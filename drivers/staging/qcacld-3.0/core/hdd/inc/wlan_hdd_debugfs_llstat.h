@@ -68,7 +68,7 @@ void hdd_debugfs_process_radio_stats(struct hdd_adapter *adapter,
 
 /**
  * hdd_debugfs_process_iface_stats() - This function is called after
- * @adapter: Pointer to device adapter
+ * @link_info: Link info pointer in HDD adapter
  * @data: Pointer to stats data
  * @num_peers: Number of peers
  *
@@ -78,8 +78,8 @@ void hdd_debugfs_process_radio_stats(struct hdd_adapter *adapter,
  *
  * Return: None
  */
-void hdd_debugfs_process_iface_stats(struct hdd_adapter *adapter,
-		void *data, uint32_t num_peers);
+void hdd_debugfs_process_iface_stats(struct wlan_hdd_link_info *link_info,
+				     void *data, uint32_t num_peers);
 
 /**
  * wlan_hdd_create_ll_stats_file() - API to create Link Layer stats file
@@ -100,11 +100,12 @@ static inline void hdd_debugfs_process_radio_stats(
 {
 }
 
-static inline void hdd_debugfs_process_iface_stats(
-				struct hdd_adapter *adapter,
+static inline void
+hdd_debugfs_process_iface_stats(struct wlan_hdd_link_info *link_info,
 				void *data, uint32_t num_peers)
 {
 }
+
 static inline int wlan_hdd_create_ll_stats_file(struct hdd_adapter *adapter)
 {
 	return 0;

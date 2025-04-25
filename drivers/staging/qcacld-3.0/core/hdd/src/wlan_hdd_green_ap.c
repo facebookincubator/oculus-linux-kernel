@@ -219,6 +219,7 @@ __wlan_hdd_enter_sap_low_pwr_mode(struct wiphy *wiphy,
 	QDF_STATUS status;
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
 	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
+	struct hdd_ap_ctx *ap_ctx = WLAN_HDD_GET_AP_CTX_PTR(adapter->deflink);
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_DOZED_AP_MAX + 1];
 	struct sk_buff *skb;
 
@@ -248,9 +249,9 @@ __wlan_hdd_enter_sap_low_pwr_mode(struct wiphy *wiphy,
 	hdd_debug("state: %s",
 		  lp_flags == QCA_WLAN_DOZED_AP_ENABLE ? "ENABLE" : "DISABLE");
 
-	status = ucfg_green_ap_ll_ps(hdd_ctx->pdev, adapter->vdev, lp_flags,
-				     adapter->session.ap.sap_config.beacon_int,
-				     &cookie_id);
+	status = ucfg_green_ap_ll_ps(
+			hdd_ctx->pdev, adapter->deflink->vdev, lp_flags,
+			ap_ctx->sap_config.beacon_int, &cookie_id);
 	if (status != QDF_STATUS_SUCCESS) {
 		hdd_err("unable to send low latency power save cmd");
 		return -EINVAL;

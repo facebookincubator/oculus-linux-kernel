@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -236,25 +236,6 @@ bool mlme_is_flexible_twt_enabled(struct wlan_objmgr_psoc *psoc)
 #endif /* WLAN_FEATURE_11AX */
 
 /**
- * mlme_sap_set_twt_command_in_progress() - Set TWT command is in progress.
- * @psoc: Pointer to psoc object
- * @vdev_id: vdev id
- * @peer_mac: Pointer to peer mac address
- * @dialog_id: Dialog id
- * @cmd: TWT command
- *
- * if the broadcast MAC address is passed, then
- * set TWT command is in progress for all the peers
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS mlme_sap_set_twt_command_in_progress(struct wlan_objmgr_psoc *psoc,
-						uint8_t vdev_id,
-						struct qdf_mac_addr *peer_mac,
-						uint8_t dialog_id,
-						enum wlan_twt_commands cmd);
-
-/**
  * mlme_set_twt_command_in_progress() - Set TWT command is in progress.
  * @psoc: Pointer to psoc object
  * @peer_mac: Pointer to peer mac address
@@ -327,6 +308,22 @@ bool mlme_is_max_twt_sessions_reached(struct wlan_objmgr_psoc *psoc,
  */
 bool mlme_is_24ghz_twt_enabled(struct wlan_objmgr_psoc *psoc);
 
+#ifdef WLAN_TWT_CONV_SUPPORTED
+/**
+ * mlme_is_twt_disable_info_frame() - Get if TWT info frame enabled/disabled
+ * @psoc: Pointer to psoc object
+ *
+ * Return: True if TWT info frame is disabled.
+ */
+bool mlme_is_twt_disable_info_frame(struct wlan_objmgr_psoc *psoc);
+#else
+static inline bool
+mlme_is_twt_disable_info_frame(struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+
+#endif
 #else
 static inline
 void mlme_set_twt_peer_capabilities(struct wlan_objmgr_psoc *psoc,
@@ -347,5 +344,18 @@ bool mlme_is_flexible_twt_enabled(struct wlan_objmgr_psoc *psoc)
 {
 	return false;
 }
+
+static inline bool
+mlme_is_24ghz_twt_enabled(struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+
+static inline bool
+mlme_is_twt_disable_info_frame(struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+
 #endif /* WLAN_SUPPORT_TWT */
 #endif /* _WLAN_MLME_TWT_API_H_ */

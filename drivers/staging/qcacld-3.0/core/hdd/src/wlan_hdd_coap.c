@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -60,7 +60,7 @@ __wlan_hdd_cfg80211_coap_offload(struct wiphy *wiphy,
 	if (adapter->device_mode != QDF_STA_MODE)
 		return -ENOTSUPP;
 
-	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_COAP_ID);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink, WLAN_COAP_ID);
 	if (!vdev)
 		return -EINVAL;
 

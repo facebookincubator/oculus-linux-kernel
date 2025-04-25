@@ -1088,8 +1088,8 @@ void htt_t2h_msg_handler(void *context, HTC_PACKET *pkt)
 #ifdef WLAN_FEATURE_FASTPATH
 #define HTT_T2H_MSG_BUF_REINIT(_buf, dev)				\
 	do {								\
-		QDF_NBUF_CB_PADDR(_buf) -= (HTC_HEADER_LEN +		\
-					HTC_HDR_ALIGNMENT_PADDING);	\
+		qdf_nbuf_push_head(_buf, (HTC_HEADER_LEN) +		\
+				   HTC_HDR_ALIGNMENT_PADDING);		\
 		qdf_nbuf_init_fast((_buf));				\
 		qdf_mem_dma_sync_single_for_device(dev,			\
 					(QDF_NBUF_CB_PADDR(_buf)),	\

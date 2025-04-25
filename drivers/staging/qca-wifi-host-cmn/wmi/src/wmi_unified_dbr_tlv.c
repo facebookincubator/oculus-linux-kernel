@@ -133,17 +133,23 @@ static QDF_STATUS extract_dbr_buf_release_fixed_tlv(wmi_unified_t wmi_handle,
 								ev->pdev_id);
 	param->mod_id = ev->mod_id;
 	if ((!param_buf->num_entries) ||
-	    param_buf->num_entries < ev->num_buf_release_entry){
+	    param_buf->num_entries < ev->num_buf_release_entry) {
 		wmi_err("actual num of buf release entries less than provided entries");
 		return QDF_STATUS_E_INVAL;
 	}
 	param->num_buf_release_entry = ev->num_buf_release_entry;
-	if ((!param_buf->num_meta_data) ||
-	    param_buf->num_meta_data < ev->num_meta_data_entry) {
-		wmi_err("actual num of meta data entries less than provided entries");
+	if (((!param_buf->num_meta_data) ||
+	     param_buf->num_meta_data < ev->num_meta_data_entry) &&
+	     ((!param_buf->num_cv_meta_data) ||
+	     param_buf->num_cv_meta_data < ev->num_meta_data_entry) &&
+	     ((!param_buf->num_cqi_meta_data) ||
+	     param_buf->num_cqi_meta_data < ev->num_meta_data_entry)) {
+		wmi_err(" actual num of meta data entries less than provided entries");
 		return QDF_STATUS_E_INVAL;
 	}
-	param->num_meta_data_entry = ev->num_meta_data_entry;
+	param->num_meta_data_entry = param_buf->num_meta_data;
+	param->num_cv_meta_data_entry = param_buf->num_cv_meta_data;
+	param->num_cqi_meta_data_entry = param_buf->num_cqi_meta_data;
 	wmi_debug("pdev id %d mod id %d num buf release entry %d",
 		 param->pdev_id, param->mod_id, param->num_buf_release_entry);
 
@@ -204,6 +210,89 @@ static QDF_STATUS extract_dbr_buf_metadata_tlv(
 	return QDF_STATUS_SUCCESS;
 }
 
+static QDF_STATUS extract_dbr_buf_cv_metadata_tlv(
+		wmi_unified_t wmi_handle, uint8_t *event,
+		uint8_t idx, struct direct_buf_rx_cv_metadata *param)
+{
+	WMI_PDEV_DMA_RING_BUF_RELEASE_EVENTID_param_tlvs *param_buf;
+	wmi_dma_buf_release_cv_upload_meta_data *ev;
+
+	param_buf = (WMI_PDEV_DMA_RING_BUF_RELEASE_EVENTID_param_tlvs *)event;
+	if (!param_buf)
+		return QDF_STATUS_E_INVAL;
+
+	ev = &param_buf->cv_meta_data[idx];
+
+	if (!ev) {
+		wmi_err("CV metadata is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	param->is_valid = ev->is_valid;
+	param->fb_type = ev->fb_type;
+	param->asnr_len =
+		WMI_DMA_BUF_RELEASE_CV_UPLOAD_GET_ASNR_LENGTH(ev->asnr_params);
+	param->asnr_offset =
+		WMI_DMA_BUF_RELEASE_CV_UPLOAD_GET_ASNR_OFFSET(ev->asnr_params);
+	param->dsnr_len =
+		WMI_DMA_BUF_RELEASE_CV_UPLOAD_GET_DSNR_LENGTH(ev->dsnr_params);
+	param->dsnr_offset =
+		WMI_DMA_BUF_RELEASE_CV_UPLOAD_GET_DSNR_OFFSET(ev->dsnr_params);
+	WMI_MAC_ADDR_TO_CHAR_ARRAY(&ev->peer_mac_address,
+				   &param->peer_mac.bytes[0]);
+	param->fb_params = ev->fb_params;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS extract_dbr_buf_cqi_metadata_tlv(
+		wmi_unified_t wmi_handle, uint8_t *event,
+		uint8_t idx, struct direct_buf_rx_cqi_metadata *param)
+{
+	WMI_PDEV_DMA_RING_BUF_RELEASE_EVENTID_param_tlvs *param_buf;
+	wmi_dma_buf_release_cqi_upload_meta_data *ev;
+	uint16_t asnr_len, asnr_offset;
+	uint8_t num_users = 0;
+	uint8_t i;
+
+	param_buf = (WMI_PDEV_DMA_RING_BUF_RELEASE_EVENTID_param_tlvs *)event;
+	if (!param_buf)
+		return QDF_STATUS_E_INVAL;
+
+	ev = &param_buf->cqi_meta_data[idx];
+
+	if (!ev) {
+		wmi_err("CQI metadata is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	param->fb_params = ev->fb_params_cqi;
+	asnr_len =
+		WMI_DMA_BUF_RELEASE_CV_UPLOAD_GET_ASNR_LENGTH(ev->asnr_params);
+	asnr_offset =
+		WMI_DMA_BUF_RELEASE_CV_UPLOAD_GET_ASNR_OFFSET(ev->asnr_params);
+	for (i = 0; i < MAX_NUM_CQI_USERS_IN_STANDALONE_SND; i++) {
+		if (WMI_DMA_BUF_RELEASE_CQI_UPLOAD_GET_FB_PARAMS_IS_VALID(
+		    param->fb_params, i)) {
+			WMI_DMA_BUF_RELEASE_CQI_UPLOAD_SET_FB_PARAMS_IS_VALID(
+			param->is_valid, 1, i);
+			param->user_info[i].asnr_len = asnr_len;
+			param->user_info[i].asnr_offset =
+				asnr_offset + CQI_USER_DATA_OFFSET(i);
+			param->user_info[i].fb_params =
+				WMI_DMA_BUF_RELEASE_CQI_UPLOAD_GET_FB_PARAMS_NC(
+				param->fb_params, i);
+
+			WMI_MAC_ADDR_TO_CHAR_ARRAY(&ev->peer_mac_address[i],
+				&param->user_info[i].peer_mac.bytes[0]);
+			num_users++;
+		}
+	}
+	param->num_users = num_users;
+
+	return QDF_STATUS_SUCCESS;
+}
+
 void wmi_dbr_attach_tlv(wmi_unified_t wmi_handle)
 {
 	struct wmi_ops *ops = wmi_handle->ops;
@@ -211,6 +300,8 @@ void wmi_dbr_attach_tlv(wmi_unified_t wmi_handle)
 	ops->send_dbr_cfg_cmd = send_dbr_cfg_cmd_tlv;
 	ops->extract_dbr_buf_release_entry = extract_dbr_buf_release_entry_tlv;
 	ops->extract_dbr_buf_metadata = extract_dbr_buf_metadata_tlv;
+	ops->extract_dbr_buf_cv_metadata = extract_dbr_buf_cv_metadata_tlv;
+	ops->extract_dbr_buf_cqi_metadata = extract_dbr_buf_cqi_metadata_tlv;
 	ops->extract_dbr_buf_release_fixed = extract_dbr_buf_release_fixed_tlv;
 	ops->extract_scaling_params_service_ready_ext =
 			extract_scaling_params_service_ready_ext_tlv;

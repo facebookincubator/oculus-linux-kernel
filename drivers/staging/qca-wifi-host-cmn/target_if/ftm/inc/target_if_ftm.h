@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018 The Linux Foundation. All rights reserved.
- *
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -58,9 +58,9 @@ target_if_ftm_detach(struct wlan_objmgr_psoc *psoc);
 /**
  * target_if_ftm_cmd_send() - Send WMI command for FTM requests
  * @pdev: pdev pointer
- * buf: data to be sent to FW
- * len: length of the data
- * pdev_id: pdev id
+ * @buf: data to be sent to FW
+ * @len: length of the data
+ * @pdev_id: pdev id
  *
  * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
  */

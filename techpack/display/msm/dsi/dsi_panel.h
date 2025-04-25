@@ -204,6 +204,7 @@ struct dsi_backlight_config {
 	u32 scanline_offset[2];
 	u32 settling_time_us[2];
 	u32 blu_default_duty_override;
+	u32 blu_current_duty_cycle;
 
 	/* Temperature-dependent timing */
 	bool temperature_dependent_timing;

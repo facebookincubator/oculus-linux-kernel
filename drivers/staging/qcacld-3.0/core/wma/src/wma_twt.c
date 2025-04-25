@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -180,7 +180,7 @@ void wma_send_twt_disable_cmd(uint32_t pdev_id,
 /**
  * wma_twt_disable_comp_event_handler- TWT disable complete event handler
  * @handle: wma handle
- * @event: buffer with event
+ * @data: data buffer
  * @len: buffer length
  *
  * Return: 0 on success, negative value on failure

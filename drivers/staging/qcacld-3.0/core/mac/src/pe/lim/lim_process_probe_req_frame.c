@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -283,12 +283,12 @@ lim_process_probe_req_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 	tSirMacAddr dst_mac;
 
 	mac_hdr = WMA_GET_RX_MAC_HEADER(rx_pkt_info);
-	if (LIM_IS_AP_ROLE(session)) {
+	if (LIM_IS_AP_ROLE(session) &&
+	    session->curr_op_freq == WMA_GET_RX_FREQ(rx_pkt_info)) {
 		frame_len = WMA_GET_RX_PAYLOAD_LEN(rx_pkt_info);
 
-		pe_debug("Received Probe Request: %d bytes from",
-			frame_len);
-			lim_print_mac_addr(mac_ctx, mac_hdr->sa, LOGD);
+		pe_debug("Received Probe Request: %d bytes from "QDF_MAC_ADDR_FMT,
+			 frame_len, QDF_MAC_ADDR_REF(mac_hdr->sa));
 		/* Get pointer to Probe Request frame body */
 		body_ptr = WMA_GET_RX_MPDU_DATA(rx_pkt_info);
 
@@ -342,9 +342,8 @@ lim_process_probe_req_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 			}
 
 			if ((rate_11b > 0) && (other_rates == 0)) {
-				pe_debug("Received a probe req frame with only 11b rates, SA is: ");
-					lim_print_mac_addr(mac_ctx,
-						mac_hdr->sa, LOGD);
+				pe_debug("Received a probe req frame with only 11b rates, SA: "QDF_MAC_ADDR_FMT,
+					 QDF_MAC_ADDR_REF(mac_hdr->sa));
 					goto free_and_exit;
 			}
 		}
@@ -414,9 +413,8 @@ lim_process_probe_req_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 					goto free_and_exit;
 				}
 			} else {
-				pe_debug("Ignore ProbeReq frm with unmatch SSID received from");
-					lim_print_mac_addr(mac_ctx, mac_hdr->sa,
-							   LOGD);
+				pe_debug("Ignore ProbeReq frm with unmatch SSID received from SA: "QDF_MAC_ADDR_FMT,
+					 QDF_MAC_ADDR_REF(mac_hdr->sa));
 			}
 		} else {
 			/*
@@ -439,12 +437,12 @@ lim_process_probe_req_frame(struct mac_context *mac_ctx, uint8_t *rx_pkt_info,
 			goto free_and_exit;
 		}
 multipleSSIDcheck:
-		pe_debug("Ignore ProbeReq frm with unmatch SSID rcved from");
-			lim_print_mac_addr(mac_ctx, mac_hdr->sa, LOGD);
+		pe_debug("Ignore ProbeReq frm with unmatch SSID rcved from SA: "QDF_MAC_ADDR_FMT,
+			 QDF_MAC_ADDR_REF(mac_hdr->sa));
 	} else {
 		/* Ignore received Probe Request frame */
-		pe_debug("Ignoring Probe Request frame received from");
-		lim_print_mac_addr(mac_ctx, mac_hdr->sa, LOGD);
+		pe_debug("Ignoring Probe Request frame received from SA: "QDF_MAC_ADDR_FMT,
+			 QDF_MAC_ADDR_REF(mac_hdr->sa));
 	}
 
 free_and_exit:

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -197,10 +197,10 @@ bool __qdf_trace_dp_tx_comp_generic_ip_pkt_enabled(void)
  * __qdf_trace_dp_tx_comp_generic_ip_pkt() - Trace generic ip packet in
  *					     tx direction
  * @skb: pointer to network buffer
+ * @ip_proto: IP protocol field
  * @ip_id: ip identification field
  * @trans_hdr_4_bytes: transport header first 4 bytes
  * @latency: latency
-
  *
  * Return: None
  */
@@ -217,7 +217,7 @@ void __qdf_trace_dp_tx_comp_generic_ip_pkt(struct sk_buff *skb,
 }
 
 /**
- * __qdf_trace_dp_rx_pkt_enablei() - Get the dp_rx_pkt tracepoint
+ * __qdf_trace_dp_rx_pkt_enabled() - Get the dp_rx_pkt tracepoint
  *  enabled or disabled state
  *
  * Return: True if the tracepoint is enabled else false

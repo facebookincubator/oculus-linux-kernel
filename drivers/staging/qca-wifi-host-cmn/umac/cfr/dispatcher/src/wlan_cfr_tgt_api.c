@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -154,7 +154,8 @@ int tgt_cfr_validate_period(struct wlan_objmgr_psoc *psoc, u_int32_t period)
 	    target_type == TARGET_TYPE_QCA8074V2 ||
 	    target_type == TARGET_TYPE_QCA5018 ||
 	    target_type == TARGET_TYPE_QCA5332 ||
-	    target_type == TARGET_TYPE_QCN9224) {
+	    target_type == TARGET_TYPE_QCN9224 ||
+	    target_type == TARGET_TYPE_QCN6432) {
 		/* No additional check required for these targets */
 		status = 1;
 	} else {

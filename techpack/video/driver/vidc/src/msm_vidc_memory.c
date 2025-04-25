@@ -10,7 +10,7 @@
 #include <linux/qcom-dma-mapping.h>
 #include <linux/mem-buf.h>
 #include <soc/qcom/secure_buffer.h>
-
+#include <../drivers/dma-buf/heaps/qcom_sg_ops.h>
 #include "msm_vidc_memory.h"
 #include "msm_vidc_debug.h"
 #include "msm_vidc_internal.h"
@@ -312,6 +312,75 @@ int msm_vidc_memory_unmap(struct msm_vidc_core *core,
 	map->table = NULL;
 
 exit:
+	return rc;
+}
+
+int msm_vidc_iommu_unmap(struct msm_vidc_core *core,
+	struct msm_vidc_map *map)
+{
+	int rc = 0;
+	struct context_bank_info *cb = NULL;
+
+	if (!core || !map) {
+		d_vpr_e("%s: invalid params\n", __func__);
+		return -EINVAL;
+	}
+
+	cb = get_context_bank(core, map->region);
+	if (!cb) {
+		d_vpr_e("%s: Failed to get context bank device\n",
+			__func__);
+		rc = -EIO;
+		goto exit;
+	}
+
+	iommu_unmap(cb->domain, map->device_addr, map->size);
+	d_vpr_l("%s: type %11s, device_addr %#x, region %d\n",
+		__func__, buf_name(map->type), map->device_addr, map->region);
+
+	map->device_addr = 0x0;
+
+exit:
+	return rc;
+}
+
+int msm_vidc_iommu_map(struct msm_vidc_core *core, struct msm_vidc_map *map)
+{
+	int rc = 0;
+	struct qcom_sg_buffer *sg_buffer;
+	phys_addr_t phys_addr;
+	struct context_bank_info *cb = NULL;
+
+	if (!core || !map) {
+		d_vpr_e("%s: invalid params\n", __func__);
+		return -EINVAL;
+	}
+
+	if (map->dmabuf) {
+		sg_buffer = (struct qcom_sg_buffer *)map->dmabuf->priv;
+		phys_addr = sg_phys(sg_buffer->sg_table.sgl);
+	} else {
+		phys_addr = map->phys_addr;
+	}
+
+	cb = get_context_bank(core, map->region);
+	if (!cb) {
+		d_vpr_e("%s: Failed to get context bank device\n", __func__);
+		return -EIO;
+	}
+
+	rc = iommu_map(cb->domain, map->device_addr, phys_addr,
+		map->size, IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE);
+	if (rc) {
+		d_vpr_e(
+			"iommu_map failed for device_addr 0x%x, size %d, rc:%d\n",
+			map->device_addr, map->size, rc);
+		return rc;
+	}
+
+	d_vpr_l("%s: device_addr %#x, region %d\n",
+		__func__, map->device_addr, map->region);
+
 	return rc;
 }
 

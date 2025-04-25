@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -86,26 +86,62 @@ enum {
 /**
  * struct hal_wbm_err_desc_info - structure to hold wbm error codes and reasons
  *
- * @reo_psh_rsn:	REO push reason
- * @reo_err_code:	REO Error code
- * @rxdma_psh_rsn:	RXDMA push reason
- * @rxdma_err_code:	RXDMA Error code
- * @reserved_1:		Reserved bits
- * @wbm_err_src:	WBM error source
- * @pool_id:		pool ID, indicates which rxdma pool
- * @msdu_continued:     Is the MSDU continued
- * @reserved_2:		Reserved bits
+ * The fields of this structure is aligned to HAL Rx WBM2SW Ring desc,
+ * inorder to efficiently copy the data from desc to struct.
+ * Do not change the sequence of the fields.
+ *
+ * @wbm_err_src: Module which initiated the buffer release
+ * @bm_action: BM action
+ * @buffer_or_desc_type: Type of Buffer or Desc released
+ * @return_buffer_manager: Buffer address Info for debug
+ * @pool_id: pool ID, indicates which rxdma pool
+ * @cache_id: cache Id
+ * @cookie_conversion_status: cookie conversion status
+ * @rxdma_psh_rsn: RXDMA push reason
+ * @rxdma_err_code: RXDMA Error code
+ * @reo_psh_rsn: REO push reason
+ * @reo_err_code: REO Error code
+ * @wbm_internal_error: WBM Internal error
  */
 struct hal_wbm_err_desc_info {
-	uint16_t reo_psh_rsn:2,
-		 reo_err_code:5,
-		 rxdma_psh_rsn:2,
-		 rxdma_err_code:5,
-		 reserved_1:2;
-	uint8_t wbm_err_src:3,
-		pool_id:2,
-		msdu_continued:1,
-		reserved_2:2;
+#ifndef WIFI_BIT_ORDER_BIG_ENDIAN
+	uint32_t wbm_err_src                                             :  3,
+		 bm_action                                               :  3,
+		 buffer_or_desc_type                                     :  3,
+		 return_buffer_manager                                   :  4,
+		 pool_id                                                 :  2,
+		 cache_id                                                :  1,
+		 cookie_conversion_status                                :  1,
+		 rxdma_psh_rsn                                           :  2,
+		 rxdma_err_code                                          :  5,
+		 reo_psh_rsn                                             :  2,
+		 reo_err_code                                            :  5,
+		 wbm_internal_error                                      :  1;
+#else
+	uint32_t wbm_internal_error                                      :  1,
+		 reo_err_code                                            :  5,
+		 reo_psh_rsn                                             :  2,
+		 rxdma_err_code                                          :  5,
+		 rxdma_psh_rsn                                           :  2,
+		 cookie_conversion_status                                :  1,
+		 cache_id                                                :  1,
+		 pool_id                                                 :  2,
+		 return_buffer_manager                                   :  4,
+		 buffer_or_desc_type                                     :  3,
+		 bm_action                                               :  3,
+		 wbm_err_src                                             :  3;
+#endif
+};
+
+/**
+ * union hal_wbm_err_info_u - Union to hold wbm error information
+ * @info_bit: hal_wbm_err_desc_info: structure to hold wbm error info bit fields
+ * @info: variable to hold wbm error info
+ *
+ */
+union hal_wbm_err_info_u {
+	struct hal_wbm_err_desc_info info_bit;
+	uint32_t info;
 };
 
 /**
@@ -1559,28 +1595,100 @@ enum hal_rx_wbm_rxdma_push_reason {
 	HAL_RX_WBM_RXDMA_PSH_RSN_FLUSH,
 };
 
-static inline void hal_rx_dump_mpdu_start_tlv(struct rx_mpdu_start *mpdu_start,
-					      uint8_t dbg_level,
-					      struct hal_soc *hal)
-{
-
-	hal->ops->hal_rx_dump_mpdu_start_tlv(mpdu_start, dbg_level);
-}
-
 /**
  * hal_rx_dump_msdu_end_tlv() - dump RX msdu_end TLV in structured
  *			        human readable format.
  * @hal_soc: HAL soc
- * @msdu_end: pointer the msdu_end TLV in pkt.
+ * @pkt_tlvs: pointer the pkt_tlvs.
  * @dbg_level: log level.
  *
  * Return: void
  */
 static inline void hal_rx_dump_msdu_end_tlv(struct hal_soc *hal_soc,
-					    struct rx_msdu_end *msdu_end,
+					    void *pkt_tlvs,
 					    uint8_t dbg_level)
 {
-	hal_soc->ops->hal_rx_dump_msdu_end_tlv(msdu_end, dbg_level);
+	hal_soc->ops->hal_rx_dump_msdu_end_tlv(pkt_tlvs, dbg_level);
+}
+
+/**
+ * hal_rx_dump_rx_attention_tlv() - dump RX rx_attention TLV in structured
+ *				    human readable format.
+ * @hal_soc: HAL soc
+ * @pkt_tlvs: pointer the pkt_tlvs.
+ * @dbg_level: log level.
+ *
+ * Return: void
+ */
+static inline void hal_rx_dump_rx_attention_tlv(struct hal_soc *hal_soc,
+						void *pkt_tlvs,
+						uint8_t dbg_level)
+{
+	hal_soc->ops->hal_rx_dump_rx_attention_tlv(pkt_tlvs, dbg_level);
+}
+
+/**
+ * hal_rx_dump_msdu_start_tlv: dump RX msdu_start TLV in structured
+ *			       human readable format.
+ * @hal_soc: HAL soc
+ * @pkt_tlvs: pointer the pkt_tlvs.
+ * @dbg_level: log level.
+ *
+ * Return: void
+ */
+static inline void hal_rx_dump_msdu_start_tlv(struct hal_soc *hal_soc,
+					      void *pkt_tlvs,
+					      uint8_t dbg_level)
+{
+	hal_soc->ops->hal_rx_dump_msdu_start_tlv(pkt_tlvs, dbg_level);
+}
+
+/**
+ * hal_rx_dump_mpdu_start_tlv: dump RX mpdu_start TLV in structured
+ *			       human readable format.
+ * @hal_soc: HAL soc
+ * @pkt_tlvs: pointer the pkt_tlvs.
+ * @dbg_level: log level.
+ *
+ * Return: void
+ */
+static inline void hal_rx_dump_mpdu_start_tlv(struct hal_soc *hal_soc,
+					      void *pkt_tlvs,
+					      uint8_t dbg_level)
+{
+	hal_soc->ops->hal_rx_dump_mpdu_start_tlv(pkt_tlvs, dbg_level);
+}
+
+/**
+ * hal_rx_dump_mpdu_end_tlv: dump RX mpdu_end TLV in structured
+ *			     human readable format.
+ * @hal_soc: HAL soc
+ * @pkt_tlvs: pointer the pkt_tlvs.
+ * @dbg_level: log level.
+ *
+ * Return: void
+ */
+static inline void hal_rx_dump_mpdu_end_tlv(struct hal_soc *hal_soc,
+					    void *pkt_tlvs,
+					    uint8_t dbg_level)
+{
+	hal_soc->ops->hal_rx_dump_mpdu_end_tlv(pkt_tlvs, dbg_level);
+}
+
+/**
+ * hal_rx_dump_pkt_hdr_tlv: dump RX pkt_hdr TLV in structured
+ *			    human readable format.
+ * @hal_soc: HAL soc
+ * @pkt_tlvs: pointer the pkt_tlvs.
+ * @dbg_level: log level.
+ *
+ * Return: void
+ */
+static inline void hal_rx_dump_pkt_hdr_tlv(struct hal_soc *hal_soc,
+					   void *pkt_tlvs,
+					   uint8_t dbg_level)
+{
+	hal_soc->ops->hal_rx_dump_pkt_hdr_tlv(pkt_tlvs, dbg_level);
 }
 
 /**
@@ -1753,22 +1861,6 @@ uint32_t hal_rx_msdu_start_nss_get(hal_soc_handle_t hal_soc_hdl, uint8_t *buf)
 	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
 
 	return hal_soc->ops->hal_rx_msdu_start_nss_get(buf);
-}
-
-/**
- * hal_rx_dump_msdu_start_tlv() - dump RX msdu_start TLV in structured
- *			          human readable format.
- * @hal_soc: HAL SOC
- * @msdu_start: pointer the msdu_start TLV in pkt.
- * @dbg_level: log level.
- *
- * Return: void
- */
-static inline void hal_rx_dump_msdu_start_tlv(struct hal_soc *hal_soc,
-					      struct rx_msdu_start *msdu_start,
-					      uint8_t dbg_level)
-{
-	hal_soc->ops->hal_rx_dump_msdu_start_tlv(msdu_start, dbg_level);
 }
 
 /**
@@ -3106,6 +3198,21 @@ hal_rx_tlv_l3_type_get(hal_soc_handle_t hal_soc_hdl, uint8_t *buf)
 }
 
 /**
+ * hal_rx_phy_legacy_get_rssi() - API to get RSSI from TLV
+ * @hal_soc_hdl: HAL soc handle
+ * @buf: pointer to the start of WIFIPHYRX_RSSI_LEGACY_E TLV
+ *
+ * Return: value of RSSI
+ */
+static inline int8_t
+hal_rx_phy_legacy_get_rssi(hal_soc_handle_t hal_soc_hdl, uint8_t *buf)
+{
+	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
+
+	return hal_soc->ops->hal_rx_phy_legacy_get_rssi(buf);
+}
+
+/**
  * hal_get_tsf_time() - Get tsf time
  * @hal_soc_hdl: HAL soc handle
  * @tsf_id:
@@ -3126,4 +3233,33 @@ hal_get_tsf_time(hal_soc_handle_t hal_soc_hdl, uint32_t tsf_id,
 		hal_soc->ops->hal_get_tsf_time(hal_soc_hdl, tsf_id, mac_id,
 					       tsf, tsf_sync_soc_time);
 }
+
+/**
+ * hal_rx_en_mcast_fp_data_filter() - Is mcast filter pass enabled
+ * @hal_soc_hdl: HAL soc handle
+ *
+ * Return: false for BE MCC, true for WIN
+ */
+static inline
+bool hal_rx_en_mcast_fp_data_filter(hal_soc_handle_t hal_soc_hdl)
+{
+	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
+
+	return hal_soc->ops->hal_rx_en_mcast_fp_data_filter();
+}
+
+/**
+ * hal_rx_get_phy_ppdu_id_size() - Get phy ppdu id size
+ * @hal_soc_hdl: HAL soc handle
+ *
+ * Return: phy ppdu id size
+ */
+static inline uint8_t
+hal_rx_get_phy_ppdu_id_size(hal_soc_handle_t hal_soc_hdl)
+{
+	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
+
+	return hal_soc->ops->hal_rx_get_phy_ppdu_id_size();
+}
+
 #endif /* _HAL_RX_H */

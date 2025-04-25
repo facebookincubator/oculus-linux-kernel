@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -100,11 +101,11 @@ qdf_nbuf_t ol_tx_send_ipa_data_frame(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
 	qdf_nbuf_t ret;
 
 	if (qdf_unlikely(!pdev)) {
-		ol_txrx_err("%s: invalid pdev", __func__);
+		ol_txrx_err("Invalid pdev");
 		return skb;
 	}
 	if (qdf_unlikely(!vdev)) {
-		ol_txrx_err("%s: invalid vdev, vdev_id:%d", __func__, vdev_id);
+		ol_txrx_err("Invalid vdev, vdev_id:%d", vdev_id);
 		return skb;
 	}
 

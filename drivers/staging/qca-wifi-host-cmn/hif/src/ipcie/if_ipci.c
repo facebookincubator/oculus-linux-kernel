@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -408,7 +408,7 @@ static irqreturn_t hif_ce_interrupt_handler(int irq, void *context)
 {
 	struct ce_tasklet_entry *tasklet_entry = context;
 
-	hif_rtpm_check_and_request_resume();
+	hif_rtpm_check_and_request_resume(false);
 	return ce_dispatch_interrupt(tasklet_entry->ce_id, tasklet_entry);
 }
 
@@ -557,16 +557,17 @@ void hif_ipci_irq_set_affinity_hint(struct hif_exec_context *hif_ext_group,
 	int i, ret;
 	unsigned int cpus;
 	bool mask_set = false;
-	int cpu_cluster = perf ? CPU_CLUSTER_TYPE_PERF :
-						CPU_CLUSTER_TYPE_LITTLE;
+	int package_id;
+	int cpu_cluster = perf ? hif_get_perf_cluster_bitmap() :
+				 BIT(CPU_CLUSTER_TYPE_LITTLE);
 
 	for (i = 0; i < hif_ext_group->numirq; i++)
 		qdf_cpumask_clear(&hif_ext_group->new_cpu_mask[i]);
 
 	for (i = 0; i < hif_ext_group->numirq; i++) {
 		qdf_for_each_online_cpu(cpus) {
-			if (qdf_topology_physical_package_id(cpus) ==
-			    cpu_cluster) {
+			package_id = qdf_topology_physical_package_id(cpus);
+			if (package_id >= 0 && BIT(package_id) & cpu_cluster) {
 				qdf_cpumask_set_cpu(cpus,
 						    &hif_ext_group->
 						    new_cpu_mask[i]);
@@ -576,14 +577,10 @@ void hif_ipci_irq_set_affinity_hint(struct hif_exec_context *hif_ext_group,
 	}
 	for (i = 0; i < hif_ext_group->numirq; i++) {
 		if (mask_set) {
-			qdf_dev_modify_irq_status(hif_ext_group->os_irq[i],
-						  IRQ_NO_BALANCING, 0);
-			ret = qdf_dev_set_irq_affinity(hif_ext_group->os_irq[i],
-						       (struct qdf_cpu_mask *)
-						       &hif_ext_group->
-						       new_cpu_mask[i]);
-			qdf_dev_modify_irq_status(hif_ext_group->os_irq[i],
-						  0, IRQ_NO_BALANCING);
+			ret = hif_affinity_mgr_set_qrg_irq_affinity((struct hif_softc *)hif_ext_group->hif,
+								    hif_ext_group->os_irq[i],
+								    hif_ext_group->grp_id, i,
+								    &hif_ext_group->new_cpu_mask[i]);
 			if (ret)
 				qdf_debug("Set affinity %*pbl fails for IRQ %d ",
 					  qdf_cpumask_pr_args(&hif_ext_group->
@@ -623,14 +620,16 @@ static void hif_ipci_ce_irq_set_affinity_hint(struct hif_softc *scn)
 	struct hif_ipci_softc *ipci_sc = HIF_GET_IPCI_SOFTC(scn);
 	struct CE_attr *host_ce_conf;
 	int ce_id;
-	qdf_cpu_mask ce_cpu_mask;
+	qdf_cpu_mask ce_cpu_mask, updated_mask;
+	int perf_cpu_cluster = hif_get_perf_cluster_bitmap();
+	int package_id;
 
 	host_ce_conf = ce_sc->host_ce_config;
 	qdf_cpumask_clear(&ce_cpu_mask);
 
 	qdf_for_each_online_cpu(cpus) {
-		if (qdf_topology_physical_package_id(cpus) ==
-			CPU_CLUSTER_TYPE_PERF) {
+		package_id = qdf_topology_physical_package_id(cpus);
+		if (package_id >= 0 && BIT(package_id) & perf_cpu_cluster) {
 			qdf_cpumask_set_cpu(cpus,
 					    &ce_cpu_mask);
 		}
@@ -642,16 +641,13 @@ static void hif_ipci_ce_irq_set_affinity_hint(struct hif_softc *scn)
 	for (ce_id = 0; ce_id < scn->ce_count; ce_id++) {
 		if (host_ce_conf[ce_id].flags & CE_ATTR_DISABLE_INTR)
 			continue;
+		qdf_cpumask_copy(&updated_mask, &ce_cpu_mask);
+		ret = hif_affinity_mgr_set_ce_irq_affinity(scn, ipci_sc->ce_msi_irq_num[ce_id],
+							   ce_id,
+							   &updated_mask);
 		qdf_cpumask_clear(&ipci_sc->ce_irq_cpu_mask[ce_id]);
 		qdf_cpumask_copy(&ipci_sc->ce_irq_cpu_mask[ce_id],
-				 &ce_cpu_mask);
-		qdf_dev_modify_irq_status(ipci_sc->ce_msi_irq_num[ce_id],
-					  IRQ_NO_BALANCING, 0);
-		ret = qdf_dev_set_irq_affinity(
-		       ipci_sc->ce_msi_irq_num[ce_id],
-		       (struct qdf_cpu_mask *)&ipci_sc->ce_irq_cpu_mask[ce_id]);
-		qdf_dev_modify_irq_status(ipci_sc->ce_msi_irq_num[ce_id],
-					  0, IRQ_NO_BALANCING);
+				 &updated_mask);
 		if (ret)
 			hif_err_rl("Set affinity %*pbl fails for CE IRQ %d",
 				   qdf_cpumask_pr_args(
@@ -687,14 +683,10 @@ void hif_ipci_config_irq_clear_cpu_affinity(struct hif_softc *scn,
 			qdf_cpumask_setall(&hif_ext_group->new_cpu_mask[i]);
 			qdf_cpumask_clear_cpu(cpu,
 					      &hif_ext_group->new_cpu_mask[i]);
-			qdf_dev_modify_irq_status(hif_ext_group->os_irq[i],
-						  IRQ_NO_BALANCING, 0);
-			ret = qdf_dev_set_irq_affinity(hif_ext_group->os_irq[i],
-						       (struct qdf_cpu_mask *)
-						       &hif_ext_group->
-						       new_cpu_mask[i]);
-			qdf_dev_modify_irq_status(hif_ext_group->os_irq[i],
-						  0, IRQ_NO_BALANCING);
+			ret = hif_affinity_mgr_set_qrg_irq_affinity((struct hif_softc *)hif_ext_group->hif,
+								    hif_ext_group->os_irq[i],
+								    hif_ext_group->grp_id, i,
+								    &hif_ext_group->new_cpu_mask[i]);
 			if (ret)
 				hif_err("Set affinity %*pbl fails for IRQ %d ",
 					qdf_cpumask_pr_args(&hif_ext_group->
@@ -814,6 +806,7 @@ static bool hif_is_pld_based_target(struct hif_ipci_softc *sc,
 #ifdef QCA_WIFI_QCA6750
 	case QCA6750_DEVICE_ID:
 #endif
+	case WCN6450_DEVICE_ID:
 		return true;
 	}
 	return false;
@@ -846,7 +839,7 @@ QDF_STATUS hif_ipci_enable_bus(struct hif_softc *ol_sc,
 	struct hif_opaque_softc *hif_hdl = GET_HIF_OPAQUE_HDL(ol_sc);
 	uint16_t revision_id = 0;
 	struct hif_target_info *tgt_info;
-	int device_id = QCA6750_DEVICE_ID;
+	int device_id = HIF_IPCI_DEVICE_ID;
 
 	if (!ol_sc) {
 		hif_err("hif_ctx is NULL");
@@ -971,7 +964,8 @@ void hif_print_ipci_stats(struct hif_ipci_softc *ipci_handle)
 }
 #endif /* FORCE_WAKE */
 
-#ifdef FEATURE_HAL_DELAYED_REG_WRITE
+#if defined(FEATURE_HAL_DELAYED_REG_WRITE) || \
+	defined(FEATURE_HIF_DELAYED_REG_WRITE)
 int hif_prevent_link_low_power_states(struct hif_opaque_softc *hif)
 {
 	struct hif_softc *scn = HIF_GET_SOFTC(hif);
@@ -982,10 +976,7 @@ int hif_prevent_link_low_power_states(struct hif_opaque_softc *hif)
 	if (pld_is_pci_ep_awake(scn->qdf_dev->dev) == -ENOTSUPP)
 		return 0;
 
-	if ((qdf_atomic_read(&scn->dp_ep_vote_access) ==
-	     HIF_EP_VOTE_ACCESS_DISABLE) &&
-	    (qdf_atomic_read(&scn->ep_vote_access) ==
-	    HIF_EP_VOTE_ACCESS_DISABLE)) {
+	if (hif_is_ep_vote_access_disabled(scn)) {
 		hif_info_high("EP access disabled in flight skip vote");
 		return 0;
 	}
@@ -1051,6 +1042,7 @@ void hif_allow_link_low_power_states(struct hif_opaque_softc *hif)
 }
 #endif
 
+#ifndef QCA_WIFI_WCN6450
 int hif_ipci_enable_grp_irqs(struct hif_softc *scn)
 {
 	struct hif_ipci_softc *ipci_scn = HIF_GET_IPCI_SOFTC(scn);
@@ -1084,3 +1076,4 @@ int hif_ipci_disable_grp_irqs(struct hif_softc *scn)
 
 	return status;
 }
+#endif

@@ -53,6 +53,10 @@ int msm_vidc_memory_map(struct msm_vidc_core *core,
 	struct msm_vidc_map *map);
 int msm_vidc_memory_unmap(struct msm_vidc_core *core,
 	struct msm_vidc_map *map);
+int msm_vidc_iommu_map(struct msm_vidc_core *core,
+	struct msm_vidc_map *map);
+int msm_vidc_iommu_unmap(struct msm_vidc_core *core,
+	struct msm_vidc_map *map);
 struct dma_buf *msm_vidc_memory_get_dmabuf(struct msm_vidc_inst *inst,
 	int fd);
 void msm_vidc_memory_put_dmabuf(struct msm_vidc_inst *inst,

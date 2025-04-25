@@ -100,6 +100,7 @@ struct wlan_cds_feature_set {
  * @enable_tx_compl_tsf64:
  * @cds_feature_set: CDS feature set structure.
  * @get_wifi_features: Get wifi features from fw
+ * @exclude_selftx_from_cca_busy: Exclude selx tx time from cca busy time
  */
 
 struct cds_config_info {
@@ -136,5 +137,6 @@ struct cds_config_info {
 	struct wlan_cds_feature_set cds_feature_set;
 	bool get_wifi_features;
 #endif
+	bool exclude_selftx_from_cca_busy;
 };
 #endif /* !defined( __CDS_CONFIG_H ) */

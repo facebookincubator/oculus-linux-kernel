@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -32,6 +32,7 @@
 #ifdef WLAN_CM_USE_SPINLOCK
 #include <scheduler_api.h>
 #endif
+#include <wlan_cp_stats_chipset_stats.h>
 
 #define CONNECT_REQ_PREFIX          0x0C000000
 #define DISCONNECT_REQ_PREFIX       0x0D000000
@@ -39,7 +40,7 @@
 
 #define CM_ID_MASK                  0x0000FFFF
 
-#define CM_ID_GET_PREFIX(cm_id)     cm_id & 0xFF000000
+#define CM_ID_GET_PREFIX(cm_id)     cm_id & 0x0F000000
 #define CM_VDEV_ID_SHIFT            16
 #define CM_VDEV_ID_MASK             0x00FF0000
 #define CM_ID_GET_VDEV_ID(cm_id) (cm_id & CM_VDEV_ID_MASK) >> CM_VDEV_ID_SHIFT
@@ -255,6 +256,7 @@ QDF_STATUS cm_connect_rsp(struct wlan_objmgr_vdev *vdev,
 QDF_STATUS cm_notify_connect_complete(struct cnx_mgr *cm_ctx,
 				      struct wlan_cm_connect_resp *resp,
 				      bool acquire_lock);
+
 /**
  * cm_connect_complete() - This API would be called after connect complete
  * request from the serialization.
@@ -331,19 +333,22 @@ void cm_hw_mode_change_resp(struct wlan_objmgr_pdev *pdev, uint8_t vdev_id,
 			    wlan_cm_id cm_id, QDF_STATUS status);
 
 /**
- * cm_handle_hw_mode_change() - SM handling of hw mode change resp
+ * cm_ser_connect_after_mode_change_resp() - SM handling of
+ * hw mode change/bearer switch resp
  * @cm_ctx: connection manager context
  * @cm_id: Connection mgr ID assigned to this connect request.
- * @event: HW mode success or failure event
+ * @event: success or failure event
  *
  * Return: QDF_STATUS
  */
-QDF_STATUS cm_handle_hw_mode_change(struct cnx_mgr *cm_ctx, wlan_cm_id *cm_id,
-				    enum wlan_cm_sm_evt event);
+QDF_STATUS cm_ser_connect_after_mode_change_resp(struct cnx_mgr *cm_ctx,
+						wlan_cm_id *cm_id,
+						enum wlan_cm_sm_evt event);
 #else
 static inline
-QDF_STATUS cm_handle_hw_mode_change(struct cnx_mgr *cm_ctx, wlan_cm_id *cm_id,
-				    enum wlan_cm_sm_evt event)
+QDF_STATUS cm_ser_connect_after_mode_change_resp(struct cnx_mgr *cm_ctx,
+						wlan_cm_id *cm_id,
+						enum wlan_cm_sm_evt event)
 {
 	return QDF_STATUS_SUCCESS;
 }
@@ -636,6 +641,83 @@ QDF_STATUS cm_bss_select_ind_rsp(struct wlan_objmgr_vdev *vdev,
 {
 	return QDF_STATUS_SUCCESS;
 }
+
+/**
+ * cm_is_link_switch_connect_req() - API to check if connect request
+ * is for link switch.
+ * @req: Connect request
+ *
+ * Return true if the request for connection is due to link switch or else
+ * return false.
+ *
+ * Return: bool
+ */
+static inline bool cm_is_link_switch_connect_req(struct cm_connect_req *req)
+{
+	return req->req.source == CM_MLO_LINK_SWITCH_CONNECT;
+}
+
+/**
+ * cm_is_link_switch_disconnect_req() - API to check if disconnect request is
+ * for link switch.
+ * @req: Disconnect request.
+ *
+ * Return true if the request for disconnection is due to link switch or else
+ * return false.
+ *
+ * Return: bool
+ */
+static inline bool
+cm_is_link_switch_disconnect_req(struct cm_disconnect_req *req)
+{
+	return req->req.source == CM_MLO_LINK_SWITCH_DISCONNECT;
+}
+
+/**
+ * cm_is_link_switch_cmd() - Check if the CM ID is for link switch
+ * @cm_id: Connection manager request ID
+ *
+ * Return true if the bit corresponding to link switch is set for @cm_id or
+ * else return false.
+ *
+ * Return: bool
+ */
+static inline bool cm_is_link_switch_cmd(wlan_cm_id cm_id)
+{
+	return cm_id & CM_ID_LSWITCH_BIT;
+}
+
+/**
+ * cm_is_link_switch_disconnect_resp() - API to check if the disconnect
+ * response is for link switch.
+ * @resp: Disconnect response.
+ *
+ * Return true if the disconnect response is for link switch or else return
+ * false.
+ *
+ * Return: bool
+ */
+static inline bool
+cm_is_link_switch_disconnect_resp(struct wlan_cm_discon_rsp *resp)
+{
+	return cm_is_link_switch_cmd(resp->req.cm_id);
+}
+
+/**
+ * cm_is_link_switch_connect_resp() - API to check if the connect response
+ * is for link switch.
+ * @resp: Connect response.
+ *
+ * Return true if the connect response is for link switch or else return
+ * false.
+ *
+ * Return: bool
+ */
+static inline bool
+cm_is_link_switch_connect_resp(struct wlan_cm_connect_resp *resp)
+{
+	return cm_is_link_switch_cmd(resp->cm_id);
+}
 #else
 static inline void cm_store_wep_key(struct cnx_mgr *cm_ctx,
 				    struct wlan_cm_connect_crypto_info *crypto,
@@ -671,6 +753,34 @@ cm_peer_create_on_bss_select_ind_resp(struct cnx_mgr *cm_ctx,
  */
 QDF_STATUS cm_bss_select_ind_rsp(struct wlan_objmgr_vdev *vdev,
 				 QDF_STATUS status);
+
+static inline bool cm_is_link_switch_connect_req(struct cm_connect_req *req)
+{
+	return false;
+}
+
+static inline bool
+cm_is_link_switch_disconnect_req(struct cm_disconnect_req *req)
+{
+	return false;
+}
+
+static inline bool cm_is_link_switch_cmd(wlan_cm_id cm_id)
+{
+	return false;
+}
+
+static inline bool
+cm_is_link_switch_disconnect_resp(struct wlan_cm_discon_rsp *resp)
+{
+	return false;
+}
+
+static inline bool
+cm_is_link_switch_connect_resp(struct wlan_cm_connect_resp *resp)
+{
+	return false;
+}
 #endif
 
 #ifdef WLAN_FEATURE_FILS_SK
@@ -898,10 +1008,12 @@ void cm_set_max_connect_attempts(struct wlan_objmgr_vdev *vdev,
 /**
  * cm_trigger_panic_on_cmd_timeout() - trigger panic on active command timeout
  * @vdev: vdev pointer
+ * @reason: Hang reason code
  *
  * Return: void
  */
-void cm_trigger_panic_on_cmd_timeout(struct wlan_objmgr_vdev *vdev);
+void cm_trigger_panic_on_cmd_timeout(struct wlan_objmgr_vdev *vdev,
+				     enum qdf_hang_reason reason);
 
 /**
  * cm_set_max_connect_timeout() - Set max connect timeout
@@ -955,6 +1067,26 @@ bool cm_is_vdev_disconnecting(struct wlan_objmgr_vdev *vdev);
  * Return: bool
  */
 bool cm_is_vdev_disconnected(struct wlan_objmgr_vdev *vdev);
+
+#ifdef CONN_MGR_ADV_FEATURE
+/**
+ * cm_is_vdev_idle_due_to_link_switch() - Check if VDEV is in
+ * IDLE state due to link switch
+ * @vdev: VDEV objmgr pointer
+ *
+ * Returns true if the current CM SS is WLAN_CM_SS_IDLE_DUE_TO_LINK_SWITCH or
+ * returns false.
+ *
+ * Return: bool
+ */
+bool cm_is_vdev_idle_due_to_link_switch(struct wlan_objmgr_vdev *vdev);
+#else
+static inline bool
+cm_is_vdev_idle_due_to_link_switch(struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+#endif
 
 /**
  * cm_is_vdev_roaming() - check if vdev is in roaming state
@@ -1134,6 +1266,28 @@ cm_connect_rsp_get_mld_addr_or_bssid(struct wlan_cm_connect_resp *resp,
 }
 #endif
 
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+/**
+ * cm_standby_link_update_mlme_by_bssid() - update the scan mlme info for
+ * standby_link
+ * @vdev: Object manager vdev
+ * @assoc_state: association state
+ * @ssid: SSID of the connection
+ *
+ * Return: void
+ */
+void cm_standby_link_update_mlme_by_bssid(struct wlan_objmgr_vdev *vdev,
+					  uint32_t assoc_state,
+					  struct wlan_ssid ssid);
+#else
+static inline void
+cm_standby_link_update_mlme_by_bssid(struct wlan_objmgr_vdev *vdev,
+				     uint32_t assoc_state,
+				     struct wlan_ssid ssid)
+{
+}
+#endif
+
 /**
  * cm_get_cm_id_by_scan_id() - Get cm id by matching the scan id
  * @cm_ctx: connection manager context
@@ -1303,7 +1457,51 @@ void cm_set_candidate_custom_sort_cb(
  */
 bool cm_is_connect_req_reassoc(struct wlan_cm_connect_req *req);
 
-#ifdef CONN_MGR_ADV_FEATURE
+/**
+ * cm_is_first_candidate_connect_attempt() - Is it a first attempt to
+ * connect to a candidate after receiving connect request
+ * @vdev: vdev pointer
+ *
+ * Return: True if it is the first connect attempt to a candidate
+ * after receiving the connect request from the userspace
+ */
+bool cm_is_first_candidate_connect_attempt(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * cm_get_active_connect_req_param() - Get Connect request parameter
+ * @vdev: vdev pointer
+ * @req: Connection request buffer to be filled
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+cm_get_active_connect_req_param(struct wlan_objmgr_vdev *vdev,
+				struct wlan_cm_connect_req *req);
+
+/**
+ * cm_get_rnr() - get rnr
+ * @vdev:vdev
+ * @cm_id: connect mgr id
+ * @rnr: pointer to copy rnr info
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS cm_get_rnr(struct wlan_objmgr_vdev *vdev, wlan_cm_id cm_id,
+		      struct reduced_neighbor_report *rnr);
+
+/**
+ * cm_get_curr_candidate_entry() - Get the current candidate from cnx mgr
+ * @vdev: VDEV object manager.
+ * @cm_id: cnx mgr ID.
+ *
+ * Get current entry of connection from the cnx mgr list.
+ * Caller to free the returned scan entry if not NULL.
+ *
+ * Return: Scan entry
+ */
+struct scan_cache_entry *
+cm_get_curr_candidate_entry(struct wlan_objmgr_vdev *vdev, wlan_cm_id cm_id);
+
 /**
  * cm_free_connect_rsp_ies() - Function to free all connection IEs.
  * @connect_rsp: pointer to connect rsp
@@ -1314,6 +1512,48 @@ bool cm_is_connect_req_reassoc(struct wlan_cm_connect_req *req);
  */
 void cm_free_connect_rsp_ies(struct wlan_cm_connect_resp *connect_rsp);
 
+/**
+ * cm_free_connect_req() - Function to free up connect request and its sub memory.
+ * @connect_req: pointer to connect req
+ *
+ * Function to free up connect request and its sub memory.
+ *
+ * Return: void
+ */
+void cm_free_connect_req(struct wlan_cm_connect_req *connect_req);
+
+/**
+ * cm_free_connect_rsp() - Function to free up connect response and its sub memory.
+ * @connect_rsp: pointer to connect rsp
+ *
+ * Function to free up connect response and its sub memory.
+ *
+ * Return: void
+ */
+void cm_free_connect_rsp(struct wlan_cm_connect_resp *connect_rsp);
+
+/**
+ * cm_free_connect_req_param() - Function to free up connect request sub memory.
+ * @req: pointer to connect req
+ *
+ * Function to free up connect request sub memory parameters.
+ *
+ * Return: void
+ */
+void cm_free_connect_req_param(struct wlan_cm_connect_req *req);
+
+/**
+ * cm_free_wep_key_params() - Function to free up connect request wep key params
+ * sub memory
+ * @req: pointer to connect req
+ *
+ * Function to free up connect request wep key params sub memory.
+ *
+ * Return: void
+ */
+void cm_free_wep_key_params(struct wlan_cm_connect_req *req);
+
+#ifdef CONN_MGR_ADV_FEATURE
 /**
  * cm_store_first_candidate_rsp() - store the connection failure response
  * @cm_ctx: connection manager context
@@ -1358,11 +1598,6 @@ cm_get_first_candidate_rsp(struct cnx_mgr *cm_ctx, wlan_cm_id cm_id,
 void cm_store_n_send_failed_candidate(struct cnx_mgr *cm_ctx, wlan_cm_id cm_id);
 #else
 static inline
-void cm_free_connect_rsp_ies(struct wlan_cm_connect_resp *connect_rsp)
-{
-}
-
-static inline
 void cm_store_first_candidate_rsp(struct cnx_mgr *cm_ctx, wlan_cm_id cm_id,
 				  struct wlan_cm_connect_resp *resp)
 {
@@ -1373,4 +1608,61 @@ void cm_store_n_send_failed_candidate(struct cnx_mgr *cm_ctx, wlan_cm_id cm_id)
 {
 }
 #endif /* CONN_MGR_ADV_FEATURE */
+
+#ifdef WLAN_FEATURE_11BE_MLO
+/**
+ * cm_bss_mlo_type() - Check if the scan entry is of MLO type
+ * @psoc: Pointer to psoc
+ * @entry: scan cache entry
+ * @scan_list: list of scan entries to look for if @entry is of ML type
+ *
+ * Return: MLO AP type: SLO, MLMR or EMLSR.
+ */
+enum MLO_TYPE cm_bss_mlo_type(struct wlan_objmgr_psoc *psoc,
+			      struct scan_cache_entry *entry,
+			      qdf_list_t *scan_list);
+#else
+static inline enum MLO_TYPE
+cm_bss_mlo_type(struct wlan_objmgr_psoc *psoc,
+		struct scan_cache_entry *entry,
+		qdf_list_t *scan_list)
+{
+	return SLO;
+}
+#endif
+
+#ifdef WLAN_FEATURE_LL_LT_SAP
+/**
+ * cm_bearer_switch_resp() - Bearer switch response
+ * @psoc: Psoc pointer
+ * @vdev_id: vdev id
+ * @cm_id: connection ID which gave the hw mode change request
+ * @status: status of the bearer switch
+ *
+ * Return: void
+ */
+void cm_bearer_switch_resp(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+			   wlan_cm_id cm_id, QDF_STATUS status);
+#endif
+#ifdef WLAN_CHIPSET_STATS
+/**
+ * cm_cp_stats_cstats_log_connecting_event : Chipset stats connecting event
+ * @vdev: pointer to vdev object
+ * @req: pointer to wlan_cm_vdev_connect_req object
+ * @cm_req: pointer to cm_req object
+ *
+ * Return: void
+ */
+void
+cm_cp_stats_cstats_log_connecting_event(struct wlan_objmgr_vdev *vdev,
+					struct wlan_cm_vdev_connect_req *req,
+					struct cm_req *cm_req);
+#else
+static inline void
+cm_cp_stats_cstats_log_connecting_event(struct wlan_objmgr_vdev *vdev,
+					struct wlan_cm_vdev_connect_req *req,
+					struct cm_req *cm_req)
+{
+}
+#endif /* WLAN_CHIPSET_STATS */
 #endif /* __WLAN_CM_MAIN_API_H__ */

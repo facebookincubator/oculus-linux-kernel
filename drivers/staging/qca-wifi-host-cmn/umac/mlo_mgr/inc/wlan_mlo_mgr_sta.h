@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -26,6 +26,7 @@
 #include <wlan_mlo_mgr_cmn.h>
 #ifdef WLAN_FEATURE_11BE_MLO
 #include <wlan_mlo_mgr_public_structs.h>
+#include <wlan_mlo_mgr_peer.h>
 
 /**
  * mlo_connect - Start the connection process
@@ -41,7 +42,7 @@ QDF_STATUS mlo_connect(struct wlan_objmgr_vdev *vdev,
  * mlo_sta_link_connect_notify - Called by connection manager to notify the
  * STA link connect is complete
  * @vdev: pointer to vdev
- * @mlo_ie: MLO information element
+ * @rsp: MLO connect response
  *
  * Connection manager will notify the MLO manager when the link has started
  * and MLO manager will start the subsequent connections, if necessary
@@ -164,9 +165,208 @@ bool ucfg_mlo_is_mld_connected(struct wlan_objmgr_vdev *vdev);
 void ucfg_mlo_mld_clear_mlo_cap(struct wlan_objmgr_vdev *vdev);
 #endif
 
+#ifdef WLAN_MLO_MULTI_CHIP
+/**
+ * mlo_get_central_umac_id - get central umac in 3 link topology
+ * @psoc_ids: pointer to psoc_ids
+ *
+ * Return: central umac if success, -1 all soc are adjacent to each other
+ */
+
+int8_t mlo_get_central_umac_id(uint8_t *psoc_ids);
+
+/**
+ * mlo_check_topology() - check topology of the psoc's in STA
+ * @pdev: pdev pointer
+ * @vdev: vdev pointer
+ * @aplinks: Number of active links on ap side
+ *
+ * Return: QDF_STATUS
+ */
+
+QDF_STATUS mlo_check_topology(struct wlan_objmgr_pdev *pdev,
+			      struct wlan_objmgr_vdev *vdev,
+			      uint8_t aplinks);
+/**
+ * mlo_update_partner_bridge_info() - Update parter info of bridge vap
+ * @ml_dev: ML dev context
+ * @partner_info: partner info that needs to be updated
+ *
+ * Return: none
+ */
+
+void mlo_update_partner_bridge_info(struct wlan_mlo_dev_context *ml_dev,
+				    struct mlo_partner_info *partner_info);
+/**
+ * mlo_get_total_links() - get total links supported by device
+ * @pdev: pdev pointer
+ *
+ * Return: Number of total links supported
+ */
+
+uint8_t mlo_get_total_links(struct wlan_objmgr_pdev *pdev);
+
+/**
+ * mlo_is_sta_bridge_vdev() - Check if the vdev is sta bridge vdev
+ * @vdev: vdev pointer
+ *
+ * Return: True if STA bridge vdev else false
+ */
+
+bool mlo_is_sta_bridge_vdev(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlo_sta_bridge_exists() - Check if bridge vdev exists in a STA MLD
+ * @vdev: vdev pointer
+ *
+ * Return: True if Bridge Vdev exists else false
+ */
+bool mlo_sta_bridge_exists(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlo_is_force_central_primary() - Check if central vdev is forced
+ * as primary
+ * @vdev: vdev pointer
+ *
+ * Return: True if Central Vdev is force as primary else false
+ */
+
+bool mlo_is_force_central_primary(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlo_set_sta_ctx_bss_mld_addr() - Save BSS MLD in sta ctx
+ * @vdev: vdev pointer
+ * @bss_mld_addr: MLD Address of BSS
+ *
+ * Return: none
+ */
+
+static inline
+void mlo_set_sta_ctx_bss_mld_addr(struct wlan_objmgr_vdev *vdev,
+				  struct qdf_mac_addr *bss_mld_addr)
+{
+	struct wlan_mlo_dev_context *ml_dev = NULL;
+
+	if (!vdev || !vdev->mlo_dev_ctx || !bss_mld_addr)
+		return;
+
+	ml_dev = vdev->mlo_dev_ctx;
+	if (mlo_sta_bridge_exists(vdev) &&
+	    qdf_is_macaddr_zero(&ml_dev->bridge_sta_ctx->bss_mld_addr)) {
+		if (qdf_is_macaddr_zero(bss_mld_addr))
+			return;
+		qdf_copy_macaddr(&ml_dev->bridge_sta_ctx->bss_mld_addr,
+				 bss_mld_addr);
+	}
+}
+
+/**
+ * mlo_get_sta_ctx_bss_mld_addr() - Get BSS MLD from sta ctx
+ * @vdev: vdev pointer
+ *
+ * Return: pointer to qdf_mac_addr
+ */
+
+static inline
+struct qdf_mac_addr *mlo_get_sta_ctx_bss_mld_addr(struct wlan_objmgr_vdev *vdev)
+{
+	struct wlan_mlo_dev_context *ml_dev = NULL;
+	struct qdf_mac_addr *mld_addr;
+
+	if (!vdev || !vdev->mlo_dev_ctx)
+		return NULL;
+
+	ml_dev = vdev->mlo_dev_ctx;
+	if (mlo_sta_bridge_exists(vdev) &&
+	    !qdf_is_macaddr_zero(&ml_dev->bridge_sta_ctx->bss_mld_addr)) {
+		mld_addr = &ml_dev->bridge_sta_ctx->bss_mld_addr;
+		return mld_addr;
+	}
+	return NULL;
+}
+
+/**
+ * mlo_clear_bridge_sta_ctx() - clear bridge_sta_ctx
+ * @vdev: vdev object
+ *
+ * Return: none
+ */
+static inline
+void mlo_clear_bridge_sta_ctx(struct wlan_objmgr_vdev *vdev)
+{
+	struct wlan_mlo_dev_context *ml_dev = NULL;
+	struct wlan_objmgr_vdev *tmp_vdev = NULL;
+	uint8_t bridge_umac_id = -1;
+
+	if (!vdev || !vdev->mlo_dev_ctx)
+		return;
+
+	ml_dev = vdev->mlo_dev_ctx;
+	if (ml_dev->bridge_sta_ctx) {
+		bridge_umac_id = ml_dev->bridge_sta_ctx->bridge_umac_id;
+		qdf_mem_zero(ml_dev->bridge_sta_ctx,
+			     sizeof(struct wlan_mlo_bridge_sta));
+	}
+	if (mlo_is_force_central_primary(vdev)) {
+		tmp_vdev = mlo_get_link_vdev_from_psoc_id(ml_dev,
+							  bridge_umac_id,
+							  false);
+		if (!tmp_vdev) {
+			mlo_err("VDEV derivation failed for %u psoc wds bridge",
+				bridge_umac_id);
+			return;
+		}
+		tmp_vdev->vdev_objmgr.mlo_central_vdev = false;
+		wlan_objmgr_vdev_release_ref(tmp_vdev, WLAN_MLO_MGR_ID);
+	}
+}
+
+#else
+static inline
+void mlo_set_sta_ctx_bss_mld_addr(struct wlan_objmgr_vdev *vdev,
+				  struct qdf_mac_addr *bss_mld_addr)
+{ }
+
+static inline
+struct qdf_mac_addr *mlo_get_sta_ctx_bss_mld_addr(struct wlan_objmgr_vdev *vdev)
+{
+	return NULL;
+}
+
+static inline
+bool mlo_is_sta_bridge_vdev(struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+
+static inline
+bool mlo_sta_bridge_exists(struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+
+static inline
+bool mlo_is_force_central_primary(struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+
+static inline
+void mlo_clear_bridge_sta_ctx(struct wlan_objmgr_vdev *vdev)
+{ }
+#endif
+/**
+ * wlan_mlo_get_tdls_link_vdev() - API to get tdls link vdev
+ * @vdev: vdev object
+ *
+ * Return: MLD tdls link vdev
+ */
+struct wlan_objmgr_vdev *
+wlan_mlo_get_tdls_link_vdev(struct wlan_objmgr_vdev *vdev);
+
 /**
  * ucfg_mlo_get_assoc_link_vdev - API to get assoc link vdev
- * @mlo_dev_ctx: mlo dev ctx
+ * @vdev: vdev object
  *
  * Return: MLD assoc link vdev
  */
@@ -175,7 +375,7 @@ ucfg_mlo_get_assoc_link_vdev(struct wlan_objmgr_vdev *vdev);
 
 /**
  * wlan_mlo_get_assoc_link_vdev - API to get assoc link vdev
- * @mlo_dev_ctx: mlo dev ctx
+ * @vdev: vdev object
  *
  * Return: MLD assoc link vdev
  */
@@ -191,10 +391,10 @@ wlan_mlo_get_assoc_link_vdev(struct wlan_objmgr_vdev *vdev);
  */
 void
 mlo_update_connected_links_bmap(struct wlan_mlo_dev_context *mlo_dev_ctx,
-				struct mlo_partner_info ml_parnter_info);
+				struct mlo_partner_info ml_partner_info);
 
 /**
- * mlo_clear_connected_links: clear connected links bitmap
+ * mlo_clear_connected_links_bmap() - clear connected links bitmap
  * @vdev: vdev object
  *
  * Return: none
@@ -242,7 +442,9 @@ void mlo_init_cu_bpcc(struct wlan_mlo_dev_context *mlo_dev_ctx,
 void mlo_clear_cu_bpcc(struct wlan_objmgr_vdev *vdev);
 
 /**
- * API to have operation on ml vdevs
+ * typedef mlo_vdev_op_handler() - API to have operation on ml vdevs
+ * @vdev: vdev object
+ * @arg: operation-specific argument
  */
 typedef void (*mlo_vdev_op_handler)(struct wlan_objmgr_vdev *vdev,
 				    void *arg);
@@ -285,7 +487,7 @@ void mlo_iterate_connected_vdev_list(struct wlan_objmgr_vdev *vdev,
  * call_handler_for_standalone_ap: Iterate on all standalone ML vdevs in
  * ML AP context and call handler only for standalone AP
  *
- * @vdev: vdev object
+ * @ap_dev_ctx: AP vdev context
  * @handler: the handler will be called for each object in ML list
  * @arg: argument to be passed to handler
  *
@@ -310,7 +512,7 @@ call_handler_for_standalone_ap(struct wlan_mlo_dev_context *ap_dev_ctx,
 	}
 }
 
-/*
+/**
  * mlo_iterate_ml_standalone_vdev_list: Iterate on all standalone ML vdevs in
  * ML link
  *
@@ -434,7 +636,7 @@ mlo_is_vdev_connect_req_link(struct wlan_objmgr_vdev *vdev)
 }
 
 /**
- * mlo_clear_connect_req_links: clear connect req links bitmap
+ * mlo_clear_connect_req_links_bmap() - clear connect req links bitmap
  * @vdev: vdev object
  *
  * Return: none
@@ -502,24 +704,6 @@ struct wlan_objmgr_vdev *
 mlo_get_ml_vdev_by_mac(struct wlan_objmgr_vdev *vdev,
 		       struct qdf_mac_addr *macaddr);
 #endif
-
-/**
- * mlo_set_keys_saved: set mlo keys saved bool for vdev
- * @vdev: vdev object
- * @mac_address: peer mac address
- * @value: bool true or false
- * Return: none
- */
-void mlo_set_keys_saved(struct wlan_objmgr_vdev *vdev,
-			struct qdf_mac_addr *mac_address, bool value);
-
-/**
- * mlo_get_keys_saved: get if mlo keys are saved for vdev
- * @vdev: vdev object
- * @mac_address: peer mac address
- * Return: boolean value true or false
- */
-bool mlo_get_keys_saved(struct wlan_objmgr_vdev *vdev, uint8_t *mac_address);
 
 /**
  * mlo_get_chan_freq_by_bssid - Get channel freq by bssid
@@ -604,7 +788,32 @@ bool mlo_is_sta_csa_synced(struct wlan_mlo_dev_context *mlo_dev_ctx,
 QDF_STATUS mlo_sta_csa_save_params(struct wlan_mlo_dev_context *mlo_dev_ctx,
 				   uint8_t link_id,
 				   struct csa_offload_params *csa_param);
-
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+/**
+ * mlo_sta_handle_csa_standby_link - Handle csa parameters for standby link
+ * @mlo_dev_ctx: mlo context
+ * @link_id: link id
+ * @csa_param: csa parameters to be saved
+ * @vdev: vdev obj mgr
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS mlo_sta_handle_csa_standby_link(
+			struct wlan_mlo_dev_context *mlo_dev_ctx,
+			uint8_t link_id,
+			struct csa_offload_params *csa_param,
+			struct wlan_objmgr_vdev *vdev);
+#else
+static inline
+QDF_STATUS mlo_sta_handle_csa_standby_link(
+			struct wlan_mlo_dev_context *mlo_dev_ctx,
+			uint8_t link_id,
+			struct csa_offload_params *csa_param,
+			struct wlan_objmgr_vdev *vdev)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif
 /**
  * mlo_sta_up_active_notify - mlo sta up active notify
  * @vdev: vdev obj mgr
@@ -681,6 +890,7 @@ void mlo_process_ml_reconfig_ie(struct wlan_objmgr_vdev *vdev,
 				struct scan_cache_entry *scan_entry,
 				uint8_t *ml_ie, qdf_size_t ml_ie_len,
 				struct mlo_partner_info *partner_info);
+
 /**
  * wlan_mlo_send_vdev_pause() - send MLO vdev pause to FW
  * @psoc: pointer to psoc
@@ -727,6 +937,39 @@ mlo_get_link_state_context(struct wlan_objmgr_psoc *psoc,
 			   get_ml_link_state_cb *resp_cb,
 			   void **context, uint8_t vdev_id);
 #else
+static inline
+void mlo_clear_bridge_sta_ctx(struct wlan_objmgr_vdev *vdev)
+{ }
+
+static inline
+void mlo_set_sta_ctx_bss_mld_addr(struct wlan_objmgr_vdev *vdev,
+				  struct qdf_mac_addr *bss_mld_addr)
+{ }
+
+static inline
+struct qdf_mac_addr *mlo_get_sta_ctx_bss_mld_addr(struct wlan_objmgr_vdev *vdev)
+{
+	return NULL;
+}
+
+static inline
+bool mlo_is_sta_bridge_vdev(struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+
+static inline
+bool mlo_sta_bridge_exists(struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+
+static inline
+bool mlo_is_force_central_primary(struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+
 static inline
 QDF_STATUS mlo_connect(struct wlan_objmgr_vdev *vdev,
 		       struct wlan_cm_connect_req *req)
@@ -889,25 +1132,11 @@ static inline void mlo_sta_stop_reconfig_timer(struct wlan_objmgr_vdev *vdev)
 }
 
 static inline
-void mlo_set_keys_saved(struct wlan_objmgr_vdev *vdev,
-			struct qdf_mac_addr *mac_address, bool value)
-{
-}
-
-static inline
-bool mlo_get_keys_saved(struct wlan_objmgr_vdev *vdev,
-			uint8_t *mac_address)
-{
-	return false;
-}
-
-static inline
 void mlo_process_ml_reconfig_ie(struct wlan_objmgr_vdev *vdev,
 				struct scan_cache_entry *scan_entry,
 				uint8_t *ml_ie, qdf_size_t ml_ie_len,
 				struct mlo_partner_info *partner_info)
 { }
-
 #ifdef WLAN_FEATURE_11BE_MLO
 static inline QDF_STATUS
 mlo_get_link_state_context(struct wlan_objmgr_psoc *psoc,
@@ -925,4 +1154,112 @@ void wlan_mlo_send_vdev_pause(struct wlan_objmgr_psoc *psoc,
 			      uint16_t vdev_pause_dur)
 {}
 #endif
+
+#if defined(WLAN_FEATURE_11BE_MLO_ADV_FEATURE) && defined(WLAN_FEATURE_11BE_MLO)
+/**
+ * mlo_defer_set_keys: Defer MLO set keys for link
+ * @vdev: vdev obj
+ * @link_id: link_id
+ * @value: bool true or false
+ * Return: none
+ */
+void mlo_defer_set_keys(struct wlan_objmgr_vdev *vdev,
+			uint8_t link_id, bool value);
+
+/**
+ * mlo_is_set_key_defered: Verify whether the set key deferred for the link
+ * @vdev: vdev obj
+ * @link_id: link_id
+ * Return: boolean value true or false
+ */
+bool mlo_is_set_key_defered(struct wlan_objmgr_vdev *vdev,
+			    uint8_t link_id);
+
+/**
+ * mlo_is_any_link_disconnecting: Check if any ML link is disconnecting
+ * @vdev: vdev obj
+ *
+ * Check connection manager state machine if any ML link is disconnecting
+ *
+ * Return: boolean value true or false
+ */
+bool mlo_is_any_link_disconnecting(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlo_set_chan_switch_in_progress: Set/clear the flag upon CSA at MLD level
+ * @vdev: vdev obj
+ * @val: Carries true if CSA is started on any of the ML links. This carries
+ *       false once CSA is completed.
+ *
+ * This API is to set/clear the flag ml_chan_switch_in_progress upon
+ * CSA start/CSA completion on any of the ML links.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+mlo_set_chan_switch_in_progress(struct wlan_objmgr_vdev *vdev, bool val);
+
+/**
+ * mlo_is_chan_switch_in_progress: Check if ML level CSA flag is set
+ * @vdev: vdev obj
+ *
+ * This API is to check the flag ml_chan_switch_in_progress upon
+ * CSA start/CSA completion on any of the ML links.
+ *
+ * Return: True if flag ml_chan_switch_in_progress is set, false otherwise
+ */
+bool mlo_is_chan_switch_in_progress(struct wlan_objmgr_vdev *vdev);
+#else
+static inline
+void mlo_defer_set_keys(struct wlan_objmgr_vdev *vdev,
+			uint8_t link_id, bool value)
+{
+}
+
+static inline
+bool mlo_is_set_key_defered(struct wlan_objmgr_vdev *vdev,
+			    uint8_t link_id)
+{
+	return false;
+}
+
+static inline
+bool mlo_is_any_link_disconnecting(struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+
+static inline QDF_STATUS
+mlo_set_chan_switch_in_progress(struct wlan_objmgr_vdev *vdev, bool val)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline bool
+mlo_is_chan_switch_in_progress(struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+#endif
+
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+/**
+ * mlo_mgr_get_per_link_chan_info: Get wlan channel info per link id
+ * @vdev: vdev obj
+ * @link_id: link id
+ * @chan_info: wlan channel info buffer
+ *
+ * Return: zero for success, non-zero for failure
+ */
+int mlo_mgr_get_per_link_chan_info(struct wlan_objmgr_vdev *vdev, int link_id,
+				   struct wlan_channel *chan_info);
+#else
+static inline int
+mlo_mgr_get_per_link_chan_info(struct wlan_objmgr_vdev *vdev, int link_id,
+			       struct wlan_channel *chan_info)
+{
+	return -EINVAL;
+}
+#endif
+
 #endif

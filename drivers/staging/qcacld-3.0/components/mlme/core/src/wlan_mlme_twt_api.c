@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -853,3 +853,16 @@ bool mlme_is_24ghz_twt_enabled(struct wlan_objmgr_psoc *psoc)
 
 	return mlme_obj->cfg.twt_cfg.enable_twt_24ghz;
 }
+
+#if defined(WLAN_SUPPORT_TWT) && defined(WLAN_TWT_CONV_SUPPORTED)
+bool mlme_is_twt_disable_info_frame(struct wlan_objmgr_psoc *psoc)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return cfg_default(CFG_DISABLE_TWT_INFO_FRAME);
+
+	return mlme_obj->cfg.twt_cfg.disable_twt_info_frame;
+}
+#endif

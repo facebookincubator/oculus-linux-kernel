@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -55,4 +56,27 @@ target_if_fwol_unregister_event_handler(struct wlan_objmgr_psoc *psoc,
  */
 QDF_STATUS target_if_fwol_register_tx_ops(struct wlan_fwol_tx_ops *tx_ops);
 
+/**
+ * target_if_fwol_notify_thermal_throttle() - Notify thermal throttle level
+ * to upper layer
+ * @psoc: PSOC object manager
+ * @info: Thermal throttle information from target
+ *
+ * This function is used to notify thermal throttle level to upper layer
+ * when thermal management event receive.
+ *
+ * Return: QDF_STATUS_SUCCESS for success otherwise failure
+ */
+#ifdef FW_THERMAL_THROTTLE_SUPPORT
+QDF_STATUS
+target_if_fwol_notify_thermal_throttle(struct wlan_objmgr_psoc *psoc,
+				       struct thermal_throttle_info *info);
+#else
+static inline QDF_STATUS
+target_if_fwol_notify_thermal_throttle(struct wlan_objmgr_psoc *psoc,
+				       struct thermal_throttle_info *info)
+{
+	return QDF_STATUS_E_INVAL;
+}
+#endif
 #endif /* __TARGET_IF_FWOL_H__ */

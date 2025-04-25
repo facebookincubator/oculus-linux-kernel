@@ -151,6 +151,7 @@ typedef enum eMgmtFrmDropReason {
 	eMGMT_DROP_SPURIOUS_FRAME,
 	eMGMT_DROP_DUPLICATE_AUTH_FRAME,
 	eMGMT_DROP_EXCESSIVE_MGMT_FRAME,
+	eMGMT_DROP_DEAUTH_DURING_ROAM_STARTED,
 } tMgmtFrmDropReason;
 
 /**
@@ -614,6 +615,23 @@ void lim_set_twt_ext_capabilities(struct mac_context *mac_ctx,
  */
 void lim_get_basic_rates(tSirMacRateSet *b_rates, uint32_t chan_freq);
 
+#define FW_CTS2SELF_PROFILE 34
+
+/**
+ * lim_enable_cts_to_self_for_exempted_iot_ap() - enable cts to self for iot ap
+ * @mac_ctx: mac context
+ * @session: pe session
+ * @ie_ptr: ie pointer
+ * @ie_len: ie length
+ *
+ * Return: true on success else false
+ */
+bool lim_enable_cts_to_self_for_exempted_iot_ap(
+				       struct mac_context *mac_ctx,
+				       struct pe_session *session,
+				       uint8_t *ie_ptr,
+				       uint16_t ie_len);
+
 /**
  * lim_fill_pe_session() - Lim fill pe session
  * @mac_ctx: Pointer to mac context
@@ -630,7 +648,52 @@ lim_fill_pe_session(struct mac_context *mac_ctx,
 		    struct pe_session *session,
 		    struct bss_description *bss_desc);
 
+/**
+ * lim_update_omn_ie_ch_width() - update omn_ie_ch_width in struct
+ * assoc_channel_info while processing bcn/probe resp/assoc resp/re-assoc resp
+ * @vdev: VDEV object manager
+ * @ch_width: ch_width present in OMN IE
+ *
+ * Return: none
+ */
+void lim_update_omn_ie_ch_width(struct wlan_objmgr_vdev *vdev,
+				enum phy_ch_width ch_width);
+
 #ifdef WLAN_FEATURE_11BE_MLO
+/*
+ * lim_add_bcn_probe() - Add the generated probe resp to scan DB
+ * @vdev: VDEV object manager
+ * @bcn_probe: Pointer to bcn/probe
+ * @len: Length of frame.
+ * @freq: Freq on frame.
+ * @rssi: RSSI of the frame.
+ *
+ * Prepares the meta data to add the generated bcn/probe frame to
+ * scan DB.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+lim_add_bcn_probe(struct wlan_objmgr_vdev *vdev, uint8_t *bcn_probe,
+		  uint32_t len, qdf_freq_t freq, int32_t rssi);
+
+/**
+ * lim_update_mlo_mgr_info() - API to update mlo_mgr link info
+ * @mac_ctx: Pointer to mac context
+ * @vdev: vdev
+ * @link_addr: link address
+ * @link_id: Link id
+ * @freq: chan freq
+ *
+ * This api will update link sp[ecific info into mlo_mgr
+ *
+ * Return: qdf_status
+ */
+QDF_STATUS
+lim_update_mlo_mgr_info(struct mac_context *mac_ctx,
+			struct wlan_objmgr_vdev *vdev,
+			struct qdf_mac_addr *link_addr, uint8_t link_id,
+			uint16_t freq);
 /**
  * lim_gen_link_specific_probe_rsp() - Generate link specific prb response
  * @mac_ctx: Pointer to mac context
@@ -678,19 +741,23 @@ lim_process_cu_for_probe_rsp(struct mac_context *mac_ctx,
 			     uint8_t *probe_rsp,
 			     uint32_t probe_rsp_len);
 
-/**
- * lim_gen_link_probe_rsp_roam() - Generate link prb rsp from assoc link prb rsp
- * @mac_ctx: Pointer to mac context
- * @session_entry: pe session
- * @roam_sync_ind_ptr: Roam synch parameters
- *
- * Return qdf status
- */
-QDF_STATUS
-lim_gen_link_probe_rsp_roam(struct mac_context *mac_ctx,
-			    struct pe_session *session_entry,
-			    struct roam_offload_synch_ind *roam_sync_ind);
 #else
+static inline QDF_STATUS
+lim_add_bcn_probe(struct wlan_objmgr_vdev *vdev, uint8_t *bcn_probe,
+		  uint32_t len, qdf_freq_t freq, int32_t rssi)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline QDF_STATUS
+lim_update_mlo_mgr_info(struct mac_context *mac_ctx,
+			struct wlan_objmgr_vdev *vdev,
+			struct qdf_mac_addr *link_addr, uint8_t link_id,
+			uint16_t freq)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
 static inline QDF_STATUS
 lim_gen_link_specific_probe_rsp(struct mac_context *mac_ctx,
 				struct pe_session *session_entry,
@@ -704,14 +771,6 @@ lim_gen_link_specific_probe_rsp(struct mac_context *mac_ctx,
 
 static inline QDF_STATUS
 lim_check_for_ml_probe_req(struct pe_session *session)
-{
-	return QDF_STATUS_E_NOSUPPORT;
-}
-
-static inline QDF_STATUS
-lim_gen_link_probe_rsp_roam(struct mac_context *mac_ctx,
-			    struct pe_session *session_entry,
-			    struct roam_offload_synch_ind *roam_sync_ind)
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }

@@ -31,11 +31,6 @@ target_if_twt_register_events(struct wlan_objmgr_psoc *psoc)
 	QDF_STATUS status;
 	struct wmi_unified *wmi_handle;
 
-	if (!psoc) {
-		target_if_err("psoc obj is null!");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
 	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
 	if (!wmi_handle) {
 		target_if_err("wmi_handle is null!");
@@ -151,15 +146,8 @@ QDF_STATUS
 target_if_twt_set_twt_ack_support(struct wlan_objmgr_psoc *psoc,
 				  bool val)
 {
-	struct twt_psoc_priv_obj *twt_psoc;
-
-	if (!psoc) {
-		target_if_err("null psoc");
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	twt_psoc = wlan_objmgr_psoc_get_comp_private_obj(psoc,
-							 WLAN_UMAC_COMP_TWT);
+	struct twt_psoc_priv_obj *twt_psoc =
+		wlan_objmgr_psoc_get_comp_private_obj(psoc, WLAN_UMAC_COMP_TWT);
 	if (!twt_psoc) {
 		target_if_err("null twt psoc priv obj");
 		return QDF_STATUS_E_FAILURE;

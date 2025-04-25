@@ -168,7 +168,7 @@
 
 #define WBM_IDLE_DESC_LIST 1
 
-/**
+/*
  * Common SRNG register access macros:
  * The SRNG registers are distributed across various UMAC and LMAC HW blocks,
  * but the register group and format is exactly same for all rings, with some
@@ -220,7 +220,7 @@
 #define HP_GROUP R2
 #define TP_GROUP R2
 
-/**
+/*
  * Register definitions for all SRNG based rings are same, except few
  * differences between source (HW consumer) and destination (HW producer)
  * registers. Following macros definitions provide generic access to all
@@ -326,7 +326,7 @@
 #define SRNG_MAX_SIZE_DWORDS \
 	(SRNG_MS(SRNG_SRC_FLD(BASE_MSB, RING_SIZE), 0xffffffff))
 
-/**
+/*
  * HW ring configuration table to identify hardware ring attributes like
  * register addresses, number of rings, ring entry size etc., for each type
  * of SRNG ring.
@@ -339,14 +339,13 @@
 			(&_hal_soc->hw_srng_table[_ring_type])
 
 /**
- * hal_set_link_desc_addr - Setup link descriptor in a buffer_addr_info
- * HW structure
- *
+ * hal_set_link_desc_addr() - Setup link descriptor in a buffer_addr_info
+ *                            HW structure
  * @hal_soc_hdl: HAL soc handle
  * @desc: Descriptor entry (from WBM_IDLE_LINK ring)
  * @cookie: SW cookie for the buffer/descriptor
  * @link_desc_paddr: Physical address of link descriptor entry
- *
+ * @bm_id: idle link BM id
  */
 static inline void hal_set_link_desc_addr(hal_soc_handle_t hal_soc_hdl,
 					  void *desc, uint32_t cookie,
@@ -369,7 +368,7 @@ static inline void hal_set_link_desc_addr(hal_soc_handle_t hal_soc_hdl,
 /**
  * hal_get_reo_qdesc_size - Get size of reo queue descriptor
  *
- * @hal_soc: Opaque HAL SOC handle
+ * @hal_soc_hdl: Opaque HAL SOC handle
  * @ba_window_size: BlockAck window size
  * @tid: TID number
  *
@@ -389,7 +388,7 @@ uint32_t hal_get_reo_qdesc_size(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_get_rx_max_ba_window - Get RX max BA window size per target
- * @hal_soc: Opaque HAL SOC handle
+ * @hal_soc_hdl: Opaque HAL SOC handle
  * @tid: TID number
  *
  * Return: Max RX BA window size
@@ -405,6 +404,7 @@ uint16_t hal_get_rx_max_ba_window(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_get_idle_link_bm_id() - Get idle link BM id from chid_id
+ * @hal_soc_hdl: Opaque HAL SOC handle
  * @chip_id: mlo chip_id
  *
  * Returns: RBM ID

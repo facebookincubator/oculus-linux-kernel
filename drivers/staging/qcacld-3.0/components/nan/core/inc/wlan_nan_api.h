@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,6 +27,8 @@
 #include "wlan_objmgr_peer_obj.h"
 #include "wlan_policy_mgr_public_struct.h"
 #include "qdf_status.h"
+#include <nan_public_structs.h>
+#include <wlan_cp_stats_chipset_stats.h>
 
 #ifdef WLAN_FEATURE_NAN
 
@@ -317,4 +319,40 @@ wlan_is_mlo_sta_nan_ndi_allowed(struct wlan_objmgr_psoc *psoc)
 	return false;
 }
 #endif
+
+#if defined(WLAN_FEATURE_NAN) && defined(WLAN_CHIPSET_STATS)
+/**
+ * nan_cstats_log_nan_enable_resp_evt() - Chipset stats NAN enable
+ * response event
+ *
+ * @nan_event: pointer to nan_event_params object
+ *
+ * Return: void
+ */
+void nan_cstats_log_nan_enable_resp_evt(struct nan_event_params *nan_event);
+
+/**
+ * nan_cstats_log_nan_disable_resp_evt() - Chipset stats NAN disable
+ * response event
+ *
+ * @vdev_id: vdev ID
+ * @psoc: pointer to psoc object
+ *
+ * Return: void
+ */
+void
+nan_cstats_log_nan_disable_resp_evt(uint8_t vdev_id,
+				    struct wlan_objmgr_psoc *psoc);
+#else
+static inline void
+nan_cstats_log_nan_enable_resp_evt(struct nan_event_params *nan_event)
+{
+}
+
+static inline void
+nan_cstats_log_nan_disable_resp_evt(uint8_t vdev_id,
+				    struct wlan_objmgr_psoc *psoc)
+{
+}
+#endif /* WLAN_FEATURE_NAN && WLAN_CHIPSET_STATS */
 #endif /* _WLAN_NAN_API_H_ */

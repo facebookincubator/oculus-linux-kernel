@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2015-2017 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -28,12 +28,12 @@
 #include <i_qdf_lro.h>
 
 /**
- * @qdf_nbuf_t - Platform independent LRO context abstraction
+ * typedef qdf_lro_ctx_t - Platform independent LRO context abstraction
  */
 typedef __qdf_lro_ctx_t qdf_lro_ctx_t;
 
 /**
- * qdf_lro_info_s - LRO information
+ * struct qdf_lro_info - LRO information
  * @iph: IP header
  * @tcph: TCP header
  */
@@ -88,7 +88,7 @@ bool qdf_lro_get_info(qdf_lro_ctx_t lro_ctx, qdf_nbuf_t nbuf,
  * Return: none
  */
 void qdf_lro_flush_pkt(qdf_lro_ctx_t lro_ctx,
-	 struct qdf_lro_info *info);
+		       struct qdf_lro_info *info);
 
 /**
  * qdf_lro_flush() - LRO flush API
@@ -103,14 +103,14 @@ void qdf_lro_flush(qdf_lro_ctx_t lro_ctx);
 
 /**
  * qdf_lro_desc_free() - Free the LRO descriptor
- * @desc: LRO descriptor
  * @lro_ctx: LRO context
+ * @data: LRO descriptor
  *
  * Return the LRO descriptor to the free pool
  *
  * Return: none
  */
-void qdf_lro_desc_free(qdf_lro_ctx_t lro_ctx, void *desc);
+void qdf_lro_desc_free(qdf_lro_ctx_t lro_ctx, void *data);
 
 #else
 

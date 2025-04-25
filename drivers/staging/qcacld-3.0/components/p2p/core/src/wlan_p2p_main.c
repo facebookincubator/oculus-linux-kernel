@@ -554,7 +554,7 @@ static QDF_STATUS p2p_object_init_params(
 	p2p_soc_obj->param.is_random_seq_num_enabled =
 			cfg_get(psoc, CFG_ACTION_FRAME_RANDOM_SEQ_NUM_ENABLED);
 	p2p_soc_obj->param.indoor_channel_support =
-				cfg_get(psoc, CFG_P2P_GO_ON_INDOOR_CHANNEL);
+			cfg_get(psoc, CFG_P2P_GO_ON_5GHZ_INDOOR_CHANNEL);
 	return QDF_STATUS_SUCCESS;
 }
 

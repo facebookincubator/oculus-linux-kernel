@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -75,7 +75,7 @@ void hal_setup_reo_swap(struct hal_soc *soc)
 /**
  * hal_tx_init_data_ring_be() - Initialize all the TCL Descriptors in SRNG
  * @hal_soc_hdl: Handle to HAL SoC structure
- * @hal_srng: Handle to HAL SRNG structure
+ * @hal_ring_hdl: Handle to HAL SRNG structure
  *
  * Return: none
  */
@@ -326,12 +326,6 @@ static uint32_t hal_rx_wbm_err_src_get_be(hal_ring_desc_t ring_desc)
 					     HAL_BE_WBM_RELEASE_DIR_RX);
 }
 
-/**
- * hal_rx_ret_buf_manager_get_be() - Get return buffer manager from ring desc
- * @ring_desc: ring descriptor
- *
- * Return: rbm
- */
 uint8_t hal_rx_ret_buf_manager_get_be(hal_ring_desc_t ring_desc)
 {
 	/*
@@ -364,13 +358,6 @@ uint8_t hal_rx_ret_buf_manager_get_be(hal_ring_desc_t ring_desc)
 	WBM2SW_COMPLETION_RING_RX_RXDMA_ERROR_CODE_MASK) >>	\
 	WBM2SW_COMPLETION_RING_RX_RXDMA_ERROR_CODE_LSB)
 
-/**
- * hal_rx_wbm_err_info_get_generic_be(): Retrieves WBM error code and reason and
- *	save it to hal_wbm_err_desc_info structure passed by caller
- * @wbm_desc: wbm ring descriptor
- * @wbm_er_info1: hal_wbm_err_desc_info structure, output parameter.
- * Return: void
- */
 void hal_rx_wbm_err_info_get_generic_be(void *wbm_desc, void *wbm_er_info1)
 {
 	struct hal_wbm_err_desc_info *wbm_er_info =
@@ -441,13 +428,11 @@ static void hal_rx_msdu_link_desc_set_be(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_rx_reo_ent_buf_paddr_get_be: Gets the physical address and
- * cookie from the REO entrance ring element
+ * hal_rx_buf_cookie_rbm_get_be() - Get the cookie and return buffer
+ *                                  manager from the REO entrance ring desc
+ * @buf_addr_info_hdl: Buffer address info element from ring desc
+ * @buf_info_hdl: structure to return the buffer information
  *
- * @ hal_rx_desc_cookie: Opaque cookie pointer used by HAL to get to
- * the current descriptor
- * @ buf_info: structure to return the buffer information
- * @ msdu_cnt: pointer to msdu count in MPDU
  * Return: void
  */
 static
@@ -468,7 +453,18 @@ void hal_rx_buf_cookie_rbm_get_be(uint32_t *buf_addr_info_hdl,
 						(hal_ring_desc_t)buf_addr_info);
 }
 
-/*
+/**
+ * hal_rx_en_mcast_fp_data_filter_generic_be() - Is mcast filter pass enabled
+ *
+ * Return: true default for BE WIN
+ */
+static inline
+bool hal_rx_en_mcast_fp_data_filter_generic_be(void)
+{
+	return true;
+}
+
+/**
  * hal_rxdma_buff_addr_info_set_be() - set the buffer_addr_info of the
  *				    rxdma ring entry.
  * @rxdma_entry: descriptor entry
@@ -507,6 +503,7 @@ static uint32_t hal_rx_get_reo_error_code_be(hal_ring_desc_t rx_desc)
 
 /**
  * hal_gen_reo_remap_val_generic_be() - Generate the reo map value
+ * @remap_reg: remap register
  * @ix0_map: mapping values for reo
  *
  * Return: IX0 reo remap register value to be written
@@ -673,17 +670,16 @@ hal_mpdu_desc_info_set_be(hal_soc_handle_t hal_soc_hdl,
 
 	HAL_RX_MPDU_DESC_INFO_SET(mpdu_desc_info,
 				  MSDU_COUNT, 0x1);
-	/* unset frag bit */
 	HAL_RX_MPDU_DESC_INFO_SET(mpdu_desc_info,
-				  FRAGMENT_FLAG, 0x0);
+				  FRAGMENT_FLAG, 0x1);
 	HAL_RX_MPDU_DESC_INFO_SET(mpdu_desc_info,
 				  RAW_MPDU, 0x0);
 }
 
 /**
- * hal_rx_msdu_reo_dst_ind_get: Gets the REO
- * destination ring ID from the msdu desc info
- *
+ * hal_rx_msdu_reo_dst_ind_get_be() - Gets the REO destination ring ID
+ *                                    from the msdu desc info
+ * @hal_soc_hdl: hal_soc handle
  * @msdu_link_desc : Opaque cookie pointer used by HAL to get to
  * the current descriptor
  *
@@ -809,7 +805,7 @@ hal_rx_wbm_rel_buf_paddr_get_be(hal_ring_desc_t rx_desc,
 #ifdef DP_UMAC_HW_RESET_SUPPORT
 /**
  * hal_unregister_reo_send_cmd_be() - Unregister Reo send command callback.
- * @hal_soc_hdl: HAL soc handle
+ * @hal_soc: HAL soc handle
  *
  * Return: None
  */
@@ -821,7 +817,7 @@ void hal_unregister_reo_send_cmd_be(struct hal_soc *hal_soc)
 
 /**
  * hal_register_reo_send_cmd_be() - Register Reo send command callback.
- * @hal_soc_hdl: HAL soc handle
+ * @hal_soc: HAL soc handle
  *
  * Return: None
  */
@@ -833,9 +829,9 @@ void hal_register_reo_send_cmd_be(struct hal_soc *hal_soc)
 
 /**
  * hal_reset_rx_reo_tid_q_be() - reset the reo tid queue.
- * @hal_soc_hdl: HAL soc handle
- * @hw_qdesc_vaddr:start address of the tid queue
- * @size:size of address pointed by hw_qdesc_vaddr
+ * @hal_soc: HAL soc handle
+ * @hw_qdesc_vaddr: start address of the tid queue
+ * @size: size of address pointed by hw_qdesc_vaddr
  *
  * Return: None
  */
@@ -928,13 +924,11 @@ hal_reset_rx_reo_tid_q_be(struct hal_soc *hal_soc, void *hw_qdesc_vaddr,
 }
 #endif
 
-/**
- * hal_hw_txrx_default_ops_attach_be() - Attach the default hal ops for
- *		beryllium chipsets.
- * @hal_soc_hdl: HAL soc handle
- *
- * Return: None
- */
+static inline uint8_t hal_rx_get_phy_ppdu_id_size_be(void)
+{
+	return sizeof(uint64_t);
+}
+
 void hal_hw_txrx_default_ops_attach_be(struct hal_soc *hal_soc)
 {
 	hal_soc->ops->hal_get_reo_qdesc_size = hal_get_reo_qdesc_size_be;
@@ -995,4 +989,10 @@ void hal_hw_txrx_default_ops_attach_be(struct hal_soc *hal_soc)
 					hal_set_reo_ent_desc_reo_dest_ind_be;
 	hal_soc->ops->hal_get_reo_ent_desc_qdesc_addr =
 					hal_get_reo_ent_desc_qdesc_addr_be;
+	hal_soc->ops->hal_rx_en_mcast_fp_data_filter =
+				hal_rx_en_mcast_fp_data_filter_generic_be;
+	hal_soc->ops->hal_rx_get_phy_ppdu_id_size =
+					hal_rx_get_phy_ppdu_id_size_be;
+	hal_soc->ops->hal_rx_phy_legacy_get_rssi =
+					hal_rx_phy_legacy_get_rssi_be;
 }

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,14 +29,14 @@
 /**
  * hdd_nud_failure_work() - Handle NUD failuire work
  * @context: HDD context pointer
- * @vdev_id: vdev id
+ * @netdev: netdev
  *
  * Return: None
  */
-void hdd_nud_failure_work(hdd_cb_handle context, uint8_t vdev_id);
+void hdd_nud_failure_work(hdd_cb_handle context, qdf_netdev_t netdev);
 #else
 static inline void
-hdd_nud_failure_work(hdd_cb_handle context, uint8_t vdev_id)
+hdd_nud_failure_work(hdd_cb_handle context, qdf_netdev_t netdev)
 {
 }
 #endif /* WLAN_NUD_TRACKING */

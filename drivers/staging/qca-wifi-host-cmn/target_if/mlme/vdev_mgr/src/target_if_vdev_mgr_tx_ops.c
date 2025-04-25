@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -711,7 +711,7 @@ static QDF_STATUS target_if_vdev_mgr_stop_send(
 	target_if_wake_lock_timeout_release(psoc, START_WAKELOCK);
 	target_if_wake_lock_timeout_acquire(psoc, STOP_WAKELOCK);
 
-	status = wmi_unified_vdev_stop_send(wmi_handle, param->vdev_id);
+	status = wmi_unified_vdev_stop_send(wmi_handle, param);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		vdev_rsp->expire_time = 0;
 		vdev_rsp->timer_status = QDF_STATUS_E_CANCELED;
@@ -1320,8 +1320,13 @@ target_if_vdev_mgr_set_mac_address_send(struct qdf_mac_addr mac_addr,
 					struct qdf_mac_addr mld_addr,
 					struct wlan_objmgr_vdev *vdev)
 {
+	QDF_STATUS status;
+	struct wlan_objmgr_psoc *psoc;
+	struct vdev_response_timer *vdev_rsp;
+	struct wlan_lmac_if_mlme_rx_ops *rx_ops;
 	struct set_mac_addr_params params = {0};
 	struct wmi_unified *wmi_handle;
+	uint8_t vdev_id = wlan_vdev_get_id(vdev);
 
 	wmi_handle = target_if_vdev_mgr_wmi_handle_get(vdev);
 	if (!wmi_handle) {
@@ -1329,7 +1334,40 @@ target_if_vdev_mgr_set_mac_address_send(struct qdf_mac_addr mac_addr,
 		return QDF_STATUS_E_INVAL;
 	}
 
-	params.vdev_id = wlan_vdev_get_id(vdev);
+	if (!wlan_vdev_mlme_is_mlo_link_switch_in_progress(vdev))
+		goto send_req;
+
+	psoc = wlan_vdev_get_psoc(vdev);
+	if (!psoc) {
+		mlme_err("PSOC NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	rx_ops = target_if_vdev_mgr_get_rx_ops(psoc);
+	if (!rx_ops || !rx_ops->psoc_get_vdev_response_timer_info) {
+		mlme_err("VDEV_%d: PSOC_%d No Rx Ops", vdev_id,
+			 wlan_psoc_get_id(psoc));
+		return QDF_STATUS_E_INVAL;
+	}
+
+	vdev_rsp = rx_ops->psoc_get_vdev_response_timer_info(psoc, vdev_id);
+	if (!vdev_rsp) {
+		mlme_err("VDEV_%d: PSOC_%d No vdev rsp timer", vdev_id,
+			 wlan_psoc_get_id(psoc));
+		return QDF_STATUS_E_INVAL;
+	}
+
+	vdev_rsp->expire_time = WLAN_SET_MAC_ADDR_TIMEOUT;
+	status = target_if_vdev_mgr_rsp_timer_start(psoc, vdev_rsp,
+						    UPDATE_MAC_ADDR_RESPONSE_BIT);
+
+	if (QDF_IS_STATUS_ERROR(status)) {
+		mlme_err("Start VDEV response timer failed");
+		return status;
+	}
+
+send_req:
+	params.vdev_id = vdev_id;
 	params.mac_addr = mac_addr;
 	params.mld_addr = mld_addr;
 
@@ -1349,15 +1387,7 @@ static void target_if_vdev_register_set_mac_address(
 }
 #endif
 
-/**
- * target_if_phy_ch_width_to_wmi_chan_width() - convert channel width from
- *                                              phy_ch_width to
- *                                              wmi_host_channel_width
- * @ch_width: enum phy_ch_width
- *
- * return: wmi_host_channel_width
- */
-static wmi_host_channel_width
+wmi_host_channel_width
 target_if_phy_ch_width_to_wmi_chan_width(enum phy_ch_width ch_width)
 {
 	switch (ch_width) {

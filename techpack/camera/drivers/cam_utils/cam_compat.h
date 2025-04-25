@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _CAM_COMPAT_H_
@@ -13,7 +13,11 @@
 #include <linux/iommu.h>
 #include <linux/qcom_scm.h>
 #include <linux/list_sort.h>
+#include <soc/qcom/of_common.h>
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 #include <linux/dma-iommu.h>
+#endif
 
 #include "cam_csiphy_dev.h"
 #include "cam_cpastop_hw.h"
@@ -27,7 +31,6 @@
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && \
 	LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
-#include <soc/qcom/of_common.h>
 #include <linux/qcom-dma-mapping.h>
 #endif
 
@@ -42,6 +45,10 @@
 #include <soc/qcom/smci_opener.h>
 #include <soc/qcom/ctrusted_camera_driver.h>
 #include <soc/qcom/trusted_camera_driver.h>
+#endif
+
+#if KERNEL_VERSION(5, 18, 0) <= LINUX_VERSION_CODE
+MODULE_IMPORT_NS(DMA_BUF);
 #endif
 
 struct cam_fw_alloc_info {
@@ -61,7 +68,7 @@ int cam_csiphy_notify_secure_mode(struct csiphy_device *csiphy_dev,
 void cam_free_clear(const void *);
 void cam_check_iommu_faults(struct iommu_domain *domain,
 	struct cam_smmu_pf_info *pf_info);
-int cam_get_ddr_type(void);
+static inline int cam_get_ddr_type(void) { return of_fdt_get_ddrtype(); }
 int cam_compat_util_get_dmabuf_va(struct dma_buf *dmabuf, uintptr_t *vaddr);
 void cam_compat_util_put_dmabuf_va(struct dma_buf *dmabuf, void *vaddr);
 void cam_smmu_util_iommu_custom(struct device *dev,
@@ -77,5 +84,28 @@ int cam_req_mgr_ordered_list_cmp(void *priv,
 int cam_req_mgr_ordered_list_cmp(void *priv,
 	struct list_head *head_1, struct list_head *head_2);
 #endif
+struct file *cam_fcheck_files(struct files_struct *files, uint32_t fd);
+void cam_close_fd(struct files_struct *files, uint32_t fd);
+int cam_atomic_add_unless (struct file *file);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)
+void cam_eeprom_spi_driver_remove(struct spi_device *sdev);
+#else
+int cam_eeprom_spi_driver_remove(struct spi_device *sdev);
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+void cam_actuator_driver_i2c_remove_wrapper(struct i2c_client *client);
+void cam_eeprom_i2c_driver_remove_wrapper(struct i2c_client *client);
+void cam_ois_i2c_driver_remove_wrapper(struct i2c_client *client);
+void cam_sensor_i2c_driver_remove_wrapper(struct i2c_client *client);
+void cam_flash_i2c_driver_remove_wrapper(struct i2c_client *client);
+#else
+int cam_actuator_driver_i2c_remove_wrapper(struct i2c_client *client);
+int cam_eeprom_i2c_driver_remove_wrapper(struct i2c_client *client);
+int cam_ois_i2c_driver_remove_wrapper(struct i2c_client *client);
+int cam_sensor_i2c_driver_remove_wrapper(struct i2c_client *client);
+int cam_flash_i2c_driver_remove_wrapper(struct i2c_client *client);
+#endif
+int cam_compat_util_get_irq(struct cam_hw_soc_info *soc_info);
 #endif /* _CAM_COMPAT_H_ */

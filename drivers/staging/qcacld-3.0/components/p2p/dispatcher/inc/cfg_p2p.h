@@ -125,7 +125,7 @@
 
 /*
  * <ini>
- * p2p_go_on_indoor_chan - Allow P2P GO to operate on 5 GHz indoor channels
+ * p2p_go_on_5ghz_indoor_chan - Allow P2P GO to operate on 5 GHz indoor channels
  *
  * @Min: 0
  * @Max: 1
@@ -142,15 +142,16 @@
  *
  * </ini>
  */
-#define CFG_P2P_GO_ON_INDOOR_CHANNEL CFG_INI_BOOL("p2p_go_on_indoor_chan", \
-						  "0", \
-				"Allow P2P GO on 5 GHz indoor channels")
+#define CFG_P2P_GO_ON_5GHZ_INDOOR_CHANNEL CFG_INI_BOOL(\
+					"p2p_go_on_5ghz_indoor_chan", \
+					0, \
+					"Allow P2P GO on 5 GHz indoor channels")
 
 #define CFG_P2P_ALL \
 	CFG(CFG_ACTION_FRAME_RANDOM_SEQ_NUM_ENABLED) \
 	CFG(CFG_GO_KEEP_ALIVE_PERIOD) \
 	CFG(CFG_GO_LINK_MONITOR_PERIOD) \
 	CFG(CFG_P2P_DEVICE_ADDRESS_ADMINISTRATED) \
-	CFG(CFG_P2P_GO_ON_INDOOR_CHANNEL)
+	CFG(CFG_P2P_GO_ON_5GHZ_INDOOR_CHANNEL)
 
 #endif

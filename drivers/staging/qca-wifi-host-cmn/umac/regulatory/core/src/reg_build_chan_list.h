@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -39,14 +39,17 @@
 #ifdef CONFIG_AFC_SUPPORT
 #define MIN_AFC_BW 2
 #ifdef WLAN_FEATURE_11BE
-#define MAX_AFC_BW 320
-#else
-#define MAX_AFC_BW 160
+#define AFC_BW_320 320
 #endif
+#define AFC_BW_160 160
 #endif
 
 #define HALF_IEEE_CH_SEP  2
 #define IEEE_20MHZ_CH_SEP 4
+
+/* Check if the freq lies within low_freq and high_freq (both inclusive) */
+#define IS_WITHIN_RANGE_ASYM(_freq, _low_freq, _high_freq)\
+	(((_freq) >= (_low_freq) && (_freq) <= (_high_freq)))
 
 #include "reg_priv_objs.h"
 /**
@@ -68,6 +71,7 @@ void reg_init_pdev_mas_chan_list(
 
 /**
  * reg_save_reg_rules_to_pdev() - Save psoc reg-rules to pdev.
+ * @psoc_reg_rules: reg rules pointer
  * @pdev_priv_obj: Pointer to regdb pdev private object.
  */
 void reg_save_reg_rules_to_pdev(
@@ -102,8 +106,9 @@ QDF_STATUS
 reg_process_master_chan_list_ext(struct cur_regulatory_info *reg_info);
 
 /**
- * reg_get_6g_ap_master_chan_list() - Get  an ap  master channel list depending
- * on * ap power type
+ * reg_get_6g_ap_master_chan_list() - Get a pdev's ap master channel
+ *                                    list depending on ap power type
+ * @pdev: pdev object
  * @ap_pwr_type: Power type (LPI/VLP/SP)
  * @chan_list: Pointer to the channel list. The output channel list
  *
@@ -151,9 +156,9 @@ const char *reg_get_power_string(enum reg_6g_ap_type power_type);
 
 #ifdef CONFIG_AFC_SUPPORT
 /**
- * reg_process_afc_event() - Process the afc event and compute the 6G AFC
+ * reg_process_afc_event() - Process the afc event and compute the 6 GHz AFC
  * channel list based on the frequency range and channel frequency indices set.
- * @reg_info: Pointer to regulatory info
+ * @afc_info: Pointer to AFC regulatory info
  *
  * Return: QDF_STATUS
  */
@@ -205,11 +210,14 @@ QDF_STATUS reg_eirp_2_psd(struct wlan_objmgr_pdev *pdev,
 			  int16_t *psd);
 
 /**
- * reg_is_supp_pwr_mode_invalid - Indicates if the given 6G power mode is
- * one of the valid power modes enumerated by enum supported_6g_pwr_types
- * from REG_AP_LPI to REG_CLI_SUB_VLP.
+ * reg_is_supp_pwr_mode_invalid() - Is 6 GHz power mode invalid
+ * @supp_pwr_mode: 6 GHz power mode to test
  *
- * Note: REG_BEST_PWR_MODE and REG_CURRENT_PWR_MODE are not valid 6G power
+ * Indicates if the given 6G power mode is one of the valid power
+ * modes enumerated by enum supported_6g_pwr_types from REG_AP_LPI to
+ * REG_CLI_SUB_VLP.
+ *
+ * Note: REG_BEST_PWR_MODE and REG_CURRENT_PWR_MODE are not valid 6 GHz power
  * modes.
  *
  * Return: True for any valid power mode from REG_AP_LPI tp REG_CLI_SUB_VLP.
@@ -222,14 +230,14 @@ reg_is_supp_pwr_mode_invalid(enum supported_6g_pwr_types supp_pwr_mode)
 }
 
 /**
- * reg_copy_from_super_chan_info_to_reg_channel - Copy the structure fields from
- * a super channel entry to the regulatory channel fields.
+ * reg_copy_from_super_chan_info_to_reg_channel() - Copy the structure
+ * fields from a super channel entry to the regulatory channel fields.
  *
- * chan - Pointer to the regulatory channel where the fields of super channel
+ * @chan: Pointer to the regulatory channel where the fields of super channel
  * entry is copied to.
- * sc_entry - Input super channel entry whose fields are copied to the
+ * @sc_entry: Input super channel entry whose fields are copied to the
  * regulatory channel structure.
- * in_6g_pwr_mode - Input 6g power type. If the power type is best power mode,
+ * @in_6g_pwr_mode: Input 6g power type. If the power type is best power mode,
  * get the best power mode of the given super channel entry and copy its
  * information to the regulatory channel fields.
  */
@@ -250,6 +258,24 @@ reg_copy_from_super_chan_info_to_reg_channel(struct regulatory_channel *chan,
  */
 void reg_set_ap_pwr_type(struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj);
 
+/**
+ * reg_get_6g_pwrmode_chan_list() - Get the modified channel list. The modified
+ * current channel list consists of 2G and 5G portions of the current channel
+ * list and the 6G portion of the current channel list is derived from the input
+ * 6g power type.
+ * @pdev_priv_obj: Pointer to pdev private object.
+ * @chan_list: channel list pointer
+ * @in_6g_pwr_mode: Input 6GHz power mode.
+ *
+ * Return:
+ * QDF_STATUS_SUCCESS: Success
+ * QDF_STATUS_E_INVAL: Failed to get channel list
+ */
+QDF_STATUS
+reg_get_6g_pwrmode_chan_list(struct wlan_regulatory_pdev_priv_obj
+			     *pdev_priv_obj,
+			     struct regulatory_channel *chan_list,
+			     enum supported_6g_pwr_types in_6g_pwr_mode);
 #else /* CONFIG_BAND_6GHZ */
 static inline QDF_STATUS
 reg_get_6g_ap_master_chan_list(struct wlan_objmgr_pdev *pdev,
@@ -310,6 +336,15 @@ static inline void
 reg_set_ap_pwr_type(struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
 {
 }
+
+static inline QDF_STATUS
+reg_get_6g_pwrmode_chan_list(struct wlan_regulatory_pdev_priv_obj
+			     *pdev_priv_obj,
+			     struct regulatory_channel *chan_list,
+			     enum supported_6g_pwr_types in_6g_pwr_mode)
+{
+	return QDF_STATUS_E_INVAL;
+}
 #endif /* CONFIG_BAND_6GHZ */
 /**
  * reg_process_master_chan_list() - Compute master channel list based on the
@@ -326,6 +361,7 @@ QDF_STATUS reg_process_master_chan_list(struct cur_regulatory_info *reg_info);
  * list and the 6G portion of the current channel list is derived from the input
  * 6g power type.
  * @pdev: Pointer to pdev
+ * @chan_list: channel list pointer
  * @in_6g_pwr_mode: Input 6GHz power mode.
  *
  * Return:
@@ -390,9 +426,9 @@ reg_get_secondary_current_chan_list(struct wlan_objmgr_pdev *pdev,
  * temporary and a radar disabled channel does not mean that the channel is
  * permanently disabled. The API checks if the channel is disabled, but not due
  * to radar.
- * @chan - Regulatory channel object
+ * @chan: Regulatory channel object
  *
- * Return - True,  the channel is disabled, but not due to radar, else false.
+ * Return: True,  the channel is disabled, but not due to radar, else false.
  */
 bool reg_is_chan_disabled_and_not_nol(struct regulatory_channel *chan);
 #endif

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -163,6 +163,53 @@ return false;
 }
 #endif
 
+#ifdef WLAN_FEATURE_11BE
+/**
+ * ucfg_tdls_update_fw_mlo_capability() - update fw mlo capability
+ * @psoc: psoc object
+ * @is_fw_tdls_mlo_capable: bool value
+ *
+ * Return: none
+ */
+void ucfg_tdls_update_fw_mlo_capability(struct wlan_objmgr_psoc *psoc,
+					bool is_fw_tdls_mlo_capable);
+#else
+static inline
+void ucfg_tdls_update_fw_mlo_capability(struct wlan_objmgr_psoc *psoc,
+					bool is_fw_tdls_mlo_capable)
+{
+}
+#endif
+
+/**
+ * ucfg_tdls_link_vdev_is_matching() - check whether vdev is matching link vdev
+ * @vdev: vdev object
+ *
+ * Return: bool
+ */
+bool ucfg_tdls_link_vdev_is_matching(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * ucfg_tdls_get_tdls_link_vdev() - get tdls link vdev
+ * @vdev: vdev object
+ * @dbg_id: debug id
+ *
+ * Return: vdev pointer
+ */
+struct wlan_objmgr_vdev *
+ucfg_tdls_get_tdls_link_vdev(struct wlan_objmgr_vdev *vdev,
+			     wlan_objmgr_ref_dbgid dbg_id);
+
+/**
+ * ucfg_tdls_put_tdls_link_vdev() - put tdls link vdev
+ * @vdev: vdev odject
+ * @dbg_id: debug id
+ *
+ * Return: void
+ */
+void ucfg_tdls_put_tdls_link_vdev(struct wlan_objmgr_vdev *vdev,
+				  wlan_objmgr_ref_dbgid dbg_id);
+
 /**
  * ucfg_tdls_psoc_enable() - TDLS module enable API
  * @psoc: psoc object
@@ -251,10 +298,12 @@ QDF_STATUS ucfg_tdls_teardown_links(struct wlan_objmgr_psoc *psoc);
 /**
  * ucfg_tdls_teardown_links_sync() - teardown all TDLS links.
  * @psoc: psoc object
+ * @vdev: Vdev object pointer
  *
  * Return: None
  */
-void ucfg_tdls_teardown_links_sync(struct wlan_objmgr_psoc *psoc);
+void ucfg_tdls_teardown_links_sync(struct wlan_objmgr_psoc *psoc,
+				   struct wlan_objmgr_vdev *vdev);
 
 /**
  * ucfg_tdls_notify_reset_adapter() - notify reset adapter
@@ -263,37 +312,6 @@ void ucfg_tdls_teardown_links_sync(struct wlan_objmgr_psoc *psoc);
  * Return: QDF_STATUS
  */
 QDF_STATUS ucfg_tdls_notify_reset_adapter(struct wlan_objmgr_vdev *vdev);
-
-/**
- * ucfg_tdls_notify_sta_connect() - notify sta connect to TDLS
- * @vdev_id: pointer to soc object
- * @tdls_chan_swit_prohibited: indicates channel switch capability
- * @tdls_prohibited: indicates tdls allowed or not
- * @vdev: vdev object manager
- *
- * Notify sta connect event to TDLS component
- *
- * Return: None
- */
-void ucfg_tdls_notify_sta_connect(uint8_t vdev_id,
-				  bool tdls_chan_swit_prohibited,
-				  bool tdls_prohibited,
-				  struct wlan_objmgr_vdev *vdev);
-
-/**
- * ucfg_tdls_notify_sta_disconnect() - notify sta disconnect
- * @vdev_id: pointer to soc object
- * @lfr_roam: indicate, whether disconnect due to lfr roam
- * @user_disconnect: disconnect from user space
- * @vdev: vdev object manager
- *
- * Notify sta disconnect event to TDLS component
- *
- * Return: None
- */
-void ucfg_tdls_notify_sta_disconnect(uint8_t vdev_id,
-				     bool lfr_roam, bool user_disconnect,
-				     struct wlan_objmgr_vdev *vdev);
 
 /**
  * ucfg_tdls_set_operating_mode() - set operating mode
@@ -367,6 +385,35 @@ QDF_STATUS ucfg_set_tdls_secoffchanneloffset(struct wlan_objmgr_vdev *vdev,
 					     int offchanoffset);
 
 /**
+ * ucfg_tdls_discovery_on_going() - check discovery is on going
+ * @vdev: vdev object
+ *
+ * Return: true if tdls discovery on going else false
+ */
+bool ucfg_tdls_discovery_on_going(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * ucfg_tdls_get_mlo_vdev() - get mlo vdev for tdls
+ * @vdev: vdev object
+ * @index: index of vdev in mlo list
+ * @dbg_id: debug id
+ *
+ * Return: vdev pointer
+ */
+struct wlan_objmgr_vdev *ucfg_tdls_get_mlo_vdev(struct wlan_objmgr_vdev *vdev,
+						uint8_t index,
+						wlan_objmgr_ref_dbgid dbg_id);
+
+/**
+ * ucfg_tdls_release_mlo_vdev() - release mlo vdev for tdls
+ * @vdev: vdev object
+ * @dbg_id: debug id
+ *
+ * Return: void
+ */
+void ucfg_tdls_release_mlo_vdev(struct wlan_objmgr_vdev *vdev,
+				wlan_objmgr_ref_dbgid dbg_id);
+/**
  * ucfg_tdls_set_rssi() - API to set TDLS RSSI on peer given by mac
  * @vdev: vdev object
  * @mac: MAC address of Peer
@@ -412,7 +459,47 @@ uint16_t ucfg_get_tdls_conn_peer_count(struct wlan_objmgr_vdev *vdev);
 struct wlan_objmgr_vdev *ucfg_get_tdls_vdev(struct wlan_objmgr_psoc *psoc,
 					    wlan_objmgr_ref_dbgid dbg_id);
 
+/**
+ * ucfg_tdls_check_is_tdls_allowed() - Ucfg api to check is tdls allowed or not
+ * @vdev: vdev object
+ *
+ * Function determines the whether TDLS allowed in the system
+ *
+ * Return: true or false
+ */
+bool ucfg_tdls_check_is_tdls_allowed(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * ucfg_tdls_set_user_tdls_enable() - ucfg api to set tdls is enable or not
+ * from userspace
+ * @vdev: vdev object
+ * @is_user_tdls_enable: true if tdls is enabled from userspace
+ *
+ * Return: void
+ */
+void ucfg_tdls_set_user_tdls_enable(struct wlan_objmgr_vdev *vdev,
+				    bool is_user_tdls_enable);
+
 #else
+static inline
+bool ucfg_tdls_link_vdev_is_matching(struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+
+static inline
+struct wlan_objmgr_vdev *
+ucfg_tdls_get_tdls_link_vdev(struct wlan_objmgr_vdev *vdev,
+			     wlan_objmgr_ref_dbgid dbg_id)
+{
+	return NULL;
+}
+
+static inline
+void ucfg_tdls_put_tdls_link_vdev(struct wlan_objmgr_vdev *vdev,
+				  wlan_objmgr_ref_dbgid dbg_id)
+{
+}
 
 static inline
 QDF_STATUS ucfg_tdls_init(void)
@@ -470,7 +557,8 @@ QDF_STATUS ucfg_tdls_teardown_links(struct wlan_objmgr_psoc *psoc)
 }
 
 static inline
-void ucfg_tdls_teardown_links_sync(struct wlan_objmgr_psoc *psoc)
+void ucfg_tdls_teardown_links_sync(struct wlan_objmgr_psoc *psoc,
+				   struct wlan_objmgr_vdev *vdev)
 {
 }
 
@@ -487,24 +575,22 @@ void ucfg_tdls_notify_connect_failure(struct wlan_objmgr_psoc *psoc)
 }
 
 static inline
-void ucfg_tdls_notify_sta_connect(uint8_t vdev_id,
-				  bool tdls_chan_swit_prohibited,
-				  bool tdls_prohibited,
-				  struct wlan_objmgr_vdev *vdev)
-{
-}
-
-static inline
-void ucfg_tdls_notify_sta_disconnect(uint8_t vdev_id,
-				     bool lfr_roam, bool user_disconnect,
-				     struct wlan_objmgr_vdev *vdev)
-{}
-
-static inline
 struct wlan_objmgr_vdev *ucfg_get_tdls_vdev(struct wlan_objmgr_psoc *psoc,
 					    wlan_objmgr_ref_dbgid dbg_id)
 {
 	return NULL;
+}
+
+static inline
+bool ucfg_tdls_check_is_tdls_allowed(struct wlan_objmgr_vdev *vdev)
+{
+	return false;
+}
+
+static inline
+void ucfg_tdls_set_user_tdls_enable(struct wlan_objmgr_vdev *vdev,
+				    bool is_user_tdls_enable)
+{
 }
 
 static inline

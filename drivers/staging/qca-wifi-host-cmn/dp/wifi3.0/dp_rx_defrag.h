@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -49,14 +49,36 @@ struct dp_rx_defrag_cipher {
 	uint8_t ic_miclen;
 };
 
+#ifndef WLAN_SOFTUMAC_SUPPORT /* WLAN_SOFTUMAC_SUPPORT */
+/**
+ * dp_rx_frag_handle() - Handles fragmented Rx frames
+ *
+ * @soc: core txrx main context
+ * @ring_desc: opaque pointer to the REO error ring descriptor
+ * @mpdu_desc_info: MPDU descriptor information from ring descriptor
+ * @rx_desc:
+ * @mac_id:
+ * @quota: No. of units (packets) that can be serviced in one shot.
+ *
+ * This function implements RX 802.11 fragmentation handling
+ * The handling is mostly same as legacy fragmentation handling.
+ * If required, this function can re-inject the frames back to
+ * REO ring (with proper setting to by-pass fragmentation check
+ * but use duplicate detection / re-ordering and routing these frames
+ * to a different core.
+ *
+ * Return: uint32_t: No. of elements processed
+ */
 uint32_t dp_rx_frag_handle(struct dp_soc *soc, hal_ring_desc_t  ring_desc,
 			   struct hal_rx_mpdu_desc_info *mpdu_desc_info,
 			   struct dp_rx_desc *rx_desc,
 			   uint8_t *mac_id,
 			   uint32_t quota);
+#endif /* WLAN_SOFTUMAC_SUPPORT */
 
-/*
+/**
  * dp_rx_frag_get_mac_hdr() - Return pointer to the mac hdr
+ * @soc: DP SOC
  * @rx_desc_info: Pointer to the pkt_tlvs in the
  * nbuf (pkt_tlvs->mac_hdr->data)
  *
@@ -65,7 +87,7 @@ uint32_t dp_rx_frag_handle(struct dp_soc *soc, hal_ring_desc_t  ring_desc,
  * 802.11 fields that hardware does not populate in the
  * rx meta data.
  *
- * Returns: pointer to ieee80211_frame
+ * Return: pointer to ieee80211_frame
  */
 static inline struct ieee80211_frame *
 dp_rx_frag_get_mac_hdr(struct dp_soc *soc, uint8_t *rx_desc_info)
@@ -74,12 +96,13 @@ dp_rx_frag_get_mac_hdr(struct dp_soc *soc, uint8_t *rx_desc_info)
 	return (struct ieee80211_frame *)(rx_desc_info + rx_desc_len);
 }
 
-/*
+/**
  * dp_rx_frag_get_mpdu_seq_number() - Get mpdu sequence number
+ * @soc: DP SOC
  * @rx_desc_info: Pointer to the pkt_tlvs in the
  * nbuf (pkt_tlvs->mac_hdr->data)
  *
- * Returns: uint16_t, rx sequence number
+ * Return: uint16_t, rx sequence number
  */
 static inline uint16_t
 dp_rx_frag_get_mpdu_seq_number(struct dp_soc *soc, int8_t *rx_desc_info)
@@ -91,12 +114,13 @@ dp_rx_frag_get_mpdu_seq_number(struct dp_soc *soc, int8_t *rx_desc_info)
 		IEEE80211_SEQ_SEQ_SHIFT;
 }
 
-/*
+/**
  * dp_rx_frag_get_mpdu_frag_number() - Get mpdu fragment number
+ * @soc: DP SOC
  * @rx_desc_info: Pointer to the pkt_tlvs in the
  * nbuf (pkt_tlvs->mac_hdr->data)
  *
- * Returns: uint8_t, receive fragment number
+ * Return: uint8_t, receive fragment number
  */
 static inline uint8_t
 dp_rx_frag_get_mpdu_frag_number(struct dp_soc *soc, uint8_t *rx_desc_info)
@@ -108,12 +132,13 @@ dp_rx_frag_get_mpdu_frag_number(struct dp_soc *soc, uint8_t *rx_desc_info)
 		IEEE80211_SEQ_FRAG_MASK;
 }
 
-/*
+/**
  * dp_rx_frag_get_more_frag_bit() - Get more fragment bit
+ * @soc: DP SOC
  * @rx_desc_info: Pointer to the pkt_tlvs in the
  * nbuf (pkt_tlvs->mac_hdr->data)
  *
- * Returns: uint8_t, get more fragment bit
+ * Return: uint8_t, get more fragment bit
  */
 static inline
 uint8_t dp_rx_frag_get_more_frag_bit(struct dp_soc *soc, uint8_t *rx_desc_info)
@@ -133,11 +158,93 @@ uint8_t dp_rx_get_pkt_dir(struct dp_soc *soc, uint8_t *rx_desc_info)
 	return mac_hdr->i_fc[1] & IEEE80211_FC1_DIR_MASK;
 }
 
+/**
+ * dp_rx_defrag_fraglist_insert() - Create a per-sequence fragment list
+ * @txrx_peer: Pointer to the peer data structure
+ * @tid: Transmit ID (TID)
+ * @head_addr: Pointer to head list
+ * @tail_addr: Pointer to tail list
+ * @frag: Incoming fragment
+ * @all_frag_present: Flag to indicate whether all fragments are received
+ *
+ * Build a per-tid, per-sequence fragment list.
+ *
+ * Return: Success, if inserted
+ */
+QDF_STATUS
+dp_rx_defrag_fraglist_insert(struct dp_txrx_peer *txrx_peer, unsigned int tid,
+			     qdf_nbuf_t *head_addr, qdf_nbuf_t *tail_addr,
+			     qdf_nbuf_t frag, uint8_t *all_frag_present);
+
+/**
+ * dp_rx_defrag_waitlist_add() - Update per-PDEV defrag wait list
+ * @txrx_peer: Pointer to the peer data structure
+ * @tid: Transmit ID (TID)
+ *
+ * Appends per-tid fragments to global fragment wait list
+ *
+ * Return: None
+ */
+void dp_rx_defrag_waitlist_add(struct dp_txrx_peer *txrx_peer,
+			       unsigned int tid);
+
+/**
+ * dp_rx_defrag() - Defragment the fragment chain
+ * @txrx_peer: Pointer to the peer
+ * @tid: Transmit Identifier
+ * @frag_list_head: Pointer to head list
+ * @frag_list_tail: Pointer to tail list
+ *
+ * Defragment the fragment chain
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS dp_rx_defrag(struct dp_txrx_peer *txrx_peer, unsigned int tid,
+			qdf_nbuf_t frag_list_head,
+			qdf_nbuf_t frag_list_tail);
+
+/**
+ * dp_rx_defrag_waitlist_flush() - Flush SOC defrag wait list
+ * @soc: DP SOC
+ *
+ * Flush fragments of all waitlisted TID's
+ *
+ * Return: None
+ */
 void dp_rx_defrag_waitlist_flush(struct dp_soc *soc);
+
+/**
+ * dp_rx_reorder_flush_frag() - Flush the frag list
+ * @txrx_peer: Pointer to the peer data structure
+ * @tid: Transmit ID (TID)
+ *
+ * Flush the per-TID frag list
+ *
+ * Return: None
+ */
 void dp_rx_reorder_flush_frag(struct dp_txrx_peer *txrx_peer,
 			      unsigned int tid);
-void dp_rx_defrag_waitlist_remove(struct dp_txrx_peer *peer, unsigned int tid);
-void dp_rx_defrag_cleanup(struct dp_txrx_peer *peer, unsigned int tid);
+
+/**
+ * dp_rx_defrag_waitlist_remove() - Remove fragments from waitlist
+ * @txrx_peer: Pointer to the peer data structure
+ * @tid: Transmit ID (TID)
+ *
+ * Remove fragments from waitlist
+ *
+ * Return: None
+ */
+void dp_rx_defrag_waitlist_remove(struct dp_txrx_peer *txrx_peer,
+				  unsigned int tid);
+
+/**
+ * dp_rx_defrag_cleanup() - Clean up activities
+ * @txrx_peer: Pointer to the peer
+ * @tid: Transmit Identifier
+ *
+ * Return: None
+ */
+void dp_rx_defrag_cleanup(struct dp_txrx_peer *txrx_peer, unsigned int tid);
 
 QDF_STATUS dp_rx_defrag_add_last_frag(struct dp_soc *soc,
 				      struct dp_txrx_peer *peer, uint16_t tid,

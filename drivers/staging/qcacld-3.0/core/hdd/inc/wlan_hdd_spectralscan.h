@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -255,13 +255,14 @@ void spectral_scan_deactivate_service(void);
 /**
  * wlan_spectral_update_rx_chainmask() - API to update rx chainmask before
  * start spectral gen3
- * @adapter: pointer to adapter
+ * @link_info: Link info pointer in HDD adapter.
  *
  * API to update rx chainmask before start spectral gen3.
  *
  * Return: QDF_STATUS_SUCCESS or non-zero on failure
  */
-QDF_STATUS wlan_spectral_update_rx_chainmask(struct hdd_adapter *adapter);
+QDF_STATUS
+wlan_spectral_update_rx_chainmask(struct wlan_hdd_link_info *link_info);
 #else
 static inline void spectral_scan_activate_service(struct hdd_context *hdd_ctx)
 {
@@ -273,7 +274,7 @@ static inline void spectral_scan_deactivate_service(void)
 
 #ifdef WLAN_CONV_SPECTRAL_ENABLE
 static inline QDF_STATUS
-wlan_spectral_update_rx_chainmask(struct hdd_adapter *adapter)
+wlan_spectral_update_rx_chainmask(struct wlan_hdd_link_info *link_info)
 {
 	return QDF_STATUS_SUCCESS;
 }

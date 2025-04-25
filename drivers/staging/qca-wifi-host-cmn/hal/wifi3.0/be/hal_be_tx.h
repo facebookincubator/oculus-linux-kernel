@@ -60,7 +60,8 @@ enum hal_tx_mcast_ctrl {
 	HAL_TX_MCAST_CTRL_NO_SPECIAL,
 };
 
-/* enum hal_tx_notify_frame_type - TX notify frame type
+/**
+ * enum hal_tx_notify_frame_type - TX notify frame type
  * @NO_TX_NOTIFY: Not a notify frame
  * @TX_HARD_NOTIFY: Hard notify TX frame
  * @TX_SOFT_NOTIFY_E: Soft Notify Tx frame
@@ -78,7 +79,7 @@ enum hal_tx_notify_frame_type {
  * ---------------------------------------------------------------------------
  */
 /**
- * struct hal_tx_bank_config - SW config bank params
+ * union hal_tx_bank_config - SW config bank params
  * @epd: EPD indication flag
  * @encap_type: encapsulation type
  * @encrypt_type: encrypt type
@@ -91,6 +92,8 @@ enum hal_tx_notify_frame_type {
  * @vdev_id_check_en: vdev id check
  * @pmac_id: mac id
  * @mcast_pkt_ctrl: mulitcast packet control
+ * @dscp_tid_map_id: DSCP to TID map id
+ * @reserved: unused bits
  * @val: value representing bank config
  */
 union hal_tx_bank_config {
@@ -114,14 +117,15 @@ union hal_tx_bank_config {
 };
 
 /**
- * struct hal_tx_cmn_config_ppe - SW config exception related parameters
- * @drop_prec_err - Exception drop_prec errors.
- * @fake_mac_hdr - Exception fake mac header.
- * @cpu_code_inv - Exception cpu code invalid.
- * @data_buff_err - Exception buffer length/offset erorors.
- * @l3_l4_err - Exception m3_l4 checksum errors
- * @data_offset_max - Maximum data offset allowed.
- * @data_len_max - Maximum data length allowed.
+ * union hal_tx_cmn_config_ppe - SW config exception related parameters
+ * @drop_prec_err: Exception drop_prec errors.
+ * @fake_mac_hdr: Exception fake mac header.
+ * @cpu_code_inv: Exception cpu code invalid.
+ * @data_buff_err: Exception buffer length/offset erorors.
+ * @l3_l4_err: Exception m3_l4 checksum errors
+ * @data_offset_max: Maximum data offset allowed.
+ * @data_len_max: Maximum data length allowed.
+ * @val: aggregate 32-bit value
  */
 union hal_tx_cmn_config_ppe {
 	struct {
@@ -137,15 +141,16 @@ union hal_tx_cmn_config_ppe {
 };
 
 /**
- * hal_tx_ppe_vp_config - SW config PPE VP table
- * @vp_num - Virtual port number
- * @pmac_id - Lmac ID
+ * union hal_tx_ppe_vp_config - SW config PPE VP table
+ * @vp_num: Virtual port number
+ * @pmac_id: Lmac ID
  * @bank_id: Bank ID corresponding to this I/F.
  * @vdev_id: VDEV ID of the I/F.
  * @search_idx_reg_num: Register number of this SI.
  * @use_ppe_int_pri: Use the PPE INT_PRI to TID table
  * @to_fw: Use FW
  * @drop_prec_enable: Enable precedence drop.
+ * @val: aggregate 32-bit value
  */
 union hal_tx_ppe_vp_config {
 	struct {
@@ -162,9 +167,10 @@ union hal_tx_ppe_vp_config {
 };
 
 /**
- * hal_tx_cmn_ppe_idx_map_config: Use ppe index mapping table
+ * union hal_tx_ppe_idx_map_config - Use ppe index mapping table
  * @search_idx: Search index
  * @cache_set: Cache set number
+ * @val: aggregate 32-bit value
  */
 union hal_tx_ppe_idx_map_config {
 	struct {
@@ -175,7 +181,7 @@ union hal_tx_ppe_idx_map_config {
 };
 
 /**
- * hal_tx_ppe_pri2tid_map0_config : Configure ppe INT_PRI to tid map
+ * union hal_tx_ppe_pri2tid_map0_config - Configure ppe INT_PRI to tid map
  * @int_pri0: INT_PRI_0
  * @int_pri1: INT_PRI_1
  * @int_pri2: INT_PRI_2
@@ -186,6 +192,7 @@ union hal_tx_ppe_idx_map_config {
  * @int_pri7: INT_PRI_7
  * @int_pri8: INT_PRI_8
  * @int_pri9: INT_PRI_9
+ * @val: aggregate 32-bit value
  */
 union hal_tx_ppe_pri2tid_map0_config {
 	struct {
@@ -204,13 +211,14 @@ union hal_tx_ppe_pri2tid_map0_config {
 };
 
 /**
- * hal_tx_ppe_pri2tid_map1_config : Configure ppe INT_PRI to tid map
- * @int_pri0: INT_PRI_10
- * @int_pri1: INT_PRI_11
- * @int_pri2: INT_PRI_12
- * @int_pri3: INT_PRI_13
- * @int_pri4: INT_PRI_14
- * @int_pri5: INT_PRI_15
+ * union hal_tx_ppe_pri2tid_map1_config - Configure ppe INT_PRI to tid map
+ * @int_pri10: INT_PRI_10
+ * @int_pri11: INT_PRI_11
+ * @int_pri12: INT_PRI_12
+ * @int_pri13: INT_PRI_13
+ * @int_pri14: INT_PRI_14
+ * @int_pri15: INT_PRI_15
+ * @val: aggregate 32-bit value
  */
 union hal_tx_ppe_pri2tid_map1_config {
 	struct {
@@ -235,7 +243,7 @@ union hal_tx_ppe_pri2tid_map1_config {
  */
 
 /**
- * hal_tx_desc_set_tx_notify_frame - Set TX notify_frame field in Tx desc
+ * hal_tx_desc_set_tx_notify_frame() - Set TX notify_frame field in Tx desc
  * @desc: Handle to Tx Descriptor
  * @val: Value to be set
  *
@@ -249,7 +257,7 @@ static inline void hal_tx_desc_set_tx_notify_frame(void *desc,
 }
 
 /**
- * hal_tx_desc_set_flow_override_enable - Set flow_override_enable field
+ * hal_tx_desc_set_flow_override_enable() - Set flow_override_enable field
  * @desc: Handle to Tx Descriptor
  * @val: Value to be set
  *
@@ -263,7 +271,7 @@ static inline void  hal_tx_desc_set_flow_override_enable(void *desc,
 }
 
 /**
- * hal_tx_desc_set_flow_override - Set flow_override field in TX desc
+ * hal_tx_desc_set_flow_override() - Set flow_override field in TX desc
  * @desc: Handle to Tx Descriptor
  * @val: Value to be set
  *
@@ -277,7 +285,7 @@ static inline void  hal_tx_desc_set_flow_override(void *desc,
 }
 
 /**
- * hal_tx_desc_set_who_classify_info_sel - Set who_classify_info_sel field
+ * hal_tx_desc_set_who_classify_info_sel() - Set who_classify_info_sel field
  * @desc: Handle to Tx Descriptor
  * @val: Value to be set
  *
@@ -291,7 +299,7 @@ static inline void  hal_tx_desc_set_who_classify_info_sel(void *desc,
 }
 
 /**
- * hal_tx_desc_set_buf_length - Set Data length in bytes in Tx Descriptor
+ * hal_tx_desc_set_buf_length() - Set Data length in bytes in Tx Descriptor
  * @desc: Handle to Tx Descriptor
  * @data_length: MSDU length in case of direct descriptor.
  *              Length of link extension descriptor in case of Link extension
@@ -306,7 +314,7 @@ static inline void  hal_tx_desc_set_buf_length(void *desc,
 }
 
 /**
- * hal_tx_desc_set_buf_offset - Sets Packet Offset field in Tx descriptor
+ * hal_tx_desc_set_buf_offset() - Sets Packet Offset field in Tx descriptor
  * @desc: Handle to Tx Descriptor
  * @offset: Packet offset from Metadata in case of direct buffer descriptor.
  *
@@ -320,8 +328,8 @@ static inline void hal_tx_desc_set_buf_offset(void *desc,
 }
 
 /**
- * hal_tx_desc_set_l4_checksum_en -  Set TCP/IP checksum enable flags
- * Tx Descriptor for MSDU_buffer type
+ * hal_tx_desc_set_l4_checksum_en() -  Set TCP/IP checksum enable flags
+ *                                     Tx Descriptor for MSDU_buffer type
  * @desc: Handle to Tx Descriptor
  * @en: UDP/TCP over ipv4/ipv6 checksum enable flags (5 bits)
  *
@@ -338,10 +346,10 @@ static inline void hal_tx_desc_set_l4_checksum_en(void *desc,
 }
 
 /**
- * hal_tx_desc_set_l3_checksum_en -  Set IPv4 checksum enable flag in
- * Tx Descriptor for MSDU_buffer type
+ * hal_tx_desc_set_l3_checksum_en() -  Set IPv4 checksum enable flag in
+ *                                     Tx Descriptor for MSDU_buffer type
  * @desc: Handle to Tx Descriptor
- * @checksum_en_flags: ipv4 checksum enable flags
+ * @en: ipv4 checksum enable flags
  *
  * Return: void
  */
@@ -353,8 +361,8 @@ static inline void hal_tx_desc_set_l3_checksum_en(void *desc,
 }
 
 /**
- * hal_tx_desc_set_fw_metadata- Sets the metadata that is part of TCL descriptor
- * @desc:Handle to Tx Descriptor
+ * hal_tx_desc_set_fw_metadata() - Sets the metadata that is part of TCL descriptor
+ * @desc: Handle to Tx Descriptor
  * @metadata: Metadata to be sent to Firmware
  *
  * Return: void
@@ -367,8 +375,8 @@ static inline void hal_tx_desc_set_fw_metadata(void *desc,
 }
 
 /**
- * hal_tx_desc_set_to_fw - Set To_FW bit in Tx Descriptor.
- * @desc:Handle to Tx Descriptor
+ * hal_tx_desc_set_to_fw() - Set To_FW bit in Tx Descriptor.
+ * @desc: Handle to Tx Descriptor
  * @to_fw: if set, Forward packet to FW along with classification result
  *
  * Return: void
@@ -380,8 +388,8 @@ static inline void hal_tx_desc_set_to_fw(void *desc, uint8_t to_fw)
 }
 
 /**
- * hal_tx_desc_set_hlos_tid - Set the TID value (override DSCP/PCP fields in
- * frame) to be used for Tx Frame
+ * hal_tx_desc_set_hlos_tid() - Set the TID value (override DSCP/PCP fields in
+ *                              frame) to be used for Tx Frame
  * @desc: Handle to Tx Descriptor
  * @hlos_tid: HLOS TID
  *
@@ -398,9 +406,10 @@ static inline void hal_tx_desc_set_hlos_tid(void *desc,
 }
 
 /**
- * hal_tx_desc_sync - Commit the descriptor to Hardware
- * @hal_tx_des_cached: Cached descriptor that software maintains
+ * hal_tx_desc_sync() - Commit the descriptor to Hardware
+ * @hal_tx_desc_cached: Cached descriptor that software maintains
  * @hw_desc: Hardware descriptor to be updated
+ * @num_bytes: descriptor size
  */
 static inline void hal_tx_desc_sync(void *hal_tx_desc_cached,
 				    void *hw_desc, uint8_t num_bytes)
@@ -409,8 +418,8 @@ static inline void hal_tx_desc_sync(void *hal_tx_desc_cached,
 }
 
 /**
- * hal_tx_desc_set_vdev_id - set vdev id to the descriptor to Hardware
- * @hal_tx_des_cached: Cached descriptor that software maintains
+ * hal_tx_desc_set_vdev_id() - set vdev id to the descriptor to Hardware
+ * @desc: Cached descriptor that software maintains
  * @vdev_id: vdev id
  */
 static inline void hal_tx_desc_set_vdev_id(void *desc, uint8_t vdev_id)
@@ -420,8 +429,8 @@ static inline void hal_tx_desc_set_vdev_id(void *desc, uint8_t vdev_id)
 }
 
 /**
- * hal_tx_desc_set_bank_id - set bank id to the descriptor to Hardware
- * @hal_tx_des_cached: Cached descriptor that software maintains
+ * hal_tx_desc_set_bank_id() - set bank id to the descriptor to Hardware
+ * @desc: Cached descriptor that software maintains
  * @bank_id: bank id
  */
 static inline void hal_tx_desc_set_bank_id(void *desc, uint8_t bank_id)
@@ -431,9 +440,9 @@ static inline void hal_tx_desc_set_bank_id(void *desc, uint8_t bank_id)
 }
 
 /**
- * hal_tx_desc_set_tcl_cmd_type - set tcl command type to the descriptor
- * to Hardware
- * @hal_tx_des_cached: Cached descriptor that software maintains
+ * hal_tx_desc_set_tcl_cmd_type() - set tcl command type to the descriptor
+ *                                  to Hardware
+ * @desc: Cached descriptor that software maintains
  * @tcl_cmd_type: tcl command type
  */
 static inline void
@@ -444,9 +453,9 @@ hal_tx_desc_set_tcl_cmd_type(void *desc, uint8_t tcl_cmd_type)
 }
 
 /**
- * hal_tx_desc_set_lmac_id_be - set lmac id to the descriptor to Hardware
+ * hal_tx_desc_set_lmac_id_be() - set lmac id to the descriptor to Hardware
  * @hal_soc_hdl: hal soc handle
- * @hal_tx_des_cached: Cached descriptor that software maintains
+ * @desc: Cached descriptor that software maintains
  * @lmac_id: lmac id
  */
 static inline void
@@ -458,10 +467,10 @@ hal_tx_desc_set_lmac_id_be(hal_soc_handle_t hal_soc_hdl, void *desc,
 }
 
 /**
- * hal_tx_desc_set_search_index_be - set search index to the
- * descriptor to Hardware
+ * hal_tx_desc_set_search_index_be() - set search index to the
+ *                                     descriptor to Hardware
  * @hal_soc_hdl: hal soc handle
- * @hal_tx_des_cached: Cached descriptor that software maintains
+ * @desc: Cached descriptor that software maintains
  * @search_index: search index
  */
 static inline void
@@ -473,10 +482,10 @@ hal_tx_desc_set_search_index_be(hal_soc_handle_t hal_soc_hdl, void *desc,
 }
 
 /**
- * hal_tx_desc_set_cache_set_num - set cache set num to the
- * descriptor to Hardware
+ * hal_tx_desc_set_cache_set_num() - set cache set num to the
+ *                                   descriptor to Hardware
  * @hal_soc_hdl: hal soc handle
- * @hal_tx_des_cached: Cached descriptor that software maintains
+ * @desc: Cached descriptor that software maintains
  * @cache_num: cache number
  */
 static inline void
@@ -488,11 +497,11 @@ hal_tx_desc_set_cache_set_num(hal_soc_handle_t hal_soc_hdl, void *desc,
 }
 
 /**
- * hal_tx_desc_set_lookup_override_num - set lookup override num
- * to the descriptor to Hardware
+ * hal_tx_desc_set_index_lookup_override() - set lookup override num to the
+ *                                           descriptor to Hardware
  * @hal_soc_hdl: hal soc handle
- * @hal_tx_des_cached: Cached descriptor that software maintains
- * @cache_num: set numbernumber
+ * @desc: Cached descriptor that software maintains
+ * @num: set number
  */
 static inline void
 hal_tx_desc_set_index_lookup_override(hal_soc_handle_t hal_soc_hdl,
@@ -611,13 +620,13 @@ static inline uint64_t hal_tx_comp_get_desc_va(void *hal_desc)
 {
 	uint64_t va_from_desc;
 
-	va_from_desc = HAL_TX_DESC_GET(hal_desc,
+	va_from_desc = qdf_le64_to_cpu(HAL_TX_DESC_GET(hal_desc,
 				       WBM2SW_COMPLETION_RING_TX,
 				       BUFFER_VIRT_ADDR_31_0) |
-			(((uint64_t)HAL_TX_DESC_GET(
-					hal_desc,
-					WBM2SW_COMPLETION_RING_TX,
-					BUFFER_VIRT_ADDR_63_32)) << 32);
+				       (((uint64_t)HAL_TX_DESC_GET(
+				       hal_desc,
+				       WBM2SW_COMPLETION_RING_TX,
+				       BUFFER_VIRT_ADDR_63_32)) << 32));
 
 	return va_from_desc;
 }
@@ -629,6 +638,7 @@ static inline uint64_t hal_tx_comp_get_desc_va(void *hal_desc)
 
 /**
  * hal_tx_get_num_tcl_banks() - Get number of banks for target
+ * @hal_soc_hdl: HAL soc handle
  *
  * Return: None
  */
@@ -649,8 +659,8 @@ hal_tx_get_num_tcl_banks(hal_soc_handle_t hal_soc_hdl)
 
 /**
  * hal_tx_populate_bank_register() - populate the bank register with
- *		the software configs.
- * @soc: HAL soc handle
+ *                                   the software configs.
+ * @hal_soc_hdl: HAL soc handle
  * @config: bank config
  * @bank_id: bank id to be configured
  *
@@ -679,7 +689,7 @@ hal_tx_populate_bank_register(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_tx_config_rbm_mapping_be() - Update return buffer manager ring id
- * @hal_soc: HAL SoC context
+ * @hal_soc_hdl: HAL SoC context
  * @hal_ring_hdl: Source ring pointer
  * @rbm_id: return buffer manager ring id
  *
@@ -705,13 +715,14 @@ hal_tx_config_rbm_mapping_be(hal_soc_handle_t hal_soc_hdl,
 #endif
 
 /**
- * hal_tx_desc_set_buf_addr_be - Fill Buffer Address information in Tx Desc
+ * hal_tx_desc_set_buf_addr_be() - Fill Buffer Address information in Tx Desc
+ * @hal_soc_hdl: HAL SoC context
  * @desc: Handle to Tx Descriptor
  * @paddr: Physical Address
- * @pool_id: Return Buffer Manager ID
+ * @rbm_id: Return Buffer Manager ID
  * @desc_id: Descriptor ID
  * @type: 0 - Address points to a MSDU buffer
- *		1 - Address points to MSDU extension descriptor
+ *        1 - Address points to MSDU extension descriptor
  *
  * Return: void
  */
@@ -780,8 +791,8 @@ hal_tx_desc_set_buf_addr_be(hal_soc_handle_t hal_soc_hdl, void *desc,
 #endif
 
 /**
- * hal_tx_vdev_mismatch_routing_set - set vdev mismatch exception routing
- * @hal_soc: HAL SoC context
+ * hal_tx_vdev_mismatch_routing_set() - set vdev mismatch exception routing
+ * @hal_soc_hdl: HAL SoC context
  * @config: HAL_TX_VDEV_MISMATCH_TQM_NOTIFY - route via TQM
  *          HAL_TX_VDEV_MISMATCH_FW_NOTIFY - route via FW
  *
@@ -805,15 +816,15 @@ hal_tx_vdev_mismatch_routing_set(hal_soc_handle_t hal_soc_hdl,
 #endif
 
 /**
- * hal_tx_mcast_mlo_reinject_routing_set - set MLO multicast reinject routing
- * @hal_soc: HAL SoC context
+ * hal_tx_mcast_mlo_reinject_routing_set() - set MLO multicast reinject routing
+ * @hal_soc_hdl: HAL SoC context
  * @config: HAL_TX_MCAST_MLO_REINJECT_FW_NOTIFY - route via FW
  *          HAL_TX_MCAST_MLO_REINJECT_TQM_NOTIFY - route via TQM
  *
  * Return: void
  */
 #if defined(HWIO_TCL_R0_CMN_CONFIG_MCAST_CMN_PN_SN_MLO_REINJECT_ENABLE_BMSK) && \
-	defined(WLAN_MCAST_MLO)
+	defined(WLAN_MCAST_MLO) && !defined(CONFIG_MLO_SINGLE_DEV)
 static inline void
 hal_tx_mcast_mlo_reinject_routing_set(
 				hal_soc_handle_t hal_soc_hdl,
@@ -848,8 +859,8 @@ void hal_reo_config_reo2ppe_dest_info(hal_soc_handle_t hal_soc_hdl)
 }
 
 /**
- * hal_tx_get_num_ppe_vp_tbl_entries() - Get the total number of VP table
- * @hal_soc: HAL SoC Context
+ * hal_tx_get_num_ppe_vp_tbl_entries() - Get the total number of VP table entries
+ * @hal_soc_hdl: HAL SoC Context
  *
  * Return: Total number of entries.
  */
@@ -862,8 +873,9 @@ uint32_t hal_tx_get_num_ppe_vp_tbl_entries(hal_soc_handle_t hal_soc_hdl)
 }
 
 /**
- * hal_tx_get_num_ppe_vp_search_idx_tbl_entries() - Get the total number of search idx registers
- * @hal_soc: HAL SoC Context
+ * hal_tx_get_num_ppe_vp_search_idx_tbl_entries() - Get the total number of
+ *                                                  search idx registers
+ * @hal_soc_hdl: HAL SoC Context
  *
  * Return: Total number of entries.
  */
@@ -877,7 +889,7 @@ uint32_t hal_tx_get_num_ppe_vp_search_idx_tbl_entries(hal_soc_handle_t hal_soc_h
 
 /**
  * hal_tx_set_ppe_cmn_cfg()- Set the PPE common config
- * @hal_soc: HAL SoC context
+ * @hal_soc_hdl: HAL SoC context
  * @cmn_cfg: HAL PPE VP common config
  *
  * Return: void
@@ -892,8 +904,8 @@ hal_tx_set_ppe_cmn_cfg(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_populate_ppe_vp_entry -  Populate ppe VP entry
- * @hal_soc: HAL SoC context
+ * hal_tx_populate_ppe_vp_entry() -  Populate ppe VP entry
+ * @hal_soc_hdl: HAL SoC context
  * @vp_cfg: HAL PPE VP config
  * @ppe_vp_idx: PPE VP index
  *
@@ -910,8 +922,8 @@ hal_tx_populate_ppe_vp_entry(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_ppeds_cfg_ast_override_map_reg - Set ppe index mapping table value
- * @hal_soc: HAL SoC context
+ * hal_ppeds_cfg_ast_override_map_reg() - Set ppe index mapping table value
+ * @hal_soc_hdl: HAL SoC context
  * @reg_idx: index into the table
  * @overide_map: HAL PPE INDEX MAPPING config
  *
@@ -930,9 +942,10 @@ hal_ppeds_cfg_ast_override_map_reg(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_set_int_pri2id - Set the prit2tid table.
- * @hal_soc: HAL SoC context
- * @pri2tid: Reference to SW INT_PRI to TID table
+ * hal_tx_set_int_pri2tid() - Set the pri2tid table.
+ * @hal_soc_hdl: HAL SoC context
+ * @val: value to set
+ * @map_no: index in SW INT_PRI to TID table
  *
  * Return: void
  */
@@ -946,8 +959,8 @@ hal_tx_set_int_pri2tid(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_update_int_pri2id - Populate the prit2tid table.
- * @hal_soc: HAL SoC context
+ * hal_tx_update_int_pri2tid() - Populate the pri2tid table.
+ * @hal_soc_hdl: HAL SoC context
  * @pri: INT_PRI value
  * @tid: Wi-Fi TID
  *
@@ -963,7 +976,7 @@ hal_tx_update_int_pri2tid(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_dump_ppe_vp_entry - Dump the PPE VP entry
+ * hal_tx_dump_ppe_vp_entry() - Dump the PPE VP entry
  * @hal_soc_hdl: HAL SoC context
  *
  * Return: void
@@ -977,9 +990,10 @@ hal_tx_dump_ppe_vp_entry(hal_soc_handle_t hal_soc_hdl)
 }
 
 /**
- * hal_tx_enable_pri2tid_map- Enable the priority to tid mapping
+ * hal_tx_enable_pri2tid_map() - Enable the priority to tid mapping
  * @hal_soc_hdl: HAL SoC context
  * @val: True/False value
+ * @ppe_vp_idx: map index
  *
  * Return: void
  */

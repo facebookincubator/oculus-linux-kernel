@@ -47,21 +47,26 @@ struct wmi_mlo_ready_params {
 /** enum wmi_mlo_teardown_reason - Reason code in WMI MLO teardown command
  * @WMI_HOST_MLO_TEARDOWN_REASON_DOWN: Wifi down
  * @WMI_HOST_MLO_TEARDOWN_REASON_SSR: Wifi Recovery
- * @WMI_HOST_MLO_TEARDOWN_REASON_CLEANUP_DONE: SSR related cleanup done
+ * @WMI_HOST_MLO_TEARDOWN_REASON_MODE1_SSR: Recovery Mode1 SSR teardown
+ * @WMI_HOST_MLO_TEARDOWN_REASON_STANDBY: Network Standby mode teardown
  */
 enum wmi_mlo_teardown_reason {
 	WMI_HOST_MLO_TEARDOWN_REASON_DOWN,
 	WMI_HOST_MLO_TEARDOWN_REASON_SSR,
-	WMI_HOST_MLO_TEARDOWN_REASON_CLEANUP_DONE,
+	WMI_HOST_MLO_TEARDOWN_REASON_MODE1_SSR,
+	WMI_HOST_MLO_TEARDOWN_REASON_STANDBY,
 };
 
 /** struct wmi_mlo_teardown_params - MLO teardown command params
  * @pdev_id: pdev id of radio on which this command is sent
  * @reason: reason code from enum wmi_mlo_teardown_reason
+ * @umac_reset: trigger umac reset for mode1 or not
  */
 struct wmi_mlo_teardown_params {
 	uint32_t pdev_id;
 	enum wmi_mlo_teardown_reason reason;
+	bool umac_reset;
+	bool standby_active;
 };
 
 /** enum wmi_mlo_setup_status - Status code in WMI MLO setup completion event
@@ -76,10 +81,12 @@ enum wmi_mlo_setup_status {
 /** struct wmi_mlo_setup_complete_params - MLO setup complete event params
  * @pdev_id: pdev id of radio on which this event is received
  * @status: status code
+ * @max_ml_peer_ids: Maximum ML Peer ID's
  */
 struct wmi_mlo_setup_complete_params {
 	uint32_t pdev_id;
 	enum wmi_mlo_setup_status status;
+	uint32_t max_ml_peer_ids;
 };
 
 /** enum wmi_mlo_teardown_status - Status code in WMI MLO teardown completion

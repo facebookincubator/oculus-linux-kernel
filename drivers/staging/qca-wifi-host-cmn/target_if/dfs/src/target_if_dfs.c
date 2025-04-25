@@ -1,7 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- *
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -164,9 +163,8 @@ static int target_if_radar_event_handler(
 }
 
 /**
- * target_if_reg_phyerr_events() - register dfs phyerr radar event.
+ * target_if_reg_phyerr_events_dfs2() - register dfs phyerr radar event.
  * @psoc: pointer to psoc.
- * @pdev: pointer to pdev.
  *
  * Return: QDF_STATUS.
  */
@@ -215,9 +213,13 @@ static bool target_if_dfs_offload(struct wlan_objmgr_psoc *psoc)
 }
 
 /**
- * target_if_dfs_bangradar_320_supp: Check the service of
- * 'wmi_service_bang_radar_320_support' whether the bang radar 320 is
- * supported or not. If the service is enabled, then it returns true.
+ * target_if_dfs_bangradar_320_supp: Check if bang radar 320 is supported
+ * @psoc: psoc handle
+ *
+ * Check the service of 'wmi_service_bang_radar_320_support' whether
+ * the bang radar 320 is supported or not.
+ *
+ * Return: true if the service is enabled, false otherwise
  */
 
 static bool target_if_dfs_bangradar_320_supp(struct wlan_objmgr_psoc *psoc)
@@ -236,10 +238,17 @@ static bool target_if_dfs_bangradar_320_supp(struct wlan_objmgr_psoc *psoc)
 
 #ifdef WLAN_FEATURE_11BE
 /**
- * target_if_dfs_is_radar_found_chan_freq_eq_center_freq: Check whether the
- * service of 'radar_found_chan_freq' representing the center frequency of the
- * radar segment is supported or not. If the service is not enabled, then
- * chan_freq will indicate the channel's primary 20MHz center.
+ * target_if_dfs_is_radar_found_chan_freq_eq_center_freq() -
+ *			Check if service 'radar_found_chan_freq' is supported
+ * @psoc: psoc handle
+ *
+ * Check whether the service of 'radar_found_chan_freq' representing
+ * the center frequency of the radar segment is supported or not. If
+ * the service is not enabled, then chan_freq will indicate the
+ * channel's primary 20MHz center.
+ *
+ * Return: true if wmi_service_radar_found_chan_freq_eq_center_freq is
+ *         supported, false otherwise
  */
 static bool
 target_if_dfs_is_radar_found_chan_freq_eq_center_freq(

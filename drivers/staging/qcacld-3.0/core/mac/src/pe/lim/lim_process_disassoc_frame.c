@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -159,12 +159,11 @@ lim_process_disassoc_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 			reasonCode, pe_session->limMlmState,
 			pe_session->limSmeState,
 			GET_LIM_SYSTEM_ROLE(pe_session));
-	wlan_connectivity_mgmt_event(mac->psoc, (struct wlan_frame_hdr *)pHdr,
-				     pe_session->vdev_id, reasonCode,
-				     0, frame_rssi, 0, 0, 0, 0,
-				     WLAN_DISASSOC_RX);
 	lim_diag_event_report(mac, WLAN_PE_DIAG_DISASSOC_FRAME_EVENT,
 		pe_session, 0, reasonCode);
+
+	lim_cp_stats_cstats_log_disassoc_evt(pe_session, CSTATS_DIR_RX,
+					     reasonCode);
 
 	/**
 	 * Extract 'associated' context for STA, if any.
@@ -328,6 +327,11 @@ lim_process_disassoc_frame(struct mac_context *mac, uint8_t *pRxPacketInfo,
 	}
 	lim_extract_ies_from_deauth_disassoc(pe_session, (uint8_t *)pHdr,
 					WMA_GET_RX_MPDU_LEN(pRxPacketInfo));
+	wlan_connectivity_mgmt_event(mac->psoc, (struct wlan_frame_hdr *)pHdr,
+				     pe_session->vdev_id, reasonCode,
+				     0, frame_rssi, 0, 0, 0, 0,
+				     WLAN_DISASSOC_RX);
+
 	lim_perform_disassoc(mac, frame_rssi, reasonCode,
 			     pe_session, pHdr->sa);
 

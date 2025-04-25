@@ -280,10 +280,13 @@ uint8_t dp_svc_get(uint8_t svc_id, struct dp_svc_data *svc_table,
 
 	qdf_rcu_read_lock_bh();
 	if (svc_id != DP_SVC_INVALID_ID) {
-		svc_data = qdf_rcu_dereference(svc_ctx->svc_table[svc_id]);
-		if (svc_data && (count + 1 < table_size)) {
-			dp_svc_copy(&svc_table[count], svc_data);
-			count++;
+		if (svc_id < DP_SVC_ARRAY_SIZE) {
+			svc_data =
+				qdf_rcu_dereference(svc_ctx->svc_table[svc_id]);
+			if (svc_data && (count + 1 < table_size)) {
+				dp_svc_copy(&svc_table[count], svc_data);
+				count++;
+			}
 		}
 	} else {
 		for (svc_id = 0; svc_id < DP_SVC_ARRAY_SIZE; svc_id++) {

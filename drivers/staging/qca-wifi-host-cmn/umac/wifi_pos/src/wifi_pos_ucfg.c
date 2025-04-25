@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2018, 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021, 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,7 +18,7 @@
  */
 
 /**
- * This file defines the important dispatcher APIs pertinent to
+ * DOC: This file defines the important dispatcher APIs pertinent to
  * wifi positioning.
  */
 #include <wlan_lmac_if_def.h>
@@ -206,8 +206,11 @@ void ucfg_wifi_pos_set_oem_6g_supported(struct wlan_objmgr_psoc *psoc,
 bool ucfg_wifi_pos_is_nl_rsp(struct wlan_objmgr_psoc *psoc)
 {
 	uint32_t val = 0;
-	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc =
-			wifi_pos_get_psoc_priv_obj(psoc);
+	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc = NULL;
+	struct wlan_objmgr_psoc *tmp_psoc = wifi_pos_get_psoc();
+
+	if (tmp_psoc)
+		wifi_pos_psoc = wifi_pos_get_psoc_priv_obj(tmp_psoc);
 
 	if (!wifi_pos_psoc) {
 		wifi_pos_alert("unable to get wifi_pos psoc obj");

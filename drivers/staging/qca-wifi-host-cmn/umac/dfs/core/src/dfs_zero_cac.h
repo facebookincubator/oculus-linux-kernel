@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2007-2008 Sam Leffler, Errno Consulting
  * All rights reserved.
  *
@@ -34,10 +34,6 @@
 
 #include "dfs.h"
 #include <wlan_dfs_tgt_api.h>
-
-#define OCAC_SUCCESS 0
-#define OCAC_RESET 1
-#define OCAC_CANCEL 2
 
 #ifdef WLAN_FEATURE_11BE
 #define TREE_DEPTH_320                    5
@@ -359,7 +355,7 @@ static inline bool dfs_is_precac_done(struct wlan_dfs *dfs,
  *                                      precac status of configured
  *                                      DFS channel.
  * @dfs: Pointer to wlan_dfs structure.
- * @pref_chan: Configured DFS channel frequency
+ * @pref_chan_freq: Configured DFS channel frequency
  * @mode: Configured PHY mode.
  *
  * Return: True if intermediate channel needs to configure. False otherwise.
@@ -458,11 +454,28 @@ void dfs_prepare_agile_precac_chan(struct wlan_dfs *dfs, bool *is_chan_found);
  * @chwidth : Width of the channel for which OCAC completion is received.
  */
 void dfs_process_ocac_complete(struct wlan_objmgr_pdev *pdev,
-			       uint32_t ocac_status,
+			       enum ocac_status_type ocac_status,
 			       uint32_t center_freq1,
 			       uint32_t center_freq2,
 			       enum phy_ch_width chwidth);
 
+/*
+ * dfs_is_ocac_complete_event_for_cur_agile_chan() - Check if the OCAC
+ * completion event from FW is received for the currently configured agile
+ * channel in host.
+ *
+ * @dfs: Pointer to dfs structure.
+ * @center_freq_mhz1: Center frequency of the band when the precac width is
+ * 20/40/80/160MHz and center frequency of the left 80MHz in case of restricted
+ * 80P80/165MHz.
+ * @center_freq_mhz2: Center frequency of the right 80MHz in case of restricted
+ * 80P80/165MHz. It is zero for other channel widths.
+ * @chwidth: Agile channel width for which the completion event is received.
+ *
+ * return: True if the channel on which OCAC completion event received is same
+ * as currently configured agile channel in host. False otherwise.
+ */
+bool dfs_is_ocac_complete_event_for_cur_agile_chan(struct wlan_dfs *dfs);
 /**
  * dfs_set_agilecac_chan_for_freq() - Find chan freq for agile CAC.
  * @dfs:         Pointer to wlan_dfs structure.
@@ -510,7 +523,7 @@ void dfs_agile_precac_start(struct wlan_dfs *dfs);
  * fields in adfs_param.
  */
 void dfs_start_agile_precac_timer(struct wlan_dfs *dfs,
-				  uint8_t ocac_status,
+				  enum ocac_status_type ocac_status,
 				  struct dfs_agile_cac_params *adfs_param);
 
 /**
@@ -539,11 +552,17 @@ static inline void dfs_prepare_agile_precac_chan(struct wlan_dfs *dfs,
 
 static inline void
 dfs_process_ocac_complete(struct wlan_objmgr_pdev *pdev,
-			  uint32_t ocac_status,
+			  enum ocac_status_type ocac_status,
 			  uint32_t center_freq1,
 			  uint32_t center_freq2,
 			  enum phy_ch_width chwidth)
 {
+}
+
+static inline bool
+dfs_is_ocac_complete_event_for_cur_agile_chan(struct wlan_dfs *dfs)
+{
+	return false;
 }
 
 #ifdef CONFIG_CHAN_FREQ_API
@@ -569,7 +588,7 @@ static inline void dfs_agile_precac_start(struct wlan_dfs *dfs)
 
 static inline void
 dfs_start_agile_precac_timer(struct wlan_dfs *dfs,
-			     uint8_t ocac_status,
+			     enum ocac_status_type ocac_status,
 			     struct dfs_agile_cac_params *adfs_param)
 {
 }
@@ -587,8 +606,7 @@ dfs_set_fw_adfs_support(struct wlan_dfs *dfs,
 /**
  * dfs_agile_soc_obj_init() - Initialize soc obj for agile precac.
  * @dfs: Pointer to wlan_dfs structure.
- * @precac_chan: Start thr precac timer in this channel.
- * @ocac_status: Status of the off channel CAC.
+ * @psoc: Pointer to psoc object
  */
 void dfs_agile_soc_obj_init(struct wlan_dfs *dfs,
 			    struct wlan_objmgr_psoc *psoc);
@@ -715,8 +733,8 @@ static inline uint32_t dfs_get_intermediate_chan(struct wlan_dfs *dfs)
 
 /**
  * dfs_get_precac_chan_state_for_freq() - Get precac status of a given channel.
- * @dfs:         Pointer to wlan_dfs structure.
- * @precac_chan: Channel freq for which precac state need to be checked.
+ * @dfs: Pointer to wlan_dfs structure.
+ * @precac_chan_freq: Channel freq for which precac state need to be checked.
  */
 
 #ifdef CONFIG_CHAN_FREQ_API
@@ -766,8 +784,8 @@ static inline void dfs_reinit_precac_lists(struct wlan_dfs *src_dfs,
 /**
  * dfs_is_precac_done_on_non_80p80_chan_for_freq() - Is precac done on
  * a 20/40/80/160/165/320 MHz channel.
- *@dfs: Pointer to wlan_dfs structure.
- *@chan: Channel frequency
+ * @dfs: Pointer to wlan_dfs structure.
+ * @chan_freq: Channel frequency
  *
  * Return:
  * * True:  If CAC is done on channel.
@@ -844,7 +862,7 @@ void dfs_mark_precac_nol_for_freq(struct wlan_dfs *dfs,
 /**
  * dfs_unmark_precac_nol_for_freq() - Unmark the precac channel as radar.
  * @dfs:      Pointer to wlan_dfs structure.
- * @channel:  channel freq marked as radar.
+ * @chan_freq:  channel freq marked as radar.
  */
 #ifdef CONFIG_CHAN_FREQ_API
 void dfs_unmark_precac_nol_for_freq(struct wlan_dfs *dfs, uint16_t chan_freq);
@@ -1145,10 +1163,21 @@ void dfs_start_agile_rcac_timer(struct wlan_dfs *dfs);
  *
  */
 void dfs_stop_agile_rcac_timer(struct wlan_dfs *dfs);
+
+/**
+ * dfs_agile_cleanup_rcac() - Reset parameters of wlan_dfs relatewd to RCAC
+ *
+ * @dfs: Pointer to struct wlan_dfs.
+ */
+void dfs_agile_cleanup_rcac(struct wlan_dfs *dfs);
 #else
 static inline bool dfs_is_agile_rcac_enabled(struct wlan_dfs *dfs)
 {
 	return false;
+}
+
+static inline void dfs_agile_cleanup_rcac(struct wlan_dfs *dfs)
+{
 }
 
 static inline void
@@ -1333,4 +1362,256 @@ bool dfs_get_configured_bwexpand_dfs_chan(struct wlan_dfs *dfs,
 	return false;
 }
 #endif /* QCA_DFS_BW_EXPAND */
+
+#if defined(QCA_DFS_BW_PUNCTURE) && !defined(CONFIG_REG_CLIENT)
+/**
+ * dfs_create_punc_sm() - Wrapper API to Create DFS puncture state machine.
+ * @dfs: pointer to wlan_dfs.
+ *
+ * Return: Nothing.
+ */
+void dfs_create_punc_sm(struct wlan_dfs *dfs);
+
+/**
+ * dfs_destroy_punc_sm() - Wrapper API to Destroy DFS puncture state machine.
+ * @dfs: pointer to wlan_dfs.
+ *
+ * Return: Nothing.
+ */
+void dfs_destroy_punc_sm(struct wlan_dfs *dfs);
+
+/**
+ * dfs_punc_sm_stop_all() - API to stop all puncture SM object.
+ * @dfs: pointer to wlan_dfs.
+ *
+ * Return: Nothing.
+ */
+void dfs_punc_sm_stop_all(struct wlan_dfs *dfs);
+
+/**
+ * dfs_punc_sm_stop() - Stop DFS puncture state machine.
+ * @dfs:           Pointer to wlan_dfs.
+ * @indx:          Index of DFS puncture state machine.
+ * @dfs_punc_arr:  Pointer to DFS puncture state machine object.
+ *
+ * Return: Nothing.
+ */
+void dfs_punc_sm_stop(struct wlan_dfs *dfs,
+		      uint8_t indx,
+		      struct dfs_punc_obj *dfs_punc_arr);
+
+/**
+ * dfs_punc_sm_create() - Create DFS puncture state machine.
+ * @dfs_punc:             Pointer to DFS puncture state machine object.
+ *
+ * Return: Success if SM is created.
+ */
+QDF_STATUS dfs_punc_sm_create(struct dfs_punc_obj *dfs_punc);
+
+/**
+ * dfs_punc_sm_destroy() - Destroy DFS puncture state machine.
+ * @dfs_punc:              Pointer to DFS puncture state machine object.
+ *
+ * Return: Success if SM is destroyed.
+ */
+QDF_STATUS dfs_punc_sm_destroy(struct dfs_punc_obj *dfs_punc);
+
+/**
+ * dfs_punc_cac_timer_attach() - Attach puncture CAC timer to DFS puncture
+ *                               state machine.
+ * @dfs:                         Pointer to wlan_dfs.
+ * @dfs_punc_arr:                Pointer to DFS puncture state machine object.
+ *
+ * Return: Nothing.
+ */
+void dfs_punc_cac_timer_attach(struct wlan_dfs *dfs,
+			       struct dfs_punc_obj *dfs_punc_arr);
+
+/**
+ * dfs_handle_dfs_puncture_unpuncture() - Handles DFS puncture and unpuncturing.
+ * @dfs:                                  Pointer to wlan_dfs.
+ *
+ * Return: Nothing.
+ */
+void dfs_handle_dfs_puncture_unpuncture(struct wlan_dfs *dfs);
+
+/**
+ * dfs_punc_cac_timer_reset() - Reset puncture CAC timer.
+ * @dfs_punc_arr:               Pointer to DFS puncture state machine object.
+ *
+ * Return: Nothing.
+ */
+void dfs_punc_cac_timer_reset(struct dfs_punc_obj *dfs_punc_arr);
+
+/**
+ * dfs_punc_cac_timer_detach() - Detach puncture CAC timer from DFS puncture
+ *                               state machine.
+ * @dfs_punc_arr:                Pointer to DFS puncture state machine object.
+ *
+ * Return: Nothing.
+ */
+void dfs_punc_cac_timer_detach(struct dfs_punc_obj *dfs_punc_arr);
+
+/**
+ * dfs_start_punc_cac_timer() - Start puncture CAC timer.
+ * @dfs_punc_arr:               Pointer to DFS puncture state machine object.
+ * @is_weather_chan:            check if the channel is weather channel.
+ *
+ * Return: Nothing.
+ */
+void dfs_start_punc_cac_timer(struct dfs_punc_obj *dfs_punc_arr,
+			      bool is_weather_chan);
+
+/**
+ * dfs_cancel_punc_cac_timer() - Cancel puncture CAC timer.
+ * @dfs_punc_arr:                Pointer to DFS puncture state machine object.
+ *
+ * Return: Nothing.
+ */
+void dfs_cancel_punc_cac_timer(struct dfs_punc_obj *dfs_punc_arr);
+
+/**
+ * utils_dfs_puncturing_sm_deliver_evt() - Utility API to post events to DFS
+ *                                         puncture state machine.
+ * @pdev:                          Pointer to DFS pdev object.
+ * @sm_indx:                       Index of state machine.
+ * @event:                         Event to be posted to DFS Puncturing SM.
+ *
+ * Return: Nothing.
+ */
+void utils_dfs_puncturing_sm_deliver_evt(struct wlan_objmgr_pdev *pdev,
+					 uint8_t sm_indx,
+					 enum dfs_punc_sm_evt event);
+/**
+ * dfs_puncturing_sm_deliver_evt() - API to post events to DFS puncture
+ *                                   state machine.
+ * @dfs:                           Pointer to wlan_dfs.
+ * @event:                         Event to be posted to DFS Puncturing SM.
+ * @event_data_len:                Size of event data.
+ * @event_data:                    Event data.
+ *
+ * Return: Nothing.
+ */
+QDF_STATUS dfs_puncturing_sm_deliver_evt(struct wlan_dfs *dfs,
+					 enum dfs_punc_sm_evt event,
+					 uint16_t event_data_len,
+					 void *event_data);
+
+/**
+ * dfs_handle_nol_puncture() - Send SM event post NOL expiry.
+ * @dfs:           Pointer to wlan_dfs.
+ * @nolfreq:       NOL channel frequency.
+ *
+ * Return: Nothing.
+ */
+void dfs_handle_nol_puncture(struct wlan_dfs *dfs, qdf_freq_t nolfreq);
+
+/**
+ * dfs_is_ignore_radar_for_punctured_chans() - Store the radar bitmap and check
+ *                                             if radar is found in already
+ *                                             punctured channel and ignore the
+ *                                             radar.
+ * @dfs:                       Wlan_dfs structure
+ * @dfs_curr_radar_bitmap:     Variable to store radar bitmap.
+ *
+ * Return: If radar is found on punctured channel then return true.
+ * Else return false.
+ */
+bool dfs_is_ignore_radar_for_punctured_chans(struct wlan_dfs *dfs,
+					     uint16_t dfs_curr_radar_bitmap);
+#else
+static inline
+void dfs_create_punc_sm(struct wlan_dfs *dfs)
+{
+}
+
+static inline
+void dfs_destroy_punc_sm(struct wlan_dfs *dfs)
+{
+}
+
+static inline
+void dfs_punc_sm_stop_all(struct wlan_dfs *dfs)
+{
+}
+
+static inline
+void dfs_punc_sm_stop(struct wlan_dfs *dfs,
+		      uint8_t indx,
+		      struct dfs_punc_obj *dfs_punc_arr)
+{
+}
+
+static inline
+QDF_STATUS dfs_punc_sm_create(struct dfs_punc_obj *dfs_punc)
+{
+	return QDF_STATUS_E_FAILURE;
+}
+
+static inline
+QDF_STATUS dfs_punc_sm_destroy(struct dfs_punc_obj *dfs_punc)
+{
+	return QDF_STATUS_E_FAILURE;
+}
+
+static inline
+void dfs_punc_cac_timer_attach(struct wlan_dfs *dfs,
+			       struct dfs_punc_obj *dfs_punc_arr)
+{
+}
+
+static inline
+void dfs_handle_dfs_puncture_unpuncture(struct wlan_dfs *dfs)
+{
+}
+
+static inline
+void dfs_punc_cac_timer_reset(struct dfs_punc_obj *dfs_punc_arr)
+{
+}
+
+static inline
+void dfs_punc_cac_timer_detach(struct dfs_punc_obj *dfs_punc_arr)
+{
+}
+
+static inline
+void dfs_start_punc_cac_timer(struct dfs_punc_obj *dfs_punc_arr,
+			      bool is_weather_chan)
+{
+}
+
+static inline
+void dfs_cancel_punc_cac_timer(struct dfs_punc_obj *dfs_punc_arr)
+{
+}
+
+static inline
+void utils_dfs_puncturing_sm_deliver_evt(struct wlan_objmgr_pdev *pdev,
+					 uint8_t sm_indx,
+					 enum dfs_punc_sm_evt event)
+{
+}
+
+static inline
+QDF_STATUS dfs_puncturing_sm_deliver_evt(struct wlan_dfs *dfs,
+					 enum dfs_punc_sm_evt event,
+					 uint16_t event_data_len,
+					 void *event_data)
+{
+	return QDF_STATUS_E_FAILURE;
+}
+
+static inline
+void dfs_handle_nol_puncture(struct wlan_dfs *dfs, qdf_freq_t nolfreq)
+{
+}
+
+static inline
+bool dfs_is_ignore_radar_for_punctured_chans(struct wlan_dfs *dfs,
+					     uint16_t dfs_curr_radar_bitmap)
+{
+	return false;
+}
+#endif /* DFS_BW_PUNCTURE */
 #endif /* _DFS_ZERO_CAC_H_ */

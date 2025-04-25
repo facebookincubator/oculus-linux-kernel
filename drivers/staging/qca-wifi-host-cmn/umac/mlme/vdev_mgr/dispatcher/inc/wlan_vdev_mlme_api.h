@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -345,4 +345,22 @@ wlan_mlme_update_sr_data(struct wlan_objmgr_vdev *vdev, int *val,
 			 bool is_sr_enable)
 {}
 #endif
+
+/**
+ * wlan_mlme_disable_fd_in_6ghz_band() - Set fd disabled flag in vdev
+ * @vdev: vdev object
+ * @disable_fd: Disable the 6 GHz FD.
+ *
+ * Return: void
+ */
+void wlan_mlme_disable_fd_in_6ghz_band(struct wlan_objmgr_vdev *vdev,
+				       bool disable_fd);
+
+/**
+ * wlan_mlme_is_fd_disabled_in_6ghz_band() - Get fd disabled flag fom vdev
+ * @vdev: vdev obj
+ *
+ * Return: true/false
+ */
+bool wlan_mlme_is_fd_disabled_in_6ghz_band(struct wlan_objmgr_vdev *vdev);
 #endif

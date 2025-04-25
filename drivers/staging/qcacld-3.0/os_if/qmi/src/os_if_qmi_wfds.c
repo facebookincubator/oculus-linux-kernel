@@ -495,7 +495,7 @@ os_if_qmi_wfds_send_ut_cmd_req_msg(struct os_if_qmi_wfds_ut_cmd_info *cmd_info)
 		return QDF_STATUS_E_NOMEM;
 	}
 
-	req->cmd = cmd_info->cmd;
+	req->cmd = (enum wifi_drv_qmi_ut_cmd_v01)cmd_info->cmd;
 	req->duration = cmd_info->duration;
 	req->flush_period = cmd_info->flush_period;
 	req->num_pkts = cmd_info->num_pkts;
@@ -504,6 +504,15 @@ os_if_qmi_wfds_send_ut_cmd_req_msg(struct os_if_qmi_wfds_ut_cmd_info *cmd_info)
 	for (i = 0; i < QDF_MAC_ADDR_SIZE; i++) {
 		req->src_mac[i] = cmd_info->src_mac.bytes[i];
 		req->dest_mac[i] = cmd_info->dest_mac.bytes[i];
+	}
+
+	if (cmd_info->cmd == WFDS_START_WHC) {
+		for (i = 0; i < QDF_IPV4_ADDR_SIZE; i++) {
+			req->src_ip_addr[i] = cmd_info->src_ip.bytes[i];
+			req->dest_ip_addr[i] = cmd_info->dest_ip.bytes[i];
+		}
+
+		req->dest_port = cmd_info->dest_port;
 	}
 
 	osif_debug("cmd: %u for duration: %u s, flush period: %u ms",

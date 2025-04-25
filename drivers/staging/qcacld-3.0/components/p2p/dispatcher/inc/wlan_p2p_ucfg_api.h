@@ -476,4 +476,23 @@ bool ucfg_p2p_is_roam_config_disabled(struct wlan_objmgr_psoc *psoc)
  * Return: p2p go supported on indoor channel
  */
 bool ucfg_p2p_get_indoor_ch_support(struct wlan_objmgr_psoc *psoc);
+
+#ifdef WLAN_FEATURE_DYNAMIC_MAC_ADDR_UPDATE
+/**
+ * ucfg_is_p2p_device_dynamic_set_mac_addr_supported() - API to check P2P device
+ * dynamic MAC address update is supported or not
+ *
+ * @psoc: Pointer to psoc
+ *
+ * Return: true or false
+ */
+bool
+ucfg_is_p2p_device_dynamic_set_mac_addr_supported(struct wlan_objmgr_psoc *psoc);
+#else
+static inline bool
+ucfg_is_p2p_device_dynamic_set_mac_addr_supported(struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+#endif
 #endif /* _WLAN_P2P_UCFG_API_H_ */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -29,7 +29,7 @@
 #if defined(WIFI_POS_CONVERGED) && defined(WLAN_FEATURE_RTT_11AZ_SUPPORT)
 /**
  * wifi_pos_set_peer_ltf_keyseed_required() - Set LTF keyseed required
- * for the peer
+ *                                            for the peer
  * @peer:  Peer object
  * @value: Value to set
  *
@@ -40,7 +40,7 @@ wifi_pos_set_peer_ltf_keyseed_required(struct wlan_objmgr_peer *peer,
 				       bool value);
 /**
  * wifi_pos_is_ltf_keyseed_required_for_peer() - Is LTF keyseed required for
- * the given peer
+ *                                               the given peer
  * @peer: Peer object
  *
  * Return: true or false
@@ -63,7 +63,7 @@ QDF_STATUS wifi_pos_handle_ranging_peer_create(struct wlan_objmgr_psoc *psoc,
 
 /**
  * wifi_pos_set_11az_failed_peers() - Update the 11az failed peers to the
- * context
+ *                                    context
  * @vdev: Objmgr vdev pointer
  * @mac_addr: mac address
  */
@@ -72,19 +72,19 @@ void wifi_pos_set_11az_failed_peers(struct wlan_objmgr_vdev *vdev,
 
 /**
  * wifi_pos_add_peer_to_list() - Add the peer mac to the secure/unsecure
- * peer list in the 11az context
+ *                               peer list in the 11az context
  * @vdev: Pointer to vdev object
  * @req: PASN peer create request pointer
  * @is_peer_create_required: True if we need to send peer create command to
- * firmware
+ *                           firmware
  */
 void wifi_pos_add_peer_to_list(struct wlan_objmgr_vdev *vdev,
 			       struct wlan_pasn_request *req,
 			       bool is_peer_create_required);
 
 /**
- * wifi_pos_handle_ranging_peer_create_rsp  - Ranging peer create response
- * handler
+ * wifi_pos_handle_ranging_peer_create_rsp() - Ranging peer create response
+ *                                             handler
  * @psoc: Pointer to PSOC object
  * @vdev_id: vdev id
  * @peer_mac: Peer mac address
@@ -101,8 +101,8 @@ wifi_pos_handle_ranging_peer_create_rsp(struct wlan_objmgr_psoc *psoc,
 /**
  * wifi_pos_handle_ranging_peer_delete() - Handle ranging PASN peer delete
  * @psoc: Pointer to PSOC object
+ * @req: PASN request
  * @vdev_id: vdev id
- * @peer_data: PASN peer data
  * @total_entries: Total number of peers
  *
  * Return: QDF_STATUS
@@ -114,9 +114,9 @@ wifi_pos_handle_ranging_peer_delete(struct wlan_objmgr_psoc *psoc,
 				    uint8_t total_entries);
 
 /**
- * wifi_pos_send_pasn_auth_status  - Send PASN auth status to firmware
+ * wifi_pos_send_pasn_auth_status() - Send PASN auth status to firmware
  * @psoc: Pointer to PSOC object
- * @data: pointer  to auth status data
+ * @data: pointer to auth status data
  *
  * Return: QDF_STATUS
  */
@@ -125,7 +125,7 @@ wifi_pos_send_pasn_auth_status(struct wlan_objmgr_psoc *psoc,
 			       struct wlan_pasn_auth_status *data);
 
 /**
- * wifi_pos_send_pasn_peer_deauth  - Send PASN peer deauth
+ * wifi_pos_send_pasn_peer_deauth() - Send PASN peer deauth
  * @psoc: Pointer to PSOC object
  * @peer_mac: Peer mac address
  *
@@ -155,8 +155,9 @@ void wifi_pos_update_pasn_peer_count(struct wlan_objmgr_vdev *vdev,
 				     bool is_increment);
 
 /**
- * wifi_pos_cleanup_pasn_peers  - Delete all PASN peer objects for
- * given vdev
+ * wifi_pos_cleanup_pasn_peers() - Delete all PASN peer objects for
+ *                                 given vdev
+ * @psoc: Pointer to psoc object
  * @vdev: Pointer to vdev object
  *
  * Return: QDF_STATUS
@@ -167,9 +168,8 @@ wifi_pos_cleanup_pasn_peers(struct wlan_objmgr_psoc *psoc,
 
 /**
  * wifi_pos_vdev_delete_all_ranging_peers() - Delete all ranging peers
- * associated with given vdev id
- * @psoc: Psoc pointer
- * @vdev_id: vdev id
+ *                                            associated with given vdev
+ * @vdev: Vdev object pointer
  *
  * Return: QDF_STATUS
  */
@@ -178,7 +178,7 @@ wifi_pos_vdev_delete_all_ranging_peers(struct wlan_objmgr_vdev *vdev);
 
 /**
  * wifi_pos_vdev_delete_all_ranging_peers_rsp() - Delete all vdev peers response
- * handler
+ *                                                handler
  * @psoc: Psoc pointer
  * @vdev_id: vdev id
  *
@@ -189,8 +189,9 @@ wifi_pos_vdev_delete_all_ranging_peers_rsp(struct wlan_objmgr_psoc *psoc,
 					   uint8_t vdev_id);
 
 /**
- * wifi_pos_is_delete_all_peer_in_progress() - Check if delete all
- * pasn peers command is already in progress for a given vdev
+ * wifi_pos_is_delete_all_peer_in_progress() - Check if delete all pasn peers
+ *                                             command is already in progress
+ *                                             for a given vdev
  * @vdev: Vdev object pointer
  *
  * Return: True if delete all pasn peer is in progress
@@ -199,7 +200,7 @@ bool wifi_pos_is_delete_all_peer_in_progress(struct wlan_objmgr_vdev *vdev);
 
 /**
  * wifi_pos_set_delete_all_peer_in_progress() - API to set/unset delete all
- * ranging peers is in progress
+ *                                              ranging peers is in progress
  * @vdev: Pointer to vdev object
  * @flag: value to indicate set or unset the flag
  *

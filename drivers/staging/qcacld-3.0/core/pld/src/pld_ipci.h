@@ -210,6 +210,11 @@ static inline int pld_ipci_is_pci_ep_awake(struct device *dev)
 {
 	return 0;
 }
+
+static inline int pld_ipci_get_irq(struct device *dev, int ce_id)
+{
+	return 0;
+}
 #else
 /**
  * pld_ipci_register_driver() - Register platform device callback functions
@@ -265,6 +270,7 @@ int pld_ipci_wlan_disable(struct device *dev, enum pld_driver_mode mode);
  *         Non zero failure code for errors
  */
 int pld_ipci_get_soc_info(struct device *dev, struct pld_soc_info *info);
+int pld_ipci_get_irq(struct device *dev, int ce_id);
 
 static inline int pld_ipci_power_on(struct device *dev)
 {

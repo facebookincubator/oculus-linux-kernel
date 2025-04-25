@@ -96,7 +96,6 @@
 #define SIR_MAC_MGMT_RESERVED15   0xF
 
 #define SIR_MAC_ACTION_TX             1
-#define SIR_MAC_ACTION_RX             2
 
 #define SIR_MAC_BA_POLICY_IMMEDIATE     1
 #define SIR_MAC_BA_DEFAULT_BUFF_SIZE    64
@@ -112,7 +111,6 @@
 
 /* RRM related. */
 /* Refer IEEE Std 802.11k-2008, Section 7.3.2.21, table 7.29 */
-
 #define SIR_MAC_RRM_CHANNEL_LOAD_TYPE          3
 #define SIR_MAC_RRM_NOISE_HISTOGRAM_BEACON     4
 #define SIR_MAC_RRM_BEACON_TYPE                5
@@ -123,37 +121,9 @@
 #define SIR_MAC_RRM_LOCATION_CIVIC_TYPE        11
 #define SIR_MAC_RRM_FINE_TIME_MEAS_TYPE        16
 
-/* VHT Action Field */
-#define SIR_MAC_VHT_GID_NOTIFICATION           1
-#define SIR_MAC_VHT_OPMODE_NOTIFICATION        2
-
 #define SIR_MAC_VHT_OPMODE_SIZE                3
 
 #define NUM_OF_SOUNDING_DIMENSIONS	1 /*Nss - 1, (Nss = 2 for 2x2)*/
-/* HT Action Field Codes */
-#define SIR_MAC_SM_POWER_SAVE       1
-
-/* block acknowledgment action frame types */
-#define SIR_MAC_ACTION_VENDOR_SPECIFIC 9
-#define SIR_MAC_ACTION_VENDOR_SPECIFIC_CATEGORY     0x7F
-#define SIR_MAC_PROT_ACTION_VENDOR_SPECIFIC_CATEGORY 0x7E
-#define SIR_MAC_ACTION_P2P_SUBTYPE_PRESENCE_RSP     2
-
-/* Public Action for 20/40 BSS Coexistence */
-#define SIR_MAC_ACTION_2040_BSS_COEXISTENCE     0
-#define SIR_MAC_ACTION_EXT_CHANNEL_SWITCH_ID    4
-
-/* Public Action frames for GAS */
-#define SIR_MAC_ACTION_GAS_INITIAL_REQUEST      0x0A
-#define SIR_MAC_ACTION_GAS_INITIAL_RESPONSE     0x0B
-#define SIR_MAC_ACTION_GAS_COMEBACK_REQUEST     0x0C
-#define SIR_MAC_ACTION_GAS_COMEBACK_RESPONSE    0x0D
-
-/* Protected Dual of Public Action(PDPA) frames Action field */
-#define SIR_MAC_PDPA_GAS_INIT_REQ      10
-#define SIR_MAC_PDPA_GAS_INIT_RSP      11
-#define SIR_MAC_PDPA_GAS_COMEBACK_REQ  12
-#define SIR_MAC_PDPA_GAS_COMEBACK_RSP  13
 
 /* ----------------------------------------------------------------------------- */
 /* EID (Element ID) definitions */
@@ -270,7 +240,6 @@
 
 /* / Protocol defined MAX definitions */
 #define SIR_MAC_MAX_NUMBER_OF_RATES          12
-#define SIR_MAC_MAX_NUM_OF_DEFAULT_KEYS      4
 #define SIR_MAC_KEY_LENGTH                   13 /* WEP Maximum key length size */
 #define SIR_MAC_AUTH_CHALLENGE_LENGTH        253
 #define SIR_MAC_SAP_AUTH_CHALLENGE_LENGTH    128
@@ -1378,6 +1347,152 @@ typedef struct sSirMacBeaconReport {
 
 } tSirMacBeaconReport, *tpSirMacBeaconReport;
 
+/**
+ * struct sir_mac_bw_ind_element - Contains info for Bandwidth Indication IE
+ * present in channel load request received from AP
+ * @is_wide_bw_chan_switch: to check Bandwidth Indication optional IE present
+ * @channel_width: channel width
+ * @center_chan_freq0: center freq segment 0 for 320 MHz request
+ * @center_chan_freq1: center freq segment 1 for 320 MHz request
+ */
+struct sir_mac_bw_ind_element {
+	bool is_bw_ind_element;
+	uint8_t channel_width;
+	uint8_t center_freq_seg0;
+	uint8_t center_freq_seg1;
+};
+
+/**
+ * struct sir_mac_wide_bw_chan_switch - Contains info for Wide Bandwidth Channel
+ * Switch IE present in channel load request received from AP
+ * @is_wide_bw_chan_switch: to check Bandwidth Indication optional IE present
+ * @channel_width: channel width
+ * @center_chan_freq0: center freq segment 0 for till 160 MHz request
+ * @center_chan_freq1: center freq segment 1 for till 160 MHz request
+ */
+struct sir_mac_wide_bw_chan_switch {
+	uint8_t is_wide_bw_chan_switch;
+	uint8_t channel_width;
+	uint8_t center_chan_freq0;
+	uint8_t center_chan_freq1;
+};
+
+/**
+ * struct chan_load_report - channel load Report Structure
+ * @op_class: Regulatory Class
+ * @channel: Channel for which the current report is being sent
+ * @rrm_scan_tsf: RRM scan start time for this report
+ * @meas_duration: Scan duration for the current channel
+ * @chan_load: channel utilization measurement
+ * @bw_ind: Contains info for Bandwidth Indication IE
+ * @wide_bw: Contains info for Wide Bandwidth Channel IE
+ */
+struct chan_load_report {
+	uint8_t op_class;
+	uint8_t channel;
+	qdf_time_t rrm_scan_tsf;
+	uint8_t meas_duration;
+	uint8_t chan_load;
+	struct sir_mac_bw_ind_element bw_ind;
+	struct sir_mac_wide_bw_chan_switch wide_bw;
+};
+
+/**
+ * sta_statistics_group_id - RRM STA STATISTICS TYPE related Refer IEEE
+ * P802.11-REVme/D2.1, January 2023, Table 9-144
+ * @STA_STAT_GROUP_ID_COUNTER_STATS: group id for counter stats
+ * @STA_STAT_GROUP_ID_MAC_STATS: group id for mac stats
+ * @STA_STAT_GROUP_ID_QOS_STATS: group id for qos stats
+ * @STA_STAT_GROUP_ID_DELAY_STATS: group id delay stats
+ */
+enum sta_statistics_group_id {
+	STA_STAT_GROUP_ID_COUNTER_STATS = 0,
+	STA_STAT_GROUP_ID_MAC_STATS = 1,
+	STA_STAT_GROUP_ID_QOS_STATS = 2,
+	STA_STAT_GROUP_ID_DELAY_STATS = 10,
+};
+
+/**
+ * counter_stats - structure to hold stats of group id 0
+ * @transmitted_fragment_count: transmitted fragment count
+ * @group_transmitted_frame_count: group transmitted frame count
+ * @failed_count: failed count
+ * @group_received_frame_count: group received frame count
+ * @fcs_error_count: face error count
+ * @transmitted_frame_count: transmitted frame count
+ * @received_fragment_count: received fragment count
+ */
+struct counter_stats {
+	uint32_t transmitted_fragment_count;
+	uint32_t group_transmitted_frame_count;
+	uint32_t failed_count;
+	uint32_t group_received_frame_count;
+	uint32_t fcs_error_count;
+	uint32_t transmitted_frame_count;
+	uint32_t received_fragment_count;
+};
+
+/**
+ * mac_stats - struct to hold group id 1 stats
+ * @retry_count: retry count
+ * @multiple_retry_count: multiple retry count
+ * @frame_duplicate_count: frame duplicate count
+ * @rts_success_count: rts success count
+ * @rts_failure_count: rts failure count
+ * @ack_failure_count: ack failure count
+ */
+struct mac_stats {
+	uint32_t retry_count;
+	uint32_t multiple_retry_count;
+	uint32_t frame_duplicate_count;
+	uint32_t rts_success_count;
+	uint32_t rts_failure_count;
+	uint32_t ack_failure_count;
+};
+
+/**
+ * struct access_delay_stats - struct for group id 10 stats
+ * @ap_average_access_delay: ap average access delay
+ * @average_access_delay_besteffort: access delay best effort
+ * @average_access_delay_background: average access delay background
+ * @average_access_delay_video: average access delay video
+ * @average_access_delay_voice: average access delay voice
+ * station_count: station count
+ * channel_utilization: channel utilization
+ */
+struct access_delay_stats {
+	uint8_t ap_average_access_delay;
+	uint8_t average_access_delay_besteffort;
+	uint8_t average_access_delay_background;
+	uint8_t average_access_delay_video;
+	uint8_t average_access_delay_voice;
+	uint16_t station_count;
+	uint8_t channel_utilization;
+};
+
+/**
+ * union stats_group_data - stats data for provided group id
+ * @counter stats - stats for group id 0
+ * @mac_stats - stats for group id 1
+ */
+union stats_group_data {
+	struct counter_stats counter_stats;
+	struct mac_stats mac_stats;
+	struct access_delay_stats access_delay_stats;
+};
+
+/**
+ * struct statistics_report - To store sta statistics report
+ * @meas_duration: measurement duration
+ * @group id: stats group id
+ * @group stats: stats data
+ */
+struct statistics_report {
+	uint8_t meas_duration;
+	uint8_t group_id;
+	union stats_group_data group_stats;
+};
+
 typedef struct sSirMacRadioMeasureReport {
 	uint8_t token;
 	uint8_t refused;
@@ -1385,6 +1500,8 @@ typedef struct sSirMacRadioMeasureReport {
 	uint8_t type;
 	union {
 		tSirMacBeaconReport beaconReport;
+		struct chan_load_report channel_load_report;
+		struct statistics_report statistics_report;
 	} report;
 
 } tSirMacRadioMeasureReport, *tpSirMacRadioMeasureReport;

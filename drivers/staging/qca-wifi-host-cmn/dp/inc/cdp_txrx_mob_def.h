@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -77,6 +77,7 @@
 
 /**
  * enum netif_action_type - Type of actions on netif queues
+ * @WLAN_NETIF_ACTION_TYPE_NONE: perform no action
  * @WLAN_STOP_ALL_NETIF_QUEUE: stop all netif queues
  * @WLAN_START_ALL_NETIF_QUEUE: start all netif queues
  * @WLAN_WAKE_ALL_NETIF_QUEUE: wake all netif queues
@@ -88,8 +89,15 @@
  * @WLAN_NETIF_CARRIER_OFF: off carrier
  * @WLAN_NETIF_PRIORITY_QUEUE_ON: start priority netif queues
  * @WLAN_NETIF_PRIORITY_QUEUE_OFF: stop priority netif queues
+ * @WLAN_NETIF_VO_QUEUE_ON: start voice queue
+ * @WLAN_NETIF_VO_QUEUE_OFF: stop voice queue
+ * @WLAN_NETIF_VI_QUEUE_ON: start video queue
+ * @WLAN_NETIF_VI_QUEUE_OFF: stop video queue
+ * @WLAN_NETIF_BE_BK_QUEUE_OFF: start best-effort & background queue
+ * @WLAN_NETIF_BE_BK_QUEUE_ON: stop best-effort & background queue
  * @WLAN_WAKE_NON_PRIORITY_QUEUE: wake non priority netif queues
  * @WLAN_STOP_NON_PRIORITY_QUEUE: stop non priority netif queues
+ * @WLAN_NETIF_ACTION_TYPE_MAX: Maximum action
  */
 enum netif_action_type {
 	WLAN_NETIF_ACTION_TYPE_NONE = 0,
@@ -124,6 +132,12 @@ enum netif_action_type {
  * @WLAN_VDEV_STOP: because of vdev stop
  * @WLAN_PEER_UNAUTHORISED: because of peer is unauthorised
  * @WLAN_THERMAL_MITIGATION: because of thermal mitigation
+ * @WLAN_DATA_FLOW_CONTROL_PRIORITY:
+ * @WLAN_DATA_FLOW_CTRL_BE_BK:
+ * @WLAN_DATA_FLOW_CTRL_VI:
+ * @WLAN_DATA_FLOW_CTRL_VO:
+ * @WLAN_DATA_FLOW_CTRL_PRI:
+ * @WLAN_REASON_TYPE_MAX: maximum reason
  */
 enum netif_reason_type {
 	WLAN_CONTROL_PATH = 1,
@@ -163,6 +177,8 @@ enum throttle_level {
 	THROTTLE_LEVEL_1,
 	THROTTLE_LEVEL_2,
 	THROTTLE_LEVEL_3,
+	THROTTLE_LEVEL_4,
+	THROTTLE_LEVEL_5,
 	/* Invalid */
 	THROTTLE_LEVEL_MAX,
 };
@@ -176,9 +192,15 @@ enum {
 };
 
 /**
- * @enum ol_tx_spec
- * @brief indicate what non-standard transmission actions to apply
- * @details
+ * enum ol_tx_spec - indicate what non-standard transmission actions to apply
+ * @OL_TX_SPEC_STD: do regular processing
+ * @OL_TX_SPEC_RAW: skip encap + A-MSDU aggr
+ * @OL_TX_SPEC_NO_AGGR: skip encap + all aggr
+ * @OL_TX_SPEC_NO_ENCRYPT: skip encap + encrypt
+ * @OL_TX_SPEC_TSO: TCP segmented
+ * @OL_TX_SPEC_NWIFI_NO_ENCRYPT: skip encrypt for nwifi
+ * @OL_TX_SPEC_NO_FREE: give to cb rather than free
+ *
  *  Indicate one or more of the following:
  *    - The tx frame already has a complete 802.11 header.
  *      Thus, skip 802.3/native-WiFi to 802.11 header encapsulation and
@@ -205,9 +227,7 @@ enum ol_tx_spec {
 };
 
 /**
- * @enum peer_debug_id_type: debug ids to track peer get_ref and release_ref
- * @brief Unique peer debug IDs to track the callers. Each new usage can add to
- *        this enum list to create a new "PEER_DEBUG_ID_".
+ * enum peer_debug_id_type - debug ids to track peer get_ref and release_ref
  * @PEER_DEBUG_ID_OL_INTERNAL: debug id for OL internal usage
  * @PEER_DEBUG_ID_WMA_PKT_DROP: debug id for wma_is_pkt_drop_candidate API
  * @PEER_DEBUG_ID_WMA_ADDBA_REQ: debug id for ADDBA request
@@ -220,8 +240,12 @@ enum ol_tx_spec {
  * @PEER_DEBUG_ID_OL_PEER_MAP:debug id for peer map/unmap
  * @PEER_DEBUG_ID_OL_PEER_ATTACH: debug id for peer attach/detach
  * @PEER_DEBUG_ID_OL_TXQ_VDEV_FL: debug id for vdev flush
- * @PEER_DEBUG_ID_OL_HASH_ERS:debug id for peer find hash erase
+ * @PEER_DEBUG_ID_OL_HASH_ERS: debug id for peer find hash erase
+ * @PEER_DEBUG_ID_OL_UNMAP_TIMER_WORK: debug id for peer unmap timer work
  * @PEER_DEBUG_ID_MAX: debug id MAX
+ *
+ * Unique peer debug IDs to track the callers. Each new usage can add to
+ * this enum list to create a new "PEER_DEBUG_ID_".
  */
 enum peer_debug_id_type {
 	PEER_DEBUG_ID_OL_INTERNAL,
@@ -308,44 +332,60 @@ struct ol_tx_sched_wrr_ac_specs_t {
 /**
  * struct txrx_pdev_cfg_param_t - configuration information
  * passed to the data path
+ * @is_full_reorder_offload:
+ * @is_uc_offload_enabled: IPA Micro controller data path offload enable flag
+ * @uc_tx_buffer_count: IPA Micro controller data path offload TX buffer count
+ * @uc_tx_buffer_size: IPA Micro controller data path offload TX buffer size
+ * @uc_rx_indication_ring_count: IPA Micro controller data path offload RX
+ *                               indication ring count
+ * @uc_tx_partition_base: IPA Micro controller data path offload TX partition
+ *                        base
+ * @ip_tcp_udp_checksum_offload: IP, TCP and UDP checksum offload
+ * @nan_ip_tcp_udp_checksum_offload: IP, TCP and UDP checksum offload for NAN
+ *                                   Mode
+ * @p2p_ip_tcp_udp_checksum_offload: IP, TCP and UDP checksum offload for P2P
+ *                                   Mod
+ * @legacy_mode_csum_disable: Checksum offload override flag for Legcay modes
+ * @enable_rxthread: Rx processing in thread from TXRX
+ * @ce_classify_enabled: CE classification enabled through INI
+ * @tx_flow_stop_queue_th: Threshold to stop queue in percentage
+ * @tx_flow_start_queue_offset: Start queue offset in percentage
+ * @del_ack_enable: enable the tcp delay ack feature in the driver
+ * @del_ack_timer_value: timeout if no more tcp ack frames, unit is ms
+ * @del_ack_pkt_count: the maximum number of replaced tcp ack frames
+ * @ac_specs:
+ * @gro_enable:
+ * @tso_enable:
+ * @lro_enable:
+ * @sg_enable:
+ * @enable_data_stall_detection:
+ * @enable_flow_steering:
+ * @disable_intra_bss_fwd:
+ * @bundle_timer_value:
+ * @bundle_size:
+ * @pktlog_buffer_size:
  */
 struct txrx_pdev_cfg_param_t {
 	uint8_t is_full_reorder_offload;
-	/* IPA Micro controller data path offload enable flag */
 	uint8_t is_uc_offload_enabled;
-	/* IPA Micro controller data path offload TX buffer count */
 	uint32_t uc_tx_buffer_count;
-	/* IPA Micro controller data path offload TX buffer size */
 	uint32_t uc_tx_buffer_size;
-	/* IPA Micro controller data path offload RX indication ring count */
 	uint32_t uc_rx_indication_ring_count;
-	/* IPA Micro controller data path offload TX partition base */
 	uint32_t uc_tx_partition_base;
-	/* IP, TCP and UDP checksum offload */
 	bool ip_tcp_udp_checksum_offload;
-	/* IP, TCP and UDP checksum offload for NAN Mode */
 	bool nan_ip_tcp_udp_checksum_offload;
-	/* IP, TCP and UDP checksum offload for P2P Mode*/
 	bool p2p_ip_tcp_udp_checksum_offload;
-	/* Checksum offload override flag for Legcay modes */
 	bool legacy_mode_csum_disable;
-	/* Rx processing in thread from TXRX */
 	bool enable_rxthread;
-	/* CE classification enabled through INI */
 	bool ce_classify_enabled;
 #if defined(QCA_LL_TX_FLOW_CONTROL_V2) || defined(QCA_LL_PDEV_TX_FLOW_CONTROL)
-	/* Threshold to stop queue in percentage */
 	uint32_t tx_flow_stop_queue_th;
-	/* Start queue offset in percentage */
 	uint32_t tx_flow_start_queue_offset;
 #endif
 
 #ifdef QCA_SUPPORT_TXRX_DRIVER_TCP_DEL_ACK
-	/* enable the tcp delay ack feature in the driver */
 	bool  del_ack_enable;
-	/* timeout if no more tcp ack frames, unit is ms */
 	uint16_t del_ack_timer_value;
-	/* the maximum number of replaced tcp ack frames */
 	uint16_t del_ack_pkt_count;
 #endif
 
@@ -367,7 +407,20 @@ struct txrx_pdev_cfg_param_t {
 
 #ifdef IPA_OFFLOAD
 /**
- * ol_txrx_ipa_resources - Resources needed for IPA
+ * struct ol_txrx_ipa_resources - Resources needed for IPA
+ * @ce_sr:
+ * @ce_sr_ring_size:
+ * @ce_reg_paddr:
+ * @tx_comp_ring:
+ * @tx_num_alloc_buffer:
+ * @rx_rdy_ring:
+ * @rx_proc_done_idx:
+ * @rx2_rdy_ring:
+ * @rx2_proc_done_idx:
+ * @tx_comp_doorbell_dmaaddr: IPA UC Tx Complete doorbell register paddr
+ * @rx_ready_doorbell_dmaaddr: IPA UC Rx Ready doorbell register paddr
+ * @tx_pipe_handle:
+ * @rx_pipe_handle:
  */
 struct ol_txrx_ipa_resources {
 	qdf_shared_mem_t *ce_sr;
@@ -398,7 +451,7 @@ struct ol_txrx_ocb_chan_info {
 };
 
 /**
- * ol_mic_error_info - carries the information associated with
+ * struct ol_mic_error_info - carries the information associated with
  * a MIC error
  * @vdev_id: virtual device ID
  * @key_id: Key ID
@@ -417,9 +470,10 @@ struct ol_mic_error_info {
 };
 
 /**
- * ol_error_info - carries the information associated with an
+ * struct ol_error_info - carries the information associated with an
  * error indicated by the firmware
- * @mic_err: MIC error information
+ * @u: union of error information structs
+ * @u.mic_err: MIC error information
  */
 struct ol_error_info {
 	union {
@@ -439,9 +493,12 @@ struct ol_txrx_ocb_set_chan {
 };
 
 /**
- * @brief Parameter type to pass WMM setting to ol_txrx_set_wmm_param
- * @details
- *   The struct is used to specify information to update TX WMM scheduler.
+ * struct ol_tx_ac_param_t - WMM parameters
+ * @aifs: Arbitration Inter-Frame Space
+ * @cwmin: Minimum contention window size
+ * @cwmax: Maximum contention window size
+ *
+ * The struct is used to specify information to update TX WMM scheduler.
  */
 struct ol_tx_ac_param_t {
 	uint32_t aifs;
@@ -490,14 +547,20 @@ struct ieee80211_delba_parameterset {
 } __packed;
 
 /**
- * ol_txrx_vdev_peer_remove_cb - wma_remove_peer callback
+ * typedef ol_txrx_vdev_peer_remove_cb() - wma_remove_peer callback
+ * @handle: callback handle
+ * @bssid: BSSID
+ * @vdev_id: virtual device ID
+ * @peer: peer
  */
 typedef void (*ol_txrx_vdev_peer_remove_cb)(void *handle, uint8_t *bssid,
 		uint8_t vdev_id, void *peer);
 
 /**
- * @typedef tx_pause_callback
- * @brief OSIF function registered with the data path
+ * typedef tx_pause_callback() - OSIF function registered with the data path
+ * @vdev_id: virtual device id
+ * @action: tx pause action to take
+ * @reason: reason for the tx pause action
  */
 typedef void (*tx_pause_callback)(uint8_t vdev_id,
 		enum netif_action_type action,
@@ -516,13 +579,13 @@ struct ol_rx_inv_peer_params {
 };
 
 /**
- * cdp_txrx_ext_stats: dp extended stats
- * tx_msdu_enqueue: tx msdu queued to hw
- * tx_msdu_overflow: tx msdu overflow
- * rx_mpdu_received: rx mpdu processed by hw
- * rx_mpdu_delivered: rx mpdu received from hw
- * rx_mpdu_error: rx mpdu error count
- * rx_mpdu_missed: rx mpdu missed by hw
+ * struct cdp_txrx_ext_stats: dp extended stats
+ * @tx_msdu_enqueue: tx msdu queued to hw
+ * @tx_msdu_overflow: tx msdu overflow
+ * @rx_mpdu_received: rx mpdu processed by hw
+ * @rx_mpdu_delivered: rx mpdu received from hw
+ * @rx_mpdu_error: rx mpdu error count
+ * @rx_mpdu_missed: rx mpdu missed by hw
  */
 struct cdp_txrx_ext_stats {
 	uint32_t tx_msdu_enqueue;

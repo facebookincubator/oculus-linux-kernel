@@ -830,6 +830,26 @@ QDF_STATUS ucfg_pmo_get_ps_params(struct wlan_objmgr_vdev *vdev,
 				  struct pmo_ps_params *ps_params);
 
 /**
+ * ucfg_pmo_core_vdev_set_ps_opm_mode() - Set OPM mode
+ * @vdev: pointer to vdev object
+ * @opm_mode: OPM mode
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS ucfg_pmo_core_vdev_set_ps_opm_mode(struct wlan_objmgr_vdev *vdev,
+					      enum powersave_mode opm_mode);
+
+/**
+ * ucfg_pmo_core_vdev_get_ps_opm_mode() - Get OPM mode
+ * @vdev: pointer to vdev object
+ * @opm_mode: OPM mode
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS ucfg_pmo_core_vdev_get_ps_opm_mode(struct wlan_objmgr_vdev *vdev,
+					      enum powersave_mode *opm_mode);
+
+/**
  * ucfg_pmo_get_gtk_rsp(): API to send gtk response request to fwr
  * @vdev: objmgr vdev handle
  * @gtk_rsp_req: pmo gtk response request

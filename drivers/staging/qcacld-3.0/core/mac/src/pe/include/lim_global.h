@@ -370,8 +370,7 @@ typedef struct sLimChannelSwitchInfo {
 
 typedef struct sLimOperatingModeInfo {
 	uint8_t present;
-	uint8_t chanWidth:2;
-	uint8_t reserved:2;
+	uint8_t chanWidth:4;
 	uint8_t rxNSS:3;
 	uint8_t rxNSSType:1;
 } tLimOperatingModeInfo, *tpLimOperatingModeInfo;

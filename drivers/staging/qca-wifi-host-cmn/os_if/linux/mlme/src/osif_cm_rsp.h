@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015,2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -47,7 +47,7 @@ QDF_STATUS osif_disconnect_handler(struct wlan_objmgr_vdev *vdev,
  * osif_cm_get_assoc_req_ie_data() - Get the assoc req IE offset and length
  * if valid assoc req is present
  * @assoc_req: assoc req info
- * @ie_data_len: IE date length to be calculated
+ * @ie_data_len: IE data length to be calculated
  * @ie_data_ptr: IE data pointer to be calculated
  *
  * Return: void
@@ -59,8 +59,8 @@ void osif_cm_get_assoc_req_ie_data(struct element_info *assoc_req,
 /**
  * osif_cm_get_assoc_rsp_ie_data() - Get the assoc resp IE offset and length
  * if valid assoc req is present
- * @assoc_req: assoc req info
- * @ie_data_len: IE date length to be calculated
+ * @assoc_rsp: assoc response info
+ * @ie_data_len: IE data length to be calculated
  * @ie_data_ptr: IE data pointer to be calculated
  *
  * Return: void
@@ -99,7 +99,7 @@ void osif_indicate_reassoc_results(struct wlan_objmgr_vdev *vdev,
 				   struct wlan_cm_connect_resp *rsp);
 
 /**
- * @osif_pmksa_candidate_notify_cb: Roam pmksa candidate notify callback
+ * osif_pmksa_candidate_notify() - Roam pmksa candidate notify callback
  * @vdev: vdev pointer
  * @bssid: bssid
  * @index: index
@@ -161,7 +161,7 @@ osif_cm_indicate_disconnect(struct wlan_objmgr_vdev *vdev,
 /**
  * osif_get_partner_info_from_mlie() - API to get partner information
  * from basic variant mlo ie
- * @rsp: Connection manager connect response for the candidate
+ * @connect_rsp: Connection manager connect response for the candidate
  * @partner_info: mlo partner info pointer
  *
  * The API is is used get partner information from basic variant ml ie.
@@ -172,11 +172,12 @@ osif_cm_indicate_disconnect(struct wlan_objmgr_vdev *vdev,
 QDF_STATUS
 osif_get_partner_info_from_mlie(struct wlan_cm_connect_resp *connect_rsp,
 				struct mlo_partner_info *partner_info);
+
 /**
  * osif_get_link_id_from_assoc_ml_ie() - API to get link id from assoc rsp
  * ml ie.
  * @rsp_link_info: pointer to mlo link info
- * @partner_info: mlo partner info pointer
+ * @assoc_partner_info: mlo partner info pointer
  * @link_id: Link id information
  *
  * The API is used to get link id from assoc response basic variant mlo ie

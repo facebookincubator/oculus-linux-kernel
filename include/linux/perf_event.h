@@ -1249,9 +1249,6 @@ static inline void perf_event_task_sched_out(struct task_struct *prev,
 		__perf_event_task_sched_out(prev, next);
 }
 
-extern void perf_event_cpu_frequency(unsigned int frequency);
-extern bool perf_event_cpu_frequency_enabled(void);
-
 extern void perf_event_mmap(struct vm_area_struct *vma);
 
 extern void perf_event_ksymbol(u16 ksym_type, u64 addr, u32 len,
@@ -1521,9 +1518,6 @@ static inline int perf_register_guest_info_callbacks
 (struct perf_guest_info_callbacks *callbacks)				{ return 0; }
 static inline int perf_unregister_guest_info_callbacks
 (struct perf_guest_info_callbacks *callbacks)				{ return 0; }
-
-static inline void perf_event_cpu_frequency(unsigned int frequency)	{ }
-static inline bool perf_event_cpu_frequency_enabled(void)		{ return false; }
 
 static inline void perf_event_mmap(struct vm_area_struct *vma)		{ }
 

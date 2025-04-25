@@ -102,6 +102,7 @@ static const char *const mpeg_video_hevc_profile[] = {
 	"Main Still Picture",
 	"Main 10",
 	"Main 10 Still Picture",
+	"Main Multi View",
 	NULL,
 };
 
@@ -1422,6 +1423,8 @@ int msm_vidc_adjust_profile(void *instance, struct v4l2_ctrl *ctrl)
 		/* 8 bit profile for 8 bit color format */
 		if (is_image_session(inst))
 			adjusted_value = V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN_STILL_PICTURE;
+		else if (inst->capabilities->cap[PROFILE].value == V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN)
+			adjusted_value = V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN;
 		else
 			adjusted_value = V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN;
 	}

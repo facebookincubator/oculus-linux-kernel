@@ -71,6 +71,7 @@
 #include <wlan_cp_stats_mc_tgt_api.h>
 #include "wma_eht.h"
 #include <target_if_spatial_reuse.h>
+#include "wlan_dp_ucfg_api.h"
 
 /* MCS Based rate table */
 /* HT MCS parameters with Nss = 1 */
@@ -357,9 +358,9 @@ static uint16_t wma_match_he_rate(uint16_t raw_rate,
 		return 0;
 
 	if (is_he_mcs_12_13_supported)
-		max_he_mcs_idx = MAX_HE_MCS12_13_IDX;
+		max_he_mcs_idx = QDF_ARRAY_SIZE(he_mcs_nss1);
 	else
-		max_he_mcs_idx = MAX_HE_MCS_IDX;
+		max_he_mcs_idx = QDF_ARRAY_SIZE(he_mcs_nss1) - 2;
 
 	for (index = 0; index < max_he_mcs_idx; index++) {
 		dcm_index_max = IS_MCS_HAS_DCM_RATE(index) ? 2 : 1;
@@ -468,6 +469,7 @@ uint8_t wma_get_mcs_idx(uint16_t raw_rate, enum tx_rate_info rate_flags,
 {
 	uint8_t  index = 0;
 	uint16_t match_rate = 0;
+	uint8_t max_ht_mcs_idx;
 	const uint16_t *nss1_rate;
 	const uint16_t *nss2_rate;
 
@@ -489,7 +491,7 @@ uint8_t wma_get_mcs_idx(uint16_t raw_rate, enum tx_rate_info rate_flags,
 	if (match_rate)
 		goto rate_found;
 
-	for (index = 0; index < MAX_VHT_MCS_IDX; index++) {
+	for (index = 0; index < QDF_ARRAY_SIZE(vht_mcs_nss1); index++) {
 		if (rate_flags & TX_RATE_VHT160) {
 			nss1_rate = &vht_mcs_nss1[index].ht160_rate[0];
 			nss2_rate = &vht_mcs_nss2[index].ht160_rate[0];
@@ -544,7 +546,8 @@ uint8_t wma_get_mcs_idx(uint16_t raw_rate, enum tx_rate_info rate_flags,
 			}
 		}
 	}
-	for (index = 0; index < MAX_HT_MCS_IDX; index++) {
+	max_ht_mcs_idx = QDF_ARRAY_SIZE(mcs_nss1);
+	for (index = 0; index < max_ht_mcs_idx; index++) {
 		if (rate_flags & TX_RATE_HT40) {
 			nss1_rate = &mcs_nss1[index].ht40_rate[0];
 			nss2_rate = &mcs_nss2[index].ht40_rate[0];
@@ -556,7 +559,7 @@ uint8_t wma_get_mcs_idx(uint16_t raw_rate, enum tx_rate_info rate_flags,
 			if (match_rate) {
 				*mcs_rate_flag = TX_RATE_HT40;
 				if (*nss == 2)
-					index += MAX_HT_MCS_IDX;
+					index += max_ht_mcs_idx;
 				goto rate_found;
 			}
 		}
@@ -571,7 +574,7 @@ uint8_t wma_get_mcs_idx(uint16_t raw_rate, enum tx_rate_info rate_flags,
 			if (match_rate) {
 				*mcs_rate_flag = TX_RATE_HT20;
 				if (*nss == 2)
-					index += MAX_HT_MCS_IDX;
+					index += max_ht_mcs_idx;
 				goto rate_found;
 			}
 		}
@@ -1660,6 +1663,51 @@ static int wma_ll_stats_evt_handler(void *handle, u_int8_t *event,
 	return 0;
 }
 
+#ifdef WLAN_FEATURE_11BE_MLO
+static bool wma_get_mlo_per_link_stats_cap(wmi_unified_t wmi_handle)
+{
+	return wmi_service_enabled(wmi_handle,
+				   wmi_service_per_link_stats_support);
+}
+#else
+static inline bool wma_get_mlo_per_link_stats_cap(wmi_unified_t wmi_handle)
+{
+	return false;
+}
+#endif
+
+/**
+ * wma_get_dp_peer_stats() - get host dp peer stats
+ * @wmi_handle: wmi handle
+ * @dp_stats: buffer to store stats
+ * @peer_mac: peer mac address
+ *
+ * Return: 0 on success or error code
+ */
+static QDF_STATUS wma_get_dp_peer_stats(wmi_unified_t wmi_handle,
+					struct cdp_peer_stats *dp_stats,
+					uint8_t *peer_mac)
+{
+	void *dp_soc = cds_get_context(QDF_MODULE_ID_SOC);
+	uint8_t vdev_id;
+	QDF_STATUS status;
+
+	status = cdp_peer_get_vdevid(dp_soc, peer_mac, &vdev_id);
+	if (!QDF_IS_STATUS_SUCCESS(status)) {
+		wma_err("Unable to find peer ["QDF_MAC_ADDR_FMT"]",
+			QDF_MAC_ADDR_REF(peer_mac));
+		return status;
+	}
+
+	if (!wma_get_mlo_per_link_stats_cap(wmi_handle))
+		return cdp_host_get_peer_stats(dp_soc, vdev_id,
+					       peer_mac, dp_stats);
+
+	return ucfg_dp_get_per_link_peer_stats(dp_soc, vdev_id, peer_mac,
+					       dp_stats, CDP_WILD_PEER_TYPE,
+					       WLAN_MAX_MLD);
+}
+
 /**
  * wma_unified_link_peer_stats_event_handler() - peer stats event handler
  * @handle:          wma handle
@@ -1672,12 +1720,13 @@ static int wma_unified_link_peer_stats_event_handler(void *handle,
 						     uint8_t *cmd_param_info,
 						     uint32_t len)
 {
+	tp_wma_handle wma_handle = (tp_wma_handle)handle;
 	WMI_PEER_LINK_STATS_EVENTID_param_tlvs *param_tlvs;
 	wmi_peer_stats_event_fixed_param *fixed_param;
 	wmi_peer_link_stats *peer_stats, *temp_peer_stats;
 	wmi_rate_stats *rate_stats;
 	tSirLLStatsResults *link_stats_results;
-	uint8_t *results, *t_peer_stats, *t_rate_stats;
+	uint8_t *results, *t_peer_stats, *t_rate_stats, *peer_mac;
 	uint32_t count, rate_cnt;
 	uint32_t total_num_rates = 0;
 	uint32_t next_res_offset, next_peer_offset, next_rate_offset;
@@ -1686,7 +1735,6 @@ static int wma_unified_link_peer_stats_event_handler(void *handle,
 	bool excess_data = false;
 	uint32_t buf_len = 0;
 	struct cdp_peer_stats *dp_stats;
-	void *dp_soc = cds_get_context(QDF_MODULE_ID_SOC);
 	QDF_STATUS status;
 	uint8_t mcs_index;
 
@@ -1803,10 +1851,9 @@ static int wma_unified_link_peer_stats_event_handler(void *handle,
 			     t_peer_stats + next_peer_offset, peer_info_size);
 		next_res_offset += peer_info_size;
 
-		status = cdp_host_get_peer_stats(dp_soc,
-				       link_stats_results->ifaceId,
-				       (uint8_t *)&peer_stats->peer_mac_address,
-				       dp_stats);
+		peer_mac = (uint8_t *)&peer_stats->peer_mac_address;
+		status = wma_get_dp_peer_stats(wma_handle->wmi_handle,
+					       dp_stats, peer_mac);
 
 		/* Copy rate stats associated with this peer */
 		for (count = 0; count < peer_stats->num_rates; count++) {
@@ -2167,13 +2214,21 @@ __wma_unified_link_radio_stats_event_handler(tp_wma_handle wma_handle,
 	uint8_t *info;
 	uint32_t stats_len = 0;
 	int ret;
-
 	struct mac_context *mac = cds_get_context(QDF_MODULE_ID_PE);
+	struct wma_ini_config *cfg = wma_get_ini_handle(wma_handle);
+	bool exclude_selftx_from_cca_busy;
 
 	if (!mac) {
 		wma_debug("NULL mac ptr. Exiting");
 		return -EINVAL;
 	}
+
+	if (!cfg) {
+		wma_err("NULL WMA ini handle");
+		return 0;
+	}
+
+	exclude_selftx_from_cca_busy = cfg->exclude_selftx_from_cca_busy;
 
 	if (!mac->sme.link_layer_stats_cb) {
 		wma_debug("HDD callback is null");
@@ -2338,6 +2393,12 @@ __wma_unified_link_radio_stats_event_handler(tp_wma_handle wma_handle,
 		}
 
 		for (count = 0; count < radio_stats->num_channels; count++) {
+			if (exclude_selftx_from_cca_busy &&
+			    channel_stats->cca_busy_time >=
+			    channel_stats->tx_time)
+				channel_stats->cca_busy_time -=
+						channel_stats->tx_time;
+
 			ret = qdf_scnprintf(info + stats_len,
 					WMI_MAX_RADIO_STATS_LOGS - stats_len,
 					" %d[%d][%d][%d]",
@@ -2362,7 +2423,7 @@ __wma_unified_link_radio_stats_event_handler(tp_wma_handle wma_handle,
 
 			if (stats_len >= (WMI_MAX_RADIO_STATS_LOGS -
 					WMI_MAX_RADIO_SINGLE_STATS_LEN)) {
-				wmi_nofl_debug("freq[width][freq0][freq1][awake time][cca busy time][rx time][tx time] :%s",
+				wmi_nofl_debug("freq[width][freq0][freq1][awake time][cca busy time][tx time][rx time] :%s",
 					       info);
 				stats_len = 0;
 			}
@@ -2378,7 +2439,7 @@ __wma_unified_link_radio_stats_event_handler(tp_wma_handle wma_handle,
 		}
 
 		if (stats_len)
-			wmi_nofl_debug("freq[width][freq0][freq1][awake time][cca busy time][rx time][tx time] :%s",
+			wmi_nofl_debug("freq[width][freq0][freq1][awake time][cca busy time][tx time][rx time] :%s",
 				       info);
 
 		qdf_mem_free(info);
@@ -2518,7 +2579,7 @@ static int wma_peer_ps_evt_handler(void *handle, u_int8_t *event,
 	link_stats_results->moreResultToFollow = 0;
 
 	peer_stat = (struct wifi_peer_stat *)link_stats_results->results;
-	peer_stat->numPeers = 1;
+	peer_stat->num_peers = 1;
 	peer_info = (struct wifi_peer_info *)peer_stat->peer_info;
 	qdf_mem_copy(&peer_info->peer_macaddr,
 		     &mac_address,
@@ -3803,12 +3864,6 @@ void wma_update_intf_hw_mode_params(uint32_t vdev_id, uint32_t mac_id,
 	else
 		wma->interfaces[vdev_id].tx_streams =
 			hw_mode.mac1_tx_ss;
-
-	wma_debug("vdev %d, update tx ss:%d mac %d hw_mode_id %d",
-		 vdev_id,
-		 wma->interfaces[vdev_id].tx_streams,
-		 mac_id,
-		 cfgd_hw_mode_index);
 }
 
 /**
@@ -5116,12 +5171,32 @@ int wma_oem_event_handler(void *wma_ctx, uint8_t *event_buff, uint32_t len)
 }
 #endif
 
-/**
- * wma_get_eht_ch_width - return eht channel width
- *
- * Return: return eht channel width
- */
 #ifdef WLAN_FEATURE_11BE
+uint32_t wma_get_orig_eht_ch_width(void)
+{
+	tDot11fIEeht_cap eht_cap;
+	tp_wma_handle wma;
+	QDF_STATUS status;
+
+	wma = cds_get_context(QDF_MODULE_ID_WMA);
+	if (qdf_unlikely(!wma)) {
+		wma_err_rl("wma handle is NULL");
+		goto vht_ch_width;
+	}
+
+	status = mlme_cfg_get_orig_eht_caps(wma->psoc, &eht_cap);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		wma_err_rl("Failed to get eht caps");
+		goto vht_ch_width;
+	}
+
+	if (eht_cap.support_320mhz_6ghz)
+		return WNI_CFG_EHT_CHANNEL_WIDTH_320MHZ;
+
+vht_ch_width:
+	return wma_get_vht_ch_width();
+}
+
 uint32_t wma_get_eht_ch_width(void)
 {
 	tDot11fIEeht_cap eht_cap;

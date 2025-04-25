@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -80,7 +80,7 @@ target_if_cfr_deinit_pdev(struct wlan_objmgr_psoc *psoc,
 
 /**
  * target_if_cfr_tx_ops_register() - Registers tx ops for cfr module
- * @tx_ops - pointer to tx_ops structure.
+ * @tx_ops: pointer to tx_ops structure.
  */
 void target_if_cfr_tx_ops_register(struct wlan_lmac_if_tx_ops *tx_ops);
 
@@ -95,7 +95,8 @@ int target_if_cfr_enable_cfr_timer(struct wlan_objmgr_pdev *pdev,
 				   uint32_t cfr_timer);
 
 /**
- * target_if_cfr_pdev_set_param() - Function to set params for cfr config
+ * target_if_cfr_periodic_peer_cfr_enable() - Function to set params
+ *                                            for cfr config
  * @pdev: pointer to pdev object
  * @param_value: value of param being set
  *
@@ -103,6 +104,7 @@ int target_if_cfr_enable_cfr_timer(struct wlan_objmgr_pdev *pdev,
  */
 int target_if_cfr_periodic_peer_cfr_enable(struct wlan_objmgr_pdev *pdev,
 					   uint32_t param_value);
+
 /**
  * target_if_cfr_start_capture() - Function to start cfr capture for a peer
  * @pdev: pointer to pdev object
@@ -114,6 +116,7 @@ int target_if_cfr_periodic_peer_cfr_enable(struct wlan_objmgr_pdev *pdev,
 int target_if_cfr_start_capture(struct wlan_objmgr_pdev *pdev,
 				struct wlan_objmgr_peer *peer,
 				struct cfr_capture_params *cfr_params);
+
 /**
  * target_if_cfr_stop_capture() - Function to stop cfr capture for a peer
  * @pdev: pointer to pdev object

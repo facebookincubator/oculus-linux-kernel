@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -25,6 +26,7 @@
 #define _I_QDF_IRQ_H
 
 #include <linux/irq.h>
+#include <linux/irqreturn.h>
 
 #define __QDF_IRQ_TYPE_NONE		IRQ_TYPE_NONE
 #define __QDF_IRQ_TYPE_EDGE_RISING	IRQ_TYPE_EDGE_RISING
@@ -48,5 +50,9 @@
 #define __QDF_IRQ_PER_CPU_DEVID		IRQ_PER_CPU_DEVID
 #define __QDF_IRQ_IS_POLLED		IRQ_IS_POLLED
 #define __QDF_IRQ_DISABLE_UNLAZY	IRQ_DISABLE_UNLAZY
+#define __QDF_IRQF_SHARED		IRQF_SHARED
+#define __QDF_IRQF_TRIGGER_RISING	IRQF_TRIGGER_RISING
+#define __QDF_IRQ_NONE			IRQ_NONE
+#define __QDF_IRQ_HANDLED		IRQ_HANDLED
 
 #endif /* _I_QDF_IRQ_H */

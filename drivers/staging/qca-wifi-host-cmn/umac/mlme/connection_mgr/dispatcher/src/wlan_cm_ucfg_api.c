@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -74,6 +74,16 @@ bool ucfg_cm_is_vdev_roaming(struct wlan_objmgr_vdev *vdev)
 	return cm_is_vdev_roaming(vdev);
 }
 
+void ucfg_cm_free_wep_key_params(struct wlan_cm_connect_req *req)
+{
+	cm_free_wep_key_params(req);
+}
+
+void ucfg_cm_free_connect_req(struct wlan_cm_connect_req *req)
+{
+	cm_free_connect_req(req);
+}
+
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 bool ucfg_cm_is_vdev_roam_started(struct wlan_objmgr_vdev *vdev)
 {
@@ -103,7 +113,7 @@ enum band_info ucfg_cm_get_connected_band(struct wlan_objmgr_vdev *vdev)
 	struct wlan_channel *bss_chan;
 	uint32_t sta_freq = 0;
 
-	if (wlan_cm_is_vdev_connected(vdev)) {
+	if (cm_is_vdev_connected(vdev)) {
 		bss_chan = wlan_vdev_mlme_get_bss_chan(vdev);
 		sta_freq = bss_chan->ch_freq;
 	}
@@ -116,4 +126,14 @@ enum band_info ucfg_cm_get_connected_band(struct wlan_objmgr_vdev *vdev)
 		return BAND_5G;
 	else	/* If station is not connected return as BAND_ALL */
 		return BAND_ALL;
+}
+
+bool ucfg_cm_is_link_switch_disconnect_resp(struct wlan_cm_discon_rsp *resp)
+{
+	return cm_is_link_switch_disconnect_resp(resp);
+}
+
+bool ucfg_cm_is_link_switch_connect_resp(struct wlan_cm_connect_resp *resp)
+{
+	return cm_is_link_switch_connect_resp(resp);
 }

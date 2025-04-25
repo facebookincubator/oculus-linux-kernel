@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,24 +19,17 @@
 
 #ifndef EPPING_INTERNAL_H
 #define EPPING_INTERNAL_H
-/**===========================================================================
-
-   \file  epping_internal.h
-
-   \brief Linux epping internal head file
-
-   ==========================================================================*/
-
-/*---------------------------------------------------------------------------
-   Include files
-   -------------------------------------------------------------------------*/
+/**
+ * DOC: epping_internal.h
+ *      Linux epping internal head file
+ */
 
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
 #include <linux/kthread.h>
 #include <linux/semaphore.h>
-#if defined(WLAN_OPEN_SOURCE) && defined(CONFIG_HAS_WAKELOCK)
+#if defined(CONFIG_HAS_WAKELOCK)
 #include <linux/wakelock.h>
 #endif
 #include "htc_api.h"

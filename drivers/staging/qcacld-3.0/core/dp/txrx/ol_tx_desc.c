@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011, 2014-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -207,7 +208,7 @@ static void ol_tx_do_pdev_flow_control_unpause(struct ol_txrx_pdev_t *pdev)
 	case FLOW_POOL_ACTIVE_UNPAUSED:
 		break;
 	default:
-		ol_txrx_err("pool is INACTIVE State!!\n");
+		ol_txrx_err("pool is INACTIVE State!!");
 		break;
 	};
 }
@@ -802,7 +803,7 @@ struct ol_tx_desc_t *ol_tx_desc_ll(struct ol_txrx_pdev_t *pdev,
 			htt_tx_desc_frag(pdev->htt_pdev, tx_desc->htt_frag_desc,
 					 i - 1, frag_paddr, frag_len);
 #if defined(HELIUMPLUS_DEBUG)
-			qdf_debug("htt_fdesc=%pK frag=%d frag_vaddr=0x%pK frag_paddr=0x%llx len=%zu\n",
+			qdf_debug("htt_fdesc=%pK frag=%d frag_vaddr=0x%pK frag_paddr=0x%llx len=%zu",
 				  tx_desc->htt_frag_desc,
 				  i-1, frag_vaddr, frag_paddr, frag_len);
 			ol_txrx_dump_pkt(netbuf, frag_paddr, 64);
@@ -945,7 +946,7 @@ void ol_tx_desc_frame_free_nonstd(struct ol_txrx_pdev_t *pdev,
 		 * table pointer needs to be reset.
 		 */
 #if defined(HELIUMPLUS_DEBUG)
-		qdf_print("Frag Descriptor Reset [%d] to 0x%x\n",
+		qdf_print("Frag Descriptor Reset [%d] to 0x%x",
 			  tx_desc->id,
 			  frag_desc_paddr);
 #endif /* HELIUMPLUS_DEBUG */

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -92,16 +93,16 @@ static int __wlan_hdd_cfg80211_set_ota_test(struct wiphy *wiphy,
 	}
 
 	mac_handle = hdd_ctx->mac_handle;
-	current_roam_state =
-		sme_get_current_roam_state(mac_handle, adapter->vdev_id);
-	status = sme_stop_roaming(mac_handle, adapter->vdev_id,
+	current_roam_state = sme_get_current_roam_state(
+					mac_handle, adapter->deflink->vdev_id);
+	status = sme_stop_roaming(mac_handle, adapter->deflink->vdev_id,
 				  REASON_SME_ISSUED, RSO_INVALID_REQUESTOR);
 	if (status != QDF_STATUS_SUCCESS) {
 		hdd_err("Enable/Disable roaming failed");
 		return -EINVAL;
 	}
 
-	status = sme_ps_enable_disable(mac_handle, adapter->vdev_id,
+	status = sme_ps_enable_disable(mac_handle, adapter->deflink->vdev_id,
 				       SME_PS_DISABLE);
 	if (status != QDF_STATUS_SUCCESS) {
 		hdd_err("Enable/Disable power save failed");
@@ -109,13 +110,13 @@ static int __wlan_hdd_cfg80211_set_ota_test(struct wiphy *wiphy,
 		if (current_roam_state == eCSR_ROAMING_STATE_JOINING ||
 		    current_roam_state == eCSR_ROAMING_STATE_JOINED)
 			status = sme_start_roaming(mac_handle,
-						 adapter->vdev_id,
+						 adapter->deflink->vdev_id,
 						 REASON_SME_ISSUED,
 						 RSO_INVALID_REQUESTOR);
 		else if (current_roam_state == eCSR_ROAMING_STATE_STOP ||
 			 current_roam_state == eCSR_ROAMING_STATE_IDLE)
 			status = sme_stop_roaming(mac_handle,
-						 adapter->vdev_id,
+						 adapter->deflink->vdev_id,
 						 REASON_SME_ISSUED,
 						 RSO_INVALID_REQUESTOR);
 

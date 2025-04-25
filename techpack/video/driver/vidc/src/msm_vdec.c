@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  */
-/* Copyright (c) 2022. Qualcomm Innovation Center, Inc. All rights reserved. */
+/* Copyright (c) 2022-2024. Qualcomm Innovation Center, Inc. All rights reserved. */
 
 #include <media/v4l2_vidc_extensions.h>
 #include "msm_media_info.h"
@@ -2731,6 +2731,7 @@ int msm_vdec_inst_init(struct msm_vidc_inst *inst)
 	}
 	core = inst->core;
 
+	INIT_DELAYED_WORK(&inst->decode_batch.work, msm_vidc_batch_handler);
 	if (core->capabilities[DECODE_BATCH].value) {
 		inst->decode_batch.enable = true;
 		inst->decode_batch.size = MAX_DEC_BATCH_SIZE;

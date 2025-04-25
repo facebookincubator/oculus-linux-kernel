@@ -375,18 +375,20 @@ static void hdd_sr_osif_events(struct wlan_objmgr_vdev *vdev,
 	QDF_STATUS status;
 	enum qca_wlan_sr_operation sr_nl_oper;
 	enum qca_wlan_sr_reason_code sr_nl_rc;
+	struct wlan_hdd_link_info *link_info;
 
 	if (!vdev) {
 		hdd_err("Null VDEV");
 		return;
 	}
 
-	adapter = wlan_hdd_get_adapter_from_objmgr(vdev);
-	if (!adapter) {
+	link_info = wlan_hdd_get_link_info_from_objmgr(vdev);
+	if (!link_info) {
 		hdd_err("Null adapter");
 		return;
 	}
 
+	adapter = link_info->adapter;
 	wlan_vdev_mlme_get_srg_pd_offset(vdev, &srg_max_pd_offset,
 					 &srg_min_pd_offset);
 	non_srg_max_pd_offset = wlan_vdev_mlme_get_non_srg_pd_offset(vdev);
@@ -661,7 +663,7 @@ static bool hdd_check_mode_support_for_sr(struct hdd_adapter *adapter,
 					  uint8_t sr_ctrl)
 {
 	if ((adapter->device_mode == QDF_STA_MODE) &&
-	    (!hdd_cm_is_vdev_connected(adapter) ||
+	    (!hdd_cm_is_vdev_connected(adapter->deflink) ||
 	    ((sr_ctrl & NON_SRG_PD_SR_DISALLOWED) &&
 	    !(sr_ctrl & SRG_INFO_PRESENT)))) {
 		hdd_err("mode %d doesn't supports SR", adapter->device_mode);
@@ -687,6 +689,7 @@ static int __wlan_hdd_cfg80211_sr_operations(struct wiphy *wiphy,
 	QDF_STATUS status;
 	uint32_t id;
 	bool is_sr_enable = false;
+	bool non_srg_sr_disallowed = false, srg_info_present = false;
 	int32_t srg_pd_threshold = 0;
 	int32_t non_srg_pd_threshold = 0;
 	uint8_t sr_he_siga_val15_allowed = true;
@@ -718,7 +721,8 @@ static int __wlan_hdd_cfg80211_sr_operations(struct wiphy *wiphy,
 		return -EPERM;
 	}
 
-	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_HDD_ID_OBJ_MGR);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink,
+					   WLAN_HDD_ID_OBJ_MGR);
 	if (!vdev) {
 		hdd_err("Null VDEV");
 		return -EINVAL;
@@ -801,6 +805,9 @@ static int __wlan_hdd_cfg80211_sr_operations(struct wiphy *wiphy,
 	switch (sr_oper) {
 	case QCA_WLAN_SR_OPERATION_SR_ENABLE:
 	case QCA_WLAN_SR_OPERATION_SR_DISABLE:
+		non_srg_sr_disallowed = sr_ctrl & NON_SRG_PD_SR_DISALLOWED;
+		srg_info_present = sr_ctrl & SRG_INFO_PRESENT;
+
 		if (sr_oper == QCA_WLAN_SR_OPERATION_SR_ENABLE) {
 			is_sr_enable = true;
 		} else {
@@ -819,19 +826,38 @@ static int __wlan_hdd_cfg80211_sr_operations(struct wiphy *wiphy,
 		 */
 		if (is_sr_enable &&
 		    tb2[QCA_WLAN_VENDOR_ATTR_SR_PARAMS_SRG_PD_THRESHOLD]) {
-			srg_pd_threshold =
-			nla_get_s32(
-			tb2[QCA_WLAN_VENDOR_ATTR_SR_PARAMS_SRG_PD_THRESHOLD]);
-			wlan_vdev_mlme_set_pd_threshold_present(vdev, true);
+			if (srg_info_present) {
+				srg_pd_threshold =
+				nla_get_s32(
+				tb2[QCA_WLAN_VENDOR_ATTR_SR_PARAMS_SRG_PD_THRESHOLD]);
+				wlan_vdev_mlme_set_pd_threshold_present(vdev,
+									true);
+			} else {
+				hdd_err("SRG OBSS PD threshold set is disallowed\n");
+				ret = -EINVAL;
+				goto exit;
+			}
 		}
 
 		if (is_sr_enable &&
 		    tb2[QCA_WLAN_VENDOR_ATTR_SR_PARAMS_NON_SRG_PD_THRESHOLD]) {
-			non_srg_pd_threshold =
-			nla_get_s32(
-			tb2[QCA_WLAN_VENDOR_ATTR_SR_PARAMS_NON_SRG_PD_THRESHOLD]
-			);
-			wlan_vdev_mlme_set_pd_threshold_present(vdev, true);
+			if (!non_srg_sr_disallowed) {
+				non_srg_pd_threshold =
+				nla_get_s32(
+				tb2[QCA_WLAN_VENDOR_ATTR_SR_PARAMS_NON_SRG_PD_THRESHOLD]);
+				wlan_vdev_mlme_set_pd_threshold_present(vdev,
+									true);
+			} else {
+				hdd_err("non-SRG OBSS PD threshold set is disallowed\n");
+				ret = -EINVAL;
+				goto exit;
+			}
+		}
+
+		if (non_srg_sr_disallowed && !srg_info_present) {
+			hdd_err("Failed to enable SR\n");
+			ret = -EINVAL;
+			goto exit;
 		}
 
 		hdd_debug("setting sr enable %d with pd threshold srg: %d non srg: %d",
@@ -850,12 +876,13 @@ static int __wlan_hdd_cfg80211_sr_operations(struct wiphy *wiphy,
 
 		break;
 	case QCA_WLAN_SR_OPERATION_GET_STATS:
-		status = policy_mgr_get_mac_id_by_session_id(hdd_ctx->psoc,
-							     adapter->vdev_id,
-							     &mac_id);
+		status = policy_mgr_get_mac_id_by_session_id(
+						hdd_ctx->psoc,
+						adapter->deflink->vdev_id,
+						&mac_id);
 		if (QDF_IS_STATUS_ERROR(status)) {
 			hdd_err("Failed to get mac_id for vdev_id: %u",
-				adapter->vdev_id); {
+				adapter->deflink->vdev_id); {
 				ret = -EAGAIN;
 				goto exit;
 			}
@@ -881,12 +908,13 @@ static int __wlan_hdd_cfg80211_sr_operations(struct wiphy *wiphy,
 		ret = wlan_cfg80211_vendor_cmd_reply(skb);
 		break;
 	case QCA_WLAN_SR_OPERATION_CLEAR_STATS:
-		status = policy_mgr_get_mac_id_by_session_id(hdd_ctx->psoc,
-							     adapter->vdev_id,
-							     &mac_id);
+		status = policy_mgr_get_mac_id_by_session_id(
+						hdd_ctx->psoc,
+						adapter->deflink->vdev_id,
+						&mac_id);
 		if (QDF_IS_STATUS_ERROR(status)) {
 			hdd_err("Failed to get mac_id for vdev_id: %u",
-				adapter->vdev_id);
+				adapter->deflink->vdev_id);
 			ret = -EAGAIN;
 			goto exit;
 		}

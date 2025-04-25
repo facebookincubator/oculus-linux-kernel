@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -140,6 +140,17 @@ wlan_cp_stats_infra_cp_register_resp_cb(struct wlan_objmgr_psoc *psoc,
 					struct infra_cp_stats_cmd_info *req);
 
 /**
+ * wlan_cp_stats_infra_cp_deregister_resp_cb() - Deregister the response callback
+ * and cookie in the psoc mc_stats object
+ * @psoc: pointer to psoc object
+ *
+ * Return: QDF_STATUS_SUCCESS on Success, other QDF_STATUS error codes on
+ * failure
+ */
+QDF_STATUS
+wlan_cp_stats_infra_cp_deregister_resp_cb(struct wlan_objmgr_psoc *psoc);
+
+/**
  * wlan_cp_stats_infra_cp_get_context() - get the context and callback
  * for sending response
  * @psoc: pointer to psoc object
@@ -167,7 +178,7 @@ wlan_cp_stats_send_infra_cp_req(struct wlan_objmgr_psoc *psoc,
 				struct infra_cp_stats_cmd_info *req);
 #endif /* WLAN_SUPPORT_INFRA_CTRL_PATH_STATS */
 
-#ifdef WLAN_TELEMETRY_STATS_SUPPORT
+#ifdef WLAN_CONFIG_TELEMETRY_AGENT
 /**
  * wlan_cp_stats_send_telemetry_cp_req() - API to send telemetry cp stats
  * request to lmac
@@ -195,6 +206,31 @@ int wlan_cp_stats_twt_get_peer_session_params(
 					struct wlan_objmgr_psoc *psoc,
 					struct twt_session_stats_info *params);
 #endif
+#ifdef WLAN_CHIPSET_STATS
+/**
+ * wlan_cp_stats_get_chipset_stats_enable() - Returns INI
+ * CHIPSET_STATS_ENABLE
+ *
+ * @psoc: psoc object
+ *
+ * Return: True if Chipset Stats is enabled
+ *	   False if Chipset Stats is not supported or disabled
+ */
+bool wlan_cp_stats_get_chipset_stats_enable(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * wlan_cp_stats_cstats_qmi_event_handler() - chipset stats QMI event handler
+ *
+ * @cb_ctx: callback context
+ * @type : Type of stats
+ * @event: event data
+ * @event_len: event data length
+ *
+ * Return : 0 on success and -ve value on error
+ */
+int wlan_cp_stats_cstats_qmi_event_handler(void *cb_ctx, uint16_t type,
+					   void *event, int event_len);
+#endif /* WLAN_CHIPSET_STATS */
 
 #endif /* QCA_SUPPORT_CP_STATS */
 #endif /* __WLAN_CP_STATS_OBJ_MGR_HANDLER_H__ */

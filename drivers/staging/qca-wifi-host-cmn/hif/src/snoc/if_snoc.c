@@ -481,3 +481,52 @@ bool hif_snoc_needs_bmi(struct hif_softc *scn)
 {
 	return false;
 }
+
+#ifdef FEATURE_ENABLE_CE_DP_IRQ_AFFINE
+static void hif_snoc_ce_dp_irq_set_affinity_hint(struct hif_softc *scn)
+{
+	int ret, irq;
+	unsigned int cpus;
+	struct CE_state *ce_state;
+	int ce_id;
+	qdf_cpu_mask ce_cpu_mask, updated_mask;
+	int perf_cpu_cluster = hif_get_perf_cluster_bitmap();
+	int package_id;
+
+	qdf_cpumask_clear(&ce_cpu_mask);
+
+	qdf_for_each_online_cpu(cpus) {
+		package_id = qdf_topology_physical_package_id(cpus);
+		if (package_id >= 0 && BIT(package_id) & perf_cpu_cluster)
+			qdf_cpumask_set_cpu(cpus, &ce_cpu_mask);
+	}
+
+	if (qdf_cpumask_empty(&ce_cpu_mask)) {
+		hif_err_rl("Empty cpu_mask, unable to set CE DP IRQ affinity");
+		return;
+	}
+
+	for (ce_id = 0; ce_id < scn->ce_count; ce_id++) {
+		ce_state = scn->ce_id_to_state[ce_id];
+		if (!ce_state || !ce_state->htt_rx_data)
+			continue;
+
+		qdf_cpumask_copy(&updated_mask, &ce_cpu_mask);
+		irq = pld_get_irq(scn->qdf_dev->dev, ce_id);
+		ret = hif_affinity_mgr_set_ce_irq_affinity(scn, irq, ce_id,
+							   &updated_mask);
+		if (ret)
+			hif_err_rl("Set affinity %*pbl fails for CE IRQ %d",
+				   qdf_cpumask_pr_args(&updated_mask), irq);
+		else
+			hif_debug_rl("Set affinity %*pbl for CE IRQ: %d",
+				     qdf_cpumask_pr_args(&updated_mask), irq);
+	}
+}
+
+void hif_snoc_configure_irq_affinity(struct hif_softc *scn)
+{
+	if (scn->hif_config.enable_ce_dp_irq_affine)
+		hif_snoc_ce_dp_irq_set_affinity_hint(scn);
+}
+#endif

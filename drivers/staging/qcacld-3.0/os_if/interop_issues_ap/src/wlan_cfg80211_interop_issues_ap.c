@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -187,7 +187,8 @@ __wlan_cfg80211_set_interop_issues_ap_config(struct wiphy *wiphy,
 		return -EPERM;
 	}
 
-	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_INTEROP_ISSUES_AP_ID);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink,
+					   WLAN_INTEROP_ISSUES_AP_ID);
 	if (!vdev) {
 		osif_err("Invalid vdev");
 		return -EINVAL;

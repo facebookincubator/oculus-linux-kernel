@@ -20,11 +20,12 @@
 #ifndef _WLAN_IPA_CORE_H_
 #define _WLAN_IPA_CORE_H_
 
+#ifdef IPA_OFFLOAD
+
 #include "wlan_ipa_priv.h"
 #include "wlan_ipa_public_struct.h"
 
-#ifdef IPA_OFFLOAD
-
+#define WLAN_IPA_NBUF_CB_PEER_ID_OFFSET		5
 /**
  * wlan_ipa_is_enabled() - Is IPA enabled?
  * @ipa_cfg: IPA config
@@ -157,16 +158,32 @@ struct wlan_ipa_iface_context
 *wlan_ipa_get_iface(struct wlan_ipa_priv *ipa_ctx, uint8_t mode);
 
 /**
+ * wlan_ipa_check_iface_netdev_sessid() - Check IPA interface using netdev
+ * and session id
+ *
+ * @ipa_iface: IPA iface
+ * @net_dev: net dev
+ * @session_id: vdev id
+ *
+ * Return: Result if iface is matching or not
+ */
+int wlan_ipa_check_iface_netdev_sessid(struct wlan_ipa_iface_context *ipa_iface,
+				       qdf_netdev_t net_dev,
+				       uint8_t session_id);
+
+/**
  * wlan_ipa_get_iface_by_mode_netdev() - Get IPA interface
  * @ipa_ctx: IPA context
  * @ndev: Interface netdev pointer
  * @mode: Interface device mode
+ * @session_id: vdev id
  *
  * Return: IPA interface address
  */
 struct wlan_ipa_iface_context *
 wlan_ipa_get_iface_by_mode_netdev(struct wlan_ipa_priv *ipa_ctx,
-				  qdf_netdev_t ndev, uint8_t mode);
+				  qdf_netdev_t ndev, uint8_t mode,
+				  uint8_t session_id);
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)) && \
 	!defined(CONFIG_IPA_WDI_UNIFIED_API)
@@ -385,8 +402,6 @@ QDF_STATUS wlan_ipa_uc_op_metering(struct wlan_ipa_priv *ipa_ctx,
 /**
  * wlan_ipa_wdi_meter_notifier_cb() - SSR wrapper for
  * __wlan_ipa_wdi_meter_notifier_cb
- * @priv: pointer to private data registered with IPA (we register a
- *        pointer to the global IPA context)
  * @evt: the IPA event which triggered the callback
  * @data: data associated with the event
  *
@@ -478,6 +493,7 @@ void wlan_ipa_uc_info(struct wlan_ipa_priv *ipa_ctx);
 /**
  * wlan_ipa_print_fw_wdi_stats() - Print FW IPA WDI stats
  * @ipa_ctx: IPA context
+ * @uc_fw_stat: stats to print
  *
  * Return: None
  */
@@ -598,7 +614,7 @@ void wlan_ipa_reg_send_to_nw_cb(struct wlan_ipa_priv *ipa_ctx,
 	ipa_ctx->send_to_nw = cb;
 }
 
-#ifdef QCA_CONFIG_RPS
+#if defined(QCA_CONFIG_RPS) && !defined(MDM_PLATFORM)
 /**
  * wlan_ipa_reg_rps_enable_cb() - Register callback to enable RPS
  * @ipa_ctx: IPA context
@@ -612,17 +628,6 @@ void wlan_ipa_reg_rps_enable_cb(struct wlan_ipa_priv *ipa_ctx,
 {
 	ipa_ctx->rps_enable = cb;
 }
-
-/**
- * ipa_set_rps_enable(): Enable/disable RPS for all interfaces of specific mode
- * @ipa_ctx: IPA context
- * @mode: mode of interface for which RPS needs to be enabled
- * @enable: Set true to enable RPS
- *
- * Return: None
- */
-void ipa_set_rps(struct wlan_ipa_priv *ipa_ctx, enum QDF_OPMODE mode,
-		 bool enable);
 
 /**
  * ipa_set_rps_per_vdev(): Enable/disable RPS for a specific vdev
@@ -640,38 +645,12 @@ void ipa_set_rps_per_vdev(struct wlan_ipa_priv *ipa_ctx, uint8_t vdev_id,
 		ipa_ctx->rps_enable(vdev_id, enable);
 }
 
-/**
- * wlan_ipa_handle_multiple_sap_evt() - Handle multiple SAP connect/disconnect
- * @ipa_ctx: IPA global context
- * @type: IPA event type.
- *
- * This function is used to disable pipes when multiple SAP are connected and
- * enable pipes back when only one SAP is connected.
- *
- * Return: None
- */
-void wlan_ipa_handle_multiple_sap_evt(struct wlan_ipa_priv *ipa_ctx,
-				      qdf_ipa_wlan_event type);
-
 #else
-static inline
-void ipa_set_rps(struct wlan_ipa_priv *ipa_ctx, enum QDF_OPMODE mode,
-		 bool enable)
-{
-}
-
 static inline
 void ipa_set_rps_per_vdev(struct wlan_ipa_priv *ipa_ctx, uint8_t vdev_id,
 			  bool enable)
 {
 }
-
-static inline
-void wlan_ipa_handle_multiple_sap_evt(struct wlan_ipa_priv *ipa_ctx,
-				      qdf_ipa_wlan_event type)
-{
-}
-
 #endif
 
 /**
@@ -788,9 +767,10 @@ static inline void wlan_ipa_mcc_work_handler(void *data)
  * @net_dev: Interface net device
  * @device_mode: Net interface device mode
  * @session_id: session id for the event
- * @type: event enum of type ipa_wlan_event
- * @mac_address: MAC address associated with the event
+ * @ipa_event_type: event enum of type ipa_wlan_event
+ * @mac_addr: MAC address associated with the event
  * @is_2g_iface: true if interface is operating on 2G band, otherwise false
+ * @ipa_obj: IPA context
  *
  * Return: QDF_STATUS
  */
@@ -825,6 +805,7 @@ bool wlan_ipa_is_fw_wdi_activated(struct wlan_ipa_priv *ipa_ctx);
  * wlan_ipa_uc_cleanup_sta - disconnect and cleanup sta iface
  * @ipa_ctx: IPA context
  * @net_dev: Interface net device
+ * @session_id: vdev id
  *
  * Send disconnect sta event to IPA driver and cleanup IPA iface
  * if not yet done
@@ -832,7 +813,7 @@ bool wlan_ipa_is_fw_wdi_activated(struct wlan_ipa_priv *ipa_ctx);
  * Return: void
  */
 void wlan_ipa_uc_cleanup_sta(struct wlan_ipa_priv *ipa_ctx,
-			     qdf_netdev_t net_dev);
+			     qdf_netdev_t net_dev, uint8_t session_id);
 
 /**
  * wlan_ipa_uc_disconnect_ap() - send ap disconnect event
@@ -850,11 +831,12 @@ QDF_STATUS wlan_ipa_uc_disconnect_ap(struct wlan_ipa_priv *ipa_ctx,
  * wlan_ipa_cleanup_dev_iface() - Clean up net dev IPA interface
  * @ipa_ctx: IPA context
  * @net_dev: Interface net device
+ * @session_id: vdev id
  *
  * Return: None
  */
 void wlan_ipa_cleanup_dev_iface(struct wlan_ipa_priv *ipa_ctx,
-				qdf_netdev_t net_dev);
+				qdf_netdev_t net_dev, uint8_t session_id);
 
 /**
  * wlan_ipa_uc_ssr_cleanup() - handle IPA UC clean up during SSR
@@ -875,7 +857,7 @@ void wlan_ipa_fw_rejuvenate_send_msg(struct wlan_ipa_priv *ipa_ctx);
 /**
  * wlan_ipa_flush_pending_vdev_events() - flush pending vdev ipa events
  * @ipa_ctx: IPA context
- * vdev_id: vdev id
+ * @vdev_id: vdev id
  *
  * This function is to flush vdev wlan ipa pending events
  *
@@ -884,11 +866,35 @@ void wlan_ipa_fw_rejuvenate_send_msg(struct wlan_ipa_priv *ipa_ctx);
 void wlan_ipa_flush_pending_vdev_events(struct wlan_ipa_priv *ipa_ctx,
 					uint8_t vdev_id);
 
+/**
+ * wlan_ipa_set_perf_level_bw_enabled - Get bandwidth based IPA perf voting
+ *					status
+ * @ipa_ctx: IPA context
+ *
+ * This function returns true or false for bandwidth based IPA perf level
+ * voting.
+ *
+ * Return: true - bandwidth based IPA perf voting is enabld. Otherwise false.
+ */
+bool wlan_ipa_set_perf_level_bw_enabled(struct wlan_ipa_priv *ipa_ctx);
+
+/**
+ * wlan_ipa_set_perf_level_bw() - Set IPA perf level based on BW
+ * @ipa_ctx: IPA context
+ * @lvl: enum wlan_ipa_bw_level
+ *
+ * This function is to set IPA perf level based on bw level
+ *
+ * Return: None
+ */
+void wlan_ipa_set_perf_level_bw(struct wlan_ipa_priv *ipa_ctx,
+				enum wlan_ipa_bw_level lvl);
+
 #ifdef IPA_OPT_WIFI_DP
 /**
  * wlan_ipa_wdi_opt_dpath_flt_rsrv_cb() - reserve cce super rules for Rx filter
- * @ipa_ctx - ipa_context
- * out_params - filter reservation params
+ * @ipa_ctx: ipa_context
+ * @out_params: filter reservation params
  *
  * Return:int 0 on success, negative on failure
  *
@@ -900,8 +906,7 @@ int wlan_ipa_wdi_opt_dpath_flt_rsrv_cb(
 /**
  * wlan_ipa_wdi_opt_dpath_notify_flt_rsvd() - notify filter reservation
  * response to IPA
- *
- * @is_success : result of filter reservation
+ * @is_success: result of filter reservation
  *
  * Return: None
  */
@@ -910,7 +915,7 @@ void wlan_ipa_wdi_opt_dpath_notify_flt_rsvd(bool is_success);
 /**
  * wlan_ipa_wdi_opt_dpath_flt_add_cb - Add rx filter tuple to cce filter
  * @ipa_ctx: IPA context
- * in_out - filter tuple info
+ * @in_out: filter tuple info
  *
  * Return: 0 on success, negative on failure
  */
@@ -921,7 +926,7 @@ int wlan_ipa_wdi_opt_dpath_flt_add_cb(
 /**
  * wlan_ipa_wdi_opt_dpath_flt_rem_cb() - Remove rx filter tuple from cce filter
  * @ipa_ctx: IPA context
- * in - filter tuple info
+ * @in: filter tuple info
  *
  * Return: 0 on success, negative on failure
  */
@@ -932,8 +937,8 @@ int wlan_ipa_wdi_opt_dpath_flt_rem_cb(
 /**
  * wlan_ipa_wdi_opt_dpath_notify_flt_add_rem_cb() - notify filter add/remove
  * result to IPA
- * @result0 : result of add/remove filter0
- * @result1 : result of add/remove filter1
+ * @result0: result of add/remove filter0
+ * @result1: result of add/remove filter1
  *
  * Return: void
  */
@@ -951,13 +956,37 @@ int wlan_ipa_wdi_opt_dpath_flt_rsrv_rel_cb(void *ipa_ctx);
 /**
  * wlan_ipa_wdi_opt_dpath_notify_flt_rlsd() - notify filter release
  * response to IPA
- * @result0 : result of filter0 release
- * @result1 : result of filter1 release
+ * @result0: result of filter0 release
+ * @result1: result of filter1 release
  *
  * Return: void
  */
 void wlan_ipa_wdi_opt_dpath_notify_flt_rlsd(int result0, int result1);
 
 #endif /* IPA_OPT_WIFI_DP */
+
+#ifdef IPA_WDI3_TX_TWO_PIPES
+/**
+ * wlan_ipa_get_alt_pipe() - Get alt_pipe for vdev_id
+ * @ipa_ctx: IPA context
+ * @vdev_id: vdev_id of the target interface
+ * @alt_pipe: Boolean output to indicate if interface with @vdev_id
+ *	      is using alternate TX pipe or not.
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wlan_ipa_get_alt_pipe(struct wlan_ipa_priv *ipa_ctx,
+				 uint8_t vdev_id,
+				 bool *alt_pipe);
+#else /* !IPA_WDI3_TX_TWO_PIPES */
+static inline
+QDF_STATUS wlan_ipa_get_alt_pipe(struct wlan_ipa_priv *ipa_ctx,
+				 uint8_t vdev_id,
+				 bool *alt_pipe)
+{
+	return QDF_STATUS_E_INVAL;
+}
+#endif /* IPA_WDI3_TX_TWO_PIPES */
+
 #endif /* IPA_OFFLOAD */
 #endif /* _WLAN_IPA_CORE_H_ */

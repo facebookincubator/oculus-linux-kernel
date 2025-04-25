@@ -385,8 +385,7 @@ struct perf_event_attr {
 				aux_output     :  1, /* generate AUX records instead of events */
 				cgroup         :  1, /* include cgroup events */
 				text_poke      :  1, /* include text poke events */
-				__reserved_1   : 29,
-				cpu_frequency_oculus     : 1; /* include cpu frequency data */
+				__reserved_1   : 30;
 
 	union {
 		__u32		wakeup_events;	  /* wakeup every n events */
@@ -1065,16 +1064,6 @@ enum perf_event_type {
 	PERF_RECORD_TEXT_POKE			= 20,
 
 	PERF_RECORD_MAX,			/* non-ABI */
-
-	/*
-	 * struct {
-	 *	struct perf_event_header	header;
-	 *	u32				cpu_frequency;
-	 *	u32				cpu;
-	 *	struct sample_id		sample_id;
-	 * };
-	 */
-	PERF_RECORD_CPU_FREQUENCY_OCULUS	= -1U,
 };
 
 enum perf_record_ksymbol_type {

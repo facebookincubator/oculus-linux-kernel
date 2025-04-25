@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2017, 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -22,7 +23,7 @@
 #include "cdp_txrx_handle.h"
 /**
  * cdp_set_ocb_chan_info() - set OCB channel info to vdev.
- * @soc - data path soc handle
+ * @soc: data path soc handle
  * @vdev_id: vdev_id corresponding to vdev start
  * @ocb_set_chan: OCB channel information to be set in vdev.
  *
@@ -45,7 +46,7 @@ cdp_set_ocb_chan_info(ol_txrx_soc_handle soc, uint8_t vdev_id,
 }
 /**
  * cdp_get_ocb_chan_info() - return handle to vdev ocb_channel_info
- * @soc - data path soc handle
+ * @soc: data path soc handle
  * @vdev_id: vdev_id corresponding to vdev start
  *
  * Return: handle to struct ol_txrx_ocb_chan_info

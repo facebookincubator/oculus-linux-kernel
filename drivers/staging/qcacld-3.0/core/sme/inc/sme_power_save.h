@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015-2019, 2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -32,6 +33,13 @@
 #define AUTO_PS_ENTRY_USER_TIMER_DEFAULT_VALUE 5000
 #define AUTO_PS_ENTRY_TIMER_DEFAULT_VALUE 1000
 #define AUTO_PS_DEFER_TIMEOUT_MS 1500
+
+#ifdef QCA_WIFI_EMULATION
+/*
+ * Auto Ps timeout for emulation targets.
+ */
+#define AUTO_PS_EMULATION_TIMEOUT 11
+#endif
 
 /**
  * struct ps_global_info - global struct for Power save information

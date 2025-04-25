@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -894,7 +894,7 @@ QDF_STATUS sme_qos_csr_event_ind(struct mac_context *mac,
 {
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 
-	sme_debug("On Session %d Event %d received from CSR", sessionId, ind);
+	sme_debug("vdev %d event %d", sessionId, ind);
 	switch (ind) {
 	case SME_QOS_CSR_ASSOC_COMPLETE:
 		/* expecting assoc info in pEvent_info */
@@ -983,7 +983,7 @@ uint8_t sme_qos_get_acm_mask(struct mac_context *mac, struct bss_description
 		if (sme_qos_is_acm(mac, pSirBssDesc, ac, pIes))
 			acm_mask = acm_mask | (1 << (QCA_WLAN_AC_VO - ac));
 	}
-	sme_debug("mask is 0x%x", acm_mask);
+
 	return acm_mask;
 }
 
@@ -1642,9 +1642,9 @@ static enum sme_qos_statustype sme_qos_internal_modify_req(struct mac_context *m
 		flow_info->QoSInfo.suspension_interval) &&
 	    (pQoSInfo->surplus_bw_allowance ==
 		flow_info->QoSInfo.surplus_bw_allowance)) {
-		sme_err("the addts parameters are same as last request, dropping the current request");
+		sme_debug("the addts parameters are same as last request, dropping the current request");
 
-		return SME_QOS_STATUS_MODIFY_SETUP_FAILURE_RSP;
+		return SME_QOS_STATUS_MODIFY_SETUP_SUCCESS_APSD_SET_ALREADY;
 	}
 
 	/* check to consider the following flowing scenario.
@@ -1914,6 +1914,7 @@ static enum sme_qos_statustype sme_qos_internal_release_req(struct mac_context *
 			if (QDF_IS_STATUS_SUCCESS(hstatus)) {
 				sme_debug("Buffered release request for flow = %d",
 					  QosFlowID);
+				return SME_QOS_STATUS_RELEASE_REQ_PENDING_RSP;
 			}
 		}
 		return SME_QOS_STATUS_RELEASE_INVALID_PARAMS_RSP;
@@ -2666,7 +2667,6 @@ static enum sme_qos_statustype sme_qos_setup(struct mac_context *mac,
 static QDF_STATUS sme_qos_process_set_key_success_ind(struct mac_context *mac,
 					   uint8_t sessionId, void *pEvent_info)
 {
-	sme_debug("Set Key complete");
 	(void)sme_qos_process_buffered_cmd(sessionId);
 
 	return QDF_STATUS_SUCCESS;
@@ -3130,7 +3130,7 @@ static QDF_STATUS sme_qos_process_ft_reassoc_req_ev(
 	 */
 	entry = csr_ll_peek_head(&sme_qos_cb.flow_list, false);
 	if (!entry) {
-		sme_warn("Flow List empty, nothing to update");
+		sme_debug("Flow List empty, nothing to update");
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -3983,7 +3983,7 @@ static QDF_STATUS sme_qos_process_del_ts_ind(struct mac_context *mac,
 	search_key.key.ac_type = ac;
 	search_key.index = SME_QOS_SEARCH_KEY_INDEX_2;
 	search_key.sessionId = sessionId;
-	/* find all Flows on the perticular AC & delete them, also send HDD
+	/* find all Flows on the particular AC & delete them, also send HDD
 	 * indication through the callback it registered per request
 	 */
 	if (!QDF_IS_STATUS_SUCCESS
@@ -4019,7 +4019,6 @@ static QDF_STATUS sme_qos_process_assoc_complete_ev(struct mac_context *mac, uin
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	enum qca_wlan_ac_type ac = QCA_WLAN_AC_BE;
 
-	sme_debug("invoked on session %d", sessionId);
 	pSession = &sme_qos_cb.sessionInfo[sessionId];
 	if (((SME_QOS_INIT == pSession->ac_info[QCA_WLAN_AC_BE].curr_state)
 	     && (SME_QOS_INIT ==
@@ -4105,7 +4104,6 @@ static QDF_STATUS sme_qos_process_reassoc_req_ev(struct mac_context *mac, uint8_
 	struct sme_qos_flowinfoentry *flow_info = NULL;
 	tListElem *entry = NULL;
 
-	sme_debug("invoked on session %d", sessionId);
 	pSession = &sme_qos_cb.sessionInfo[sessionId];
 
 	if (pSession->ftHandoffInProgress) {
@@ -4323,8 +4321,6 @@ static QDF_STATUS sme_qos_process_reassoc_success_ev(struct mac_context *mac_ctx
 	enum qca_wlan_ac_type ac;
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 
-	sme_debug("invoked on session %d", sessionid);
-
 	if (sessionid >= WLAN_MAX_VDEVS) {
 		sme_err("invoked on session %d", sessionid);
 		return status;
@@ -4428,7 +4424,6 @@ static QDF_STATUS sme_qos_process_reassoc_failure_ev(struct mac_context *mac,
 	struct sme_qos_acinfo *pACInfo;
 	enum qca_wlan_ac_type ac;
 
-	sme_debug("invoked on session %d", sessionId);
 	pSession = &sme_qos_cb.sessionInfo[sessionId];
 	for (ac = QCA_WLAN_AC_BE; ac < QCA_WLAN_AC_ALL; ac++) {
 		pACInfo = &pSession->ac_info[ac];
@@ -4537,7 +4532,6 @@ static QDF_STATUS sme_qos_process_handoff_assoc_req_ev(struct mac_context *mac,
 	struct sme_qos_acinfo *pACInfo;
 	uint8_t ac;
 
-	sme_debug("invoked on session %d", sessionId);
 	pSession = &sme_qos_cb.sessionInfo[sessionId];
 	for (ac = QCA_WLAN_AC_BE; ac < QCA_WLAN_AC_ALL; ac++) {
 		pACInfo = &pSession->ac_info[ac];
@@ -4595,7 +4589,6 @@ static QDF_STATUS sme_qos_process_handoff_success_ev(struct mac_context *mac,
 	uint8_t ac;
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 
-	sme_debug("invoked on session %d", sessionId);
 	pSession = &sme_qos_cb.sessionInfo[sessionId];
 	/* go back to original state before handoff */
 	for (ac = QCA_WLAN_AC_BE; ac < QCA_WLAN_AC_ALL; ac++) {
@@ -4650,7 +4643,6 @@ static QDF_STATUS sme_qos_process_disconnect_ev(struct mac_context *mac, uint8_t
 {
 	struct sme_qos_sessioninfo *pSession;
 
-	sme_debug("invoked on session %d", sessionId);
 	pSession = &sme_qos_cb.sessionInfo[sessionId];
 	/*
 	 * In case of 11r - RIC, we request QoS and Hand-off at the
@@ -4762,8 +4754,6 @@ static QDF_STATUS sme_qos_process_preauth_success_ind(struct mac_context *mac_ct
 	uint8_t tspec_pending_status = 0;
 	struct wlan_objmgr_vdev *vdev;
 	struct mlme_legacy_priv *mlme_priv;
-
-	sme_debug("invoked on SME session %d", sessionid);
 
 	if (!sme_session) {
 		sme_err("sme_session is NULL");
@@ -5534,10 +5524,6 @@ static void sme_qos_state_transition(uint8_t sessionId,
 	pACInfo = &pSession->ac_info[ac];
 	pACInfo->prev_state = pACInfo->curr_state;
 	pACInfo->curr_state = new_state;
-	if (pACInfo->curr_state != pACInfo->prev_state)
-		sme_debug("On session %d new %d old %d, for AC %d",
-			  sessionId, pACInfo->curr_state,
-			  pACInfo->prev_state, ac);
 }
 
 /**
@@ -5847,10 +5833,9 @@ static QDF_STATUS sme_qos_delete_existing_flows(struct mac_context *mac,
 	struct sme_qos_flowinfoentry *flow_info = NULL;
 
 	pEntry = csr_ll_peek_head(&sme_qos_cb.flow_list, true);
-	if (!pEntry) {
-		sme_err("Flow List empty, nothing to delete");
+	if (!pEntry)
 		return QDF_STATUS_E_FAILURE;
-	}
+
 	while (pEntry) {
 		pNextEntry = csr_ll_next(&sme_qos_cb.flow_list, pEntry, true);
 		flow_info = GET_BASE_ADDR(pEntry, struct sme_qos_flowinfoentry,
@@ -5932,7 +5917,6 @@ static QDF_STATUS sme_qos_process_buffered_cmd(uint8_t session_id)
 	QDF_STATUS qdf_ret_status = QDF_STATUS_SUCCESS;
 	struct sme_qos_cmdinfo *qos_cmd = NULL;
 
-	sme_debug("Invoked on session %d", session_id);
 	qos_session = &sme_qos_cb.sessionInfo[session_id];
 	if (!csr_ll_is_list_empty(&qos_session->bufferedCommandList, false)) {
 		list_elt = csr_ll_remove_head(&qos_session->bufferedCommandList,
@@ -6006,9 +5990,8 @@ static QDF_STATUS sme_qos_process_buffered_cmd(uint8_t session_id)
 		}
 		/* buffered command has been processed, reclaim the memory */
 		qdf_mem_free(pcmd);
-	} else {
-		sme_debug("cmd buffer empty");
 	}
+
 	return qdf_ret_status;
 }
 
@@ -6025,14 +6008,11 @@ static QDF_STATUS sme_qos_delete_buffered_requests(struct mac_context *mac,
 	struct sme_qos_cmdinfoentry *pcmd = NULL;
 	tListElem *pEntry = NULL, *pNextEntry = NULL;
 
-	sme_debug("Invoked on session %d", sessionId);
 	pSession = &sme_qos_cb.sessionInfo[sessionId];
 	pEntry = csr_ll_peek_head(&pSession->bufferedCommandList, true);
-	if (!pEntry) {
-		sme_debug("Buffered List empty, nothing to delete on session %d",
-			  sessionId);
+	if (!pEntry)
 		return QDF_STATUS_E_FAILURE;
-	}
+
 	while (pEntry) {
 		pNextEntry = csr_ll_next(&pSession->bufferedCommandList, pEntry,
 					true);
@@ -6213,7 +6193,7 @@ static QDF_STATUS sme_qos_modify_fnp(struct mac_context *mac, tListElem *pEntry)
 
 /*
  * sme_qos_del_ts_ind_fnp() - Utility function (pointer) to find all Flows on
- *  the perticular AC & delete them, also send HDD indication through the
+ *  the particular AC & delete them, also send HDD indication through the
  * callback it registered per request
  *
  * mac - Pointer to the global MAC parameter structure.
@@ -6674,8 +6654,9 @@ void sme_qos_update_hand_off(uint8_t sessionId, bool updateHandOff)
 	struct sme_qos_sessioninfo *pSession;
 
 	pSession = &sme_qos_cb.sessionInfo[sessionId];
-	sme_debug("handoffRequested %d updateHandOff %d",
-		  pSession->handoffRequested, updateHandOff);
+	if (pSession->handoffRequested != updateHandOff)
+		sme_debug("handoffRequested %d updateHandOff %d",
+			  pSession->handoffRequested, updateHandOff);
 
 	pSession->handoffRequested = updateHandOff;
 
@@ -7063,7 +7044,7 @@ enum sme_qos_statustype sme_qos_re_request_add_ts(struct mac_context *mac_ctx,
 	case SME_QOS_LINK_UP:
 	default:
 		/* print error msg, */
-		sme_err("ReAdd request in unexpected state = %d",
+		sme_err("Re-Add request in unexpected state = %d",
 			ac_info->curr_state);
 		break;
 	}

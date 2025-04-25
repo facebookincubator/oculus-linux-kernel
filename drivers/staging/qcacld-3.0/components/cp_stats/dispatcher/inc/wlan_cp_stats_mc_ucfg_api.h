@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -269,12 +269,12 @@ QDF_STATUS ucfg_mc_cp_stats_cca_stats_get(struct wlan_objmgr_vdev *vdev,
 /**
  * ucfg_mc_cp_stats_set_rate_flags() - API to set rate flags
  * @vdev: pointer to vdev object
- * @flags: value to set (enum tx_rate_info)
+ * @flags: value to set
  *
  * Return: status of operation
  */
 QDF_STATUS ucfg_mc_cp_stats_set_rate_flags(struct wlan_objmgr_vdev *vdev,
-					   enum tx_rate_info flags);
+					   uint32_t flags);
 
 /**
  * ucfg_mc_cp_stats_register_lost_link_info_cb() - API to register lost link
@@ -395,6 +395,17 @@ void wlan_cp_stats_update_chan_info(struct wlan_objmgr_psoc *psoc,
 				    uint8_t vdev_id);
 
 /**
+ * wlan_cp_stats_get_rx_clear_count() - API to get rx clear count for a channel
+ * @psoc: pointer to psoc
+ * @vdev_id: vdev id
+ * @req_freq: freq for which rx clear count require
+ *
+ * Return: channel load
+ */
+uint8_t wlan_cp_stats_get_rx_clear_count(struct wlan_objmgr_psoc *psoc,
+					 uint8_t vdev_id, qdf_freq_t req_freq);
+
+/**
  * ucfg_mc_cp_stats_clear_channel_status() - API to clear chan stats
  * @pdev: pointer to pdev object
  *
@@ -425,7 +436,7 @@ static inline QDF_STATUS ucfg_mc_cp_stats_send_stats_request(
 
 static inline QDF_STATUS ucfg_mc_cp_stats_set_rate_flags(
 				struct wlan_objmgr_vdev *vdev,
-				enum tx_rate_info flags)
+				uint32_t flags)
 {
 	return QDF_STATUS_SUCCESS;
 }
@@ -503,6 +514,12 @@ static inline
 void wlan_cp_stats_update_chan_info(struct wlan_objmgr_psoc *psoc,
 				    struct channel_status *chan_stat,
 				    uint8_t vdev_id)
+{
+}
+
+static inline
+uint8_t wlan_cp_stats_get_rx_clear_count(struct wlan_objmgr_psoc *psoc,
+					 uint8_t vdev_id, qdf_freq_t req_freq)
 {
 }
 

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -25,17 +25,17 @@
 #ifndef _TARGET_IF_PUB_H_
 #define _TARGET_IF_PUB_H_
 
+struct target_pdev_info;
 /**
  * typedef target_pdev_info_t - Opaque definition of target pdev
  *				information structure
  */
-struct target_pdev_info;
 typedef struct target_pdev_info target_pdev_info_t;
 
+struct target_psoc_info;
 /**
  * typedef target_psoc_info_t - Opaque definition of target psoc
  *				information structure
  */
-struct target_psoc_info;
 typedef struct target_psoc_info target_psoc_info_t;
 #endif /* _TARGET_IF_PUB_H_ */

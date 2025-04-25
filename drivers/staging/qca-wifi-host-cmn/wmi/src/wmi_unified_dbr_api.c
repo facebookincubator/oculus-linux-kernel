@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -61,6 +62,32 @@ QDF_STATUS wmi_extract_dbr_buf_metadata(
 {
 	if (wmi_handle->ops->extract_dbr_buf_metadata)
 		return wmi_handle->ops->extract_dbr_buf_metadata(
+				wmi_handle,
+				evt_buf, idx, param);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS wmi_extract_dbr_buf_cv_metadata(
+			wmi_unified_t wmi_handle,
+			uint8_t *evt_buf, uint8_t idx,
+			struct direct_buf_rx_cv_metadata *param)
+{
+	if (wmi_handle->ops->extract_dbr_buf_cv_metadata)
+		return wmi_handle->ops->extract_dbr_buf_cv_metadata(
+				wmi_handle,
+				evt_buf, idx, param);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS wmi_extract_dbr_buf_cqi_metadata(
+			wmi_unified_t wmi_handle,
+			uint8_t *evt_buf, uint8_t idx,
+			struct direct_buf_rx_cqi_metadata *param)
+{
+	if (wmi_handle->ops->extract_dbr_buf_cqi_metadata)
+		return wmi_handle->ops->extract_dbr_buf_cqi_metadata(
 				wmi_handle,
 				evt_buf, idx, param);
 

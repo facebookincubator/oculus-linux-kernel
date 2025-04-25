@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -97,7 +97,9 @@ __wlan_hdd_sysfs_freq_show(struct hdd_context *hdd_ctx,
 			   struct kobj_attribute *attr, char *buf)
 {
 	int ret = 0;
-	struct regulatory_channel chan_list[NUM_6GHZ_CHANNELS];
+	struct regulatory_channel *chan_list;
+	uint32_t len_6g =
+			NUM_6GHZ_CHANNELS * sizeof(struct regulatory_channel);
 	QDF_STATUS status;
 	uint32_t i;
 
@@ -114,6 +116,10 @@ __wlan_hdd_sysfs_freq_show(struct hdd_context *hdd_ctx,
 	if (!strcmp(wlan_reg_get_power_string(hdd_ctx->power_type), "INVALID"))
 		return -EINVAL;
 
+	chan_list = qdf_mem_malloc(len_6g);
+	if (!chan_list)
+		return -ENOMEM;
+
 	status = wlan_reg_get_6g_ap_master_chan_list(
 						hdd_ctx->pdev,
 						hdd_ctx->power_type,
@@ -123,11 +129,14 @@ __wlan_hdd_sysfs_freq_show(struct hdd_context *hdd_ctx,
 		if ((chan_list[i].state != CHANNEL_STATE_DISABLE) &&
 		    !(chan_list[i].chan_flags & REGULATORY_CHAN_DISABLED)) {
 			if ((PAGE_SIZE - ret) <= 0)
-				return ret;
+				goto err;
 			ret += scnprintf(buf + ret, PAGE_SIZE - ret,
 					"%d  ", chan_list[i].center_freq);
 		}
 	}
+
+err:
+	qdf_mem_free(chan_list);
 	return ret;
 }
 

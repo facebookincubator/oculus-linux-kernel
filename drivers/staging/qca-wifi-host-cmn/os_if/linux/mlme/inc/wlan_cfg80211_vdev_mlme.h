@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -30,7 +31,7 @@
 #include "include/wlan_vdev_mlme.h"
 
 /**
- * wlan_cfg80211_vdev_mlme_get_param_ssid() – cfg80211 MLME API to
+ * wlan_cfg80211_vdev_mlme_get_param_ssid() - cfg80211 MLME API to
  * get ssid
  * @vdev: pointer to vdev object
  * @ssid: pointer to store the ssid
@@ -44,7 +45,7 @@ wlan_cfg80211_vdev_mlme_get_param_ssid(struct wlan_objmgr_vdev *vdev,
 				       uint8_t *ssid_len);
 
 /**
- * wlan_cfg80211_vdev_mlme_get_trans_bssid() – cfg80211 MLME API to
+ * wlan_cfg80211_vdev_mlme_get_trans_bssid() - cfg80211 MLME API to
  * get trans bssid
  * @vdev: pointer to vdev object
  * @addr: pointer to store the addr of the transmission bssid
@@ -56,7 +57,7 @@ wlan_cfg80211_vdev_mlme_get_trans_bssid(struct wlan_objmgr_vdev *vdev,
 					uint8_t *addr);
 
 /**
- * wlan_cfg80211_vdev_mlme_set_param() – cfg80211 MLME API to fill common
+ * wlan_cfg80211_vdev_mlme_set_param() - cfg80211 MLME API to fill common
  * parameters of vdev_mlme object
  * @vdev: pointer to vdev object
  * @param_id: param id for which the value should be set
@@ -70,7 +71,7 @@ wlan_cfg80211_vdev_mlme_set_param(struct wlan_objmgr_vdev *vdev,
 				  struct wlan_vdev_mgr_cfg mlme_cfg);
 
 /**
- * wlan_cfg80211_vdev_mlme_get_param() – cfg80211 MLME API to get common
+ * wlan_cfg80211_vdev_mlme_get_param() - cfg80211 MLME API to get common
  * parameters of vdev_mlme object
  * @vdev: pointer to vdev object
  * @param_id: param id for which the value should be set

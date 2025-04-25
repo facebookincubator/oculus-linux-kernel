@@ -31,7 +31,9 @@
 #ifdef WLAN_FEATURE_11BE_MLO
 #include "wlan_mlo_mgr_public_structs.h"
 #endif
-
+#ifdef CONFIG_AFC_SUPPORT
+#include "wlan_reg_afc.h"
+#endif
 
 /**
  * struct wlan_psoc_hal_reg_capability - hal reg table in psoc
@@ -143,7 +145,13 @@ struct wlan_psoc_host_hal_reg_cap_ext {
  * @phy_id: Starts with 0
  * @phy_idx: Index to mac phy caps structure for the given hw_mode_id and phy_id
  * @hw_mode_config_type: holds the enum wmi_hw_mode_config_type
- * @bitmap of supported modulations
+ * @supports_11b: is 802.11b supported
+ * @supports_11g: is 802.11g supported
+ * @supports_11a: is 802.11a supported
+ * @supports_11n: is 802.11n supported
+ * @supports_11ac: is 802.11ac supported
+ * @supports_11ax: is 802.11ax supported
+ * @supports_11be: is 802.11be supported
  * @supported_bands: supported bands, enum WLAN_BAND_CAPABILITY
  * @ampdu_density: ampdu density 0 for no restriction, 1 for 1/4 us,
  *        2 for 1/2 us, 3 for 1 us,4 for 2 us, 5 for 4 us,
@@ -158,7 +166,7 @@ struct wlan_psoc_host_hal_reg_cap_ext {
  *         - 1 indicates support for VHT-MCS 0-8 for n spatial streams
  *         - 2 indicates support for VHT-MCS 0-9 for n spatial streams
  *         - 3 indicates that n spatial streams is not supported
- * @he_cap_info_2G[]: HE capability info field of 802.11ax, WMI_HE_CAP defines
+ * @he_cap_info_2G: HE capability info field of 802.11ax, WMI_HE_CAP defines
  * @he_supp_mcs_2G: HE Supported MCS Set field Rx/Tx same
  * @tx_chain_mask_2G: Valid Transmit chain mask
  * @rx_chain_mask_2G: Valid Receive chain mask
@@ -172,7 +180,7 @@ struct wlan_psoc_host_hal_reg_cap_ext {
  *        - 1 indicates support for VHT-MCS 0-8 for n spatial streams
  *        - 2 indicates support for VHT-MCS 0-9 for n spatial streams
  *        - 3 indicates that n spatial streams is not supported
- * @he_cap_info_5G[]: HE capability info field of 802.11ax, WMI_HE_CAP defines
+ * @he_cap_info_5G: HE capability info field of 802.11ax, WMI_HE_CAP defines
  * @he_supp_mcs_5G: HE Supported MCS Set field Rx/Tx same
  * @tx_chain_mask_5G: Valid Transmit chain mask
  * @rx_chain_mask_5G: Valid Receive chain mask
@@ -187,7 +195,7 @@ struct wlan_psoc_host_hal_reg_cap_ext {
  * @tgt_pdev_id: target pdev id assigned and used by firmware
  * @nss_ratio_enabled: This flag is set if nss ratio is received from FW as part
  *                     of service ready ext event.
- * @nss_ratio: nss ratio is used to calculate the NSS value for 160MHz.
+ * @nss_ratio_info: nss ratio is used to calculate the NSS value for 160MHz.
  * @hw_link_id: Unique link id across SoCs used to identify link in Multi-SoC ML
  */
 struct wlan_psoc_host_mac_phy_caps {
@@ -253,15 +261,15 @@ struct wlan_psoc_host_hw_mode_caps {
 	uint32_t hw_mode_config_type;
 };
 
-/*
+/**
  * struct wlan_psoc_host_mac_phy_caps_ext2 - Phy caps received in EXT2 service
  * @hw_mode_id: HW mode id
  * @pdev_id: Pdev id
  * @phy_id: Phy id
  * @wireless_modes_ext: Extended wireless modes
- * @eht_cap_info_2G[]: EHT capability info field of 802.11ax, WMI_HE_CAP defines
+ * @eht_cap_info_2G: EHT capability info field of 802.11ax, WMI_HE_CAP defines
  * @eht_supp_mcs_2G: EHT Supported MCS Set field Rx/Tx same
- * @eht_cap_info_5G[]: EHT capability info field of 802.11ax, WMI_HE_CAP defines
+ * @eht_cap_info_5G: EHT capability info field of 802.11ax, WMI_HE_CAP defines
  * @eht_supp_mcs_5G: EHT Supported MCS Set field Rx/Tx same
  * @eht_cap_phy_info_2G: 2G EHT capability phy field
  * @eht_cap_phy_info_5G: 5G EHT capability phy field
@@ -272,6 +280,7 @@ struct wlan_psoc_host_hw_mode_caps {
  * @eht_ppet5G: 5G EHT PPET info
  * @emlcap: EML Capabilities info
  * @mldcap: MLD Capabilities info
+ * @msdcap: Medium Synchronization Delay capabilities info
  */
 struct wlan_psoc_host_mac_phy_caps_ext2 {
 	uint32_t hw_mode_id;
@@ -294,6 +303,7 @@ struct wlan_psoc_host_mac_phy_caps_ext2 {
 #ifdef WLAN_FEATURE_11BE_MLO
 	struct wlan_mlo_eml_cap emlcap;
 	struct wlan_mlo_mld_cap mldcap;
+	struct wlan_mlo_msd_cap msdcap;
 #endif
 };
 
@@ -302,11 +312,13 @@ struct wlan_psoc_host_mac_phy_caps_ext2 {
  * @phy_id: phy id
  * @scan_radio_supported: indicates scan radio support
  * @dfs_en: indicates DFS needs to be enabled/disabled for scan radio vap
+ * @blanking_en: Indicates whether scan blanking feature is enabled
  */
 struct wlan_psoc_host_scan_radio_caps {
 	uint32_t phy_id;
 	bool scan_radio_supported;
 	bool dfs_en;
+	bool blanking_en;
 };
 
 /**
@@ -343,6 +355,36 @@ struct wlan_psoc_host_spectral_scaling_params {
 	uint32_t rssi_thr;
 	uint32_t default_agc_max_gain;
 };
+
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+/**
+ * struct wlan_psoc_host_rcc_enh_aoa_caps_ext2 - aoa capabilities
+ * @max_agc_gain_tbls: max number of AGC gain tables supported
+ * @max_agc_gain_per_tbl_2g: max AGC gain value per each table on 2GHz band.
+ *                           Each entry in max_agc_gain_per_table indicates
+ *                           max AGC gain value corresponding AGC gain table
+ *                           index.
+ * @max_agc_gain_per_tbl_5g: max AGC gain value per each table on 5GHz band.
+ *                           Each entry in max_agc_gain_per_table indicates
+ *                           max AGC gain value corresponding AGC gain table
+ *                           index.
+ * @max_agc_gain_per_tbl_6g: max AGC gain value per each table on 5GHz band.
+ *                           Each entry in max_agc_gain_per_table indicates
+ *                           max AGC gain value corresponding AGC gain table
+ *                           index.
+ * @max_bdf_entries_per_tbl: max entries in phase_array and gain_array per
+ *                           each gain table index. Each entry in this array
+ *                           indicates max entries used to store required data
+ *                           for corresponding AGC gain table index.
+ */
+struct wlan_psoc_host_rcc_enh_aoa_caps_ext2 {
+	uint32_t max_agc_gain_tbls;
+	uint16_t max_agc_gain_per_tbl_2g[PSOC_MAX_NUM_AGC_GAIN_TBLS];
+	uint16_t max_agc_gain_per_tbl_5g[PSOC_MAX_NUM_AGC_GAIN_TBLS];
+	uint16_t max_agc_gain_per_tbl_6g[PSOC_MAX_NUM_AGC_GAIN_TBLS];
+	uint8_t max_bdf_entries_per_tbl[PSOC_MAX_NUM_AGC_GAIN_TBLS];
+};
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
 
 /**
  * struct wlan_psoc_host_chainmask_capabilities - chain mask capabilities list
@@ -398,11 +440,32 @@ struct wlan_psoc_host_chainmask_table {
 	struct wlan_psoc_host_chainmask_capabilities *cap_list;
 };
 
+/* struct wlan_psoc_host_aux_dev_caps - wlan psoc aux dev capability.
+ *                                      retrieved from wmi_aux_dev_capabilities.
+ *
+ * @aux_index: aux index
+ * @hw_mode_id：hw mode which defined in WMI_HW_MODE_CONFIG_TYPE
+ * @supported_modes_bitmap: indicate which mode this AUX supports for the
+ *                          HW mode defined in hw_mode_id. bitmap defined in
+ *                          WMI_AUX_DEV_CAPS_SUPPORTED_MODE.
+ * @listen_pdev_id_map: indicate which AUX MAC can listen/scan for the HW mode
+ *                      described in hw_mode_id
+ * @emlsr_pdev_id_map: indicate which AUX MAC can perform eMLSR for the HW mode
+ *                     described in hw_mode_id.
+ */
+struct wlan_psoc_host_aux_dev_caps {
+	uint32_t aux_index;
+	uint32_t hw_mode_id;
+	uint32_t supported_modes_bitmap;
+	uint32_t listen_pdev_id_map;
+	uint32_t emlsr_pdev_id_map;
+};
+
 /**
  * struct wlan_psoc_host_service_ext_param - EXT service base params in event
  * @default_conc_scan_config_bits: Default concurrenct scan config
  * @default_fw_config_bits: Default HW config bits
- * @wlan_psoc_host_ppe_threshold ppet: Host PPE threshold struct
+ * @ppet: Host PPE threshold struct
  * @he_cap_info: HE capabality info
  * @mpdu_density: units are microseconds
  * @max_bssid_rx_filters: Maximum no of BSSID based RX filters host can program
@@ -418,6 +481,15 @@ struct wlan_psoc_host_chainmask_table {
  * @num_bin_scaling_params: Number of Spectral bin scaling parameters
  * @chainmask_table: Available chain mask tables.
  * @sar_version: SAR version info
+ *
+ * Following fields are used to save the values that are received in service
+ * ready EXT event. Currently, used by RF path switch code.
+ * @wireless_modes: Regdmn modes
+ * @low_2ghz_chan: 2 GHz channel low
+ * @high_2ghz_chan: 2 GHz channel High
+ * @low_5ghz_chan: 5 GHz channel low
+ * @high_5ghz_chan: 5 GHz channel High
+ *
  */
 struct wlan_psoc_host_service_ext_param {
 	uint32_t default_conc_scan_config_bits;
@@ -436,14 +508,19 @@ struct wlan_psoc_host_service_ext_param {
 	struct wlan_psoc_host_chainmask_table
 		chainmask_table[PSOC_MAX_CHAINMASK_TABLES];
 	uint32_t sar_version;
+	uint64_t wireless_modes;
+	uint32_t low_2ghz_chan;
+	uint32_t high_2ghz_chan;
+	uint32_t low_5ghz_chan;
+	uint32_t high_5ghz_chan;
 };
 
 /**
  * struct wlan_psoc_host_service_ext2_param - EXT service base params in event
- * reg_db_version_major: REG DB version major number
- * reg_db_version_minor: REG DB version minor number
- * bdf_reg_db_version_major: BDF REG DB version major number
- * bdf_reg_db_version_minor: BDF REG DB version minor number
+ * @reg_db_version_major: REG DB version major number
+ * @reg_db_version_minor: REG DB version minor number
+ * @bdf_reg_db_version_major: BDF REG DB version major number
+ * @bdf_reg_db_version_minor: BDF REG DB version minor number
  * @num_dbr_ring_caps: Number of direct buf rx ring capabilities
  * @chwidth_num_peer_caps: Peer limit for peer_chan_width_switch WMI cmd
  * @max_ndp_sessions: Max number of ndp session fw supports
@@ -458,9 +535,10 @@ struct wlan_psoc_host_service_ext_param {
  * @sap_coex_fixed_chan_support: Indicates if fw supports coex SAP in
  *                               fixed chan config
  * @target_cap_flags: Rx peer metadata version number used by target
+ * @dp_peer_meta_data_ver: DP peer metadata version reported by target
  * @ul_mumimo_tx_2g: UL MUMIMO Tx support for 2GHz
  * @ul_mumimo_tx_5g: UL MUMIMO Tx support for 5GHz
- * @ul_mumimo_tx_5g: UL MUMIMO Tx support for 6GHz
+ * @ul_mumimo_tx_6g: UL MUMIMO Tx support for 6GHz
  * @ul_mumimo_rx_2g: UL MUMIMO Rx support for 2GHz
  * @ul_mumimo_rx_5g: UL MUMIMO Rx support for 5GHz
  * @ul_mumimo_rx_6g: UL MUMIMO Rx support for 6GHz
@@ -468,6 +546,16 @@ struct wlan_psoc_host_service_ext_param {
  * @num_msdu_idx_qtype_map: Number of HTT_MSDUQ_INDEX to HTT_MSDU_QTYPE
  *                          mapping
  * @is_multipass_sap: Multipass sap flag
+ * @num_max_mlo_link_per_ml_bss_supp: max link number per MLD FW supports.
+ * @num_aux_dev_caps: number of aux dev capabilities
+ *
+ * Following fields are used to save the values that are received in service
+ * ready EXT2 event. Currently, used by RF path switch code.
+ * @wireless_modes_ext: REGDMN MODE, see REGDMN_MODE_ enum
+ * @low_2ghz_chan_ext: 2 GHz channel ext low
+ * @high_2ghz_chan_ext: 2 GHz channel ext High
+ * @low_5ghz_chan_ext: 5 GHz channel ext low
+ * @high_5ghz_chan_ext: 5 GHz channel ext High
  */
 struct wlan_psoc_host_service_ext2_param {
 	uint8_t reg_db_version_major;
@@ -487,6 +575,7 @@ struct wlan_psoc_host_service_ext2_param {
 	uint32_t twt_ack_support_cap:1;
 	uint32_t sap_coex_fixed_chan_support:1;
 	uint32_t target_cap_flags;
+	uint8_t dp_peer_meta_data_ver;
 	uint8_t ul_mumimo_tx_2g:1,
 		ul_mumimo_tx_5g:1,
 		ul_mumimo_tx_6g:1,
@@ -500,6 +589,14 @@ struct wlan_psoc_host_service_ext2_param {
 #ifdef QCA_MULTIPASS_SUPPORT
 	bool is_multipass_sap;
 #endif
+	uint32_t num_max_mlo_link_per_ml_bss_supp;
+	uint32_t num_aux_dev_caps;
+
+	uint64_t wireless_modes_ext;
+	uint32_t low_2ghz_chan_ext;
+	uint32_t high_2ghz_chan_ext;
+	uint32_t low_5ghz_chan_ext;
+	uint32_t high_5ghz_chan_ext;
 };
 
 #endif /* _SERVICE_READY_PARAM_H_*/

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,6 +29,7 @@
 #include <wlan_policy_mgr_api.h>
 #include "wlan_reg_ucfg_api.h"
 #include <host_diag_core_event.h>
+#include "wlan_policy_mgr_api.h"
 
 static uint8_t calculate_hash_key(const uint8_t *macaddr)
 {
@@ -490,7 +491,7 @@ tdls_find_first_connected_peer(struct tdls_vdev_priv_obj *vdev_obj)
  * @vdev_obj: TDLS vdev object
  * @peer: TDLS peer
  * @channel: pointer to channel
- * @opclass: pinter to opclass
+ * @opclass: pointer to opclass
  *
  * Function determines the channel and operating class
  *
@@ -504,7 +505,8 @@ static void tdls_determine_channel_opclass(struct tdls_soc_priv_obj *soc_obj,
 	uint32_t vdev_id;
 	enum QDF_OPMODE opmode;
 	struct wlan_objmgr_pdev *pdev = NULL;
-
+	struct wlan_objmgr_psoc *psoc = NULL;
+	enum policy_mgr_con_mode mode;
 	/*
 	 * If tdls offchannel is not enabled then we provide base channel
 	 * and in that case pass opclass as 0 since opclass is mainly needed
@@ -516,10 +518,13 @@ static void tdls_determine_channel_opclass(struct tdls_soc_priv_obj *soc_obj,
 		vdev_id = wlan_vdev_get_id(vdev_obj->vdev);
 		opmode = wlan_vdev_mlme_get_opmode(vdev_obj->vdev);
 		pdev = wlan_vdev_get_pdev(vdev_obj->vdev);
+		psoc = wlan_pdev_get_psoc(pdev);
 
+		mode = policy_mgr_qdf_opmode_to_pm_con_mode(psoc, opmode,
+							    vdev_id);
 		*channel = wlan_reg_freq_to_chan(pdev, policy_mgr_get_channel(
 						 soc_obj->soc,
-						 policy_mgr_convert_device_mode_to_qdf_type(opmode),
+						 mode,
 						 &vdev_id));
 		*opclass = 0;
 	} else {
@@ -574,6 +579,46 @@ static void tdls_get_wifi_hal_state(struct tdls_peer *peer, uint32_t *state,
 	}
 }
 
+#ifdef WLAN_FEATURE_TDLS_CONCURRENCIES
+/**
+ * tdls_get_allowed_off_channel_for_concurrency() - Get allowed off-channel
+ * frequency based on current concurrency. Return 0 if all frequencies are
+ * allowed
+ * @pdev: Pointer to PDEV object
+ * @vdev: Pointer to vdev object
+ *
+ * Return: Frequency
+ */
+static inline qdf_freq_t
+tdls_get_allowed_off_channel_for_concurrency(struct wlan_objmgr_pdev *pdev,
+					     struct wlan_objmgr_vdev *vdev)
+{
+	struct wlan_objmgr_psoc *psoc = wlan_pdev_get_psoc(pdev);
+	qdf_freq_t freq = 0;
+
+	if (!psoc)
+		return 0;
+
+	if (!wlan_psoc_nif_fw_ext2_cap_get(psoc,
+					   WLAN_TDLS_CONCURRENCIES_SUPPORT))
+		return 0;
+
+	if (!policy_mgr_get_allowed_tdls_offchannel_freq(psoc, vdev, &freq)) {
+		tdls_debug("off channel not allowed for current concurrency");
+		return 0;
+	}
+
+	return freq;
+}
+#else
+static inline qdf_freq_t
+tdls_get_allowed_off_channel_for_concurrency(struct wlan_objmgr_pdev *pdev,
+					     struct wlan_objmgr_vdev *vdev)
+{
+	return 0;
+}
+#endif
+
 /**
  * tdls_extract_peer_state_param() - extract peer update params from TDLS peer
  * @peer_param: output peer update params
@@ -592,7 +637,7 @@ void tdls_extract_peer_state_param(struct tdls_peer_update_state *peer_param,
 	enum channel_state ch_state;
 	struct wlan_objmgr_pdev *pdev;
 	uint32_t cur_band;
-	qdf_freq_t ch_freq;
+	qdf_freq_t ch_freq, allowed_freq;
 	uint32_t tx_power = 0;
 
 	vdev_obj = peer->vdev_priv;
@@ -654,14 +699,22 @@ void tdls_extract_peer_state_param(struct tdls_peer_update_state *peer_param,
 	}
 
 	num = 0;
+	allowed_freq =
+		tdls_get_allowed_off_channel_for_concurrency(pdev,
+							     vdev_obj->vdev);
+	tdls_debug("allowed freq:%u", allowed_freq);
+
 	for (i = 0; i < peer->supported_channels_len; i++) {
 		ch_freq = peer->supported_chan_freq[i];
+		if (allowed_freq && allowed_freq != ch_freq)
+			continue;
+
 		ch_state = wlan_reg_get_channel_state_for_pwrmode(
 							pdev, ch_freq,
 							REG_CURRENT_PWR_MODE);
 
 		if (CHANNEL_STATE_INVALID != ch_state &&
-		    CHANNEL_STATE_DFS != ch_state &&
+		    !wlan_reg_is_dfs_for_freq(pdev, ch_freq) &&
 		    !wlan_reg_is_dsrc_freq(ch_freq)) {
 			peer_param->peer_cap.peer_chan[num].ch_freq = ch_freq;
 			if (!wlan_reg_is_6ghz_chan_freq(ch_freq)) {
@@ -706,6 +759,7 @@ static void tdls_prevent_suspend(struct tdls_soc_priv_obj *tdls_soc)
 			      WIFI_POWER_EVENT_WAKELOCK_TDLS);
 	qdf_runtime_pm_prevent_suspend(&tdls_soc->runtime_lock);
 	tdls_soc->is_prevent_suspend = true;
+	tdls_debug("Acquire WIFI_POWER_EVENT_WAKELOCK_TDLS");
 }
 
 /**
@@ -725,6 +779,7 @@ static void tdls_allow_suspend(struct tdls_soc_priv_obj *tdls_soc)
 			      WIFI_POWER_EVENT_WAKELOCK_TDLS);
 	qdf_runtime_pm_allow_suspend(&tdls_soc->runtime_lock);
 	tdls_soc->is_prevent_suspend = false;
+	tdls_debug("Release WIFI_POWER_EVENT_WAKELOCK_TDLS");
 }
 
 /**
@@ -768,15 +823,6 @@ static void tdls_update_pmo_status(struct tdls_vdev_priv_obj *tdls_vdev,
 }
 #endif
 
-/**
- * tdls_set_link_status() - set link statue for TDLS peer
- * @vdev_obj: TDLS vdev object
- * @mac: MAC address of current TDLS peer
- * @link_status: link status
- * @link_reason: reason with link status
- *
- * Return: None.
- */
 void tdls_set_link_status(struct tdls_vdev_priv_obj *vdev_obj,
 			  const uint8_t *mac,
 			  enum tdls_link_state link_status,
@@ -821,6 +867,21 @@ void tdls_set_link_status(struct tdls_vdev_priv_obj *vdev_obj,
 	}
 }
 
+static inline char *
+tdls_link_status_str(enum tdls_link_state link_status)
+{
+	switch (link_status) {
+	CASE_RETURN_STRING(TDLS_LINK_IDLE);
+	CASE_RETURN_STRING(TDLS_LINK_DISCOVERING);
+	CASE_RETURN_STRING(TDLS_LINK_DISCOVERED);
+	CASE_RETURN_STRING(TDLS_LINK_CONNECTING);
+	CASE_RETURN_STRING(TDLS_LINK_CONNECTED);
+	CASE_RETURN_STRING(TDLS_LINK_TEARING);
+	default:
+		return "UNKNOWN";
+	}
+}
+
 void tdls_set_peer_link_status(struct tdls_peer *peer,
 			       enum tdls_link_state link_status,
 			       enum tdls_link_state_reason link_reason)
@@ -833,13 +894,15 @@ void tdls_set_peer_link_status(struct tdls_peer *peer,
 	struct tdls_vdev_priv_obj *vdev_obj;
 	enum tdls_link_state old_status;
 
-	tdls_debug("state %d reason %d peer:" QDF_MAC_ADDR_FMT,
-		   link_status, link_reason,
-		   QDF_MAC_ADDR_REF(peer->peer_mac.bytes));
-
 	vdev_obj = peer->vdev_priv;
+
 	old_status = peer->link_status;
 	peer->link_status = link_status;
+	tdls_debug("vdev:%d new state: %s old state:%s reason %d peer:" QDF_MAC_ADDR_FMT,
+		   wlan_vdev_get_id(vdev_obj->vdev),
+		   tdls_link_status_str(link_status),
+		   tdls_link_status_str(old_status), link_reason,
+		   QDF_MAC_ADDR_REF(peer->peer_mac.bytes));
 	tdls_update_pmo_status(vdev_obj, old_status, link_status);
 
 	if (link_status >= TDLS_LINK_DISCOVERED)

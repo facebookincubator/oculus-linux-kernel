@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -227,7 +227,7 @@ static int hdd_set_reset_apf_offload(struct hdd_context *hdd_ctx,
 	int prog_len;
 	int ret = 0;
 
-	if (!hdd_cm_is_vdev_associated(adapter)) {
+	if (!hdd_cm_is_vdev_associated(adapter->deflink)) {
 		hdd_err("Not in Connected state!");
 		return -ENOTSUPP;
 	}
@@ -239,7 +239,7 @@ static int hdd_set_reset_apf_offload(struct hdd_context *hdd_ctx,
 		goto fail;
 	}
 
-	apf_set_offload.session_id = adapter->vdev_id;
+	apf_set_offload.session_id = adapter->deflink->vdev_id;
 	apf_set_offload.total_length = nla_get_u32(tb[APF_PACKET_SIZE]);
 
 	if (!apf_set_offload.total_length) {
@@ -320,7 +320,8 @@ hdd_enable_disable_apf(struct hdd_adapter *adapter, bool apf_enable)
 	QDF_STATUS status;
 
 	status = sme_set_apf_enable_disable(hdd_adapter_get_mac_handle(adapter),
-					    adapter->vdev_id, apf_enable);
+					    adapter->deflink->vdev_id,
+					    apf_enable);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		hdd_err("Unable to post sme apf enable/disable message (status-%d)",
 				status);
@@ -350,7 +351,7 @@ hdd_apf_write_memory(struct hdd_adapter *adapter, struct nlattr **tb)
 	QDF_STATUS status;
 	int ret = 0;
 
-	write_mem_params.vdev_id = adapter->vdev_id;
+	write_mem_params.vdev_id = adapter->deflink->vdev_id;
 	if (adapter->apf_context.apf_enabled) {
 		hdd_err("Cannot get/set when APF interpreter is enabled");
 		return -EINVAL;
@@ -422,10 +423,10 @@ hdd_apf_read_memory_callback(void *hdd_context,
 			     struct wmi_apf_read_memory_resp_event_params *evt)
 {
 	struct hdd_context *hdd_ctx = hdd_context;
-	struct hdd_adapter *adapter;
 	struct hdd_apf_context *context;
 	uint8_t *buf_ptr;
 	uint32_t pkt_offset;
+	struct wlan_hdd_link_info *link_info;
 
 	hdd_enter();
 
@@ -435,10 +436,11 @@ hdd_apf_read_memory_callback(void *hdd_context,
 		return;
 	}
 
-	adapter = hdd_get_adapter_by_vdev(hdd_ctx, evt->vdev_id);
-	if (hdd_validate_adapter(adapter))
+	link_info = hdd_get_link_info_by_vdev(hdd_ctx, evt->vdev_id);
+	if (!link_info || hdd_validate_adapter(link_info->adapter))
 		return;
-	context = &adapter->apf_context;
+
+	context = &link_info->adapter->apf_context;
 
 	if (context->magic != APF_CONTEXT_MAGIC) {
 		/* The caller presumably timed out, nothing to do */
@@ -494,13 +496,20 @@ static int hdd_apf_read_memory(struct hdd_adapter *adapter, struct nlattr **tb)
 	int ret = 0;
 	struct sk_buff *skb = NULL;
 	uint8_t *bufptr;
+	mac_handle_t mac_handle;
+
+	mac_handle = hdd_adapter_get_mac_handle(adapter);
+	if (!mac_handle) {
+		hdd_debug("mac ctx NULL");
+		return -EINVAL;
+	}
 
 	if (context->apf_enabled) {
 		hdd_err("Cannot get/set while interpreter is enabled");
 		return -EINVAL;
 	}
 
-	read_mem_params.vdev_id = adapter->vdev_id;
+	read_mem_params.vdev_id = adapter->deflink->vdev_id;
 
 	/* Read APF work memory offset */
 	if (!tb[APF_CURRENT_OFFSET]) {
@@ -535,8 +544,7 @@ static int hdd_apf_read_memory(struct hdd_adapter *adapter, struct nlattr **tb)
 	context->buf_len = read_mem_params.length;
 	context->magic = APF_CONTEXT_MAGIC;
 
-	status = sme_apf_read_work_memory(hdd_adapter_get_mac_handle(adapter),
-					  &read_mem_params,
+	status = sme_apf_read_work_memory(mac_handle, &read_mem_params,
 					  hdd_apf_read_memory_callback);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		hdd_err("Unable to post sme APF read memory message (status-%d)",

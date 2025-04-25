@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2015-2017, 2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,7 +31,7 @@
 
 /**
  * qdf_lro_desc_pool_init() - Initialize the free pool of LRO
- * descriptors
+ *                            descriptors
  * @lro_desc_pool: free pool of the LRO descriptors
  * @lro_mgr: LRO manager
  *
@@ -40,7 +40,7 @@
  * Return: none
  */
 static void qdf_lro_desc_pool_init(struct qdf_lro_desc_pool *lro_desc_pool,
-	 struct net_lro_mgr *lro_mgr)
+				   struct net_lro_mgr *lro_mgr)
 {
 	int i;
 
@@ -106,11 +106,6 @@ static int qdf_lro_get_skb_header(struct sk_buff *skb, void **ip_hdr,
 	return 0;
 }
 
-/**
- * qdf_lro_init() - LRO initialization function
- *
- * Return: LRO context
- */
 qdf_lro_ctx_t qdf_lro_init(void)
 {
 	struct qdf_lro_s *lro_ctx;
@@ -119,9 +114,9 @@ qdf_lro_ctx_t qdf_lro_init(void)
 	uint8_t *lro_mem_ptr;
 
 	/*
-	* Allocate all the LRO data structures at once and then carve
-	* them up as needed
-	*/
+	 * Allocate all the LRO data structures at once and then carve
+	 * them up as needed
+	 */
 	lro_info_sz = sizeof(struct qdf_lro_s);
 	lro_mgr_sz = sizeof(struct net_lro_mgr);
 	desc_arr_sz =
@@ -171,12 +166,6 @@ qdf_lro_ctx_t qdf_lro_init(void)
 	return lro_ctx;
 }
 
-/**
- * qdf_lro_deinit() - LRO deinitialization function
- * @lro_ctx: LRO context
- *
- * Return: nothing
- */
 void qdf_lro_deinit(qdf_lro_ctx_t lro_ctx)
 {
 	if (likely(lro_ctx)) {
@@ -188,9 +177,9 @@ void qdf_lro_deinit(qdf_lro_ctx_t lro_ctx)
 
 /**
  * qdf_lro_tcp_flow_match() - function to check for a flow match
+ * @lro_desc: LRO descriptor
  * @iph: IP header
  * @tcph: TCP header
- * @lro_desc: LRO descriptor
  *
  * Checks if the descriptor belongs to the same flow as the one
  * indicated by the TCP and IP header.
@@ -198,8 +187,8 @@ void qdf_lro_deinit(qdf_lro_ctx_t lro_ctx)
  * Return: true - flow match, false - flow does not match
  */
 static inline bool qdf_lro_tcp_flow_match(struct net_lro_desc *lro_desc,
-	 struct iphdr *iph,
-	 struct tcphdr *tcph)
+					  struct iphdr *iph,
+					  struct tcphdr *tcph)
 {
 	if ((lro_desc->tcph->source != tcph->source) ||
 		 (lro_desc->tcph->dest != tcph->dest) ||
@@ -295,7 +284,7 @@ static int qdf_lro_desc_find(struct qdf_lro_s *lro_ctx,
 }
 
 /**
- *  qdf_lro_get_info() - Update the LRO information
+ * qdf_lro_get_info() - Update the LRO information
  *
  * @lro_ctx: LRO context
  * @nbuf: network buffer
@@ -372,17 +361,7 @@ bool qdf_lro_get_info(qdf_lro_ctx_t lro_ctx, qdf_nbuf_t nbuf,
 	return true;
 }
 
-/**
- * qdf_lro_desc_free() - Free the LRO descriptor
- * @desc: LRO descriptor
- * @lro_ctx: LRO context
- *
- * Return the LRO descriptor to the free pool
- *
- * Return: none
- */
-void qdf_lro_desc_free(qdf_lro_ctx_t lro_ctx,
-	 void *data)
+void qdf_lro_desc_free(qdf_lro_ctx_t lro_ctx, void *data)
 {
 	struct qdf_lro_desc_entry *entry;
 	struct net_lro_mgr *lro_mgr;
@@ -419,15 +398,6 @@ void qdf_lro_desc_free(qdf_lro_ctx_t lro_ctx,
 		 lro_desc_pool.lro_free_list_head);
 }
 
-/**
- * qdf_lro_flush() - LRO flush API
- * @lro_ctx: LRO context
- *
- * Flush all the packets aggregated in the LRO manager for all
- * the flows
- *
- * Return: none
- */
 void qdf_lro_flush(qdf_lro_ctx_t lro_ctx)
 {
 	struct net_lro_mgr *lro_mgr = lro_ctx->lro_mgr;
@@ -440,6 +410,7 @@ void qdf_lro_flush(qdf_lro_ctx_t lro_ctx)
 		}
 	}
 }
+
 /**
  * qdf_lro_get_desc() - LRO descriptor look-up function
  * @iph: IP header
@@ -467,18 +438,8 @@ static struct net_lro_desc *qdf_lro_get_desc(struct net_lro_mgr *lro_mgr,
 	return NULL;
 }
 
-/**
- * qdf_lro_flush_pkt() - function to flush the LRO flow
- * @info: LRO related information passed by the caller
- * @lro_ctx: LRO context
- *
- * Flush all the packets aggregated in the LRO manager for the
- * flow indicated by the TCP and IP header
- *
- * Return: none
- */
 void qdf_lro_flush_pkt(qdf_lro_ctx_t lro_ctx,
-	 struct qdf_lro_info *info)
+		       struct qdf_lro_info *info)
 {
 	struct net_lro_desc *lro_desc;
 	struct net_lro_mgr *lro_mgr = lro_ctx->lro_mgr;

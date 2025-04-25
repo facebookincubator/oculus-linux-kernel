@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,6 +29,7 @@
 #include <target_if_direct_buf_rx_api.h>
 #include <target_if_cfr_enh.h>
 #include "cdp_txrx_ctrl.h"
+#include <wlan_reg_services_api.h>
 
 #define CMN_NOISE_FLOOR       (-96)
 #define NUM_CHAINS_FW_TO_HOST(n) ((1 << ((n) + 1)) - 1)
@@ -61,6 +62,35 @@ u_int32_t snr_to_signal_strength(uint8_t snr)
 		((int8_t)snr);
 }
 #endif
+
+/**
+ * target_if_snr_to_signal_strength() - wrapper API to snr_to_signal_strength to
+ *                                      consider target_type.
+ * @target_type: target type of the pdev
+ * @meta: pointer to CFR metadata
+ * @ppdu: rx ppdu having per chain rssi to be converted to dBm
+ *
+ * Return: none
+ */
+static inline
+void target_if_snr_to_signal_strength(uint32_t target_type,
+				      struct enh_cfr_metadata *meta,
+				      struct cdp_rx_indication_ppdu *ppdu)
+{
+	uint8_t i;
+
+	/* No need to add CMN_NOISE_FLOOR for york */
+	if (target_type == TARGET_TYPE_QCN9160) {
+		for (i = 0; i < MAX_CHAIN; i++) {
+			meta->chain_rssi[i] = (int8_t)ppdu->per_chain_rssi[i];
+		}
+	} else {
+		for (i = 0; i < MAX_CHAIN; i++) {
+			meta->chain_rssi[i] =
+				snr_to_signal_strength(ppdu->per_chain_rssi[i]);
+		}
+	}
+}
 
 /**
  * get_lut_entry() - Retrieve LUT entry using cookie number
@@ -705,7 +735,8 @@ extract_peer_mac_from_freeze_tlv(void *freeze_tlv, uint8_t *peermac)
 
 /**
  * check_dma_length() - Sanity check DMA header and payload length
- * @dma_hdr: pointer to enhanced DMA header
+ * @lut: lookup table entry to check
+ * @target_type: target type
  *
  * Return: QDF_STATUS
  */
@@ -731,6 +762,16 @@ static QDF_STATUS check_dma_length(struct look_up_table *lut,
 	} else if (target_type == TARGET_TYPE_QCN9224) {
 		if (lut->header_length <= WAIKIKI_MAX_HEADER_LENGTH_WORDS &&
 		    lut->payload_length <= WAIKIKI_MAX_DATA_LENGTH_BYTES) {
+			return QDF_STATUS_SUCCESS;
+		}
+	} else if (target_type == TARGET_TYPE_QCN6432) {
+		if (lut->header_length <= QCN6432_MAX_HEADER_LENGTH_WORDS &&
+		    lut->payload_length <= QCN6432_MAX_DATA_LENGTH_BYTES) {
+			return QDF_STATUS_SUCCESS;
+		}
+	} else if (target_type == TARGET_TYPE_QCA5332) {
+		if (lut->header_length <= QCA5332_MAX_HEADER_LENGTH_WORDS &&
+		    lut->payload_length <= QCA5332_MAX_DATA_LENGTH_BYTES) {
 			return QDF_STATUS_SUCCESS;
 		}
 	} else {
@@ -868,9 +909,272 @@ done:
 }
 
 /**
+ * target_if_cfr_get_11be_support_flag(): check if target supports 11be
+ * @pdev_id: pdev id of the pdev
+ * @tgt_hdl: psoc info of pdev associated with pdev_id. Caller of this API to
+ *           ensure that tgt_hdl is not NULL
+ *
+ * Return: true if 11be supported, false otherwise
+ */
+#ifdef WLAN_FEATURE_11BE
+static inline
+bool target_if_cfr_get_11be_support_flag(uint8_t pdev_id,
+					 struct target_psoc_info *tgt_hdl)
+{
+	struct wlan_psoc_host_mac_phy_caps *mac_phy_cap_arr, *mac_phy_cap;
+
+	mac_phy_cap_arr = target_psoc_get_mac_phy_cap(tgt_hdl);
+
+	if (!mac_phy_cap_arr)
+		return false;
+
+	mac_phy_cap = &mac_phy_cap_arr[pdev_id];
+	if (mac_phy_cap && mac_phy_cap->supports_11be)
+		return true;
+
+	return false;
+}
+#else
+static inline
+bool target_if_cfr_get_11be_support_flag(uint8_t pdev_id,
+					 struct target_psoc_info *tgt_hdl)
+{
+	return false;
+}
+#endif
+
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+static inline
+bool is_valid_gain_table_idx(uint16_t tbl_idx, struct pdev_cfr *pcfr)
+{
+	/* if default gain table return true */
+	if (!tbl_idx)
+		return true;
+
+	/* non zero gain table is invalid when is_enh_aoa_data is not set */
+	if (!pcfr->is_enh_aoa_data)
+		return false;
+
+	if ((tbl_idx > 0) && (tbl_idx < pcfr->max_agc_gain_tbls))
+		return true;
+
+	return false;
+}
+
+static inline
+uint16_t get_max_agc_gain(struct wlan_objmgr_vdev *vdev,
+			  uint16_t tbl_idx, struct pdev_cfr *pcfr,
+			  bool supports_11be)
+{
+	uint16_t *max_agc_gain_per_tbl = NULL;
+	struct wlan_channel *bss_chan;
+
+	if (!supports_11be)
+		return MAX_AGC_GAIN;
+
+	if (!pcfr->is_enh_aoa_data)
+		return INVALID_AGC_GAIN;
+
+	bss_chan = wlan_vdev_mlme_get_bss_chan(vdev);
+	if (wlan_reg_is_24ghz_ch_freq(bss_chan->ch_freq))
+		max_agc_gain_per_tbl = pcfr->max_agc_gain_per_tbl_2g;
+	else if (wlan_reg_is_5ghz_ch_freq(bss_chan->ch_freq))
+		max_agc_gain_per_tbl = pcfr->max_agc_gain_per_tbl_5g;
+	else if (wlan_reg_is_6ghz_chan_freq(bss_chan->ch_freq))
+		max_agc_gain_per_tbl = pcfr->max_agc_gain_per_tbl_6g;
+
+	if (is_valid_gain_table_idx(tbl_idx, pcfr) && max_agc_gain_per_tbl)
+		return max_agc_gain_per_tbl[tbl_idx];
+	else
+		return INVALID_AGC_GAIN;
+}
+
+static
+void populate_enh_chain_phase(struct wlan_objmgr_vdev *vdev,
+			      struct pdev_cfr *pcfr,
+			      struct enh_cfr_metadata *meta,
+			      bool invalid_gain_table_idx)
+{
+	uint16_t *phase_array, *gain_array;
+	uint16_t phase_delta;
+	uint32_t start_ent, stop_ent, chain, tbl_idx, grp_stp_idx, found;
+	uint32_t data_idx, rf_chain;
+
+	if (invalid_gain_table_idx || !pcfr->is_enh_aoa_data) {
+		/**
+		 * When AoA is enabled but invalid gain table index is reported
+		 * by HW, it indicates the AoA result is not reliable. Hence,
+		 * set the chain_phase to 0xFFFF indicating an error.
+		 * Set invalid phase when enhanced aoa capability is not set.
+		 */
+		for (chain = 0; chain < pcfr->max_aoa_chains; chain++)
+			meta->chain_phase[chain] = INVALID_PHASE_DELTA;
+
+		return;
+	}
+
+	for (chain = 0; chain < pcfr->max_aoa_chains; chain++) {
+		rf_chain = (pcfr->xbar_config) ?
+			    ((pcfr->xbar_config >> (3 * chain)) & 0x07) :
+			    chain;
+		data_idx = (rf_chain * pcfr->max_entries_all_table);
+
+		phase_array = &pcfr->enh_phase_delta_array[data_idx];
+		gain_array = &pcfr->gain_stop_index_array[data_idx];
+		tbl_idx = meta->agc_gain_tbl_index[chain];
+		start_ent = pcfr->start_ent[tbl_idx];
+		stop_ent = start_ent + pcfr->max_bdf_entries_per_tbl[tbl_idx];
+
+		/**
+		 * if default gain table exceeds max_agc_gain, chain_phase needs
+		 * to be considered as 0. Remaining gain tables would have a
+		 * phase delta assigned with max agc gain as well
+		 */
+		if (!tbl_idx && (meta->agc_gain[chain] ==
+				get_max_agc_gain(vdev, tbl_idx, pcfr, true))) {
+			phase_delta = 0;
+			meta->chain_phase[chain] =
+				(pcfr->ibf_cal_val[rf_chain] +
+				 phase_delta) & 0x3FF;
+			continue;
+		}
+
+		for (grp_stp_idx = start_ent, found = 0;
+		     grp_stp_idx < stop_ent; grp_stp_idx++) {
+			if (meta->agc_gain[chain] <= gain_array[grp_stp_idx]) {
+				phase_delta = phase_array[grp_stp_idx];
+				found = 1;
+				break;
+			}
+		}
+
+		if ((!found) && (grp_stp_idx >= stop_ent))
+			phase_delta = 0;
+
+		/**
+		 * FW sets 0xFFFF as invalid phase delta in invalid cases.
+		 * Retain same in HOST as well. In case of valid phase, add the
+		 * ibf cal value to the delta & ensure the derived phase value
+		 * is in the range of 0 - 1024 indicating 0 - 360 degrees.
+		 */
+		if (phase_delta == INVALID_PHASE_DELTA)
+			meta->chain_phase[chain] = INVALID_PHASE_DELTA;
+		else
+			meta->chain_phase[chain] =
+				((pcfr->ibf_cal_val[rf_chain] + phase_delta) &
+				 0x3FF);
+	}
+}
+#else
+static inline
+bool is_valid_gain_table_idx(uint16_t tbl_idx, struct pdev_cfr *pcfr)
+{
+	/* if default gain table return true */
+	if (!tbl_idx)
+		return true;
+
+	return false;
+}
+
+static inline
+uint16_t get_max_agc_gain(struct wlan_objmgr_vdev *vdev,
+			  uint16_t tbl_idx, struct pdev_cfr *pcfr,
+			  bool supports_11be)
+{
+	if (!supports_11be)
+		return MAX_AGC_GAIN;
+
+	return INVALID_AGC_GAIN;
+}
+
+static
+void populate_enh_chain_phase(struct wlan_objmgr_vdev *vdev,
+			      struct pdev_cfr *pcfr,
+			      struct enh_cfr_metadata *meta,
+			      bool invalid_gain_table_idx)
+{
+	uint8_t chain;
+
+	cfr_debug("Enahced AoA not supported.. Invsetigate");
+	for (chain = 0; chain < pcfr->max_aoa_chains; chain++)
+		meta->chain_phase[chain] = INVALID_PHASE_DELTA;
+}
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
+
+static
+void populate_chain_phase(struct wlan_objmgr_vdev *vdev,
+			  struct pdev_cfr *pcfr,
+			  struct enh_cfr_metadata *meta,
+			  bool invalid_gain_table_idx)
+{
+	uint8_t i;
+	uint16_t gain, pdelta;
+
+	if (invalid_gain_table_idx) {
+		/**
+		 * When AoA is enabled but invalid gain table index is reported
+		 * by HW, it indicates the AoA result is not reliable. Hence,
+		 * set the chain_phase to 0xFFFF indicating an error.
+		 */
+		for (i = 0; i < pcfr->max_aoa_chains; i++) {
+			if (wlan_vdev_mlme_is_special_vdev(vdev) &&
+			    i == CHAIN_SHIFT_INDEX_PINE_SCAN) {
+				meta->chain_phase[i - 1] = INVALID_PHASE_DELTA;
+				break;
+			}
+			meta->chain_phase[i] = INVALID_PHASE_DELTA;
+		}
+		return;
+	}
+
+	for (i = 0; i < pcfr->max_aoa_chains; i++) {
+		/**
+		 * phase delta stored in reverse order by FW.
+		 * Hence, index accordingly
+		 */
+		gain = meta->agc_gain[i];
+		if (gain < MAX_AGC_GAIN) {
+			pdelta = pcfr->phase_delta[i][MAX_AGC_GAIN -
+				1 -
+				gain];
+		} else {
+			/* populate 0 for last gain index */
+			pdelta = 0;
+		}
+		/**
+		 * FW sets 0xFFFF as invalid phase delta in
+		 * invalid cases. Retain same in HOST as well.
+		 * In case of valid phase, add the ibf cal value
+		 * to the delta & ensure the derived phase value
+		 * is in the range of 0 - 1024 indicating 0 - 360
+		 * degrees
+		 */
+		if (pdelta == INVALID_PHASE_DELTA) {
+			if (wlan_vdev_mlme_is_special_vdev(vdev) &&
+			    i == CHAIN_SHIFT_INDEX_PINE_SCAN) {
+				meta->chain_phase[i - 1] =
+					INVALID_PHASE_DELTA;
+				break;
+			}
+			meta->chain_phase[i] = INVALID_PHASE_DELTA;
+		} else {
+			if (wlan_vdev_mlme_is_special_vdev(vdev) &&
+			    i == CHAIN_SHIFT_INDEX_PINE_SCAN) {
+				meta->chain_phase[i - 1] =
+					((pcfr->ibf_cal_val[i] +
+					  pdelta) & 0x3FF);
+				break;
+			}
+			meta->chain_phase[i] = ((pcfr->ibf_cal_val[i] +
+						pdelta) & 0x3FF);
+		}
+	}
+}
+
+/**
  * target_if_cfr_rx_tlv_process() - Process PPDU status TLVs and store info in
  * lookup table
- * @pdev_obj: PDEV object
+ * @pdev: PDEV object
  * @nbuf: ppdu info
  *
  * Return: none
@@ -899,9 +1203,12 @@ void target_if_cfr_rx_tlv_process(struct wlan_objmgr_pdev *pdev, void *nbuf)
 	uint8_t srng_id = 0;
 	struct wlan_lmac_if_rx_ops *rx_ops;
 	uint32_t target_type;
-	uint16_t pdelta, gain;
 	uint16_t gain_info[HOST_MAX_CHAINS];
 	bool invalid_gain_table_idx = false;
+	uint32_t max_agc_gain = 0;
+	bool supports_11be;
+	uint8_t pdev_id;
+	struct target_psoc_info *tgt_hdl;
 
 	if (qdf_unlikely(!pdev)) {
 		cfr_err("pdev is null\n");
@@ -940,6 +1247,17 @@ void target_if_cfr_rx_tlv_process(struct wlan_objmgr_pdev *pdev, void *nbuf)
 		cfr_err("rx_ops is NULL");
 		goto relref;
 	}
+
+	tgt_hdl = wlan_psoc_get_tgt_if_handle(psoc);
+	if (qdf_unlikely(!tgt_hdl)) {
+		cfr_err("tgt_hdl is NULL");
+		goto relref;
+	}
+
+	pdev_id = wlan_objmgr_pdev_get_pdev_id(pdev);
+
+	supports_11be = target_if_cfr_get_11be_support_flag(pdev_id, tgt_hdl);
+
 	target_type = target_if_cfr_get_target_type(psoc);
 	cfr_rx_ops = &rx_ops->cfr_rx_ops;
 	buf_addr_extn = cfr_info->rtt_che_buffer_pointer_high8 & 0xF;
@@ -1031,82 +1349,36 @@ void target_if_cfr_rx_tlv_process(struct wlan_objmgr_pdev *pdev, void *nbuf)
 	for (i = 0; i < HOST_MAX_CHAINS; i++) {
 		meta->agc_gain[i] = get_gain_db(gain_info[i]);
 		meta->agc_gain_tbl_index[i] = get_gain_table_idx(gain_info[i]);
-
-		if (pcfr->is_aoa_for_rcc_support &&
-		    (i < pcfr->max_aoa_chains) &&
-		    (meta->agc_gain_tbl_index[i] != 0)) {
+		max_agc_gain = get_max_agc_gain(vdev,
+						meta->agc_gain_tbl_index[i],
+						pcfr,
+						supports_11be);
+		if (!is_valid_gain_table_idx(meta->agc_gain_tbl_index[i],
+					     pcfr)) {
 			cfr_debug("Invalid gain table index reported");
 			invalid_gain_table_idx = true;
 		}
 
-		if (meta->agc_gain[i] > MAX_AGC_GAIN)
-			meta->agc_gain[i] = MAX_AGC_GAIN;
+		if (meta->agc_gain[i] > max_agc_gain)
+			meta->agc_gain[i] = max_agc_gain;
+	}
+
+	if (wlan_vdev_mlme_is_special_vdev(vdev)) {
+		for (i = 0; i < pcfr->max_aoa_chains; i++)
+			meta->chain_phase[i] = INVALID_PHASE_DELTA;
 	}
 
 	/**
 	 * Do not derive the chain phase when capability is not set Or
 	 * when an invalid gain table index is reported by Hardware.
 	 */
-	if (wlan_vdev_mlme_is_special_vdev(vdev)) {
-		for (i = 0; i < pcfr->max_aoa_chains; i++)
-			meta->chain_phase[i] = INVALID_PHASE_DELTA;
-	}
-
-	if (pcfr->is_aoa_for_rcc_support && !invalid_gain_table_idx) {
-		for (i = 0; i < pcfr->max_aoa_chains; i++) {
-			/**
-			 * phase delta stored in reverse order by FW.
-			 * Hence, index accordingly
-			 */
-			gain = meta->agc_gain[i];
-			if (gain < MAX_AGC_GAIN) {
-				pdelta = pcfr->phase_delta[i][MAX_AGC_GAIN -
-							      1 -
-							      gain];
-			} else {
-				pdelta = 0;
-			}
-			/**
-			 * FW sets 0xFFFF as invalid phase delta in
-			 * invalid cases. Retain same in HOST as well.
-			 * In case of valid phase, add the ibf cal value
-			 * to the delta & ensure the derived phase value
-			 * is in the range of 0 - 1024 indicating 0 - 360
-			 * degrees
-			 */
-			if (pdelta == INVALID_PHASE_DELTA) {
-				if (wlan_vdev_mlme_is_special_vdev(vdev) &&
-				    i == CHAIN_SHIFT_INDEX_PINE_SCAN) {
-					meta->chain_phase[i - 1] =
-							INVALID_PHASE_DELTA;
-					break;
-				}
-				meta->chain_phase[i] = INVALID_PHASE_DELTA;
-			} else {
-				if (wlan_vdev_mlme_is_special_vdev(vdev) &&
-				    i == CHAIN_SHIFT_INDEX_PINE_SCAN) {
-					meta->chain_phase[i - 1] =
-						((pcfr->ibf_cal_val[i] +
-						  pdelta) & 0x3FF);
-					break;
-				}
-				meta->chain_phase[i] = ((pcfr->ibf_cal_val[i] +
-							pdelta) & 0x3FF);
-			}
-		}
-	} else if (pcfr->is_aoa_for_rcc_support) {
-		/**
-		 * When AoA is enabled but invalid gain table index is reported
-		 * by HW, it indicates the AoA result is not reliable. Hence,
-		 * set the chain_phase to 0xFFFF indicating an error.
-		 */
-		for (i = 0; i < pcfr->max_aoa_chains; i++) {
-			if (wlan_vdev_mlme_is_special_vdev(vdev) &&
-			    i == CHAIN_SHIFT_INDEX_PINE_SCAN) {
-				meta->chain_phase[i - 1] = INVALID_PHASE_DELTA;
-				break;
-			}
-			meta->chain_phase[i] = INVALID_PHASE_DELTA;
+	if (pcfr->is_aoa_for_rcc_support) {
+		if (supports_11be) {
+			populate_enh_chain_phase(vdev, pcfr,
+						 meta, invalid_gain_table_idx);
+		} else {
+			populate_chain_phase(vdev, pcfr,
+					     meta, invalid_gain_table_idx);
 		}
 	}
 
@@ -1122,9 +1394,7 @@ void target_if_cfr_rx_tlv_process(struct wlan_objmgr_pdev *pdev, void *nbuf)
 	if (meta->num_mu_users > pcfr->max_mu_users)
 		meta->num_mu_users = pcfr->max_mu_users;
 
-	for (i = 0; i < MAX_CHAIN; i++)
-		meta->chain_rssi[i] =
-			snr_to_signal_strength(cdp_rx_ppdu->per_chain_rssi[i]);
+	target_if_snr_to_signal_strength(target_type, meta, cdp_rx_ppdu);
 
 	if (cdp_rx_ppdu->u.ppdu_type != CDP_RX_TYPE_SU) {
 		for (i = 0 ; i < meta->num_mu_users; i++) {
@@ -1552,11 +1822,164 @@ target_if_pdev_aoa_phasedaelta_event_handler(ol_scn_t sc,
 	return retval;
 }
 
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+static int
+target_if_pdev_enhanced_aoa_phasedelta_event_handler(ol_scn_t sc,
+						     uint8_t *data,
+						     uint32_t datalen)
+{
+	struct wmi_unified *wmi_handle;
+	struct wlan_objmgr_psoc *psoc;
+	struct wlan_objmgr_pdev *pdev;
+	struct pdev_cfr *pcfr;
+	QDF_STATUS retval = 0;
+	struct wmi_cfr_enh_phase_delta_param param = {0};
+	uint32_t dst_idx, src_idx, max_src_ent, max_dst_ent;
+	uint32_t num_data_chains;
+	uint32_t offset;
+
+	qdf_bitmap(data_chain_bmap, sizeof(uint32_t) * QDF_CHAR_BIT);
+
+	if (!sc || !data) {
+		cfr_err("sc or data is null");
+		return -EINVAL;
+	}
+
+	psoc = target_if_get_psoc_from_scn_hdl(sc);
+	if (!psoc) {
+		cfr_err("psoc is null");
+		return -EINVAL;
+	}
+
+	retval = wlan_objmgr_psoc_try_get_ref(psoc, WLAN_CFR_ID);
+	if (QDF_IS_STATUS_ERROR(retval)) {
+		cfr_err("unable to get psoc reference");
+		return -EINVAL;
+	}
+
+	wmi_handle = GET_WMI_HDL_FROM_PSOC(psoc);
+	if (!wmi_handle) {
+		cfr_err("wmi_handle is null");
+		wlan_objmgr_psoc_release_ref(psoc, WLAN_CFR_ID);
+		return -EINVAL;
+	}
+
+	retval = wmi_extract_cfr_pdev_enhanced_aoa_phasedelta_event_fixed_param
+			(wmi_handle, data, &param);
+
+	if (QDF_IS_STATUS_ERROR(retval)) {
+		cfr_err("Failed to extract phase delta fixed param tlv");
+		wlan_objmgr_psoc_release_ref(psoc, WLAN_CFR_ID);
+		return -EINVAL;
+	}
+
+	pdev = wlan_objmgr_get_pdev_by_id(psoc, param.pdev_id, WLAN_CFR_ID);
+	if (!pdev) {
+		cfr_err("pdev is null");
+		wlan_objmgr_psoc_release_ref(psoc, WLAN_CFR_ID);
+		return -EINVAL;
+	}
+
+	pcfr = wlan_objmgr_pdev_get_comp_private_obj(pdev, WLAN_UMAC_COMP_CFR);
+
+	if (!pcfr) {
+		cfr_err("pdev object for CFR is NULL");
+		wlan_objmgr_psoc_release_ref(psoc, WLAN_CFR_ID);
+		wlan_objmgr_pdev_release_ref(pdev, WLAN_CFR_ID);
+		return -EINVAL;
+	}
+
+	pcfr->freq = param.freq;
+	pcfr->max_aoa_chains = (param.max_chains <= HOST_MAX_CHAINS) ?
+				param.max_chains : HOST_MAX_CHAINS;
+
+	num_data_chains = qdf_get_hweight32(param.data_for_chainmask);
+
+	if (num_data_chains != param.max_chains)
+		cfr_debug("data not received for all chains");
+
+	qdf_mem_zero(data_chain_bmap, sizeof(data_chain_bmap));
+	qdf_mem_copy(data_chain_bmap, &param.data_for_chainmask,
+		     qdf_min(sizeof(data_chain_bmap),
+			     sizeof(param.data_for_chainmask)));
+	pcfr->xbar_config = param.xbar_config;
+
+	qdf_mem_copy(pcfr->ibf_cal_val, param.ibf_cal_val,
+		     sizeof(uint32_t) * HOST_MAX_CHAINS);
+
+	param.array_size = (pcfr->max_aoa_chains *
+			    pcfr->max_entries_all_table * sizeof(uint16_t));
+
+	param.gain_stop_index_array = qdf_mem_malloc(param.array_size);
+	if (!param.gain_stop_index_array) {
+		cfr_err("Failed to allocate gain stop index array");
+		wlan_objmgr_psoc_release_ref(psoc, WLAN_CFR_ID);
+		wlan_objmgr_pdev_release_ref(pdev, WLAN_CFR_ID);
+		return -EINVAL;
+	}
+
+	param.enh_phase_delta_array = qdf_mem_malloc(param.array_size);
+	if (!param.enh_phase_delta_array) {
+		cfr_err("Failed to allocate phase delta array");
+		qdf_mem_free(param.gain_stop_index_array);
+		wlan_objmgr_psoc_release_ref(psoc, WLAN_CFR_ID);
+		wlan_objmgr_pdev_release_ref(pdev, WLAN_CFR_ID);
+		return -EINVAL;
+	}
+
+	qdf_mem_zero(param.gain_stop_index_array, param.array_size);
+	qdf_mem_zero(param.enh_phase_delta_array, param.array_size);
+
+	retval = wmi_extract_cfr_pdev_enhanced_aoa_phasedelta_event_data
+			(wmi_handle, data, &param);
+
+	if (QDF_IS_STATUS_ERROR(retval)) {
+		cfr_err("Failed to extract phase data tlv");
+		wlan_objmgr_psoc_release_ref(psoc, WLAN_CFR_ID);
+		wlan_objmgr_pdev_release_ref(pdev, WLAN_CFR_ID);
+		qdf_mem_free(param.gain_stop_index_array);
+		qdf_mem_free(param.enh_phase_delta_array);
+		return -EINVAL;
+	}
+
+	if (!pcfr->is_aoa_for_rcc_support || !pcfr->is_enh_aoa_data)
+		cfr_err("AoA data event from unsupported target");
+
+	max_src_ent = param.array_size / sizeof(uint32_t);
+	max_dst_ent = pcfr->max_entries_all_table * pcfr->max_aoa_chains;
+
+	offset = pcfr->max_entries_all_table *
+			qdf_find_first_bit(data_chain_bmap,
+					   sizeof(uint32_t) * QDF_CHAR_BIT);
+	for (dst_idx = (0 + offset), src_idx = 0;
+	     ((dst_idx < max_dst_ent) && (src_idx < max_src_ent));
+	     dst_idx += 2, src_idx++) {
+		uint32_t data;
+
+		data = param.gain_stop_index_array[src_idx];
+		pcfr->gain_stop_index_array[dst_idx] = get_u16_lsb(data);
+		pcfr->gain_stop_index_array[dst_idx + 1] = get_u16_msb(data);
+
+		data = param.enh_phase_delta_array[src_idx];
+		pcfr->enh_phase_delta_array[dst_idx] = get_u16_lsb(data);
+		pcfr->enh_phase_delta_array[dst_idx + 1] = get_u16_msb(data);
+	}
+
+	wlan_objmgr_psoc_release_ref(psoc, WLAN_CFR_ID);
+	wlan_objmgr_pdev_release_ref(pdev, WLAN_CFR_ID);
+	qdf_mem_free(param.gain_stop_index_array);
+	qdf_mem_free(param.enh_phase_delta_array);
+
+	return QDF_STATUS_SUCCESS;
+}
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
+
 #ifdef DIRECT_BUF_RX_ENABLE
 /**
  * enh_prepare_cfr_header_txstatus() - Prepare CFR metadata for TX failures
  * @tx_evt_param: ptr to WMI TX completion event
  * @header: pointer to metadata
+ * @target_type: target type
  *
  * Return: none
  */
@@ -1895,6 +2318,69 @@ target_if_unregister_phase_delta_for_rcc_event_handler(struct wlan_objmgr_psoc
 	return status;
 }
 
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+static QDF_STATUS
+target_if_register_enh_phase_for_rcc_event_handler(struct wlan_objmgr_psoc
+						   *psoc)
+{
+	wmi_unified_t wmi_hdl;
+	QDF_STATUS ret = QDF_STATUS_SUCCESS;
+
+	wmi_hdl = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_hdl) {
+		cfr_err("Unable to get wmi handle");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	ret = wmi_unified_register_event_handler
+		(wmi_hdl, wmi_pdev_enhanced_aoa_phasedelta_eventid,
+		 target_if_pdev_enhanced_aoa_phasedelta_event_handler,
+		 WMI_RX_UMAC_CTX);
+
+	/*
+	 * Event registration is called per pdev
+	 * Ignore error if event is already registered.
+	 */
+	if (ret == QDF_STATUS_E_FAILURE)
+		ret = QDF_STATUS_SUCCESS;
+
+	return ret;
+}
+
+static QDF_STATUS
+target_if_unregister_enh_phase_for_rcc_event_handler(struct wlan_objmgr_psoc
+						     *psoc)
+{
+	wmi_unified_t wmi_hdl;
+	QDF_STATUS status = QDF_STATUS_SUCCESS;
+
+	wmi_hdl = get_wmi_unified_hdl_from_psoc(psoc);
+	if (!wmi_hdl) {
+		cfr_err("Unable to get wmi handle");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	status = wmi_unified_unregister_event
+			(wmi_hdl, wmi_pdev_enhanced_aoa_phasedelta_eventid);
+
+	return status;
+}
+#else
+static QDF_STATUS
+target_if_register_enh_phase_for_rcc_event_handler(struct wlan_objmgr_psoc
+						   *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS
+target_if_unregister_enh_phase_for_rcc_event_handler(struct wlan_objmgr_psoc
+						     *psoc)
+{
+	return QDF_STATUS_SUCCESS;
+}
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
+
 /**
  * target_if_register_tx_completion_enh_event_handler() - Register callback for
  * WMI TX completion event
@@ -1956,10 +2442,12 @@ target_if_unregister_tx_completion_enh_event_handler(struct wlan_objmgr_psoc
 	return status;
 }
 
-/**
+/*
  * lut_ageout_timer_task() - Timer to flush pending TXRX/DBR events
  *
  * Return: none
+ * NB: kernel-doc script doesn't parse os_timer_func
+
  */
 static os_timer_func(lut_ageout_timer_task)
 {
@@ -2069,6 +2557,11 @@ void target_if_cfr_update_global_cfg(struct wlan_objmgr_pdev *pdev)
 	pcfr = wlan_objmgr_pdev_get_comp_private_obj(pdev,
 						     WLAN_UMAC_COMP_CFR);
 
+	if (!pcfr) {
+		target_if_err("pcfr is null");
+		return;
+	}
+
 	for (grp_id = 0; grp_id < MAX_TA_RA_ENTRIES; grp_id++) {
 		if (qdf_test_bit(grp_id,
 				 &pcfr->rcc_param.modified_in_curr_session)) {
@@ -2173,6 +2666,12 @@ QDF_STATUS cfr_enh_init_pdev(struct wlan_objmgr_psoc *psoc,
 		return status;
 	}
 
+	status = target_if_register_enh_phase_for_rcc_event_handler(psoc);
+	if (status != QDF_STATUS_SUCCESS) {
+		cfr_err("Failed to register with phase delta event handler");
+		return status;
+	}
+
 	status = target_if_register_phase_delta_for_rcc_event_handler(psoc);
 	if (status != QDF_STATUS_SUCCESS) {
 		cfr_err("Failed to register with phase delta event handler");
@@ -2230,13 +2729,24 @@ QDF_STATUS cfr_enh_init_pdev(struct wlan_objmgr_psoc *psoc,
 		   target_type == TARGET_TYPE_QCN9160) {
 		pcfr->subbuf_size = STREAMFS_MAX_SUBBUF_SPRUCE;
 		pcfr->num_subbufs = STREAMFS_NUM_SUBBUF_SPRUCE;
-		pcfr->chip_type = CFR_CAPTURE_RADIO_SPRUCE;
+		pcfr->chip_type = (target_type == TARGET_TYPE_QCN6122) ?
+			CFR_CAPTURE_RADIO_SPRUCE : CFR_CAPTURE_RADIO_YORK;
 		pcfr->max_mu_users = SPRUCE_CFR_MU_USERS;
 	} else if (target_type == TARGET_TYPE_QCN9224) {
 		pcfr->subbuf_size = STREAMFS_MAX_SUBBUF_WAIKIKI;
 		pcfr->num_subbufs = STREAMFS_NUM_SUBBUF_WAIKIKI;
 		pcfr->chip_type = CFR_CAPTURE_RADIO_WAIKIKI;
 		pcfr->max_mu_users = WAIKIKI_CFR_MU_USERS;
+	} else if (target_type == TARGET_TYPE_QCN6432) {
+		pcfr->subbuf_size = STREAMFS_MAX_SUBBUF_QCN6432;
+		pcfr->num_subbufs = STREAMFS_NUM_SUBBUF_QCN6432;
+		pcfr->chip_type = CFR_CAPTURE_RADIO_PEBBLE;
+		pcfr->max_mu_users = QCN6432_CFR_MU_USERS;
+	} else if (target_type == TARGET_TYPE_QCA5332) {
+		pcfr->subbuf_size = STREAMFS_MAX_SUBBUF_QCA5332;
+		pcfr->num_subbufs = STREAMFS_NUM_SUBBUF_QCA5332;
+		pcfr->chip_type = CFR_CAPTURE_RADIO_MIAMI;
+		pcfr->max_mu_users = QCA5332_CFR_MU_USERS;
 	} else {
 		pcfr->subbuf_size = STREAMFS_MAX_SUBBUF_CYP;
 		pcfr->num_subbufs = STREAMFS_NUM_SUBBUF_CYP;
@@ -2253,6 +2763,7 @@ QDF_STATUS cfr_enh_init_pdev(struct wlan_objmgr_psoc *psoc,
 	}
 
 	qdf_spinlock_create(&pcfr->lut_lock);
+	pcfr->lut_lock_initialised = true;
 
 	return status;
 }
@@ -2311,11 +2822,18 @@ QDF_STATUS cfr_enh_deinit_pdev(struct wlan_objmgr_psoc *psoc,
 	if (status != QDF_STATUS_SUCCESS)
 		cfr_err("Failed to register with dbr");
 
+	status = target_if_unregister_enh_phase_for_rcc_event_handler(psoc);
+	if (status != QDF_STATUS_SUCCESS)
+		cfr_err("Failed to unregister phase delta handler");
+
 	status = target_if_unregister_phase_delta_for_rcc_event_handler(psoc);
 	if (status != QDF_STATUS_SUCCESS)
 		cfr_err("Failed to unregister phase delta handler");
 
-	qdf_spinlock_destroy(&pcfr->lut_lock);
+	if (pcfr->lut_lock_initialised) {
+		qdf_spinlock_destroy(&pcfr->lut_lock);
+		pcfr->lut_lock_initialised = false;
+	}
 
 	return status;
 }

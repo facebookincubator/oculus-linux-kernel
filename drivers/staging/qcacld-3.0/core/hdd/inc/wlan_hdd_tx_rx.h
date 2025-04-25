@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -122,21 +122,23 @@ void hdd_tsf_timestamp_rx(hdd_cb_handle ctx, qdf_nbuf_t netbuf);
 
 /**
  * hdd_get_tsf_time_cb() - HDD helper function to get TSF time
- * @vdev_id: vdev id mapped to adapter
+ * @netdev: netdev
  * @input_time: Input time
  * @tsf_time: time from TFS module
  *
  * Return: None
  */
-void hdd_get_tsf_time_cb(uint8_t vdev_id, uint64_t input_time,
+void hdd_get_tsf_time_cb(qdf_netdev_t netdev, uint64_t input_time,
 			 uint64_t *tsf_time);
 #else
 static inline
 void hdd_tsf_timestamp_rx(hdd_cb_handle ctx, qdf_nbuf_t netbuf) { }
 
 static inline
-void hdd_get_tsf_time_cb(uint8_t vdev_id, uint64_t input_time,
-			 uint64_t *tsf_time) { }
+void hdd_get_tsf_time_cb(qdf_netdev_t netdev, uint64_t input_time,
+			 uint64_t *tsf_time)
+{
+}
 #endif
 
 /**
@@ -210,12 +212,12 @@ void hdd_get_tx_resource(uint8_t vdev_id,
 /**
  * hdd_get_tx_flow_low_watermark() - Get TX flow low watermark info
  * @cb_ctx: HDD opaque ctx
- * @intf_id: HDD adapter id
+ * @netdev: netdev
  *
  * Return: flow low watermark value
  */
 unsigned int
-hdd_get_tx_flow_low_watermark(hdd_cb_handle cb_ctx, uint8_t intf_id);
+hdd_get_tx_flow_low_watermark(hdd_cb_handle cb_ctx, qdf_netdev_t netdev);
 #else
 static inline void hdd_tx_resume_cb(void *adapter_context, bool tx_resume)
 {
@@ -246,7 +248,7 @@ void hdd_get_tx_resource(uint8_t vdev_id,
 			 struct qdf_mac_addr *mac_addr) { }
 
 static inline unsigned int
-hdd_get_tx_flow_low_watermark(hdd_cb_handle cb_ctx, uint8_t intf_id)
+hdd_get_tx_flow_low_watermark(hdd_cb_handle cb_ctx, qdf_netdev_t netdev)
 {
 	return 0;
 }
@@ -323,14 +325,6 @@ static inline void netif_trans_update(struct net_device *dev)
 	"%s: Transmission timeout occurred jiffies %lu", \
 	__func__, jiffies)
 #endif
-
-/**
- * hdd_txrx_get_tx_ack_count() - get tx acked count
- * @adapter: Pointer to adapter
- *
- * Return: tx acked count
- */
-uint32_t hdd_txrx_get_tx_ack_count(struct hdd_adapter *adapter);
 
 /**
  * hdd_dp_cfg_update() - update hdd config for HDD DP INIs

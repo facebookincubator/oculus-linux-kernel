@@ -557,6 +557,27 @@ QDF_STATUS wlan_objmgr_iterate_psoc_list(
 struct wlan_objmgr_psoc
 *wlan_objmgr_get_psoc_by_id(uint8_t psoc_id, wlan_objmgr_ref_dbgid dbg_id);
 
+#ifdef QCA_SUPPORT_DP_GLOBAL_CTX
+/**
+ * wlan_objmgr_get_global_ctx() - Get global context from global umac object
+ *
+ * This API is used to get global context object from the global umac object
+ *
+ * Return: Pointer to global context
+ */
+struct dp_global_context *wlan_objmgr_get_global_ctx(void);
+
+/**
+ * wlan_objmgr_set_global_ctx() - Set global context in global umac object
+ * @ctx: global context to be set
+ *
+ * This API is used to set global context object in the global umac object
+ *
+ * Return:
+ */
+void wlan_objmgr_set_global_ctx(struct dp_global_context *ctx);
+#endif
+
 #ifdef WLAN_FEATURE_11BE_MLO
 /**
  * wlan_objmgr_get_mlo_ctx() - Get MLO context from global umac object

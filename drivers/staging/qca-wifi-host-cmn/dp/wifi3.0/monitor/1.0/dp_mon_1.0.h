@@ -26,6 +26,77 @@
 
 void dp_flush_monitor_rings(struct dp_soc *soc);
 
+#if !defined(DISABLE_MON_CONFIG)
+/**
+ * dp_mon_htt_srng_setup_1_0() - Prepare HTT messages for Monitor rings
+ * @soc: soc handle
+ * @pdev: physical device handle
+ * @mac_id: ring number
+ * @mac_for_pdev: mac_id
+ *
+ * Return: non-zero for failure, zero for success
+ */
+QDF_STATUS dp_mon_htt_srng_setup_1_0(struct dp_soc *soc,
+				     struct dp_pdev *pdev,
+				     int mac_id,
+				     int mac_for_pdev);
+
+/**
+ * dp_mon_rings_alloc_1_0() - DP monitor rings allocation
+ * @pdev: physical device handle
+ *
+ * Return: non-zero for failure, zero for success
+ */
+QDF_STATUS dp_mon_rings_alloc_1_0(struct dp_pdev *pdev);
+
+/**
+ * dp_mon_rings_free_1_0() - DP monitor rings deallocation
+ * @pdev: physical device handle
+ *
+ * Return: non-zero for failure, zero for success
+ */
+void dp_mon_rings_free_1_0(struct dp_pdev *pdev);
+
+/**
+ * dp_mon_rings_init_1_0() - DP monitor rings initialization
+ * @pdev: physical device handle
+ *
+ * Return: non-zero for failure, zero for success
+ */
+QDF_STATUS dp_mon_rings_init_1_0(struct dp_pdev *pdev);
+
+/**
+ * dp_mon_rings_deinit_1_0() - DP monitor rings deinitialization
+ * @pdev: physical device handle
+ *
+ * Return: non-zero for failure, zero for success
+ */
+void dp_mon_rings_deinit_1_0(struct dp_pdev *pdev);
+#else
+static inline
+void dp_mon_rings_deinit_1_0(struct dp_pdev *pdev)
+{
+}
+
+static inline
+void dp_mon_rings_free_1_0(struct dp_pdev *pdev)
+{
+}
+
+static inline
+QDF_STATUS dp_mon_rings_init_1_0(struct dp_pdev *pdev)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline
+QDF_STATUS dp_mon_rings_alloc_1_0(struct dp_pdev *pdev)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+#endif
+
 /* MCL specific functions */
 #if defined(DP_CON_MON)
 

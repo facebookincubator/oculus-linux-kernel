@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2011, Atheros Communications Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -28,13 +28,13 @@
 #include "wlan_dfs_lmac_api.h"
 #include "../dfs_internal.h"
 #include "../dfs_partial_offload_radar.h"
-#if defined(WLAN_DFS_PARTIAL_OFFLOAD) && defined(HOST_DFS_SPOOF_TEST)
+#if defined(WLAN_DFS_PARTIAL_OFFLOAD)
 #include "../dfs_process_radar_found_ind.h"
 #endif
 #include "../dfs_confirm_radar.h"
 
 #ifdef MOBILE_DFS_SUPPORT
-/**
+/*
  * struct dfs_pulse dfs_fcc_radars_qcn7605 - FCC radar table for QCN7605
  *					     chipsets.
  */
@@ -66,7 +66,7 @@ static const struct dfs_pulse dfs_fcc_radars_qcn7605[] = {
 	{18, 1,  325,  500, 0, 4,  9,   0,  1, 22,  0, 3,  0, 5, 0, 23},
 };
 
-/**
+/*
  * struct dfs_pulse dfs_mkk4_radars_qcn7605 - MKK4 radar table for QCN7605
  *					      chipsets.
  */
@@ -100,7 +100,7 @@ static const struct dfs_pulse dfs_mkk4_radars_qcn7605[] = {
 	{16, 15, 2000, 5000, 0,  4,  7, 11, 23, 22,  0, 3, 0, 5, 0, 11},
 };
 
-/**
+/*
  * dfs_pulse dfs_etsi_radars_qcn7605 - ETSI radar table for QCN7605
  *				       chipsets.
  */
@@ -154,7 +154,7 @@ static const struct dfs_pulse dfs_etsi_radars_qcn7605[] = { };
 static const struct dfs_pulse dfs_mkk4_radars_qcn7605[] = { };
 #endif
 
-/**
+/*
  * struct dfs_pulse dfs_fcc_radars - FCC radar table for Offload chipsets.
  */
 static struct dfs_pulse dfs_fcc_radars[] = {
@@ -185,7 +185,7 @@ static struct dfs_pulse dfs_fcc_radars[] = {
 	{18, 1,  325,  500, 0, 4,  9,   0,  1, 22,  0, 3,  0, 5, 0, 23},
 };
 
-/**
+/*
  * struct dfs_pulse dfs_mkk4_radars - MKK4 radar table for Offload chipsets.
  */
 static struct dfs_pulse dfs_mkk4_radars[] = {
@@ -219,7 +219,7 @@ static struct dfs_pulse dfs_mkk4_radars[] = {
 	{16, 15, 2000, 5000, 0,  4,  7, 11, 23, 22,  0, 3, 0, 5, 0, 11},
 };
 
-/**
+/*
  * struct dfs_bin5pulse dfs_fcc_bin5pulses - FCC BIN5 pulses for Offload
  *                                           chipsets.
  */
@@ -227,7 +227,7 @@ static struct dfs_bin5pulse dfs_fcc_bin5pulses[] = {
 	{6, 28, 105, 12, 18, 5},
 };
 
-/**
+/*
  * struct dfs_bin5pulse dfs_jpn_bin5pulses - JAPAN BIN5 pulses for Offload
  *                                           chipsets.
  */
@@ -235,7 +235,7 @@ static struct dfs_bin5pulse dfs_jpn_bin5pulses[] = {
 	{5, 28, 105, 12, 22, 5},
 };
 
-/**
+/*
  * dfs_bin5pulse dfs_fcc_bin5pulses_ar900b - FCC BIN5 pulses for AR9300
  *                                           chipsets.
  *
@@ -250,7 +250,7 @@ static struct dfs_bin5pulse dfs_fcc_bin5pulses_ar900b[] = {
 	{5, 28, 105, 12, 20, 5},
 };
 
-/**
+/*
  * dfs_bin5pulse dfs_jpn_bin5pulses_ar900b - JAPAN BIN5 pulses for AR9300
  *                                           chipsets.
  */
@@ -258,7 +258,7 @@ static struct dfs_bin5pulse dfs_jpn_bin5pulses_ar900b[] = {
 	{5, 28, 105, 12, 20, 5},
 };
 
-/**
+/*
  * dfs_bin5pulse dfs_fcc_bin5pulses_qca9984 - FCC BIN5 pulses for QCA9984
  *                                            chipsets.
  * WAR : IR-83400
@@ -272,7 +272,7 @@ static struct dfs_bin5pulse dfs_fcc_bin5pulses_qca9984[] = {
 	{5, 20, 105, 12, 20, 0},
 };
 
-/**
+/*
  * dfs_bin5pulse dfs_jpn_bin5pulses_qca9984 - JAPAN BIN5 pulses for QCA9984
  *                                            chipsets.
  */
@@ -280,7 +280,7 @@ static struct dfs_bin5pulse dfs_jpn_bin5pulses_qca9984[] = {
 	{5, 20, 105, 12, 20, 0},
 };
 
-/**
+/*
  * dfs_pulse dfs_etsi_radars - ETSI radar table.
  */
 static struct dfs_pulse dfs_etsi_radars[] = {
@@ -329,7 +329,7 @@ static struct dfs_pulse dfs_etsi_radars[] = {
 	{20, 30, 2000, 4000, 0,  4, 6, 19, 33, 24, 0,   0, 0, 24,  1, 36},
 };
 
-/**
+/*
  * dfs_pulse dfs_china_radars - CHINA radar table.
  */
 static struct dfs_pulse dfs_china_radars[] = {
@@ -367,7 +367,7 @@ static struct dfs_pulse dfs_china_radars[] = {
 	{20,  1, 1000, 1000, 0,  6,  6,  0,  1, 18,  0, 3, 0, 0, 0, 50},
 };
 
-/**
+/*
  * dfs_pulse dfs_korea_radars - KOREA radar table.
  */
 static struct dfs_pulse dfs_korea_radars[] = {
@@ -471,9 +471,10 @@ void dfs_handle_radar_tab_init_failure(struct wlan_dfs_radar_tab_info *rinfo)
 /**
  * dfs_merge_external_radar() - Get and merge the external radar table with
  * internal radar table.
- * @dfs: Pointer to the DFS structure.
  * @rinfo: Pointer to wlan_dfs_radar_tab_info structure.
+ * @external_radars: list of external radar pulses
  * @dfsdomain: dfs domain.
+ * @num_ext_radars: number of @external_radar entries
  *
  * Return: Pointer to the allocated merged radar table if success, else NULL.
  * The caller is responsible for freeing up the allocated memory when no longer
@@ -513,7 +514,7 @@ void dfs_update_radar_info(struct wlan_dfs_radar_tab_info *rinfo,
  * dfs_assign_mkk_bin5_radars() - Assign the MKK bin5 radar table
  * @rinfo: Pointer to wlan_dfs_radar_tab_info structure.
  * @target_type: Target type.
- * @tx_ops: target tx ops.
+ * @tgt_tx_ops: target tx ops.
  */
 static void
 dfs_assign_mkk_bin5_radars(struct wlan_dfs_radar_tab_info *rinfo,
@@ -635,7 +636,7 @@ void dfs_get_po_radars(struct wlan_dfs *dfs)
 
 		/*
 		 * So far we have treated Korea as part of ETSI and did not
-		 * support any radar patters specific to Korea other than
+		 * support any radar patterns specific to Korea other than
 		 * standard ETSI radar patterns. Ideally we would want to
 		 * treat Korea as a different domain. This is something that
 		 * we will address in the future. However, for now override
@@ -724,6 +725,16 @@ void dfs_get_po_radars(struct wlan_dfs *dfs)
 	qdf_mem_free(merged_radars);
 }
 
+#if defined(WLAN_DFS_PARTIAL_OFFLOAD)
+void
+dfs_disable_radar_and_flush_pulses(struct wlan_dfs *dfs)
+{
+	dfs_radar_disable(dfs);
+	dfs_second_segment_radar_disable(dfs);
+	dfs_flush_additional_pulses(dfs);
+}
+#endif
+
 #if defined(WLAN_DFS_PARTIAL_OFFLOAD) && defined(HOST_DFS_SPOOF_TEST)
 void dfs_send_avg_params_to_fw(struct wlan_dfs *dfs,
 			       struct dfs_radar_found_params *params)
@@ -731,9 +742,12 @@ void dfs_send_avg_params_to_fw(struct wlan_dfs *dfs,
 	tgt_dfs_send_avg_params_to_fw(dfs->dfs_pdev_obj, params);
 }
 
-/**
+/*
  * dfs_no_res_from_fw_task() - The timer function that is called if there is no
  * response from fw after sending the average radar pulse parameters.
+ *
+ * NB: not using kernel-doc format since the kernel-doc script doesn't
+ *     handle the os_timer_func() macro
  */
 static os_timer_func(dfs_no_res_from_fw_task)
 {
@@ -823,14 +837,6 @@ void dfs_extract_radar_found_params(struct wlan_dfs *dfs,
 	dfs->dfs_average_sidx = 0;
 	dfs->dfs_average_duration = 0;
 	dfs->dfs_average_pri = 0;
-}
-
-void
-dfs_disable_radar_and_flush_pulses(struct wlan_dfs *dfs)
-{
-	dfs_radar_disable(dfs);
-	dfs_second_segment_radar_disable(dfs);
-	dfs_flush_additional_pulses(dfs);
 }
 
 void dfs_radarfound_action_fcc(struct wlan_dfs *dfs, uint8_t seg_id)

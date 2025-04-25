@@ -104,18 +104,11 @@ int hdd_cfg80211_medium_assess(struct wiphy *wiphy,
 },
 
 /**
- * hdd_medium_assess_init() - medium assess init timer
+ * hdd_medium_assess_ssr_reinit() - medium assess reinit timer in ssr
  *
  * Return: none
  */
-void hdd_medium_assess_init(void);
-
-/**
- * hdd_medium_assess_deinit() - medium assess deinit timer
- *
- * Return: none
- */
-void hdd_medium_assess_deinit(void);
+void hdd_medium_assess_ssr_reinit(void);
 
 /**
  * hdd_medium_assess_stop_timer() - medium assess reset and stop timer
@@ -135,8 +128,7 @@ void hdd_medium_assess_ssr_enable_flag(void);
 #else
 #define FEATURE_MEDIUM_ASSESS_VENDOR_COMMANDS
 #define FEATURE_MEDIUM_ASSESS_VENDOR_EVENTS
-static inline void hdd_medium_assess_init(void) {}
-static inline void hdd_medium_assess_deinit(void) {}
+static inline void hdd_medium_assess_ssr_reinit(void) {}
 static inline void hdd_medium_assess_stop_timer(uint8_t pdev_id,
 						struct hdd_context *hdd_ctx) {}
 static inline void hdd_medium_assess_ssr_enable_flag(void) {}

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+`* Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "cam_cci_dev.h"
@@ -361,8 +362,7 @@ static int cam_cci_irq_routine(struct v4l2_subdev *sd, u32 status,
 	irqreturn_t ret;
 	struct cam_hw_soc_info *soc_info =
 		&cci_dev->soc_info;
-
-	ret = cam_cci_irq(soc_info->irq_line->start, cci_dev);
+	ret = cam_cci_irq(soc_info->irq_num, cci_dev);
 	*handled = true;
 	return 0;
 }

@@ -35,10 +35,11 @@
 #include <wlan_cm_roam_api.h>
 #include "wlan_nan_api.h"
 #include "wlan_mlme_vdev_mgr_interface.h"
-#ifdef WLAN_FEATURE_11BE_MLO
 #include <wlan_mlo_mgr_sta.h>
-#endif
 #include "wlan_vdev_mgr_utils_api.h"
+#include "wlan_tdls_api.h"
+#include "wlan_mlo_mgr_link_switch.h"
+#include "wlan_ll_sap_api.h"
 
 QDF_STATUS if_mgr_connect_start(struct wlan_objmgr_vdev *vdev,
 				struct if_mgr_event_data *event_data)
@@ -66,9 +67,9 @@ QDF_STATUS if_mgr_connect_start(struct wlan_objmgr_vdev *vdev,
 	sta_cnt = policy_mgr_get_mode_specific_conn_info(psoc, NULL,
 							 vdev_id_list,
 							 PM_STA_MODE);
-	sap_cnt = policy_mgr_get_mode_specific_conn_info(psoc, NULL,
-							 &vdev_id_list[sta_cnt],
-							 PM_SAP_MODE);
+	sap_cnt = policy_mgr_get_sap_mode_info(psoc, NULL,
+					       &vdev_id_list[sta_cnt]);
+
 	op_mode = wlan_vdev_mlme_get_opmode(vdev);
 
 	if (op_mode == QDF_STA_MODE || op_mode == QDF_P2P_CLIENT_MODE)
@@ -90,6 +91,9 @@ QDF_STATUS if_mgr_connect_start(struct wlan_objmgr_vdev *vdev,
 		if (disable_nan)
 			ucfg_nan_disable_concurrency(psoc);
 	}
+
+	if (op_mode == QDF_P2P_CLIENT_MODE)
+		wlan_tdls_handle_p2p_client_connect(psoc, vdev);
 
 	/*
 	 * STA+NDI concurrency gets preference over NDI+NDI. Disable
@@ -186,6 +190,8 @@ QDF_STATUS if_mgr_connect_complete(struct wlan_objmgr_vdev *vdev,
 		policy_mgr_check_concurrent_intf_and_restart_sap(psoc,
 				wlan_util_vdev_mgr_get_acs_mode_for_vdev(vdev));
 
+	wlan_ll_sap_switch_bearer_on_sta_connect_complete(psoc, vdev_id);
+
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -194,6 +200,7 @@ QDF_STATUS if_mgr_disconnect_start(struct wlan_objmgr_vdev *vdev,
 {
 	struct wlan_objmgr_psoc *psoc;
 	struct wlan_objmgr_pdev *pdev;
+	struct mlme_legacy_priv *mlme_priv;
 
 	pdev = wlan_vdev_get_pdev(vdev);
 	if (!pdev)
@@ -203,7 +210,11 @@ QDF_STATUS if_mgr_disconnect_start(struct wlan_objmgr_vdev *vdev,
 	if (!psoc)
 		return QDF_STATUS_E_FAILURE;
 
-	/* Leaving as stub to fill in later */
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv)
+		return QDF_STATUS_E_FAILURE;
+
+	qdf_runtime_pm_prevent_suspend(&mlme_priv->disconnect_runtime_lock);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -213,6 +224,7 @@ QDF_STATUS if_mgr_disconnect_complete(struct wlan_objmgr_vdev *vdev,
 {
 	struct wlan_objmgr_psoc *psoc;
 	struct wlan_objmgr_pdev *pdev;
+	struct mlme_legacy_priv *mlme_priv;
 	QDF_STATUS status;
 
 	pdev = wlan_vdev_get_pdev(vdev);
@@ -222,6 +234,12 @@ QDF_STATUS if_mgr_disconnect_complete(struct wlan_objmgr_vdev *vdev,
 	psoc = wlan_pdev_get_psoc(pdev);
 	if (!psoc)
 		return QDF_STATUS_E_FAILURE;
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv)
+		return QDF_STATUS_E_FAILURE;
+
+	qdf_runtime_pm_allow_suspend(&mlme_priv->disconnect_runtime_lock);
 
 	if (wlan_vdev_mlme_get_opmode(vdev) == QDF_STA_MODE ||
 	    wlan_vdev_mlme_get_opmode(vdev) == QDF_P2P_CLIENT_MODE)
@@ -233,15 +251,35 @@ QDF_STATUS if_mgr_disconnect_complete(struct wlan_objmgr_vdev *vdev,
 		ifmgr_err("Failed to enable roaming after p2p disconnect");
 		return status;
 	}
-
-	policy_mgr_check_concurrent_intf_and_restart_sap(psoc,
-				wlan_util_vdev_mgr_get_acs_mode_for_vdev(vdev));
+	if (!mlo_is_mld_sta(vdev) || !mlo_mgr_is_link_switch_in_progress(vdev))
+		policy_mgr_check_concurrent_intf_and_restart_sap(
+			psoc, wlan_util_vdev_mgr_get_acs_mode_for_vdev(vdev));
 
 	status = if_mgr_enable_roaming_on_connected_sta(pdev, vdev);
 	if (status) {
 		ifmgr_err("Failed to enable roaming on connected sta");
 		return status;
 	}
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+if_mgr_sta_csa_complete(struct wlan_objmgr_vdev *vdev,
+			struct if_mgr_event_data *event_data)
+{
+	struct wlan_objmgr_psoc *psoc;
+	struct wlan_objmgr_pdev *pdev;
+
+	pdev = wlan_vdev_get_pdev(vdev);
+	if (!pdev)
+		return QDF_STATUS_E_FAILURE;
+
+	psoc = wlan_pdev_get_psoc(pdev);
+	if (!psoc)
+		return QDF_STATUS_E_FAILURE;
+
+	wlan_tdls_notify_channel_switch_complete(psoc, wlan_vdev_get_id(vdev));
 
 	return QDF_STATUS_SUCCESS;
 }

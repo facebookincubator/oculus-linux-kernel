@@ -26,6 +26,7 @@
 #include "nan_ucfg_api.h"
 #include "target_if_nan.h"
 #include "wlan_nan_api.h"
+#include "target_if.h"
 #include "wmi_unified_api.h"
 #include "scheduler_api.h"
 #include <wmi_unified.h>
@@ -1161,6 +1162,13 @@ void target_if_nan_set_vdev_feature_config(struct wlan_objmgr_psoc *psoc,
 
 	if (!wmi_handle) {
 		target_if_err("Invalid wmi handle");
+		return;
+	}
+
+	if (!target_if_is_vdev_valid(vdev_id)) {
+		target_if_err("vdev_id: %d is invalid, reject the req: param id %d",
+			      vdev_id,
+			      wmi_vdev_param_enable_disable_nan_config_features);
 		return;
 	}
 

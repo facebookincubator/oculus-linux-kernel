@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -35,19 +35,32 @@
  * struct dfs_to_mlme - These are MLME function pointer used by DFS component.
  * @pdev_component_obj_attach:         Attach DFS object to PDEV.
  * @pdev_component_obj_detach:         Detach DFS object from PDEV.
- * @pdev_get_comp_private_obj:         Get DFS object from PDEV.
  * @dfs_start_rcsa:                    Send RCSA to RootAP.
+ * @mlme_mark_dfs:                     Mark DFS channel frequency as radar.
+ * @mlme_start_csa_for_freq:
  * @mlme_proc_cac:                     Process the CAC completion event.
  * @mlme_deliver_event_up_after_cac:   Send a CAC timeout, VAP up event to user
  *                                     space
+ * @mlme_get_extchan_for_freq:         Get the extension channel.
  * @mlme_set_no_chans_available:       Sets no_chans_available flag.
  * @mlme_ieee2mhz:                     Gets Channel freq from ieee number.
+ * @mlme_find_dot11_chan_for_freq:     Find a channel pointer.
+ * @mlme_get_dfs_channels_for_freq:    Get DFS channels from current channel
+ *                                     list.
  * @mlme_dfs_ch_flags_ext:             Gets channel extension flag.
  * @mlme_channel_change_by_precac:     Channel change triggered by PreCAC.
+ * @mlme_precac_chan_change_csa_for_freq:Channel change triggered by PrCAC using
+ *                                     Channel Switch Announcement.
+ * @mlme_postnol_chan_switch:          Channel change post NOL using Channel
+ *                                     Switch Announcement.
+ * @mlme_unpunc_chan_switch:           After DFS unpuncture occurs send VDEV
+ *                                     restart.
  * @mlme_nol_timeout_notification:     NOL timeout notification.
  * @mlme_clist_update:                 Updates the channel list.
  * @mlme_is_opmode_sta:                Check if pdev opmode is STA.
- * @mlme_rebuild_chan_list_with_non_dfs_channel: Rebuild channels with non-dfs
+ * @mlme_get_cac_timeout_for_freq:     Get CAC timeout for a given channel
+ *                                     frequency.
+ * @mlme_rebuild_chan_list_with_non_dfs_channels: Rebuild channels with non-dfs
  *                                     channels.
  * @mlme_restart_vaps_with_non_dfs_chan: Restart vaps with non-dfs channel.
  * @mlme_check_allowed_prim_chanlist:  Check whether the given channel is
@@ -56,21 +69,15 @@
  * @mlme_update_scan_channel_list:     Update the scan channel list sent to FW.
  * @mlme_bringdown_vaps:               Bringdown vaps if no chans is present.
  * @mlme_dfs_deliver_event:            Deliver DFS events to user space
- * @mlme_precac_chan_change_csa_for_freq:Channel change triggered by PrCAC using
- *                                     Channel Switch Announcement.
- * @mlme_postnol_chan_switch:          Channel change post NOL using Channel
- *                                     Switch Announcement.
- * @mlme_mark_dfs:                     Mark DFS channel frequency as radar.
- * @mlme_get_extchan_for_freq:         Get the extension channel.
- * @mlme_find_dot11_chan_for_freq:     Find a channel pointer.
- * @mlme_get_dfs_channels_for_freq:    Get DFS channels from current channel
- *                                     list.
- * @mlme_get_cac_timeout_for_freq:     Get CAC timeout for a given channel
- *                                     frequency.
+ * @mlme_is_inter_band_chan_switch_allowed: Check if switch between 5 GHz and
+ *                                     6 GHz is allowed.
  * @mlme_acquire_radar_mode_switch_lock: Acquire lock for radar processing over
  *                                     mode switch.
  * @mlme_release_radar_mode_switch_lock: Release lock taken for radar processing
  *                                     over mode switch.
+ * @mlme_proc_spoof_success:           Called when FW send spoof success event.
+ * @mlme_set_tx_flag:                  Called when Radar is detected to
+ *                                     indicate stop data traffic.
  */
 struct dfs_to_mlme {
 	QDF_STATUS (*pdev_component_obj_attach)(struct wlan_objmgr_pdev *pdev,
@@ -161,6 +168,11 @@ struct dfs_to_mlme {
 				    qdf_freq_t des_cfreq2,
 				    enum wlan_phymode des_mode);
 #endif
+#if defined(QCA_DFS_BW_PUNCTURE) && !defined(CONFIG_REG_CLIENT)
+	QDF_STATUS
+	    (*mlme_unpunc_chan_switch)(struct wlan_objmgr_pdev *pdev,
+				       uint16_t new_punc_pattern);
+#endif
 	QDF_STATUS (*mlme_nol_timeout_notification)(
 			struct wlan_objmgr_pdev *pdev);
 	QDF_STATUS (*mlme_clist_update)(struct wlan_objmgr_pdev *pdev,
@@ -201,6 +213,8 @@ struct dfs_to_mlme {
 	QDF_STATUS (*mlme_proc_spoof_success)
 			(struct wlan_objmgr_pdev *pdev);
 #endif
+	QDF_STATUS (*mlme_set_tx_flag)(struct wlan_objmgr_pdev *pdev,
+				       bool is_tx_allowed);
 };
 
 extern struct dfs_to_mlme global_dfs_to_mlme;
@@ -208,6 +222,7 @@ extern struct dfs_to_mlme global_dfs_to_mlme;
 /**
  * wlan_dfs_pdev_obj_create_notification() - DFS pdev object create handler.
  * @pdev: Pointer to DFS pdev object.
+ * @arg: component argument
  */
 QDF_STATUS wlan_dfs_pdev_obj_create_notification(struct wlan_objmgr_pdev *pdev,
 		void *arg);
@@ -215,6 +230,7 @@ QDF_STATUS wlan_dfs_pdev_obj_create_notification(struct wlan_objmgr_pdev *pdev,
 /**
  * wlan_dfs_pdev_obj_destroy_notification() - DFS pdev object delete handler.
  * @pdev: Pointer to DFS pdev object.
+ * @arg: component argument
  */
 QDF_STATUS wlan_dfs_pdev_obj_destroy_notification(struct wlan_objmgr_pdev *pdev,
 		void *arg);
@@ -244,6 +260,7 @@ QDF_STATUS ucfg_dfs_getnol(struct wlan_objmgr_pdev *pdev, void *dfs_nolinfo);
  * ucfg_dfs_override_cac_timeout() -  Override the default CAC timeout.
  * @pdev: Pointer to DFS pdev object.
  * @cac_timeout: CAC timeout value.
+ * @status: pointer to save status
  *
  * Wrapper function for dfs_override_cac_timeout().
  * This function called from outside of dfs component.
@@ -255,6 +272,7 @@ QDF_STATUS ucfg_dfs_override_cac_timeout(struct wlan_objmgr_pdev *pdev,
  * ucfg_dfs_get_override_cac_timeout() -  Get override CAC timeout value.
  * @pdev: Pointer to DFS pdev object.
  * @cac_timeout: Pointer to save the CAC timeout value.
+ * @status: pointer to save status
  *
  * Wrapper function for dfs_get_override_cac_timeout().
  * This function called from outside of dfs component.
@@ -345,7 +363,7 @@ QDF_STATUS ucfg_dfs_get_precac_intermediate_chan(struct wlan_objmgr_pdev *pdev,
  * ucfg_dfs_get_precac_chan_state_for_freq() - Get precac status for the
  * given channel.
  * @pdev: Pointer to DFS pdev object.
- * @precac_chan: Channel frequency for which precac state needs to be
+ * @precac_freq: Channel frequency for which precac state needs to be
  *               determined.
  *
  * Wrapper function for dfs_get_precac_chan_state_for_freq().
@@ -503,7 +521,7 @@ QDF_STATUS ucfg_dfs_reinit_timers(struct wlan_objmgr_pdev *pdev);
 
 /**
  * ucfg_dfs_reset_agile_config() - Reset ADFS config.
- * @pdev: Pointer to wlan_objmgr_pdev structure.
+ * @psoc: Pointer to wlan_objmgr_psoc structure.
  *
  * Wrapper function to reset Agile DFS config such as the variables which hold
  * information about the state of the preCAC timer, active precac

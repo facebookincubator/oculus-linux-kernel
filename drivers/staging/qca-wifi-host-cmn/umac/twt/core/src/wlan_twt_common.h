@@ -22,16 +22,6 @@
 #include <wlan_twt_public_structs.h>
 
 /**
- * wlan_twt_tgt_caps_get_requestor() - twt get requestor
- * @psoc: psoc handle
- * @val: pointer to the output variable
- *
- * return: QDF_STATUS
- */
-QDF_STATUS
-wlan_twt_tgt_caps_get_requestor(struct wlan_objmgr_psoc *psoc, bool *val);
-
-/**
  * wlan_twt_tgt_caps_get_responder() - twt get responder
  * @psoc: psoc handle
  * @val: pointer to the output variable
@@ -42,17 +32,6 @@ QDF_STATUS
 wlan_twt_tgt_caps_get_responder(struct wlan_objmgr_psoc *psoc, bool *val);
 
 /**
- * wlan_twt_tgt_caps_get_legacy_bcast_support() - get legacy bcast support
- * @psoc: psoc handle
- * @val: pointer to the output variable
- *
- * return: QDF_STATUS
- */
-QDF_STATUS
-wlan_twt_tgt_caps_get_legacy_bcast_support(struct wlan_objmgr_psoc *psoc,
-					   bool *val);
-
-/**
  * wlan_twt_tgt_caps_get_bcast_req_support() - get bcast requestor support
  * @psoc: psoc handle
  * @val: pointer to the output variable
@@ -61,17 +40,6 @@ wlan_twt_tgt_caps_get_legacy_bcast_support(struct wlan_objmgr_psoc *psoc,
  */
 QDF_STATUS
 wlan_twt_tgt_caps_get_bcast_req_support(struct wlan_objmgr_psoc *psoc,
-					bool *val);
-
-/**
- * wlan_twt_tgt_caps_get_bcast_res_support() - get bcast responder support
- * @psoc: psoc handle
- * @val: pointer to the output variable
- *
- * return: QDF_STATUS
- */
-QDF_STATUS
-wlan_twt_tgt_caps_get_bcast_res_support(struct wlan_objmgr_psoc *psoc,
 					bool *val);
 
 /**
@@ -196,7 +164,7 @@ wlan_twt_set_peer_capabilities(struct wlan_objmgr_psoc *psoc,
 			       uint8_t peer_cap);
 
 /**
- * ucfg_twt_get_peer_capabilities() - get twt peer capabilities
+ * wlan_twt_get_peer_capabilities() - get twt peer capabilities
  * @psoc: psoc handle
  * @peer_mac: peer mac address
  * @peer_cap: Pointer to output variable to hold TWT peer capability bitmap.

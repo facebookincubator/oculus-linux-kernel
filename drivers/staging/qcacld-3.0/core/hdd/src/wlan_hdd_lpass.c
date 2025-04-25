@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -70,7 +70,7 @@ static void wlan_hdd_get_channel_info(struct hdd_context *hdd_ctx,
 /**
  * wlan_hdd_gen_wlan_status_pack() - Create lpass adapter status package
  * @data: Status data record to be created
- * @adapter: Adapter whose status is to being packaged
+ * @link_info: Link info pointer in HDD adapter
  * @sta_ctx: Station-specific context of @adapter
  * @is_on: Is wlan driver loaded?
  * @is_connected: Is @adapter connected to an AP?
@@ -81,7 +81,7 @@ static void wlan_hdd_get_channel_info(struct hdd_context *hdd_ctx,
  * Return: 0 if package was created, otherwise a negative errno
  */
 static int wlan_hdd_gen_wlan_status_pack(struct wlan_status_data *data,
-					 struct hdd_adapter *adapter,
+					 struct wlan_hdd_link_info *link_info,
 					 struct hdd_station_ctx *sta_ctx,
 					 uint8_t is_on, uint8_t is_connected)
 {
@@ -92,12 +92,13 @@ static int wlan_hdd_gen_wlan_status_pack(struct wlan_status_data *data,
 	struct svc_channel_info *chan_info;
 	bool lpass_support, wls_6ghz_capable = false;
 	QDF_STATUS status;
+	struct hdd_adapter *adapter;
 
 	if (!data) {
 		hdd_err("invalid data pointer");
 		return -EINVAL;
 	}
-	if (!adapter) {
+	if (!link_info) {
 		if (is_on) {
 			/* no active interface */
 			data->lpss_support = 0;
@@ -108,9 +109,10 @@ static int wlan_hdd_gen_wlan_status_pack(struct wlan_status_data *data,
 		return -EINVAL;
 	}
 
-	if (wlan_hdd_validate_vdev_id(adapter->vdev_id))
+	if (wlan_hdd_validate_vdev_id(link_info->vdev_id))
 		return -EINVAL;
 
+	adapter = link_info->adapter;
 	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 
 	status = ucfg_mlme_get_lpass_support(hdd_ctx->psoc, &lpass_support);
@@ -156,11 +158,11 @@ static int wlan_hdd_gen_wlan_status_pack(struct wlan_status_data *data,
 
 	wlan_reg_get_cc_and_src(hdd_ctx->psoc, data->country_code);
 	data->is_on = is_on;
-	data->vdev_id = adapter->vdev_id;
+	data->vdev_id = link_info->vdev_id;
 	data->vdev_mode = adapter->device_mode;
 	if (sta_ctx) {
 		data->is_connected = is_connected;
-		data->rssi = adapter->rssi;
+		data->rssi = link_info->rssi;
 		data->freq = sta_ctx->conn_info.chan_freq;
 		if (WLAN_SVC_MAX_SSID_LEN >=
 		    sta_ctx->conn_info.ssid.SSID.length) {
@@ -215,7 +217,7 @@ static int wlan_hdd_gen_wlan_version_pack(struct wlan_version_data *data,
 
 /**
  * wlan_hdd_send_status_pkg() - Send adapter status to lpass
- * @adapter: Adapter whose status is to be sent to lpass
+ * @link_info: Link info pointer in HDD adapter
  * @sta_ctx: Station-specific context of @adapter
  * @is_on: Is @adapter enabled
  * @is_connected: Is @adapter connected
@@ -225,7 +227,7 @@ static int wlan_hdd_gen_wlan_version_pack(struct wlan_version_data *data,
  *
  * Return: none
  */
-static void wlan_hdd_send_status_pkg(struct hdd_adapter *adapter,
+static void wlan_hdd_send_status_pkg(struct wlan_hdd_link_info *link_info,
 				     struct hdd_station_ctx *sta_ctx,
 				     uint8_t is_on, uint8_t is_connected)
 {
@@ -244,8 +246,9 @@ static void wlan_hdd_send_status_pkg(struct hdd_adapter *adapter,
 		return;
 
 	if (is_on)
-		ret = wlan_hdd_gen_wlan_status_pack(data, adapter, sta_ctx,
-						    is_on, is_connected);
+		ret = wlan_hdd_gen_wlan_status_pack(data, link_info,
+						    sta_ctx, is_on,
+						    is_connected);
 
 	if (!ret)
 		wlan_hdd_send_svc_nlink_msg(hdd_ctx->radio_index,
@@ -290,27 +293,16 @@ static void wlan_hdd_send_version_pkg(uint32_t fw_version,
 
 /**
  * wlan_hdd_send_scan_intf_info() - report scan interfaces to lpass
- * @hdd_ctx: The global HDD context
- * @adapter: Adapter that supports scanning.
+ * @link_info: Link info pointer in HDD adapter
  *
  * This function indicates adapter that supports scanning to lpass.
  *
  * Return: none
  */
-static void wlan_hdd_send_scan_intf_info(struct hdd_context *hdd_ctx,
-					 struct hdd_adapter *adapter)
+static inline void
+wlan_hdd_send_scan_intf_info(struct wlan_hdd_link_info *link_info)
 {
-	if (!hdd_ctx) {
-		hdd_err("NULL pointer for hdd_ctx");
-		return;
-	}
-
-	if (!adapter) {
-		hdd_err("Adapter is Null");
-		return;
-	}
-
-	wlan_hdd_send_status_pkg(adapter, NULL, 1, 0);
+	wlan_hdd_send_status_pkg(link_info, NULL, 1, 0);
 }
 
 /*
@@ -357,51 +349,40 @@ void hdd_lpass_populate_pmo_config(struct pmo_psoc_cfg *pmo_config,
 	pmo_config->lpass_enable = lpass_support;
 }
 
-/*
- * hdd_lpass_notify_connect() - Notify LPASS of interface connect
- * (public function documented in wlan_hdd_lpass.h)
- */
-void hdd_lpass_notify_connect(struct hdd_adapter *adapter)
+void hdd_lpass_notify_connect(struct wlan_hdd_link_info *link_info)
 {
 	struct hdd_station_ctx *sta_ctx;
 
 	/* only send once per connection */
-	if (adapter->rssi_send)
+	if (link_info->rssi_send)
 		return;
 
 	/* don't send if driver is unloading */
 	if (cds_is_driver_unloading())
 		return;
 
-	adapter->rssi_send = true;
-	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-	wlan_hdd_send_status_pkg(adapter, sta_ctx, 1, 1);
+	link_info->rssi_send = true;
+	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(link_info);
+	wlan_hdd_send_status_pkg(link_info, sta_ctx, 1, 1);
 }
 
-/*
- * hdd_lpass_notify_disconnect() - Notify LPASS of interface disconnect
- * (public function documented in wlan_hdd_lpass.h)
- */
-void hdd_lpass_notify_disconnect(struct hdd_adapter *adapter)
+void hdd_lpass_notify_disconnect(struct wlan_hdd_link_info *link_info)
 {
 	struct hdd_station_ctx *sta_ctx;
 
-	adapter->rssi_send = false;
-	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-	wlan_hdd_send_status_pkg(adapter, sta_ctx, 1, 0);
+	link_info->rssi_send = false;
+	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(link_info);
+	wlan_hdd_send_status_pkg(link_info, sta_ctx, 1, 0);
 }
 
-void hdd_lpass_notify_mode_change(struct hdd_adapter *adapter)
+void hdd_lpass_notify_mode_change(struct wlan_hdd_link_info *link_info)
 {
-	struct hdd_context *hdd_ctx;
-
-	if (!adapter || adapter->device_mode != QDF_STA_MODE)
+	if (link_info->adapter->device_mode != QDF_STA_MODE)
 		return;
 
 	hdd_debug("Sending Lpass mode change notification");
 
-	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-	wlan_hdd_send_scan_intf_info(hdd_ctx, adapter);
+	wlan_hdd_send_scan_intf_info(link_info);
 }
 
 /*
@@ -420,17 +401,16 @@ void hdd_lpass_notify_wlan_version(struct hdd_context *hdd_ctx)
 	hdd_exit();
 }
 
-void hdd_lpass_notify_start(struct hdd_context *hdd_ctx,
-			    struct hdd_adapter *adapter)
+void hdd_lpass_notify_start(struct wlan_hdd_link_info *link_info)
 {
 	hdd_enter();
 
-	if (!adapter || adapter->device_mode != QDF_STA_MODE)
+	if (link_info->adapter->device_mode != QDF_STA_MODE)
 		return;
 
 	hdd_debug("Sending Start Lpass notification");
 
-	wlan_hdd_send_scan_intf_info(hdd_ctx, adapter);
+	wlan_hdd_send_scan_intf_info(link_info);
 
 	hdd_exit();
 }

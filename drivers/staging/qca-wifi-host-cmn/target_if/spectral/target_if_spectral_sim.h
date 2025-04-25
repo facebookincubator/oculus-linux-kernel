@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2015,2017-2020 The Linux Foundation. All rights reserved.
- *
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -26,7 +26,7 @@
 /**
  * target_if_spectral_sim_attach() - Initialize Spectral Simulation
  * functionality
- * @spectral - pointer to spectral internal data structure
+ * @spectral: pointer to spectral internal data structure
  *
  * Setup data structures to be used for serving out data corresponding to
  * various bandwidths and configurations.
@@ -38,7 +38,7 @@ int target_if_spectral_sim_attach(struct target_if_spectral *spectral);
 /**
  * target_if_spectral_sim_detach() - De-initialize Spectral Simulation
  * functionality
- * @spectral - pointer to spectral internal data structure
+ * @spectral: pointer to spectral internal data structure
  *
  * Free up data structures used for serving out data corresponding to various
  * bandwidths and configurations.
@@ -50,7 +50,7 @@ void target_if_spectral_sim_detach(struct target_if_spectral *spectral);
 /**
  * target_if_spectral_sops_sim_is_active() - Check if Spectral(simulated) is
  * active
- * @arg - pointer to spectral internal data structure
+ * @arg: pointer to spectral internal data structure
  *
  * Check if Spectral (simulated) is active
  *
@@ -61,7 +61,7 @@ uint32_t target_if_spectral_sops_sim_is_active(void *arg);
 /**
  * target_if_spectral_sops_sim_is_enabled() - Check if Spectral(simulated) is
  * enabled
- * @arg - pointer to spectral internal data structure
+ * @arg: pointer to spectral internal data structure
  *
  * Check if Spectral(simulated) is enabled
  *
@@ -71,7 +71,7 @@ uint32_t target_if_spectral_sops_sim_is_enabled(void *arg);
 
 /**
  * target_if_spectral_sops_sim_start_scan() - Start Spectral simulation
- * @arg - pointer to spectral internal data structure
+ * @arg: pointer to spectral internal data structure
  *
  * Start Spectral simulation
  *
@@ -81,7 +81,7 @@ uint32_t target_if_spectral_sops_sim_start_scan(void *arg);
 
 /**
  * target_if_spectral_sops_sim_stop_scan() - Stop Spectral simulation
- * @arg - pointer to spectral internal data structure
+ * @arg: pointer to spectral internal data structure
  *
  * Stop Spectral simulation
  *
@@ -111,8 +111,8 @@ uint32_t target_if_spectral_sops_sim_configure_params(
 /**
  * target_if_spectral_sops_sim_get_params() - Get Spectral parameters configured
  * into simulation
- * arg - pointer to ath_spectral structure
- * params - pointer to struct spectral_config structure which should be
+ * @arg: pointer to ath_spectral structure
+ * @params: pointer to struct spectral_config structure which should be
  *          populated with Spectral configuration
  *
  * Get Spectral parameters configured into simulation

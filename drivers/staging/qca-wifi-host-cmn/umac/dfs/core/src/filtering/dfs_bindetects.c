@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2002-2010, Atheros Communications Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -90,6 +90,9 @@ static inline bool dfs_ts_within_window(
  * dfs_ts_eq_prevts() - Calculate pulses for timestamp equals to prev event
  * @dfs: Pointer to wlan_dfs structure.
  * @pl: Pointer to dfs_pulseline structure.
+ * @next_event_ts: next event timestamp
+ * @event_ts: current event timestamp
+ * @refpri: reference PRI
  * @index: Index to dfs pulse elements.
  * @dur: Pulse duration/width
  * @numpulses: Number of pulses

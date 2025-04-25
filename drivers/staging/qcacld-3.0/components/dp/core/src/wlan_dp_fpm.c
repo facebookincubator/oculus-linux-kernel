@@ -406,7 +406,8 @@ QDF_STATUS fpm_policy_add(struct fpm_table *fpm, struct dp_policy *policy)
 				qdf_mem_malloc(sizeof(struct dp_policy));
 	if (!new_policy) {
 		dp_err("failed to allocate memory for new policy");
-		return QDF_STATUS_E_INVAL;
+		ret = QDF_STATUS_E_NOMEM;
+		goto exit;
 	}
 
 	qdf_mem_copy(new_policy, policy, sizeof(struct dp_policy));

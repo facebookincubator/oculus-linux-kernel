@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- *
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -152,3 +152,19 @@ QDF_STATUS wmi_extract_reg_ch_avoid_event(
 	return QDF_STATUS_E_FAILURE;
 }
 qdf_export_symbol(wmi_extract_reg_ch_avoid_event);
+
+QDF_STATUS wmi_extract_tgtr2p_table_event(
+		wmi_unified_t wmi_handle,
+		uint8_t *evt_buf,
+		struct r2p_table_update_status_obj *update_status,
+		uint32_t len)
+{
+	if (wmi_handle &&
+	    wmi_handle->ops->extract_tgtr2p_table_event)
+		return wmi_handle->ops->extract_tgtr2p_table_event(
+				wmi_handle, evt_buf, update_status, len);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+qdf_export_symbol(wmi_extract_tgtr2p_table_event);

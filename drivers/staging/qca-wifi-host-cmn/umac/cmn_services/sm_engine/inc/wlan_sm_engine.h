@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -161,7 +161,7 @@ struct wlan_sm {
  * @ctx: caller pointer, used on invoking callbacks
  * @init_state: Default state of the SM
  * @state_info: States' definitions
- * @num_state: Number of states
+ * @num_states: Number of states
  * @event_names: Event name table
  * @num_event_names: Number of events
  *

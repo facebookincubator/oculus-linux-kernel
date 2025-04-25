@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -40,7 +40,6 @@
 #define SIZE_OF_NOA_DESCRIPTOR 13
 #define MAX_NOA_PERIOD_IN_MICROSECS 3000000
 
-uint32_t lim_cmp_ssid(tSirMacSSid *, struct pe_session *);
 uint8_t lim_compare_capabilities(struct mac_context *,
 				 tSirAssocReq *,
 				 tSirMacCapabilityInfo *, struct pe_session *);
@@ -195,6 +194,20 @@ static inline QDF_STATUS lim_add_ft_sta_self(struct mac_context *mac,
 		uint16_t assocId, struct pe_session *pe_session)
 {
 	return QDF_STATUS_SUCCESS;
+}
+#endif
+
+#ifdef WLAN_FEATURE_11BE
+static inline bool
+lim_is_add_sta_params_eht_capable(tpAddStaParams add_sta_params)
+{
+	return add_sta_params->eht_capable;
+}
+#else
+static inline bool
+lim_is_add_sta_params_eht_capable(tpAddStaParams add_sta_params)
+{
+	return false;
 }
 #endif
 

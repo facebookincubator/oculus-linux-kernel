@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -106,7 +106,7 @@ int qld_register(void *addr, size_t size, char *name)
 	uint32_t list_count = 0;
 
 	if (!qld_handle || !addr) {
-		qld_err("Handle or address is NULL");
+		qld_debug("Handle or address is NULL");
 		return -EINVAL;
 	}
 

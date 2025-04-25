@@ -224,8 +224,7 @@ static int llc_ui_release(struct socket *sock)
 	} else {
 		release_sock(sk);
 	}
-	if (llc->dev)
-		dev_put(llc->dev);
+	dev_put(llc->dev);
 	sock_put(sk);
 	llc_sk_free(sk);
 out:

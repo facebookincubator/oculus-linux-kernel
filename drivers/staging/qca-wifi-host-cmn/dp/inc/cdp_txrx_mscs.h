@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,8 +18,8 @@
  */
 
 /**
- * @file cdp_txrx_mscs.h
- * @brief Define the host data path MSCS API functions
+ * DOC: cdp_txrx_mscs.h
+ * Define the host data path MSCS API functions
  * called by the host control SW and the OS interface module
  */
 #ifndef _CDP_TXRX_MSCS_H_
@@ -27,15 +27,17 @@
 #include "cdp_txrx_handle.h"
 #ifdef WLAN_SUPPORT_MSCS
 /**
- * @brief find MSCS enabled peer for this mac address and validate priority
- * @details
- *  This function checks if there is a peer for this mac address with MSCS
- *  enabled flag set and nbuf priority is valid from user priority bitmap.
+ * cdp_mscs_peer_lookup_n_get_priority() - find MSCS enabled peer for this mac
+ *                                         address and validate priority
+ * @soc: SoC handle
+ * @src_mac: source mac address of peer
+ * @dst_mac: destination mac address of peer
+ * @nbuf: nbuf pointer
  *
- * @param src_mac - source mac address of peer
- * @param dst_mac - destination mac address of peer
- * @param nbuf - nbuf pointer
- * @return - 0 for non error case, 1 for failure
+ * This function checks if there is a peer for this mac address with MSCS
+ * enabled flag set and nbuf priority is valid from user priority bitmap.
+ *
+ * Return: 0 for non error case, 1 for failure
  */
 static inline int
 cdp_mscs_peer_lookup_n_get_priority(ol_txrx_soc_handle soc,

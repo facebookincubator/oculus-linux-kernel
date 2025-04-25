@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2012, 2014-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -50,6 +50,113 @@ struct sir_channel_info {
 	uint8_t reg_class;
 	uint8_t chan_num;
 	uint32_t chan_freq;
+};
+
+/**
+ * struct rrm_reporting - Contains info for rrm_ reporting IE present in
+ * channel load request received from AP
+ * @reporting_condition: reporting condition
+ * @threshold: threshold value to report channel load request
+ */
+struct rrm_reporting {
+	uint8_t reporting_condition;
+	uint8_t threshold;
+};
+
+/**
+ * struct bw_ind_element - Contains info for Bandwidth Indication IE
+ * present in channel load request received from AP
+ * @is_bw_ind_element: to check Bandwidth Indication optional IE present
+ * @channel_width: channel width
+ * @ccfi0: center channel frequency index segment 0
+ * @ccfi1: center channel frequency index segment 1
+ * @center_freq: center freq segment  for 320 MHz request
+ */
+struct bw_ind_element {
+	bool is_bw_ind_element;
+	uint8_t channel_width;
+	uint8_t ccfi0;
+	uint8_t ccfi1;
+	qdf_freq_t center_freq;
+};
+
+/**
+ * struct wide_bw_chan_switch - Contains info for Wide Bandwidth Channel
+ * Switch IE present in channel load request received from AP
+ * @is_wide_bw_chan_switch: to check Bandwidth Indication optional IE present
+ * @channel_width: channel width
+ * @center_chan_freq0: center freq segment 0 for till 160 MHz request
+ * @center_chan_freq1: center freq segment 1 for till 160 MHz request
+ */
+struct wide_bw_chan_switch {
+	uint8_t is_wide_bw_chan_switch;
+	uint8_t channel_width;
+	uint8_t center_chan_freq0;
+	uint8_t center_chan_freq1;
+};
+
+/**
+ * struct ch_load_ind - Contains info for channel load request received from AP
+ * @message_type: message type eWNI_SME_CHAN_LOAD_REQ_IND
+ * @length: size of struct chan_load_req_ind
+ * @measurement_idx: measurement index for channel load request
+ * @peer_addr: connected peer mac address
+ * @dialog_token: dialog token
+ * @msg_source: message source of type enum tRrmMsgReqSource
+ * @op_class: regulatory class
+ * @channel: channel number
+ * @req_freq: freq as per channel load req
+ * @randomization_intv: Random interval in ms
+ * @meas_duration: measurement duration in ms
+ * @bw_ind: Info for bandwidth indication IE
+ * @wide_bw: Info for wide bandwidth channel switch IE
+ */
+struct ch_load_ind {
+	uint16_t message_type;
+	uint16_t length;
+	uint8_t measurement_idx;
+	struct qdf_mac_addr peer_addr;
+	uint16_t dialog_token;
+	tRrmMsgReqSource msg_source;
+	uint8_t op_class;
+	uint8_t channel;
+	qdf_freq_t req_freq;
+	uint16_t randomization_intv;
+	uint16_t meas_duration;
+	struct bw_ind_element bw_ind;
+	struct wide_bw_chan_switch wide_bw;
+};
+
+/**
+ * struct chan_load_xmit_ind - Contains info for channel load xmit indication
+ * @messageType: message type eWNI_SME_CHAN_LOAD_REPORT_RESP_XMIT_IND
+ * @length: size of struct chan_load_req_ind
+ * @measurement_idx: measurement index for channel load request
+ * @peer_addr: MAC address of the BSS
+ * @dialog_token: dialog token
+ * @op_class: regulatory class
+ * @channel: channel number
+ * @duration: measurement duration in ms
+ * @chan_load: channel utilization measurement
+ * @rrm_scan_tsf: time at which driver triggers rrm scan for channel load
+ * @is_report_success: need to send failure report or not
+ * @bw_ind: Info for bandwidth indication IE
+ * @wide_bw: Info for wide bandwidth channel switch IE
+ */
+struct chan_load_xmit_ind {
+	uint16_t messageType;
+	uint16_t length;
+	uint8_t measurement_idx;
+	struct qdf_mac_addr peer_addr;
+	uint16_t dialog_token;
+	uint8_t op_class;
+	uint8_t channel;
+	uint16_t duration;
+	uint8_t chan_load;
+	qdf_time_t rrm_scan_tsf;
+	bool is_report_success;
+	struct bw_ind_element bw_ind;
+	struct wide_bw_chan_switch wide_bw;
 };
 
 typedef struct sSirBeaconReportReqInd {
@@ -142,12 +249,19 @@ typedef struct sSirNeighborReportInd {
 	uint8_t measurement_idx;
 	uint16_t numNeighborReports;
 	tSirMacAddr bssId;      /* For the session. */
-	tSirNeighborBssDescription sNeighborBssDescription[1];
+	QDF_FLEX_ARRAY(tSirNeighborBssDescription, sNeighborBssDescription);
 } tSirNeighborReportInd, *tpSirNeighborReportInd;
+
+typedef struct eid_ext_info {
+	uint8_t eid;
+	uint8_t num_eid_ext;
+	uint8_t eid_ext[255];
+} eid_ext_info;
 
 typedef struct sRRMBeaconReportRequestedIes {
 	uint8_t num;
 	uint8_t *pElementIds;
+	eid_ext_info ext_info;
 } tRRMBeaconReportRequestedIes, *tpRRMBeaconReportRequestedIes;
 
 /* Reporting detail defines. */
@@ -205,6 +319,22 @@ typedef struct sRRMCaps {
 	uint8_t reserved:4;
 } tRRMCaps, *tpRRMCaps;
 
+/**
+ * struct rrm_sta_stats - RRM sta stats structure
+ * @rrm_report: rrm_report
+ * @peer: peer address
+ * @index: current req index
+ * @rrm_sta_stats_res_count: sta stats response count
+ * @vdev_id: vdev_id
+ */
+struct rrm_sta_stats {
+	tSirMacRadioMeasureReport rrm_report;
+	tSirMacAddr peer;
+	uint8_t index;
+	uint8_t rrm_sta_stats_res_count;
+	uint8_t vdev_id;
+};
+
 typedef struct sRrmPEContext {
 	uint8_t rrmEnable;
 	/*
@@ -225,6 +355,7 @@ typedef struct sRrmPEContext {
 	tpRRMReq pCurrentReq[MAX_MEASUREMENT_REQUEST];
 	uint32_t beacon_rpt_chan_list[MAX_NUM_CHANNELS];
 	uint8_t beacon_rpt_chan_num;
+	struct rrm_sta_stats rrm_sta_stats;
 } tRrmPEContext, *tpRrmPEContext;
 
 /* 2008 11k spec reference: 18.4.8.5 RCPI Measurement */

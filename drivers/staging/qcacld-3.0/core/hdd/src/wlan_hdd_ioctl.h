@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2014, 2017-2019, 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -53,7 +53,17 @@ int hdd_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd);
  */
 int hdd_dev_private_ioctl(struct net_device *dev, struct ifreq *ifr,
 			  void __user *data, int cmd);
-int wlan_hdd_set_mc_rate(struct hdd_adapter *adapter, int target_rate);
+
+/**
+ * wlan_hdd_set_mc_rate() - Function to set MC rate.
+ * @link_info: Link info pointer in HDD adapter
+ * @target_rate: Target rate to set.
+ *
+ * The API sets the value in @target_rate for MC Tx
+ *
+ * Return: Non-zero value on failure.
+ */
+int wlan_hdd_set_mc_rate(struct wlan_hdd_link_info *link_info, int target_rate);
 
 /**
  * hdd_update_smps_antenna_mode() - set smps and antenna mode
@@ -68,12 +78,10 @@ QDF_STATUS hdd_update_smps_antenna_mode(struct hdd_context *hdd_ctx, int mode);
 
 /**
  * hdd_set_antenna_mode() - SET ANTENNA MODE command handler
- * @adapter: Pointer to network adapter
- * @hdd_ctx: Pointer to hdd context
+ * @link_info: Link info pointer in HDD adapter
  * @mode: new antenna mode
  */
-int hdd_set_antenna_mode(struct hdd_adapter *adapter,
-			  struct hdd_context *hdd_ctx, int mode);
+int hdd_set_antenna_mode(struct wlan_hdd_link_info *link_info, int mode);
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 /**
@@ -122,5 +130,39 @@ hdd_get_roam_scan_freq(struct hdd_adapter *adapter, mac_handle_t mac_handle,
 {
 	return -EFAULT;
 }
+#endif
+
+/**
+ * hdd_ioctl_log_buffer() - dump log buffer of a type
+ * @log_id: id of what log type to be
+ * @count: number of lines to be copied
+ * @custom_print: custom print function pointer
+ * @print_ctx: print context for custom print function
+ *
+ * If custom print function is NULL, will default to printk
+ *
+ * Return: None
+ */
+void hdd_ioctl_log_buffer(int log_id, uint32_t count, qdf_abstract_print
+							     *custom_print,
+							     void *print_ctx);
+#ifdef WLAN_DUMP_LOG_BUF_CNT
+/**
+ * hdd_dump_log_buffer() - dump log buffer history
+ * @print_ctx: print context for custom print function
+ * @custom_print: custom print function pointer
+ *
+ * If custom print function is NULL, will default to printk
+ *
+ * Return: None
+ */
+void hdd_dump_log_buffer(void *print_ctx, qdf_abstract_print *custom_print);
+
+#else
+static inline
+void hdd_dump_log_buffer(void *print_ctx, qdf_abstract_print *custom_print)
+{
+}
+
 #endif
 #endif /* end #if !defined(WLAN_HDD_IOCTL_H) */

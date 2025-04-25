@@ -329,11 +329,13 @@ bool ucfg_is_nan_sap_supported(struct wlan_objmgr_psoc *psoc);
  * allowed
  * @psoc: pointer to psoc object
  * @nan_ch_freq: NAN Discovery primary social channel
+ * @vdev_id: Vdev Id
  *
  * Return: True if NAN Discovery enable is allowed, False otherwise
  */
 bool ucfg_is_nan_enable_allowed(struct wlan_objmgr_psoc *psoc,
-				uint32_t nan_ch_freq);
+				uint32_t nan_ch_freq,
+				uint8_t vdev_id);
 
 /**
  * ucfg_is_nan_disc_active() - ucfg API to query if NAN Discovery is

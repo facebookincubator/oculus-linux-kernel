@@ -487,7 +487,6 @@ struct mmc_host {
 	/* Inline encryption support */
 #ifdef CONFIG_MMC_CRYPTO
 	struct blk_keyslot_manager ksm;
-	bool crypto_reprogram_key;
 #endif
 
 	/* Host Software Queue support */

@@ -1,0 +1,11 @@
+/dts-v1/;
+
+
+#include "montague.dtsi"
+#include "montague-talyn.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Apache wigig IDP";
+	compatible = "qcom,montague-idp", "qcom,montague", "qcom,idp";
+	qcom,board-id = <0 0>;
+};

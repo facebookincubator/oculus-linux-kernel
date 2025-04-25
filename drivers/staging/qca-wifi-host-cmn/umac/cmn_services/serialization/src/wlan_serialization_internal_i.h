@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -91,11 +92,9 @@ wlan_serialization_activate_cmd(
  * wlan_serialization_move_pending_to_active() - Move a cmd from pending
  *			queue to active queue
  * @cmd_type: Type of command to be moved i.e scan or non scan
- * @pcmd_list: Pointer to command list containing the command
  * @ser_pdev_obj: Serialization private pdev object
  * @vdev: Pointer to vdev object manager
  * @blocking_cmd_removed: If a blocking cmd is removed from active queue
- * @blocking_cmd_waiting: If a blocking cmd is waiting in pending queue
  *
  * Return: Status of command request
  */

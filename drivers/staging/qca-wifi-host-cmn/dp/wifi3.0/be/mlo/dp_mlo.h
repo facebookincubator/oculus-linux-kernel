@@ -26,10 +26,12 @@
 #define DP_MAX_MLO_PEER 512
 
 /* Max number of chips supported */
-#define DP_MLO_MAX_DEST_CHIP_ID 3
+#define DP_MLO_MAX_DEST_CHIP_ID 4
 
 /*
- * dp_mlo_ctxt
+ * NB: intentionally not using kernel-doc comment because the kernel-doc
+ *     script does not handle the TAILQ_HEAD macro
+ * struct dp_mlo_ctxt - datapath MLO context
  *
  * @ctrl_ctxt: opaque handle of cp mlo mgr
  * @ml_soc_list: list of socs which are mlo enabled. This also maintains
@@ -39,9 +41,14 @@
  * @mld_peer_hash: peer hash table for ML peers
  *           Associated peer with this MAC address)
  * @mld_peer_hash_lock: lock to protect mld_peer_hash
+ * @toeplitz_hash_ipv4:
+ * @toeplitz_hash_ipv6:
  * @link_to_pdev_map: link to pdev mapping
  * @rx_fst: pointer to rx_fst handle
  * @rx_fst_ref_cnt: ref count of rx_fst
+ * @grp_umac_reset_ctx: UMAC reset context at mlo group level
+ * @mlo_dev_list: list of MLO device context
+ * @mlo_dev_list_lock: lock to protect MLO device ctxt
  */
 struct dp_mlo_ctxt {
 	struct cdp_ctrl_mlo_mgr *ctrl_ctxt;
@@ -60,8 +67,12 @@ struct dp_mlo_ctxt {
 	uint32_t toeplitz_hash_ipv6[LRO_IPV6_SEED_ARR_SZ];
 	struct dp_pdev_be *link_to_pdev_map[WLAN_MAX_MLO_CHIPS *
 		WLAN_MAX_MLO_LINKS_PER_SOC];
-	struct dp_rx_fst *rx_fst;
-	uint8_t rx_fst_ref_cnt;
+#ifdef DP_UMAC_HW_RESET_SUPPORT
+	struct dp_soc_mlo_umac_reset_ctx grp_umac_reset_ctx;
+#endif
+	/* MLO device ctxt list */
+	TAILQ_HEAD(, dp_mlo_dev_ctxt) mlo_dev_list;
+	qdf_spinlock_t mlo_dev_list_lock;
 };
 
 /**
@@ -77,9 +88,8 @@ struct cdp_mlo_ctxt *dp_mlo_ctx_to_cdp(struct dp_mlo_ctxt *mlo_ctxt)
 }
 
 /**
- * cdp_mlo_ctx_to_dp() - typecast cdp_soc_t to
- * dp soc handle
- * @psoc: CDP psoc handle
+ * cdp_mlo_ctx_to_dp() - typecast CDP MLO context to DP MLO context
+ * @mlo_ctxt: CDP MLO context
  *
  * Return: struct dp_soc pointer
  */
@@ -108,6 +118,17 @@ void dp_soc_mlo_fill_params(struct dp_soc *soc,
  */
 void dp_pdev_mlo_fill_params(struct dp_pdev *pdev,
 			     struct cdp_pdev_attach_params *params);
+
+/**
+ * dp_mlo_get_soc_ref_by_chip_id() - Get DP soc from DP ML context.
+ * @ml_ctxt: DP ML context handle
+ * @chip_id: MLO chip id
+ *
+ * This API will increment a reference count for DP soc. Caller has
+ * to take care for decrementing refcount.
+ *
+ * Return: dp_soc
+ */
 struct dp_soc*
 dp_mlo_get_soc_ref_by_chip_id(struct dp_mlo_ctxt *ml_ctxt, uint8_t chip_id);
 
@@ -152,7 +173,7 @@ struct dp_rx_fst *dp_mlo_get_rx_fst(struct dp_soc *soc);
 void dp_mlo_set_rx_fst(struct dp_soc *soc, struct dp_rx_fst *fst);
 
 /**
- * dp_mlo_update_link_to_pdev_map : map link-id to pdev mapping
+ * dp_mlo_update_link_to_pdev_map() - map link-id to pdev mapping
  * @soc: DP SOC
  * @pdev: DP PDEV
  *
@@ -161,7 +182,7 @@ void dp_mlo_set_rx_fst(struct dp_soc *soc, struct dp_rx_fst *fst);
 void dp_mlo_update_link_to_pdev_map(struct dp_soc *soc, struct dp_pdev *pdev);
 
 /**
- * dp_mlo_update_link_to_pdev_unmap : unmap link-id to pdev mapping
+ * dp_mlo_update_link_to_pdev_unmap() - unmap link-id to pdev mapping
  * @soc: DP SOC
  * @pdev: DP PDEV
  *
@@ -188,4 +209,54 @@ int32_t dp_mlo_get_delta_tsf2_wrt_mlo_offset(struct dp_soc *soc,
  * Return: int32_t
  */
 int32_t dp_mlo_get_delta_tqm_wrt_mlo_offset(struct dp_soc *soc);
+
+/**
+ * dp_get_interface_stats_be() - get vdev stats for ath interface
+ * @soc_hdl: CDP SoC handle
+ * @vdev_id: vdev Id
+ * @buf: buffer for vdev stats
+ * @is_aggregate: for aggregation
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+dp_get_interface_stats_be(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
+			  void *buf, bool is_aggregate);
+
+/*
+ * dp_mlo_debug_print_ptnr_info() - print partner info
+ * @vdev: DP VDEV
+ *
+ * Return: none
+ */
+void dp_mlo_debug_print_ptnr_info(struct dp_vdev *vdev);
+
+/*
+ * dp_mlo_get_chip_id() - return MLO chip id
+ * @soc: DP soc
+ *
+ * Return: chip_id
+ */
+uint8_t dp_mlo_get_chip_id(struct dp_soc *soc);
+
+/*
+ * dp_mlo_link_peer_hash_find_by_chip_id() - returns mlo link peer on chip_id
+ *			      peer_hash_table matching vdev_id and mac_address
+ * @soc: partner soc handle in MLO
+ * @peer_mac_addr: peer mac address
+ * @mac_addr_is_aligned: is mac addr aligned
+ * @vdev_id: vdev_id
+ * @chip_id: mlo_chip_id
+ * @mod_id: id of module requesting reference
+ *
+ * return: peer in success
+ *         NULL in failure
+ */
+struct dp_peer *
+dp_mlo_link_peer_hash_find_by_chip_id(struct dp_soc *soc,
+				      uint8_t *peer_mac_addr,
+				      int mac_addr_is_aligned,
+				      uint8_t vdev_id,
+				      uint8_t chip_id,
+				      enum dp_mod_id mod_id);
 #endif /* __DP_MLO_H */

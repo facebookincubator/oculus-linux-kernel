@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -97,7 +97,7 @@ __hdd_sysfs_mt_bl_config_store(struct net_device *net_dev,
 	if (kstrtou32(token, 0, &bl_num_meas))
 		return -EINVAL;
 
-	motion_det_base_line_cfg.vdev_id = adapter->vdev_id;
+	motion_det_base_line_cfg.vdev_id = adapter->deflink->vdev_id;
 	motion_det_base_line_cfg.bl_time_t = bl_time_t;
 	motion_det_base_line_cfg.bl_packet_gap = bl_packet_gap;
 	motion_det_base_line_cfg.bl_n = bl_n;
@@ -182,7 +182,7 @@ __hdd_sysfs_mt_bl_start_store(struct net_device *net_dev,
 		return -EINVAL;
 	}
 
-	motion_det_base_line.vdev_id = adapter->vdev_id;
+	motion_det_base_line.vdev_id = adapter->deflink->vdev_id;
 	motion_det_base_line.enable = value;
 	status = sme_motion_det_base_line_enable(hdd_ctx->mac_handle,
 						 &motion_det_base_line);
@@ -266,7 +266,7 @@ __hdd_sysfs_mt_config_store(struct net_device *net_dev,
 		}
 	}
 
-	motion_det_cfg.vdev_id = adapter->vdev_id;
+	motion_det_cfg.vdev_id = adapter->deflink->vdev_id;
 	motion_det_cfg.time_t1 = val_32[0];
 	motion_det_cfg.time_t2 = val_32[1];
 	motion_det_cfg.n1 = val_32[2];
@@ -365,7 +365,7 @@ __hdd_sysfs_mt_start_store(struct net_device *net_dev,
 		return -EAGAIN;
 	}
 
-	motion_det.vdev_id = adapter->vdev_id;
+	motion_det.vdev_id = adapter->deflink->vdev_id;
 	motion_det.enable = value;
 
 	if (value) {

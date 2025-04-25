@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -380,9 +381,8 @@ hal_rx_msdu_start_nss_get_6390(uint8_t *buf)
 
 /**
  * hal_rx_mon_hw_desc_get_mpdu_status_6390(): Retrieve MPDU status
- *
- * @ hw_desc_addr: Start address of Rx HW TLVs
- * @ rs: Status for monitor mode
+ * @hw_desc_addr: Start address of Rx HW TLVs
+ * @rs: Status for monitor mode
  *
  * Return: void
  */
@@ -437,7 +437,7 @@ static uint8_t hal_rx_get_tlv_6390(void *rx_tlv)
  * hal_rx_proc_phyrx_other_receive_info_tlv_6390()
  *				    - process other receive info TLV
  * @rx_tlv_hdr: pointer to TLV header
- * @ppdu_info: pointer to ppdu_info
+ * @ppdu_info_handle: pointer to ppdu_info
  *
  * Return: None
  */
@@ -472,16 +472,18 @@ void hal_rx_proc_phyrx_other_receive_info_tlv_6390(void *rx_tlv_hdr,
 }
 
 /**
- * hal_rx_dump_msdu_start_tlv_6390() : dump RX msdu_start TLV in structured
- *			     human readable format.
- * @ msdu_start: pointer the msdu_start TLV in pkt.
- * @ dbg_level: log level.
+ * hal_rx_dump_msdu_start_tlv_6390() - dump RX msdu_start TLV in structured
+ *			               human readable format.
+ * @pkttlvs: pointer to the pkttlvs.
+ * @dbg_level: log level.
  *
  * Return: void
  */
-static void hal_rx_dump_msdu_start_tlv_6390(void *msdustart, uint8_t dbg_level)
+static void hal_rx_dump_msdu_start_tlv_6390(void *pkttlvs, uint8_t dbg_level)
 {
-	struct rx_msdu_start *msdu_start = (struct rx_msdu_start *)msdustart;
+	struct rx_pkt_tlvs *pkt_tlvs = (struct rx_pkt_tlvs *)pkttlvs;
+	struct rx_msdu_start *msdu_start =
+					&pkt_tlvs->msdu_start_tlv.rx_msdu_start;
 
 	hal_verbose_debug(
 			  "rx_msdu_start tlv (1/2) - "
@@ -549,17 +551,18 @@ static void hal_rx_dump_msdu_start_tlv_6390(void *msdustart, uint8_t dbg_level)
 }
 
 /**
- * hal_rx_dump_msdu_end_tlv_6390: dump RX msdu_end TLV in structured
- *			     human readable format.
- * @ msdu_end: pointer the msdu_end TLV in pkt.
- * @ dbg_level: log level.
+ * hal_rx_dump_msdu_end_tlv_6390() - dump RX msdu_end TLV in structured
+ *			             human readable format.
+ * @pkttlvs: pointer to the pkttlvs.
+ * @dbg_level: log level.
  *
  * Return: void
  */
-static void hal_rx_dump_msdu_end_tlv_6390(void *msduend,
+static void hal_rx_dump_msdu_end_tlv_6390(void *pkttlvs,
 					  uint8_t dbg_level)
 {
-	struct rx_msdu_end *msdu_end = (struct rx_msdu_end *)msduend;
+	struct rx_pkt_tlvs *pkt_tlvs = (struct rx_pkt_tlvs *)pkttlvs;
+	struct rx_msdu_end *msdu_end = &pkt_tlvs->msdu_end_tlv.rx_msdu_end;
 
 	__QDF_TRACE_RL(dbg_level, QDF_MODULE_ID_DP,
 		       "rx_msdu_end tlv (1/2) - "

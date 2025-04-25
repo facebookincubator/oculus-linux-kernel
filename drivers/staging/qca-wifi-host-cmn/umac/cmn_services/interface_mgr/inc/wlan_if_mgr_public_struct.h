@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,7 +15,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
+/**
  * DOC: contains interface manager structure definitions
  */
 #ifndef __IF_MGR_PUBLIC_STRUCTS_H
@@ -40,16 +40,19 @@
  * @WLAN_IF_MGR_EV_AP_START_BSS_COMPLETE:Event to handle start bss complete
  * @WLAN_IF_MGR_EV_AP_STOP_BSS:Event to handle stop bss request
  * @WLAN_IF_MGR_EV_AP_STOP_BSS_COMPLETE:Event to stop bss complete
- * WLAN_IF_MGR_EV_AP_START_ACS: Event to handle ACS start
- * WLAN_IF_MGR_EV_AP_STOP_ACS: Event to handle ACS stop
- * WLAN_IF_MGR_EV_AP_DONE_ACS: Event to handle ACS completion
- * WLAN_IF_MGR_EV_AP_CANCEL_ACS: Event to handle ACS cancel
- * WLAN_IF_MGR_EV_AP_START_HT40: Event to handle HT40 scan start
- * WLAN_IF_MGR_EV_AP_STOP_HT40: Event to handle HT40 scan stop
- * WLAN_IF_MGR_EV_AP_DONE_HT40: Event to handle HT40 scan completion
- * WLAN_IF_MGR_EV_AP_CANCEL_HT40: Event to handle HT40 scan cancel
- * WLAN_IF_MGR_EV_CSA_COMPLETE: Event to handle csa complete
+ * @WLAN_IF_MGR_EV_AP_START_ACS: Event to handle ACS start
+ * @WLAN_IF_MGR_EV_AP_STOP_ACS: Event to handle ACS stop
+ * @WLAN_IF_MGR_EV_AP_DONE_ACS: Event to handle ACS completion
+ * @WLAN_IF_MGR_EV_AP_CANCEL_ACS: Event to handle ACS cancel
+ * @WLAN_IF_MGR_EV_AP_START_HT40: Event to handle HT40 scan start
+ * @WLAN_IF_MGR_EV_AP_STOP_HT40: Event to handle HT40 scan stop
+ * @WLAN_IF_MGR_EV_AP_DONE_HT40: Event to handle HT40 scan completion
+ * @WLAN_IF_MGR_EV_AP_CANCEL_HT40: Event to handle HT40 scan cancel
+ * @WLAN_IF_MGR_EV_AP_CSA_START: Event to handle CSA start
+ * @WLAN_IF_MGR_EV_AP_CSA_COMPLETE: Event to handle csa complete
+ * @WLAN_IF_MGR_EV_STA_CSA_COMPLETE: Event to handle STA/P2P_CLI CSA completion
  * @WLAN_IF_MGR_EV_CONNECT_ACTIVE:Event to handle connect active request
+ * @WLAN_IF_MGR_EV_MAX: Max event
  */
 enum wlan_if_mgr_evt {
 	WLAN_IF_MGR_EV_CONNECT_START = 0,
@@ -69,7 +72,9 @@ enum wlan_if_mgr_evt {
 	WLAN_IF_MGR_EV_AP_STOP_HT40 = 14,
 	WLAN_IF_MGR_EV_AP_DONE_HT40 = 15,
 	WLAN_IF_MGR_EV_AP_CANCEL_HT40 = 16,
-	WLAN_IF_MGR_EV_CSA_COMPLETE = 17,
+	WLAN_IF_MGR_EV_AP_CSA_START = 17,
+	WLAN_IF_MGR_EV_AP_CSA_COMPLETE = 18,
+	WLAN_IF_MGR_EV_STA_CSA_COMPLETE = 19,
 	WLAN_IF_MGR_EV_CONNECT_ACTIVE = 20,
 	WLAN_IF_MGR_EV_MAX = 21,
 };

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019, 2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -69,6 +70,18 @@ QDF_STATUS
 wmi_extract_cfr_pdev_phase_delta_event(wmi_unified_t wmi_handle,
 				       void *evt_buf,
 				       struct wmi_cfr_phase_delta_param *param);
+
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+QDF_STATUS
+wmi_extract_cfr_pdev_enhanced_aoa_phasedelta_event_fixed_param
+	(wmi_unified_t wmi_handle, void *evt_buf,
+	 struct wmi_cfr_enh_phase_delta_param *param);
+
+QDF_STATUS
+wmi_extract_cfr_pdev_enhanced_aoa_phasedelta_event_data
+	(wmi_unified_t wmi_handle, void *evt_buf,
+	 struct wmi_cfr_enh_phase_delta_param *param);
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
 #endif
 #endif /* WLAN_CFR_ENABLE */
 #endif /* _WMI_UNIFIED_CFR_API_H_ */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,7 +27,7 @@
 #define __WLAN_REG_TGT_API_H
 
 /**
- * tgt_process_master_chan_list() - process master channel list
+ * tgt_reg_process_master_chan_list() - process master channel list
  * @reg_info: regulatory info
  *
  * Return: QDF_STATUS
@@ -69,21 +69,23 @@ QDF_STATUS tgt_reg_process_11d_new_country(struct wlan_objmgr_psoc *psoc,
 
 /**
  * tgt_reg_set_regdb_offloaded() - set/clear regulatory offloaded flag
- *
  * @psoc: psoc pointer
+ * @val: flag value to set
+ *
  * Return: Success or Failure
  */
 QDF_STATUS tgt_reg_set_regdb_offloaded(struct wlan_objmgr_psoc *psoc,
-		bool val);
+				       bool val);
 
 /**
  * tgt_reg_set_11d_offloaded() - set/clear 11d offloaded flag
- *
  * @psoc: psoc pointer
+ * @val: flag value to set
+ *
  * Return: Success or Failure
  */
 QDF_STATUS tgt_reg_set_11d_offloaded(struct wlan_objmgr_psoc *psoc,
-		bool val);
+				     bool val);
 /**
  * tgt_reg_process_ch_avoid_event() - process new ch avoid event
  * @psoc: pointer to psoc
@@ -211,4 +213,16 @@ QDF_STATUS
 tgt_reg_get_eirp_preferred_support(struct wlan_objmgr_psoc *psoc,
 				   bool *reg_is_eirp_support_preferred);
 #endif
+
+/**
+ * tgt_reg_process_r2p_table_update_response() - process rate2power table update
+ * response
+ * @psoc: pointer to psoc
+ * @pdev_id: pdev id from target
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS tgt_reg_process_r2p_table_update_response(
+						struct wlan_objmgr_psoc *psoc,
+						uint32_t pdev_id);
 #endif

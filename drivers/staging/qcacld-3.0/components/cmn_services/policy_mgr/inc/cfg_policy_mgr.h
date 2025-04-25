@@ -25,20 +25,20 @@
  * <ini>
  * gWlanMccToSccSwitchMode - Control SAP channel.
  * @Min: 0
- * @Max: 5
+ * @Max: 6
  * @Default: 0
  *
  * This ini is used to override SAP channel.
  * If gWlanMccToSccSwitchMode = 0: disabled.
- * If gWlanMccToSccSwitchMode = 1: Enable switch.
- * If gWlainMccToSccSwitchMode = 2: Force switch with SAP restart.
- * If gWlainMccToSccSwitchMode = 3: Force switch without SAP restart.
- * If gWlainMccToSccSwitchMode = 4: Switch using
- *					fav channel(s)without SAP restart.
- * If gWlainMccToSccSwitchMode = 5: Force switch without SAP restart.MCC allowed
- *					in exceptional cases.
- * If gWlainMccToSccSwitchMode = 6: Force Switch without SAP restart only in
-					user preferred band.
+ * If gWlanMccToSccSwitchMode = 1: deprecated, overwritten to 3 in driver
+ * If gWlanMccToSccSwitchMode = 2: deprecated, overwritten to 3 in driver
+ * If gWlanMccToSccSwitchMode = 3: Force switch without SAP restart.
+ * If gWlanMccToSccSwitchMode = 4: Switch using
+ *                                 fav channel(s)without SAP restart.
+ * If gWlanMccToSccSwitchMode = 5: Force switch without SAP restart.MCC allowed
+ *                                 in exceptional cases.
+ * If gWlanMccToSccSwitchMode = 6: Force Switch without SAP restart only in
+ *                                 user preferred band.
  * Related: None.
  *
  * Supported Feature: Concurrency

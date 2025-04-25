@@ -23,7 +23,6 @@
 #include "cdp_txrx_ipa.h"
 #include "qdf_platform.h"
 
-#ifdef IPA_OFFLOAD
 /**
  * wlan_ipa_uc_rt_debug_host_fill - fill rt debug buffer
  * @ctext: pointer to ipa context.
@@ -197,8 +196,8 @@ void wlan_ipa_uc_rt_debug_init(struct wlan_ipa_priv *ipa_ctx)
 }
 
 /**
- * wlan_ipa_dump_ipa_ctx() - dump entries in IPA IPA struct
- * @ipa_ctx: IPA context
+ * wlan_ipa_dump_ipa_ctx() - Dump entries in IPA private context structure
+ * @ipa_ctx: IPA private context structure
  *
  * Dump entries in struct ipa_ctx
  *
@@ -349,8 +348,8 @@ static void wlan_ipa_dump_ipa_ctx(struct wlan_ipa_priv *ipa_ctx)
 }
 
 /**
- * wlan_ipa_dump_sys_pipe() - dump IPA IPA SYS Pipe struct
- * @ipa_ctx: IPA IPA struct
+ * wlan_ipa_dump_sys_pipe() - Dump IPA system pipe
+ * @ipa_ctx: IPA private context structure
  *
  * Dump entire struct wlan_ipa_sys_pipe
  *
@@ -407,9 +406,22 @@ static void wlan_ipa_dump_sys_pipe(struct wlan_ipa_priv *ipa_ctx)
 	}
 }
 
+#ifdef IPA_WDI3_TX_TWO_PIPES
+static void
+wlan_ipa_dump_iface_context_alt_pipe(struct wlan_ipa_iface_context *iface)
+{
+	ipa_info("\talt_pipe: %d\n", iface->alt_pipe);
+}
+#else
+static void
+wlan_ipa_dump_iface_context_alt_pipe(struct wlan_ipa_iface_context *iface)
+{
+}
+#endif
+
 /**
- * wlan_ipa_dump_iface_context() - dump IPA IPA Interface Context struct
- * @ipa_ctx: IPA IPA struct
+ * wlan_ipa_dump_iface_context() - Dump IPA interface context structure
+ * @ipa_ctx: IPA private context structure
  *
  * Dump entire struct wlan_ipa_iface_context
  *
@@ -443,6 +455,7 @@ static void wlan_ipa_dump_iface_context(struct wlan_ipa_priv *ipa_ctx)
 			iface_context->iface_id,
 			&iface_context->interface_lock,
 			iface_context->ifa_address);
+		wlan_ipa_dump_iface_context_alt_pipe(iface_context);
 	}
 }
 
@@ -557,8 +570,8 @@ static void wlan_ipa_print_session_info(struct wlan_ipa_priv *ipa_ctx)
 }
 
 /**
- * wlan_ipa_print_txrx_stats - Print IPA IPA TX/RX stats
- * @ipa_ctx: IPA context
+ * wlan_ipa_print_txrx_stats - Print IPA TX/RX stats
+ * @ipa_ctx: IPA private context structure
  *
  * Return: None
  */
@@ -760,8 +773,6 @@ void wlan_ipa_uc_stat(struct wlan_ipa_priv *ipa_ctx)
 /**
  * __wlan_ipa_wdi_meter_notifier_cb() - WLAN to IPA callback handler.
  * IPA calls to get WLAN stats or set quota limit.
- * @priv: pointer to private data registered with IPA (we register a
- *	  pointer to the IPA context)
  * @evt: the IPA event which triggered the callback
  * @data: data associated with the event
  *
@@ -877,8 +888,6 @@ static void wlan_ipa_uc_set_quota(struct wlan_ipa_priv *ipa_ctx,
 /**
  * __wlan_ipa_wdi_meter_notifier_cb() - WLAN to IPA callback handler.
  * IPA calls to get WLAN stats or set quota limit.
- * @priv: pointer to private data registered with IPA (we register a
- *	  pointer to the IPA context)
  * @evt: the IPA event which triggered the callback
  * @data: data associated with the event
  *
@@ -1024,16 +1033,6 @@ QDF_STATUS wlan_ipa_uc_op_metering(struct wlan_ipa_priv *ipa_ctx,
 }
 #endif /* WDI3_STATS_UPDATE */
 
-/**
- * wlan_ipa_wdi_meter_notifier_cb() - SSR wrapper for
- * __wlan_ipa_wdi_meter_notifier_cb
- * @priv: pointer to private data registered with IPA (we register a
- *	  pointer to the IPA context)
- * @evt: the IPA event which triggered the callback
- * @data: data associated with the event
- *
- * Return: None
- */
 void wlan_ipa_wdi_meter_notifier_cb(qdf_ipa_wdi_meter_evt_type_t evt,
 				    void *data)
 {
@@ -1047,4 +1046,3 @@ void wlan_ipa_wdi_meter_notifier_cb(qdf_ipa_wdi_meter_evt_type_t evt,
 	qdf_op_unprotect(op_sync);
 }
 #endif /* FEATURE_METERING */
-#endif /* IPA_OFFLOAD */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,16 +31,18 @@
 #include <wlan_objmgr_psoc_obj.h>
 #include <target_if.h>
 #include <cdp_txrx_ops.h>
+#include <wlan_cfg.h>
 
 #define PEER_ROUTING_LMAC_ID_INDEX	6
 #define PEER_ROUTING_LMAC_ID_BITS	2
+
 /**
  * struct reorder_q_setup - reorder queue setup params
  * @psoc: psoc
  * @vdev_id: vdev id
  * @pdev_id: pdev id
- * @peer_macaddr: peer mac address
- * @hw_qdesc: hw queue descriptor
+ * @peer_mac: peer mac address
+ * @hw_qdesc_paddr: hw queue descriptor
  * @tid: tid number
  * @queue_no: queue number
  * @ba_window_size_valid: BA window size validity flag
@@ -56,6 +58,41 @@ struct reorder_q_setup {
 	uint16_t queue_no;
 	uint8_t ba_window_size_valid;
 	uint16_t ba_window_size;
+};
+
+/**
+ * struct reorder_q_setup_list - Specific tid params for each tid
+ * @hw_qdesc_paddr: hw queue descriptor
+ * @queue_no: queue number
+ * @ba_window_size: BA window size
+ * @ba_window_size_valid: BA window size validity flag
+ */
+struct reorder_q_setup_list {
+	qdf_dma_addr_t hw_qdesc_paddr;
+	uint16_t queue_no;
+	uint16_t ba_window_size;
+	uint8_t ba_window_size_valid;
+};
+
+/**
+ * struct multi_reorder_q_setup - multi reorder queue setup
+ *	params for setting up TIDs at a time
+ * @q_setup_list:  An array for recording the specific params for each tid
+ * @peer_mac: peer mac address
+ * @psoc: psoc
+ * @vdev_id: vdev id
+ * @pdev_id: pdev id
+ * @tid_num: Total number of TIDs to be set up
+ * @tid_bitmap: TIDs to be set up
+ */
+struct multi_reorder_q_setup {
+	struct reorder_q_setup_list q_setup_list[DP_MAX_TIDS];
+	uint8_t peer_mac[QDF_MAC_ADDR_SIZE];
+	struct cdp_ctrl_objmgr_psoc *psoc;
+	uint8_t vdev_id;
+	uint8_t pdev_id;
+	uint8_t tid_num;
+	uint32_t tid_bitmap;
 };
 
 /**
@@ -88,8 +125,8 @@ target_if_peer_set_default_routing(struct cdp_ctrl_objmgr_psoc *psoc,
 				   bool hash_based, uint8_t ring_num,
 				   uint8_t lmac_peer_id_msb);
 /**
- * target_if_peer_rx_reorder_queue_setup() - setup rx reorder queue
- * @pdev: pdev pointer
+ * target_if_peer_rx_reorder_queue_setup() - set up rx reorder queue
+ * @psoc: psoc pointer
  * @pdev_id: pdev id
  * @vdev_id: vdev id
  * @peer_macaddr: peer mac address
@@ -111,6 +148,20 @@ target_if_peer_rx_reorder_queue_setup(struct cdp_ctrl_objmgr_psoc *psoc,
 				      uint16_t ba_window_size);
 
 /**
+ * target_if_peer_multi_rx_reorder_queue_setup() - set up multi rx reorder queue
+ * @psoc: psoc pointer
+ * @pdev_id: pdev id
+ * @tid_params: TIDs with their parameters to be set
+ *
+ * return: QDF_STATUS_SUCCESS for success or error code
+ */
+QDF_STATUS
+target_if_peer_multi_rx_reorder_queue_setup(
+	struct cdp_ctrl_objmgr_psoc *psoc,
+	uint8_t pdev_id,
+	struct multi_rx_reorder_queue_setup_params *tid_params);
+
+/**
  * target_if_peer_rx_reorder_queue_remove() - remove rx reorder queue
  * @psoc: psoc pointer
  * @pdev_id: pdev id
@@ -128,7 +179,8 @@ target_if_peer_rx_reorder_queue_remove(struct cdp_ctrl_objmgr_psoc *psoc,
 
 /**
  * target_if_lro_hash_config() - send LRO hash config to FW
- * @psoc_handle: psoc handle pointer
+ * @psoc: psoc pointer
+ * @pdev_id: pdev id
  * @lro_hash_cfg: LRO hash config parameters
  *
  * return: QDF_STATUS_SUCCESS for success or error code

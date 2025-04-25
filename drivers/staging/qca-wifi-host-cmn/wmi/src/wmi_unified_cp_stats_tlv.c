@@ -23,7 +23,7 @@
 #include <wlan_cp_stats_public_structs.h>
 
 #if defined(WLAN_SUPPORT_INFRA_CTRL_PATH_STATS) || \
-	defined(WLAN_TELEMETRY_STATS_SUPPORT)
+	defined(WLAN_CONFIG_TELEMETRY_AGENT)
 /**
  * get_infra_cp_stats_id() - convert from to wmi_ctrl_path_stats_id
  * @type: type from enum infra_cp_stats_id
@@ -46,6 +46,8 @@ static uint32_t get_infra_cp_stats_id(enum infra_cp_stats_id type)
 		return WMI_REQUEST_CTRL_PATH_BMISS_STAT;
 	case TYPE_REQ_CTRL_PATH_PMLO_STAT:
 		return WMI_REQUEST_CTRL_PATH_PMLO_STAT;
+	case TYPE_REQ_CTRL_PATH_RRM_STA_STAT:
+		return WMI_REQUEST_CTRL_STA_RRM_STAT;
 	default:
 		return -EINVAL;
 	}
@@ -157,6 +159,47 @@ static void wmi_twt_extract_stats_struct(void *tag_buf,
 }
 #endif /* WLAN_SUPPORT_TWT */
 
+#ifdef WLAN_SUPPORT_INFRA_CTRL_PATH_STATS
+static void
+wmi_extract_ctrl_path_rrm_sta_stats_tlv(void *tag_buf,
+					struct cp_sta_stats *param)
+{
+	wmi_ctrl_path_sta_rrm_stats_struct *wmi_stats_buf =
+			(wmi_ctrl_path_sta_rrm_stats_struct *)tag_buf;
+	param->group.counter_stats.group_transmitted_frame_count =
+		wmi_stats_buf->dot11GroupTransmittedFrameCount;
+	param->group.counter_stats.group_received_frame_count =
+		wmi_stats_buf->dot11GroupReceivedFrameCount;
+	param->group.counter_stats.transmitted_frame_count =
+		wmi_stats_buf->dot11TransmittedFrameCount;
+	param->group.mac_stats.ack_failure_count =
+		wmi_stats_buf->dot11AckFailureCount;
+	param->group.counter_stats.failed_count =
+		wmi_stats_buf->dot11FailedCount;
+	param->group.counter_stats.fcs_error_count =
+		wmi_stats_buf->dot11FCSErrorCount;
+	param->group.mac_stats.rts_success_count =
+		wmi_stats_buf->dot11RTSSuccessCount;
+	param->group.mac_stats.rts_failure_count =
+		wmi_stats_buf->dot11RTSFailureCount;
+}
+
+static void
+wmi_rrm_extract_sta_stats_struct(void *tag_buf,
+				 struct infra_cp_stats_event *params)
+{
+	struct cp_sta_stats *rrm_sta_stats;
+
+	rrm_sta_stats = params->sta_stats;
+	wmi_extract_ctrl_path_rrm_sta_stats_tlv(tag_buf, rrm_sta_stats);
+}
+#else
+static inline void
+wmi_rrm_extract_sta_stats_struct(void *tag_buf,
+				 struct infra_cp_stats_event *params)
+{}
+#endif
+
 #ifdef CONFIG_WLAN_BMISS
 static void
 wmi_extract_ctrl_path_bmiss_stats_tlv(void *tag_buf,
@@ -230,7 +273,7 @@ void wmi_bmiss_extract_stats_struct(void *tag_buf,
 
 #endif/* CONFIG_WLAN_BMISS */
 
-#ifdef WLAN_TELEMETRY_STATS_SUPPORT
+#ifdef WLAN_CONFIG_TELEMETRY_AGENT
 static void
 wmi_extract_ctrl_path_pmlo_stats_tlv(wmi_unified_t wmi_handle, void *tag_buf,
 				     struct ctrl_path_pmlo_telemetry_stats_struct *param)
@@ -343,6 +386,10 @@ static void wmi_stats_extract_tag_struct(wmi_unified_t wmi_handle,
 		wmi_pmlo_extract_stats_struct(wmi_handle, tag_buf, params);
 		break;
 
+	case WMITLV_TAG_STRUC_wmi_ctrl_path_sta_rrm_stats_struct:
+		wmi_rrm_extract_sta_stats_struct(tag_buf, params);
+		break;
+
 	default:
 		break;
 	}
@@ -436,7 +483,7 @@ extract_infra_cp_stats_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 }
 
 /**
- * prepare_infra_cp_stats_buf() - Allocate and prepate wmi cmd request buffer
+ * prepare_infra_cp_stats_buf() - Allocate and prepare wmi cmd request buffer
  * @wmi_handle: wmi handle
  * @stats_req: Request parameters to be filled in wmi cmd request buffer
  * @req_buf_len: length of the output wmi cmd buffer allocated
@@ -1147,7 +1194,7 @@ extract_pmf_bcn_protect_stats_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 }
 
 #if defined(WLAN_SUPPORT_INFRA_CTRL_PATH_STATS) || \
-	defined(WLAN_TELEMETRY_STATS_SUPPORT)
+	defined(WLAN_CONFIG_TELEMETRY_AGENT)
 static void wmi_infra_cp_stats_ops_attach_tlv(struct wmi_ops *ops)
 {
 	ops->send_infra_cp_stats_request_cmd =

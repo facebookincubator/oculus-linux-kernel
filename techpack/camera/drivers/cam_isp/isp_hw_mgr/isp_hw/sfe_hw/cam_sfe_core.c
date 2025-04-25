@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -361,6 +361,7 @@ int cam_sfe_process_cmd(void *hw_priv, uint32_t cmd_type,
 		core_info->sfe_top->hw_ops.process_cmd(
 			core_info->sfe_top->top_priv, cmd_type,
 			cmd_args, arg_size);
+		break;
 	case CAM_ISP_HW_CMD_GET_RES_FOR_MID:
 		/* propagate to SFE bus wr */
 		core_info->sfe_bus_wr->hw_ops.process_cmd(

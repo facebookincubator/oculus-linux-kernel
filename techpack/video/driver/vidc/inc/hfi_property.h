@@ -100,6 +100,7 @@ enum hfi_hevc_profile_type {
 	HFI_H265_PROFILE_MAIN_STILL_PICTURE    = 1,
 	HFI_H265_PROFILE_MAIN_10               = 2,
 	HFI_H265_PROFILE_MAIN_10_STILL_PICTURE = 3,
+	HFI_H265_PROFILE_MULTIVIEW_MAIN        = 4,
 };
 
 enum hfi_vp9_profile_type {
@@ -579,6 +580,8 @@ enum hfi_saliency_type {
 #define HFI_PROP_EARLY_NOTIFY_LINE_COUNT                        0x03000199
 
 #define HFI_PROP_EARLY_NOTIFY_FENCE_COUNT                       0x0300019A
+
+#define HFI_PROP_VIEW_ID                                        0x030001A5
 
 #define HFI_PROP_END                                            0x03FFFFFF
 

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -395,8 +395,9 @@ ssize_t ftm_time_sync_show(struct wlan_objmgr_vdev *vdev, char *buf)
 		return 0;
 	}
 
-	size = qdf_scnprintf(buf, PAGE_SIZE, "%s %pM\n", "BSSID",
-			     vdev_priv->bssid.bytes);
+	size = qdf_scnprintf(buf, PAGE_SIZE,
+			     "%s " QDF_MAC_ADDR_FMT "\n", "BSSID",
+			     QDF_MAC_ADDR_REF(vdev_priv->bssid.bytes));
 
 	for (iter = 0; iter < vdev_priv->num_qtime_pair; iter++) {
 		q_initiator = vdev_priv->ftm_ts_priv.time_pair[iter].qtime_initiator;

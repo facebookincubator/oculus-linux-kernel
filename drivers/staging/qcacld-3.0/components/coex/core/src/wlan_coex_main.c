@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -93,6 +93,47 @@ QDF_STATUS wlan_coex_config_send(struct wlan_objmgr_vdev *vdev,
 		coex_err("failed to send coex config");
 
 	return status;
+}
+
+QDF_STATUS wlan_coex_multi_config_send(struct wlan_objmgr_vdev *vdev,
+				       struct coex_multi_config *param)
+{
+	struct wlan_objmgr_psoc *psoc;
+	struct coex_config_params one_param;
+	QDF_STATUS status, ret = QDF_STATUS_SUCCESS;
+	uint32_t i;
+
+	if (!vdev) {
+		coex_err("Null vdev");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	psoc = wlan_vdev_get_psoc(vdev);
+	if (!psoc) {
+		coex_err("failed to get coex_obj");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	if (tgt_get_coex_multi_config_support(psoc))
+		return tgt_send_coex_multi_config(vdev, param);
+
+	for (i = 0; i < param->num_configs; i++) {
+		one_param.vdev_id = param->vdev_id;
+		one_param.config_type = param->cfg_items[i].config_type;
+		one_param.config_arg1 = param->cfg_items[i].config_arg1;
+		one_param.config_arg2 = param->cfg_items[i].config_arg2;
+		one_param.config_arg3 = param->cfg_items[i].config_arg3;
+		one_param.config_arg4 = param->cfg_items[i].config_arg4;
+		one_param.config_arg5 = param->cfg_items[i].config_arg5;
+		one_param.config_arg6 = param->cfg_items[i].config_arg6;
+		status = tgt_send_coex_config(vdev, &one_param);
+		if (QDF_IS_STATUS_ERROR(status)) {
+			coex_err("fail to send one coex config");
+			ret = status;
+		}
+	}
+
+	return ret;
 }
 
 QDF_STATUS

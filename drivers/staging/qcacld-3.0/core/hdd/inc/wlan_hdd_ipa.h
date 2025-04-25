@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -52,6 +52,31 @@ void hdd_ipa_send_nbuf_to_network(qdf_nbuf_t nbuf, qdf_netdev_t dev);
  */
 void hdd_ipa_set_mcc_mode(bool mcc_mode);
 
+/**
+ * hdd_ipa_get_tx_pipe() - Get tx pipe for the new connection
+ * @hdd_ctx: pointer to hdd_context
+ * @link: pointer to struct wlan_hdd_link_info
+ * @tx_pipe: boolean output param to store which pipe to use for @link.
+ *	     false is the primary tx pipe and true is the alternate tx pipe.
+ *
+ * Return: QDF_STATUS_SUCCESS for success, and otherwise for failure scenarios.
+ *
+ */
+QDF_STATUS hdd_ipa_get_tx_pipe(struct hdd_context *hdd_ctx,
+			       struct wlan_hdd_link_info *link,
+			       bool *tx_pipe);
+
+/*
+ * hdd_ipa_set_perf_level_bw() - Set ipa perf level based on BW
+ * @bw: enum hw_mode_bandwidth
+ *
+ * This routine is called to set IPA perf level based on max BW configured
+ * among in-use STA and SAP vdevs.
+ *
+ * Return: None
+ */
+void hdd_ipa_set_perf_level_bw(enum hw_mode_bandwidth bw);
+
 #else
 static inline
 void hdd_ipa_send_nbuf_to_network(qdf_nbuf_t skb, qdf_netdev_t dev)
@@ -59,6 +84,18 @@ void hdd_ipa_send_nbuf_to_network(qdf_nbuf_t skb, qdf_netdev_t dev)
 }
 
 static inline void hdd_ipa_set_mcc_mode(bool mcc_mode)
+{
+}
+
+static inline QDF_STATUS
+hdd_ipa_get_tx_pipe(struct hdd_context *hdd_ctx,
+		    struct wlan_hdd_link_info *link,
+		    bool *tx_pipe)
+{
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline void hdd_ipa_set_perf_level_bw(enum hw_mode_bandwidth bw)
 {
 }
 

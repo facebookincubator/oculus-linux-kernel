@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/device.h>
@@ -289,6 +289,11 @@ static int cam_cpas_parse_mnoc_node(struct cam_cpas *cpas_core,
 		if (soc_private->rt_bw_voting_needed) {
 			CAM_ERR(CAM_CPAS, "VIRT port not supported for old bus scaling clients");
 			return -EPERM;
+		}
+
+		if (*mnoc_idx >= CAM_CPAS_MAX_AXI_PORTS) {
+			CAM_ERR(CAM_CPAS, "Invalid mnoc index: %d", *mnoc_idx);
+			return -EINVAL;
 		}
 
 		cpas_core->axi_port[*mnoc_idx].axi_port_node = mnoc_node;
@@ -1278,8 +1283,7 @@ int cam_cpas_soc_init_resources(struct cam_hw_soc_info *soc_info,
 		CAM_ERR(CAM_CPAS, "failed in get_dt_properties, rc=%d", rc);
 		return rc;
 	}
-
-	if (soc_info->irq_line && !irq_handler) {
+	if ((soc_info->irq_num > 0) && !irq_handler) {
 		CAM_ERR(CAM_CPAS, "Invalid IRQ handler");
 		return -EINVAL;
 	}

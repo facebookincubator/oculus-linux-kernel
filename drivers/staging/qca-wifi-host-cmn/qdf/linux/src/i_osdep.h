@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -64,7 +64,7 @@
 #endif /* ifdef CONFIG_SMP */
 
 /**
- * struct os_mest_t - maintain attributes of message
+ * typedef os_mesg_t - maintain attributes of message
  * @mesg_next: pointer to the nexgt message
  * @mest_type: type of message
  * @mesg_len: length of the message
@@ -146,6 +146,7 @@ typedef struct {
  * @bc: hal bus context
  * @device: generic device
  * @event_queue: instance to wait queue
+ * @async_q:
  * @is_device_asleep: keep device status, sleep or awakei
  * @acfg_event_list: event list
  * @acfg_event_queue_lock: queue lock

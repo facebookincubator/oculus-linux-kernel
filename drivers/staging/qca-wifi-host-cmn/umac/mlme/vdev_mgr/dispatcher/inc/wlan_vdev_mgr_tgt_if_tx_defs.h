@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -127,6 +127,7 @@ enum wlan_mlme_host_sta_ps_param_uapsd {
  * @WLAN_MLME_HOST_VDEV_START_CHAN_INVALID_REGDOMAIN:
  * @WLAN_MLME_HOST_VDEV_START_CHAN_INVALID_BAND:
  * @WLAN_MLME_HOST_VDEV_START_TIMEOUT:
+ * @WLAN_MLME_HOST_VDEV_START_TX_VAP_CFG_INVALID:
  * @WLAN_MLME_HOST_VDEV_START_MAX_REASON: Max enumeration
  */
 enum wlan_mlme_host_vdev_start_status {
@@ -137,6 +138,7 @@ enum wlan_mlme_host_vdev_start_status {
 	WLAN_MLME_HOST_VDEV_START_CHAN_INVALID_REGDOMAIN,
 	WLAN_MLME_HOST_VDEV_START_CHAN_INVALID_BAND,
 	WLAN_MLME_HOST_VDEV_START_TIMEOUT,
+	WLAN_MLME_HOST_VDEV_START_TX_VAP_CFG_INVALID,
 	/* Add new response status code from here */
 	WLAN_MLME_HOST_VDEV_START_MAX_REASON,
 };
@@ -158,6 +160,7 @@ static inline char *string_from_start_rsp_status(
 					"CHAN_INVALID_REGDOMAIN",
 					"CHAN_INVALID_BAND",
 					"START_RESPONSE_TIMEOUT",
+					"TX_VAP_CONFIG_INVALID",
 					"START_RESPONSE_UNKNOWN"};
 
 	if (start_rsp >= WLAN_MLME_HOST_VDEV_START_MAX_REASON)
@@ -510,10 +513,12 @@ struct peer_flush_params {
  * @vdev_id: vdev id
  * @hw_link_id_bitmap: logical link id bitmap for peers
  * not getting created
+ * @is_mlo_link_switch: Is peer delete due to link switch
  */
 struct peer_delete_cmd_params {
 	uint8_t vdev_id;
 	uint32_t hw_link_id_bitmap;
+	bool is_mlo_link_switch;
 };
 
 /* Default FILS DISCOVERY/probe response sent in period of 20TU */
@@ -667,7 +672,11 @@ struct ml_vdev_start_partner_info {
  */
 struct mlo_vdev_start_partner_links {
 	uint8_t num_links;
+#ifdef WLAN_MLO_MULTI_CHIP
+	struct ml_vdev_start_partner_info partner_info[WLAN_UMAC_MLO_MAX_VDEVS + WLAN_UMAC_MLO_MAX_BRIDGE_VDEVS];
+#else
 	struct ml_vdev_start_partner_info partner_info[WLAN_UMAC_MLO_MAX_VDEVS];
+#endif
 };
 #endif
 /**
@@ -855,9 +864,11 @@ struct vdev_delete_params {
 /**
  * struct vdev_stop_params - vdev stop cmd parameter
  * @vdev_id: vdev id
+ * @is_mlo_link_switch: Is VDEV stop due to link switch
  */
 struct vdev_stop_params {
 	uint8_t vdev_id;
+	bool is_mlo_link_switch;
 };
 
 /**

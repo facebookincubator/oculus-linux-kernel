@@ -1370,6 +1370,13 @@ static int cam_vfe_handle_sof(struct cam_vfe_mux_ver4_data *vfe_priv,
 			CAM_VFE_CAMIF_IRQ_SOF_DEBUG_CNT_MAX) {
 			vfe_priv->enable_sof_irq_debug = false;
 			vfe_priv->irq_debug_cnt = 0;
+
+			if (evt_info->res_id >= CAM_VFE_TOP_MUX_MAX) {
+				CAM_ERR(CAM_ISP,
+					"VFE:%u inval res_id for mux_rsrc:%d",
+					vfe_priv->hw_intf->hw_idx, evt_info->res_id);
+				return -EINVAL;
+			}
 		}
 	} else {
 		CAM_DBG(CAM_ISP, "VFE:%d Received SOF",

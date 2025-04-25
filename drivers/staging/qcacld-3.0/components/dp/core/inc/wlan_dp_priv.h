@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -75,6 +75,8 @@ struct dp_rtpm_tput_policy_context {
 };
 #endif
 
+#define FISA_FLOW_MAX_AGGR_COUNT        16 /* max flow aggregate count */
+
 /**
  * struct wlan_dp_psoc_cfg - DP configuration parameters.
  * @tx_orphan_enable: Enable/Disable tx orphan
@@ -134,6 +136,8 @@ struct dp_rtpm_tput_policy_context {
  * be sent to FW.
  * @lro_enable: Enable/Disable lro
  * @gro_enable: Enable/Disable gro
+ * @is_rx_fisa_enabled: flag to enable/disable FISA Rx
+ * @is_rx_fisa_lru_del_enabled: flag to enable/disable FST entry delete
  */
 struct wlan_dp_psoc_cfg {
 	bool tx_orphan_enable;
@@ -201,6 +205,10 @@ struct wlan_dp_psoc_cfg {
 
 	bool lro_enable;
 	bool gro_enable;
+#ifdef WLAN_SUPPORT_RX_FISA
+	bool is_rx_fisa_enabled;
+	bool is_rx_fisa_lru_del_enabled;
+#endif
 };
 
 /**
@@ -331,6 +339,240 @@ struct direct_link_info {
 };
 
 /**
+ * struct dp_fisa_reo_mismatch_stats - reo mismatch sub-case stats for FISA
+ * @allow_cce_match: packet allowed due to cce mismatch
+ * @allow_fse_metdata_mismatch: packet allowed since it belongs to same flow,
+ *			only fse_metadata is not same.
+ * @allow_non_aggr: packet allowed due to any other reason.
+ */
+struct dp_fisa_reo_mismatch_stats {
+	uint32_t allow_cce_match;
+	uint32_t allow_fse_metdata_mismatch;
+	uint32_t allow_non_aggr;
+};
+
+/**
+ * struct dp_fisa_stats - FISA stats
+ * @invalid_flow_index: flow index invalid from RX HW TLV
+ * @update_deferred: workqueue deferred due to suspend
+ * @reo_mismatch: REO ID mismatch
+ * @incorrect_rdi: Incorrect REO dest indication in TLV
+ *		   (typically used for RDI = 0)
+ */
+struct dp_fisa_stats {
+	uint32_t invalid_flow_index;
+	uint32_t update_deferred;
+	struct dp_fisa_reo_mismatch_stats reo_mismatch;
+	uint32_t incorrect_rdi;
+};
+
+/**
+ * enum fisa_aggr_ret - FISA aggregation return code
+ * @FISA_AGGR_DONE: FISA aggregation done
+ * @FISA_AGGR_NOT_ELIGIBLE: Not eligible for FISA aggregation
+ * @FISA_FLUSH_FLOW: FISA flow flushed
+ */
+enum fisa_aggr_ret {
+	FISA_AGGR_DONE,
+	FISA_AGGR_NOT_ELIGIBLE,
+	FISA_FLUSH_FLOW
+};
+
+/**
+ * struct fisa_pkt_hist - FISA Packet history structure
+ * @tlv_hist: array of TLV history
+ * @ts_hist: array of timestamps of fisa packets
+ * @idx: index indicating the next location to be used in the array.
+ */
+struct fisa_pkt_hist {
+	uint8_t *tlv_hist;
+	qdf_time_t ts_hist[FISA_FLOW_MAX_AGGR_COUNT];
+	uint32_t idx;
+};
+
+/**
+ * struct dp_fisa_rx_sw_ft - FISA Flow table entry
+ * @hw_fse: HAL Rx Flow Search Entry which matches HW definition
+ * @flow_hash: Flow hash value
+ * @flow_id_toeplitz: toeplitz hash value
+ * @flow_id: Flow index, equivalent to hash value truncated to FST size
+ * @stats: Stats tracking for this flow
+ * @is_ipv4_addr_entry: Flag indicating whether flow is IPv4 address tuple
+ * @is_valid: Flag indicating whether flow is valid
+ * @is_populated: Flag indicating whether flow is populated
+ * @is_flow_udp: Flag indicating whether flow is UDP stream
+ * @is_flow_tcp: Flag indicating whether flow is TCP stream
+ * @head_skb: HEAD skb where flow is aggregated
+ * @cumulative_l4_checksum: Cumulative L4 checksum
+ * @adjusted_cumulative_ip_length: Cumulative IP length
+ * @cur_aggr: Current aggregate length of flow
+ * @napi_flush_cumulative_l4_checksum: Cumulative L4 chekcsum for current
+ *				       NAPI flush
+ * @napi_flush_cumulative_ip_length: Cumulative IP length
+ * @last_skb: The last skb aggregated in the FISA flow
+ * @head_skb_ip_hdr_offset: IP header offset
+ * @head_skb_l4_hdr_offset: L4 header offset
+ * @rx_flow_tuple_info: RX tuple information
+ * @napi_id: NAPI ID (REO ID) on which the flow is being received
+ * @vdev: VDEV handle corresponding to the FLOW
+ * @dp_intf: DP interface handle corresponding to the flow
+ * @bytes_aggregated: Number of bytes currently aggregated
+ * @flush_count: Number of Flow flushes done
+ * @aggr_count: Aggregation count
+ * @do_not_aggregate: Flag to indicate not to aggregate this flow
+ * @hal_cumultive_ip_len: HAL cumulative IP length
+ * @dp_ctx: DP component handle
+ * @soc_hdl: DP SoC handle
+ * @last_hal_aggr_count: last aggregate count fetched from RX PKT TLV
+ * @cur_aggr_gso_size: Current aggreagtesd GSO size
+ * @head_skb_udp_hdr: UDP header address for HEAD skb
+ * @frags_cumulative_len:
+ * @cmem_offset: CMEM offset
+ * @metadata:
+ * @reo_dest_indication: REO destination indication for the FLOW
+ * @flow_init_ts: FLOW init timestamp
+ * @last_accessed_ts: Timestamp when the flow was last accessed
+ * @pkt_hist: FISA aggreagtion packets history
+ * @same_mld_vdev_mismatch: Packets flushed after vdev_mismatch on same MLD
+ * @add_timestamp: FISA entry created timestamp
+ */
+struct dp_fisa_rx_sw_ft {
+	void *hw_fse;
+	uint32_t flow_hash;
+	uint32_t flow_id_toeplitz;
+	uint32_t flow_id;
+	struct cdp_flow_stats stats;
+	uint8_t is_ipv4_addr_entry;
+	uint8_t is_valid;
+	uint8_t is_populated;
+	uint8_t is_flow_udp;
+	uint8_t is_flow_tcp;
+	qdf_nbuf_t head_skb;
+	uint16_t cumulative_l4_checksum;
+	uint16_t adjusted_cumulative_ip_length;
+	uint16_t cur_aggr;
+	uint16_t napi_flush_cumulative_l4_checksum;
+	uint16_t napi_flush_cumulative_ip_length;
+	qdf_nbuf_t last_skb;
+	uint32_t head_skb_ip_hdr_offset;
+	uint32_t head_skb_l4_hdr_offset;
+	struct cdp_rx_flow_tuple_info rx_flow_tuple_info;
+	uint8_t napi_id;
+	struct dp_vdev *vdev;
+	struct wlan_dp_intf *dp_intf;
+	uint64_t bytes_aggregated;
+	uint32_t flush_count;
+	uint32_t aggr_count;
+	uint8_t do_not_aggregate;
+	uint16_t hal_cumultive_ip_len;
+	struct wlan_dp_psoc_context *dp_ctx;
+	/* TODO - Only reference needed to this is to get vdev.
+	 * Once that ref is removed, this field can be deleted
+	 */
+	struct dp_soc *soc_hdl;
+	uint32_t last_hal_aggr_count;
+	uint32_t cur_aggr_gso_size;
+	qdf_net_udphdr_t *head_skb_udp_hdr;
+	uint16_t frags_cumulative_len;
+	uint32_t cmem_offset;
+	uint32_t metadata;
+	uint32_t reo_dest_indication;
+	qdf_time_t flow_init_ts;
+	qdf_time_t last_accessed_ts;
+#ifdef WLAN_SUPPORT_RX_FISA_HIST
+	struct fisa_pkt_hist pkt_hist;
+#endif
+	uint64_t same_mld_vdev_mismatch;
+	uint64_t add_timestamp;
+};
+
+#define DP_RX_GET_SW_FT_ENTRY_SIZE sizeof(struct dp_fisa_rx_sw_ft)
+#define MAX_FSE_CACHE_FL_HST 10
+/**
+ * struct fse_cache_flush_history - Debug history cache flush
+ * @timestamp: Entry update timestamp
+ * @flows_added: Number of flows added for this flush
+ * @flows_deleted: Number of flows deleted for this flush
+ */
+struct fse_cache_flush_history {
+	uint64_t timestamp;
+	uint32_t flows_added;
+	uint32_t flows_deleted;
+};
+
+/**
+ * struct dp_rx_fst - FISA handle
+ * @base: Software (DP) FST
+ * @dp_ctx: DP component handle
+ * @hal_rx_fst: Pointer to HAL FST
+ * @hal_rx_fst_base_paddr: Base physical address of HAL RX HW FST
+ * @max_entries: Maximum number of flows FSE supports
+ * @num_entries: Num entries in flow table
+ * @max_skid_length: SKID Length
+ * @hash_mask: Hash mask to obtain legitimate hash entry
+ * @dp_rx_fst_lock: Lock for adding/deleting entries of FST
+ * @add_flow_count: Num of flows added
+ * @del_flow_count: Num of flows deleted
+ * @hash_collision_cnt: Num hash collisions
+ * @soc_hdl: DP SoC handle
+ * @fse_cache_flush_posted: Num FSE cache flush cmds posted
+ * @fse_cache_flush_timer: FSE cache flush timer
+ * @fse_cache_flush_allow: Flag to indicate if FSE cache flush is allowed
+ * @cache_fl_rec: FSE cache flush history
+ * @stats: FISA stats
+ * @fst_update_work: FST CMEM update work
+ * @fst_update_wq: FST CMEM update workqueue
+ * @fst_update_list: List to post event to CMEM update work
+ * @meta_counter:
+ * @cmem_ba:
+ * @dp_rx_sw_ft_lock: SW FST lock
+ * @cmem_resp_event: CMEM response event indicator
+ * @flow_deletion_supported: Flag to indicate if flow delete is supported
+ * @fst_in_cmem: Flag to indicate if FST is stored in CMEM
+ * @pm_suspended: Flag to indicate if driver is suspended
+ * @fst_wq_defer:
+ * @rx_hash_enabled: Flag to indicate if Hash based routing supported
+ * @rx_toeplitz_hash_key: hash key
+ * @rx_pkt_tlv_size: RX packet TLV size
+ */
+struct dp_rx_fst {
+	uint8_t *base;
+	struct wlan_dp_psoc_context *dp_ctx;
+	struct hal_rx_fst *hal_rx_fst;
+	uint64_t hal_rx_fst_base_paddr;
+	uint16_t max_entries;
+	uint16_t num_entries;
+	uint16_t max_skid_length;
+	uint32_t hash_mask;
+	qdf_spinlock_t dp_rx_fst_lock;
+	uint32_t add_flow_count;
+	uint32_t del_flow_count;
+	uint32_t hash_collision_cnt;
+	struct dp_soc *soc_hdl;
+	qdf_atomic_t fse_cache_flush_posted;
+	qdf_timer_t fse_cache_flush_timer;
+	bool fse_cache_flush_allow;
+	struct fse_cache_flush_history cache_fl_rec[MAX_FSE_CACHE_FL_HST];
+	struct dp_fisa_stats stats;
+
+	/* CMEM params */
+	qdf_work_t fst_update_work;
+	qdf_workqueue_t *fst_update_wq;
+	qdf_list_t fst_update_list;
+	uint32_t meta_counter;
+	uint32_t cmem_ba;
+	qdf_spinlock_t dp_rx_sw_ft_lock[MAX_REO_DEST_RINGS];
+	qdf_event_t cmem_resp_event;
+	bool flow_deletion_supported;
+	bool fst_in_cmem;
+	qdf_atomic_t pm_suspended;
+	bool fst_wq_defer;
+	bool rx_hash_enabled;
+	uint8_t *rx_toeplitz_hash_key;
+	uint16_t rx_pkt_tlv_size;
+};
+
+/**
  * struct wlan_dp_intf - DP interface object related info
  * @dp_ctx: DP context reference
  * @link_monitoring: Link monitoring related info
@@ -338,9 +580,8 @@ struct direct_link_info {
  * @device_mode: Device Mode
  * @intf_id: Interface ID
  * @node: list node for membership in the interface list
- * @vdev: object manager vdev context
- * @vdev_lock: vdev spin lock
  * @dev: netdev reference
+ * @txrx_ops: Interface tx-rx ops
  * @dp_stats: Device TX/RX statistics
  * @is_sta_periodic_stats_enabled: Indicate whether to display sta periodic
  * stats
@@ -368,14 +609,21 @@ struct direct_link_info {
  * @sap_tx_block_mask: SAP TX block mask
  * @gro_disallowed: GRO disallowed flag
  * @gro_flushed: GRO flushed flag
+ * @fisa_disallowed: Flag to indicate fisa aggregation not to be done for a
+ *		     particular rx_context
+ * @fisa_force_flushed: Flag to indicate FISA flow has been flushed for a
+ *			particular rx_context
  * @runtime_disable_rx_thread: Runtime Rx thread flag
  * @rx_stack: function pointer Rx packet handover
  * @tx_fn: function pointer to send Tx packet
- * @conn_info: STA connection information
  * @bss_state: AP BSS state
  * @qdf_sta_eap_frm_done_event: EAP frame event management
  * @traffic_end_ind: store traffic end indication info
  * @direct_link_config: direct link configuration parameters
+ * @num_links: Number of links for this DP interface
+ * @def_link: Pointer to default link (usually used for TX operation)
+ * @dp_link_list_lock: Lock to protect dp_link_list operatiosn
+ * @dp_link_list: List of dp_links for this DP interface
  * @fpm_ctx: Flow policy manager context
  * @fim_ctx: Flow identification manager context
  */
@@ -388,13 +636,10 @@ struct wlan_dp_intf {
 
 	enum QDF_OPMODE device_mode;
 
-	uint8_t intf_id;
-
 	qdf_list_node_t node;
 
-	struct wlan_objmgr_vdev *vdev;
-	qdf_spinlock_t vdev_lock;
 	qdf_netdev_t dev;
+	struct ol_txrx_ops txrx_ops;
 	struct dp_stats dp_stats;
 #ifdef WLAN_FEATURE_PERIODIC_STA_STATS
 	bool is_sta_periodic_stats_enabled;
@@ -429,10 +674,15 @@ struct wlan_dp_intf {
 	qdf_atomic_t gro_disallowed;
 	uint8_t gro_flushed[DP_MAX_RX_THREADS];
 
+#ifdef WLAN_SUPPORT_RX_FISA
+	/*
+	 * Params used for controlling the fisa aggregation dynamically
+	 */
+	uint8_t fisa_disallowed[MAX_REO_DEST_RINGS];
+	uint8_t fisa_force_flushed[MAX_REO_DEST_RINGS];
+#endif
+
 	bool runtime_disable_rx_thread;
-	ol_txrx_rx_fp rx_stack;
-	ol_txrx_tx_fp tx_fn;
-	struct wlan_dp_conn_info conn_info;
 
 	enum bss_intf_state bss_state;
 	qdf_event_t qdf_sta_eap_frm_done_event;
@@ -440,10 +690,47 @@ struct wlan_dp_intf {
 #ifdef FEATURE_DIRECT_LINK
 	struct direct_link_info direct_link_config;
 #endif
+	uint8_t num_links;
+	struct wlan_dp_link *def_link;
+	qdf_spinlock_t dp_link_list_lock;
+	qdf_list_t dp_link_list;
 #ifdef WLAN_SUPPORT_FLOW_PRIORTIZATION
 	struct fpm_table *fpm_ctx;
 	struct fim_vdev_ctx *fim_ctx;
 #endif
+};
+
+#define WLAN_DP_LINK_MAGIC 0x5F44505F4C494E4B	/* "_DP_LINK" in ASCII */
+
+/**
+ * struct wlan_dp_link - DP link (corresponds to objmgr vdev)
+ * @node: list node for membership in the DP links list
+ * @magic: magic number to identify validity of dp_link
+ * @link_id: ID for this DP link (Same as vdev_id)
+ * @mac_addr: mac address of this link
+ * @dp_intf: Parent DP interface for this DP link
+ * @vdev: object manager vdev context
+ * @vdev_lock: vdev spin lock
+ * @conn_info: STA connection information
+ * @destroyed: flag to indicate dp_link destroyed (logical delete)
+ * @cdp_vdev_registered: flag to indicate if corresponding CDP vdev
+ *			 is registered
+ * @cdp_vdev_deleted: flag to indicate if corresponding CDP vdev is deleted
+ * @inactive_list_elem: list node for membership in dp link inactive list
+ */
+struct wlan_dp_link {
+	qdf_list_node_t node;
+	uint64_t magic;
+	uint8_t link_id;
+	struct qdf_mac_addr mac_addr;
+	struct wlan_dp_intf *dp_intf;
+	struct wlan_objmgr_vdev *vdev;
+	qdf_spinlock_t vdev_lock;
+	struct wlan_dp_conn_info conn_info;
+	uint8_t destroyed : 1,
+		cdp_vdev_registered : 1,
+		cdp_vdev_deleted : 1;
+	TAILQ_ENTRY(wlan_dp_link) inactive_list_elem;
 };
 
 /**
@@ -478,6 +765,9 @@ struct dp_direct_link_context {
  * @pdev: object manager pdev context
  * @qdf_dev: qdf device
  * @dp_cfg: place holder for DP configuration
+ * @cdp_soc: CDP SoC handle
+ * @hif_handle: HIF handle
+ * @hal_soc: HAL SoC handle
  * @intf_list_lock: DP interfaces list lock
  * @intf_list: DP interfaces list
  * @rps: rps
@@ -523,10 +813,21 @@ struct dp_direct_link_context {
  * @bbm_ctx: bus bandwidth manager context
  * @dp_direct_link_lock: Direct link mutex lock
  * @dp_direct_link_ctx: DP Direct Link context
- * @rx_skip_qdisc_chk_conc:rx skip qdisc check connection
- * @arp_connectivity_map: ARP connectiviy map
+ * @arp_connectivity_map: ARP connectivity map
  * @rx_wake_lock: rx wake lock
  * @ol_enable: Enable/Disable offload
+ * @rx_fst: FST handle
+ * @fst_cmem_base: FST base in CMEM
+ * @fst_in_cmem: Flag indicating if FST is in CMEM or not
+ * @fisa_enable: Flag to indicate if FISA is enabled or not
+ * @fisa_lru_del_enable: Flag to indicate if LRU flow delete is enabled
+ * @fisa_dynamic_aggr_size_support: Indicate dynamic aggr size programming support
+ * @skip_fisa_param: FISA skip params structure
+ * @skip_fisa_param.skip_fisa: Flag to skip FISA aggr inside @skip_fisa_param
+ * @skip_fisa_param.fisa_force_flush: Force flush inside @skip_fisa_param
+ * @fst_cmem_size: CMEM size for FISA flow table
+ * @inactive_dp_link_list: inactive DP links list
+ * @dp_link_del_lock: DP link delete operation lock
  * @svc_ctx: service class context
  */
 struct wlan_dp_psoc_context {
@@ -534,6 +835,9 @@ struct wlan_dp_psoc_context {
 	struct wlan_objmgr_pdev *pdev;
 	qdf_device_t qdf_dev;
 	struct wlan_dp_psoc_cfg dp_cfg;
+	ol_txrx_soc_handle cdp_soc;
+	struct hif_opaque_softc *hif_handle;
+	void *hal_soc;
 
 	qdf_spinlock_t intf_list_lock;
 	qdf_list_t intf_list;
@@ -594,8 +898,6 @@ struct wlan_dp_psoc_context {
 	}
 	dp_agg_param;
 
-	qdf_atomic_t rx_skip_qdisc_chk_conc;
-
 	uint32_t arp_connectivity_map;
 
 	qdf_wake_lock_t rx_wake_lock;
@@ -605,6 +907,30 @@ struct wlan_dp_psoc_context {
 	qdf_mutex_t dp_direct_link_lock;
 	struct dp_direct_link_context *dp_direct_link_ctx;
 #endif
+#ifdef WLAN_SUPPORT_RX_FISA
+	struct dp_rx_fst *rx_fst;
+	uint64_t fst_cmem_base;
+	bool fst_in_cmem;
+	uint8_t fisa_enable;
+	uint8_t fisa_lru_del_enable;
+	bool fisa_dynamic_aggr_size_support;
+	/*
+	 * Params used for controlling the fisa aggregation dynamically
+	 */
+	struct {
+		qdf_atomic_t skip_fisa;
+		uint8_t fisa_force_flush[MAX_REO_DEST_RINGS];
+	} skip_fisa_param;
+
+	/*
+	 * CMEM address and size for FST in CMEM, This is the address
+	 * shared during init time.
+	 */
+	uint64_t fst_cmem_size;
+
+#endif
+	TAILQ_HEAD(, wlan_dp_link) inactive_dp_link_list;
+	qdf_spinlock_t dp_link_del_lock;
 #ifdef WLAN_SUPPORT_SERVICE_CLASS
 	struct dp_svc_ctx *svc_ctx;
 #endif

@@ -18,8 +18,8 @@
  */
 
 /**
- * @file cdp_txrx_peer.h
- * @brief Define the host data path peer API functions
+ * DOC: cdp_txrx_peer_ops.h
+ * Define the host data path peer API functions
  * called by the host control SW and the OS interface module
  */
 #ifndef _CDP_TXRX_PEER_H_
@@ -29,9 +29,9 @@
 
 /**
  * cdp_peer_register() - Register peer into physical device
- * @soc - data path soc handle
- * @pdev_id - data path device instance id
- * @sta_desc - peer description
+ * @soc: data path soc handle
+ * @pdev_id: data path device instance id
+ * @sta_desc: peer description
  *
  * Register peer into physical device
  *
@@ -57,9 +57,9 @@ cdp_peer_register(ol_txrx_soc_handle soc, uint8_t pdev_id,
 
 /**
  * cdp_clear_peer() - remove peer from physical device
- * @soc - data path soc handle
- * @pdev_id - data path device instance id
- * @peer_addr - peer mac address
+ * @soc: data path soc handle
+ * @pdev_id: data path device instance id
+ * @peer_addr: peer mac address
  *
  * remove peer from physical device
  *
@@ -84,9 +84,8 @@ cdp_clear_peer(ol_txrx_soc_handle soc, uint8_t pdev_id,
 
 /**
  * cdp_peer_register_ocb_peer() - register ocb peer from physical device
- * @soc - data path soc handle
- * @cds_ctx - cds void context
- * @mac_addr - mac address for ocb self peer
+ * @soc: data path soc handle
+ * @mac_addr: mac address for ocb self peer
  *
  * register ocb peer from physical device
  *
@@ -95,7 +94,7 @@ cdp_clear_peer(ol_txrx_soc_handle soc, uint8_t pdev_id,
  */
 static inline QDF_STATUS
 cdp_peer_register_ocb_peer(ol_txrx_soc_handle soc,
-		uint8_t *mac_addr)
+			   uint8_t *mac_addr)
 {
 	if (!soc || !soc->ops || !soc->ops->peer_ops) {
 		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_FATAL,
@@ -111,9 +110,9 @@ cdp_peer_register_ocb_peer(ol_txrx_soc_handle soc,
 
 /**
  * cdp_find_peer_exist - Find if peer already exists
- * @soc - data path soc handle
- * @pdev_id - data path device instance id
- * @peer_addr - peer mac address
+ * @soc: data path soc handle
+ * @pdev_id: data path device instance id
+ * @peer_addr: peer mac address
  *
  * Return: true or false
  */
@@ -137,9 +136,9 @@ cdp_find_peer_exist(ol_txrx_soc_handle soc, uint8_t pdev_id,
 /**
  * cdp_find_peer_exist_on_vdev - Find if duplicate peer exists
  * on the given vdev
- * @soc - data path soc handle
- * @vdev_id - data path virtual interface id
- * @peer_addr - peer mac address
+ * @soc: data path soc handle
+ * @vdev_id: data path virtual interface id
+ * @peer_addr: peer mac address
  *
  * Return: true or false
  */
@@ -163,10 +162,10 @@ cdp_find_peer_exist_on_vdev(ol_txrx_soc_handle soc, uint8_t vdev_id,
 /**
  * cdp_find_peer_exist_on_other_vdev - Find if duplicate peer exists
  * on other than the given vdev
- * @soc - data path soc handle
- * @vdev_id - data path virtual interface id
- * @peer_addr - peer mac address
- * @max_bssid - max number of bssids
+ * @soc: data path soc handle
+ * @vdev_id: data path virtual interface id
+ * @peer_addr: peer mac address
+ * @max_bssid: max number of bssids
  *
  * Return: true or false
  */
@@ -191,9 +190,9 @@ cdp_find_peer_exist_on_other_vdev(ol_txrx_soc_handle soc, uint8_t vdev_id,
 
 /**
  * cdp_peer_state_update() - update peer local state
- * @soc - data path soc handle
- * @peer_addr - peer mac address
- * @state - new peer local state
+ * @soc: data path soc handle
+ * @peer_addr: peer mac address
+ * @state: new peer local state
  *
  * update peer local state
  *
@@ -219,10 +218,10 @@ cdp_peer_state_update(ol_txrx_soc_handle soc, uint8_t *peer_addr,
 
 /**
  * cdp_peer_state_get() - Get local peer state
- * @soc - data path soc handle
- * @vdev_id - virtual interface id
- * @peer_mac - peer mac addr
- * @slowpath - call from slow path or not
+ * @soc: data path soc handle
+ * @vdev_id: virtual interface id
+ * @peer_mac: peer mac addr
+ * @slowpath: call from slow path or not
  *
  * Get local peer state
  *
@@ -247,9 +246,9 @@ cdp_peer_state_get(ol_txrx_soc_handle soc, uint8_t vdev_id, uint8_t *peer_mac, b
 
 /**
  * cdp_peer_get_vdevid() - Get virtual interface id which peer registered
- * @soc - data path soc handle
- * @peer_mac - peer mac address
- * @vdev_id - virtual interface id which peer registered
+ * @soc: data path soc handle
+ * @peer_mac: peer mac address
+ * @vdev_id: virtual interface id which peer registered
  *
  * Get virtual interface id which peer registered
  *
@@ -273,10 +272,10 @@ cdp_peer_get_vdevid(ol_txrx_soc_handle soc,
 }
 
 /**
- * cdp_peer_get_vdev_by_sta_id() - Get vdev instance by local peer id
- * @soc - data path soc handle
- * @pdev - data path device instance
- * @peer_addr - peer mac address
+ * cdp_peer_get_vdev_by_peer_addr() - Get vdev instance by local peer address
+ * @soc: data path soc handle
+ * @pdev: data path device instance
+ * @peer_addr: peer mac address
  *
  * Get virtual interface id by local peer id
  *
@@ -302,8 +301,8 @@ static inline struct cdp_vdev
 
 /**
  * cdp_peer_get_peer_mac_addr() - Get peer mac address
- * @soc - data path soc handle
- * @peer - peer instance
+ * @soc: data path soc handle
+ * @peer: peer instance
  *
  * Get peer mac address
  *
@@ -327,9 +326,9 @@ static inline uint8_t
 
 /**
  * cdp_peer_update_ibss_add_peer_num_of_vdev() - update number of peer
- * @soc - data path soc handle
- * @vdev_id - virtual interface instance id
- * @peer_num_delta - number of peer should be updated
+ * @soc: data path soc handle
+ * @vdev_id: virtual interface instance id
+ * @peer_num_delta: number of peer should be updated
  *
  * update number of peer
  *
@@ -357,9 +356,9 @@ cdp_peer_update_ibss_add_peer_num_of_vdev(ol_txrx_soc_handle soc,
 
 /**
  * cdp_peer_copy_mac_addr_raw() - copy peer mac address
- * @soc - data path soc handle
- * @vdev_id - virtual interface instance id
- * @bss_addr - mac address should be copied
+ * @soc: data path soc handle
+ * @vdev_id: virtual interface instance id
+ * @bss_addr: mac address should be copied
  *
  * copy peer mac address
  *
@@ -384,9 +383,9 @@ cdp_peer_copy_mac_addr_raw(ol_txrx_soc_handle soc,
 
 /**
  * cdp_peer_add_last_real_peer() - Add peer with last peer marking
- * @soc - data path soc handle
- * @pdev_id - data path device instance id
- * @vdev_id - virtual interface instance id
+ * @soc: data path soc handle
+ * @pdev_id: data path device instance id
+ * @vdev_id: virtual interface instance id
  *
  * copy peer mac address
  *
@@ -410,14 +409,14 @@ cdp_peer_add_last_real_peer(ol_txrx_soc_handle soc, uint8_t pdev_id,
 
 /**
  * cdp_peer_is_vdev_restore_last_peer() - restore last peer
- * @soc - data path soc handle
- * @vdev_id - virtual interface id
- * @peer_mac - peer mac address
+ * @soc: data path soc handle
+ * @vdev_id: virtual interface id
+ * @peer_mac: peer mac address
  *
  * restore last peer
  *
  * Return: true, restore success
- *         fasle, restore fail
+ *         false, restore fail
  */
 static inline bool
 cdp_peer_is_vdev_restore_last_peer(ol_txrx_soc_handle soc, uint8_t vdev_id,
@@ -439,10 +438,10 @@ cdp_peer_is_vdev_restore_last_peer(ol_txrx_soc_handle soc, uint8_t vdev_id,
 
 /**
  * cdp_peer_update_last_real_peer() - update last real peer
- * @soc - data path soc handle
- * @pdev_id - data path device instance id
- * @vdev_id - virtual interface id
- * @restore_last_peer - restore last peer or not
+ * @soc: data path soc handle
+ * @pdev_id: data path device instance id
+ * @vdev_id: virtual interface id
+ * @restore_last_peer: restore last peer or not
  *
  * update last real peer
  *
@@ -467,8 +466,10 @@ cdp_peer_update_last_real_peer(ol_txrx_soc_handle soc, uint8_t pdev_id,
 }
 
 /**
- * ol_txrx_peer_detach_force_delete() - Detach and delete a peer's data object
- * @peer - the object to detach
+ * cdp_peer_detach_force_delete() - Detach and delete a peer's data object
+ * @soc: data path soc handle
+ * @vdev_id: data path virtual interface id
+ * @peer_mac: peer mac address
  *
  * Detach a peer and force the peer object to be removed. It is called during
  * roaming scenario when the firmware has already deleted a peer.
@@ -522,12 +523,12 @@ is_cdp_peer_detach_force_delete_supported(ol_txrx_soc_handle soc)
 	return false;
 }
 
-/*
+/**
  * cdp_peer_set_peer_as_tdls() - To set peer as tdls peer
  * @soc: pointer to SOC handle
  * @vdev_id: virtual interface id
  * @peer_mac: peer mac address
- * @var: true or false
+ * @val: true or false
  *
  * Return: void
  */
@@ -574,9 +575,9 @@ cdp_peer_set_tdls_offchan_enabled(ol_txrx_soc_handle soc, uint8_t vdev_id,
 
 /**
  * cdp_peer_flush_frags() - Flush frags on peer
- * @soc - data path soc handle
- * @vdev_id - virtual interface id
- * @peer_mac - peer mac addr
+ * @soc: data path soc handle
+ * @vdev_id: virtual interface id
+ * @peer_mac: peer mac addr
  *
  * Return: None
  */

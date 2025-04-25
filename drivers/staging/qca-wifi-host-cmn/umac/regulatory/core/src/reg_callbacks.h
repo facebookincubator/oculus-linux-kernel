@@ -97,7 +97,7 @@ QDF_STATUS reg_send_scheduler_msg_nb(struct wlan_objmgr_psoc *psoc,
  */
 void
 reg_register_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
-					reg_is_chan_connected_callback cbk);
+			reg_get_connected_chan_for_mode_callback cbk);
 
 /**
  * reg_unregister_is_chan_connected_callback() - Unregister callback to check
@@ -109,7 +109,7 @@ reg_register_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
  */
 void
 reg_unregister_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
-					  reg_is_chan_connected_callback cbk);
+			reg_get_connected_chan_for_mode_callback cbk);
 
 #else
 static inline void reg_register_chan_change_callback(
@@ -147,13 +147,13 @@ static inline QDF_STATUS reg_send_scheduler_msg_nb(
 
 static inline void
 reg_register_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
-					reg_is_chan_connected_callback cbk)
+				reg_get_connected_chan_for_mode_callback cbk)
 {
 }
 
 static inline void
 reg_unregister_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
-					  reg_is_chan_connected_callback cbk)
+				reg_get_connected_chan_for_mode_callback cbk)
 {
 }
 #endif

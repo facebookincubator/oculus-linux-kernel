@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,14 +18,15 @@
  */
 
 /**
- * @file cdp_txrx_hist_struct.h
- * @brief Define the host data path histogram data types
+ * DOC: cdp_txrx_hist_struct.h
+ *      Define the host data path histogram data types
  */
 #ifndef _CDP_TXRX_HIST_STRUCT_H_
 #define _CDP_TXRX_HIST_STRUCT_H_
 
-/*
- * cdp_hist_bucket_index : Histogram Bucket
+#define CDP_RSSI_CHAIN_LEN 8
+/**
+ * enum cdp_hist_bucket_index - Histogram Bucket
  * @CDP_HIST_BUCKET_0: Bucket Index 0
  * @CDP_HIST_BUCKET_1: Bucket Index 1
  * @CDP_HIST_BUCKET_2: Bucket Index 2
@@ -39,6 +40,7 @@
  * @CDP_HIST_BUCKET_10: Bucket Index 10
  * @CDP_HIST_BUCKET_11: Bucket Index 11
  * @CDP_HIST_BUCKET_12: Bucket Index 12
+ * @CDP_HIST_BUCKET_MAX: Max enumeration
  */
 enum cdp_hist_bucket_index {
 	CDP_HIST_BUCKET_0,
@@ -57,14 +59,15 @@ enum cdp_hist_bucket_index {
 	CDP_HIST_BUCKET_MAX,
 };
 
-/*
- * cdp_hist_types: Histogram Types
+/**
+ * enum cdp_hist_types - Histogram Types
  * @CDP_HIST_TYPE_SW_ENQEUE_DELAY: From stack to HW enqueue delay
  * @CDP_HIST_TYPE_HW_COMP_DELAY: From HW enqueue to completion delay
  * @CDP_HIST_TYPE_REAP_STACK: Rx HW reap to stack deliver delay
  * @CDP_HIST_TYPE_HW_TX_COMP_DELAY: Tx completion delay based on the timestamp
  *                                  provided by HW
  * @CDP_HIST_TYPE_DELAY_PERCENTILE: Tx completion delay based on the perctile
+ * @CDP_HIST_TYPE_MAX: Max enumeration
  */
 enum cdp_hist_types {
 	CDP_HIST_TYPE_SW_ENQEUE_DELAY,
@@ -75,8 +78,8 @@ enum cdp_hist_types {
 	CDP_HIST_TYPE_MAX,
 };
 
-/*
- * cdp_hist_bucket: Histogram Bucket
+/**
+ * struct cdp_hist_bucket - Histogram Bucket
  * @hist_type: Histogram type
  * @freq: Frequency
  */
@@ -85,8 +88,8 @@ struct cdp_hist_bucket {
 	uint64_t freq[CDP_HIST_BUCKET_MAX];
 };
 
-/*
- * cdp_hist_stats : Histogram of a stats type
+/**
+ * struct cdp_hist_stats - Histogram of a stats type
  * @hist: Frequency distribution
  * @max: Max frequency
  * @min: Minimum frequency

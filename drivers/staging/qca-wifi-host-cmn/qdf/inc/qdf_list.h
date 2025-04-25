@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014-2018, 2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -107,8 +108,14 @@ static inline void qdf_list_create(__qdf_list_t *list, uint32_t max_size)
 #define qdf_list_for_each_from(list_ptr, cursor, node_field) \
 	__qdf_list_for_each_from(list_ptr, cursor, node_field)
 
+#define qdf_list_for_each_continue(list_ptr, cursor, node_field) \
+	__qdf_list_for_each_continue(list_ptr, cursor, node_field)
+
 #define qdf_list_first_entry_or_null(list_ptr, type, node_field) \
 	__qdf_list_first_entry_or_null(list_ptr, type, node_field)
+
+#define qdf_list_last_entry(list_ptr, type, node_field) \
+	__qdf_list_last_entry(list_ptr, type, node_field)
 
 /**
  * qdf_init_list_head() - initialize list head
@@ -138,8 +145,8 @@ static inline void qdf_list_destroy(qdf_list_t *list)
 /**
  * qdf_list_size() - gives the size of the list
  * @list: object of list
- * @size: size of the list
- * Return: uint32_t
+ *
+ * Return: uint32_t size of the list
  */
 static inline uint32_t qdf_list_size(qdf_list_t *list)
 {

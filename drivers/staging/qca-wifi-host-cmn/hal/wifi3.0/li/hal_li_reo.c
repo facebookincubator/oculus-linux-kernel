@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -28,17 +28,6 @@ uint32_t hal_get_reo_reg_base_offset_li(void)
 	return SEQ_WCSS_UMAC_REO_REG_OFFSET;
 }
 
-/**
- * hal_reo_qdesc_setup - Setup HW REO queue descriptor
- *
- * @hal_soc: Opaque HAL SOC handle
- * @ba_window_size: BlockAck window size
- * @start_seq: Starting sequence number
- * @hw_qdesc_vaddr: Virtual address of REO queue descriptor memory
- * @hw_qdesc_paddr: Physical address of REO queue descriptor memory
- * @tid: TID
- *
- */
 void hal_reo_qdesc_setup_li(hal_soc_handle_t hal_soc_hdl, int tid,
 			    uint32_t ba_window_size,
 			    uint32_t start_seq, void *hw_qdesc_vaddr,
@@ -196,13 +185,6 @@ void hal_reo_qdesc_setup_li(hal_soc_handle_t hal_soc_hdl, int tid,
 
 qdf_export_symbol(hal_reo_qdesc_setup_li);
 
-/**
- * hal_get_ba_aging_timeout_li - Get BA Aging timeout
- *
- * @hal_soc: Opaque HAL SOC handle
- * @ac: Access category
- * @value: window size to get
- */
 void hal_get_ba_aging_timeout_li(hal_soc_handle_t hal_soc_hdl, uint8_t ac,
 				 uint32_t *value)
 {
@@ -236,14 +218,6 @@ void hal_get_ba_aging_timeout_li(hal_soc_handle_t hal_soc_hdl, uint8_t ac,
 }
 qdf_export_symbol(hal_get_ba_aging_timeout_li);
 
-/**
- * hal_set_ba_aging_timeout_li - Set BA Aging timeout
- *
- * @hal_soc: Opaque HAL SOC handle
- * @ac: Access category
- * ac: 0 - Background, 1 - Best Effort, 2 - Video, 3 - Voice
- * @value: Input value to set
- */
 void hal_set_ba_aging_timeout_li(hal_soc_handle_t hal_soc_hdl, uint8_t ac,
 				 uint32_t value)
 {

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -203,6 +203,7 @@ struct pld_platform_cap {
  * @PLD_FW_HANG_EVENT: firmware update hang event
  * @PLD_BUS_EVENT: update bus/link event
  * @PLD_SMMU_FAULT: SMMU fault
+ * @PLD_SYS_REBOOT: system is rebooting
  */
 enum pld_uevent {
 	PLD_FW_DOWN,
@@ -211,6 +212,7 @@ enum pld_uevent {
 	PLD_FW_HANG_EVENT,
 	PLD_BUS_EVENT,
 	PLD_SMMU_FAULT,
+	PLD_SYS_REBOOT,
 };
 
 /**
@@ -1052,8 +1054,8 @@ static inline int pld_get_driver_load_cnt(struct device *dev)
  * @dev: device
  * @vote: 0 for enable PCIE PC, 1 for disable PCIE PC
  *
- * This is for PCIE power collaps control during suspend/resume.
- * When PCIE power collaps is disabled, WLAN FW can access memory
+ * This is for PCIE power collapse control during suspend/resume.
+ * When PCIE power collapse is disabled, WLAN FW can access memory
  * through PCIE when system is suspended.
  *
  * Return: 0 for success
@@ -1637,6 +1639,21 @@ int pld_qmi_send(struct device *dev, int type, void *cmd,
 		 int (*cb)(void *ctx, void *event, int event_len));
 
 /**
+ * pld_qmi_indication() - Send data request over QMI
+ * @dev: device pointer
+ * @cb_ctx: context pointer if any to pass back in callback
+ * @cb: callback pointer to pass response back
+ *
+ * This API can be used to register for QMI events.
+ *
+ * Return: 0 if registration is successful
+ *         Non zero failure code for errors
+ */
+int pld_qmi_indication(struct device *dev, void *cb_ctx,
+		       int (*cb)(void *ctx, uint16_t type,
+				 void *event, int event_len));
+
+/**
  * pld_is_fw_dump_skipped() - get fw dump skipped status.
  * @dev: device
  *
@@ -1957,6 +1974,43 @@ static inline int pld_nbuf_pre_alloc_free(struct sk_buff *skb)
 	return 0;
 }
 #endif
+
+#ifdef CONFIG_AFC_SUPPORT
+/**
+ * pld_send_buffer_to_afcmem() - Send afc data to afc memory
+ * @dev: The device structure
+ * @afcdb: Pointer to afc data buffer
+ * @len: Length of afc data
+ * @slotid: Slot id of afc memory
+ *
+ * Return: Non-zero code for error; zero for success
+ */
+int pld_send_buffer_to_afcmem(struct device *dev, const uint8_t *afcdb,
+			      uint32_t len, uint8_t slotid);
+
+/**
+ * pld_reset_afcmem() - Reset afc data in afc memory
+ * @dev: The device structure
+ * @slotid: Slot id of afc memory
+ *
+ * Return: Non-zero code for error; zero for success
+ */
+int pld_reset_afcmem(struct device *dev, uint8_t slotid);
+#else
+static inline
+int pld_send_buffer_to_afcmem(struct device *dev, const uint8_t *afcdb,
+			      uint32_t len, uint8_t slotid)
+{
+	return -EINVAL;
+}
+
+static inline
+int pld_reset_afcmem(struct device *dev, uint8_t slotid)
+{
+	return -EINVAL;
+}
+#endif
+
 /**
  * pld_get_bus_type() - Bus type of the device
  * @dev: device

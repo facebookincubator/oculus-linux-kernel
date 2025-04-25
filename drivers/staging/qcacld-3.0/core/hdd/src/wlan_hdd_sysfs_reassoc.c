@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -50,12 +51,12 @@ __wlan_hdd_store_reassoc_sysfs(struct net_device *net_dev, char const *buf,
 		return -EINVAL;
 
 	mac_handle = hdd_ctx->mac_handle;
-	operating_ch = wlan_get_operation_chan_freq(adapter->vdev);
-	wlan_mlme_get_bssid_vdev_id(hdd_ctx->pdev, adapter->vdev_id,
+	operating_ch = wlan_get_operation_chan_freq(adapter->deflink->vdev);
+	wlan_mlme_get_bssid_vdev_id(hdd_ctx->pdev, adapter->deflink->vdev_id,
 				    &target_bssid);
 	hdd_debug("reassoc: net_devname %s", net_dev->name);
-	ucfg_wlan_cm_roam_invoke(hdd_ctx->pdev, adapter->vdev_id,
-				 &target_bssid, operating_ch, CM_ROAMING_HOST);
+	ucfg_wlan_cm_roam_invoke(hdd_ctx->pdev, adapter->deflink->vdev_id,
+				 &target_bssid, operating_ch, CM_ROAMING_USER);
 
 	return count;
 }

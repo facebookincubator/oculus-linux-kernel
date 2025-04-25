@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -29,7 +30,7 @@
 
 /**
  * target_if_dcs_get_rx_ops() - get rx ops
- * @tx_ops: pointer to target_if tx ops
+ * @psoc: pointer to psoc context
  *
  * API to retrieve the dcs rx ops from the psoc context
  *
@@ -50,7 +51,7 @@ target_if_dcs_get_rx_ops(struct wlan_objmgr_psoc *psoc)
 
 /**
  * target_if_dcs_get_tx_ops() - get tx ops
- * @tx_ops: pointer to target_if tx ops
+ * @psoc: pointer to psoc context
  *
  * API to retrieve the dcs tx ops from the psoc context
  *

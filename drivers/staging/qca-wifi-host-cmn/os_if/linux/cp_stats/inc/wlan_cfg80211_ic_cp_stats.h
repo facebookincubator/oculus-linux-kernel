@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -66,7 +67,7 @@ int wlan_cfg80211_get_pdev_cp_stats(struct wlan_objmgr_pdev *pdev_obj,
 
 #ifdef WLAN_ATF_ENABLE
 /**
- * wlan_cfg80211_get_peer_atf_cp_stats() - API to get ATF peer stats object
+ * wlan_cfg80211_get_atf_peer_cp_stats() - API to get ATF peer stats object
  * @peer_obj: peer object as input
  * @atf_cp_stats: atf peer cp stats object to populate
  *
@@ -77,7 +78,7 @@ wlan_cfg80211_get_atf_peer_cp_stats(struct wlan_objmgr_peer *peer_obj,
 				    struct atf_peer_cp_stats *atf_cp_stats);
 
 /**
- * wlan_cfg80211_get_peer_atf_cp_stats_from_mac() - API to get ATF peer
+ * wlan_cfg80211_get_atf_peer_cp_stats_from_mac() - API to get ATF peer
  * stats object from peer mac address
  * @vdev_obj: vdev object as input
  * @mac: peer mac address as input

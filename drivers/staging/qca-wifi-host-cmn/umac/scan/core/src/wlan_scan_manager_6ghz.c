@@ -17,8 +17,8 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * DOC: contains 6ghz scan manager functionality
+/**
+ * DOC: contains 6 GHz scan manager functionality
  */
 
 #include "wlan_scan_main.h"
@@ -29,7 +29,7 @@
 /* Beacon/probe weightage multiplier */
 #define BCN_PROBE_WEIGHTAGE 5
 
-/* maximum number of 6ghz hints can be sent per scan request */
+/* maximum number of 6 GHz hints can be sent per scan request */
 #define MAX_HINTS_PER_SCAN_REQ 15
 
 /* Saved profile weightage multiplier */
@@ -39,13 +39,13 @@
 #ifdef FEATURE_6G_SCAN_CHAN_SORT_ALGO
 
 /**
- * scm_sort_6ghz_channel_list() - Sort the 6ghz channels based on weightage
+ * scm_sort_6ghz_channel_list() - Sort the 6 GHz channels based on weightage
  * @vdev: vdev on which scan request is issued
  * @chan_list: channel info of the scan request
  *
  * Calculate weightage of each channel based on beacon weightage and saved
  * profile weightage. Sort the channels based on this weight in descending order
- * to scan the most preferred channels first compared other 6ghz channels.
+ * to scan the most preferred channels first compared other 6 GHz channels.
  *
  * Return: None
  */
@@ -71,9 +71,9 @@ scm_sort_6ghz_channel_list(struct wlan_objmgr_vdev *vdev,
 			temp_list[j++] = chan_list->chan[i];
 
 	tmp_list_count = j;
-	scm_debug("Total 6ghz channels %d", tmp_list_count);
+	scm_debug("Total 6 GHz channels %d", tmp_list_count);
 
-	/* No Need to sort if the 6ghz channels are less than or one */
+	/* No Need to sort if the 6 GHz channels are less than or one */
 	if (tmp_list_count <= 1)
 		return;
 
@@ -201,7 +201,7 @@ static void scm_update_rnr_info(struct wlan_objmgr_psoc *psoc,
 
 /**
  * scm_add_rnr_info() - Add the cached RNR info to scan request
- * @vdev: vdev on which scan request is issued
+ * @pdev: pdev on which scan request is issued
  * @req: Scan start request
  *
  * Fetch the cached RNR info from scan db and update it to the scan request to
@@ -257,22 +257,6 @@ scm_is_scan_type_exempted_from_optimization(struct scan_start_request *req)
 	return (req->scan_req.scan_type == SCAN_TYPE_RRM);
 }
 
-/**
- * scm_add_all_valid_6g_channels() - Add all valid 6g channels to scan request
- * @vdev: vdev on which scan request is issued
- * @req: Scan start request
- * @num_scan_ch: Total number of scan channels
- * @is_colocated_6ghz_scan_enabled: colocated 6ghz scan flag enabled in scan req
- *
- * If colocated 6ghz scan flag present in host scan request or at least one 6G
- * channel is present in the host scan request, then this API
- * fills all remaining (other than channel(s) resent in host scan req) valid
- * 6 GHz channel(s) to scan requests channel list and set the flag
- * FLAG_SCAN_ONLY_IF_RNR_FOUND for each of those added channels.
- * By this driver allows Firmware to scan 6G channels based on RNR IEs only.
- *
- * Return: None
- */
 void scm_add_all_valid_6g_channels(struct wlan_objmgr_pdev *pdev,
 				   struct chan_list *chan_list,
 				   uint8_t *num_scan_ch,

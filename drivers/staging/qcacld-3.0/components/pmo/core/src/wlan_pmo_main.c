@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021,2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -154,7 +154,7 @@ static void wlan_pmo_runtime_pm_init_cfg(struct wlan_objmgr_psoc *psoc,
 }
 #endif
 
-#if FEATURE_WLAN_RA_FILTERING
+#ifdef FEATURE_WLAN_RA_FILTERING
 static void wlan_pmo_ra_filtering_init_cfg(struct wlan_objmgr_psoc *psoc,
 					   struct pmo_psoc_cfg *psoc_cfg)
 {
@@ -295,12 +295,10 @@ static void wlan_pmo_init_cfg(struct wlan_objmgr_psoc *psoc,
 			cfg_get(psoc, CFG_DISCONNECT_SAP_TDLS_IN_WOW);
 	wlan_pmo_get_icmp_offload_enable_cfg(psoc, psoc_cfg);
 
-	psoc_cfg->enable_ssr_on_page_fault =
+	psoc_cfg->host_pf_action = cfg_get(psoc, CFG_HOST_ACTION_ON_PAGEFAULT);
+	psoc_cfg->min_pagefault_wakeups_for_action =
 				cfg_get(psoc,
-					CFG_ENABLE_SSR_ON_PAGEFAULT);
-	psoc_cfg->max_pagefault_wakeups_for_ssr =
-				cfg_get(psoc,
-					CFG_MAX_PAGEFAULT_WAKEUPS_FOR_SSR);
+					CFG_MIN_PAGEFAULT_WAKEUPS_FOR_ACTION);
 	psoc_cfg->interval_for_pagefault_wakeup_counts =
 			cfg_get(psoc,
 				CFG_INTERVAL_FOR_PAGEFAULT_WAKEUP_COUNT);
@@ -503,24 +501,25 @@ uint8_t pmo_core_psoc_get_txrx_handle(struct wlan_objmgr_psoc *psoc)
 	return txrx_pdev_id;
 }
 
-bool pmo_enable_ssr_on_page_fault(struct wlan_objmgr_psoc *psoc)
+enum pmo_page_fault_action
+pmo_host_action_on_page_fault(struct wlan_objmgr_psoc *psoc)
 {
 	struct pmo_psoc_priv_obj *pmo_psoc_ctx = pmo_psoc_get_priv(psoc);
 
 	if (!pmo_psoc_ctx)
-		return 0;
+		return PMO_PF_HOST_ACTION_NO_OP;
 
-	return pmo_psoc_ctx->psoc_cfg.enable_ssr_on_page_fault;
+	return pmo_psoc_ctx->psoc_cfg.host_pf_action;
 }
 
-uint8_t pmo_get_max_pagefault_wakeups_for_ssr(struct wlan_objmgr_psoc *psoc)
+uint8_t pmo_get_min_pagefault_wakeups_for_action(struct wlan_objmgr_psoc *psoc)
 {
 	struct pmo_psoc_priv_obj *pmo_psoc_ctx = pmo_psoc_get_priv(psoc);
 
 	if (!pmo_psoc_ctx)
 		return 0;
 
-	return pmo_psoc_ctx->psoc_cfg.max_pagefault_wakeups_for_ssr;
+	return pmo_psoc_ctx->psoc_cfg.min_pagefault_wakeups_for_action;
 }
 
 uint32_t
@@ -572,8 +571,7 @@ QDF_STATUS pmo_set_vdev_bridge_addr(struct wlan_objmgr_vdev *vdev,
 	}
 
 	vdev_ctx = pmo_vdev_get_priv(vdev);
-	qdf_mem_copy(vdev_ctx->bridgeaddr, bridgeaddr->bytes,
-		     QDF_MAC_ADDR_SIZE);
+	qdf_mem_copy(vdev_ctx->bridgeaddr, bridgeaddr->bytes, QDF_MAC_ADDR_SIZE);
 
 	return QDF_STATUS_SUCCESS;
 }

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2018, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -64,9 +64,9 @@ int qdf_hrtimer_cancel(qdf_hrtimer_data_t *timer);
  * qdf_hrtimer_init() - init hrtimer based on context
  * @timer: pointer to the qdf_hrtimer_data_t object
  * @callback: callback function to be fired
- * @qdf_clock_id: clock type
- * @qdf_hrtimer_mode: mode of qdf_hrtimer_data_t
- * @qdf_context_mode: interrupt context mode
+ * @clock: clock type
+ * @mode: mode of qdf_hrtimer_data_t
+ * @ctx: interrupt context mode
  *
  * starts hrtimer in a context passed as per qdf_context_mode
  *
@@ -201,9 +201,9 @@ int qdf_hrtimer_cancel(qdf_hrtimer_data_t *timer)
  * qdf_hrtimer_init() - init hrtimer based on context
  * @timer: pointer to the qdf_hrtimer_data_t object
  * @callback: callback function to be fired
- * @qdf_clock_id: clock type
- * @qdf_hrtimer_mode: mode of qdf_hrtimer_data_t
- * @qdf_context_mode: interrupt context mode
+ * @clock: clock type
+ * @mode: mode of qdf_hrtimer_data_t
+ * @ctx: interrupt context mode
  *
  * starts hrtimer in a context passed as per qdf_context_mode
  *

@@ -29,6 +29,7 @@
 #if defined(WLAN_FEATURE_11BE_MLO) && defined(WLAN_FEATURE_11BE_MLO_ADV_FEATURE)
 #include <wlan_t2lm_api.h>
 #endif
+#include <wlan_mlo_mgr_sta.h>
 
 QDF_STATUS wlan_mlo_parse_t2lm_info(uint8_t *ie,
 				    struct wlan_t2lm_info *t2lm)
@@ -361,6 +362,7 @@ uint8_t *wlan_mlo_add_t2lm_info_ie(uint8_t *frm, struct wlan_t2lm_info *t2lm,
 	uint8_t num_tids = 0;
 	uint8_t link_mapping_presence_indicator = 0;
 	struct vdev_mlme_obj *vdev_mlme;
+	uint8_t *tmp_frm = frm;
 
 	t2lm_ie = (struct wlan_ie_tid_to_link_mapping *)frm;
 	t2lm_ie->elem_id = WLAN_ELEMID_EXTN_ELEM;
@@ -426,11 +428,16 @@ uint8_t *wlan_mlo_add_t2lm_info_ie(uint8_t *frm, struct wlan_t2lm_info *t2lm,
 		t2lm_ie->elem_len += sizeof(uint16_t);
 	}
 
-	vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(vdev);
-	if (vdev_mlme && t2lm->mapping_switch_time_present) {
+	if (t2lm->mapping_switch_time_present) {
 		/* Mapping switch time is different for each vdevs. Hence,
 		 * populate the mapping switch time from vdev_mlme_obj.
 		 */
+		vdev_mlme = wlan_vdev_mlme_get_cmpt_obj(vdev);
+		if (!vdev_mlme) {
+			t2lm_err("null vdev_mlme");
+			return tmp_frm;
+		}
+
 		*(uint16_t *)frm =
 			htole16(vdev_mlme->proto.ap.mapping_switch_time);
 		frm += sizeof(uint16_t);
@@ -932,6 +939,12 @@ QDF_STATUS wlan_send_t2lm_info(struct wlan_objmgr_vdev *vdev,
 			continue;
 		}
 
+		if (mlo_is_sta_bridge_vdev(co_mld_vdev)) {
+			t2lm_debug("skip co_mld_vdev for bridge sta");
+			mlo_release_vdev_ref(co_mld_vdev);
+			continue;
+		}
+
 		status = mlo_tx_ops->send_tid_to_link_mapping(co_mld_vdev,
 							      t2lm);
 		if (QDF_IS_STATUS_ERROR(status))
@@ -1166,6 +1179,88 @@ void wlan_mlo_t2lm_timer_expiry_handler(void *vdev)
 
 }
 
+/**
+ * wlan_mlo_t2lm_update_peer_to_peer_negotiation() - API to update peer-to-peer
+ * level T2LM negotiation data structure on mapping switch time expiry and
+ * expected duration expiry.
+ * @ml_dev: Pointer to ML dev structure
+ * @ml_peer: Pointer to ML peer
+ * @arg: Pointer to advertised T2LM structure
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS wlan_mlo_t2lm_update_peer_to_peer_negotiation(
+		struct wlan_mlo_dev_context *ml_dev,
+		void *ml_peer, void *arg)
+{
+	struct wlan_mlo_peer_context *mlo_peer;
+	struct wlan_t2lm_info *t2lm;
+	struct wlan_prev_t2lm_negotiated_info *negotiated_t2lm = NULL;
+	uint8_t dir = 0;
+
+	mlo_peer = (struct wlan_mlo_peer_context *)ml_peer;
+	if (!mlo_peer) {
+		t2lm_err("null mlo_peer");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	t2lm = (struct wlan_t2lm_info *)arg;
+	if (!t2lm) {
+		t2lm_err("null T2LM");
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	negotiated_t2lm = &mlo_peer->t2lm_policy.t2lm_negotiated_info;
+	negotiated_t2lm->dialog_token = 0;
+
+	/* Reset the peer-to-peer level mapping to default mapping */
+	for (dir = 0; dir < WLAN_T2LM_MAX_DIRECTION; dir++) {
+		negotiated_t2lm->t2lm_info[dir].direction =
+			WLAN_T2LM_INVALID_DIRECTION;
+	}
+
+	/* Copy the Advertised T2LM established mapping to peer-to-peer level
+	 * DIBI direction data structure.
+	 */
+	qdf_mem_copy(&negotiated_t2lm->t2lm_info[WLAN_T2LM_BIDI_DIRECTION],
+		     t2lm, sizeof(struct wlan_t2lm_info));
+
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * wlan_mlo_t2lm_link_update_notifier_callback() - This callback API is invoked
+ * when mapping switch timer expires and expected duration expires.
+ * @vdev: Pointer to vdev structure
+ * @t2lm: Pointer to advertised T2LM structure
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS wlan_mlo_t2lm_link_update_notifier_callback(
+		struct wlan_objmgr_vdev *vdev,
+		struct wlan_t2lm_info *t2lm)
+{
+	/* Go over all MLO peers on this MLD and clear the peer-to-peer level
+	 * mapping.
+	 */
+	wlan_mlo_iterate_ml_peerlist(
+			vdev->mlo_dev_ctx,
+			wlan_mlo_t2lm_update_peer_to_peer_negotiation, t2lm);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS wlan_mlo_t2lm_register_link_update_notify_handler(
+		struct wlan_mlo_dev_context *ml_dev)
+{
+	ml_dev->t2lm_ctx.link_update_callback_index =
+		wlan_register_t2lm_link_update_notify_handler(
+				wlan_mlo_t2lm_link_update_notifier_callback,
+				ml_dev);
+
+	return QDF_STATUS_SUCCESS;
+}
+
 QDF_STATUS
 wlan_mlo_t2lm_timer_init(struct wlan_objmgr_vdev *vdev)
 {
@@ -1200,13 +1295,21 @@ wlan_mlo_t2lm_timer_start(struct wlan_objmgr_vdev *vdev,
 	struct wlan_t2lm_timer *t2lm_timer;
 	struct wlan_t2lm_context *t2lm_ctx;
 	uint32_t target_out_time;
+	struct wlan_mlo_dev_context *mlo_dev_ctx;
 
 	if (!interval) {
 		t2lm_debug("Timer interval is 0");
 		return QDF_STATUS_E_NULL_VALUE;
 	}
 
-	t2lm_ctx = &vdev->mlo_dev_ctx->t2lm_ctx;
+	if (!vdev)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	mlo_dev_ctx = wlan_vdev_get_mlo_dev_ctx(vdev);
+	if (!mlo_dev_ctx)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	t2lm_ctx = &mlo_dev_ctx->t2lm_ctx;
 	t2lm_timer = &vdev->mlo_dev_ctx->t2lm_ctx.t2lm_timer;
 	if (!t2lm_timer) {
 		t2lm_err("t2lm timer ctx is null");
@@ -1311,9 +1414,17 @@ static QDF_STATUS wlan_update_mapping_switch_time_expected_dur(
 {
 	struct wlan_t2lm_context *t2lm_ctx;
 	uint16_t tsf_bit25_10, ms_time;
+	struct wlan_mlo_dev_context *mlo_dev_ctx;
+
+	if (!vdev)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	mlo_dev_ctx = wlan_vdev_get_mlo_dev_ctx(vdev);
+	if (!mlo_dev_ctx)
+		return QDF_STATUS_E_NULL_VALUE;
 
 	tsf_bit25_10 = (tsf & WLAN_T2LM_MAPPING_SWITCH_TSF_BITS) >> 10;
-	t2lm_ctx = &vdev->mlo_dev_ctx->t2lm_ctx;
+	t2lm_ctx = &mlo_dev_ctx->t2lm_ctx;
 
 	t2lm_dev_lock_acquire(t2lm_ctx);
 
@@ -1340,6 +1451,7 @@ static QDF_STATUS wlan_update_mapping_switch_time_expected_dur(
 			t2lm_dev_lock_release(t2lm_ctx);
 			return QDF_STATUS_E_ALREADY;
 		}
+
 		/* Mapping switch time is already expired when STA receives the
 		 * T2LM IE from beacon/probe response frame.
 		 */
@@ -1390,12 +1502,20 @@ QDF_STATUS wlan_process_bcn_prbrsp_t2lm_ie(
 {
 	struct wlan_t2lm_context *t2lm_ctx;
 	QDF_STATUS status;
+	struct wlan_mlo_dev_context *mlo_dev_ctx;
 
 	/* Do not parse the T2LM IE if STA is not in connected state */
 	if (!wlan_cm_is_vdev_connected(vdev))
 		return QDF_STATUS_SUCCESS;
 
-	t2lm_ctx = &vdev->mlo_dev_ctx->t2lm_ctx;
+	if (!vdev)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	mlo_dev_ctx = wlan_vdev_get_mlo_dev_ctx(vdev);
+	if (!mlo_dev_ctx)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	t2lm_ctx = &mlo_dev_ctx->t2lm_ctx;
 
 	status = wlan_update_mapping_switch_time_expected_dur(
 			vdev, rx_t2lm_ie, tsf);
@@ -1458,7 +1578,8 @@ QDF_STATUS wlan_mlo_dev_t2lm_notify_link_update(
 	if (!vdev || !vdev->mlo_dev_ctx)
 		return QDF_STATUS_E_FAILURE;
 
-	if (!wlan_cm_is_vdev_connected(vdev)) {
+	if (vdev->vdev_mlme.vdev_opmode == QDF_STA_MODE &&
+	    !wlan_cm_is_vdev_connected(vdev)) {
 		t2lm_err("Not associated!");
 		return QDF_STATUS_E_AGAIN;
 	}
@@ -1540,7 +1661,7 @@ wlan_mlo_link_disable_request_handler(struct wlan_objmgr_psoc *psoc,
 							   &vdev_id);
 	if (!is_connected) {
 		t2lm_err("Not connected to peer MLD " QDF_MAC_ADDR_FMT,
-			 params->mld_addr.bytes);
+			 QDF_MAC_ADDR_REF(params->mld_addr.bytes));
 		return QDF_STATUS_E_FAILURE;
 	}
 

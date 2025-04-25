@@ -62,5 +62,33 @@ wmi_extract_cfr_pdev_phase_delta_event(wmi_unified_t wmi_handle,
 								param);
 	return QDF_STATUS_E_FAILURE;
 }
+
+#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
+QDF_STATUS
+wmi_extract_cfr_pdev_enhanced_aoa_phasedelta_event_fixed_param(
+		wmi_unified_t wmi_handle,
+		void *evt_buf,
+		struct wmi_cfr_enh_phase_delta_param *param)
+{
+	if (wmi_handle->ops->extract_cfr_enh_phase_fixed_param)
+		return wmi_handle->ops->extract_cfr_enh_phase_fixed_param
+				(wmi_handle, evt_buf, param);
+
+	return QDF_STATUS_E_FAILURE;
+}
+
+QDF_STATUS
+wmi_extract_cfr_pdev_enhanced_aoa_phasedelta_event_data(
+		wmi_unified_t wmi_handle, void *evt_buf,
+		struct wmi_cfr_enh_phase_delta_param *param)
+{
+	if (wmi_handle->ops->extract_cfr_enh_phase_data)
+		return wmi_handle->ops->extract_cfr_enh_phase_data(wmi_handle,
+								   evt_buf,
+								   param);
+
+	return QDF_STATUS_E_FAILURE;
+}
+#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
 #endif /* WLAN_ENH_CFR_ENABLE */
 #endif /* WLAN_CFR_ENABLE */

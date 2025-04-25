@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -160,6 +161,8 @@ static int __wlan_hdd_open_config_debugfs(struct inode *inode,
 		return -ENOMEM;
 
 	ini_config = (struct ini_config_buf *)buf;
+	hdd_nofl_debug("WLAN configuration written to debug log");
+	ucfg_cfg_store_print(hdd_ctx->psoc);
 	errno = wlan_hdd_config_get(hdd_ctx, ini_config);
 	if (errno) {
 		qdf_mem_free(buf);

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2018, 2020 The Linux Foundation. All rights reserved.
- *
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -24,7 +24,7 @@
 
 /**
  * target_if_register_dfs_tx_ops() - register dfs tx ops
- * @dfs_tx_ops: tx ops pointer
+ * @tx_ops: tx ops pointer
  *
  * Register dfs tx ops
  *

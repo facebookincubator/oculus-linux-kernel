@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,8 +18,8 @@
  */
 
 /**
- * @file cdp_txrx_mesh_latency.h
- * @brief Define the host data path MESH latency API functions
+ * DOC: cdp_txrx_mesh_latency.h
+ * Define the host data path MESH latency API functions
  * called by the host control SW and the OS interface module
  */
 #ifndef _CDP_TXRX_MESH_LATENCY_H_
@@ -26,18 +27,20 @@
 #include "cdp_txrx_handle.h"
 #ifdef WLAN_SUPPORT_MESH_LATENCY
 /**
- * @brief find MSCS enabled peer for this mac address and validate priority
- * @details
- *  This function updates per peer per TID mesh latency related parameters.
+ * cdp_mesh_latency_update_peer_parameter() - find MSCS enabled peer for this
+ *                                            mac address and validate priority
+ * @soc: soc context
+ * @dest_mac: destination mac address
+ * @service_interval_dl: Service Interval per tid on DL
+ * @burst_size_dl: Burst size per tid on DL
+ * @service_interval_ul: Service Interval per tid on UL
+ * @burst_size_ul: Burst size per tid on UL
+ * @priority: user priority combination of tid and msdu queue
+ * @add_or_sub: indicates to add or subtract latency parameter
  *
- * @param dest_mac - destination mac address
- * @param service_interval_dl - Service Interval per tid on DL
- * @param burst_size_dl - Burst size per tid on DL
- * @param service_interval_ul - Service Interval per tid on UL
- * @param burst_size_ul - Burst size per tid on UL
- * @param priority - user priority combination of tid and msdu queue
- * @add_or_sub - indicates to add or subtract latency parameter
- * @return - 0 for non error case, -1 for failure
+ * This function updates per peer per TID mesh latency related parameters.
+ *
+ * Return: 0 for non error case, -1 for failure
  */
 static inline QDF_STATUS
 cdp_mesh_latency_update_peer_parameter(ol_txrx_soc_handle soc,

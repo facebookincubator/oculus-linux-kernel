@@ -530,10 +530,10 @@ static int run_state_machine(struct pdfu_data *pdfu)
 	dev_info(pdfu->dev, "Exiting PDFU state machine, rc=%d", rc);
 
 	kfree(pdfu->rx_msg);
-	release_firmware(pdfu->fw);
 	pdfu->rx_msg = NULL;
-	pdfu->sm_running = false;
+	release_firmware(pdfu->fw);
 	pdfu->fw = NULL;
+	pdfu->sm_running = false;
 	pdfu->fw_manual_override = false;
 
 	return rc;
@@ -795,7 +795,9 @@ static int pdfu_initiator_remove(struct platform_device *pdev)
 	for (i = 0; i < MAX_DEVICES_SUPPORTED; i++)
 		usbvdm_unsubscribe(pdfu->subs[i]);
 	kfree(pdfu->rx_msg);
+	pdfu->rx_msg = NULL;
 	release_firmware(pdfu->fw);
+	pdfu->fw = NULL;
 	sysfs_remove_groups(&pdfu->dev->kobj, pdfu_initiator_groups);
 
 	return 0;

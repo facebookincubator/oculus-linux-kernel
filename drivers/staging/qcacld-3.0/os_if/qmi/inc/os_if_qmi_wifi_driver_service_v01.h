@@ -297,6 +297,9 @@ extern struct qmi_elem_info wfds_misc_ind_msg_v01_ei[];
  * @WFDS_UT_CMD_STOP_V01: Stop WFDS traffic
  * @WFDS_UT_CMD_START_V01: Start WFDS Traffic
  * @WFDS_UT_CMD_STATS_V01: Get WFDS traffic stats
+ * @WFDS_UT_CMD_START_WHC_V01: Start WHC Traffic
+ * @WFDS_UT_CMD_START_TSF_SYNC_V01: Start TSF handshake
+ * @WFDS_UT_CMD_MISC_V01: Miscellaneous test
  * @WIFI_DRV_QMI_UT_CMD_MAX_VAL_V01: event enum max value
  */
 enum wifi_drv_qmi_ut_cmd_v01 {
@@ -304,6 +307,9 @@ enum wifi_drv_qmi_ut_cmd_v01 {
 	WFDS_UT_CMD_STOP_V01 = 0,
 	WFDS_UT_CMD_START_V01 = 1,
 	WFDS_UT_CMD_STATS_V01 = 2,
+	WFDS_UT_CMD_START_WHC_V01 = 3,
+	WFDS_UT_CMD_START_TSF_SYNC_V01 = 4,
+	WFDS_UT_CMD_MISC_V01 = 5,
 	WIFI_DRV_QMI_UT_CMD_MAX_VAL_V01 = INT_MAX,
 };
 
@@ -317,6 +323,11 @@ enum wifi_drv_qmi_ut_cmd_v01 {
  * @ether_type: ether_type of packet
  * @src_mac: Source MAC address
  * @dest_mac: Destination MAC address
+ * @ip_ver: IP address version
+ * @src_ip_addr: source IP address
+ * @dest_ip_addr: Destination IP address
+ * @dest_port: Destination port
+ * @misc: Misc input data
  */
 struct wfds_ut_cmd_req_msg_v01 {
 	enum wifi_drv_qmi_ut_cmd_v01 cmd;
@@ -327,9 +338,14 @@ struct wfds_ut_cmd_req_msg_v01 {
 	u16 ether_type;
 	u8 src_mac[6];
 	u8 dest_mac[6];
+	u8 ip_ver;
+	u8 src_ip_addr[16];
+	u8 dest_ip_addr[16];
+	u16 dest_port;
+	u8 misc[256];
 };
 
-#define WFDS_UT_CMD_REQ_MSG_V01_MAX_MSG_LEN 58
+#define WFDS_UT_CMD_REQ_MSG_V01_MAX_MSG_LEN 364
 extern struct qmi_elem_info wfds_ut_cmd_req_msg_v01_ei[];
 
 #endif

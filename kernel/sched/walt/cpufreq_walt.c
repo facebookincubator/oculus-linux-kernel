@@ -12,14 +12,8 @@
 #include <linux/kthread.h>
 #include <trace/events/power.h>
 
-#include <linux/perf_event.h>
-
 #include "walt.h"
 #include "trace.h"
-
-#if defined(CONFIG_SMP) && defined(CONFIG_PERF_EVENTS)
-#define WALTGOV_SMP_CALL
-#endif
 
 struct waltgov_tunables {
 	struct gov_attr_set	attr_set;
@@ -38,10 +32,6 @@ struct waltgov_tunables {
 
 struct waltgov_policy {
 	struct cpufreq_policy	*policy;
-#ifdef WALTGOV_SMP_CALL
-	call_single_data_t	__percpu *csd;
-#endif
-
 	u64			last_ws;
 	u64			curr_cycles;
 	u64			last_cyc_update_time;
@@ -195,43 +185,6 @@ static void waltgov_calc_avg_cap(struct waltgov_policy *wg_policy, u64 curr_ws,
 	wg_policy->last_ws = curr_ws;
 }
 
-static void waltgov_smp_perf_event_cpu_frequency(void *info)
-{
-	perf_event_cpu_frequency((unsigned int)(uintptr_t)info);
-}
-
-static void waltgov_perf_event_cpu_frequency(struct waltgov_policy *wg_policy, unsigned int next_freq)
-{
-	unsigned int cpu;
-
-	if (!perf_event_cpu_frequency_enabled())
-		return;
-
-#ifdef WALTGOV_SMP_CALL
-	for_each_cpu(cpu, wg_policy->policy->cpus) {
-		call_single_data_t *csd;
-
-		csd = per_cpu_ptr(wg_policy->csd, cpu);
-		/* the lock flag is cleared atomically by the IPI */
-		smp_rmb();
-		/*
-		 * if a flood of frequency changes occur before the remote CPU
-		 * IPI can clear the lock flag, don't send another IPI. the
-		 * frequency value is stored in the shared policy object, so
-		 * the updated frequency will be read when the IPI executes
-		 */
-		if (csd->flags)
-			continue;
-		csd->func = waltgov_smp_perf_event_cpu_frequency;
-		csd->info = (void *)(uintptr_t)next_freq;
-		smp_call_function_single_async(cpu, csd);
-	}
-#else
-	(void) cpu;
-	waltgov_smp_perf_event_cpu_frequency((void *)next_freq);
-#endif
-}
-
 static void waltgov_fast_switch(struct waltgov_policy *wg_policy, u64 time,
 			      unsigned int next_freq)
 {
@@ -239,8 +192,6 @@ static void waltgov_fast_switch(struct waltgov_policy *wg_policy, u64 time,
 
 	waltgov_track_cycles(wg_policy, wg_policy->policy->cur, time);
 	cpufreq_driver_fast_switch(policy, next_freq);
-	waltgov_perf_event_cpu_frequency(wg_policy, next_freq);
-
 }
 
 static void waltgov_deferred_update(struct waltgov_policy *wg_policy, u64 time,
@@ -468,7 +419,6 @@ static void waltgov_work(struct kthread_work *work)
 	mutex_lock(&wg_policy->work_lock);
 	__cpufreq_driver_target(wg_policy->policy, freq, CPUFREQ_RELATION_L);
 	mutex_unlock(&wg_policy->work_lock);
-	waltgov_perf_event_cpu_frequency(wg_policy, freq);
 }
 
 static void waltgov_irq_work(struct irq_work *irq_work)
@@ -762,21 +712,11 @@ static struct waltgov_policy *waltgov_policy_alloc(struct cpufreq_policy *policy
 
 	wg_policy->policy = policy;
 	raw_spin_lock_init(&wg_policy->update_lock);
-#ifdef WALTGOV_SMP_CALL
-	wg_policy->csd = alloc_percpu(call_single_data_t);
-	if (!wg_policy->csd) {
-		kfree(wg_policy);
-		return NULL;
-	}
-#endif
 	return wg_policy;
 }
 
 static void waltgov_policy_free(struct waltgov_policy *wg_policy)
 {
-#ifdef WALTGOV_SMP_CALL
-	free_percpu(wg_policy->csd);
-#endif
 	kfree(wg_policy);
 }
 

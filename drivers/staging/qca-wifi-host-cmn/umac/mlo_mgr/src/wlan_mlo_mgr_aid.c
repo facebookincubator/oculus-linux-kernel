@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -1235,6 +1235,7 @@ QDF_STATUS wlan_mlo_vdev_aid_mgr_init(struct wlan_mlo_dev_context *ml_dev)
 	struct wlan_objmgr_vdev *vdev;
 	struct wlan_ml_vdev_aid_mgr *ml_aidmgr;
 	uint16_t max_aid = WLAN_UMAC_MAX_AID;
+	struct wlan_vdev_aid_mgr *aid_mgr = NULL;
 
 	ml_aidmgr = qdf_mem_malloc(sizeof(struct wlan_ml_vdev_aid_mgr));
 	if (!ml_aidmgr) {
@@ -1252,7 +1253,11 @@ QDF_STATUS wlan_mlo_vdev_aid_mgr_init(struct wlan_mlo_dev_context *ml_dev)
 		if (!vdev)
 			continue;
 
-		ml_aidmgr->aid_mgr[i] = wlan_vdev_aid_mgr_init(max_aid);
+		aid_mgr = wlan_vdev_mlme_get_aid_mgr(vdev);
+		if (!aid_mgr)
+			aid_mgr = wlan_vdev_aid_mgr_init(max_aid);
+
+		ml_aidmgr->aid_mgr[i] = aid_mgr;
 		if (!ml_aidmgr->aid_mgr[i]) {
 			mlo_err("AID bitmap allocation failed for VDEV%d",
 				wlan_vdev_get_id(vdev));

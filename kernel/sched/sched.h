@@ -87,6 +87,7 @@
 #include <linux/android_kabi.h>
 
 #include <asm/tlb.h>
+#include <asm-generic/vmlinux.lds.h>
 #include <linux/hrtimer.h>
 
 #ifdef CONFIG_PARAVIRT

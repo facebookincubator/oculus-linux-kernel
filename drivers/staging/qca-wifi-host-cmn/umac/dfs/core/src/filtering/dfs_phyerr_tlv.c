@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012, 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -166,11 +166,11 @@ static void dfs_radar_summary_parse(struct wlan_dfs *dfs,
 }
 
 /**
- * dfs_radar_fft_search_report_parse () - Parse FFT report.
+ * dfs_radar_fft_search_report_parse() - Parse FFT report.
  * @dfs: pointer to wlan_dfs structure.
  * @buf: Phyerr buffer.
  * @len: Phyerr buflen.
- * @rsu: Pointer to rx_radar_status structure.
+ * @rsfr: Pointer to rx_search_fft_report structure.
  */
 static void dfs_radar_fft_search_report_parse(struct wlan_dfs *dfs,
 		const char *buf,
@@ -391,7 +391,7 @@ static int dfs_tlv_parse_frame(struct wlan_dfs *dfs,
 			 * (1) There may be multiple TLV
 			 * (2) We make false detection decision solely based on
 			 * the first TLV
-			 * (3) If the first TLV is a serch FFT report then we
+			 * (3) If the first TLV is a search FFT report then we
 			 * check the peak_mag value.
 			 * When RSSI is equal to dfs->wlan_dfs_false_rssI_thres
 			 * (default 50) and peak_mag is less than

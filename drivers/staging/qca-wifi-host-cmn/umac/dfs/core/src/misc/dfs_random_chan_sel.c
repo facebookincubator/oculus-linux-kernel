@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -947,7 +947,7 @@ dfs_populate_40mhz_available_channel_for_freq(struct wlan_dfs *dfs,
  * @dfs: Pointer to DFS structure.
  * @bitmap: bitmap
  * @chan_width: channel width
- * @avail_freq_list: prepared channel list
+ * @freq_list: prepared channel list
  *
  * Prepare channel list based on width and channel bitmap.
  *
@@ -1019,6 +1019,9 @@ static uint16_t dfs_get_rand_from_lst_for_freq(struct wlan_dfs *dfs,
 }
 #endif
 
+#ifdef CONFIG_CHAN_FREQ_API
+#define FREQUENCY_BAND_LIMIT 60
+
 /**
  * dfs_random_channel_sel_set_bitmap_for_freq()- Set channel bit in bitmap based
  * on given channel number
@@ -1030,8 +1033,6 @@ static uint16_t dfs_get_rand_from_lst_for_freq(struct wlan_dfs *dfs,
  *
  * Return: None
  */
-#ifdef CONFIG_CHAN_FREQ_API
-#define FREQUENCY_BAND_LIMIT 60
 static void
 dfs_random_channel_sel_set_bitmap_for_freq(struct wlan_dfs *dfs,
 					   struct chan_bonding_bitmap *bitmap,

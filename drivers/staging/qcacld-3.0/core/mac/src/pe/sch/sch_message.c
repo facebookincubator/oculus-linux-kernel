@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -536,10 +536,8 @@ void sch_edca_profile_update(struct mac_context *mac, struct pe_session *pe_sess
 		sch_qos_update_broadcast(mac, pe_session);
 		sch_qos_concurrency_update();
 
-		if (policy_mgr_is_ll_sap_present(
-				mac->psoc,
-				policy_mgr_convert_device_mode_to_qdf_type(
-				pe_session->opmode), pe_session->vdev_id))
+		if (policy_mgr_is_vdev_ll_lt_sap(
+				mac->psoc, pe_session->vdev_id))
 			sch_qos_update_edca_pifs_param_for_ll_sap(
 							mac,
 							pe_session->vdev_id);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/of_address.h>
@@ -109,11 +110,13 @@ static bool cam_lx7_cpas_cb(uint32_t handle, void *user_data,
 				"IPE/BPS UBWC decode error status=0x%08x",
 				irq_data->u.dec_err.decerr_status.value);
 		ret = true;
+		break;
 	case CAM_CAMNOC_IRQ_IPE_BPS_UBWC_ENCODE_ERROR:
 		CAM_ERR_RATE_LIMIT(CAM_ICP,
 				"IPE/BPS UBWC encode error status=0x%08x",
 				irq_data->u.enc_err.encerr_status.value);
 		ret = true;
+		break;
 	default:
 		CAM_ERR(CAM_ICP, "unhandled irq_type=%d", irq_data->irq_type);
 		break;

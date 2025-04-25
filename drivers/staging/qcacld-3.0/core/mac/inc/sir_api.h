@@ -585,7 +585,7 @@ struct register_mgmt_frame {
 	bool registerFrame;
 	uint16_t frameType;
 	uint16_t matchLen;
-	uint8_t matchData[1];
+	QDF_FLEX_ARRAY(uint8_t, matchData);
 };
 
 /* / Generic type for sending a response message */
@@ -840,7 +840,7 @@ struct bss_description {
 	uint32_t is_single_pmk;
 #endif
 	/* Please keep the structure 4 bytes aligned above the ieFields */
-	uint32_t ieFields[1];
+	QDF_FLEX_ARRAY(uint32_t, ieFields);
 };
 
 /* / Definition for response message to previously */
@@ -1093,6 +1093,7 @@ struct assoc_ind {
 	tDot11fIEHTCaps HTCaps;
 	tDot11fIEVHTCaps VHTCaps;
 	bool he_caps_present;
+	bool eht_caps_present;
 	tSirMacCapabilityInfo capability_info;
 	bool is_sae_authenticated;
 	const uint8_t *owe_ie;
@@ -1319,17 +1320,6 @@ struct missed_beacon_ind {
 	int32_t rssi;
 };
 
-/* / Definition for Set Context request */
-/* / ---> MAC */
-struct set_context_req {
-	uint16_t messageType;   /* eWNI_SME_SET_CONTEXT_REQ */
-	uint16_t length;
-	uint8_t vdev_id;      /* vdev ID */
-	struct qdf_mac_addr peer_macaddr;
-	struct qdf_mac_addr bssid;      /* BSSID */
-	tSirKeyMaterial keyMaterial;
-};
-
 /* / Definition for Set Context response */
 /* / MAC ---> */
 struct set_context_rsp {
@@ -1534,16 +1524,6 @@ struct qos_map_set {
 	uint8_t dscp_exceptions[QOS_MAP_MAX_EX][2];
 	uint8_t dscp_range[QOS_MAP_RANGE_NUM][2];
 };
-
-typedef struct sSmeIbssPeerInd {
-	uint16_t mesgType;
-	uint16_t mesgLen;
-	uint8_t sessionId;
-
-	struct qdf_mac_addr peer_addr;
-
-	/* Beacon will be appended for new Peer indication. */
-} tSmeIbssPeerInd, *tpSmeIbssPeerInd;
 
 typedef struct sSmeMaxAssocInd {
 	uint16_t mesgType;      /* eWNI_SME_MAX_ASSOC_EXCEEDED */
@@ -1824,7 +1804,7 @@ typedef struct sSirSmeMgmtFrameInd {
 	uint8_t frameType;
 	int8_t rxRssi;
 	enum rxmgmt_flags rx_flags;
-	uint8_t frameBuf[1];    /* variable */
+	QDF_FLEX_ARRAY(uint8_t, frameBuf);
 } tSirSmeMgmtFrameInd, *tpSirSmeMgmtFrameInd;
 
 typedef void (*sir_mgmt_frame_ind_callback)(tSirSmeMgmtFrameInd *frame_ind);
@@ -1846,7 +1826,7 @@ typedef struct sSirSmeUnprotMgmtFrameInd {
 	uint8_t sessionId;
 	uint8_t frameType;
 	uint8_t frameLen;
-	uint8_t frameBuf[1];    /* variable */
+	QDF_FLEX_ARRAY(uint8_t, frameBuf);
 } tSirSmeUnprotMgmtFrameInd, *tpSirSmeUnprotMgmtFrameInd;
 
 #ifdef WLAN_FEATURE_EXTWOW_SUPPORT
@@ -2166,7 +2146,7 @@ typedef struct sSirUpdateChan {
 	uint8_t vht_24_en;
 	bool he_en;
 	bool eht_en;
-	tSirUpdateChanParam chanParam[1];
+	QDF_FLEX_ARRAY(tSirUpdateChanParam, chanParam);
 } tSirUpdateChanList, *tpSirUpdateChanList;
 
 typedef enum eSirAddonPsReq {
@@ -2377,10 +2357,12 @@ typedef enum {
 	WLAN_WMA_THERMAL_LEVEL_1,
 	WLAN_WMA_THERMAL_LEVEL_2,
 	WLAN_WMA_THERMAL_LEVEL_3,
+	WLAN_WMA_THERMAL_LEVEL_4,
+	WLAN_WMA_THERMAL_LEVEL_5,
 	WLAN_WMA_MAX_THERMAL_LEVELS
 } t_thermal_level;
 
-#define WLAN_THROTTLE_DUTY_CYCLE_LEVEL_MAX (4)
+#define WLAN_THROTTLE_DUTY_CYCLE_LEVEL_MAX (6)
 
 typedef struct {
 	/* Array of thermal levels */
@@ -3754,7 +3736,7 @@ struct chip_pwr_save_fail_detected_params {
  */
 #define DEFAULT_SCAN_IE_ID 256
 
- /* MAX_DEFAULT_SCAN_IE_LEN - Maxmimum length of Default Scan IE's */
+ /* MAX_DEFAULT_SCAN_IE_LEN - Maximum length of Default Scan IE's */
 #define MAX_DEFAULT_SCAN_IE_LEN 2048
 
  /* Extended Capabilities IE header(IE Id + IE Length) length */
@@ -3843,6 +3825,20 @@ struct sir_nss_update_request {
 };
 
 /**
+ * struct sir_sap_ch_width_update
+ * @msgType: ch_width update msg type
+ * @msgLen: length of the msg
+ * @ch_width: channel width
+ * @vdev_id: vdev id
+ */
+struct sir_sap_ch_width_update {
+	uint16_t msgType;
+	uint16_t msgLen;
+	enum phy_ch_width ch_width;
+	uint32_t vdev_id;
+};
+
+/**
  * enum sir_bcn_update_reason: bcn update reason
  * @REASON_DEFAULT: reason default
  * @REASON_NSS_UPDATE: If NSS is updated
@@ -3862,6 +3858,7 @@ enum sir_bcn_update_reason {
 	REASON_CHANNEL_SWITCH = 5,
 	REASON_MLO_IE_UPDATE = 6,
 	REASON_RNR_UPDATE = 7,
+	REASON_CH_WIDTH_UPDATE = 8,
 };
 
 /**
@@ -4095,44 +4092,6 @@ struct sir_apf_get_offload {
 };
 
 #ifdef WLAN_FEATURE_NAN
-#define IFACE_NAME_SIZE 64
-
-/**
- * enum ndp_accept_policy - nan data path accept policy
- * @NDP_ACCEPT_POLICY_NONE: the framework will decide the policy
- * @NDP_ACCEPT_POLICY_ALL: accept policy offloaded to fw
- *
- */
-enum ndp_accept_policy {
-	NDP_ACCEPT_POLICY_NONE = 0,
-	NDP_ACCEPT_POLICY_ALL = 1,
-};
-
-/**
- * enum ndp_self_role - nan data path role
- * @NDP_ROLE_INITIATOR: initiator of nan data path request
- * @NDP_ROLE_RESPONDER: responder to nan data path request
- *
- */
-enum ndp_self_role {
-	NDP_ROLE_INITIATOR = 0,
-	NDP_ROLE_RESPONDER = 1,
-};
-
-/**
- * enum ndp_response_code - responder's response code to nan data path request
- * @NDP_RESPONSE_ACCEPT: ndp request accepted
- * @NDP_RESPONSE_REJECT: ndp request rejected
- * @NDP_RESPONSE_DEFER: ndp request deferred until later (response to follow
- * any time later)
- *
- */
-enum ndp_response_code {
-	NDP_RESPONSE_ACCEPT = 0,
-	NDP_RESPONSE_REJECT = 1,
-	NDP_RESPONSE_DEFER = 2,
-};
-
 /**
  * enum ndp_end_type - NDP end type
  * @NDP_END_TYPE_UNSPECIFIED: type is unspecified
@@ -4207,67 +4166,6 @@ enum nan_reason_code {
 };
 
 /**
- * struct ndp_cfg - ndp configuration
- * @tag: unique identifier
- * @ndp_cfg_len: ndp configuration length
- * @ndp_cfg: variable length ndp configuration
- *
- */
-struct ndp_cfg {
-	uint32_t tag;
-	uint32_t ndp_cfg_len;
-	uint8_t *ndp_cfg;
-};
-
-/**
- * struct ndp_qos_cfg - ndp qos configuration
- * @tag: unique identifier
- * @ndp_qos_cfg_len: ndp qos configuration length
- * @ndp_qos_cfg: variable length ndp qos configuration
- *
- */
-struct ndp_qos_cfg {
-	uint32_t tag;
-	uint32_t ndp_qos_cfg_len;
-	uint8_t ndp_qos_cfg[];
-};
-
-/**
- * struct ndp_app_info - application info shared during ndp setup
- * @tag: unique identifier
- * @ndp_app_info_len: ndp app info length
- * @ndp_app_info: variable length application information
- *
- */
-struct ndp_app_info {
-	uint32_t tag;
-	uint32_t ndp_app_info_len;
-	uint8_t *ndp_app_info;
-};
-
-/**
- * struct ndp_scid - structure to hold sceurity context identifier
- * @scid_len: length of scid
- * @scid: scid
- *
- */
-struct ndp_scid {
-	uint32_t scid_len;
-	uint8_t *scid;
-};
-
-/**
- * struct ndp_pmk - structure to hold pairwise master key
- * @pmk_len: length of pairwise master key
- * @pmk: buffer containing pairwise master key
- *
- */
-struct ndp_pmk {
-	uint32_t pmk_len;
-	uint8_t *pmk;
-};
-
-/**
  * struct ndi_create_rsp - ndi create response params
  * @status: request status
  * @reason: reason if any
@@ -4291,157 +4189,6 @@ struct ndi_delete_rsp {
 };
 
 /**
- * struct ndp_initiator_req - ndp initiator request params
- * @transaction_id: unique identifier
- * @vdev_id: session id of the interface over which ndp is being created
- * @channel: suggested channel for ndp creation
- * @channel_cfg: channel config, 0=no channel, 1=optional, 2=mandatory
- * @service_instance_id: Service identifier
- * @peer_discovery_mac_addr: Peer's discovery mac address
- * @self_ndi_mac_addr: self NDI mac address
- * @ndp_config: ndp configuration params
- * @ndp_info: ndp application info
- * @ncs_sk_type: indicates NCS_SK_128 or NCS_SK_256
- * @pmk: pairwise master key
- *
- */
-struct ndp_initiator_req {
-	uint32_t transaction_id;
-	uint32_t vdev_id;
-	uint32_t channel;
-	uint32_t channel_cfg;
-	uint32_t service_instance_id;
-	struct qdf_mac_addr peer_discovery_mac_addr;
-	struct qdf_mac_addr self_ndi_mac_addr;
-	struct ndp_cfg ndp_config;
-	struct ndp_app_info ndp_info;
-	uint32_t ncs_sk_type;
-	struct ndp_pmk pmk;
-};
-
-/**
- * struct ndp_initiator_rsp - response event from FW
- * @transaction_id: unique identifier
- * @vdev_id: session id of the interface over which ndp is being created
- * @ndp_instance_id: locally created NDP instance ID
- * @status: status of the ndp request
- * @reason: reason for failure if any
- *
- */
-struct ndp_initiator_rsp {
-	uint32_t transaction_id;
-	uint32_t vdev_id;
-	uint32_t ndp_instance_id;
-	uint32_t status;
-	uint32_t reason;
-};
-
-/**
- * struct ndp_indication_event - create ndp indication on the responder
- * @vdev_id: session id of the interface over which ndp is being created
- * @service_instance_id: Service identifier
- * @peer_discovery_mac_addr: Peer's discovery mac address
- * @peer_mac_addr: Peer's NDI mac address
- * @ndp_initiator_mac_addr: NDI mac address of the peer initiating NDP
- * @ndp_instance_id: locally created NDP instance ID
- * @role: self role for NDP
- * @ndp_accept_policy: accept policy configured by the upper layer
- * @ndp_config: ndp configuration params
- * @ndp_info: ndp application info
- * @ncs_sk_type: indicates NCS_SK_128 or NCS_SK_256
- * @scid: security context identifier
- *
- */
-struct ndp_indication_event {
-	uint32_t vdev_id;
-	uint32_t service_instance_id;
-	struct qdf_mac_addr peer_discovery_mac_addr;
-	struct qdf_mac_addr peer_mac_addr;
-	uint32_t ndp_instance_id;
-	enum ndp_self_role role;
-	enum ndp_accept_policy policy;
-	struct ndp_cfg ndp_config;
-	struct ndp_app_info ndp_info;
-	uint32_t ncs_sk_type;
-	struct ndp_scid scid;
-};
-
-/**
- * struct ndp_responder_req - responder's response to ndp create request
- * @transaction_id: unique identifier
- * @vdev_id: session id of the interface over which ndp is being created
- * @ndp_instance_id: locally created NDP instance ID
- * @ndp_rsp: response to the ndp create request
- * @ndp_config: ndp configuration params
- * @ndp_info: ndp application info
- * @pmk: pairwise master key
- * @ncs_sk_type: indicates NCS_SK_128 or NCS_SK_256
- *
- */
-struct ndp_responder_req {
-	uint32_t transaction_id;
-	uint32_t vdev_id;
-	uint32_t ndp_instance_id;
-	enum ndp_response_code ndp_rsp;
-	struct ndp_cfg ndp_config;
-	struct ndp_app_info ndp_info;
-	struct ndp_pmk pmk;
-	uint32_t ncs_sk_type;
-};
-
-/**
- * struct ndp_responder_rsp_event - response to responder's request
- * @transaction_id: unique identifier
- * @vdev_id: session id of the interface over which ndp is being created
- * @status: command status
- * @reason: reason for failure if any
- * @peer_mac_addr: Peer's mac address
- * @create_peer: Flag to indicate to create peer
- */
-struct ndp_responder_rsp_event {
-	uint32_t transaction_id;
-	uint32_t vdev_id;
-	uint32_t status;
-	uint32_t reason;
-	struct qdf_mac_addr peer_mac_addr;
-	bool create_peer;
-};
-
-/**
- * struct ndp_confirm_event - ndp confirmation event from FW
- * @vdev_id: session id of the interface over which ndp is being created
- * @ndp_instance_id: ndp instance id for which confirm is being generated
- * @reason_code : reason code(opaque to driver)
- * @num_active_ndps_on_peer: number of ndp instances on peer
- * @peer_ndi_mac_addr: peer NDI mac address
- * @rsp_code: ndp response code
- * @ndp_info: ndp application info
- *
- */
-struct ndp_confirm_event {
-	uint32_t vdev_id;
-	uint32_t ndp_instance_id;
-	uint32_t reason_code;
-	uint32_t num_active_ndps_on_peer;
-	struct qdf_mac_addr peer_ndi_mac_addr;
-	enum ndp_response_code rsp_code;
-	struct ndp_app_info ndp_info;
-};
-
-/**
- * struct ndp_end_req - ndp end request
- * @transaction_id: unique transaction identifier
- * @num_ndp_instances: number of ndp instances to be terminated
- * @ndp_ids: pointer to array of ndp_instance_id to be terminated
- *
- */
-struct ndp_end_req {
-	uint32_t transaction_id;
-	uint32_t num_ndp_instances;
-	uint32_t *ndp_ids;
-};
-
-/**
  * struct peer_ndp_map  - mapping of NDP instances to peer to VDEV
  * @vdev_id: session id of the interface over which ndp is being created
  * @peer_ndi_mac_addr: peer NDI mac address
@@ -4460,76 +4207,6 @@ struct peer_ndp_map {
 	uint32_t ndp_instance_id;
 };
 
-/**
- * struct ndp_end_rsp_event  - firmware response to ndp end request
- * @transaction_id: unique identifier for the request
- * @status: status of operation
- * @reason: reason(opaque to host driver)
- *
- */
-struct ndp_end_rsp_event {
-	uint32_t transaction_id;
-	uint32_t status;
-	uint32_t reason;
-};
-
-/**
- * struct ndp_end_indication_event - ndp termination notification from FW
- * @num_ndp_ids: number of NDP ids
- * @ndp_map: mapping of NDP instances to peer and vdev
- *
- */
-struct ndp_end_indication_event {
-	uint32_t num_ndp_ids;
-	struct peer_ndp_map ndp_map[];
-};
-
-/**
- * struct ndp_schedule_update_req - ndp schedule update request
- * @transaction_id: unique identifier
- * @vdev_id: session id of the interface over which ndp is being created
- * @ndp_instance_id: ndp instance id for which schedule update is requested
- * @ndp_qos: new set of qos parameters
- *
- */
-struct ndp_schedule_update_req {
-	uint32_t transaction_id;
-	uint32_t vdev_id;
-	uint32_t ndp_instance_id;
-	struct ndp_qos_cfg ndp_qos;
-};
-
-/**
- * struct ndp_schedule_update_rsp - ndp schedule update response
- * @transaction_id: unique identifier
- * @vdev_id: session id of the interface over which ndp is being created
- * @status: status of the request
- * @reason: reason code for failure if any
- *
- */
-struct ndp_schedule_update_rsp {
-	uint32_t transaction_id;
-	uint32_t vdev_id;
-	uint32_t status;
-	uint32_t reason;
-};
-
-/**
- * struct sme_ndp_peer_ind - ndp peer indication
- * @msg_type: message id
- * @msg_len: message length
- * @session_id: session id
- * @peer_mac_addr: peer mac address
- * @sta_id: station id
- *
- */
-struct sme_ndp_peer_ind {
-	uint16_t msg_type;
-	uint16_t msg_len;
-	uint8_t session_id;
-	struct qdf_mac_addr peer_mac_addr;
-	uint16_t sta_id;
-};
 #endif /* WLAN_FEATURE_NAN */
 
 /**
@@ -4709,24 +4386,6 @@ struct wow_pulse_mode {
  * Return: QDF status
  */
 QDF_STATUS umac_send_mb_message_to_mac(void *msg);
-
-/* Max supported bandwidth is 320Mhz, so max 16 subbands fo 20Mhz */
-#define MAX_WIDE_BAND_SCAN_CHAN 16
-
-/**
- * struct wide_band_scan_chan_info - wide band scan channel info
- * @vdev_id: vdev id
- * @num_chan: number of channels (for each subbands fo 20Mhz)
- * @is_wide_band_scan: wide band scan or not
- * @cca_busy_subband_info: CCA busy for each possible 20Mhz subbands
- * of the wideband scan channel
- */
-struct wide_band_scan_chan_info {
-	uint32_t vdev_id;
-	uint8_t num_chan;
-	bool is_wide_band_scan;
-	uint32_t cca_busy_subband_info[MAX_WIDE_BAND_SCAN_CHAN];
-};
 
 /**
  * struct scan_chan_info - channel info
@@ -5296,6 +4955,7 @@ struct sir_update_session_txq_edca_param {
  * @sec_ch_offset: second channel offset
  * @center_freq_seg0: channel center freq 0
  * @center_freq_seg1: channel center freq 1
+ * @target_punc_bitmap: New channel puncturing bitmap
  * @dot11mode: dot11 mode
  * @nw_type: nw type
  * @cac_duration_ms:  cac duration in ms
@@ -5310,6 +4970,9 @@ struct channel_change_req {
 	enum phy_ch_width ch_width;
 	uint8_t center_freq_seg0;
 	uint8_t center_freq_seg1;
+#ifdef WLAN_FEATURE_11BE
+	uint16_t target_punc_bitmap;
+#endif
 	uint32_t dot11mode;
 	tSirNwType nw_type;
 	uint32_t cac_duration_ms;

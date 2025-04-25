@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -105,7 +105,7 @@ static void hal_tx_set_dscp_tid_map_6390(struct hal_soc *soc, uint8_t *map,
 		addr += 4;
 	}
 
-	/* Diasble read/write access */
+	/* Disable read/write access */
 	regval = HAL_REG_READ(soc, cmn_reg_addr);
 	regval &=
 	~(HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_DSCP_TID_MAP_PROGRAM_EN_BMSK);
@@ -115,9 +115,9 @@ static void hal_tx_set_dscp_tid_map_6390(struct hal_soc *soc, uint8_t *map,
 
 /**
  * hal_tx_update_dscp_tid_6390() - Update the dscp tid map table as updated
- *					by the user
+ *                                 by the user
  * @soc: HAL SoC context
- * @map: DSCP-TID mapping table
+ * @tid: TID mapping table
  * @id : MAP ID
  * @dscp: DSCP_TID map index
  *
@@ -146,7 +146,7 @@ static void hal_tx_update_dscp_tid_6390(struct hal_soc *soc, uint8_t tid,
 }
 
 /**
- * hal_tx_desc_set_lmac_id - Set the lmac_id value
+ * hal_tx_desc_set_lmac_id_6390() - Set the lmac_id value
  * @desc: Handle to Tx Descriptor
  * @lmac_id: mac Id to ast matching
  *		     b00 – mac 0
@@ -165,7 +165,7 @@ static void hal_tx_desc_set_lmac_id_6390(void *desc, uint8_t lmac_id)
 /**
  * hal_tx_init_cmd_credit_ring_6390() - Initialize command/credit SRNG
  * @hal_soc_hdl: Handle to HAL SoC structure
- * @hal_srng: Handle to HAL SRNG structure
+ * @hal_ring_hdl: Handle to HAL SRNG structure
  *
  * Return: none
  */

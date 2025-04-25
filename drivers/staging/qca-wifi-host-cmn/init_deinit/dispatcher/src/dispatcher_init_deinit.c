@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -28,6 +28,7 @@
 #include <wlan_serialization_api.h>
 #include "wlan_psoc_mlme_api.h"
 #include <include/wlan_mlme_cmn.h>
+#include "cdp_txrx_cmn.h"
 #ifdef WLAN_ATF_ENABLE
 #include <wlan_atf_utils_api.h>
 #endif
@@ -1102,6 +1103,9 @@ QDF_STATUS dispatcher_init(void)
 	if (QDF_STATUS_SUCCESS != wlan_objmgr_global_obj_init())
 		goto out;
 
+	if (QDF_STATUS_SUCCESS != cdp_global_ctx_init())
+		goto global_init_fail;
+
 	if (QDF_STATUS_SUCCESS != wlan_mlo_mgr_init())
 		goto mgmt_mlo_mgr_fail;
 
@@ -1254,6 +1258,8 @@ mgmt_txrx_init_fail:
 	wlan_objmgr_global_obj_deinit();
 mgmt_mlo_mgr_fail:
 	wlan_mlo_mgr_deinit();
+global_init_fail:
+	cdp_global_ctx_deinit();
 
 out:
 	return QDF_STATUS_E_FAILURE;
@@ -1322,6 +1328,8 @@ QDF_STATUS dispatcher_deinit(void)
 	QDF_BUG(QDF_STATUS_SUCCESS == wlan_mgmt_txrx_deinit());
 
 	QDF_BUG(QDF_STATUS_SUCCESS == wlan_mlo_mgr_deinit());
+
+	QDF_BUG(QDF_STATUS_SUCCESS == cdp_global_ctx_deinit());
 
 	QDF_BUG(QDF_STATUS_SUCCESS == wlan_objmgr_global_obj_deinit());
 

@@ -55,10 +55,33 @@ wlan_vdev_mgr_fill_mlo_params(struct cdp_vdev_info *vdev_info,
 {
 	vdev_info->mld_mac_addr = param->mlo_mac;
 }
+
+#ifdef WLAN_MLO_MULTI_CHIP
+static inline void
+wlan_vdev_mgr_fill_mlo_bridge_vap_params(struct cdp_vdev_info *vdev_info,
+					 struct wlan_objmgr_vdev *vdev)
+{
+	vdev_info->is_bridge_vap = vdev->vdev_objmgr.mlo_bridge_vdev;
+}
+#else
+
+static inline void
+wlan_vdev_mgr_fill_mlo_bridge_vap_params(struct cdp_vdev_info *vdev_info,
+					 struct wlan_objmgr_vdev *vdev)
+{
+}
+#endif
+
 #else
 static inline void
 wlan_vdev_mgr_fill_mlo_params(struct cdp_vdev_info *vdev_info,
 			      struct vdev_create_params *param)
+{
+}
+
+static inline void
+wlan_vdev_mgr_fill_mlo_bridge_vap_params(struct cdp_vdev_info *vdev_info,
+					 struct wlan_objmgr_vdev *vdev)
 {
 }
 #endif
@@ -108,6 +131,7 @@ QDF_STATUS tgt_vdev_mgr_create_send(
 	vdev_info.op_mode = wlan_util_vdev_get_cdp_txrx_opmode(vdev);
 	vdev_info.subtype = wlan_util_vdev_get_cdp_txrx_subtype(vdev);
 	vdev_info.qdf_opmode = wlan_vdev_mlme_get_opmode(vdev);
+	wlan_vdev_mgr_fill_mlo_bridge_vap_params(&vdev_info, vdev);
 	wlan_vdev_mgr_fill_mlo_params(&vdev_info, param);
 	pdev = wlan_vdev_get_pdev(vdev);
 

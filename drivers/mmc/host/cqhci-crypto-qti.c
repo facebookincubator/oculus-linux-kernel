@@ -47,7 +47,6 @@ static void get_mmio_data(struct ice_mmio_data *data, struct cqhci_host *host)
 #if IS_ENABLED(CONFIG_QTI_HW_KEY_MANAGER)
 	data->ice_hwkm_mmio = host->ice_hwkm_mmio;
 #endif
-	data->reprogram_key = host->mmc->crypto_reprogram_key;
 }
 
 static int cqhci_crypto_qti_keyslot_program(struct blk_keyslot_manager *ksm,
@@ -61,7 +60,7 @@ static int cqhci_crypto_qti_keyslot_program(struct blk_keyslot_manager *ksm,
 	const struct cqhci_crypto_alg_entry *alg;
 	int i;
 	int cap_idx = -1;
-	
+
 	const union cqhci_crypto_cap_entry *ccap_array =
 		cq_host->crypto_cap_array;
 

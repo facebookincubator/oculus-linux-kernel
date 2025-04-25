@@ -82,8 +82,6 @@ QDF_STATUS pmo_tgt_send_vdev_sta_ps_param(struct wlan_objmgr_vdev *vdev,
 	struct wlan_objmgr_psoc *psoc;
 	struct wlan_pmo_tx_ops pmo_tx_ops;
 
-	pmo_enter();
-
 	psoc = pmo_vdev_get_psoc(vdev);
 
 	pmo_tx_ops = GET_PMO_TX_OPS_FROM_PSOC(psoc);
@@ -96,8 +94,6 @@ QDF_STATUS pmo_tgt_send_vdev_sta_ps_param(struct wlan_objmgr_vdev *vdev,
 	status = pmo_tx_ops.send_vdev_sta_ps_param_req(vdev, ps_param,
 			param_value);
 out:
-	pmo_exit();
-
 	return status;
 }
 

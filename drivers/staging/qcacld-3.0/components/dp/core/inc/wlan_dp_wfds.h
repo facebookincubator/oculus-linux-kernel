@@ -24,6 +24,8 @@
 #include "wlan_qmi_public_struct.h"
 #include "wlan_qmi_wfds_api.h"
 
+#define DP_WFDS_CE_MAX_SRNG QMI_WFDS_CE_MAX_SRNG
+
 /**
  * enum dp_wfds_msg - WFDS message type
  * @DP_WFDS_REQ_MEM_IND_MSG: Memory request indication message
@@ -109,6 +111,8 @@ struct dp_direct_link_iommu_config {
  * @num_mem_arenas: Number of memory arenas requested by QMI server
  * @mem_arena_pages: Pointer to array of mem multi page structure for arenas
  * @ipcc_dma_addr: ipcc dma address
+ * @ipcc_ce_id: ids of CEs that are configured with IPCC MSI info
+ * @ipcc_ce_id_len: number of valid entries in ipcc_ce_id array
  * @iommu_cfg: direct link iommu configuration
  */
 struct dp_direct_link_wfds_context {
@@ -121,6 +125,8 @@ struct dp_direct_link_wfds_context {
 	uint32_t num_mem_arenas;
 	struct qdf_mem_multi_page_t *mem_arena_pages;
 	uint32_t ipcc_dma_addr;
+	uint8_t ipcc_ce_id[DP_WFDS_CE_MAX_SRNG];
+	uint8_t ipcc_ce_id_len;
 	struct dp_direct_link_iommu_config iommu_cfg;
 };
 

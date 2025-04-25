@@ -39,8 +39,8 @@
 #include "wlan_tdls_ucfg_api.h"
 #include "wlan_cm_roam_api.h"
 #include "wlan_mlo_mgr_sta.h"
-
-#define TDLS_MAX_NO_OF_2_4_CHANNELS 14
+#include "wlan_hdd_main.h"
+#include "wlan_hdd_object_manager.h"
 
 static int wlan_cfg80211_tdls_validate_mac_addr(const uint8_t *mac)
 {
@@ -106,8 +106,8 @@ void hdd_notify_tdls_reset_adapter(struct wlan_objmgr_vdev *vdev)
 	ucfg_tdls_notify_reset_adapter(vdev);
 }
 
-int wlan_cfg80211_tdls_add_peer(struct wlan_objmgr_vdev *vdev,
-				const uint8_t *mac)
+static int wlan_cfg80211_tdls_add_peer(struct wlan_objmgr_vdev *vdev,
+				       const uint8_t *mac)
 {
 	struct tdls_add_peer_params *add_peer_req;
 	int status;
@@ -162,6 +162,48 @@ int wlan_cfg80211_tdls_add_peer(struct wlan_objmgr_vdev *vdev,
 	}
 error:
 	qdf_mem_free(add_peer_req);
+	return status;
+}
+
+int wlan_cfg80211_tdls_add_peer_mlo(struct hdd_adapter *adapter,
+				    const uint8_t *mac, uint8_t link_id)
+{
+	struct wlan_objmgr_vdev *vdev;
+	bool is_mlo_vdev;
+	int status;
+
+	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink, WLAN_OSIF_TDLS_ID);
+	if (!vdev)
+		return -EINVAL;
+
+	if (wlan_vdev_is_up(vdev) != QDF_STATUS_SUCCESS) {
+		osif_debug("sta is not connected or disconnecting");
+		hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_TDLS_ID);
+		return -EINVAL;
+	}
+
+	is_mlo_vdev = wlan_vdev_mlme_is_mlo_vdev(vdev);
+	if (is_mlo_vdev) {
+		hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_TDLS_ID);
+
+		vdev = wlan_key_get_link_vdev(adapter, WLAN_OSIF_TDLS_ID,
+					      link_id);
+		if (!vdev)
+			return -EINVAL;
+
+		if (!ucfg_tdls_link_vdev_is_matching(vdev)) {
+			wlan_key_put_link_vdev(vdev, WLAN_OSIF_TDLS_ID);
+			return -EINVAL;
+		}
+
+		osif_debug("tdls add peer for vdev %d", wlan_vdev_get_id(vdev));
+		status = wlan_cfg80211_tdls_add_peer(vdev, mac);
+		wlan_key_put_link_vdev(vdev, WLAN_OSIF_TDLS_ID);
+	} else {
+		status = wlan_cfg80211_tdls_add_peer(vdev, mac);
+		hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_TDLS_ID);
+	}
+
 	return status;
 }
 
@@ -298,7 +340,7 @@ tdls_calc_channels_from_staparams(struct wlan_objmgr_vdev *vdev,
 }
 
 #ifdef WLAN_FEATURE_11AX
-#if defined(CFG80211_LINK_STA_PARAMS_PRESENT) && defined(CONFIG_BAND_6GHZ)
+#if defined(WLAN_LINK_STA_PARAMS_PRESENT) && defined(CONFIG_BAND_6GHZ)
 static void
 wlan_cfg80211_tdls_extract_6ghz_params(struct tdls_update_peer_params *req_info,
 				       struct station_parameters *params)
@@ -334,7 +376,7 @@ wlan_cfg80211_tdls_extract_6ghz_params(struct tdls_update_peer_params *req_info,
 }
 #endif
 
-#ifdef CFG80211_LINK_STA_PARAMS_PRESENT
+#ifdef WLAN_LINK_STA_PARAMS_PRESENT
 static void
 wlan_cfg80211_tdls_extract_he_params(struct tdls_update_peer_params *req_info,
 				     struct station_parameters *params,
@@ -390,7 +432,7 @@ wlan_cfg80211_tdls_extract_he_params(struct tdls_update_peer_params *req_info,
 }
 #endif
 #else
-static void
+static inline void
 wlan_cfg80211_tdls_extract_he_params(struct tdls_update_peer_params *req_info,
 				     struct station_parameters *params,
 				     bool tdls_6g_support)
@@ -398,7 +440,54 @@ wlan_cfg80211_tdls_extract_he_params(struct tdls_update_peer_params *req_info,
 }
 #endif
 
-#ifdef CFG80211_LINK_STA_PARAMS_PRESENT
+#ifdef WLAN_FEATURE_11BE
+#ifdef WLAN_LINK_STA_PARAMS_PRESENT
+static void
+wlan_cfg80211_tdls_extract_eht_params(struct tdls_update_peer_params *req_info,
+				      struct station_parameters *params)
+{
+	if (params->link_sta_params.eht_capa) {
+		osif_debug("eht capa is present");
+		req_info->ehtcap_present = 1;
+		req_info->eht_cap_len = params->link_sta_params.eht_capa_len;
+		qdf_mem_copy(&req_info->eht_cap,
+			     params->link_sta_params.eht_capa,
+			     sizeof(struct ehtcap));
+	} else {
+		req_info->ehtcap_present = 0;
+	}
+}
+#elif defined(WLAN_EHT_CAPABILITY_PRESENT)
+static void
+wlan_cfg80211_tdls_extract_eht_params(struct tdls_update_peer_params *req_info,
+				      struct station_parameters *params)
+{
+	if (params->eht_capa) {
+		osif_debug("eht capa is present");
+		req_info->ehtcap_present = 1;
+		req_info->eht_cap_len = params->eht_capa_len;
+		qdf_mem_copy(&req_info->eht_cap, params->eht_capa,
+			     sizeof(struct ehtcap));
+	} else {
+		req_info->ehtcap_present = 0;
+	}
+}
+#else
+static inline void
+wlan_cfg80211_tdls_extract_eht_params(struct tdls_update_peer_params *req_info,
+				      struct station_parameters *params)
+{
+}
+#endif
+#else
+static inline void
+wlan_cfg80211_tdls_extract_eht_params(struct tdls_update_peer_params *req_info,
+				      struct station_parameters *params)
+{
+}
+#endif
+
+#ifdef WLAN_LINK_STA_PARAMS_PRESENT
 static void
 wlan_cfg80211_tdls_extract_params(struct wlan_objmgr_vdev *vdev,
 				  struct tdls_update_peer_params *req_info,
@@ -491,6 +580,8 @@ wlan_cfg80211_tdls_extract_params(struct wlan_objmgr_vdev *vdev,
 						     tdls_6g_support);
 	else
 		osif_debug("tdls ax disabled");
+
+	wlan_cfg80211_tdls_extract_eht_params(req_info, params);
 }
 #else
 static void
@@ -582,6 +673,8 @@ wlan_cfg80211_tdls_extract_params(struct wlan_objmgr_vdev *vdev,
 						     tdls_6g_support);
 	else
 		osif_debug("tdls ax disabled");
+
+	wlan_cfg80211_tdls_extract_eht_params(req_info, params);
 }
 #endif
 
@@ -597,6 +690,7 @@ int wlan_cfg80211_tdls_update_peer(struct wlan_objmgr_vdev *vdev,
 	struct wlan_objmgr_psoc *psoc;
 	bool tdls_11ax_support = false;
 	bool tdls_6g_support = false;
+	bool is_mlo_vdev;
 
 	status = wlan_cfg80211_tdls_validate_mac_addr(mac);
 
@@ -606,14 +700,25 @@ int wlan_cfg80211_tdls_update_peer(struct wlan_objmgr_vdev *vdev,
 	osif_debug("Update TDLS peer " QDF_MAC_ADDR_FMT,
 		   QDF_MAC_ADDR_REF(mac));
 
-	req_info = qdf_mem_malloc(sizeof(*req_info));
-	if (!req_info)
-		return -EINVAL;
+	is_mlo_vdev = wlan_vdev_mlme_is_mlo_vdev(vdev);
+	if (is_mlo_vdev) {
+		vdev = ucfg_tdls_get_tdls_link_vdev(vdev, WLAN_OSIF_TDLS_ID);
+		if (!vdev) {
+			osif_err("no tdls link vdev");
+			return -EINVAL;
+		}
+	}
 
 	psoc = wlan_vdev_get_psoc(vdev);
 	if (!psoc) {
 		osif_err_rl("Invalid psoc");
-		return -EINVAL;
+		goto relref;
+	}
+
+	req_info = qdf_mem_malloc(sizeof(*req_info));
+	if (!req_info) {
+		status = -EINVAL;
+		goto relref;
 	}
 
 	tdls_11ax_support = ucfg_tdls_is_fw_11ax_capable(psoc);
@@ -656,6 +761,9 @@ int wlan_cfg80211_tdls_update_peer(struct wlan_objmgr_vdev *vdev,
 	}
 error:
 	qdf_mem_free(req_info);
+relref:
+	if (is_mlo_vdev)
+		ucfg_tdls_put_tdls_link_vdev(vdev, WLAN_OSIF_TDLS_ID);
 	return status;
 }
 
@@ -733,6 +841,7 @@ int wlan_cfg80211_tdls_oper(struct wlan_objmgr_vdev *vdev,
 	int status;
 	unsigned long rc;
 	enum tdls_command_type cmd;
+	bool is_mlo_vdev;
 
 	status = wlan_cfg80211_tdls_validate_mac_addr(peer);
 
@@ -743,6 +852,15 @@ int wlan_cfg80211_tdls_oper(struct wlan_objmgr_vdev *vdev,
 		osif_warn(
 			"We don't support in-driver setup/teardown/discovery");
 		return -ENOTSUPP;
+	}
+
+	is_mlo_vdev = wlan_vdev_mlme_is_mlo_vdev(vdev);
+	if (is_mlo_vdev) {
+		vdev = ucfg_tdls_get_tdls_link_vdev(vdev, WLAN_OSIF_TDLS_ID);
+		if (!vdev) {
+			osif_err("no tdls link vdev");
+			return -EINVAL;
+		}
 	}
 
 	osif_debug("%s start", tdls_oper_to_str(oper));
@@ -760,6 +878,9 @@ int wlan_cfg80211_tdls_oper(struct wlan_objmgr_vdev *vdev,
 		}
 		break;
 	case NL80211_TDLS_DISABLE_LINK:
+		wlan_vdev_mlme_feat_ext2_cap_clear(vdev,
+						   WLAN_VDEV_FEXT2_MLO_STA_TDLS);
+
 		osif_priv = wlan_vdev_get_ospriv(vdev);
 
 		if (!osif_priv || !osif_priv->osif_tdls) {
@@ -790,6 +911,8 @@ int wlan_cfg80211_tdls_oper(struct wlan_objmgr_vdev *vdev,
 	}
 
 error:
+	if (is_mlo_vdev)
+		ucfg_tdls_put_tdls_link_vdev(vdev, WLAN_OSIF_TDLS_ID);
 	return status;
 }
 
@@ -818,7 +941,8 @@ void wlan_cfg80211_tdls_rx_callback(void *user_data,
 	assoc_vdev = vdev;
 	opmode = wlan_vdev_mlme_get_opmode(vdev);
 
-	if (opmode == QDF_STA_MODE && wlan_vdev_mlme_is_mlo_vdev(vdev)) {
+	if ((opmode == QDF_STA_MODE || opmode == QDF_TDLS_MODE) &&
+	    wlan_vdev_mlme_is_mlo_vdev(vdev)) {
 		assoc_vdev = ucfg_mlo_get_assoc_link_vdev(vdev);
 		if (!assoc_vdev) {
 			osif_err("assoc vdev is null");
@@ -974,11 +1098,12 @@ bool wlan_cfg80211_tdls_is_fw_6ghz_capable(struct wlan_objmgr_vdev *vdev)
 }
 #endif
 
-int wlan_cfg80211_tdls_mgmt(struct wlan_objmgr_vdev *vdev,
-			    const uint8_t *peer_mac,
-			    uint8_t action_code, uint8_t dialog_token,
-			    uint16_t status_code, uint32_t peer_capability,
-			    const uint8_t *buf, size_t len)
+static int
+wlan_cfg80211_tdls_mgmt(struct wlan_objmgr_vdev *vdev,
+			const uint8_t *peer_mac,
+			uint8_t action_code, uint8_t dialog_token,
+			uint16_t status_code, uint32_t peer_capability,
+			const uint8_t *buf, size_t len, int link_id)
 {
 	struct tdls_action_frame_request mgmt_req;
 	struct vdev_osif_priv *osif_priv;
@@ -1034,6 +1159,8 @@ int wlan_cfg80211_tdls_mgmt(struct wlan_objmgr_vdev *vdev,
 	mgmt_req.tdls_mgmt.peer_capability = peer_capability;
 	mgmt_req.tdls_mgmt.status_code = mgmt_req.chk_frame.status_code;
 
+	mgmt_req.link_active = false;
+	mgmt_req.link_id = link_id;
 	/*populate the additional IE's */
 	mgmt_req.cmd_buf = buf;
 	mgmt_req.len = len;
@@ -1083,6 +1210,101 @@ int wlan_cfg80211_tdls_mgmt(struct wlan_objmgr_vdev *vdev,
 
 error_mgmt_req:
 	return status;
+}
+
+int
+wlan_cfg80211_tdls_mgmt_mlo(struct hdd_adapter *adapter, const uint8_t *peer,
+			    uint8_t action_code, uint8_t dialog_token,
+			    uint16_t status_code, uint32_t peer_capability,
+			    const uint8_t *buf, size_t len, int link_id)
+{
+	struct wlan_objmgr_vdev *tdls_link_vdev = NULL;
+	struct wlan_objmgr_vdev *mlo_vdev = NULL;
+	struct wlan_objmgr_vdev *vdev;
+	bool is_mlo_vdev;
+	bool link_id_vdev = false;
+	bool dis_req_more = false;
+	uint8_t i;
+	int ret = 0;
+
+	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink, WLAN_OSIF_TDLS_ID);
+	if (!vdev)
+		return -EINVAL;
+
+	/* STA should be connected before sending any TDLS frame */
+	if (wlan_vdev_is_up(vdev) != QDF_STATUS_SUCCESS) {
+		osif_err("STA is not connected");
+		hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_TDLS_ID);
+		return -EAGAIN;
+	}
+
+	is_mlo_vdev = wlan_vdev_mlme_is_mlo_vdev(vdev);
+	if (is_mlo_vdev) {
+		tdls_link_vdev =
+			ucfg_tdls_get_tdls_link_vdev(vdev, WLAN_OSIF_TDLS_ID);
+		if (!tdls_link_vdev) {
+			if (action_code == TDLS_DISCOVERY_RESPONSE) {
+				hdd_objmgr_put_vdev_by_user(vdev,
+							    WLAN_OSIF_TDLS_ID);
+				if (link_id < 0) {
+					osif_err("link id is invalid");
+					return -EINVAL;
+				}
+				/* Get the candidate vdev per link id */
+				link_id_vdev = true;
+				vdev = wlan_key_get_link_vdev(adapter,
+							      WLAN_OSIF_TDLS_ID,
+							      link_id);
+				if (!vdev) {
+					osif_err("vdev is null");
+					return -EINVAL;
+				}
+			} else if (action_code == TDLS_DISCOVERY_REQUEST) {
+				if (ucfg_tdls_discovery_on_going(vdev)) {
+					osif_err("discovery request is going");
+					hdd_objmgr_put_vdev_by_user(vdev,
+							     WLAN_OSIF_TDLS_ID);
+					return -EAGAIN;
+				}
+				dis_req_more = true;
+			}
+		} else {
+			hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_TDLS_ID);
+			vdev = tdls_link_vdev;
+		}
+	}
+
+	if (dis_req_more) {
+		/* it needs to send discovery request on each vdev */
+		for (i = 0 ;  i < WLAN_UMAC_MLO_MAX_VDEVS; i++) {
+			mlo_vdev = ucfg_tdls_get_mlo_vdev(vdev, i,
+							  WLAN_OSIF_TDLS_ID);
+			if (!mlo_vdev) {
+				osif_err("mlo vdev is NULL");
+				continue;
+			}
+			ret = wlan_cfg80211_tdls_mgmt(mlo_vdev, peer,
+						      action_code,
+						      dialog_token, status_code,
+						      peer_capability, buf, len,
+						      link_id);
+			ucfg_tdls_release_mlo_vdev(mlo_vdev, WLAN_OSIF_TDLS_ID);
+		}
+	} else {
+		ret = wlan_cfg80211_tdls_mgmt(vdev, peer,
+					      action_code, dialog_token,
+					      status_code, peer_capability,
+					      buf, len, link_id);
+	}
+
+	if (vdev && link_id_vdev)
+		wlan_key_put_link_vdev(vdev, WLAN_OSIF_TDLS_ID);
+	else if (tdls_link_vdev)
+		ucfg_tdls_put_tdls_link_vdev(tdls_link_vdev, WLAN_OSIF_TDLS_ID);
+	else
+		hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_TDLS_ID);
+
+	return ret;
 }
 
 int wlan_tdls_antenna_switch(struct wlan_objmgr_vdev *vdev, uint32_t mode)

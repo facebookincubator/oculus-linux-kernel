@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -82,6 +82,13 @@ int64_t qdf_ktime_to_ns(qdf_ktime_t ktime)
 
 qdf_export_symbol(qdf_ktime_to_ns);
 
+qdf_ktime_t qdf_time_ktime_set(const s64 secs, const unsigned long nsecs)
+{
+	return __qdf_time_ktime_set(secs, nsecs);
+}
+
+qdf_export_symbol(qdf_time_ktime_set);
+
 qdf_time_t qdf_system_ticks(void)
 {
 	return __qdf_system_ticks();
@@ -95,6 +102,13 @@ uint32_t qdf_system_ticks_to_msecs(unsigned long clock_ticks)
 }
 
 qdf_export_symbol(qdf_system_ticks_to_msecs);
+
+uint32_t qdf_system_ticks_to_nsecs(unsigned long clock_ticks)
+{
+	return __qdf_system_ticks_to_nsecs(clock_ticks);
+}
+
+qdf_export_symbol(qdf_system_ticks_to_nsecs);
 
 qdf_time_t qdf_system_msecs_to_ticks(uint32_t msecs)
 {
@@ -203,7 +217,8 @@ uint64_t qdf_usecs_to_log_timestamp(uint64_t usecs)
 
 	ts = (usecs * QDF_LOG_TIMESTAMP_CYCLES_PER_10_US);
 
-	return do_div(ts, 10ul);
+	do_div(ts, 10ul);
+	return ts;
 }
 
 qdf_export_symbol(qdf_usecs_to_log_timestamp);
@@ -242,3 +257,31 @@ unsigned long long qdf_time_sched_clock(void)
 }
 
 qdf_export_symbol(qdf_time_sched_clock);
+
+void qdf_usleep_range(unsigned long min, unsigned long max)
+{
+	__qdf_usleep_range(min, max);
+}
+
+qdf_export_symbol(qdf_usleep_range);
+
+qdf_ktime_t qdf_ktime_get_ns(void)
+{
+	return __qdf_ktime_get_ns();
+}
+
+qdf_export_symbol(qdf_ktime_get_ns);
+
+qdf_ktime_t qdf_ktime_get_real_ns(void)
+{
+	return __qdf_ktime_get_real_ns();
+}
+
+qdf_export_symbol(qdf_ktime_get_real_ns);
+
+int qdf_ktime_compare(qdf_ktime_t ktime1, qdf_ktime_t ktime2)
+{
+	return __qdf_ktime_compare(ktime1, ktime2);
+}
+
+qdf_export_symbol(qdf_ktime_compare);

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -71,7 +71,7 @@
 
 /**
  * qdf_tfree() - free memory allocated using the *_talloc() function family
- * @inout_ptr: double point to memory to free, set to NULL
+ * @ptr: double point to memory to free, set to NULL
  *
  * Return: None
  */

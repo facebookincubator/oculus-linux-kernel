@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -58,8 +58,8 @@ static ssize_t __show_sta_info(struct net_device *net_dev, char *buf)
 			continue;
 		}
 		ret_val += scnprintf(buf + ret_val, PAGE_SIZE - ret_val,
-				     QDF_FULL_MAC_FMT " ecsa=%d\n",
-				     QDF_FULL_MAC_REF(sta->sta_mac.bytes),
+				     QDF_MAC_ADDR_FMT " ecsa=%d\n",
+				     QDF_MAC_ADDR_REF(sta->sta_mac.bytes),
 				     sta->ecsa_capable);
 
 		hdd_put_sta_info_ref(&adapter->sta_info_list, &sta, true,

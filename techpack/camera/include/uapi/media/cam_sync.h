@@ -18,6 +18,7 @@
 #define CAM_SYNC_V4L_EVENT                       (V4L2_EVENT_PRIVATE_START + 0)
 #define CAM_SYNC_V4L_EVENT_V2                    (V4L2_EVENT_PRIVATE_START + 1)
 #define CAM_SYNC_V4L_EVENT_V3                    (V4L2_EVENT_PRIVATE_START + 2)
+#define CAM_SYNC_V4L_EVENT_V4                    (V4L2_EVENT_PRIVATE_START + 3)
 
 /* Specific event ids to get notified in user space */
 #define CAM_SYNC_V4L_EVENT_ID_CB_TRIG            0

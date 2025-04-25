@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -92,6 +92,7 @@
 #define REASON_ROAM_HANDOFF_DONE                    52
 #define REASON_ROAM_ABORT                           53
 #define REASON_ROAM_SET_PRIMARY                     54
+#define REASON_ROAM_LINK_SWITCH_ASSOC_VDEV_CHANGE   55
 
 #define FILS_MAX_KEYNAME_NAI_LENGTH WLAN_CM_FILS_MAX_KEYNAME_NAI_LENGTH
 #define WLAN_FILS_MAX_REALM_LEN WLAN_CM_FILS_MAX_REALM_LEN
@@ -315,7 +316,6 @@ struct rso_chan_info {
  * @roam_scan_n_probes:
  * @roam_scan_inactivity_time:
  * @roam_inactive_data_packet_count:
- * @roam_scan_period_after_inactivity:
  */
 struct rso_cfg_params {
 	uint32_t neighbor_scan_period;
@@ -346,7 +346,6 @@ struct rso_cfg_params {
 	uint8_t roam_scan_n_probes;
 	uint32_t roam_scan_inactivity_time;
 	uint32_t roam_inactive_data_packet_count;
-	uint32_t roam_scan_period_after_inactivity;
 };
 
 /**
@@ -385,7 +384,8 @@ enum roam_fail_params {
  * @ROAM_FAIL_REASON_AUTH_RECV: Authentication response received with
  * error status code
  * @ROAM_FAIL_REASON_REASSOC_SEND: Reassoc request TX failed
- * @ROAM_FAIL_REASON_REASSOC_RECV: Reassoc response frame not received
+ * @ROAM_FAIL_REASON_REASSOC_RECV: Reassoc response frame received with failure
+ * status
  * @ROAM_FAIL_REASON_NO_REASSOC_RESP: No reassociation response received
  * @ROAM_FAIL_REASON_EAPOL_TIMEOUT: EAPoL timedout
  * @ROAM_FAIL_REASON_MLME: MLME internal error
@@ -419,6 +419,12 @@ enum roam_fail_params {
  * final BMISS
  * @ROAM_FAIL_REASON_NO_CAND_AP_FOUND_AND_FINAL_BMISS_SENT: No Candidate AP
  * found after final BMISS.
+ * @ROAM_FAIL_REASON_CURR_AP_STILL_OK: Background scan was abort, but
+ * current network condition is fine.
+ * @ROAM_FAIL_REASON_SCAN_CANCEL: Roam fail reason, scan cancelled
+ * @ROAM_FAIL_REASON_SCREEN_ACTIVITY: Roam fail reason screen activity happened
+ * @ROAM_FAIL_REASON_OTHER_PRIORITY_ROAM_SCAN: Roam fail due to other priority
+ * roam scan started.
  * @ROAM_FAIL_REASON_UNKNOWN: Default reason
  */
 enum wlan_roam_failure_reason_code {
@@ -429,8 +435,8 @@ enum wlan_roam_failure_reason_code {
 	/* Failure reasons after roam scan is complete */
 	ROAM_FAIL_REASON_HOST,
 	ROAM_FAIL_REASON_AUTH_SEND,
-	ROAM_FAIL_REASON_NO_AUTH_RESP,
 	ROAM_FAIL_REASON_AUTH_RECV,
+	ROAM_FAIL_REASON_NO_AUTH_RESP,
 	ROAM_FAIL_REASON_REASSOC_SEND,
 	ROAM_FAIL_REASON_REASSOC_RECV,
 	ROAM_FAIL_REASON_NO_REASSOC_RESP,
@@ -458,6 +464,10 @@ enum wlan_roam_failure_reason_code {
 	ROAM_FAIL_REASON_UNABLE_TO_START_ROAM_HO,
 	ROAM_FAIL_REASON_NO_AP_FOUND_AND_FINAL_BMISS_SENT,
 	ROAM_FAIL_REASON_NO_CAND_AP_FOUND_AND_FINAL_BMISS_SENT,
+	ROAM_FAIL_REASON_CURR_AP_STILL_OK,
+	ROAM_FAIL_REASON_SCAN_CANCEL,
+	ROAM_FAIL_REASON_SCREEN_ACTIVITY,
+	ROAM_FAIL_REASON_OTHER_PRIORITY_ROAM_SCAN,
 	ROAM_FAIL_REASON_UNKNOWN = 255,
 };
 
@@ -475,6 +485,23 @@ struct reassoc_timer_ctx {
 };
 #endif
 
+/**
+ * struct roam_synch_frame_ind  - Structure to hold the information on frames
+ * received during roam synch frame indication.
+ * @bcn_probe_rsp_len: Length of the beacon/probe response frame
+ * @bcn_probe_rsp: Beacon probe response frame pointer
+ * @is_beacon: Flag to indicate if received frame is beacon or probe response
+ * @link_bcn_probe_rsp_len: Length of the link beacon/probe response frame
+ * @link_bcn_probe_rsp: Link beacon probe response frame pointer
+ * @is_link_beacon: Flag to indicate if received frame is link beacon or probe
+ * response
+ * @reassoc_req_len: Reassoc request frame length
+ * @reassoc_req: Reassoc request frame pointer
+ * @reassoc_rsp_len: Reassoc response frame length
+ * @reassoc_rsp: Reassoc response frame pointer
+ * @vdev_id: Vdev id
+ * @rssi: RSSI of the frame
+ */
 struct roam_synch_frame_ind {
 	uint32_t bcn_probe_rsp_len;
 	uint8_t *bcn_probe_rsp;
@@ -487,6 +514,7 @@ struct roam_synch_frame_ind {
 	uint32_t reassoc_rsp_len;
 	uint8_t *reassoc_rsp;
 	uint8_t vdev_id;
+	int8_t rssi;
 };
 
 /**
@@ -569,6 +597,10 @@ struct sae_roam_auth_map {
  * @roam_invoke_source: roam invoke source
  * @roam_invoke_bssid: mac address used for roam invoke
  * @is_forced_roaming: bool value indicating if its forced roaming
+ * @tried_candidate_freq_list: freq list on which connection tried
+ * @rso_rsn_caps: rsn caps with global user MFP which can be used for
+ *                cross-AKM roaming
+ * @is_disable_btm: btm roaming disabled or not from userspace
  */
 struct rso_config {
 #ifdef WLAN_FEATURE_HOST_ROAM
@@ -621,6 +653,22 @@ struct rso_config {
 	enum wlan_cm_source roam_invoke_source;
 	struct qdf_mac_addr roam_invoke_bssid;
 	bool is_forced_roaming;
+	struct wlan_chan_list tried_candidate_freq_list;
+	uint16_t rso_rsn_caps;
+	bool is_disable_btm;
+};
+
+/**
+ * struct rso_user_config - userspace configured RSO related
+ * configs.
+ * @num_ssid_allowed_list: The number of SSID profiles that are
+ * in the allowlist. When roaming, we consider the BSSID's with
+ * this SSID also for roaming apart from the connected ones
+ * @ssid_allowed_list: Allowlist SSIDs
+ */
+struct rso_user_config {
+	uint8_t num_ssid_allowed_list;
+	struct wlan_ssid ssid_allowed_list[MAX_SSID_ALLOWED_LIST];
 };
 
 /**
@@ -654,11 +702,6 @@ struct rso_roam_policy_params {
 
 /**
  * struct rso_config_params - global RSO params
- * @num_ssid_allowed_list: The number of SSID profiles that are
- *                         in the Allowlist. When roaming, we
- *                         consider the BSSID's with this SSID
- *                         also for roaming apart from the connected one's
- * @ssid_allowed_list: Allowlist SSID's
  * @num_bssid_favored: Number of BSSID's which have a preference over others
  * @bssid_favored: Favorable BSSID's
  * @bssid_favored_factor: RSSI to be added to this BSSID to prefer it
@@ -678,8 +721,6 @@ struct rso_roam_policy_params {
  * @neighbor_report_offload: neighbor report offload params
  */
 struct rso_config_params {
-	uint8_t num_ssid_allowed_list;
-	struct wlan_ssid ssid_allowed_list[MAX_SSID_ALLOWED_LIST];
 	uint8_t num_bssid_favored;
 	struct qdf_mac_addr bssid_favored[MAX_BSSID_FAVORED];
 	uint8_t bssid_favored_factor[MAX_BSSID_FAVORED];
@@ -729,6 +770,7 @@ struct rso_config_params {
  * @ROAM_BAND: Allowed band for roaming in FW
  * @HI_RSSI_SCAN_RSSI_DELTA:
  * @ROAM_RSSI_DIFF_6GHZ: roam rssi diff for 6 GHz AP
+ * @IS_DISABLE_BTM: disable btm roaming
  */
 enum roam_cfg_param {
 	RSSI_CHANGE_THRESHOLD,
@@ -760,6 +802,7 @@ enum roam_cfg_param {
 	ROAM_BAND,
 	HI_RSSI_SCAN_RSSI_DELTA,
 	ROAM_RSSI_DIFF_6GHZ,
+	IS_DISABLE_BTM,
 };
 
 /**
@@ -942,6 +985,124 @@ struct scoring_param {
 #endif
 	int32_t security_weightage;
 	uint32_t security_index_score;
+};
+
+/**
+ * enum roam_invoke_reason - Roam invoke reason.
+ *
+ * @WLAN_ROAM_STATS_INVOKE_REASON_UNDEFINED: Default value when target
+ *  invoke roam.
+ * @WLAN_ROAM_STATS_INVOKE_REASON_NUD_FAILURE: Neighbor unreachable
+ *  detection failed when the roam trigger.
+ * @WLAN_ROAM_STATS_INVOKE_REASON_USER_SPACE: Invoke from user space.
+ */
+enum roam_invoke_reason {
+	WLAN_ROAM_STATS_INVOKE_REASON_UNDEFINED = 0,
+	WLAN_ROAM_STATS_INVOKE_REASON_NUD_FAILURE = 1,
+	WLAN_ROAM_STATS_INVOKE_REASON_USER_SPACE = 2,
+};
+
+/**
+ * enum roam_tx_failures_reason - Roam TX failures reason.
+ *
+ * @WLAN_ROAM_STATS_KICKOUT_REASON_UNSPECIFIED: Default value when
+ *  roam by kickout.
+ * @WLAN_ROAM_STATS_KICKOUT_REASON_XRETRY: Excessive retry when roam
+ *  trigger by kickout.
+ * @WLAN_ROAM_STATS_KICKOUT_REASON_INACTIVITY: Station inactivity when
+ *  roam trigger by kickout.
+ * @WLAN_ROAM_STATS_KICKOUT_REASON_IBSS_DISCONNECT: IBSS disconnect when
+ *  roam trigger by kickout.
+ * @WLAN_ROAM_STATS_KICKOUT_REASON_TDLS_DISCONNECT: TDLS peer has
+ *  disappeared, and all TX is failing when roam trigger by kickout.
+ * @WLAN_ROAM_STATS_KICKOUT_REASON_SA_QUERY_TIMEOUT: SA query process
+ *   timeout when roam trigger by kickout.
+ * @WLAN_ROAM_STATS_KICKOUT_REASON_ROAMING_EVENT: Directly connected
+ *  peer has roamed to a repeater.
+ */
+enum roam_tx_failures_reason {
+	WLAN_ROAM_STATS_KICKOUT_REASON_UNSPECIFIED = 0,
+	WLAN_ROAM_STATS_KICKOUT_REASON_XRETRY = 1,
+	WLAN_ROAM_STATS_KICKOUT_REASON_INACTIVITY = 2,
+	WLAN_ROAM_STATS_KICKOUT_REASON_IBSS_DISCONNECT = 3,
+	WLAN_ROAM_STATS_KICKOUT_REASON_TDLS_DISCONNECT = 4,
+	WLAN_ROAM_STATS_KICKOUT_REASON_SA_QUERY_TIMEOUT = 5,
+	WLAN_ROAM_STATS_KICKOUT_REASON_ROAMING_EVENT = 6,
+};
+
+/**
+ * enum roam_abort_reason - Roam abort reason.
+ *
+ * @WLAN_ROAM_STATS_ABORT_UNSPECIFIED: Target did not specify the
+ *  detailed reason for roam scan being aborted.
+ * @WLAN_ROAM_STATS_ABORT_LOWRSSI_DATA_RSSI_HIGH: Roam scan is not
+ *  started due to high data RSSI during LOW-RSSI roaming.
+ * @WLAN_ROAM_STATS_ABORT_LOWRSSI_LINK_SPEED_GOOD: Roam scan is not
+ *  started due to good link speed during LOW-RSSI roaming.
+ * @WLAN_ROAM_STATS_ABORT_BG_DATA_RSSI_HIGH: Roam scan is not started
+ *  due to high data RSSI during background roaming.
+ * @WLAN_ROAM_STATS_ABORT_BG_RSSI_ABOVE_THRESHOLD: Roam scan is not
+ *  started due to high beacon RSSI during background roaming
+ */
+enum roam_abort_reason {
+	WLAN_ROAM_STATS_ABORT_UNSPECIFIED = 0,
+	WLAN_ROAM_STATS_ABORT_LOWRSSI_DATA_RSSI_HIGH = 1,
+	WLAN_ROAM_STATS_ABORT_LOWRSSI_LINK_SPEED_GOOD = 2,
+	WLAN_ROAM_STATS_ABORT_BG_DATA_RSSI_HIGH = 3,
+	WLAN_ROAM_STATS_ABORT_BG_RSSI_ABOVE_THRESHOLD = 4,
+};
+
+/**
+ * enum roam_scan_dwell_type  - Roam scan dwell type defines
+ * @WLAN_ROAM_DWELL_TYPE_UNSPECIFIED: Target did not specify the
+ *  detailed roam scan type.
+ * @WLAN_ROAM_DWELL_ACTIVE_TYPE: active scan during roam
+ * @WLAN_ROAM_DWELL_PASSIVE_TYPE: passive scan during roam.
+ */
+enum roam_scan_dwell_type {
+	WLAN_ROAM_DWELL_TYPE_UNSPECIFIED = 0,
+	WLAN_ROAM_DWELL_ACTIVE_TYPE = 1,
+	WLAN_ROAM_DWELL_PASSIVE_TYPE = 2,
+};
+
+/**
+ * enum eroam_frame_subtype - Enhanced roam frame subtypes.
+ *
+ * @WLAN_ROAM_STATS_FRAME_SUBTYPE_AUTH_RESP: Authentication resp frame
+ * @WLAN_ROAM_STATS_FRAME_SUBTYPE_REASSOC_RESP: Reassociation resp frame
+ * @WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_M1: EAPOL-Key M1 frame
+ * @WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_M2: EAPOL-Key M2 frame
+ * @WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_M3: EAPOL-Key M3 frame
+ * @WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_M4: EAPOL-Key M4 frame
+ * @WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_GTK_M1: EAPOL-Key GTK M1 frame
+ * @WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_GTK_M2: EAPOL-Key GTK M2 frame
+ * @WLAN_ROAM_STATS_FRAME_SUBTYPE_AUTH_REQ: Authentication req frame
+ * @WLAN_ROAM_STATS_FRAME_SUBTYPE_REASSOC_REQ: Reassociation req frame
+ */
+enum eroam_frame_subtype {
+	WLAN_ROAM_STATS_FRAME_SUBTYPE_AUTH_RESP = 1,
+	WLAN_ROAM_STATS_FRAME_SUBTYPE_REASSOC_RESP = 2,
+	WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_M1 = 3,
+	WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_M2 = 4,
+	WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_M3 = 5,
+	WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_M4 = 6,
+	WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_GTK_M1 = 7,
+	WLAN_ROAM_STATS_FRAME_SUBTYPE_EAPOL_GTK_M2 = 8,
+	WLAN_ROAM_STATS_FRAME_SUBTYPE_AUTH_REQ = 9,
+	WLAN_ROAM_STATS_FRAME_SUBTYPE_REASSOC_REQ = 10,
+};
+
+/**
+ * enum eroam_frame_status - Specifies the valid values of roam frame status
+ *
+ * @WLAN_ROAM_STATS_FRAME_STATUS_SUCCESS: indicates the roam frame was
+ *  sent or received successfully.
+ * @WLAN_ROAM_STATS_FRAME_STATUS_FAIL: indicates the roam frame sending or
+ *  receiving failed.
+ */
+enum eroam_frame_status {
+	WLAN_ROAM_STATS_FRAME_STATUS_SUCCESS = 0,
+	WLAN_ROAM_STATS_FRAME_STATUS_FAIL = 1,
 };
 
 /**
@@ -1159,7 +1320,7 @@ struct wlan_roam_scan_filter_params {
  * @btm_max_attempt_cnt: Maximum attempt for sending BTM query to ESS
  * @btm_sticky_time: Stick time after roaming to new AP by BTM
  * @disassoc_timer_threshold: threshold value till which the firmware can
- * wait before triggering the roam scan after receiving the disassoc iminent
+ * wait before triggering the roam scan after receiving the disassoc imminent
  * @btm_query_bitmask: bitmask to btm query with candidate list
  * @btm_candidate_min_score: Minimum score of the AP to consider it as a
  * candidate if the roam trigger is BTM kickout.
@@ -1633,6 +1794,19 @@ struct wlan_roam_scan_offload_params {
 };
 
 /**
+ * enum wlan_roam_offload_scan_rssi_flags - Flags for roam scan RSSI threshold
+ * params, this enums will be used in flags param of the structure
+ * wlan_roam_offload_scan_rssi_params
+ * @ROAM_SCAN_RSSI_THRESHOLD_INVALID_FLAG: invalid flag
+ * @ROAM_SCAN_RSSI_THRESHOLD_FLAG_ROAM_HI_RSSI_EN_ON_5G: enable high RSSI roam
+ * trigger support to roam from 5 GHz to 6 GHz band
+ */
+enum wlan_roam_offload_scan_rssi_flags {
+	ROAM_SCAN_RSSI_THRESHOLD_INVALID_FLAG,
+	ROAM_SCAN_RSSI_THRESHOLD_FLAG_ROAM_HI_RSSI_EN_ON_5G = BIT(0),
+};
+
+/**
  * struct wlan_roam_offload_scan_rssi_params - structure containing
  *              parameters for roam offload scan based on RSSI
  * @rssi_thresh: rssi threshold
@@ -1669,6 +1843,7 @@ struct wlan_roam_scan_offload_params {
  *                                  roam
  * @roam_data_rssi_threshold: Bad data RSSI threshold to roam
  * @rx_data_inactivity_time: Rx duration to check data RSSI
+ * @flags: Flags for roam scan RSSI threshold params
  */
 struct wlan_roam_offload_scan_rssi_params {
 	int8_t rssi_thresh;
@@ -1700,6 +1875,7 @@ struct wlan_roam_offload_scan_rssi_params {
 	uint32_t roam_data_rssi_threshold_triggers;
 	int32_t roam_data_rssi_threshold;
 	uint32_t rx_data_inactivity_time;
+	uint32_t flags;
 };
 
 /**
@@ -1747,8 +1923,6 @@ struct wlan_roam_reason_vsie_enable {
  * device is considered to be inactive
  * @roam_inactive_data_packet_count: Maximum allowed data packets count during
  * roam_scan_inactivity_time.
- * @roam_scan_period_after_inactivity: Roam scan period in ms after device is
- * in inactive state.
  * @full_scan_period: Full scan period is the idle period in seconds
  * between two successive full channel roam scans.
  */
@@ -1759,7 +1933,6 @@ struct wlan_roam_scan_period_params {
 	uint32_t scan_age;
 	uint32_t roam_scan_inactivity_time;
 	uint32_t roam_inactive_data_packet_count;
-	uint32_t roam_scan_period_after_inactivity;
 	uint32_t full_scan_period;
 };
 
@@ -1823,15 +1996,15 @@ enum roam_rt_stats_params {
  * @support_link_num: Configure max number of link mlo connection supports.
  *  Invalid value or 0 will use max supported value by fw.
  * @support_link_band: Configure the band bitmap of mlo connection supports
- *  Bit 0: 2G band support if 1
- *  Bit 1: 5G band support if 1
- *  Bit 2: 6G band support if 1
+ * The bits of the bitmap are defined by the enum reg_wifi_band
+ * @mlo_5gl_5gh_mlsr: 5GL+5GH MLSR support
  */
 struct wlan_roam_mlo_config {
 	uint8_t vdev_id;
 	struct qdf_mac_addr partner_link_addr;
 	uint32_t support_link_num;
 	uint32_t support_link_band;
+	uint32_t mlo_5gl_5gh_mlsr;
 };
 
 /**
@@ -2006,6 +2179,8 @@ enum roam_offload_state {
  *  @timestamp:     This timestamp indicates the time when btm rsp is sent
  *  @btm_resp_dialog_token: Dialog token
  *  @btm_delay: BTM bss termination delay
+ *  @is_mlo: Flag to check if the current connection is a MLO connection
+ *  @band: Band of the link that is involved in frame exchange
  */
 struct roam_btm_response_data {
 	bool present;
@@ -2015,6 +2190,8 @@ struct roam_btm_response_data {
 	uint32_t timestamp;
 	uint16_t btm_resp_dialog_token;
 	uint8_t btm_delay;
+	bool is_mlo;
+	uint8_t band;
 };
 
 /**
@@ -2096,6 +2273,8 @@ enum roam_rt_stats_type {
  * @retry_count: Frame retry count
  * @assoc_id: Association id received in the association response/
  * reassociation response frame
+ * @band: Band on which the packet is transmitted or received. Refer
+ * enum wlan_diag_wifi_band
  */
 struct roam_frame_info {
 	bool present;
@@ -2111,6 +2290,7 @@ struct roam_frame_info {
 	int32_t rssi;
 	uint16_t retry_count;
 	uint16_t assoc_id;
+	uint8_t band;
 };
 
 /**
@@ -2452,6 +2632,8 @@ struct roam_pmkid_req_event {
  * @send_roam_linkspeed_state: Send roam link speed good/poor state to FW
  * @send_roam_vendor_handoff_config: send vendor handoff config command to FW
  * @send_roam_mlo_config: send MLO config to FW
+ * @send_roam_scan_offload_rssi_params: Set the RSSI parameters for roam
+ * offload scan
  */
 struct wlan_cm_roam_tx_ops {
 	QDF_STATUS (*send_vdev_set_pcl_cmd)(struct wlan_objmgr_vdev *vdev,
@@ -2493,6 +2675,9 @@ struct wlan_cm_roam_tx_ops {
 						uint8_t value);
 	QDF_STATUS (*send_roam_mcc_disallow)(struct wlan_objmgr_vdev *vdev,
 					     uint8_t vdev_id, uint8_t value);
+	QDF_STATUS (*send_roam_scan_offload_rssi_params)(
+		struct wlan_objmgr_vdev *vdev,
+		struct wlan_roam_offload_scan_rssi_params *roam_rssi_params);
 #ifdef FEATURE_RX_LINKSPEED_ROAM_TRIGGER
 	QDF_STATUS (*send_roam_linkspeed_state)(struct wlan_objmgr_vdev *vdev,
 						uint8_t vdev_id, bool value);
@@ -2656,7 +2841,8 @@ struct cm_hw_mode_trans_ind {
  * @link_id: link id of the link
  * @channel: wmi channel
  * @flags: link flags
- * @link_addr: link mac addr
+ * @link_addr: link mac address
+ * @self_link_addr: VDEV link mac address
  */
 struct ml_setup_link_param {
 	uint32_t vdev_id;
@@ -2664,6 +2850,7 @@ struct ml_setup_link_param {
 	wmi_channel channel;
 	uint32_t flags;
 	struct qdf_mac_addr link_addr;
+	struct qdf_mac_addr self_link_addr;
 };
 
 /**
@@ -2696,7 +2883,7 @@ struct roam_offload_synch_ind {
 	struct wlan_ssid ssid;
 	int8_t tx_mgmt_power;
 	uint32_t auth_status;
-	uint8_t rssi;
+	int8_t rssi;
 	uint8_t roam_reason;
 	uint32_t chan_freq;
 	uint8_t kck[MAX_KCK_LEN];
@@ -2734,9 +2921,9 @@ struct roam_offload_synch_ind {
 	uint8_t is_link_beacon;
 #ifdef WLAN_FEATURE_11BE_MLO
 	uint8_t num_setup_links;
-	struct ml_setup_link_param ml_link[WLAN_UMAC_MLO_MAX_VDEVS];
+	struct ml_setup_link_param ml_link[WLAN_MAX_ML_BSS_LINKS];
 	uint8_t num_ml_key_material;
-	struct ml_key_material_param ml_key[WLAN_UMAC_MLO_MAX_VDEVS];
+	struct ml_key_material_param ml_key[WLAN_MAX_ML_BSS_LINKS];
 #endif
 };
 
@@ -2746,12 +2933,14 @@ struct roam_offload_synch_ind {
  * @frame_length : Length of the beacon/probe rsp frame
  * @frame : Pointer to the frame
  * @rssi: RSSI of the received frame, 0 if not available
+ * @roam_offload_candidate_frm: Is a roam offload candidate frame
  */
 struct roam_scan_candidate_frame {
 	uint8_t vdev_id;
 	uint32_t frame_length;
 	uint8_t *frame;
 	int32_t rssi;
+	bool roam_offload_candidate_frm;
 };
 
 /**
@@ -2759,6 +2948,7 @@ struct roam_scan_candidate_frame {
  * roaming related commands
  * @roam_sync_event: RX ops function pointer for roam sync event
  * @roam_sync_frame_event: Rx ops function pointer for roam sync frame event
+ * @roam_sync_key_event: Rx ops function pointer for roam sych key event
  * @roam_event_rx: Rx ops function pointer for roam info event
  * @btm_denylist_event: Rx ops function pointer for btm denylist event
  * @vdev_disconnect_event: Rx ops function pointer for vdev disconnect event
@@ -2776,6 +2966,9 @@ struct wlan_cm_roam_rx_ops {
 				      struct roam_offload_synch_ind *sync_ind);
 	QDF_STATUS (*roam_sync_frame_event)(struct wlan_objmgr_psoc *psoc,
 					    struct roam_synch_frame_ind *frm);
+	QDF_STATUS (*roam_sync_key_event)(struct wlan_objmgr_psoc *psoc,
+					  struct wlan_crypto_key_entry *keys,
+					  uint8_t num_keys);
 	QDF_STATUS (*roam_event_rx)(struct roam_offload_roam_event *roam_event);
 	QDF_STATUS (*btm_denylist_event)(struct wlan_objmgr_psoc *psoc,
 					 struct roam_denylist_event *list);

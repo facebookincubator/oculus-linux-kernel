@@ -70,7 +70,7 @@ enum {
 /* The following would span more than one octet
  * when 160MHz BW defined for VHT
  * Also it's important to maintain the ordering of this enum
- * else it would break other rate adapation functions
+ * else it would break other rate adaptation functions
  */
 
 enum DP_CMN_RATECODE_PREAM_TYPE {
@@ -7001,7 +7001,7 @@ qdf_export_symbol(dp_get_supported_rates);
  */
 int dp_get_kbps_to_mcs(int kbps_rate, int shortgi, int htflag)
 {
-	int i = 0, nss = 0, num_mcs = 0;
+	int i = 0, nss = 0, num_mcs = NUM_LEGACY_MCS;
 	int start_index = -1, end_index = -1;
 	int ratekbpssgi = 0, ratekbps = 0;
 
@@ -7144,7 +7144,7 @@ int dp_get_kbps_to_mcs(int kbps_rate, int shortgi, int htflag)
 int dp_get_kbps_to_mcs(int kbps_rate, int shortgi, int htflag,
 		       int nss, int ch_width);
 {
-	int i = 0, num_mcs = 0;
+	int i = 0, num_mcs = NUM_LEGACY_MCS;
 	int start_index = -1, end_index = -1;
 	int ratekbpssgi = 0, ratekbps = 0;
 

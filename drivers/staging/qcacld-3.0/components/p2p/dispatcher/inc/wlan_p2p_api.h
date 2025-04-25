@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -90,5 +90,12 @@ QDF_STATUS wlan_p2p_abort_scan(struct wlan_objmgr_pdev *pdev);
 QDF_STATUS
 wlan_p2p_check_and_force_scc_go_plus_go(struct wlan_objmgr_psoc *psoc,
 					struct wlan_objmgr_vdev *vdev);
+#else
+static inline QDF_STATUS
+wlan_p2p_check_and_force_scc_go_plus_go(struct wlan_objmgr_psoc *psoc,
+					struct wlan_objmgr_vdev *vdev)
+{
+	return QDF_STATUS_SUCCESS;
+}
 #endif
 #endif

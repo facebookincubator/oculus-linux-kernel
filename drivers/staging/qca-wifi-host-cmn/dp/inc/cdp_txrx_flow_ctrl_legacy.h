@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2019,2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,9 +18,8 @@
  */
 
 /**
- * @file cdp_txrx_flow_ctrl_legacy.h
- * @brief Define the host data path legacy flow control API
- * functions
+ * DOC: cdp_txrx_flow_ctrl_legacy.h
+ * Define the host data path legacy flow control API functions
  */
 #ifndef _CDP_TXRX_FC_LEG_H_
 #define _CDP_TXRX_FC_LEG_H_
@@ -37,7 +36,7 @@
  *
  * Register flow control callback.
  *
- * Returns: 0 for success
+ * Return: 0 for success
  */
 static inline int
 cdp_hl_fc_register(ol_txrx_soc_handle soc, uint8_t pdev_id,
@@ -104,15 +103,15 @@ static inline int cdp_hl_fc_set_os_queue_status(ol_txrx_soc_handle soc,
 #ifdef QCA_LL_LEGACY_TX_FLOW_CONTROL
 /**
  * cdp_fc_register() - Register flow control callback function pointer
- * @soc - data path soc handle
- * @vdev_id - virtual interface id to register flow control
- * @flowControl - callback function pointer
- * @osif_fc_ctx - client context pointer
+ * @soc: data path soc handle
+ * @vdev_id: virtual interface id to register flow control
+ * @flowcontrol: callback function pointer
+ * @osif_fc_ctx: client context pointer
  * @flow_control_is_pause: is vdev paused by flow control
  *
  * Register flow control callback function pointer and client context pointer
  *
- * return 0 success
+ * Return: 0 success
  */
 static inline int
 cdp_fc_register(ol_txrx_soc_handle soc, uint8_t vdev_id,
@@ -144,12 +143,12 @@ cdp_fc_register(ol_txrx_soc_handle soc, uint8_t vdev_id,
 #endif /* QCA_LL_LEGACY_TX_FLOW_CONTROL */
 /**
  * cdp_fc_deregister() - remove flow control instance
- * @soc - data path soc handle
- * @vdev_id - virtual interface id to register flow control
+ * @soc: data path soc handle
+ * @vdev_id: virtual interface id to register flow control
  *
  * remove flow control instance
  *
- * return 0 success
+ * Return: 0 success
  */
 static inline int
 cdp_fc_deregister(ol_txrx_soc_handle soc, uint8_t vdev_id)
@@ -178,7 +177,7 @@ cdp_fc_deregister(ol_txrx_soc_handle soc, uint8_t vdev_id)
  *
  * get data path resource count
  *
- * return true enough data path resource available
+ * Return: true enough data path resource available
  *        false resource is not available
  */
 static inline bool
@@ -204,13 +203,13 @@ cdp_fc_get_tx_resource(ol_txrx_soc_handle soc, uint8_t pdev_id,
 
 /**
  * cdp_fc_ll_set_tx_pause_q_depth() - set pause queue depth
- * @soc - data path soc handle
- * @vdev_id - virtual interface id to register flow control
- * @pause_q_depth - pending tx queue delth
+ * @soc: data path soc handle
+ * @vdev_id: virtual interface id to register flow control
+ * @pause_q_depth: pending tx queue delth
  *
  * set pause queue depth
  *
- * return 0 success
+ * Return: 0 success
  */
 static inline int
 cdp_fc_ll_set_tx_pause_q_depth(ol_txrx_soc_handle soc,
@@ -238,7 +237,7 @@ cdp_fc_ll_set_tx_pause_q_depth(ol_txrx_soc_handle soc,
  *
  * flush tx queue
  *
- * return None
+ * Return: None
  */
 static inline void
 cdp_fc_vdev_flush(ol_txrx_soc_handle soc, uint8_t vdev_id)
@@ -265,7 +264,7 @@ cdp_fc_vdev_flush(ol_txrx_soc_handle soc, uint8_t vdev_id)
  *
  * pause tx scheduler on vdev
  *
- * return None
+ * Return: None
  */
 static inline void
 cdp_fc_vdev_pause(ol_txrx_soc_handle soc, uint8_t vdev_id,
@@ -293,7 +292,7 @@ cdp_fc_vdev_pause(ol_txrx_soc_handle soc, uint8_t vdev_id,
  *
  * resume tx scheduler on vdev
  *
- * return None
+ * Return: None
  */
 static inline void
 cdp_fc_vdev_unpause(ol_txrx_soc_handle soc, uint8_t vdev_id,

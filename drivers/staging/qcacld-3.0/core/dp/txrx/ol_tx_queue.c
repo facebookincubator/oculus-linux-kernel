@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2032,7 +2032,7 @@ void ol_tx_update_grp_frm_count(struct ol_tx_frms_queue_t *txq, int num_frms)
 	int i;
 
 	if (!num_frms || !txq) {
-		ol_txrx_dbg("Invalid params\n");
+		ol_txrx_dbg("Invalid params");
 		return;
 	}
 

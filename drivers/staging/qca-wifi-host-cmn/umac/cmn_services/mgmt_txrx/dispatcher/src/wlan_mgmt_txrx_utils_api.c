@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -128,17 +128,19 @@ static QDF_STATUS wlan_mgmt_txrx_psoc_obj_destroy_notification(
 
 	mgmt_txrx_debug("deleting mgmt txrx psoc obj, mgmt txrx ctx: %pK, psoc: %pK",
 			mgmt_txrx_psoc_ctx, psoc);
-	if (wlan_objmgr_psoc_component_obj_detach(psoc,
-				WLAN_UMAC_COMP_MGMT_TXRX, mgmt_txrx_psoc_ctx)
-			!= QDF_STATUS_SUCCESS) {
-		mgmt_txrx_err("Failed to detach mgmt txrx ctx in psoc ctx");
-		return QDF_STATUS_E_FAILURE;
-	}
 
 	status = wlan_mgmt_rx_reo_psoc_obj_destroy_notification(psoc);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		mgmt_txrx_err("Failed to run mgmt Rx REO psoc destroy handler");
 		return status;
+	}
+
+	if (wlan_objmgr_psoc_component_obj_detach(psoc,
+						  WLAN_UMAC_COMP_MGMT_TXRX,
+						  mgmt_txrx_psoc_ctx)
+			!= QDF_STATUS_SUCCESS) {
+		mgmt_txrx_err("Failed to detach mgmt txrx ctx in psoc ctx");
+		return QDF_STATUS_E_FAILURE;
 	}
 
 	qdf_spinlock_destroy(&mgmt_txrx_psoc_ctx->mgmt_txrx_psoc_ctx_lock);
@@ -166,14 +168,30 @@ static QDF_STATUS wlan_mgmt_txrx_pdev_obj_create_notification(
 {
 	struct mgmt_txrx_priv_pdev_context *mgmt_txrx_pdev_ctx;
 	struct mgmt_txrx_stats_t *mgmt_txrx_stats;
+	struct wlan_objmgr_psoc *psoc;
+	uint8_t pdev_id;
+	uint8_t psoc_id;
 	QDF_STATUS status;
 
 	if (!pdev) {
 		mgmt_txrx_err("pdev context passed is NULL");
 		status = QDF_STATUS_E_INVAL;
 		goto err_return;
-
 	}
+
+	psoc = wlan_pdev_get_psoc(pdev);
+
+	if (!psoc) {
+		mgmt_txrx_err("psoc context in pdev is NULL");
+		status = QDF_STATUS_E_INVAL;
+		goto err_return;
+	}
+
+	pdev_id = wlan_objmgr_pdev_get_pdev_id(pdev);
+
+	psoc_id = wlan_psoc_get_id(psoc);
+
+	mgmt_txrx_debug("enter pdev_id:%d psoc_id:%d", pdev_id, psoc_id);
 
 	mgmt_txrx_pdev_ctx = qdf_mem_malloc(sizeof(*mgmt_txrx_pdev_ctx));
 	if (!mgmt_txrx_pdev_ctx) {
@@ -182,6 +200,8 @@ static QDF_STATUS wlan_mgmt_txrx_pdev_obj_create_notification(
 	}
 
 	mgmt_txrx_pdev_ctx->pdev = pdev;
+
+	mgmt_txrx_debug("pool init pdev_id:%d psoc_id:%d", pdev_id, psoc_id);
 
 	status = wlan_mgmt_txrx_desc_pool_init(mgmt_txrx_pdev_ctx);
 	if (status != QDF_STATUS_SUCCESS) {
@@ -198,9 +218,14 @@ static QDF_STATUS wlan_mgmt_txrx_pdev_obj_create_notification(
 	}
 	mgmt_txrx_pdev_ctx->mgmt_txrx_stats = mgmt_txrx_stats;
 
+	mgmt_txrx_debug("lock create pdev_id:%d psoc_id:%d", pdev_id, psoc_id);
+
 	qdf_wake_lock_create(&mgmt_txrx_pdev_ctx->wakelock_tx_cmp,
 			     "mgmt_txrx tx_cmp");
 	qdf_runtime_lock_init(&mgmt_txrx_pdev_ctx->wakelock_tx_runtime_cmp);
+
+	mgmt_txrx_debug("notification create pdev_id:%d psoc_id:%d",
+			pdev_id, psoc_id);
 
 	status = wlan_mgmt_rx_reo_pdev_obj_create_notification(
 					pdev, mgmt_txrx_pdev_ctx);
@@ -208,6 +233,8 @@ static QDF_STATUS wlan_mgmt_txrx_pdev_obj_create_notification(
 		mgmt_txrx_err("Failed to create mgmt Rx REO pdev object");
 		goto err_mgmt_rx_reo_attach;
 	}
+
+	mgmt_txrx_debug("obj attach pdev_id:%d psoc_id:%d", pdev_id, psoc_id);
 
 	if (wlan_objmgr_pdev_component_obj_attach(pdev,
 			WLAN_UMAC_COMP_MGMT_TXRX,
@@ -272,17 +299,19 @@ static QDF_STATUS wlan_mgmt_txrx_pdev_obj_destroy_notification(
 
 	mgmt_txrx_debug("deleting mgmt txrx pdev obj, mgmt txrx ctx: %pK, pdev: %pK",
 			mgmt_txrx_pdev_ctx, pdev);
-	if (wlan_objmgr_pdev_component_obj_detach(pdev,
-				WLAN_UMAC_COMP_MGMT_TXRX, mgmt_txrx_pdev_ctx)
-			!= QDF_STATUS_SUCCESS) {
-		mgmt_txrx_err("Failed to detach mgmt txrx ctx in pdev ctx");
-		return QDF_STATUS_E_FAILURE;
-	}
 
 	status = wlan_mgmt_rx_reo_pdev_obj_destroy_notification(
 						pdev, mgmt_txrx_pdev_ctx);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		mgmt_txrx_err("Failed to destroy mgmt Rx REO pdev object");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (wlan_objmgr_pdev_component_obj_detach(pdev,
+						  WLAN_UMAC_COMP_MGMT_TXRX,
+						  mgmt_txrx_pdev_ctx)
+			!= QDF_STATUS_SUCCESS) {
+		mgmt_txrx_err("Failed to detach mgmt txrx ctx in pdev ctx");
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -420,6 +449,7 @@ QDF_STATUS wlan_mgmt_txrx_mgmt_frame_tx(struct wlan_objmgr_peer *peer,
 	struct wlan_objmgr_vdev *vdev;
 	QDF_STATUS status;
 	struct wlan_lmac_if_tx_ops *tx_ops;
+	struct ieee80211_frame *wh;
 
 	if (!peer) {
 		mgmt_txrx_err("peer passed is NULL");
@@ -451,6 +481,14 @@ QDF_STATUS wlan_mgmt_txrx_mgmt_frame_tx(struct wlan_objmgr_peer *peer,
 	if (!pdev) {
 		mgmt_txrx_err("pdev unavailable for peer %pK vdev %pK",
 				peer, vdev);
+		wlan_objmgr_peer_release_ref(peer, WLAN_MGMT_NB_ID);
+		return QDF_STATUS_E_NULL_VALUE;
+	}
+
+	wh = (struct ieee80211_frame *)qdf_nbuf_data(buf);
+	if ((wh->i_fc[0] & QDF_IEEE80211_FC0_VERSION_MASK) !=
+	    QDF_IEEE80211_FC0_VERSION_0) {
+		mgmt_txrx_err("Incorrect frame control version");
 		wlan_objmgr_peer_release_ref(peer, WLAN_MGMT_NB_ID);
 		return QDF_STATUS_E_NULL_VALUE;
 	}

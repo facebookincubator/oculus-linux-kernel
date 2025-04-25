@@ -205,13 +205,6 @@ dp_tx_flow_ctrl_reset_subqueues(struct dp_soc *soc,
 
 #endif
 
-/**
- * dp_tx_dump_flow_pool_info() - dump global_pool and flow_pool info
- *
- * @ctx: Handle to struct dp_soc.
- *
- * Return: none
- */
 void dp_tx_dump_flow_pool_info(struct cdp_soc_t *soc_hdl)
 {
 	struct dp_soc *soc = cdp_soc_t_to_dp_soc(soc_hdl);
@@ -348,15 +341,15 @@ struct dp_tx_desc_pool_s *dp_tx_create_flow_pool(struct dp_soc *soc,
 		return pool;
 	}
 
-	if (dp_tx_desc_pool_alloc(soc, flow_pool_id, flow_pool_size)) {
+	if (dp_tx_desc_pool_alloc(soc, flow_pool_id, flow_pool_size, false)) {
 		qdf_spin_unlock_bh(&pool->flow_pool_lock);
 		dp_err("dp_tx_desc_pool_alloc failed flow_pool_id: %d",
 			flow_pool_id);
 		return NULL;
 	}
 
-	if (dp_tx_desc_pool_init(soc, flow_pool_id, flow_pool_size)) {
-		dp_tx_desc_pool_free(soc, flow_pool_id);
+	if (dp_tx_desc_pool_init(soc, flow_pool_id, flow_pool_size, false)) {
+		dp_tx_desc_pool_free(soc, flow_pool_id, false);
 		qdf_spin_unlock_bh(&pool->flow_pool_lock);
 		dp_err("dp_tx_desc_pool_init failed flow_pool_id: %d",
 			flow_pool_id);
@@ -497,8 +490,8 @@ int dp_tx_delete_flow_pool(struct dp_soc *soc, struct dp_tx_desc_pool_s *pool,
 	}
 
 	/* We have all the descriptors for the pool, we can delete the pool */
-	dp_tx_desc_pool_deinit(soc, pool->flow_pool_id);
-	dp_tx_desc_pool_free(soc, pool->flow_pool_id);
+	dp_tx_desc_pool_deinit(soc, pool->flow_pool_id, false);
+	dp_tx_desc_pool_free(soc, pool->flow_pool_id, false);
 	qdf_spin_unlock_bh(&pool->flow_pool_lock);
 	return 0;
 }
@@ -665,7 +658,7 @@ void dp_tx_flow_pool_unmap_handler(struct dp_pdev *pdev, uint8_t flow_id,
 
 /**
  * dp_tx_flow_control_init() - Initialize tx flow control
- * @tx_desc_pool: Handle to flow_pool
+ * @soc: Handle to struct dp_soc
  *
  * Return: none
  */
@@ -676,7 +669,7 @@ void dp_tx_flow_control_init(struct dp_soc *soc)
 
 /**
  * dp_tx_desc_pool_dealloc() - De-allocate tx desc pool
- * @tx_desc_pool: Handle to flow_pool
+ * @soc: Handle to struct dp_soc
  *
  * Return: none
  */
@@ -690,14 +683,14 @@ static inline void dp_tx_desc_pool_dealloc(struct dp_soc *soc)
 		if (!tx_desc_pool->desc_pages.num_pages)
 			continue;
 
-		dp_tx_desc_pool_deinit(soc, i);
-		dp_tx_desc_pool_free(soc, i);
+		dp_tx_desc_pool_deinit(soc, i, false);
+		dp_tx_desc_pool_free(soc, i, false);
 	}
 }
 
 /**
  * dp_tx_flow_control_deinit() - Deregister fw based tx flow control
- * @tx_desc_pool: Handle to flow_pool
+ * @soc: Handle to struct dp_soc
  *
  * Return: none
  */
@@ -710,7 +703,7 @@ void dp_tx_flow_control_deinit(struct dp_soc *soc)
 
 /**
  * dp_txrx_register_pause_cb() - Register pause callback
- * @ctx: Handle to struct dp_soc
+ * @handle: Handle to struct dp_soc
  * @pause_cb: Tx pause_cb
  *
  * Return: none

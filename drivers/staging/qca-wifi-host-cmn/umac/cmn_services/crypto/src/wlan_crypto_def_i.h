@@ -17,20 +17,23 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
- /**
+/**
  * DOC: Private definitions for handling crypto params
  */
 #ifndef _WLAN_CRYPTO_DEF_I_H_
 #define _WLAN_CRYPTO_DEF_I_H_
 
 #include <wlan_cmn_ieee80211.h>
+#include "wlan_objmgr_pdev_obj.h"
+#include "wlan_crypto_global_def.h"
 #ifdef WLAN_CRYPTO_AES
 #include "wlan_crypto_aes_i.h"
 #endif
 
-
 /* Number of bits per byte */
 #define CRYPTO_NBBY  8
+/* Default link id for legacy connection */
+#define CRYPTO_MAX_LINK_IDX 0xFF
 
 /* Macros for handling unaligned memory accesses */
 
@@ -394,14 +397,8 @@ typedef void (*crypto_add_key_callback)(void *context,
 /**
  * struct wlan_crypto_comp_priv - crypto component private structure
  * @crypto_params:    crypto params for the peer
- * @key:              key buffers for this peer
- * @igtk_key:         igtk key buffer for this peer
- * @bigtk_key:        bigtk key buffer for this peer
- * @igtk_key_type:    igtk key type
- * @def_tx_keyid:     default key used for this peer
- * @def_igtk_tx_keyid default igtk key used for this peer
- * @def_bigtk_tx_keyid default bigtk key used for this peer
- * @fils_aead_set     fils params for this peer
+ * @crypto_key: crypto keys structure for the peer
+ * @fils_aead_set:    fils params for this peer
  * @add_key_ctx: Opaque context to be used by the caller to associate the
  *  add key request with the response
  * @add_key_cb: Callback function to be called with the add key result
@@ -409,13 +406,7 @@ typedef void (*crypto_add_key_callback)(void *context,
  */
 struct wlan_crypto_comp_priv {
 	struct wlan_crypto_params crypto_params;
-	struct wlan_crypto_key *key[WLAN_CRYPTO_MAX_VLANKEYIX];
-	struct wlan_crypto_key *igtk_key[WLAN_CRYPTO_MAXIGTKKEYIDX];
-	struct wlan_crypto_key *bigtk_key[WLAN_CRYPTO_MAXBIGTKKEYIDX];
-	enum wlan_crypto_cipher_type igtk_key_type;
-	uint8_t def_tx_keyid;
-	uint8_t def_igtk_tx_keyid;
-	uint8_t def_bigtk_tx_keyid;
+	struct wlan_crypto_keys crypto_key;
 	uint8_t fils_aead_set;
 	void *add_key_ctx;
 	crypto_add_key_callback add_key_cb;
@@ -553,4 +544,83 @@ static inline int wlan_get_tid(const void *data)
 	} else
 		return WLAN_NONQOS_SEQ;
 }
+
+struct crypto_psoc_priv_obj {
+	/** @crypto_key_lock: lock for crypto key table */
+	qdf_mutex_t crypto_key_lock;
+	/** @crypto_key_lock: lock for crypto key table */
+	qdf_atomic_t crypto_key_cnt;
+	struct {
+		/** @mask: mask bits */
+		uint32_t mask;
+		/** @idx_bits: index to shift bits */
+		uint32_t idx_bits;
+		/** @bins: crypto key table */
+		TAILQ_HEAD(, wlan_crypto_key_entry) * bins;
+	} crypto_key_holder;
+};
+
+/**
+ * struct pdev_crypto - pdev object structure for crypto
+ * @pdev_obj: pdev object
+ */
+struct pdev_crypto {
+	struct wlan_objmgr_pdev *pdev_obj;
+};
+
+/**
+ * wlan_crypto_add_key_entry() - Add a filled key entry to the hashing
+ * framework
+ * @psoc: PSOC pointer
+ * @new_entry: New entry
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wlan_crypto_add_key_entry(struct wlan_objmgr_psoc *psoc,
+				     struct wlan_crypto_key_entry *new_entry);
+
+/**
+ * crypto_add_entry - add key entry to hashing framework
+ * @psoc: psoc handler
+ * @link_id: link id
+ * @mac_addr: mac addr
+ * @crypto_key: crypto key
+ * @key_index: key index
+ * Return: zero on success
+ */
+QDF_STATUS crypto_add_entry(struct crypto_psoc_priv_obj *psoc,
+			    uint8_t link_id,
+			    uint8_t *mac_addr,
+			    struct wlan_crypto_key *crypto_key,
+			    uint8_t key_index);
+/**
+ * crypto_hash_find_by_linkid_and_macaddr - find crypto entry by link id
+ * @psoc: psoc handler
+ * @link_id: link id
+ * @mac_addr: mac addr
+ * Return: crypto key entry on success
+ */
+struct
+wlan_crypto_key_entry * crypto_hash_find_by_linkid_and_macaddr(
+				struct crypto_psoc_priv_obj *psoc,
+				uint8_t link_id,
+				uint8_t *mac_addr);
+
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+/**
+ * wlan_crypto_free_key_by_link_id - free key by link id
+ * @psoc: psoc handler
+ * @link_addr: link address
+ * @link_id: link id
+ */
+void wlan_crypto_free_key_by_link_id(struct wlan_objmgr_psoc *psoc,
+				     struct qdf_mac_addr *link_addr,
+				     uint8_t link_id);
+#else
+static inline
+void wlan_crypto_free_key_by_link_id(struct wlan_objmgr_psoc *psoc,
+				     struct qdf_mac_addr *link_addr,
+				     uint8_t link_id)
+{}
+#endif /* WLAN_FEATURE_11BE_MLO_ADV_FEATURE */
 #endif /* end of _WLAN_CRYPTO_DEF_I_H_ */

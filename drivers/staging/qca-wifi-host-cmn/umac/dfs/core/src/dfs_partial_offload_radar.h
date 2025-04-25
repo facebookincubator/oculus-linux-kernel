@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -39,7 +39,7 @@ static inline void dfs_get_po_radars(struct wlan_dfs *dfs)
 #endif
 
 /**
- * dfs_send_avg_params_to_fw - send avg radar parameters to FW.
+ * dfs_send_avg_params_to_fw() - send avg radar parameters to FW.
  * @dfs: Pointer to wlan_dfs structure.
  * @params: Pointer to dfs_radar_found_params.
  *
@@ -219,7 +219,7 @@ static inline void dfs_allow_hw_pulses(struct wlan_dfs *dfs,
 #if defined(WLAN_DFS_PARTIAL_OFFLOAD) && defined(WLAN_DFS_SYNTHETIC_RADAR)
 /**
  * dfs_is_hw_pulses_allowed() - Check if HW pulses are allowed or not.
- * @pdev: Pointer to DFS pdev object.
+ * @dfs: Pointer to wlan_dfs structure.
  *
  * Return: bool
  */
@@ -258,7 +258,7 @@ QDF_STATUS dfs_inject_synthetic_pulse_sequence(struct wlan_dfs *dfs,
  *
  * Return: None
  */
-#if defined(WLAN_DFS_PARTIAL_OFFLOAD) && defined(HOST_DFS_SPOOF_TEST)
+#if defined(WLAN_DFS_PARTIAL_OFFLOAD)
 void
 dfs_disable_radar_and_flush_pulses(struct wlan_dfs *dfs);
 #else

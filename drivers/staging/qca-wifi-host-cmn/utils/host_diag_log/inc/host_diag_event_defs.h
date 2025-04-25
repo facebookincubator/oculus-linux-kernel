@@ -1244,6 +1244,137 @@ typedef enum {
 
 	EVENT_WLAN_BCN_RPT = 0xD38,
 
+	/*
+	 * <diag_event>
+	 * @diag_cmn: Common diag info
+	 * @version: structure version
+	 * @is_mlo: flag to specify MLO connection
+	 * @mac_2g: 2GHz STA link address
+	 * @mac_5g: 5GHz STA link address
+	 * @mac_6g: 6GHz STA link address
+	 *
+	 * This Event is used to send STA info immediately after receiving
+	 * connect request
+	 *
+	 * Supported Feature: STA
+	 * </diag_event>
+	 */
+
+	EVENT_WLAN_STA_INFO = 0xD56,
+
+	/*
+	 * <diag_event>
+	 * @diag_cmn: Common diag info
+	 * @version: structure version
+	 * @band: Indicate bands on the link
+	 * @link_id: Link ID associated with the bssid
+	 * @status: Status of the link. Will be 0 if link is rejected
+	 *
+	 * This Event is used to indicate the MLO setup info. This event
+	 * will be sent immediately after assoc/reassoc response.
+	 *
+	 * Supported Feature: STA
+	 * </diag_event>
+	 */
+
+	EVENT_WLAN_MLO_SETUP = 0xD57,
+
+	/*
+	 * <diag_event>
+	 * @diag_cmn: Common diag info
+	 * @version: structure version
+	 * @band: Indiacate band of the link
+	 * @link_id: Link id of the removed link
+	 *
+	 * This Event is used to indicate when one or more AP
+	 * affiliated with AP MLD is removed.
+	 *
+	 * Supported Feature: STA
+	 *
+	 * </diag_event>
+	 */
+
+	EVENT_WLAN_MLO_RECONFIG = 0xD58,
+
+	/*
+	 * <diag_event>
+	 * @diag_cmn: Common diag info
+	 * @version: structure version
+	 * @band: Indicates the band of this link
+	 * @tid_ul: TID-to-link mapping information on the uplink
+	 * @tid_dl: TID-to-link mapping information on the downlink
+	 *
+	 * This Event is used to send T2LM status.
+	 *
+	 * Supported Feature: STA
+	 *
+	 * </diag_event>
+	 */
+
+	EVENT_WLAN_MLO_T2LM_STATUS = 0xD59,
+
+	/*
+	 * <diag_event>
+	 * @diag_cmn: Common diag info
+	 * @version: structure version
+	 * @band: Indicates the link on which packet is transmitted or
+	 * received
+	 * @status: Status code of TID-To-Link Mapping Response frame. This
+	 * tag exists only in response frames
+	 * @token: Dialog Token field of TID-To-Link Mapping Request/Response
+	 * frame
+	 * @subtype: Indicates whether the it is a request event or response
+	 * event
+	 * @dir: Indicate whether packet is received or transmitted.
+	 * 0 - TX and 1 - RX
+	 * @tx_status: Status of frame transmission
+	 * @reserved: Reserved field
+	 *
+	 * This Event is to indicate the T2LM Req/Resp info
+	 *
+	 * Supported Feature: STA
+	 *
+	 * </diag_event>
+	 */
+
+	EVENT_WLAN_MLO_T2LM_REQ_RESP = 0xD5A,
+
+	/*
+	 * <diag_event>
+	 * @diag_cmn: Common diag info
+	 * @version: structure version
+	 * @band: Indicates the link on which packet is transmitted or
+	 * received
+	 * @tx_status: Status of frame transmission
+	 * @reserved: Reserved Field
+	 *
+	 * This Event is sent when the device sends T2LM teardown action frame
+	 *
+	 * Supported Feature: STA
+	 *
+	 * </diag_event>
+	 */
+
+	EVENT_WLAN_MLO_T2LM_TEARDOWN = 0xD5B,
+
+	/*
+	 * <diag_event>
+	 * @diag_cmn: Common diag info
+	 * @version: structure version
+	 * @active_link: Bit field indicating active links
+	 * @inactive_link: Bit field indicating inactive links
+	 * @reserved: Reserved Field
+	 * @reason: reason for change link state
+	 *
+	 * This event is generated when the state of a link is changed.
+	 *
+	 * Supported Feature: STA
+	 *
+	 * </diag_event>
+	 */
+
+	EVENT_WLAN_MLO_LINK_STATUS = 0xD5C,
+
 	EVENT_MAX_ID = 0x0FFF
 } event_id_enum_type;
 

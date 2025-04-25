@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -84,8 +85,6 @@ wlan_extscan_global_init(struct wlan_objmgr_psoc *psoc,
 
 /**
  * wlan_extscan_global_deinit() - Deinitialize extscan
- * @psoc: pointer to psoc object
- * @scan_obj: pointer to scan object
  *
  * Return: QDF_STATUS
  */

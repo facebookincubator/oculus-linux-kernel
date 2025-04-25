@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,15 +18,14 @@
  */
 
 /**
- * @file cdp_txrx_me.h
- * @brief Define the host data path mcast enhance API functions
+ * DOC: cdp_txrx_me.h
+ * Define the host data path mcast enhance API functions
  * called by the host control SW and the OS interface module
  */
 #ifndef _CDP_TXRX_ME_H_
 #define _CDP_TXRX_ME_H_
 
 #include <cdp_txrx_ops.h>
-/* TODO: adf need to be replaced with qdf */
 #include "cdp_txrx_handle.h"
 #include <cdp_txrx_cmn.h>
 

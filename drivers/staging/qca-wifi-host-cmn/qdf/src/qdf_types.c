@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -306,6 +306,44 @@ QDF_STATUS qdf_int32_parse(const char *int_str, int32_t *out_int)
 	return QDF_STATUS_SUCCESS;
 }
 qdf_export_symbol(qdf_int32_parse);
+
+QDF_STATUS qdf_uint8_parse(const char *int_str, uint8_t *out_int)
+{
+	QDF_STATUS status;
+	uint64_t value;
+
+	status = qdf_uint64_parse(int_str, &value);
+	if (QDF_IS_STATUS_ERROR(status))
+		return status;
+
+	if ((uint8_t)value != value)
+		return QDF_STATUS_E_RANGE;
+
+	*out_int = value;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+qdf_export_symbol(qdf_uint8_parse);
+
+QDF_STATUS qdf_uint16_parse(const char *int_str, uint16_t *out_int)
+{
+	QDF_STATUS status;
+	uint64_t value;
+
+	status = qdf_uint64_parse(int_str, &value);
+	if (QDF_IS_STATUS_ERROR(status))
+		return status;
+
+	if ((uint16_t)value != value)
+		return QDF_STATUS_E_RANGE;
+
+	*out_int = value;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+qdf_export_symbol(qdf_uint16_parse);
 
 QDF_STATUS qdf_uint32_parse(const char *int_str, uint32_t *out_int)
 {

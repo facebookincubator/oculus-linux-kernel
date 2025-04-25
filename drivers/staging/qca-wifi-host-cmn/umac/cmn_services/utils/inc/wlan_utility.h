@@ -44,7 +44,7 @@ struct wlan_vdev_ch_check_filter {
 };
 
 /**
- * struct wlan_peer_count- vdev connected peer count
+ * struct wlan_op_mode_peer_count - vdev connected peer count
  * @opmode: QDF mode
  * @peer_count: peer count
  **/
@@ -153,6 +153,38 @@ const uint8_t *wlan_get_ext_ie_ptr_from_ext_id(const uint8_t *oui,
 					       uint8_t oui_size,
 					       const uint8_t *ie,
 					       uint16_t ie_len);
+
+/**
+ * wlan_iecap_set() - Set the capability in the IE
+ * @iecap: pointer to capability IE
+ * @bit_pos: bit position of capability from start of capability field
+ * @tot_bits: total bits of capability
+ * @value: value to be set
+ *
+ * This function sets the value in capability IE at the bit position
+ * specified for specified number of bits in byte order.
+ *
+ * Return: void
+ */
+void wlan_iecap_set(uint8_t *iecap,
+		    uint8_t bit_pos,
+		    uint8_t tot_bits,
+		    uint32_t value);
+
+/**
+ * wlan_iecap_get() - Get the capability in the IE
+ * @iecap: pointer to capability IE
+ * @bit_pos: bit position of capability from start of capability field
+ * @tot_bits: total bits of capability
+ *
+ * This function gets the value at bit position for specified bits
+ * from start of capability field.
+ *
+ * Return: capability value
+ */
+uint32_t wlan_iecap_get(uint8_t *iecap,
+			uint8_t bit_pos,
+			uint32_t tot_bits);
 
 /**
  * wlan_get_elem_fragseq_requirements() - Get requirements related to generation
@@ -302,8 +334,8 @@ wlan_get_subelem_fragseq_requirements(uint8_t subelemid,
  * is carried out inline within the source buffer and no memmoves/memcopy would
  * be required for the lead subelement.
  * @subelemid: Subelement ID
- * @subelemid: Fragment ID to be used for the subelement (this can potentially
- * vary across protocol areas)
+ * @subelemfragid: Fragment ID to be used for the subelement (this can
+ * potentially vary across protocol areas)
  * @payloadbuff: Buffer containing the subelement payload to be fragmented. If
  * inline fragmentation is selected, the corresponding subelement fragment
  * sequence will be generated inline into this buffer, and prior to the payload
@@ -490,8 +522,8 @@ QDF_STATUS wlan_defrag_elem_fragseq(bool inline_defrag,
  * wlan_get_subelem_fragseq_info() - Get information about subelement fragment
  * sequence
  *
- * @subelemid: Fragment ID applicable for the subelement (this can potentially
- * vary across protocol areas)
+ * @subelemfragid: Fragment ID applicable for the subelement (this can
+ * potentially vary across protocol areas)
  * @subelembuff: Buffer containing a series of subelements to be checked for
  * whether a contiguous subset of these subelements (starting with the first
  * subelement in the buffer) form a subelement fragment sequence. The containing
@@ -559,8 +591,8 @@ QDF_STATUS wlan_get_subelem_fragseq_info(uint8_t subelemfragid,
  * @inline_defrag: Whether to use inline defragmentation, wherein the
  * defragmentation is carried out inline within the source buffer and no
  * memmoves/memcopy would be required for the lead subelement.
- * @subelemid: Fragment ID applicable for the subelement (this can potentially
- * vary across protocol areas)
+ * @subelemfragid: Fragment ID applicable for the subelement (this can
+ * potentially vary across protocol areas)
  * @fragbuff: Source buffer containing the subelement fragment sequence starting
  * with the subelement ID of the lead subelement. The containing element is
  * required to have already been defragmented (if applicable). If inline
@@ -627,7 +659,7 @@ QDF_STATUS wlan_defrag_subelem_fragseq(bool inline_defrag,
 
 /**
  * wlan_is_emulation_platform() - check if platform is emulation based
- * @phy_version - psoc nif phy_version
+ * @phy_version: psoc nif phy_version
  *
  * Return: boolean value based on platform type
  */
@@ -672,7 +704,7 @@ QDF_STATUS wlan_vdev_is_up(struct wlan_objmgr_vdev *vdev);
  *                                        with other vdevs in pdev
  * @pdev: pdev object
  * @vdev: vdev object
- * @ref_id: object manager ref id
+ * @dbg_id: object manager ref id
  *
  * This function checks the vdev desired channel with other vdev channels
  *
@@ -720,7 +752,7 @@ bool wlan_util_map_is_any_index_set(unsigned long *map, unsigned long nbytes);
  *                                         pending flag
  * @pdev: pdev object
  * @vdev_id_map: bitmap to derive channel change vdevs
- * @ref_id: object manager ref id
+ * @dbg_id: object manager ref id
  *
  * This function test/set channel change pending flag
  *
@@ -736,7 +768,7 @@ QDF_STATUS wlan_pdev_chan_change_pending_vdevs(struct wlan_objmgr_pdev *pdev,
  *                                              change pending flag
  * @pdev: pdev object
  * @vdev_id_map: bitmap to derive channel change vdevs
- * @ref_id: object manager ref id
+ * @dbg_id: object manager ref id
  *
  * This function test/set channel change pending flag
  *
@@ -753,7 +785,7 @@ QDF_STATUS wlan_pdev_chan_change_pending_vdevs_down(
  *                                            change pending flag for AP VDEVs
  * @pdev: pdev object
  * @vdev_id_map: bitmap to derive channel change AP vdevs
- * @ref_id: object manager ref id
+ * @dbg_id: object manager ref id
  *
  * This function test/set channel change pending flag for AP vdevs
  *
@@ -903,45 +935,47 @@ uint16_t wlan_util_get_peer_count_for_mode(struct wlan_objmgr_pdev *pdev,
 					   enum QDF_OPMODE mode);
 
 /**
- * wlan_minidump_host_data - Data structure type logged in Minidump
- * @WLAN_MD_CP_EXT_PDEV - ol_ath_softc_net80211
- * @WLAN_MD_CP_EXT_PSOC - ol_ath_soc_softc
- * @WLAN_MD_CP_EXT_VDEV - ieee80211vap
- * @WLAN_MD_CP_EXT_PEER - ieee80211_node
- * @WLAN_MD_DP_SOC - dp_soc
- * @WLAN_MD_DP_PDEV - dp_pdev
- * @WLAN_MD_DP_VDEV - dp_vdev
- * @WLAN_MD_DP_PEER - dp_peer
- * @WLAN_MD_DP_SRNG_REO_DEST - dp_srng type for reo dest
- * @WLAN_MD_DP_SRNG_REO_EXCEPTION - dp_srng type for reo exception
- * @WLAN_MD_DP_SRNG_REO_CMD - dp_srng type for reo cmd
- * @WLAN_MD_DP_SRNG_RX_REL - dp_srng type for reo release
- * @WLAN_MD_DP_SRNG_REO_REINJECT - dp_srng type for reo reinject
- * @WLAN_MD_DP_SRNG_REO_STATUS - dp_srng type for reo status
- * @WLAN_MD_DP_SRNG_TCL_DATA - dp_srng type for tcl data
- * @WLAN_MD_DP_SRNG_TCL_STATUS - dp_srng type for tcl status
- * @WLAN_MD_DP_SRNG_TX_COMP - dp_srng type for tcl comp
- * @WLAN_MD_DP_SRNG_WBM_DESC_REL - dp_srng_type for wbm desc rel
- * @WLAN_MD_DP_SRNG_WBM_IDLE_LINK - dp_srng type for wbm idle link
- * @WLAN_MD_DP_LINK_DESC_BANK - Wbm link_desc_bank
- * @WLAN_MD_DP_SRNG_RXDMA_MON_STATUS - dp_srng type for rxdma mon status
- * @WLAN_MD_DP_SRNG_RXDMA_MON_BUF - dp_srng type for rxdma mon buf
- * @WLAN_MD_DP_SRNG_RXDMA_MON_DST - dp_srng type for rxdma mon dest
- * @WLAN_MD_DP_SRNG_RXDMA_MON_DESC - dp_srng type for rxdma mon desc
- * @WLAN_MD_DP_SRNG_RXDMA_ERR_DST - dp_srng type for rxdma err dst
- * @WLAN_MD_DP_HAL_SOC - hal_soc
- * @WLAN_MD_OBJMGR_PSOC - wlan_objmgr_psoc
- * @WLAN_MD_OBJMGR_PSOC_TGT_INFO - wlan_objmgr_tgt_psoc_info
- * @WLAN_MD_OBJMGR_PDEV - wlan_objmgr_pdev
- * @WLAN_MD_OBJMGR_PDEV_MLME - pdev_mlme
- * @WLAN_MD_OBJMGR_VDEV - wlan_objmgr_vdev
- * @WLAN_MD_OBJMGR_VDEV_MLME -vdev mlme
- * @WLAN_MD_OBJMGR_VDEV_SM - wlan_sm
- * @WLAN_MD_DP_SRNG_REO2PPE- dp_srng type PPE rx ring
- * @WLAN_MD_DP_SRNG_PPE2TCL - dp_srng type for PPE tx ring
- * @WLAN_MD_DP_SRNG_PPE_RELEASE - dp_srng type for PPE tx com ring
- * @WLAN_MD_DP_SRNG_PPE_WBM2SW_RELEASE - dp_srng type for PPE2TCL tx com ring
- * @WLAN_MD_MAX - Max value
+ * enum wlan_minidump_host_data - Data structure type logged in Minidump
+ * @WLAN_MD_CP_EXT_PDEV: ol_ath_softc_net80211
+ * @WLAN_MD_CP_EXT_PSOC: ol_ath_soc_softc
+ * @WLAN_MD_CP_EXT_VDEV: ieee80211vap
+ * @WLAN_MD_CP_EXT_PEER: ieee80211_node
+ * @WLAN_MD_DP_SOC: dp_soc
+ * @WLAN_MD_DP_PDEV: dp_pdev
+ * @WLAN_MD_DP_VDEV: dp_vdev
+ * @WLAN_MD_DP_PEER: dp_peer
+ * @WLAN_MD_DP_SRNG_REO_DEST: dp_srng type for reo dest
+ * @WLAN_MD_DP_SRNG_REO_EXCEPTION: dp_srng type for reo exception
+ * @WLAN_MD_DP_SRNG_REO_CMD: dp_srng type for reo cmd
+ * @WLAN_MD_DP_SRNG_RX_REL: dp_srng type for reo release
+ * @WLAN_MD_DP_SRNG_REO_REINJECT: dp_srng type for reo reinject
+ * @WLAN_MD_DP_SRNG_REO_STATUS: dp_srng type for reo status
+ * @WLAN_MD_DP_SRNG_TCL_DATA: dp_srng type for tcl data
+ * @WLAN_MD_DP_SRNG_TCL_CMD: dp_srng type for tcl cmd
+ * @WLAN_MD_DP_SRNG_TCL_STATUS: dp_srng type for tcl status
+ * @WLAN_MD_DP_SRNG_TX_COMP: dp_srng type for tcl comp
+ * @WLAN_MD_DP_SRNG_WBM_DESC_REL: dp_srng_type for wbm desc rel
+ * @WLAN_MD_DP_SRNG_WBM_IDLE_LINK: dp_srng type for wbm idle link
+ * @WLAN_MD_DP_LINK_DESC_BANK: Wbm link_desc_bank
+ * @WLAN_MD_DP_SRNG_RXDMA_MON_STATUS: dp_srng type for rxdma mon status
+ * @WLAN_MD_DP_SRNG_RXDMA_MON_BUF: dp_srng type for rxdma mon buf
+ * @WLAN_MD_DP_SRNG_RXDMA_MON_DST: dp_srng type for rxdma mon dest
+ * @WLAN_MD_DP_SRNG_RXDMA_MON_DESC: dp_srng type for rxdma mon desc
+ * @WLAN_MD_DP_SRNG_RXDMA_ERR_DST: dp_srng type for rxdma err dst
+ * @WLAN_MD_DP_HAL_SOC: hal_soc
+ * @WLAN_MD_OBJMGR_PSOC: wlan_objmgr_psoc
+ * @WLAN_MD_OBJMGR_PSOC_TGT_INFO: wlan_objmgr_tgt_psoc_info
+ * @WLAN_MD_OBJMGR_PDEV: wlan_objmgr_pdev
+ * @WLAN_MD_OBJMGR_PDEV_MLME: pdev_mlme
+ * @WLAN_MD_OBJMGR_VDEV: wlan_objmgr_vdev
+ * @WLAN_MD_OBJMGR_VDEV_MLME: vdev mlme
+ * @WLAN_MD_OBJMGR_VDEV_SM: wlan_sm
+ * @WLAN_MD_DP_SRNG_REO2PPE: dp_srng type PPE rx ring
+ * @WLAN_MD_DP_SRNG_PPE2TCL: dp_srng type for PPE tx ring
+ * @WLAN_MD_DP_SRNG_PPE_RELEASE: dp_srng type for PPE tx com ring
+ * @WLAN_MD_DP_SRNG_PPE_WBM2SW_RELEASE: dp_srng type for PPE2TCL tx com ring
+ * @WLAN_MD_DP_SRNG_SW2RXDMA_LINK_RING: dp_srng type for SW2RXDMA link ring
+ * @WLAN_MD_MAX: Max value
  */
 enum wlan_minidump_host_data {
 	WLAN_MD_CP_EXT_PDEV,
@@ -982,6 +1016,7 @@ enum wlan_minidump_host_data {
 	WLAN_MD_DP_SRNG_PPE2TCL,
 	WLAN_MD_DP_SRNG_PPE_RELEASE,
 	WLAN_MD_DP_SRNG_PPE_WBM2SW_RELEASE,
+	WLAN_MD_DP_SRNG_SW2RXDMA_LINK_RING,
 	WLAN_MD_MAX
 };
 
@@ -1022,4 +1057,17 @@ void wlan_minidump_remove(void *start_addr, const size_t size,
  */
 bool wlan_util_is_vdev_in_cac_wait(struct wlan_objmgr_pdev *pdev,
 				   wlan_objmgr_ref_dbgid dbg_id);
+
+/**
+ * wlan_eht_chan_phy_mode - convert eht chan to phy mode
+ * @freq: frequency
+ * @bw_val: bandwidth
+ * @chan_width: channel width
+ *
+ * Return: return phy mode
+ */
+enum wlan_phymode
+wlan_eht_chan_phy_mode(uint32_t freq,
+		       uint16_t bw_val,
+		       enum phy_ch_width chan_width);
 #endif /* _WLAN_UTILITY_H_ */

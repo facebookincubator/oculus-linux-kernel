@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -65,7 +65,7 @@ hdd_wds_replace_peer_mac(void *soc, struct hdd_adapter *adapter,
 	QDF_STATUS status;
 
 	if (!cdp_find_peer_exist(soc, OL_TXRX_PDEV_ID, mac_addr)) {
-		status = cdp_txrx_get_vdev_param(soc, adapter->vdev_id,
+		status = cdp_txrx_get_vdev_param(soc, adapter->deflink->vdev_id,
 						 CDP_ENABLE_WDS, &val);
 		if (!QDF_IS_STATUS_SUCCESS(status))
 			return;

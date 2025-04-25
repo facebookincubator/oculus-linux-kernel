@@ -43,6 +43,7 @@
  * @DELETE_RESPONSE_BIT:  vdev delete response bit
  * @PEER_DELETE_ALL_RESPONSE_BIT: vdev peer delete all response bit
  * @RSO_STOP_RESPONSE_BIT: RSO stop response bit
+ * @UPDATE_MAC_ADDR_RESPONSE_BIT: MAC address update response bit
  * @RESPONSE_BIT_MAX: Max enumeration
  */
 enum wlan_vdev_mgr_tgt_if_rsp_bit {
@@ -52,6 +53,7 @@ enum wlan_vdev_mgr_tgt_if_rsp_bit {
 	DELETE_RESPONSE_BIT = 3,
 	PEER_DELETE_ALL_RESPONSE_BIT = 4,
 	RSO_STOP_RESPONSE_BIT = 5,
+	UPDATE_MAC_ADDR_RESPONSE_BIT = 6,
 	RESPONSE_BIT_MAX,
 };
 
@@ -70,6 +72,7 @@ static inline char *string_from_rsp_bit(enum wlan_vdev_mgr_tgt_if_rsp_bit bit)
 					"DELETE",
 					"PEER DELETE ALL",
 					"RSO STOP",
+					"UPDATE_MAC_ADDR",
 					"RESPONE MAX"};
 	return (char *)strings[bit];
 }
@@ -176,15 +179,12 @@ struct peer_delete_all_response {
 	uint32_t peer_type_bitmap;
 };
 
-/*
+/**
  * struct multi_vdev_restart_resp - multi-vdev restart response structure
  * @pdev_id: pdev id
  * @status: FW status for multi vdev restart request
  * @vdev_id_bmap: Bitmap of vdev_ids
  * @timestamp: Time stamp corresponding to the start of event processing
- *
- * NB: not using kernel-doc format since the kernel-doc script doesn't
- *     handle the qdf_bitmap() macro
  */
 struct multi_vdev_restart_resp {
 	uint8_t pdev_id;

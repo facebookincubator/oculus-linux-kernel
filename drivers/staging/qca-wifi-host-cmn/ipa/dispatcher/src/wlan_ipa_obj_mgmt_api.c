@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018, 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,7 +29,6 @@
 #include "qdf_platform.h"
 #include "qdf_module.h"
 
-#ifdef IPA_OFFLOAD
 /* This is as per IPA capbility */
 #define MAX_INSTANCES_SUPPORTED 2
 
@@ -214,15 +213,14 @@ static void ipa_register_ready_cb(void *user_data)
 
 	status = ipa_obj_setup(ipa_obj);
 	if (QDF_IS_STATUS_ERROR(status)) {
-		ipa_err("Failed to setup ipa component");
-		wlan_objmgr_pdev_component_obj_detach(pdev, WLAN_UMAC_COMP_IPA,
-						      ipa_obj);
-		qdf_mem_free(ipa_obj);
+		g_ipa_is_ready = false;
+		ipa_err("Failed to ipa_obj_setup");
 		goto out;
 	}
 	if (ucfg_ipa_uc_ol_init(pdev, qdf_dev)) {
 		ipa_err("IPA ucfg_ipa_uc_ol_init failed");
 		ipa_obj_cleanup(ipa_obj);
+		g_ipa_is_ready = false;
 		goto out;
 	}
 
@@ -319,11 +317,6 @@ QDF_STATUS ipa_deinit(void)
 		return status;
 	}
 
-	if (!ipa_config_is_enabled()) {
-		ipa_info("ipa is disabled");
-		return status;
-	}
-
 	qdf_mutex_destroy(&g_init_deinit_lock);
 
 	status = wlan_objmgr_unregister_pdev_destroy_handler(WLAN_UMAC_COMP_IPA,
@@ -373,4 +366,3 @@ bool wlan_ipa_is_vlan_enabled(void)
 }
 
 qdf_export_symbol(wlan_ipa_is_vlan_enabled);
-#endif

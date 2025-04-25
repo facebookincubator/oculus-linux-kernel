@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2015, 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -22,6 +23,7 @@
 #include "wlan_cm_roam.h"
 #include "wlan_cm_main_api.h"
 #include "wlan_scan_api.h"
+#include "wlan_mlo_mgr_link_switch.h"
 
 #ifdef WLAN_CM_USE_SPINLOCK
 /**
@@ -186,3 +188,42 @@ QDF_STATUS wlan_cm_deinit(struct vdev_mlme_obj *vdev_mlme)
 
 	return QDF_STATUS_SUCCESS;
 }
+
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+void cm_standby_link_update_mlme_by_bssid(struct wlan_objmgr_vdev *vdev,
+					  uint32_t assoc_state,
+					  struct wlan_ssid ssid)
+{
+	struct mlo_link_info *link_info;
+	uint8_t link_info_iter;
+	struct mlme_info mlme_info;
+	struct bss_info bss_info;
+
+	if (!wlan_vdev_mlme_is_assoc_sta_vdev(vdev))
+		return;
+
+	link_info = mlo_mgr_get_ap_link(vdev);
+	if (!link_info)
+		return;
+
+	for (link_info_iter = 0; link_info_iter < 3; link_info_iter++) {
+		if (qdf_is_macaddr_zero(&link_info->ap_link_addr))
+			break;
+
+		if (link_info->vdev_id == WLAN_INVALID_VDEV_ID) {
+			mlme_info.assoc_state = assoc_state;
+			qdf_copy_macaddr(&bss_info.bssid,
+					 &link_info->ap_link_addr);
+			bss_info.freq = link_info->link_chan_info->ch_freq;
+			bss_info.ssid.length = ssid.length;
+			qdf_mem_copy(&bss_info.ssid.ssid, ssid.ssid,
+				     bss_info.ssid.length);
+
+			wlan_scan_update_mlme_by_bssinfo(wlan_vdev_get_pdev(vdev),
+							 &bss_info, &mlme_info);
+		}
+
+		link_info++;
+	}
+}
+#endif

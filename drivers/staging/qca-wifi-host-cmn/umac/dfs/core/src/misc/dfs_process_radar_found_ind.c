@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,7 +31,7 @@
 #include <wlan_dfs_tgt_api.h>
 #include "wlan_dfs_mlme_api.h"
 #include "../dfs_internal.h"
-/**
+/*
  * TODO: The code is not according to the following description needs
  * modification and correction. Code always adds left and right channels to
  * NOL even if it is not a chirp radar.
@@ -196,6 +196,8 @@ dfs_radar_add_channel_list_to_nol_for_freq(struct wlan_dfs *dfs,
 		return QDF_STATUS_E_FAILURE;
 	}
 	*num_channels = num_ch;
+
+	dfs_update_cac_elements(dfs, nol_freq_list, num_ch, NULL, WLAN_EV_NOL_STARTED);
 
 	if (!dfs_get_disable_radar_marking(dfs)) {
 		utils_dfs_reg_update_nol_chan_for_freq(dfs->dfs_pdev_obj,
@@ -404,14 +406,15 @@ dfs_find_radar_affected_subchans_for_freq(struct wlan_dfs *dfs,
 #endif
 
 /**
- * dfs_calc_bonding_freqs: Calculate bonding channel frequencies from the
- * channel width's center frequency and channel width.
- * It is assumed that the caller has allocated sufficient memory for 'freq_list'
- * so that it can hold all the output subchannels.
+ * dfs_calc_bonding_freqs() - Calculate bonding channel frequencies
+ * @center_freq: Center frequency of the channel width.
+ * @ch_width: Channel width.
+ * @freq_list: output array of sub-channel frequencies.
  *
- * center_freq: Center frequency of the channel width.
- * ch_width: Channel width.
- * freq_list: output array of sub-channel frequencies.
+ * Calculate bonding channel frequencies from the channel width's
+ * center frequency and channel width.  It is assumed that the caller
+ * has allocated sufficient memory for @freq_list so that it can hold
+ * all the output subchannels.
  *
  * Return: void
  */
@@ -496,10 +499,11 @@ void dfs_get_160mhz_bonding_channels(uint16_t center_freq, uint16_t *freq_list)
 }
 
 /**
- * dfs_get_320mhz_bonding_channels() - Get bonding frequency list of 320MHz
+ * dfs_get_320mhz_bonding_channels() - Get bonding frequency list of 320 MHz
  * channel.
- * @center_freq: Center frequency of the 320MHz channel.
+ * @center_freq: Center frequency of the 320 MHz channel.
  * @freq_list: Pointer to frequency list.
+ * @nchannels: Number of channels in @freq_list
  *
  * Return: void
  */
@@ -511,9 +515,9 @@ void dfs_get_320mhz_bonding_channels(uint16_t center_freq, uint16_t *freq_list,
 	uint16_t chwidth = 320;
 
 	/*
-	 * In 5Ghz band, the 320Mhz channel is always 80Mhz punctured
-	 * to the right. Therefore, it is actually a 240Mhz channel and
-	 * has twelve 20Mhz subchannels.
+	 * In 5 GHz band, the 320 MHz channel is always 80 MHz punctured
+	 * to the right. Therefore, it is actually a 240 MHz channel and
+	 * has twelve 20 MHz subchannels.
 	 */
 	*nchannels = NUM_CHANNELS_240MHZ;
 	dfs_calc_bonding_freqs(center_freq, chwidth, freq_list);
@@ -529,7 +533,7 @@ void dfs_get_320mhz_bonding_channels(uint16_t center_freq, uint16_t *freq_list,
 }
 #endif
 
-/*
+/**
  * dfs_get_bonding_channel_without_seg_info_for_freq() - Get bonding frequency
  * list.
  * @chan: Pointer to dfs_channel.
@@ -579,7 +583,7 @@ dfs_get_bonding_channel_without_seg_info_for_freq(struct dfs_channel *chan,
 #endif
 
 #ifdef CONFIG_CHAN_FREQ_API
-/*
+/**
  * dfs_get_agile_subchans_for_curchan_160() - Get bonding frequency list of
  * agile channels when current operating channel is 160MHz.
  *
@@ -634,7 +638,7 @@ dfs_get_agile_subchans_for_curchan_160(struct wlan_dfs *dfs,
 	}
 }
 
-/*
+/**
  * dfs_get_bonding_channels_for_freq() - Get bonding channel frequency.
  * @dfs: Pointer to wlan_dfs.
  * @curchan: Pointer to dfs_channel.
@@ -794,6 +798,11 @@ void dfs_translate_radar_params(struct wlan_dfs *dfs,
 	if (!dfs_is_true_160mhz_supported(dfs))
 		return;
 
+	if (dfs->dfs_is_radar_found_chan_freq_eq_center_freq) {
+		dfs_debug(dfs, WLAN_DEBUG_DFS, "There is no radar translation required for chips where HALPHY reports the exact radar found chan's center freq\n");
+		return;
+	}
+
 	if (radar_found->detector_id == dfs_get_agile_detector_id(dfs)) {
 		dfs_translate_radar_params_for_agile_chan(dfs, radar_found);
 		return;
@@ -881,6 +890,31 @@ dfs_radar_action_for_hw_mode_switch(struct wlan_dfs *dfs,
 }
 
 #ifdef CONFIG_CHAN_FREQ_API
+#ifdef MOBILE_DFS_SUPPORT
+static uint8_t
+dfs_find_radar_full_bw_channels(struct wlan_dfs *dfs,
+				struct radar_found_info *radar_found,
+				uint16_t *freq_list)
+{
+	uint8_t num_channels = 0;
+
+	if (radar_found->is_full_bw_nol)
+		num_channels =
+			dfs_get_bonding_channel_without_seg_info_for_freq
+			(dfs->dfs_curchan, freq_list);
+
+	return num_channels;
+}
+#else
+static uint8_t
+dfs_find_radar_full_bw_channels(struct wlan_dfs *dfs,
+				struct radar_found_info *radar_found,
+				uint16_t *freq_list)
+{
+	return 0;
+}
+#endif
+
 uint8_t
 dfs_find_radar_affected_channels(struct wlan_dfs *dfs,
 				 struct radar_found_info *radar_found,
@@ -888,6 +922,11 @@ dfs_find_radar_affected_channels(struct wlan_dfs *dfs,
 				 uint32_t freq_center)
 {
 	uint8_t num_channels;
+
+	num_channels = dfs_find_radar_full_bw_channels(dfs, radar_found,
+						       freq_list);
+	if (num_channels)
+		return num_channels;
 
 	if (dfs->dfs_bangradar_type == DFS_BANGRADAR_FOR_ALL_SUBCHANS)
 		num_channels =
@@ -958,7 +997,7 @@ uint16_t dfs_generate_radar_bitmap(struct wlan_dfs *dfs,
 	uint16_t dfs_radar_bitmap = 0x0;
 	uint16_t bits = 0x1;
 	uint8_t i, j;
-	qdf_freq_t cur_freq_list[MAX_20MHZ_SUBCHANS];
+	uint16_t cur_freq_list[MAX_20MHZ_SUBCHANS] = {0};
 
 	n_cur_channels =
 		dfs_get_bonding_channel_without_seg_info_for_freq(dfs->dfs_curchan,
@@ -973,6 +1012,9 @@ uint16_t dfs_generate_radar_bitmap(struct wlan_dfs *dfs,
 		}
 		bits <<= 1;
 	}
+
+	if (!dfs_radar_bitmap)
+		dfs_debug(dfs, WLAN_DEBUG_DFS_ALWAYS, "Radar bitmap is zero");
 
 	return dfs_radar_bitmap;
 }
@@ -1009,52 +1051,6 @@ dfs_process_radar_ind(struct wlan_dfs *dfs,
 
 	return status;
 }
-
-#if defined(QCA_DFS_BW_PUNCTURE) && defined(WLAN_FEATURE_11BE)
-/**
- * dfs_is_ignore_radar_for_punctured_chans: Store the radar bitmap and check if
- *                                          radar is found in already punctured
- *                                          channel and ignore the radar.
- *
- * dfs: Wlan_dfs structure
- * dfs_radar_bitmap: Variable to store radar bitmap.
- * freq_list: output array of sub-channel frequencies.
- * num_channels: Number of sub-channels in target DFS channel.
- *
- * Return: If radar is found on punctured channel then return true.
- * Else return false.
- */
-static
-bool dfs_is_ignore_radar_for_punctured_chans(struct wlan_dfs *dfs,
-					     uint16_t *dfs_radar_bitmap,
-					     uint16_t *freq_list,
-					     uint8_t num_channels)
-{
-	uint16_t dfs_punc_pattern = dfs->dfs_curchan->dfs_ch_punc_pattern;
-
-	*dfs_radar_bitmap = dfs_generate_radar_bitmap(dfs,
-						      freq_list,
-						      num_channels);
-	*dfs_radar_bitmap |= dfs_punc_pattern;
-
-	if (*dfs_radar_bitmap == dfs_punc_pattern) {
-		dfs_err(dfs, WLAN_DEBUG_DFS,
-			"radar event received on invalid channel");
-		return true;
-	}
-
-	return false;
-}
-#else
-static
-bool dfs_is_ignore_radar_for_punctured_chans(struct wlan_dfs *dfs,
-					     uint16_t *dfs_radar_bitmap,
-					     uint16_t *freq_list,
-					     uint8_t num_channels)
-{
-	return false;
-}
-#endif /* QCA_DFS_BW_PUNCTURE */
 
 QDF_STATUS
 dfs_process_radar_ind_on_home_chan(struct wlan_dfs *dfs,
@@ -1099,13 +1095,6 @@ dfs_process_radar_ind_on_home_chan(struct wlan_dfs *dfs,
 							freq_list,
 							freq_center);
 
-	if (dfs->dfs_use_puncture &&
-	    dfs_is_ignore_radar_for_punctured_chans(dfs,
-						    &dfs_radar_bitmap,
-						    freq_list,
-						    num_channels))
-		goto exit;
-
 	if (!dfs->dfs_use_nol) {
 		if (!dfs->dfs_is_offload_enabled)
 			dfs_disable_radar_and_flush_pulses(dfs);
@@ -1117,6 +1106,18 @@ dfs_process_radar_ind_on_home_chan(struct wlan_dfs *dfs,
 
 	dfs_reset_bangradar(dfs);
 
+	if (dfs->dfs_use_puncture && !dfs->dfs_is_stadfs_enabled) {
+		bool is_ignore_radar_puncture = false;
+
+		dfs_handle_radar_puncturing(dfs,
+					    &dfs_radar_bitmap,
+					    freq_list,
+					    num_channels,
+					    &is_ignore_radar_puncture);
+		if (is_ignore_radar_puncture)
+			goto exit;
+	}
+
 	status = dfs_radar_add_channel_list_to_nol_for_freq(dfs,
 							    freq_list,
 							    nol_freq_list,
@@ -1126,6 +1127,8 @@ dfs_process_radar_ind_on_home_chan(struct wlan_dfs *dfs,
 			"radar event received on invalid channel");
 		goto exit;
 	}
+
+	dfs_mlme_set_tx_flag(dfs->dfs_pdev_obj, false);
 
 	/*
 	 * If precac is running and the radar found in secondary

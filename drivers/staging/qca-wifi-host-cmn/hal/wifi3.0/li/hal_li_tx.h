@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -38,7 +39,9 @@ enum hal_li_tx_ret_buf_manager {
  */
 
 /**
- * hal_tx_desc_set_buf_addr - Fill Buffer Address information in Tx Descriptor
+ * hal_tx_desc_set_buf_addr() - Fill Buffer Address information in Tx
+ *                              Descriptor
+ * @hal_soc_hdl: hal_soc handle
  * @desc: Handle to Tx Descriptor
  * @paddr: Physical Address
  * @pool_id: Return Buffer Manager ID
@@ -61,7 +64,8 @@ void hal_tx_desc_set_buf_addr(hal_soc_handle_t hal_soc_hdl, void *desc,
 }
 
 /**
- * hal_tx_desc_set_lmac_id_li - Set the lmac_id value
+ * hal_tx_desc_set_lmac_id_li() - Set the lmac_id value
+ * @hal_soc_hdl: hal_soc handle
  * @desc: Handle to Tx Descriptor
  * @lmac_id: mac Id to ast matching
  *                     b00 – mac 0
@@ -80,7 +84,8 @@ static inline void hal_tx_desc_set_lmac_id_li(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_desc_set_search_type_li - Set the search type value
+ * hal_tx_desc_set_search_type_li() - Set the search type value
+ * @hal_soc_hdl: hal_soc handle
  * @desc: Handle to Tx Descriptor
  * @search_type: search type
  *		     0 – Normal search
@@ -99,7 +104,8 @@ static inline void hal_tx_desc_set_search_type_li(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_desc_set_search_index_li - Set the search index value
+ * hal_tx_desc_set_search_index_li() - Set the search index value
+ * @hal_soc_hdl: hal_soc handle
  * @desc: Handle to Tx Descriptor
  * @search_index: The index that will be used for index based address or
  *                flow search. The field is valid when 'search_type' is
@@ -117,7 +123,8 @@ static inline void hal_tx_desc_set_search_index_li(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_desc_set_cache_set_num - Set the cache-set-num value
+ * hal_tx_desc_set_cache_set_num() - Set the cache-set-num value
+ * @hal_soc_hdl: hal_soc handle
  * @desc: Handle to Tx Descriptor
  * @cache_num: Cache set number that should be used to cache the index
  *                based search results, for address and flow search.
@@ -232,10 +239,10 @@ static inline void hal_tx_desc_set_l4_checksum_en(void *desc,
 }
 
 /**
- * hal_tx_desc_set_l3_checksum_en -  Set IPv4 checksum enable flag in
- * Tx Descriptor for MSDU_buffer type
+ * hal_tx_desc_set_l3_checksum_en() -  Set IPv4 checksum enable flag in
+ *                                     Tx Descriptor for MSDU_buffer type
  * @desc: Handle to Tx Descriptor
- * @checksum_en_flags: ipv4 checksum enable flags
+ * @en: ipv4 checksum enable flags
  *
  * Return: void
  */
@@ -247,7 +254,8 @@ static inline void hal_tx_desc_set_l3_checksum_en(void *desc,
 }
 
 /**
- * hal_tx_desc_set_fw_metadata- Sets the metadata that is part of TCL descriptor
+ * hal_tx_desc_set_fw_metadata() - Sets the metadata that is part of
+ *                                 TCL descriptor
  * @desc:Handle to Tx Descriptor
  * @metadata: Metadata to be sent to Firmware
  *
@@ -261,7 +269,7 @@ static inline void hal_tx_desc_set_fw_metadata(void *desc,
 }
 
 /**
- * hal_tx_desc_set_to_fw - Set To_FW bit in Tx Descriptor.
+ * hal_tx_desc_set_to_fw() - Set To_FW bit in Tx Descriptor.
  * @desc:Handle to Tx Descriptor
  * @to_fw: if set, Forward packet to FW along with classification result
  *
@@ -274,7 +282,7 @@ static inline void hal_tx_desc_set_to_fw(void *desc, uint8_t to_fw)
 }
 
 /**
- * hal_tx_desc_set_mesh_en - Set mesh_enable flag in Tx descriptor
+ * hal_tx_desc_set_mesh_en() - Set mesh_enable flag in Tx descriptor
  * @hal_soc_hdl: hal soc handle
  * @desc: Handle to Tx Descriptor
  * @en:   For raw WiFi frames, this indicates transmission to a mesh STA,
@@ -294,7 +302,7 @@ static inline void hal_tx_desc_set_mesh_en(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_desc_set_hlos_tid - Set the TID value (override DSCP/PCP fields in
+ * hal_tx_desc_set_hlos_tid() - Set the TID value (override DSCP/PCP fields in
  * frame) to be used for Tx Frame
  * @desc: Handle to Tx Descriptor
  * @hlos_tid: HLOS TID
@@ -313,7 +321,7 @@ static inline void hal_tx_desc_set_hlos_tid(void *desc,
 
 /**
  * hal_tx_desc_set_dscp_tid_table_id() - Sets DSCP to TID conversion table ID
- * @hal_soc: Handle to HAL SoC structure
+ * @hal_soc_hdl: Handle to HAL SoC structure
  * @desc: Handle to Tx Descriptor
  * @id: DSCP to tid conversion table to be used for this frame
  *
@@ -329,7 +337,7 @@ void hal_tx_desc_set_dscp_tid_table_id(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_desc_clear - Clear the HW descriptor entry
+ * hal_tx_desc_clear() - Clear the HW descriptor entry
  * @hw_desc: Hardware descriptor to be cleared
  *
  * Return: void
@@ -341,8 +349,8 @@ static inline void hal_tx_desc_clear(void *hw_desc)
 }
 
 /**
- * hal_tx_desc_sync - Commit the descriptor to Hardware
- * @hal_tx_des_cached: Cached descriptor that software maintains
+ * hal_tx_desc_sync() - Commit the descriptor to Hardware
+ * @hal_tx_desc_cached: Cached descriptor that software maintains
  * @hw_desc: Hardware descriptor to be updated
  */
 static inline void hal_tx_desc_sync(void *hal_tx_desc_cached,

@@ -98,6 +98,10 @@
 
 /* MLO enabled peer */
 #define WLAN_PEER_FEXT_MLO                          0x00000001
+/* Peer is QCN Node */
+#define WLAN_PEER_QCN_NODE                          0x00000010
+/* Peer is 4 Address node */
+#define WLAN_PEER_MESH_NODE                         0x00000020
 
 /**
  * enum wlan_peer_state  - peer state
@@ -186,6 +190,8 @@ struct wlan_objmgr_peer_objmgr {
  * @peer_lock:        Lock for access/update peer contents
  * @mlo_peer_ctx:     Reference to MLO Peer context
  * @mldaddr:          Peer MLD MAC address
+ * @mlo_bridge_peer:  Indicates bridge peer
+ * @peer_flags:        QCN flag and 4 address mode flag
  */
 struct wlan_objmgr_peer {
 	qdf_list_node_t psoc_peer;
@@ -204,6 +210,8 @@ struct wlan_objmgr_peer {
 #ifdef WLAN_FEATURE_11BE_MLO
 	struct wlan_mlo_peer_context *mlo_peer_ctx;
 	uint8_t mldaddr[QDF_MAC_ADDR_SIZE];
+	u_int32_t peer_flags;
+	bool mlo_bridge_peer;
 #endif
 };
 

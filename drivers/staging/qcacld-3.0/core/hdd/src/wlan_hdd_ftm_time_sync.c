@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -33,8 +34,8 @@ static ssize_t hdd_ftm_time_sync_show(struct device *dev,
 	if (adapter->magic != WLAN_HDD_ADAPTER_MAGIC)
 		return scnprintf(buf, PAGE_SIZE, "Invalid device\n");
 
-	hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-	vdev = hdd_objmgr_get_vdev_by_user(adapter, FTM_TIME_SYNC_ID);
+	hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter->deflink);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink, FTM_TIME_SYNC_ID);
 	if (!vdev)
 		return -EINVAL;
 
@@ -56,7 +57,7 @@ hdd_ftm_time_sync_sta_state_notify(struct hdd_adapter *adapter,
 	struct net_device *net_dev;
 	struct wlan_objmgr_vdev *vdev;
 
-	vdev = hdd_objmgr_get_vdev_by_user(adapter, FTM_TIME_SYNC_ID);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink, FTM_TIME_SYNC_ID);
 	if (!vdev)
 		return;
 
@@ -78,7 +79,7 @@ hdd_ftm_time_sync_sta_state_notify(struct hdd_adapter *adapter,
 					   &dev_attr_ftm_time_sync);
 	}
 
-	hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+	hdd_sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter->deflink);
 	ucfg_ftm_time_sync_update_sta_connect_state(
 						vdev, state,
 						hdd_sta_ctx->conn_info.bssid);

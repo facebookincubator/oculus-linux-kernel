@@ -23,7 +23,7 @@ struct gen7_snapshot_block_list;
 extern const struct adreno_power_ops gen7_gmu_power_ops;
 extern const struct adreno_power_ops gen7_hwsched_power_ops;
 extern const struct adreno_perfcounters adreno_gen7_perfcounters;
-extern const struct adreno_perfcounters adreno_gen7_6_0_perfcounters;
+extern const struct adreno_perfcounters adreno_gen7_hwsched_perfcounters;
 extern const struct adreno_perfcounters adreno_gen7_no_cb_perfcounters;
 
 struct gen7_gpudev {
@@ -192,6 +192,9 @@ struct gen7_cp_smmu_info {
 
 /* Size of the CP_INIT pm4 stream in dwords */
 #define GEN7_CP_INIT_DWORDS 10
+
+/* Size of the perf counter enable pm4 stream in dwords */
+#define GEN7_PERF_COUNTER_ENABLE_DWORDS 3
 
 #define GEN7_INT_MASK \
 	((1 << GEN7_INT_AHBERROR) |			\

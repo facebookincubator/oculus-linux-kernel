@@ -27,7 +27,7 @@
 #include <wlan_cp_stats_public_structs.h>
 
 #if defined(WLAN_SUPPORT_INFRA_CTRL_PATH_STATS) || \
-	defined(WLAN_TELEMETRY_STATS_SUPPORT)
+	defined(WLAN_CONFIG_TELEMETRY_AGENT)
 /**
  * wmi_unified_infra_cp_stats_request_send() - WMI request infra_cp_stats
  * function

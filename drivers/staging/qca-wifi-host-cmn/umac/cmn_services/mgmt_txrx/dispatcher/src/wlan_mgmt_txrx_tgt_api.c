@@ -824,6 +824,15 @@ mgmt_get_protected_eht_action_subtype(uint8_t action_code)
 	case EHT_T2LM_TEARDOWN:
 		frm_type = MGMT_ACTION_EHT_T2LM_TEARDOWN;
 		break;
+	case EHT_EPCS_REQUEST:
+		frm_type = MGMT_ACTION_EHT_EPCS_REQUEST;
+		break;
+	case EHT_EPCS_RESPONSE:
+		frm_type = MGMT_ACTION_EHT_EPCS_RESPONSE;
+		break;
+	case EHT_EPCS_TEARDOWN:
+		frm_type = MGMT_ACTION_EHT_EPCS_TEARDOWN;
+		break;
 	default:
 		frm_type = MGMT_FRM_UNSPECIFIED;
 		break;

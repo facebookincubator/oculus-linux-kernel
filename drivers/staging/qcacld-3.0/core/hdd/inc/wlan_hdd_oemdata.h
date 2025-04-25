@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -149,16 +149,6 @@ struct peer_status_info {
 	uint32_t peer_capability;
 	uint32_t reserved0;
 	struct hdd_channel_info peer_chan_info;
-};
-
-/**
- * enum oem_capability_mask - mask field for userspace client capabilities
- * @OEM_CAP_RM_FTMRR: FTM range report mask bit
- * @OEM_CAP_RM_LCI: LCI capability mask bit
- */
-enum oem_capability_mask {
-	OEM_CAP_RM_FTMRR = (1 << (0)),
-	OEM_CAP_RM_LCI = (1 << (1)),
 };
 
 /**

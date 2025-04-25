@@ -186,7 +186,7 @@ ol_rx_frag_restructure(
 	int rx_desc_len)
 {
 	if ((!ind_old_position) || (!rx_desc_old_position)) {
-		ol_txrx_err("ind_old_position,rx_desc_old_position is NULL\n");
+		ol_txrx_err("ind_old_position,rx_desc_old_position is NULL");
 		ASSERT(0);
 		return;
 	}
@@ -318,7 +318,7 @@ ol_rx_frag_indication_handler(ol_txrx_pdev_handle pdev,
 	void *rx_desc;
 
 	if (tid >= OL_TXRX_NUM_EXT_TIDS) {
-		ol_txrx_err("%s:  invalid tid, %u\n", __FUNCTION__, tid);
+		ol_txrx_err("Invalid tid: %u", tid);
 		return;
 	}
 
@@ -485,7 +485,7 @@ ol_rx_reorder_store_frag(ol_txrx_pdev_handle pdev,
 					  rx_reorder_array_elem->head);
 			rx_reorder_array_elem->head = NULL;
 			rx_reorder_array_elem->tail = NULL;
-			ol_txrx_err("\n ol_rx_reorder_store:%s mismatch\n",
+			ol_txrx_err("ol_rx_reorder_store:%s mismatch",
 				   (rxseq == frxseq)
 				   ? "address"
 				   : "seq number");
@@ -625,7 +625,7 @@ void ol_rx_defrag_waitlist_remove(struct ol_txrx_peer_t *peer, unsigned int tid)
 		rx_reorder->defrag_waitlist_elem.tqe_next = NULL;
 		rx_reorder->defrag_waitlist_elem.tqe_prev = NULL;
 	} else if (rx_reorder->defrag_waitlist_elem.tqe_next) {
-		ol_txrx_alert("waitlist->tqe_prv = NULL\n");
+		ol_txrx_alert("waitlist->tqe_prv = NULL");
 		QDF_ASSERT(0);
 		rx_reorder->defrag_waitlist_elem.tqe_next = NULL;
 	}
@@ -655,7 +655,7 @@ void ol_rx_defrag_waitlist_flush(struct ol_txrx_pdev_t *pdev)
 
 		tid = rx_reorder->tid;
 		if (tid >= OL_TXRX_NUM_EXT_TIDS) {
-			ol_txrx_err("%s:  invalid tid, %u\n", __FUNCTION__, tid);
+			ol_txrx_err("Invalid tid: %u", tid);
 			WARN_ON(1);
 			continue;
 		}

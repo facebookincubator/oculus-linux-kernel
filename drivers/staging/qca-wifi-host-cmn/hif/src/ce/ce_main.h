@@ -379,4 +379,10 @@ void hif_select_epping_service_to_pipe_map(struct service_to_pipe
 void ce_service_register_module(enum ce_target_type target_type,
 				struct ce_ops* (*ce_attach)(void));
 
+#ifdef CONFIG_SHADOW_V3
+void hif_get_shadow_reg_config_v3(struct hif_softc *scn,
+				  struct pld_shadow_reg_v3_cfg **shadow_config,
+				  int *num_shadow_registers_configured);
+void hif_preare_shadow_register_cfg_v3(struct hif_softc *scn);
+#endif
 #endif /* __CE_H__ */

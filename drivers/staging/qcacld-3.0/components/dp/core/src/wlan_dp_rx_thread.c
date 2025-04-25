@@ -40,6 +40,8 @@
 #else
 #define DP_RX_THREAD_WAIT_TIMEOUT 2000
 #endif
+#define DP_RX_THREAD_FLUSH_TIMEOUT 6000
+#define DP_RX_THREAD_MIN_FLUSH_TIMEOUT 10
 
 #ifdef CONFIG_WLAN_EXTRA_DEBUG
 /* number of rx pkts that thread should yield */
@@ -85,13 +87,14 @@ dp_rx_refill_thread_set_affinity(struct dp_rx_refill_thread *refill_thread)
 	unsigned int cpus;
 	char new_mask_str[10];
 	qdf_cpu_mask new_mask;
+	int perf_cpu_cluster = hif_get_perf_cluster_bitmap();
+	int package_id;
 
 	qdf_cpumask_clear(&new_mask);
 	qdf_for_each_online_cpu(cpus) {
-		if (qdf_topology_physical_package_id(cpus) ==
-		    CPU_CLUSTER_TYPE_PERF) {
+		package_id = qdf_topology_physical_package_id(cpus);
+		if (package_id >= 0 && BIT(package_id) & perf_cpu_cluster)
 			qdf_cpumask_set_cpu(cpus, &new_mask);
-		}
 	}
 
 	qdf_thread_set_cpus_allowed_mask(refill_thread->task, &new_mask);
@@ -1099,81 +1102,131 @@ suspend_fail:
 	return qdf_status;
 }
 
-/**
- * dp_rx_thread_flush_by_vdev_id() - flush rx packets by vdev_id in
- * a particular rx thread queue
- * @rx_thread: rx_thread pointer of the queue from which packets are
- * to be flushed out
+/*
+ * dp_rx_tm_flush_nbuf_list() - Flush rx thread nbuf list
+ * @rx_tm_hdl: dp_rx_tm_handle containing the overall thread
+ *  infrastructure
  * @vdev_id: vdev id for which packets are to be flushed
- * @wait_timeout: wait time value for rx thread to complete flush
  *
- * The function will flush the RX packets by vdev_id in a particular
- * RX thead queue. And will notify and wait the TX thread to flush the
- * packets in the NAPI RX GRO hash list
- *
- * Return: Success/Failure
+ * Return: None
  */
-static inline
-QDF_STATUS dp_rx_thread_flush_by_vdev_id(struct dp_rx_thread *rx_thread,
-					 uint8_t vdev_id, int wait_timeout)
+static inline void
+dp_rx_tm_flush_nbuf_list(struct dp_rx_tm_handle *rx_tm_hdl, uint8_t vdev_id)
 {
 	qdf_nbuf_t nbuf_list, tmp_nbuf_list;
 	uint32_t num_list_elements = 0;
-	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
-	uint64_t lock_time, unlock_time;
+	uint64_t lock_time, unlock_time, flush_time;
 	qdf_nbuf_t nbuf_list_head = NULL, nbuf_list_next;
+	struct dp_rx_thread *rx_thread;
+	int i;
 
-	qdf_nbuf_queue_head_lock(&rx_thread->nbuf_queue);
-	lock_time = qdf_get_log_timestamp();
-	QDF_NBUF_QUEUE_WALK_SAFE(&rx_thread->nbuf_queue, nbuf_list,
-				 tmp_nbuf_list) {
-		if (QDF_NBUF_CB_RX_VDEV_ID(nbuf_list) == vdev_id) {
-			qdf_nbuf_unlink_no_lock(nbuf_list,
-						&rx_thread->nbuf_queue);
-			DP_RX_HEAD_APPEND(nbuf_list_head, nbuf_list);
+	for (i = 0; i < rx_tm_hdl->num_dp_rx_threads; i++) {
+		rx_thread = rx_tm_hdl->rx_thread[i];
+		if (!rx_thread)
+			continue;
+
+		qdf_nbuf_queue_head_lock(&rx_thread->nbuf_queue);
+		lock_time = qdf_get_log_timestamp();
+		QDF_NBUF_QUEUE_WALK_SAFE(&rx_thread->nbuf_queue, nbuf_list,
+					 tmp_nbuf_list) {
+			if (QDF_NBUF_CB_RX_VDEV_ID(nbuf_list) == vdev_id) {
+				qdf_nbuf_unlink_no_lock(nbuf_list,
+							&rx_thread->nbuf_queue);
+				DP_RX_HEAD_APPEND(nbuf_list_head, nbuf_list);
+			}
 		}
-	}
-	qdf_nbuf_queue_head_unlock(&rx_thread->nbuf_queue);
-	unlock_time = qdf_get_log_timestamp();
-	dp_info("Lock held time: %llu us",
-		qdf_log_timestamp_to_usecs(unlock_time - lock_time));
+		qdf_nbuf_queue_head_unlock(&rx_thread->nbuf_queue);
+		unlock_time = qdf_get_log_timestamp();
 
-	while (nbuf_list_head) {
-		nbuf_list_next = qdf_nbuf_queue_next(nbuf_list_head);
-		qdf_nbuf_set_next(nbuf_list_head, NULL);
-		dp_rx_thread_adjust_nbuf_list(nbuf_list_head);
-		num_list_elements =
-			QDF_NBUF_CB_RX_NUM_ELEMENTS_IN_LIST(nbuf_list_head);
-		rx_thread->stats.rx_flushed += num_list_elements;
-		qdf_nbuf_list_free(nbuf_list_head);
-		nbuf_list_head = nbuf_list_next;
-	}
+		while (nbuf_list_head) {
+			nbuf_list_next = qdf_nbuf_queue_next(nbuf_list_head);
+			qdf_nbuf_set_next(nbuf_list_head, NULL);
+			dp_rx_thread_adjust_nbuf_list(nbuf_list_head);
+			num_list_elements =
+			    QDF_NBUF_CB_RX_NUM_ELEMENTS_IN_LIST(nbuf_list_head);
+			rx_thread->stats.rx_flushed += num_list_elements;
+			qdf_nbuf_list_free(nbuf_list_head);
+			nbuf_list_head = nbuf_list_next;
+		}
 
-	qdf_event_reset(&rx_thread->vdev_del_event);
-	qdf_set_bit(RX_VDEV_DEL_EVENT, &rx_thread->event_flag);
-	qdf_wake_up_interruptible(&rx_thread->wait_q);
+		flush_time = qdf_get_log_timestamp();
+		dp_info("Thread: %u lock held time: %llu us flush time: %llu us",
+			rx_thread->id,
+			qdf_log_timestamp_to_usecs(unlock_time - lock_time),
+			qdf_log_timestamp_to_usecs(flush_time - unlock_time));
 
-	qdf_status = qdf_wait_single_event(&rx_thread->vdev_del_event,
-					   wait_timeout);
+		qdf_event_reset(&rx_thread->vdev_del_event);
+		qdf_set_bit(RX_VDEV_DEL_EVENT, &rx_thread->event_flag);
+		qdf_wake_up_interruptible(&rx_thread->wait_q);
+		}
+}
 
-	if (QDF_IS_STATUS_SUCCESS(qdf_status))
-		dp_debug("thread:%d napi gro flush successfully",
-			 rx_thread->id);
-	else if (qdf_status == QDF_STATUS_E_TIMEOUT) {
-		dp_err("thread:%d timed out waiting for napi gro flush",
-		       rx_thread->id);
-		/*
-		 * If timeout, then force flush here in case any rx packets
-		 * belong to this vdev is still pending on stack queue,
-		 * while net_vdev will be freed soon.
+/**
+ * dp_rx_tm_wait_vdev_del_event() - wait on rx thread vdev delete event
+ * @rx_tm_hdl: dp_rx_tm_handle containing the overall thread
+ *  infrastructure
+ *
+ * Return: None
+ */
+static inline void
+dp_rx_tm_wait_vdev_del_event(struct dp_rx_tm_handle *rx_tm_hdl)
+{
+	QDF_STATUS qdf_status;
+	int i;
+	struct dp_rx_thread *rx_thread;
+	int wait_timeout = DP_RX_THREAD_FLUSH_TIMEOUT;
+	uint64_t entry_time, exit_time, wait_time;
+
+	for (i = 0; i < rx_tm_hdl->num_dp_rx_threads; i++) {
+		rx_thread = rx_tm_hdl->rx_thread[i];
+		if (!rx_thread)
+			continue;
+
+		entry_time = qdf_get_log_timestamp();
+		qdf_status =
+			qdf_wait_single_event(&rx_thread->vdev_del_event,
+					      wait_timeout);
+
+		if (QDF_IS_STATUS_SUCCESS(qdf_status))
+			dp_debug("thread:%d napi gro flush successfully",
+				 rx_thread->id);
+		else if (qdf_status == QDF_STATUS_E_TIMEOUT) {
+			dp_err("thread:%d timed out waiting for napi gro flush",
+			       rx_thread->id);
+			/*
+			 * If timeout, then force flush in case any rx packets
+			 * belong to this vdev is still pending on stack queue,
+			 * while net_vdev will be freed soon.
+			 */
+			dp_rx_thread_gro_flush(rx_thread,
+					       DP_RX_GRO_NORMAL_FLUSH);
+		} else {
+			dp_err("thread:%d event wait failed with status: %d",
+			       rx_thread->id, qdf_status);
+		}
+
+		exit_time = qdf_get_log_timestamp();
+		wait_time = qdf_do_div(qdf_log_timestamp_to_usecs(exit_time -
+								  entry_time),
+				       QDF_USEC_PER_MSEC);
+		/**
+		 *
+		 * Maximum wait timeout to flush all thread is
+		 * DP_RX_THREAD_MIN_FLUSH_TIMEOUT, This logic
+		 * limit maximum wait time of all the thread to
+		 * DP_RX_THREAD_FLUSH_TIMEOUT. In case if
+		 * DP_RX_THREAD_FLUSH_TIMEOUT is exhausted
+		 * give remaining thread DP_RX_THREAD_MIN_FLUSH_TIMEOUT.
+		 *
+		 * Since all the threads are already woken before calling
+		 * wait API. So each thread will get
+		 * DP_RX_THREAD_FLUSH_TIMEOUT to set the event.
 		 */
-		dp_rx_thread_gro_flush(rx_thread,
-				       DP_RX_GRO_NORMAL_FLUSH);
-	} else
-		dp_err("thread:%d failed while waiting for napi gro flush",
-		       rx_thread->id);
-
-	return qdf_status;
+		if (wait_timeout > DP_RX_THREAD_MIN_FLUSH_TIMEOUT)
+			wait_timeout = (wait_timeout > wait_time) ?
+				       (wait_timeout - wait_time) :
+				       DP_RX_THREAD_MIN_FLUSH_TIMEOUT;
+	}
 }
 
 /**
@@ -1185,53 +1238,21 @@ QDF_STATUS dp_rx_thread_flush_by_vdev_id(struct dp_rx_thread *rx_thread,
  *
  * Return: QDF_STATUS_SUCCESS
  */
-#ifdef CONFIG_WLAN_EXTRA_DEBUG
 QDF_STATUS dp_rx_tm_flush_by_vdev_id(struct dp_rx_tm_handle *rx_tm_hdl,
 				     uint8_t vdev_id)
 {
-	struct dp_rx_thread *rx_thread;
-	QDF_STATUS qdf_status;
-	int i;
-	int wait_timeout = DP_RX_THREAD_WAIT_TIMEOUT;
+	uint64_t entry_time, exit_time;
 
-	for (i = 0; i < rx_tm_hdl->num_dp_rx_threads; i++) {
-		rx_thread = rx_tm_hdl->rx_thread[i];
-		if (!rx_thread)
-			continue;
-
-		dp_debug("thread %d", i);
-		qdf_status = dp_rx_thread_flush_by_vdev_id(rx_thread, vdev_id,
-							   wait_timeout);
-
-		/* if one thread timeout happened, shrink timeout value
-		 * to 1/4 of original value
-		 */
-		if (qdf_status == QDF_STATUS_E_TIMEOUT)
-			wait_timeout = DP_RX_THREAD_WAIT_TIMEOUT / 4;
-	}
+	entry_time = qdf_get_log_timestamp();
+	dp_rx_tm_flush_nbuf_list(rx_tm_hdl, vdev_id);
+	dp_rx_tm_wait_vdev_del_event(rx_tm_hdl);
+	exit_time = qdf_get_log_timestamp();
+	dp_info("Vdev: %u total flush time: %llu us",
+		vdev_id,
+		qdf_log_timestamp_to_usecs(exit_time - entry_time));
 
 	return QDF_STATUS_SUCCESS;
 }
-#else
-QDF_STATUS dp_rx_tm_flush_by_vdev_id(struct dp_rx_tm_handle *rx_tm_hdl,
-				     uint8_t vdev_id)
-{
-	struct dp_rx_thread *rx_thread;
-	int i;
-
-	for (i = 0; i < rx_tm_hdl->num_dp_rx_threads; i++) {
-		rx_thread = rx_tm_hdl->rx_thread[i];
-		if (!rx_thread)
-			continue;
-
-		dp_debug("thread %d", i);
-		dp_rx_thread_flush_by_vdev_id(rx_thread, vdev_id,
-					      DP_RX_THREAD_WAIT_TIMEOUT);
-	}
-
-	return QDF_STATUS_SUCCESS;
-}
-#endif
 
 /**
  * dp_rx_tm_resume() - resume DP RX threads
@@ -1520,6 +1541,7 @@ QDF_STATUS dp_txrx_init(ol_txrx_soc_handle soc, uint8_t pdev_id,
 		if (qdf_status != QDF_STATUS_SUCCESS) {
 			dp_err("Failed to initialize RX refill thread status:%d",
 			       qdf_status);
+			qdf_mem_free(dp_ext_hdl);
 			return qdf_status;
 		}
 		cdp_register_rx_refill_thread_sched_handler(soc,

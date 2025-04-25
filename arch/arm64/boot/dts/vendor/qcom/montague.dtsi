@@ -17,9 +17,9 @@
 };
 
 &soc {
-	st54spi_gpio {
+	stsafe320_gpio {
 		status = "ok";
-		compatible = "st,st54spi_gpio";
+		compatible = "stm,stsafe320_gpio";
 		/* gpio used as SE_nRESET */
 		gpio-power_nreset = <&tlmm 48 0x00>;
 	};
@@ -31,11 +31,3 @@
 		qcom,low-latency;
 	};
 };
-
-&pcie0 {
-
-/delete-property/ qcom,config-recovery;
-/delete-property/ qcom,drv-supported;
-
-};
-

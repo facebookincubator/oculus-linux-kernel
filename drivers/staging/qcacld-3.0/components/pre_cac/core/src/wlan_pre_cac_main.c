@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -224,6 +224,11 @@ void pre_cac_handle_radar_ind(struct wlan_objmgr_vdev *vdev)
 	struct wlan_objmgr_psoc *psoc = wlan_vdev_get_psoc(vdev);
 	struct pre_cac_psoc_priv *psoc_priv = pre_cac_psoc_get_priv(psoc);
 
+	if (!psoc_priv) {
+		pre_cac_err("invalid psoc");
+		return;
+	}
+
 	pre_cac_conditional_csa_ind(psoc, wlan_vdev_get_id(vdev), false);
 
 	pre_cac_debug("schedue pre_cac_work vdev %d", wlan_vdev_get_id(vdev));
@@ -238,6 +243,11 @@ void pre_cac_handle_cac_end(struct wlan_objmgr_vdev *vdev)
 {
 	struct wlan_objmgr_psoc *psoc = wlan_vdev_get_psoc(vdev);
 	struct pre_cac_psoc_priv *psoc_priv = pre_cac_psoc_get_priv(psoc);
+
+	if (!psoc_priv) {
+		pre_cac_err("invalid psoc");
+		return;
+	}
 
 	pre_cac_conditional_csa_ind(psoc, wlan_vdev_get_id(vdev), true);
 

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -422,7 +423,7 @@ void ol_txrx_tso_stats_clear(ol_txrx_pdev_handle pdev);
 static inline
 void ol_txrx_stats_display_tso(ol_txrx_pdev_handle pdev)
 {
-	ol_txrx_err("TSO is not supported\n");
+	ol_txrx_err("TSO is not supported");
 }
 
 static inline

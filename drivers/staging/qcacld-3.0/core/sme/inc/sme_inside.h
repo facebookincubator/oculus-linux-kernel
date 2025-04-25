@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021, 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -83,6 +83,22 @@ struct s_nss_update_cmd {
 	uint32_t request_id;
 };
 
+/**
+ * struct sir_sap_ch_width_update_cmd - Format of ch_width update request
+ * @ch_width: new channel width
+ * @vdev_id: vdev ID
+ * @reason: reason for ch_width update
+ * @conc_vdev_id: Concurrent connection vdev_id that is causing ch_width update
+ * @request_id: request id for connection manager
+ */
+struct sir_sap_ch_width_update_cmd {
+	uint32_t ch_width;
+	uint32_t vdev_id;
+	enum policy_mgr_conn_update_reason reason;
+	uint32_t conc_vdev_id;
+	uint32_t request_id;
+};
+
 typedef struct tagSmeCmd {
 	tListElem Link;
 	eSmeCommandType command;
@@ -96,6 +112,7 @@ typedef struct tagSmeCmd {
 		struct s_nss_update_cmd nss_update_cmd;
 		struct policy_mgr_dual_mac_config set_dual_mac_cmd;
 		struct sir_antenna_mode_param set_antenna_mode_cmd;
+		struct sir_sap_ch_width_update_cmd bw_update_cmd;
 	} u;
 } tSmeCmd;
 
@@ -159,4 +176,5 @@ void csr_process_set_dual_mac_config(struct mac_context *mac, tSmeCmd *command);
 void csr_process_set_antenna_mode(struct mac_context *mac, tSmeCmd *command);
 void csr_process_set_hw_mode(struct mac_context *mac, tSmeCmd *command);
 void csr_process_nss_update_req(struct mac_context *mac, tSmeCmd *command);
+void csr_process_sap_ch_width_update(struct mac_context *mac, tSmeCmd *command);
 #endif /* #if !defined( __SMEINSIDE_H ) */

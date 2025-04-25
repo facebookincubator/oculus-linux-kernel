@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -192,8 +192,8 @@ const char *dp_hist_delay_percentile_str(uint8_t index)
 	return dp_hist_delay_percentile_dbucket_str[index];
 }
 
-/*
- * dp_hist_find_bucket_idx: Find the bucket index
+/**
+ * dp_hist_find_bucket_idx() - Find the bucket index
  * @bucket_array: Bucket array
  * @value: Frequency value
  *
@@ -211,8 +211,8 @@ static int dp_hist_find_bucket_idx(int16_t *bucket_array, int value)
 	return idx;
 }
 
-/*
- * dp_hist_fill_buckets: Fill the histogram frequency buckets
+/**
+ * dp_hist_fill_buckets() - Fill the histogram frequency buckets
  * @hist_bucket: Histogram bukcets
  * @value: Frequency value
  *
@@ -260,13 +260,6 @@ static void dp_hist_fill_buckets(struct cdp_hist_bucket *hist_bucket, int value)
 	hist_bucket->freq[idx]++;
 }
 
-/*
- * dp_hist_update_stats: Update histogram stats
- * @hist_stats: Hist stats object
- * @value: Delay value
- *
- * Return: void
- */
 void dp_hist_update_stats(struct cdp_hist_stats *hist_stats, int value)
 {
 	if (qdf_unlikely(!hist_stats))
@@ -293,13 +286,6 @@ void dp_hist_update_stats(struct cdp_hist_stats *hist_stats, int value)
 		hist_stats->avg = (hist_stats->avg + value) / 2;
 }
 
-/*
- * dp_copy_hist_stats(): Copy the histogram stats
- * @src_hist_stats: Source histogram stats
- * @dst_hist_stats: Destination histogram stats
- *
- * Return: void
- */
 void dp_copy_hist_stats(struct cdp_hist_stats *src_hist_stats,
 			struct cdp_hist_stats *dst_hist_stats)
 {
@@ -313,13 +299,6 @@ void dp_copy_hist_stats(struct cdp_hist_stats *src_hist_stats,
 	dst_hist_stats->avg = src_hist_stats->avg;
 }
 
-/*
- * dp_accumulate_hist_stats(): Accumulate the hist src to dst
- * @src_hist_stats: Source histogram stats
- * @dst_hist_stats: Destination histogram stats
- *
- * Return: void
- */
 void dp_accumulate_hist_stats(struct cdp_hist_stats *src_hist_stats,
 			      struct cdp_hist_stats *dst_hist_stats)
 {
@@ -345,11 +324,6 @@ void dp_accumulate_hist_stats(struct cdp_hist_stats *src_hist_stats,
 	}
 }
 
-/*
- * dp_hist_init(): Initialize the histogram object
- * @hist_stats: Hist stats object
- * @hist_type: Histogram type
- */
 void dp_hist_init(struct cdp_hist_stats *hist_stats,
 		  enum cdp_hist_types hist_type)
 {

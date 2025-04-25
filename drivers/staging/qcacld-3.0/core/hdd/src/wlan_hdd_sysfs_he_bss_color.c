@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -63,7 +64,8 @@ __hdd_sysfs_he_bss_color_store(struct net_device *net_dev,
 	if (kstrtou32(token, 0, &value))
 		return -EINVAL;
 
-	status = sme_set_he_bss_color(hdd_ctx->mac_handle, adapter->vdev_id,
+	status = sme_set_he_bss_color(hdd_ctx->mac_handle,
+				      adapter->deflink->vdev_id,
 				      value);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		hdd_err_rl("Failed to set HE BSS color, status %d", status);

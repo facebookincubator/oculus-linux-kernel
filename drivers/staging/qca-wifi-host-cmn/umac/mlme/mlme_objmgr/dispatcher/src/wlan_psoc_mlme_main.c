@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -72,6 +73,8 @@ static QDF_STATUS mlme_psoc_obj_create_handler(struct wlan_objmgr_psoc *psoc,
 		goto init_failed;
 	}
 
+	wlan_mlme_psoc_init_peer_trans_history(psoc_mlme);
+
 	return QDF_STATUS_SUCCESS;
 init_failed:
 	qdf_mem_free(psoc_mlme);
@@ -89,6 +92,8 @@ static QDF_STATUS mlme_psoc_obj_destroy_handler(struct wlan_objmgr_psoc *psoc,
 		mlme_err("PSOC MLME component object is NULL");
 		return QDF_STATUS_E_FAILURE;
 	}
+
+	wlan_mlme_psoc_flush_peer_trans_history(psoc);
 
 	wlan_objmgr_psoc_component_obj_detach(psoc, WLAN_UMAC_COMP_MLME,
 					      psoc_mlme);

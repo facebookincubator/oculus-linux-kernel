@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2015-2017, 2019, 2021 The Linux Foundation.
  * All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -22,9 +22,15 @@
 #define __WLAN_HDD_DRIVER_OPS_H__
 
 #include "hif.h"
+#include <qdf_types.h>
 
 struct hdd_context;
 
+#define wlan_hdd_trigger_cds_recovery(reason) \
+	__wlan_hdd_trigger_cds_recovery(reason, __func__, __LINE__)
+
+void __wlan_hdd_trigger_cds_recovery(enum qdf_hang_reason reason,
+				     const char *func, const uint32_t line);
 /**
  * DOC: wlan_hdd_driver_ops.h
  *
@@ -175,4 +181,12 @@ void hdd_hif_set_enable_detection(struct hif_opaque_softc *hif_ctx, bool value)
 {
 }
 #endif /* HIF_DETECTION_LATENCY_ENABLE */
+
+/**
+ * hdd_deinit_qdf_ctx() - API to Deinitialize global QDF Device structure
+ * @domain: Debug domain
+ *
+ * Return: 0 - success, < 0 - failure
+ */
+int hdd_deinit_qdf_ctx(uint8_t domain);
 #endif /* __WLAN_HDD_DRIVER_OPS_H__ */

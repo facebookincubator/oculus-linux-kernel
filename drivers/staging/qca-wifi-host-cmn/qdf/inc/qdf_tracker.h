@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021, 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -48,9 +48,9 @@ struct qdf_tracker {
  * qdf_tracker_declare() - statically declare a qdf_tacker instance
  * @name: C identifier to use for the new qdf_tracker
  * @bits: the number of bits to use for hashing the resource pointers
- * @leak_title: the string title to use when logging leaks
- * @track_title: the string title to use when logging double tracking issues
- * @untrack_title: the string title to use when logging double untracking issues
+ * @_leak_title: the string title to use when logging leaks
+ * @_track_title: the string title to use when logging double tracking issues
+ * @_untrack_title: the string title to use when logging double untracking issues
  */
 #define qdf_tracker_declare(name, bits, _leak_title, \
 			    _track_title, _untrack_title) \

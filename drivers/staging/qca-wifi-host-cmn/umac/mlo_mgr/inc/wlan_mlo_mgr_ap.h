@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -40,6 +40,82 @@ bool mlo_ap_vdev_attach(struct wlan_objmgr_vdev *vdev,
 			uint8_t link_id,
 			uint16_t vdev_count);
 
+#if defined(WLAN_FEATURE_11BE_MLO) && defined(WLAN_MLO_MULTI_CHIP)
+/**
+ * mlo_ap_get_bridge_vdev_list() - get mlo bridge vdev list
+ * @vdev: vdev pointer
+ * @vdev_count: vdev count
+ * @wlan_bridge_vdev_list: bridge vdev list
+ *
+ * This API gets all partner bridge vdevs.
+ *
+ * It takes references for all vdev's with bit set in the list. Callers
+ * of this API should properly release references before destroying the
+ * list.
+ *
+ * Return: None
+ */
+void mlo_ap_get_bridge_vdev_list(struct wlan_objmgr_vdev *vdev,
+				 uint16_t *vdev_count,
+				 struct wlan_objmgr_vdev **wlan_bridge_vdev_list);
+
+/**
+ * mlo_ap_get_bridge_vdev_count() - get mlo bridge vdev count
+ * @mld_ctx: mld context
+ * @vdev_count: vdev count
+ *
+ * This API gets count of all partner bridge vdevs
+ *
+ * Return: None
+ */
+QDF_STATUS mlo_ap_get_bridge_vdev_count(struct wlan_mlo_dev_context *mld_ctx,
+					uint16_t *vdev_count);
+
+/**
+ * mlo_ap_get_vdev_list_no_flag() - get mlo vdev list
+ * @vdev: vdev pointer
+ * @vdev_count: vdev count
+ * @wlan_vdev_list: vdev list
+ *
+ * This API gets all partner vdev's without checking for WLAN_VDEV_FEXT2_MLO.
+ *
+ * It takes references for all vdev's with bit set in the list. Callers
+ * of this API should properly release references before destroying the
+ * list.
+ *
+ * Return: None
+ */
+void mlo_ap_get_vdev_list_no_flag(struct wlan_objmgr_vdev *vdev,
+				  uint16_t *vdev_count,
+				  struct wlan_objmgr_vdev **wlan_vdev_list);
+#else
+static inline void
+mlo_ap_get_bridge_vdev_list(struct wlan_objmgr_vdev *vdev,
+			    uint16_t *vdev_count,
+			    struct wlan_objmgr_vdev **wlan_bridge_vdev_list)
+{
+}
+
+static inline QDF_STATUS
+mlo_ap_get_bridge_vdev_count(struct wlan_mlo_dev_context *mld_ctx,
+			     uint16_t *vdev_count)
+{
+	if (!vdev_count)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	*vdev_count = 0;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+static inline void
+mlo_ap_get_vdev_list_no_flag(struct wlan_objmgr_vdev *vdev,
+			     uint16_t *vdev_count,
+			     struct wlan_objmgr_vdev **wlan_vdev_list)
+{
+}
+#endif
+
 /**
  * mlo_ap_get_vdev_list() - get mlo vdev list
  * @vdev: vdev pointer
@@ -58,6 +134,25 @@ bool mlo_ap_vdev_attach(struct wlan_objmgr_vdev *vdev,
 void mlo_ap_get_vdev_list(struct wlan_objmgr_vdev *vdev,
 			  uint16_t *vdev_count,
 			  struct wlan_objmgr_vdev **wlan_vdev_list);
+
+/**
+ * mlo_peer_get_vdev_list() - get mlo peer vdev list
+ * @peer: peer pointer
+ * @vdev_count: vdev count
+ * @wlan_vdev_list: vdev list
+ *
+ * This API gets all partner vdev's which have WLAN_VDEV_FEXT2_MLO bit
+ * set.
+ *
+ * It takes references for all vdev's with bit set in the list. Callers
+ * of this API should properly release references before destroying the
+ * list.
+ *
+ * Return: None
+ */
+void mlo_peer_get_vdev_list(struct wlan_objmgr_peer *peer,
+			    uint16_t *vdev_count,
+			    struct wlan_objmgr_vdev **wlan_vdev_list);
 
 /**
  * mlo_ap_get_active_vdev_list() - get mlo vdev list
@@ -430,18 +525,28 @@ QDF_STATUS mlme_set_aid(struct wlan_objmgr_vdev *vdev,
 uint16_t wlan_mlme_get_aid_count(struct wlan_objmgr_vdev *vdev);
 
 /**
+ * mlo_ap_update_max_ml_peer_ids() - public API to update max MLO peer ids
+ * @pdev_id: PDEV id
+ * @max_ml_peer_ids: maximum ml peer ids supported
+ *
+ * This function updated the maximum MLO peer ids supported for the psoc
+ */
+QDF_STATUS mlo_ap_update_max_ml_peer_ids(
+		uint32_t pdev_id, uint32_t max_ml_peer_ids);
+
+/**
  * mlo_ap_ml_peerid_alloc() - public API to allocate MLO peer id
  *
  * This function allocates MLO peer ID
  *
  * Return: mlo_peer_id on success,
-	 MLO_INVALID_PEER_ID on failure
+ *	 MLO_INVALID_PEER_ID on failure
  */
 uint16_t mlo_ap_ml_peerid_alloc(void);
 
 /**
  * mlo_ap_ml_peerid_free() - public API to free MLO peer id
- * @ml_peer_id: ML peer id
+ * @mlo_peer_id: ML peer id
  *
  * This function frees MLO peer ID
  *
@@ -467,7 +572,7 @@ void mlo_peer_assign_primary_umac(
  * mlo_peer_allocate_primary_umac() - Allocate Primary UMAC
  * @ml_dev: MLO DEV context
  * @ml_peer: MLO peer object
- * @link_vdev: link vdev array
+ * @link_vdevs: link vdev array
  *
  * This function allocates primary UMAC for a MLO peer
  *
@@ -579,4 +684,21 @@ QDF_STATUS mlo_peer_create_get_frm_buf(
  */
 uint16_t wlan_mlo_ap_get_active_links(struct wlan_objmgr_vdev *vdev);
 
+#ifdef QCA_SUPPORT_PRIMARY_LINK_MIGRATE
+/**
+ * mlo_ap_ml_ptqm_peerid_free() - API to clear ml peer id bmap set for
+ * ptqm migration
+ * @ml_dev: ML dev pointer
+ * @mlo_peer_id: MLO peer id
+ *
+ * Return: none
+ */
+void mlo_ap_ml_ptqm_peerid_free(struct wlan_mlo_dev_context *ml_dev,
+				uint16_t mlo_peer_id);
+#else
+static inline
+void mlo_ap_ml_ptqm_peerid_free(struct wlan_mlo_dev_context *ml_dev,
+				uint16_t mlo_peer_id)
+{ }
+#endif /* QCA_SUPPORT_PRIMARY_LINK_MIGRATE */
 #endif

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -164,7 +164,7 @@ static int __wlan_hdd_cfg80211_set_coex_config(struct wiphy *wiphy,
 
 	hdd_debug("priority4 0x%x", coex_cfg_params.config_arg4);
 
-	coex_cfg_params.vdev_id = adapter->vdev_id;
+	coex_cfg_params.vdev_id = adapter->deflink->vdev_id;
 	status = sme_send_coex_config_cmd(&coex_cfg_params);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		hdd_err("Failed to send coex config params");

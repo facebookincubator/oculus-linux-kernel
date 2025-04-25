@@ -113,6 +113,10 @@
 #define WLAN_PDEV_FEXT_AGILE_SPECTRAL_SCAN_320_DIS     0x00000100
 /* WiFi Radar support enabled */
 #define WLAN_PDEV_FEXT_WIFI_RADAR_ENABLE               0x00000200
+/* Scan blanking support enabled.valid only for scan radio supported pdevs */
+#define WLAN_PDEV_FEXT_SCAN_BLANKING_EN                0x00000400
+/* Overlapping frequency support */
+#define WLAN_PDEV_FEXT_OVERLAPPING_FREQ                0x00000800
 
 /* PDEV op flags */
    /* Enable htrate for wep and tkip */
@@ -208,10 +212,12 @@ struct wlan_beacon_process {
  * @max_peer_count:    Max Peer count
  * @temp_peer_count:   Temporary peer count
  * @max_monitor_vdev_count: Max monitor vdev count
+ * @max_bridge_vdev_count: Max bridge vdev count
  * @wlan_psoc:         back pointer to PSOC, its attached to
  * @ref_cnt:           Ref count
  * @ref_id_dbg:        Array to track Ref count
  * @wlan_mlo_vdev_count: MLO VDEVs count
+ * @wlan_mlo_bridge_vdev_count: MLO bridge VDEVs count
  * @bcn:               Struct to keep track of beacon count
  */
 struct wlan_objmgr_pdev_objmgr {
@@ -224,11 +230,13 @@ struct wlan_objmgr_pdev_objmgr {
 	uint16_t max_peer_count;
 	uint16_t temp_peer_count;
 	uint8_t max_monitor_vdev_count;
+	uint8_t max_bridge_vdev_count;
 	struct wlan_objmgr_psoc *wlan_psoc;
 	qdf_atomic_t ref_cnt;
 	qdf_atomic_t ref_id_dbg[WLAN_REF_ID_MAX];
 #ifdef WLAN_FEATURE_11BE_MLO
 	qdf_atomic_t wlan_mlo_vdev_count;
+	qdf_atomic_t wlan_mlo_bridge_vdev_count;
 #endif
 	struct wlan_beacon_process bcn;
 };
@@ -248,6 +256,7 @@ struct wlan_objmgr_pdev_objmgr {
  * @peer_free_list:    list to hold freed peer
  * @peer_obj_free_work:delayed work to be queued into workqueue
  * @active_work_cnt:   active work counts
+ * @standby_active: Pdev in standby mode while power down
 */
 struct wlan_objmgr_pdev {
 	struct wlan_chan_list *current_chan_list;
@@ -265,6 +274,7 @@ struct wlan_objmgr_pdev {
 	qdf_work_t peer_obj_free_work;
 	uint32_t active_work_cnt;
 #endif
+	bool standby_active;
 };
 
 /*
@@ -1245,6 +1255,36 @@ static inline uint16_t wlan_pdev_get_max_monitor_vdev_count(
 }
 
 /**
+ * wlan_pdev_set_max_bridge_vdev_count() - set max bridge vdev count
+ * @pdev: PDEV object
+ * @count: Max bridge vdev count
+ *
+ * API to set max bridge vdev count of PDEV
+ *
+ * Return: void
+ */
+static inline void wlan_pdev_set_max_bridge_vdev_count(
+		struct wlan_objmgr_pdev *pdev,
+		uint16_t count)
+{
+	pdev->pdev_objmgr.max_bridge_vdev_count = count;
+}
+
+/**
+ * wlan_pdev_get_max_bridge_vdev_count() - get max bridge vdev count
+ * @pdev: PDEV object
+ *
+ * API to get max bridge vdev count of PDEV
+ *
+ * Return: max bridge vdev count
+ */
+static inline uint16_t wlan_pdev_get_max_bridge_vdev_count(
+		struct wlan_objmgr_pdev *pdev)
+{
+	return pdev->pdev_objmgr.max_bridge_vdev_count;
+}
+
+/**
  * wlan_pdev_get_peer_count() - get pdev peer count
  * @pdev: PDEV object
  *
@@ -1395,6 +1435,66 @@ void wlan_pdev_dec_mlo_vdev_count(struct wlan_objmgr_pdev *pdev)
 
 	qdf_atomic_dec(&pdev->pdev_objmgr.wlan_mlo_vdev_count);
 }
+
+/**
+ * wlan_pdev_init_mlo_bridge_vdev_count() - Initialize PDEV MLO bridge
+ *					    vdev count
+ * @pdev: PDEV object
+ *
+ * API to initialize MLO bridge vdev count from PDEV
+ *
+ * Return: void
+ */
+static inline
+void wlan_pdev_init_mlo_bridge_vdev_count(struct wlan_objmgr_pdev *pdev)
+{
+	qdf_atomic_init(&pdev->pdev_objmgr.wlan_mlo_bridge_vdev_count);
+}
+
+/**
+ * wlan_pdev_get_mlo_bridge_vdev_count() - get PDEV MLO bridge vdev count
+ * @pdev: PDEV object
+ *
+ * API to get MLO bridge vdev count from PDEV
+ *
+ * Return: MLO vdev_count - pdev's MLO bridge vdev count
+ */
+static inline
+uint32_t wlan_pdev_get_mlo_bridge_vdev_count(struct wlan_objmgr_pdev *pdev)
+{
+	return qdf_atomic_read(&pdev->pdev_objmgr.wlan_mlo_bridge_vdev_count);
+}
+
+/**
+ * wlan_pdev_inc_mlo_bridge_vdev_count() - Increment PDEV MLO bridge vdev count
+ * @pdev: PDEV object
+ *
+ * API to increment MLO bridge vdev count from PDEV
+ *
+ * Return: void
+ */
+static inline
+void wlan_pdev_inc_mlo_bridge_vdev_count(struct wlan_objmgr_pdev *pdev)
+{
+	qdf_atomic_inc(&pdev->pdev_objmgr.wlan_mlo_bridge_vdev_count);
+}
+
+/**
+ * wlan_pdev_dec_mlo_bridge_vdev_count() - Decrement PDEV MLO bridge vdev count
+ * @pdev: PDEV object
+ *
+ * API to decrement MLO bridge vdev count from PDEV
+ *
+ * Return: void
+ */
+static inline
+void wlan_pdev_dec_mlo_bridge_vdev_count(struct wlan_objmgr_pdev *pdev)
+{
+	qdf_assert_always
+	(qdf_atomic_read(&pdev->pdev_objmgr.wlan_mlo_bridge_vdev_count));
+
+	qdf_atomic_dec(&pdev->pdev_objmgr.wlan_mlo_bridge_vdev_count);
+}
 #else
 static inline
 void wlan_pdev_init_mlo_vdev_count(struct wlan_objmgr_pdev *pdev)
@@ -1414,6 +1514,27 @@ void wlan_pdev_inc_mlo_vdev_count(struct wlan_objmgr_pdev *pdev)
 
 static inline
 void wlan_pdev_dec_mlo_vdev_count(struct wlan_objmgr_pdev *pdev)
+{
+}
+
+static inline
+void wlan_pdev_init_mlo_bridge_vdev_count(struct wlan_objmgr_pdev *pdev)
+{
+}
+
+static inline
+uint32_t wlan_pdev_get_mlo_bridge_vdev_count(struct wlan_objmgr_pdev *pdev)
+{
+	return 0;
+}
+
+static inline
+void wlan_pdev_inc_mlo_bridge_vdev_count(struct wlan_objmgr_pdev *pdev)
+{
+}
+
+static inline
+void wlan_pdev_dec_mlo_bridge_vdev_count(struct wlan_objmgr_pdev *pdev)
 {
 }
 #endif /* WLAN_FEATURE_11BE_MLO */

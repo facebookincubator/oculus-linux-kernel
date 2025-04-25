@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -84,9 +84,9 @@ uint8_t reg_get_band_cap_from_op_class(const uint8_t *country,
 				       const uint8_t *opclass);
 
 /**
- * reg_dmn_get_opclass_from_channe() - Print channels in op class.
+ * reg_dmn_print_channels_in_opclass() - Print channels in op class.
  * @country: Country code.
- * @opclass: opclass.
+ * @op_class: opclass.
  *
  * Return: Void.
  */
@@ -117,6 +117,7 @@ uint16_t reg_dmn_get_curr_opclasses(uint8_t *num_classes, uint8_t *class);
  * @n_opclasses: Pointer to number of opclasses.
  * @max_supp_op_class: Maximum number of operating classes supported.
  * @global_tbl_lookup: Whether to lookup global op class table.
+ * @in_6g_pwr_mode: 6g power type which decides 6G channel list lookup.
  *
  * Return: QDF_STATUS_SUCCESS if success, else return QDF_STATUS_FAILURE.
  */
@@ -124,7 +125,18 @@ QDF_STATUS reg_get_opclass_details(struct wlan_objmgr_pdev *pdev,
 				   struct regdmn_ap_cap_opclass_t *reg_ap_cap,
 				   uint8_t *n_opclasses,
 				   uint8_t max_supp_op_class,
-				   bool global_tbl_lookup);
+				   bool global_tbl_lookup,
+				   enum supported_6g_pwr_types in_6g_pwr_mode);
+
+/**
+ * reg_get_opclass_from_map() - Get opclass from map.
+ * @map: Pointer to pointer to regdmn_ap_cap_opclass_t.
+ * @is_global_op_table_needed: Whether to lookup global op class table.
+ *
+ * Return: QDF_STATUS_SUCCESS if success, else return QDF_STATUS_FAILURE.
+ */
+QDF_STATUS reg_get_opclass_from_map(const struct reg_dmn_op_class_map_t **map,
+				    bool is_global_op_table_needed);
 
 /**
  * reg_get_opclass_for_cur_hwmode() - Get details about the opclasses for
@@ -136,6 +148,7 @@ QDF_STATUS reg_get_opclass_details(struct wlan_objmgr_pdev *pdev,
  * @global_tbl_lookup: Whether to lookup global op class table.
  * @max_chwidth: Max channel width supported by cur hwmode
  * @is_80p80_supp: Bool to indicate if 80p80 is supported
+ * @in_6g_pwr_mode: 6g power type which decides 6G channel list lookup.
  *
  * Return: QDF_STATUS_SUCCESS if success, else return QDF_STATUS_FAILURE.
  */
@@ -146,7 +159,9 @@ reg_get_opclass_for_cur_hwmode(struct wlan_objmgr_pdev *pdev,
 			       uint8_t max_supp_op_class,
 			       bool global_tbl_lookup,
 			       enum phy_ch_width max_chwidth,
-			       bool is_80p80_supp);
+			       bool is_80p80_supp,
+			       enum supported_6g_pwr_types in_6g_pwr_mode);
+
 /**
  * reg_is_5ghz_op_class() - Check if the input opclass is a 5GHz opclass.
  * @country: Country code.
@@ -359,7 +374,15 @@ QDF_STATUS reg_get_opclass_details(struct wlan_objmgr_pdev *pdev,
 				   struct regdmn_ap_cap_opclass_t *reg_ap_cap,
 				   uint8_t *n_opclasses,
 				   uint8_t max_supp_op_class,
-				   bool global_tbl_lookup)
+				   bool global_tbl_lookup,
+				   enum supported_6g_pwr_types in_6g_pwr_mode)
+{
+	return QDF_STATUS_E_FAILURE;
+}
+
+static inline
+QDF_STATUS reg_get_opclass_from_map(const struct reg_dmn_op_class_map_t **map,
+				    bool is_global_op_table_needed);
 {
 	return QDF_STATUS_E_FAILURE;
 }
@@ -383,7 +406,8 @@ reg_get_opclass_for_cur_hwmode(struct wlan_objmgr_pdev *pdev,
 			       uint8_t max_supp_op_class,
 			       bool global_tbl_lookup,
 			       enum phy_ch_width max_ch_width,
-			       bool is_80p80_supp)
+			       bool is_80p80_supp,
+			       enum supported_6g_pwr_types in_6g_pwr_mode)
 {
 	return QDF_STATUS_E_FAILURE;
 }
@@ -468,12 +492,12 @@ reg_chan_opclass_to_freq_auto(uint8_t chan, uint8_t op_class,
 #endif
 
 /**
- * reg_dmn_get_chanwidth_from_opclass_auto()- Get channel width for the
+ * reg_dmn_get_chanwidth_from_opclass_auto() - Get channel width for the
  * given channel and opclass. If not found then search it in the global
  * op class.
- * @country - Country
- * @channel - Channel for which channel spacing is required
- * @opclass - Opclass to search from.
+ * @country: Country
+ * @channel: Channel for which channel spacing is required
+ * @opclass: Opclass to search from.
  *
  * Return: valid channel spacing if found. If not found then
  * return 0.
@@ -485,14 +509,14 @@ uint16_t reg_dmn_get_chanwidth_from_opclass_auto(uint8_t *country,
 #ifdef CONFIG_AFC_SUPPORT
 
 /**
- * reg_dmn_get_6g_opclasses_and_channels()- Get the following from the
+ * reg_dmn_get_6g_opclasses_and_channels() - Get the following from the
  * operating class table for 6Ghz band: number of operating classes, list of
  * opclasses, list channel sizes, list of channel lists.
  * @p_frange_lst: Pointer to frequency range list (AFC)
  * @pdev: Pointer to pdev.
  * @num_opclasses: Pointer to number of operating classes. This is the number
  * of elements in the list array arguments
- * @opclas_lst: Pointer to pointer to memory of list of opclasses
+ * @opclass_lst: Pointer to pointer to memory of list of opclasses
  * @chansize_lst: Pointer to pointer to memory of list of channel sizes
  * @channel_lists: Array of pointers to pointer to memory of list of channels
  *
@@ -510,12 +534,12 @@ QDF_STATUS reg_dmn_get_6g_opclasses_and_channels(struct wlan_objmgr_pdev *pdev,
 						 uint8_t **channel_lists[]);
 
 /**
- * reg_dmn_free_6g_opclasses_and_channels()- Free the memory allocated by
+ * reg_dmn_free_6g_opclasses_and_channels() - Free the memory allocated by
  * the pointers and arrays indicated by the arguments.
  * @pdev: Pointer to pdev.
  * @num_opclasses: Number of operating classes. This is the number of
  * elements in the 'channel_lists' array.
- * @opclas_lst: Pointer to memory of list of opclasses
+ * @opclass_lst: Pointer to memory of list of opclasses
  * @chansize_lst: Pointer to memory of list of channel sizes
  * @channel_lists: Array of pointers to memory of list of channels
  *
@@ -526,5 +550,25 @@ void reg_dmn_free_6g_opclasses_and_channels(struct wlan_objmgr_pdev *pdev,
 					    uint8_t *opclass_lst,
 					    uint8_t *chansize_lst,
 					    uint8_t *channel_lists[]);
+#endif
+
+#ifndef CONFIG_REG_CLIENT
+/**
+ * reg_enable_disable_opclass_chans() - Disable or enable the input 20 MHz
+ * operating channels in the radio's current channel list
+ * @pdev: Pointer to pdev
+ * @is_disable: Boolean to disable or enable the channels
+ * @opclass: Operating class. Only 20MHz opclasses are supported.
+ * @ieee_chan_list: Pointer to ieee_chan_list
+ * @chan_list_size: Size of ieee_chan_list
+ * @global_tbl_lookup: Whether to lookup global op class table
+ *
+ * Return - Return QDF_STATUS
+ */
+QDF_STATUS reg_enable_disable_opclass_chans(struct wlan_objmgr_pdev *pdev,
+					    bool is_disable, uint8_t opclass,
+					    uint8_t *ieee_chan_list,
+					    uint8_t chan_list_size,
+					    bool global_tbl_lookup);
 #endif
 #endif

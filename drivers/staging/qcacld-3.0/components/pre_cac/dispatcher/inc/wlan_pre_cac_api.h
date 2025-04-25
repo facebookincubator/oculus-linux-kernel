@@ -94,6 +94,13 @@ wlan_pre_cac_get_freq_before_pre_cac(struct wlan_objmgr_vdev *vdev);
  */
 void wlan_pre_cac_handle_radar_ind(struct wlan_objmgr_vdev *vdev);
 #else
+static inline void
+wlansap_pre_cac_end_notify(struct sap_context *sap_context,
+			   struct mac_context *mac,
+			   uint8_t intf)
+{
+}
+
 static inline bool wlan_pre_cac_get_status(struct wlan_objmgr_psoc *psoc)
 {
 	return false;

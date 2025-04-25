@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -150,7 +150,7 @@ typedef struct sSirMbMsg {
 	 * NOTE: data[1] is not a place holder to store data
 	 * instead to dereference the message body.
 	 */
-	uint32_t data[1];
+	QDF_FLEX_ARRAY(uint32_t, data);
 } tSirMbMsg, *tpSirMbMsg;
 
 /**
@@ -242,8 +242,10 @@ enum halmsgtype {
 
 	SIR_HAL_SWITCH_CHANNEL_RSP        = (SIR_HAL_ITC_MSG_TYPES_BEGIN + 35),
 	SIR_HAL_PWR_SAVE_CFG              = (SIR_HAL_ITC_MSG_TYPES_BEGIN + 36),
-
-	SIR_HAL_IBSS_STA_ADD              = (SIR_HAL_ITC_MSG_TYPES_BEGIN + 43),
+/*
+ * (SIR_HAL_ITC_MSG_TYPES_BEGIN + 37) to
+ * (SIR_HAL_ITC_MSG_TYPES_BEGIN + 43) are unused
+ */
 	SIR_HAL_TIMER_ADJUST_ADAPTIVE_THRESHOLD_IND =
 					(SIR_HAL_ITC_MSG_TYPES_BEGIN + 44),
 	SIR_HAL_SET_LINK_STATE            = (SIR_HAL_ITC_MSG_TYPES_BEGIN + 45),
@@ -548,7 +550,8 @@ enum halmsgtype {
 	SIR_HAL_SET_RSSI_MONITOR_REQ      = (SIR_HAL_ITC_MSG_TYPES_BEGIN + 333),
 	SIR_HAL_SET_IE_INFO               = (SIR_HAL_ITC_MSG_TYPES_BEGIN + 334),
 
-	SIR_HAL_LRO_CONFIG_CMD            = (SIR_HAL_ITC_MSG_TYPES_BEGIN + 335),
+	/* SIR_HAL_ITC_MSG_TYPES_BEGIN + 335 is unused */
+	/* SIR_HAL_ITC_MSG_TYPES_BEGIN + 336 is unused */
 
 	SIR_HAL_HT40_OBSS_SCAN_IND        = (SIR_HAL_ITC_MSG_TYPES_BEGIN + 337),
 
@@ -706,11 +709,11 @@ enum halmsgtype {
 #define SIR_LIM_WPS_OVERLAP_TIMEOUT      (SIR_LIM_TIMEOUT_MSG_START + 0x1D)
 #define SIR_LIM_FT_PREAUTH_RSP_TIMEOUT   (SIR_LIM_TIMEOUT_MSG_START + 0x1E)
 
-/* currently unused                     (SIR_LIM_TIMEOUT_MSG_START + 0x24) */
+#define SIR_LIM_RRM_STA_STATS_RSP_TIMEOUT    (SIR_LIM_TIMEOUT_MSG_START + 0x24)
 /* currently unused                     (SIR_LIM_TIMEOUT_MSG_START + 0x25) */
 
 #define SIR_LIM_DISASSOC_ACK_TIMEOUT       (SIR_LIM_TIMEOUT_MSG_START + 0x26)
-#define SIR_LIM_DEAUTH_ACK_TIMEOUT       (SIR_LIM_TIMEOUT_MSG_START + 0x27)
+/*#define SIR_LIM_DEAUTH_ACK_TIMEOUT       (SIR_LIM_TIMEOUT_MSG_START + 0x27) */
 #define SIR_LIM_PERIODIC_JOIN_PROBE_REQ_TIMEOUT \
 					 (SIR_LIM_TIMEOUT_MSG_START + 0x28)
 

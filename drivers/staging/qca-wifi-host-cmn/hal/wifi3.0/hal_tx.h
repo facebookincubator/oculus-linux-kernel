@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -118,6 +118,7 @@ do {                                            \
 
 #define HAL_MAX_HW_DSCP_TID_V2_MAPS 48
 #define HAL_MAX_HW_DSCP_TID_V2_MAPS_5332 24
+#define HAL_MAX_HW_DSCP_TID_V2_MAPS_6432 24
 #define HTT_META_HEADER_LEN_BYTES 64
 #define HAL_TX_EXT_DESC_WITH_META_DATA \
 	(HTT_META_HEADER_LEN_BYTES + HAL_TX_EXTENSION_DESC_LEN_BYTES)
@@ -140,11 +141,18 @@ do {                                            \
  * on wbm_release_ring DWORDs 2,3 ,4 and 5for software based completions
  * (Exception frames and TQM bypass frames)
  */
+#if defined(CONFIG_BERYLLIUM) || defined(CONFIG_LITHIUM)
 #define HAL_TX_COMP_HTT_STATUS_OFFSET 8
+#else
+#define HAL_TX_COMP_HTT_STATUS_OFFSET 0 /* Rhine */
+#endif
+
 #ifdef CONFIG_BERYLLIUM
 #define HAL_TX_COMP_HTT_STATUS_LEN 20
-#else
+#elif defined(CONFIG_LITHIUM)
 #define HAL_TX_COMP_HTT_STATUS_LEN 16
+#else
+#define HAL_TX_COMP_HTT_STATUS_LEN 32 /* Rhine */
 #endif
 
 #define HAL_TX_BUF_TYPE_BUFFER 0
@@ -206,6 +214,7 @@ do {                                            \
  * @mcs: Transmit MCS Rate
  * @ofdma: Set when the transmission was an OFDMA transmission
  * @tones_in_ru: The number of tones in the RU used.
+ * @valid:
  * @tsf: Lower 32 bits of the TSF
  * @ppdu_id: TSF, snapshot of this value when transmission of the
  *           PPDU containing the frame finished.
@@ -236,7 +245,7 @@ struct hal_tx_completion_status {
 	uint8_t transmit_cnt;
 	uint8_t tid;
 	uint16_t peer_id;
-#if defined(WLAN_FEATURE_TSF_UPLINK_DELAY) || defined(WLAN_CONFIG_TX_DELAY)
+#if defined(WLAN_FEATURE_TSF_AUTO_REPORT) || defined(WLAN_CONFIG_TX_DELAY)
 	uint32_t buffer_timestamp:19;
 #endif
 };
@@ -374,7 +383,7 @@ static inline void hal_tx_ext_desc_set_tso_enable(void *desc,
 /**
  * hal_tx_ext_desc_set_tso_flags() - Set TSO Flags
  * @desc: Handle to Tx MSDU Extension Descriptor
- * @flags: 32-bit word with all TSO flags consolidated
+ * @tso_flags: 32-bit word with all TSO flags consolidated
  *
  * Return: none
  */
@@ -631,6 +640,7 @@ static inline uint32_t hal_tx_comp_get_buffer_type(void *hal_desc)
 #ifdef QCA_WIFI_KIWI
 /**
  * hal_tx_comp_get_buffer_source() - Get buffer release source value
+ * @hal_soc_hdl: HAL SoC context
  * @hal_desc: completion ring descriptor pointer
  *
  * This function will get buffer release source from Tx completion descriptor
@@ -657,6 +667,7 @@ hal_tx_comp_get_buffer_source(hal_soc_handle_t hal_soc_hdl,
 /**
  * hal_tx_comp_get_release_reason() - TQM Release reason
  * @hal_desc: completion ring descriptor pointer
+ * @hal_soc_hdl: HAL SoC context
  *
  * This function will return the type of pointer - buffer or descriptor
  *
@@ -672,7 +683,7 @@ uint8_t hal_tx_comp_get_release_reason(void *hal_desc,
 }
 
 /**
- * hal_tx_comp_get_peer_id() - Get peer_id value()
+ * hal_tx_comp_get_peer_id() - Get peer_id value
  * @hal_desc: completion ring descriptor pointer
  *
  * This function will get peer_id value from Tx completion descriptor
@@ -709,7 +720,7 @@ static inline uint8_t hal_tx_comp_get_tx_status(void *hal_desc)
 
 /**
  * hal_tx_comp_desc_sync() - collect hardware descriptor contents
- * @hal_desc: hardware descriptor pointer
+ * @hw_desc: hardware descriptor pointer
  * @comp: software descriptor pointer
  * @read_status: 0 - Do not read status words from descriptors
  *		 1 - Enable reading of status words from descriptor
@@ -732,7 +743,7 @@ static inline void hal_tx_comp_desc_sync(void *hw_desc,
 
 /**
  * hal_dump_comp_desc() - dump tx completion descriptor
- * @hal_desc: hardware descriptor pointer
+ * @hw_desc: hardware descriptor pointer
  *
  * This function will print tx completion descriptor
  *
@@ -755,7 +766,7 @@ static inline void hal_dump_comp_desc(void *hw_desc)
 
 /**
  * hal_tx_comp_get_htt_desc() - Read the HTT portion of WBM Descriptor
- * @hal_desc: Hardware (WBM) descriptor pointer
+ * @hw_desc: Hardware (WBM) descriptor pointer
  * @htt_desc: Software HTT descriptor pointer
  *
  * This function will read the HTT structure overlaid on WBM descriptor
@@ -772,7 +783,7 @@ static inline void hal_tx_comp_get_htt_desc(void *hw_desc, uint8_t *htt_desc)
 /**
  * hal_tx_init_data_ring() - Initialize all the TCL Descriptors in SRNG
  * @hal_soc_hdl: Handle to HAL SoC structure
- * @hal_srng: Handle to HAL SRNG structure
+ * @hal_ring_hdl: Handle to HAL SRNG structure
  *
  * Return: none
  */
@@ -785,9 +796,8 @@ static inline void hal_tx_init_data_ring(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_tx_set_dscp_tid_map_default() - Configure default DSCP to TID map table
- *
- * @soc: HAL SoC context
+ * hal_tx_set_dscp_tid_map() - Configure default DSCP to TID map table
+ * @hal_soc_hdl: HAL SoC context
  * @map: DSCP-TID mapping table
  * @id: mapping table ID - 0,1
  *
@@ -803,11 +813,10 @@ static inline void hal_tx_set_dscp_tid_map(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_tx_update_dscp_tid() - Update the dscp tid map table as updated by user
- *
- * @soc: HAL SoC context
- * @map: DSCP-TID mapping table
- * @id : MAP ID
- * @dscp: DSCP_TID map index
+ * @hal_soc_hdl: HAL SoC context
+ * @tid: TID
+ * @id: MAP ID
+ * @dscp: DSCP
  *
  * Return: void
  */
@@ -822,7 +831,9 @@ void hal_tx_update_dscp_tid(hal_soc_handle_t hal_soc_hdl, uint8_t tid,
 
 /**
  * hal_tx_comp_get_status() - TQM Release reason
- * @hal_desc: completion ring Tx status
+ * @desc: completion ring Tx status
+ * @ts: returned tx completion status
+ * @hal_soc_hdl: HAL SoC context
  *
  * This function will parse the WBM completion descriptor and populate in
  * HAL structure
@@ -839,8 +850,7 @@ static inline void hal_tx_comp_get_status(void *desc, void *ts,
 
 /**
  * hal_tx_set_pcp_tid_map_default() - Configure default PCP to TID map table
- *
- * @soc: HAL SoC context
+ * @hal_soc_hdl: HAL SoC context
  * @map: PCP-TID mapping table
  *
  * Return: void
@@ -855,8 +865,7 @@ static inline void hal_tx_set_pcp_tid_map_default(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_tx_update_pcp_tid_map() - Update PCP to TID map table
- *
- * @soc: HAL SoC context
+ * @hal_soc_hdl: HAL SoC context
  * @pcp: pcp value
  * @tid: tid no
  *
@@ -872,8 +881,7 @@ static inline void hal_tx_update_pcp_tid_map(hal_soc_handle_t hal_soc_hdl,
 
 /**
  * hal_tx_set_tidmap_prty() - Configure TIDmap priority
- *
- * @soc: HAL SoC context
+ * @hal_soc_hdl: HAL SoC context
  * @val: priority value
  *
  * Return: void
@@ -888,6 +896,7 @@ void hal_tx_set_tidmap_prty(hal_soc_handle_t hal_soc_hdl, uint8_t val)
 
 /**
  * hal_get_wbm_internal_error() - wbm internal error
+ * @hal_soc_hdl: HAL SoC context
  * @hal_desc: completion ring descriptor pointer
  *
  * This function will return the type of pointer - buffer or descriptor
@@ -904,7 +913,6 @@ uint8_t hal_get_wbm_internal_error(hal_soc_handle_t hal_soc_hdl, void *hal_desc)
 
 /**
  * hal_get_tsf2_offset() - get tsf2 offset
- *
  * @hal_soc_hdl: HAL SoC context
  * @mac_id: mac id
  * @value: pointer to update tsf2 offset value

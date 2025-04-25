@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -297,6 +297,15 @@ static void dp_rx_refill_buff_pool_init(struct dp_soc *soc, u8 mac_id)
 
 	buff_pool->max_bufq_len =
 		wlan_cfg_get_rx_refill_buf_pool_size(soc->wlan_cfg_ctx);
+
+	buff_pool->buf_elem = qdf_mem_malloc(buff_pool->max_bufq_len *
+					     sizeof(qdf_nbuf_t));
+	if (!buff_pool->buf_elem) {
+		dp_err("Failed to allocate memory for RX refill buf element");
+		buff_pool->is_initialized = false;
+		return;
+	}
+
 	buff_pool->dp_pdev = dp_get_pdev_for_lmac_id(soc, 0);
 	buff_pool->tail = 0;
 
@@ -344,7 +353,7 @@ void dp_rx_buffer_pool_init(struct dp_soc *soc, u8 mac_id)
 	dp_rx_refill_buff_pool_init(soc, mac_id);
 
 	if (!wlan_cfg_is_rx_buffer_pool_enabled(soc->wlan_cfg_ctx)) {
-		dp_err("RX buffer pool support is disabled");
+		dp_info("RX buffer pool support is disabled");
 		buff_pool->is_initialized = false;
 		return;
 	}
@@ -395,6 +404,7 @@ static void dp_rx_refill_buff_pool_deinit(struct dp_soc *soc, u8 mac_id)
 	dp_info("Rx refill buffers freed during deinit %u head: %u, tail: %u",
 		count, buff_pool->head, buff_pool->tail);
 
+	qdf_mem_free(buff_pool->buf_elem);
 	buff_pool->is_initialized = false;
 }
 

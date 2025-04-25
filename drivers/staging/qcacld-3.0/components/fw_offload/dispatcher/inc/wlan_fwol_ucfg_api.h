@@ -227,7 +227,7 @@ QDF_STATUS ucfg_fwol_get_ani_enabled(struct wlan_objmgr_psoc *psoc,
  * Return: QDF Status
  */
 QDF_STATUS ucfg_fwol_get_pcie_config(struct wlan_objmgr_psoc *psoc,
-				     bool *pcie_config);
+				     uint8_t *pcie_config);
 
 /**
  * ucfg_get_enable_rts_sifsbursting() - Assigns the enable_rts_sifsbursting
@@ -772,11 +772,23 @@ QDF_STATUS ucfg_fwol_configure_global_params(struct wlan_objmgr_psoc *psoc,
 					     struct wlan_objmgr_pdev *pdev);
 
 /**
- * ucfg_fwol_configure_vdev_params - API to configure vdev specific params
+ * ucfg_fwol_set_ilp_config - API to configure Interface Low Power (ILP)
  * @psoc: pointer to psoc object
  * @pdev: pointer to pdev object
- * @device_mode: device mode
- * @vdev_id: vdev ID
+ * @enable: enable
+ *
+ * This API is used to enable/disable Interface Low Power (IPL) feature.
+ *
+ * Return: QDF Status
+ */
+QDF_STATUS ucfg_fwol_set_ilp_config(struct wlan_objmgr_psoc *psoc,
+				    struct wlan_objmgr_pdev *pdev,
+				    uint32_t enable);
+
+/**
+ * ucfg_fwol_configure_vdev_params - API to configure vdev specific params
+ * @psoc: pointer to psoc object
+ * @vdev: pointer to vdev object
  *
  * Used to configure per vdev firmware params based on device mode. This is
  * invoked from hdd during vdev creation.
@@ -784,9 +796,7 @@ QDF_STATUS ucfg_fwol_configure_global_params(struct wlan_objmgr_psoc *psoc,
  * Return: QDF Status
  */
 QDF_STATUS ucfg_fwol_configure_vdev_params(struct wlan_objmgr_psoc *psoc,
-					   struct wlan_objmgr_pdev *pdev,
-					   enum QDF_OPMODE device_mode,
-					   uint8_t vdev_id);
+					   struct wlan_objmgr_vdev *vdev);
 #else
 static inline QDF_STATUS ucfg_fwol_psoc_open(struct wlan_objmgr_psoc *psoc)
 {
@@ -884,7 +894,7 @@ ucfg_fwol_get_ani_enabled(struct wlan_objmgr_psoc *psoc,
 
 static inline QDF_STATUS
 ucfg_fwol_get_pcie_config(struct wlan_objmgr_psoc *psoc,
-			  bool *pcie_config)
+			  uint8_t *pcie_config)
 {
 	return QDF_STATUS_E_FAILURE;
 }
@@ -1105,8 +1115,7 @@ ucfg_fwol_configure_global_params(struct wlan_objmgr_psoc *psoc,
 
 static inline QDF_STATUS
 ucfg_fwol_configure_vdev_params(struct wlan_objmgr_psoc *psoc,
-				struct wlan_objmgr_pdev *pdev,
-				enum QDF_OPMODE device_mode, uint8_t vdev_id)
+				struct wlan_objmgr_vdev *vdev)
 {
 	return QDF_STATUS_E_FAILURE;
 }

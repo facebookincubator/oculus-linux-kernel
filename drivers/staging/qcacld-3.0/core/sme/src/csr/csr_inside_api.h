@@ -89,25 +89,20 @@ void csr_roam_complete(struct mac_context *mac, uint8_t session_id);
 /**
  * csr_issue_set_context_req_helper  - Function to fill unicast/broadcast keys
  * request to set the keys to fw
- * @mac:         Pointer to mac context
+ * @mac_ctx:     Pointer to mac context
  * @vdev_id:     vdev id
  * @bssid:       Connected BSSID
  * @addkey:      Is add key request to crypto
  * @unicast:     Unicast(1) or broadcast key(0)
- * @key_direction: Key used in TX or RX or both Tx and RX path
- * @key_id:       Key index
- * @key_length:   Key length
- * @key:          Pointer to the key
+ * @key_id:      Key index
  *
  * Return: QDF_STATUS
  */
 QDF_STATUS
-csr_issue_set_context_req_helper(struct mac_context *mac,
-				 uint32_t session_id,
-				 tSirMacAddr *bssid, bool addkey,
-				 bool unicast, tAniKeyDirection key_direction,
-				 uint8_t key_id, uint16_t key_length,
-				 uint8_t *key);
+csr_issue_set_context_req_helper(struct mac_context *mac_ctx,
+				 uint32_t vdev_id, tSirMacAddr *bssid,
+				 bool addkey, bool unicast, uint8_t key_id);
+
 void csr_roam_check_for_link_status_change(struct mac_context *mac,
 					tSirSmeRsp *pSirMsg);
 QDF_STATUS csr_send_mb_disassoc_req_msg(struct mac_context *mac, uint32_t sessionId,
@@ -153,13 +148,12 @@ QDF_STATUS csr_save_to_channel_power2_g_5_g(struct mac_context *mac,
 /*
  * csr_prepare_vdev_delete() - CSR api to delete vdev
  * @mac_ctx: pointer to mac context
- * @vdev_id: vdev id to be deleted.
- * @cleanup: clean up vdev session on true
+ * @vdev: vdev object to be prepared for deletion.
  *
  * Return QDF_STATUS
  */
 QDF_STATUS csr_prepare_vdev_delete(struct mac_context *mac_ctx,
-				   uint8_t vdev_id, bool cleanup);
+				   struct wlan_objmgr_vdev *vdev);
 
 /*
  * csr_cleanup_vdev_session() - CSR api to cleanup vdev
@@ -194,13 +188,13 @@ QDF_STATUS csr_scan_get_result(struct mac_context *mac,
  *      bssid specified
  * @mac_ctx: mac context
  * @bssid: bssid to get the scan result for
- * @res: pointer to tCsrScanResultInfo
+ * @ret_list: pointer to scan results
  *
  * Return: QDF_STATUS
  */
 QDF_STATUS csr_scan_get_result_for_bssid(struct mac_context *mac_ctx,
 					 struct qdf_mac_addr *bssid,
-					 tCsrScanResultInfo *res);
+					 qdf_list_t **ret_list);
 
 /**
  * csr_scan_filter_results: filter scan result based

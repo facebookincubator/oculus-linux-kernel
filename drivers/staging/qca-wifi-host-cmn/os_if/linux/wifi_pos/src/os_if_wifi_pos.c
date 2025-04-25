@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -573,6 +573,11 @@ static void os_if_send_nl_resp(uint32_t pid, uint8_t *buf,
 
 /**
  * os_if_wifi_pos_send_rsp() - send oem registration response
+ * @psoc: soc object
+ * @pid: registering process ID
+ * @cmd: OEM command
+ * @buf_len: length of the OEM message in @buf
+ * @buf: OEM message
  *
  * This function sends oem message to registered application process
  *
@@ -884,14 +889,17 @@ static int wifi_pos_parse_req(struct sk_buff *skb, struct wifi_pos_req_msg *req,
 }
 #endif
 
+#ifdef CNSS_GENL
 /**
  * __os_if_wifi_pos_callback() - callback registered with NL service socket to
  * process wifi pos request
- * @skb: request message sk_buff
+ * @data: request message buffer
+ * @data_len: length of @data
+ * @ctx: context registered with the dispatcher (unused)
+ * @pid: caller process ID
  *
  * Return: status of operation
  */
-#ifdef CNSS_GENL
 static void __os_if_wifi_pos_callback(const void *data, int data_len,
 				      void *ctx, int pid)
 {
@@ -936,6 +944,13 @@ static void os_if_wifi_pos_callback(const void *data, int data_len,
 	qdf_op_unprotect(op_sync);
 }
 #else
+/**
+ * __os_if_wifi_pos_callback() - callback registered with NL service socket to
+ * process wifi pos request
+ * @skb: request message sk_buff
+ *
+ * Return: status of operation
+ */
 static int __os_if_wifi_pos_callback(struct sk_buff *skb)
 {
 	uint8_t err;

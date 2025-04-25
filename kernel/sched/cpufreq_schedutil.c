@@ -6,10 +6,6 @@
  * Author: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
  */
 
-#if defined(CONFIG_SMP) && defined(CONFIG_PERF_EVENTS)
-#define SUGOV_SMP_CALL
-#endif
-
 #define IOWAIT_BOOST_MIN	(SCHED_CAPACITY_SCALE / 8)
 
 struct sugov_tunables {
@@ -19,9 +15,6 @@ struct sugov_tunables {
 
 struct sugov_policy {
 	struct cpufreq_policy	*policy;
-#ifdef SUGOV_SMP_CALL
-	call_single_data_t	__percpu *csd;
-#endif
 
 	struct sugov_tunables	*tunables;
 	struct list_head	tunables_hook;
@@ -115,50 +108,11 @@ static bool sugov_update_next_freq(struct sugov_policy *sg_policy, u64 time,
 	return true;
 }
 
-static void sugov_smp_perf_event_cpu_frequency(void *info)
-{
-	perf_event_cpu_frequency((unsigned int)(uintptr_t)info);
-}
-
-static void sugov_perf_event_cpu_frequency(struct sugov_policy *sg_policy, unsigned int next_freq)
-{
-	unsigned int cpu;
-
-	if (!perf_event_cpu_frequency_enabled())
-		return;
-
-#ifdef SUGOV_SMP_CALL
-	for_each_cpu(cpu, sg_policy->policy->cpus) {
-		call_single_data_t *csd;
-
-		csd = per_cpu_ptr(sg_policy->csd, cpu);
-		/* the lock flag is cleared atomically by the IPI */
-		smp_rmb();
-		/*
-		 * if a flood of frequency changes occur before the remote CPU
-		 * IPI can clear the lock flag, don't send another IPI. the
-		 * frequency value is stored in the shared policy object, so
-		 * the updated frequency will be read when the IPI executes
-		 */
-		if (csd->flags)
-			continue;
-		csd->func = sugov_smp_perf_event_cpu_frequency;
-		csd->info = (void *)(uintptr_t)next_freq;
-		smp_call_function_single_async(cpu, csd);
-	}
-#else
-	(void) cpu;
-	sugov_smp_perf_event_cpu_frequency(next_freq);
-#endif
-}
-
 static void sugov_fast_switch(struct sugov_policy *sg_policy, u64 time,
 			      unsigned int next_freq)
 {
-	if (sugov_update_next_freq(sg_policy, time, next_freq)) {
+	if (sugov_update_next_freq(sg_policy, time, next_freq))
 		cpufreq_driver_fast_switch(sg_policy->policy, next_freq);
-		sugov_perf_event_cpu_frequency(sg_policy, next_freq);
-	}
 }
 
 static void sugov_deferred_update(struct sugov_policy *sg_policy, u64 time,
@@ -602,8 +556,6 @@ static void sugov_work(struct kthread_work *work)
 	mutex_lock(&sg_policy->work_lock);
 	__cpufreq_driver_target(sg_policy->policy, freq, CPUFREQ_RELATION_L);
 	mutex_unlock(&sg_policy->work_lock);
-
-	sugov_perf_event_cpu_frequency(sg_policy, freq);
 }
 
 static void sugov_irq_work(struct irq_work *irq_work)
@@ -685,21 +637,11 @@ static struct sugov_policy *sugov_policy_alloc(struct cpufreq_policy *policy)
 
 	sg_policy->policy = policy;
 	raw_spin_lock_init(&sg_policy->update_lock);
-#ifdef SUGOV_SMP_CALL
-	sg_policy->csd = alloc_percpu(call_single_data_t);
-	if (!sg_policy->csd) {
-		kfree(sg_policy);
-		return NULL;
-	}
-#endif
 	return sg_policy;
 }
 
 static void sugov_policy_free(struct sugov_policy *sg_policy)
 {
-#ifdef SUGOV_SMP_CALL
-	free_percpu(sg_policy->csd);
-#endif
 	kfree(sg_policy);
 }
 

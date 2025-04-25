@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -52,7 +53,7 @@ __hdd_sysfs_txrx_stats_store(struct net_device *net_dev,
 	if (ret != 0)
 		return ret;
 
-	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter->deflink);
 	if (!wlan_hdd_validate_modules_state(hdd_ctx))
 		return -EINVAL;
 
@@ -93,13 +94,13 @@ __hdd_sysfs_txrx_stats_store(struct net_device *net_dev,
 
 	if (val1 == CDP_TXRX_STATS_28) {
 		if (sta_ctx->conn_info.is_authenticated) {
-			hdd_debug("ap mac addr: %pM",
-				  (void *)&sta_ctx->conn_info.bssid);
+			hdd_debug("ap mac addr:" QDF_MAC_ADDR_FMT,
+				  QDF_MAC_ADDR_REF(&sta_ctx->conn_info.bssid.bytes[0]));
 			req.peer_addr =
 				(char *)&sta_ctx->conn_info.bssid;
 		}
 	}
-	ret = cdp_txrx_stats_request(soc, adapter->vdev_id, &req);
+	ret = cdp_txrx_stats_request(soc, adapter->deflink->vdev_id, &req);
 
 	if (ret) {
 		hdd_err_rl("failed to set txrx stats: %d", ret);

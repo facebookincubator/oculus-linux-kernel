@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -25,8 +25,16 @@
 #include "wlan_mlo_mgr_public_structs.h"
 #include <wlan_cm_ucfg_api.h>
 #include <wlan_objmgr_vdev_obj.h>
+#include <wlan_mlo_epcs.h>
 
 #ifdef WLAN_FEATURE_11BE_MLO
+
+#define MLO_LINKSPECIFIC_ASSOC_REQ_FC0  0x00
+#define MLO_LINKSPECIFIC_ASSOC_REQ_FC1  0x00
+#define MLO_LINKSPECIFIC_ASSOC_RESP_FC0 0x10
+#define MLO_LINKSPECIFIC_ASSOC_RESP_FC1 0x00
+#define MLO_LINKSPECIFIC_PROBE_RESP_FC0 0x50
+#define MLO_LINKSPECIFIC_PROBE_RESP_FC1 0x00
 
 /**
  * util_gen_link_assoc_req() - Generate link specific assoc request
@@ -396,6 +404,35 @@ util_get_bvmlie_bssparamchangecnt(uint8_t *mlieseq, qdf_size_t mlieseqlen,
 QDF_STATUS
 util_get_bvmlie_mldcap(uint8_t *mlieseq, qdf_size_t mlieseqlen,
 		       bool *mldcapfound, uint16_t *mldcap);
+/**
+ * util_get_bvmlie_ext_mld_cap_op_info() - Get Ext MLD Capabilities and
+ * operation
+ * @mlie_seq: Starting address of the Multi-Link element or Multi-Link element
+ * fragment sequence
+ * @mlie_seqlen: Total length of the Multi-Link element or Multi-Link element
+ * fragment sequence
+ * @ext_mld_cap_found: Pointer to the location where a boolean status should be
+ * updated indicating whether the Ext MLD capabilities was found or not.
+ * This should be ignored by the caller if the function returns error.
+ * @ext_mld_cap: Pointer to the location where the value of the Ext MLD
+ * capabilities should be updated. This should be ignored by the caller if the
+ * function returns error, or if the function indicates that the MLD
+ * capabilities was not found.
+ *
+ * Get the Ext MLD capabilities from a given Basic variant Multi-Link element or
+ * element fragment sequence, of the AP that transmits the Multi-Link element/
+ * element fragment sequence or the non-transmitted BSSID in the same
+ * multiple BSSID set as the AP that transmits the Multi-Link element/element
+ * fragment sequence and that is affiliated with the MLD that is described in
+ * the Multi-Link element.
+ *
+ * Return: QDF_STATUS_SUCCESS in the case of success, QDF_STATUS value giving
+ * the reason for error in the case of failure
+ */
+QDF_STATUS
+util_get_bvmlie_ext_mld_cap_op_info(uint8_t *mlie_seq, qdf_size_t mlie_seqlen,
+				    bool *ext_mld_cap_found,
+				    uint16_t *ext_mld_cap);
 
 /**
  * util_get_bvmlie_persta_partner_info() - Get per-STA partner link information
@@ -410,9 +447,12 @@ util_get_bvmlie_mldcap(uint8_t *mlieseq, qdf_size_t mlieseqlen,
  * profile is found, or if none of the per-STA profiles includes a MAC address
  * in the STA Info field (assuming no errors are encountered).
  *
- * Get partner link information in the per-STA profiles present in a Basic
- * variant Multi-Link element. The partner link information is returned only for
- * those per-STA profiles which have a MAC address in the STA Info field.
+ * Get partner link information and NSTR capability information in the
+ * per-STA profiles present in a Basic variant Multi-Link element.
+ * The partner link information is returned only for those per-STA profiles
+ * which have a MAC address in the STA Info field.
+ * The NSTR capability information is returned only for those per-STA profiles
+ * which are Complete per-STA profiles.
  *
  * Return: QDF_STATUS_SUCCESS in the case of success, QDF_STATUS value giving
  * the reason for error in the case of failure
@@ -517,6 +557,24 @@ util_get_rvmlie_persta_link_info(uint8_t *mlieseq,
 				 qdf_size_t mlieseqlen,
 				 struct ml_rv_info *reconfig_info);
 
+/**
+ * util_get_pav_mlie_link_info() - Get priority access link information
+ *
+ * @mlieseq: Starting address of the Multi-Link element or Multi-Link element
+ * fragment sequence
+ * @mlieseqlen: Total length of the Multi-Link element or Multi-Link element
+ * fragment sequence
+ * @pa_info: Pointer to the location where the priority access multi link
+ * information is stored.
+ *
+ * Get EPCS priority access information from Priority Access Multi-Link element.
+ *
+ * Return: QDF_STATUS_SUCCESS in the case of success, QDF_STATUS value giving
+ * the reason for error in the case of failure.
+ */
+QDF_STATUS util_get_pav_mlie_link_info(uint8_t *mlieseq,
+				       qdf_size_t mlieseqlen,
+				       struct ml_pa_info *pa_info);
 #else
 static inline QDF_STATUS
 util_gen_link_assoc_req(uint8_t *frame, qdf_size_t frame_len, bool isreassoc,
@@ -644,5 +702,14 @@ util_get_rvmlie_persta_link_info(uint8_t *mlieseq,
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }
+
+static inline
+QDF_STATUS util_get_pav_mlie_link_info(uint8_t *mlieseq,
+				       qdf_size_t mlieseqlen,
+				       struct ml_pa_info *pa_info)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
 #endif /* WLAN_FEATURE_11BE_MLO */
 #endif /* _WLAN_UTILS_MLO_H_ */

@@ -39,7 +39,7 @@ struct direct_buf_rx_data;
 #endif
 
 /**
- * struct direct_buf_rx_info - direct buffer rx operation info struct
+ * struct direct_buf_rx_buf_info - direct buffer rx operation info struct
  * @cookie: SW cookie used to get the virtual address
  * @paddr: Physical address pointer for DMA operation
  * @vaddr: Virtual address pointer
@@ -63,6 +63,7 @@ struct direct_buf_rx_buf_info {
  * @head_idx_addr: head index addr
  * @tail_idx_addr: tail index addr
  * @srng: HAL srng context
+ * @buf_size: size of each buffer
  */
 struct direct_buf_rx_ring_cfg {
 	uint32_t num_ptr;
@@ -139,7 +140,7 @@ struct dbr_debugfs_priv {
  * @ring_debug_idx: Current index in the array of ring debug entries
  * @num_ring_debug_entries: Total ring debug entries
  * @debugfs_entry: Debugfs entry for this ring
- * @debugfs_priv: Debugfs ops for this ring
+ * @debugfs_fops: Debugfs ops for this ring
  */
 struct direct_buf_rx_ring_debug {
 	struct direct_buf_rx_ring_debug_entry *entries;
@@ -171,13 +172,13 @@ struct direct_buf_rx_module_debug {
  * struct direct_buf_rx_module_param - DMA module param
  * @mod_id: Module ID
  * @pdev_id: pdev ID
+ * @srng_id: SRNG ID
  * @dbr_config: Pointer to dirct buf rx module configuration struct
  * @dbr_ring_cap: Pointer to direct buf rx ring capabilities struct
  * @dbr_ring_cfg: Pointer to direct buf rx ring config struct
  * @dbr_buf_pool: Pointer to direct buf rx buffer pool struct
  * @dbr_rsp_handler: Pointer to direct buf rx response handler for the module
  * @srng_initialized: Whether the DBR ring is successfully initialized for this
- * @pdev_id @srng_id
  */
 struct direct_buf_rx_module_param {
 	enum DBR_MODULE mod_id;
@@ -214,11 +215,11 @@ struct direct_buf_rx_pdev_obj {
  * struct direct_buf_rx_psoc_obj - Direct Buf RX psoc object struct
  * @hal_soc: Opaque HAL SOC handle
  * @osdev: QDF os device handle
- * @dbr_pdev_objs: array of DBR pdev objects
+ * @dbr_pdev_obj: array of DBR pdev objects
  * @mem_list: list for holding the large memories during the entire
  *  PSOC lifetime
  * @mem_list_lock: spin lock for the memory list
- * handler_ctx: Direct DMA event handler context
+ * @handler_ctx: Direct DMA event handler context
  */
 struct direct_buf_rx_psoc_obj {
 	void *hal_soc;
@@ -299,7 +300,8 @@ QDF_STATUS target_if_direct_buf_rx_pdev_destroy_handler(
  * target_if_direct_buf_rx_psoc_create_handler() - Handler invoked for
  *                                                 direct buffer rx module
  *                                                 during attach
- * @pdev: pointer to psoc object
+ * @psoc: pointer to psoc object
+ * @data: callback context provided during registration
  *
  * Return : QDF status of operation
  */
@@ -310,7 +312,8 @@ QDF_STATUS target_if_direct_buf_rx_psoc_create_handler(
  * target_if_direct_buf_rx_psoc_destroy_handler() - Handler invoked for
  *                                                  direct buffer rx module
  *                                                  during detach
- * @pdev: pointer to psoc object
+ * @psoc: pointer to psoc object
+ * @data: callback context provided during registration
  *
  * Return : QDF status of operation
  */
@@ -364,7 +367,7 @@ QDF_STATUS target_if_direct_buf_rx_module_unregister(
  * target_if_direct_buf_rx_get_ring_params() - Function to get ring parameters
  *                                             for module_id
  * @pdev: pointer to pdev object
- * @module_ring_params: pointer to store ring params
+ * @param: pointer to store ring params
  * @mod_id: module idindicating module using direct buffer rx framework
  * @srng_id: srng ID
  */

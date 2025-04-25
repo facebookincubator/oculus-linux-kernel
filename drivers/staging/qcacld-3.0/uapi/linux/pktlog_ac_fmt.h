@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -94,12 +94,14 @@ struct ath_pktlog_hdr {
 
 /**
  * enum - Pktlog flag field details
- * packet origin [1:0]
- * 00 - Local
- * 01 - Remote
- * 10 - Unknown/Not applicable
- * 11 - Reserved
- * reserved [15:2]
+ * @PKTLOG_FLG_FRM_TYPE_LOCAL_S: local-generated frame (tx)
+ * @PKTLOG_FLG_FRM_TYPE_REMOTE_S: remote-generated frame (rx)
+ * @PKTLOG_FLG_FRM_TYPE_CLONE_S: cloned frame
+ * @PKTLOG_FLG_FRM_TYPE_CBF_S: CBF remote frame
+ * @PKTLOG_FLG_FRM_TYPE_UNKNOWN_S: Unknown
+ *
+ * struct ath_pktlog_hdr flags field bit definitions,
+ * (use 1 << [enum] to assign)
  */
 enum {
 	PKTLOG_FLG_FRM_TYPE_LOCAL_S = 0,

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2017,2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -155,6 +155,17 @@ static inline uint8_t qdf_nbuf_get_lmac_id(qdf_nbuf_t buf)
 }
 
 /**
+ * qdf_nbuf_get_mpdu_seq_num() - get MPDU sequence number
+ * @buf: Network buffer
+ *
+ * Return: mpdu sequence number value
+ */
+static inline uint16_t qdf_nbuf_get_mpdu_seq_num(qdf_nbuf_t buf)
+{
+	return QDF_NBUF_CB_RX_MPDU_SEQ_NUM(buf);
+}
+
+/**
  * qdf_nbuf_set_rx_ipa_smmu_map() - set ipa smmu mapped flag
  * @buf: Network buffer
  * @value: 1 - ipa smmu mapped, 0 - ipa smmu unmapped
@@ -180,7 +191,7 @@ static inline uint8_t qdf_nbuf_is_rx_ipa_smmu_map(qdf_nbuf_t buf)
 
 /**
  * qdf_nbuf_set_rx_reo_dest_ind_or_sw_excpt() - set reo destination indication
-						or sw exception flag
+ *						or sw exception flag
  * @buf: Network buffer
  * @value: value to set
  *
@@ -194,7 +205,7 @@ static inline void qdf_nbuf_set_rx_reo_dest_ind_or_sw_excpt(qdf_nbuf_t buf,
 
 /**
  * qdf_nbuf_get_rx_reo_dest_ind_or_sw_excpt() - get reo destination indication
-						or sw exception flag
+ *						or sw exception flag
  * @buf: Network buffer
  *
  * Return reo destination indication value (0 ~ 31) or sw exception (0 ~ 1)
@@ -227,5 +238,82 @@ static inline void *qdf_nbuf_get_tx_fctx(qdf_nbuf_t buf)
 static inline void
 qdf_nbuf_set_tx_fctx_type(qdf_nbuf_t buf, void *ctx, uint8_t type)
 {
+}
+
+/**
+ * qdf_nbuf_tx_set_band() - Set band in nbuf cb
+ * @nbuf: nbuf pointer
+ * @band: peer band
+ *
+ * Return: None
+ */
+static inline void
+qdf_nbuf_tx_set_band(qdf_nbuf_t nbuf, uint8_t band)
+{
+	QDF_NBUF_CB_TX_BAND(nbuf) = band;
+}
+
+/**
+ * qdf_nbuf_tx_get_band() - Get band from nbuf cb
+ * @nbuf: nbuf pointer
+ *
+ * Return: Band
+ */
+static inline uint8_t
+qdf_nbuf_tx_get_band(qdf_nbuf_t nbuf)
+{
+	return QDF_NBUF_CB_TX_BAND(nbuf);
+}
+
+/**
+ * qdf_nbuf_rx_set_band() - Set band in nbuf cb
+ * @nbuf: nbuf pointer
+ * @band: peer band
+ *
+ * Return: None
+ */
+static inline void
+qdf_nbuf_rx_set_band(qdf_nbuf_t nbuf, uint8_t band)
+{
+	QDF_NBUF_CB_RX_BAND(nbuf) = band;
+}
+
+/**
+ * qdf_nbuf_rx_get_band() - Get band from nbuf cb
+ * @nbuf: nbuf pointer
+ *
+ * Return: Band
+ */
+static inline uint8_t
+qdf_nbuf_rx_get_band(qdf_nbuf_t nbuf)
+{
+	return QDF_NBUF_CB_RX_BAND(nbuf);
+}
+
+/**
+ * qdf_nbuf_set_tx_ts() - set tx timestamp of nbuf
+ * @buf: Network buffer
+ *
+ * Return: None
+ */
+static inline void qdf_nbuf_set_tx_ts(qdf_nbuf_t buf)
+{
+	__qdf_nbuf_set_tx_ts(buf, qdf_ktime_real_get());
+}
+
+/**
+ * qdf_nbuf_get_tx_ts() - get tx timestamp of nbuf
+ * @buf: Network buffer
+ * @clear: clear the fields after getting tx timestamp
+ *
+ * Return: tx timestamp
+ */
+static inline qdf_time_t qdf_nbuf_get_tx_ts(qdf_nbuf_t buf, bool clear)
+{
+	qdf_time_t ts = __qdf_nbuf_get_tx_ts(buf);
+
+	if (clear)
+		__qdf_nbuf_clear_tx_ts(buf);
+	return ts;
 }
 #endif /* _QDF_NBUF_M_H */

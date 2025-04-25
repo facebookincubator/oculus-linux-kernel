@@ -426,6 +426,8 @@ QDF_STATUS mlme_vdev_update_beacon(struct vdev_mlme_obj *vdev_mlme,
  * @vdev_mlme:  VDEV MLME comp object
  * @event_data_len: data size
  * @event_data: event data
+ * @discon_legacy_only: flag indicating that only legacy peer to be
+ * disconnected
  *
  * API trigger stations disconnection with AP VDEV or AP disconnection with STA
  * VDEV
@@ -435,13 +437,15 @@ QDF_STATUS mlme_vdev_update_beacon(struct vdev_mlme_obj *vdev_mlme,
  */
 static inline QDF_STATUS mlme_vdev_disconnect_peers(
 				struct vdev_mlme_obj *vdev_mlme,
-				uint16_t event_data_len, void *event_data)
+				uint16_t event_data_len, void *event_data,
+				bool discon_legacy_only)
 {
 	QDF_STATUS ret = QDF_STATUS_SUCCESS;
 
 	if ((vdev_mlme->ops) && vdev_mlme->ops->mlme_vdev_disconnect_peers)
 		ret = vdev_mlme->ops->mlme_vdev_disconnect_peers(
-					vdev_mlme, event_data_len, event_data);
+					vdev_mlme, event_data_len, event_data,
+					discon_legacy_only);
 
 	return ret;
 }

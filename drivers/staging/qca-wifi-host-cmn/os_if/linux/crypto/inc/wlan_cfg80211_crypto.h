@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -36,6 +36,23 @@
 int wlan_cfg80211_set_default_key(struct wlan_objmgr_vdev *vdev,
 				  uint8_t key_index,
 				  struct qdf_mac_addr *bssid);
+
+/**
+ * wlan_cfg80211_translate_ml_sta_key - Translate the cfg80211 keys
+ * to internal for ml sta key
+ * @key_index: key index
+ * @key_type: key type
+ * @mac_addr: mac addr
+ * @params: params
+ * @crypto_key: crypto keys
+ *
+ * Return: None
+ */
+void wlan_cfg80211_translate_ml_sta_key(uint8_t key_index,
+					enum wlan_crypto_key_type key_type,
+					const u8 *mac_addr,
+					struct key_params *params,
+					struct wlan_crypto_key *crypto_key);
 /**
  * wlan_cfg80211_translate_key() - Translate the cfg80211 keys to
  * internal
@@ -56,12 +73,30 @@ void wlan_cfg80211_translate_key(struct wlan_objmgr_vdev *vdev,
 				 struct wlan_crypto_key *crypto_key);
 
 /**
+ * wlan_cfg80211_store_link_key() - store link key info
+ * @psoc: psoc handler
+ * @key_index: key index
+ * @key_type: key type
+ * @mac_addr: mac address
+ * @params: params
+ * @link_addr: link address
+ * @link_id: link id
+ *
+ */
+int wlan_cfg80211_store_link_key(struct wlan_objmgr_psoc *psoc,
+				 uint8_t key_index,
+				 enum wlan_crypto_key_type key_type,
+				 const u8 *mac_addr, struct key_params *params,
+				 struct qdf_mac_addr *link_addr,
+				 uint8_t link_id);
+
+/**
  * wlan_cfg80211_store_key() - Store the key
  * @vdev: VDEV Object pointer
  * @key_index: Index to be set as the default
  * @key_type: denotes if the key is pairwise or group key
  * @mac_addr: BSSID for which the key is to be set
- * @key_params: Params received from the kernel
+ * @params: Key params received from the kernel
  *
  * Return: Zero for success and negative for failure.
  */

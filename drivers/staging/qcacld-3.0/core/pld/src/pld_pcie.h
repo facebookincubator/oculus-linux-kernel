@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -451,6 +451,14 @@ pld_pcie_qmi_send(struct device *dev, int type, void *cmd,
 	return -EINVAL;
 }
 
+static inline int
+pld_pcie_register_qmi_ind(struct device *dev, void *cb_ctx,
+			  int (*cb)(void *ctx, uint16_t type,
+				    void *event, int event_len))
+{
+	return -EINVAL;
+}
+
 static inline int pld_pcie_get_user_msi_assignment(struct device *dev,
 						   char *user_name,
 						   int *num_vectors,
@@ -622,6 +630,24 @@ pld_pcie_qmi_send(struct device *dev, int type, void *cmd,
 {
 	return cnss_qmi_send(dev, type, cmd, cmd_len, cb_ctx, cb);
 }
+
+#ifdef WLAN_CHIPSET_STATS
+static inline int
+pld_pcie_register_qmi_ind(struct device *dev, void *cb_ctx,
+			  int (*cb)(void *ctx, uint16_t type,
+				    void *event, int event_len))
+{
+	return cnss_register_driver_async_data_cb(dev, cb_ctx, cb);
+}
+#else
+static inline int
+pld_pcie_register_qmi_ind(struct device *dev, void *cb_ctx,
+			  int (*cb)(void *ctx, uint16_t type,
+				    void *event, int event_len))
+{
+	return 0;
+}
+#endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
 static inline void *pld_pcie_smmu_get_domain(struct device *dev)
@@ -819,7 +845,7 @@ static inline void pld_pcie_unlock_reg_window(struct device *dev,
 	cnss_pci_unlock_reg_window(dev, flags);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 static inline int pld_pcie_get_pci_slot(struct device *dev)
 {
 	return cnss_get_pci_slot(dev);

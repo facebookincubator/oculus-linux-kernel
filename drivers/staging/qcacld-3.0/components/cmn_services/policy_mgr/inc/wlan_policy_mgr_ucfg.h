@@ -396,4 +396,75 @@ ucfg_policy_mgr_get_sta_sap_scc_on_indoor_chnl(struct wlan_objmgr_psoc *psoc);
  * Return: true if DBS is supported else false
  */
 bool ucfg_policy_mgr_is_fw_supports_dbs(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * ucfg_policy_mgr_get_connection_count() - Get number of connections
+ * @psoc: pointer to psoc
+ *
+ * This API is used to get the count of current connections.
+ *
+ * Return: connection count
+ */
+uint32_t ucfg_policy_mgr_get_connection_count(struct wlan_objmgr_psoc *psoc);
+
+/**
+ * ucfg_policy_mgr_is_hw_sbs_capable() - Check if HW is SBS capable
+ * @psoc: pointer to psoc
+ *
+ * This API is to check if the HW is SBS capable.
+ *
+ * Return: true if the HW is SBS capable
+ */
+bool ucfg_policy_mgr_is_hw_sbs_capable(struct wlan_objmgr_psoc *psoc);
+
+/*
+ * ucfg_policy_mgr_get_vdev_same_freq_new_conn() - Get vdev_id of the first
+ *					           connection that has same
+ *					           channel frequency as new_freq
+ * @psoc: psoc object pointer
+ * @new_freq: channel frequency for the new connection
+ * @vdev_id: Output parameter to return vdev id of the first existing connection
+ *	     that has same channel frequency as @new_freq
+ *
+ * This function is to return the first connection that has same
+ * channel frequency as @new_freq.
+ *
+ * Return: true if connection that has same channel frequency as
+ *	   @new_freq exists. Otherwise false.
+ */
+bool ucfg_policy_mgr_get_vdev_same_freq_new_conn(struct wlan_objmgr_psoc *psoc,
+						 uint32_t new_freq,
+						 uint8_t *vdev_id);
+/*
+ * ucfg_policy_mgr_get_vdev_diff_freq_new_conn() - Get vdev id of the first
+ *						   connection that has different
+ *						   channel freq from new_freq
+ * @psoc: psoc object pointer
+ * @new_freq: channel frequency for the new connection
+ * @vdev_id: Output parameter to return vdev id of the first existing connection
+ *	     that has different channel frequency from @new_freq
+ *
+ * This function is to return the first connection that has different
+ * channel frequency from @new_freq.
+ *
+ * Return: true if connection that has different channel frequency from
+ *	   @new_freq exists. Otherwise false.
+ */
+bool ucfg_policy_mgr_get_vdev_diff_freq_new_conn(struct wlan_objmgr_psoc *psoc,
+						 uint32_t new_freq,
+						 uint8_t *vdev_id);
+
+/**
+ * ucfg_policy_mgr_get_dbs_hw_modes() - to get the DBS HW modes
+ *
+ * @psoc: pointer to psoc
+ * @one_by_one_dbs: 1x1 DBS capability of HW
+ * @two_by_two_dbs: 2x2 DBS capability of HW
+ *
+ * Return: Failure in case of error otherwise success
+ */
+QDF_STATUS ucfg_policy_mgr_get_dbs_hw_modes(struct wlan_objmgr_psoc *psoc,
+					    bool *one_by_one_dbs,
+					    bool *two_by_two_dbs);
+
 #endif //__WLAN_POLICY_MGR_UCFG

@@ -98,7 +98,9 @@ QDF_STATUS hif_initialize_pci_ops(struct hif_softc *hif_sc)
 #ifdef FEATURE_IRQ_AFFINITY
 	bus_ops->hif_set_grp_intr_affinity = &hif_pci_set_grp_intr_affinity;
 #endif
-
+#ifdef WLAN_FEATURE_AFFINITY_MGR
+	bus_ops->hif_affinity_mgr_set_affinity = &hif_affinity_mgr_affine_irq;
+#endif
 	return QDF_STATUS_SUCCESS;
 }
 

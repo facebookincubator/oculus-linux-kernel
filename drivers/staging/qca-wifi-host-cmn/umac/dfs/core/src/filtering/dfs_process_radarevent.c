@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013, 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2002-2010, Atheros Communications Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -102,7 +102,7 @@ static inline uint8_t dfs_process_pulse_dur(struct wlan_dfs *dfs,
 }
 
 #ifdef DFS_FCC_TYPE4_DURATION_CHECK
-/*
+/**
  * dfs_dur_check() - Modify the pulse duration for FCC Type 4 and JAPAN W56
  *                   Type 8 radar pulses when the conditions mentioned in the
  *                   function body are reported in the radar summary report.
@@ -154,7 +154,7 @@ static inline void dfs_dur_check(
 }
 #endif
 
-/*
+/**
  * dfs_print_radar_events() - Prints the Radar events.
  * @dfs: Pointer to wlan_dfs structure.
  */
@@ -366,7 +366,7 @@ static bool dfs_is_real_radar(struct wlan_dfs *dfs,
 }
 #endif /* CONFIG_EXT_RADAR_PROCESS */
 
-/*
+/**
  * dfs_reject_on_pri() - Rejecting on individual filter based on min PRI .
  * @dfs: Pointer to wlan_dfs structure.
  * @rf: Pointer to dfs_filter structure.
@@ -448,19 +448,21 @@ static inline void dfs_confirm_radar_check(
 	}
 }
 
-/*
+/**
  * __dfs_process_radarevent() - Continuation of process a radar event function.
  * @dfs: Pointer to wlan_dfs structure.
  * @ft: Pointer to dfs_filtertype structure.
  * @re: Pointer to dfs_event structure.
  * @this_ts: Timestamp.
+ * @found: set if radar event is found
+ * @false_radar_found: set if false radar found
  *
  * There is currently no way to specify that a radar event has occurred on
  * a specific channel, so the current methodology is to mark both the pri
  * and ext channels as being unavailable.  This should be fixed for 802.11ac
  * or we'll quickly run out of valid channels to use.
  *
- * Return: If a radar event is found, return 1.  Otherwise, return 0.
+ * Return: void
  */
 static void __dfs_process_radarevent(struct wlan_dfs *dfs,
 				     struct dfs_filtertype *ft,
@@ -669,10 +671,13 @@ static void dfs_print_radar_found_freq(struct wlan_dfs *dfs)
 #endif
 
 /**
- * dfs_handle_bangradar - Handle the case of bangradar
+ * dfs_handle_bangradar() - Handle the case of bangradar
  * @dfs: Pointer to wlan_dfs structure.
  * @chan: Current channel.
  * @rs: Pointer to dfs_state.
+ * @seg_id: Pointer to segment id
+ * @retval: Pointer to return value
+ *
  * Return: if bangradar then  return 1.  Otherwise, return 0.
  */
 static inline int dfs_handle_bangradar(
@@ -680,7 +685,7 @@ static inline int dfs_handle_bangradar(
 	struct dfs_channel *chan,
 	struct dfs_state **rs,
 	uint8_t *seg_id,
-	int *retval)
+	bool *retval)
 {
 
 	if (dfs->dfs_bangradar_type) {
@@ -710,7 +715,7 @@ static inline int dfs_handle_bangradar(
 		*seg_id = dfs->dfs_seg_id;
 		dfs_debug(dfs, WLAN_DEBUG_DFS, "bangradar %d",
 			  dfs->dfs_bangradar_type);
-		*retval = 1;
+		*retval = true;
 		return 1;
 	}
 	return 0;
@@ -884,7 +889,7 @@ static inline void dfs_check_if_nonbin5(
 	uint64_t this_ts,
 	uint32_t diff_ts,
 	int *found,
-	int *retval,
+	bool *retval,
 	int *false_radar_found)
 {
 
@@ -1156,11 +1161,12 @@ static inline void  dfs_calculate_timestamps(
 }
 
 /**
- * dfs_add_to_pulseline - Extract necessary items from dfs_event and
+ * dfs_add_to_pulseline() - Extract necessary items from dfs_event and
  * add it as pulse in the pulseline
  * @dfs: Pointer to wlan_dfs structure.
  * @re:  Pointer to re(radar event)
- * @this_ts: Pointer to  this_ts (this timestamp)
+ * @this_ts: Pointer to this_ts (this timestamp)
+ * @test_ts: Pointer to test_ts (test timestamp)
  * @diff_ts: Diff ts.
  * @index: Pointer to get index value.
  */
@@ -1229,7 +1235,7 @@ static inline void dfs_add_to_pulseline(
 }
 
 /**
- * dfs_conditional_clear_delaylines - Clear delay lines to remove  the
+ * dfs_conditional_clear_delaylines() - Clear delay lines to remove the
  * false pulses.
  * @dfs: Pointer to wlan_dfs structure.
  * @diff_ts: diff between timerstamps.
@@ -1278,7 +1284,7 @@ static inline void dfs_conditional_clear_delaylines(
 }
 
 /**
- * dfs_process_each_radarevent - remove each event from the dfs radar queue
+ * dfs_process_each_radarevent() - remove each event from the dfs radar queue
  * and process it.
  * @dfs: Pointer to wlan_dfs structure.
  * @chan: Pointer to DFS current channel.
@@ -1294,7 +1300,7 @@ static inline int dfs_process_each_radarevent(
 	struct dfs_channel *chan,
 	struct dfs_state **rs,
 	uint8_t *seg_id,
-	int *retval,
+	bool *retval,
 	int *false_radar_found)
 {
 	struct dfs_event re, *event;
@@ -1363,8 +1369,8 @@ static inline int dfs_process_each_radarevent(
 }
 
 /**
- * dfs_false_radarfound_reset_vars () - Reset dfs variables after false radar
- *                                      found.
+ * dfs_false_radarfound_reset_vars() - Reset dfs variables after false radar
+ *                                     found.
  * @dfs: Pointer to wlan_dfs structure.
  */
 void dfs_false_radarfound_reset_vars(
@@ -1383,15 +1389,16 @@ void dfs_false_radarfound_reset_vars(
 }
 
 /**
- * dfs_process_radarevent() - For Full Offload, FW sends segment id,freq_offset
- * and chirp information and gets assigned when there is radar detect. In
- * case of radartool bangradar enhanced command and real radar for DA and PO,
- * we assign these information here.
- *
+ * dfs_fill_radar_found_info() - Fill radar found info
  * @dfs: Pointer to wlan_dfs structure.
  * @radar_found: Pointer to radar_found_info structure.
+ *
+ * For Full Offload, FW sends segment id, freq_offset and chirp
+ * information and gets assigned when there is radar detect. In case
+ * of radartool bangradar enhanced command and real radar for DA and
+ * PO, we assign these information here.
+ *
  */
-
 static void
 dfs_fill_radar_found_info(struct wlan_dfs *dfs,
 			  struct radar_found_info *radar_found)
@@ -1486,15 +1493,26 @@ bool dfs_radar_pulse_event_basic_sanity(struct wlan_dfs *dfs,
 	return true;
 }
 
-void dfs_process_radarevent(
-	struct wlan_dfs *dfs,
-	struct dfs_channel *chan)
+/**
+ * dfs_find_radar() - Check if radar found or not.
+ * @dfs: Pointer to wlan_dfs structure.
+ * @chan: Current channel.
+ * @rs: Pointer to dfs_state structure.
+ * @seg_id: segment id.
+ * @is_bangradar: true if radar is due to bangradar command.
+ * @is_radar_found: pointer to radar found or not.
+ *
+ */
+static
+void dfs_find_radar(struct wlan_dfs *dfs,
+		    struct dfs_channel *chan,
+		    struct dfs_state *rs,
+		    uint8_t   *seg_id,
+		    bool *is_bangradar,
+		    bool *is_radar_found)
 {
-	struct dfs_state *rs = NULL;
-	uint8_t   seg_id = 0;
-	int retval = 0;
 	int false_radar_found = 0;
-	bool bangradar = false;
+	*is_radar_found = false;
 
 	if (!dfs_radar_pulse_event_basic_sanity(dfs, chan))
 		return;
@@ -1503,24 +1521,43 @@ void dfs_process_radarevent(
 	 * TEST : Simulate radar bang, make sure we add the channel to NOL
 	 * (bug 29968)
 	 */
-	if (dfs_handle_bangradar(dfs, chan, &rs, &seg_id, &retval)) {
-		if (retval)
-			bangradar = true;
+	if (dfs_handle_bangradar(dfs, chan, &rs, seg_id, is_radar_found)) {
+		if (*is_radar_found)
+			*is_bangradar = true;
 		goto dfsfound;
 	}
 
 	if (!dfs_handle_missing_pulses(dfs, chan))
 		return;
 
-	dfs_process_each_radarevent(dfs, chan, &rs, &seg_id, &retval,
-			&false_radar_found);
+	dfs_process_each_radarevent(dfs, chan, &rs, seg_id, is_radar_found,
+				    &false_radar_found);
 
 dfsfound:
-	if (retval) {
-		dfs_radarfound_reset_vars(dfs, rs, chan, seg_id);
-		dfs_radar_found_action(dfs, bangradar, seg_id);
-	}
-
 	if (false_radar_found)
 		dfs_false_radarfound_reset_vars(dfs);
+
+	if (*is_radar_found)
+		dfs_radarfound_reset_vars(dfs, rs, chan, *seg_id);
+}
+
+void dfs_process_radarevent(
+	struct wlan_dfs *dfs,
+	struct dfs_channel *chan)
+{
+	struct dfs_state *rs = NULL;
+	uint8_t   seg_id = 0;
+	bool is_radar_found = 0;
+	bool is_bangradar = false;
+
+	/* Need to take a lock here since dfs filtering data structures are
+	 * freed and re-allocated in dfs_init_radar_filters() during channel
+	 * change which may happen in the middle of dfs pulse processing.
+	 */
+	WLAN_DFS_DATA_STRUCT_LOCK(dfs);
+	dfs_find_radar(dfs, chan, rs, &seg_id, &is_bangradar, &is_radar_found);
+	WLAN_DFS_DATA_STRUCT_UNLOCK(dfs);
+
+	if (is_radar_found)
+		dfs_radar_found_action(dfs, is_bangradar, seg_id);
 }

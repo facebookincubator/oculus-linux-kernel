@@ -53,6 +53,7 @@ QDF_STATUS cm_check_and_prepare_roam_req(struct cnx_mgr *cm_ctx,
 	QDF_STATUS status;
 	struct wlan_cm_connect_req *req;
 	struct qdf_mac_addr bssid;
+	struct qdf_mac_addr bss_mld_addr = {0};
 	struct wlan_ssid ssid;
 	struct cm_req *cm_req, *req_ptr;
 	qdf_freq_t freq = 0;
@@ -76,13 +77,20 @@ QDF_STATUS cm_check_and_prepare_roam_req(struct cnx_mgr *cm_ctx,
 		return QDF_STATUS_E_FAILURE;
 
 	wlan_vdev_get_bss_peer_mac(cm_ctx->vdev, &bssid);
-
 	/* Reject re-assoc unless prev_bssid matches the current BSSID. */
 	if (!qdf_is_macaddr_equal(&req->prev_bssid, &bssid)) {
 		mlme_debug("BSSID didn't matched: bssid: "QDF_MAC_ADDR_FMT " prev bssid: " QDF_MAC_ADDR_FMT,
 			   QDF_MAC_ADDR_REF(bssid.bytes),
 			   QDF_MAC_ADDR_REF(req->prev_bssid.bytes));
-		return QDF_STATUS_E_FAILURE;
+		status = wlan_vdev_get_bss_peer_mld_mac(cm_ctx->vdev,
+							&bss_mld_addr);
+		if (!(QDF_IS_STATUS_SUCCESS(status) &&
+		      qdf_is_macaddr_equal(&req->prev_bssid, &bss_mld_addr))) {
+			mlme_debug("BSSID didn't matched: bss mld: "QDF_MAC_ADDR_FMT " prev bssid: " QDF_MAC_ADDR_FMT,
+				   QDF_MAC_ADDR_REF(bss_mld_addr.bytes),
+				   QDF_MAC_ADDR_REF(req->prev_bssid.bytes));
+			return QDF_STATUS_E_FAILURE;
+		}
 	}
 
 	status = wlan_vdev_mlme_get_ssid(cm_ctx->vdev, ssid.ssid, &ssid.length);

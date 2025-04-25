@@ -26,7 +26,6 @@
 
 /delete-node/ &fancontroller;
 /delete-node/ &msm_sdexpress;
-/delete-node/ &pcie1;
 /delete-node/ &pm8010_m;
 /delete-node/ &pm8010_n;
 
@@ -493,8 +492,6 @@
 	 */
 	qcom,gpios-reserved = <54 55 115 136>;
 
-	/delete-node/ pcie1;
-
 	fan_tach_default: fan_tach_default {
 		mux {
 			pins = "gpio147";
@@ -635,7 +632,6 @@
 
 	dwc3@a600000 {
 		qcom,iommu-faults = "non-fatal";
-		maximum-speed = "super-speed";
 		snps,usb2-lpm-disable;
 		snps,usb2-gadget-lpm-disable;
 	};
@@ -649,7 +645,7 @@
 		pinctrl-0 = <&privacy_led_default>;
 		pinctrl-1 = <&privacy_led_sleep>;
 
-		led0: led0 {
+		led0 {
 			color = <LED_COLOR_ID_WHITE>;
 			default-state = "off";
 			function = LED_FUNCTION_INDICATOR;

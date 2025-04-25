@@ -257,6 +257,17 @@ QDF_STATUS init_deinit_spectral_scaling_params_free(
 				struct target_psoc_info *tgt_psoc_info);
 
 /**
+ * init_deinit_aux_dev_cap_free() - free aux dev capability buffer
+ * @tgt_psoc_info: target psoc info object
+ *
+ * API to free aux dev capability buffer
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS init_deinit_aux_dev_cap_free(
+				struct target_psoc_info *tgt_psoc_info);
+
+/**
  * init_deinit_populate_phy_reg_cap() - populate phy reg capability
  * @psoc: PSOC object
  * @wmi_handle: WMI handle pointer
@@ -300,6 +311,33 @@ int init_deinit_populate_hal_reg_cap_ext2(wmi_unified_t handle, uint8_t *event,
  */
 int init_deinit_populate_mac_phy_cap_ext2(wmi_unified_t handle, uint8_t *event,
 					  struct tgt_info *info);
+
+/**
+ * init_deinit_populate_rcc_aoa_cap_ext2() - populate aoa capabilities from
+ * service ready ext2 event
+ * @psoc: PSOC object
+ * @handle: WMI handle pointer
+ * @event: event buffer received from FW
+ * @info: tgt_info object
+ *
+ * API to populate aoa capability from service ready ext2 event.
+ *
+ * Return: zero on successful population of aoa capability or failure
+ */
+int init_deinit_populate_rcc_aoa_cap_ext2(struct wlan_objmgr_psoc *psoc,
+					  wmi_unified_t handle, uint8_t *event,
+					  struct tgt_info *info);
+
+/**
+ * init_deinit_rcc_aoa_cap_ext2_free() - free aoa capability
+ * @tgt_psoc_info: target psoc info object
+ *
+ * API to free aoa capability
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS init_deinit_rcc_aoa_cap_ext2_free(
+				struct target_psoc_info *tgt_psoc_info);
 
 /**
  * init_deinit_populate_scan_radio_cap_ext2() - populate scan radio capabilities
@@ -373,6 +411,23 @@ int init_deinit_populate_dbs_or_sbs_cap_ext2(struct wlan_objmgr_psoc *psoc,
 					     wmi_unified_t handle,
 					     uint8_t *event,
 					     struct tgt_info *info);
+
+/**
+ * init_deinit_populate_aux_dev_cap_ext2() - populate aux dev capability
+ * from service ready ext2 event
+ *
+ * @psoc: PSOC object
+ * @handle: WMI handle pointer
+ * @event: event buffer received from FW
+ * @info: tgt_info object
+ *
+ * API to populate aux dev capability from service ready ext2 event.
+ * Return: zero on successful or failure
+ */
+
+int init_deinit_populate_aux_dev_cap_ext2(struct wlan_objmgr_psoc *psoc,
+					  wmi_unified_t handle, uint8_t *event,
+					  struct tgt_info *info);
 
 /**
  * init_deinit_populate_sap_coex_capability() - SAP coex capability

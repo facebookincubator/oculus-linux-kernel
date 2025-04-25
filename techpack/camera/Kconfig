@@ -1,0 +1,44 @@
+config SPECTRA_ISP
+	bool "enable camera ISP modele"
+	help
+	  This is enabling camera ISP module.
+	  IFE camera driver file be included.
+	  This will enable camera ISP driver to handle IFE driver.
+	  Core camera driver to handle VFE HW.
+
+config SPECTRA_ICP
+	bool "enable camera ICP modele"
+	help
+	  This is enabling camera ICP module.
+	  Camera ICP driver file be included.
+	  This will enable camera ICP driver to interact with,
+	  ICP FW. Which can control IPE and BPS HW.
+
+config SPECTRA_JPEG
+	bool "enable camera jpeg modele"
+	help
+	  This is enabling camera JPEG module.
+	  camera jpeg module will be functional.
+	  This module interact with jpeg HW for
+	  snapshot processing.
+
+config SPECTRA_SENSOR
+	bool "enable camera sensor modele"
+	help
+	  This is enabling camera sensor module.
+	  sensor module files will be included to enable the driver.
+	  eeprom, flash, csiphy all other module will be included
+	  to make the sensor functional.
+
+config INTERCONNECT_QCOM
+	bool "enabling icc bus driver"
+	help
+          This is to access icc driver api.
+          To cache AB and IB vote will
+          use ICC kernel driver API.
+          So that ICC driver can consolidate the vote
+
+config SPECTRA_FD
+        bool "enabling camera fd modele"
+        help
+          This is enabling camera FD module.

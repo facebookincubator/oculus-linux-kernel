@@ -540,11 +540,6 @@ static QDF_STATUS lim_send_fils_discovery_template(struct mac_context *mac,
 		goto memfree;
 	}
 
-	pe_debug("Fils Discovery template created successfully %d", n_bytes);
-
-	QDF_TRACE_HEX_DUMP(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG,
-			   fd_params->frm, n_bytes);
-
 	fd_params->tmpl_len = n_bytes;
 	fd_params->tmpl_len_aligned = roundup(fd_params->tmpl_len,
 					      sizeof(uint32_t));
@@ -554,9 +549,6 @@ static QDF_STATUS lim_send_fils_discovery_template(struct mac_context *mac,
 						 fd_params);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		pe_err("FAIL bytes %d retcode[%X]", n_bytes, status);
-	} else {
-		pe_debug("Fils Discovery tmpl msg posted to HAL of bytes %d",
-			 n_bytes);
 	}
 
 memfree:
@@ -572,9 +564,6 @@ QDF_STATUS sch_send_beacon_req(struct mac_context *mac, uint8_t *beaconPayload,
 	struct scheduler_msg msgQ = {0};
 	tpSendbeaconParams beaconParams = NULL;
 	QDF_STATUS retCode;
-
-	pe_debug("Indicating HAL to copy the beacon template [%d bytes] to memory, reason %d",
-		size, reason);
 
 	if (LIM_IS_AP_ROLE(pe_session) &&
 	   (mac->sch.beacon_changed)) {
@@ -878,9 +867,6 @@ uint32_t lim_send_probe_rsp_template_to_hal(struct mac_context *mac,
 		if (QDF_STATUS_SUCCESS != retCode) {
 			pe_err("FAIL bytes %d retcode[%X]", nBytes, retCode);
 			qdf_mem_free(pprobeRespParams);
-		} else {
-			pe_debug("Probe response template msg posted to HAL of bytes %d",
-				nBytes);
 		}
 	}
 

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018, 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021, 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021,2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,7 +27,6 @@
 #include <wlan_objmgr_pdev_obj.h>
 #include <wlan_lmac_if_def.h>
 
-#ifdef IPA_OFFLOAD
 QDF_STATUS tgt_ipa_uc_offload_enable_disable(struct wlan_objmgr_pdev *pdev,
 				struct ipa_uc_offload_control_params *req)
 {
@@ -80,4 +79,4 @@ tgt_ipa_intrabss_enable_disable(struct wlan_objmgr_pdev *pdev,
 	IPA_EXIT();
 	return status;
 }
-#endif
+

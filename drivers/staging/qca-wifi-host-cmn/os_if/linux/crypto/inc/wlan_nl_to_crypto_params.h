@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -37,7 +38,7 @@ osif_nl_to_crypto_auth_type(enum nl80211_auth_type auth_type);
 
 /**
  * osif_nl_to_crypto_akm_type() - populate akm type for crypto
- * @akm_type: NL akm_type
+ * @key_mgmt: NL akm_type
  *
  * set the crypto akm type for corresponding akm type received
  * from NL

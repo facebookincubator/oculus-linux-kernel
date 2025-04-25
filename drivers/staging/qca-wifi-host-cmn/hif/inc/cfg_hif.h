@@ -120,9 +120,32 @@
 	0, \
 	"Disable wake IRQ")
 
+/*
+ * <ini>
+ * irq_affine_audio_use_case - IRQ affinity for audio use case supported
+ * @Min: 0
+ * @Max: 1
+ * @Default: 0
+ *
+ * This ini controls driver to enable IRQ affinity for Pro audio use case.
+ *
+ * Related: None.
+ *
+ * Supported Feature: IRQ Affinity
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_IRQ_AFFINE_AUDIO_USE_CASE CFG_INI_BOOL( \
+	"irq_affine_audio_use_case", \
+	0, \
+	"Enable IRQ affinity for audio use case")
+
 #define CFG_HIF \
 	CFG_RING_TIMER_THRESHOLD \
 	CFG_BATCH_COUNT_THRESHOLD \
-	CFG(CFG_DISABLE_WAKE_IRQ)
+	CFG(CFG_DISABLE_WAKE_IRQ) \
+	CFG(CFG_IRQ_AFFINE_AUDIO_USE_CASE)
 
 #endif /* _CFG_HIF_H_ */

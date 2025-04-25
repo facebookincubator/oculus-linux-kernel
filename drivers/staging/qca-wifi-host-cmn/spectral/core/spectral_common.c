@@ -53,7 +53,10 @@ spectral_get_vdev(struct wlan_objmgr_pdev *pdev, uint8_t vdev_id)
 {
 	struct wlan_objmgr_vdev *vdev = NULL;
 
-	qdf_assert_always(pdev);
+	if (!pdev) {
+		spectral_err("pdev is null");
+		return NULL;
+	}
 
 	if (vdev_id == WLAN_INVALID_VDEV_ID)
 		vdev = wlan_objmgr_pdev_get_first_vdev(pdev, WLAN_SPECTRAL_ID);

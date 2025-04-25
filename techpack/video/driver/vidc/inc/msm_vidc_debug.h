@@ -75,6 +75,7 @@ enum vidc_msg_prio {
 	FW_ERROR        = 0x00080000,
 	FW_FATAL        = 0x00100000,
 	FW_PERF         = 0x00200000,
+	FW_TRACE        = 0x00400000,
 	FW_PRINTK       = 0x10000000,
 	FW_FTRACE       = 0x20000000,
 };
@@ -86,6 +87,12 @@ enum vidc_msg_prio {
 #define FW_LOG         (FW_ERROR | FW_FATAL | FW_PRINTK)
 #define FW_LOGSHIFT    (16)
 #define FW_LOGMASK     (0x0FFF0000)
+
+/* The below macro is used even in msm_vidc_events.h
+ * Both has to be updated with same value else it may
+ * lead to stability issue
+ */
+#define MAX_FW_LOG_LEN 1024
 
 #define dprintk_inst(__level, __level_str, inst, __fmt, ...) \
 	do { \
@@ -137,12 +144,17 @@ enum vidc_msg_prio {
 		} \
 	} while (0)
 
-#define dprintk_firmware(__level, __fmt, ...)	\
+#define dprintk_firmware(__level, __size, __fmt, ...)	\
 	do { \
 		if (__level & FW_PRINTK) { \
 			pr_info(FW_DBG_TAG __fmt, \
 				"fw", \
 				##__VA_ARGS__); \
+		} \
+		if (__level & (FW_FTRACE | FW_TRACE)) { \
+			if (__size < MAX_FW_LOG_LEN) {\
+				trace_msm_v4l2_vidc_trace_fw_log(__size, __VA_ARGS__); \
+			} \
 		} \
 	} while (0)
 

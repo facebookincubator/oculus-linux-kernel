@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,10 +27,15 @@
 #include "cfg_ucfg_api.h"
 #include "wlan_ipa_obj_mgmt_api.h"
 
-#ifdef IPA_OFFLOAD
 static struct wlan_ipa_config *g_ipa_config;
 static bool g_ipa_hw_support;
 static bool g_ipa_pld_enable = true;
+static bool g_ipa_cap_offload = true;
+
+void ipa_set_cap_offload(bool flag)
+{
+	g_ipa_cap_offload = flag;
+}
 
 void ipa_set_pld_enable(bool flag)
 {
@@ -39,7 +44,7 @@ void ipa_set_pld_enable(bool flag)
 
 bool ipa_get_pld_enable(void)
 {
-	return g_ipa_pld_enable;
+	return (g_ipa_pld_enable && g_ipa_cap_offload);
 }
 
 bool ipa_check_hw_present(void)
@@ -383,7 +388,7 @@ void ipa_reg_send_to_nw_cb(struct wlan_objmgr_pdev *pdev,
 	return wlan_ipa_reg_send_to_nw_cb(ipa_obj, cb);
 }
 
-#ifdef QCA_CONFIG_RPS
+#if defined(QCA_CONFIG_RPS) && !defined(MDM_PLATFORM)
 void ipa_reg_rps_enable_cb(struct wlan_objmgr_pdev *pdev,
 			   wlan_ipa_rps_enable cb)
 {
@@ -738,7 +743,7 @@ bool ipa_is_fw_wdi_activated(struct wlan_objmgr_pdev *pdev)
 }
 
 void ipa_uc_cleanup_sta(struct wlan_objmgr_pdev *pdev,
-			qdf_netdev_t net_dev)
+			qdf_netdev_t net_dev, uint8_t session_id)
 {
 	struct wlan_ipa_priv *ipa_obj;
 
@@ -753,7 +758,7 @@ void ipa_uc_cleanup_sta(struct wlan_objmgr_pdev *pdev,
 		return;
 	}
 
-	return wlan_ipa_uc_cleanup_sta(ipa_obj, net_dev);
+	return wlan_ipa_uc_cleanup_sta(ipa_obj, net_dev, session_id);
 }
 
 QDF_STATUS ipa_uc_disconnect_ap(struct wlan_objmgr_pdev *pdev,
@@ -774,7 +779,7 @@ QDF_STATUS ipa_uc_disconnect_ap(struct wlan_objmgr_pdev *pdev,
 }
 
 void ipa_cleanup_dev_iface(struct wlan_objmgr_pdev *pdev,
-			   qdf_netdev_t net_dev)
+			   qdf_netdev_t net_dev, uint8_t session_id)
 {
 	struct wlan_ipa_priv *ipa_obj;
 
@@ -787,7 +792,7 @@ void ipa_cleanup_dev_iface(struct wlan_objmgr_pdev *pdev,
 		return;
 	}
 
-	return wlan_ipa_cleanup_dev_iface(ipa_obj, net_dev);
+	return wlan_ipa_cleanup_dev_iface(ipa_obj, net_dev, session_id);
 }
 
 void ipa_uc_ssr_cleanup(struct wlan_objmgr_pdev *pdev)
@@ -824,6 +829,33 @@ void ipa_fw_rejuvenate_send_msg(struct wlan_objmgr_pdev *pdev)
 	return wlan_ipa_fw_rejuvenate_send_msg(ipa_obj);
 }
 
+#ifdef IPA_OPT_WIFI_DP
+uint32_t get_ipa_config(struct wlan_objmgr_psoc *psoc)
+{
+	uint32_t val = cfg_get(psoc, CFG_DP_IPA_OFFLOAD_CONFIG);
+
+	if (val == INTRL_MODE_DISABLE) {
+		val = 0;
+	} else {
+		if (val == IPA_OFFLOAD_CFG)
+			ipa_err("Invalid IPA Config 0x%x", val);
+		val = INTRL_MODE_ENABLE;
+	}
+	return val;
+}
+#else
+uint32_t get_ipa_config(struct wlan_objmgr_psoc *psoc)
+{
+	uint32_t val = cfg_get(psoc, CFG_DP_IPA_OFFLOAD_CONFIG);
+
+	if (val & WLAN_IPA_OPT_WIFI_DP) {
+		val &= ~WLAN_IPA_OPT_WIFI_DP;
+		ipa_info("Resetting IPAConfig val to 0x%x", val);
+	}
+	return val;
+}
+#endif
+
 void ipa_component_config_update(struct wlan_objmgr_psoc *psoc)
 {
 	QDF_STATUS status;
@@ -834,11 +866,10 @@ void ipa_component_config_update(struct wlan_objmgr_psoc *psoc)
 		return;
 	}
 
-	if (g_ipa_pld_enable) {
-		g_ipa_config->ipa_config = cfg_get(psoc,
-						   CFG_DP_IPA_OFFLOAD_CONFIG);
-		ipa_info("IPA ini configuration: 0x%x",
-			 g_ipa_config->ipa_config);
+	if (g_ipa_pld_enable && g_ipa_cap_offload) {
+		g_ipa_config->ipa_config = get_ipa_config(psoc);
+		ipa_debug("IPA ini configuration: 0x%x",
+			  g_ipa_config->ipa_config);
 	} else {
 		g_ipa_config->ipa_config = 0;
 		ipa_info("IPA disabled from platform driver");
@@ -921,4 +952,64 @@ bool ipa_is_wds_enabled(void)
 {
 	return g_ipa_config ? g_ipa_config->ipa_wds : 0;
 }
-#endif /* IPA_OFFLOAD */
+
+QDF_STATUS ipa_get_alt_pipe(struct wlan_objmgr_pdev *pdev,
+			    uint8_t vdev_id,
+			    bool *alt_pipe)
+{
+	struct wlan_ipa_priv *ipa_obj;
+
+	if (!ipa_config_is_enabled())
+		return QDF_STATUS_E_INVAL;
+
+	if (!ipa_cb_is_ready())
+		return QDF_STATUS_E_INVAL;
+
+	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+	if (!ipa_obj) {
+		ipa_err("IPA object is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+
+	return wlan_ipa_get_alt_pipe(ipa_obj, vdev_id, alt_pipe);
+}
+
+bool ipa_set_perf_level_bw_enabled(struct wlan_objmgr_pdev *pdev)
+{
+	struct wlan_ipa_priv *ipa_obj;
+
+	if (!ipa_config_is_enabled())
+		return false;
+
+	if (!ipa_cb_is_ready())
+		return false;
+
+	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+	if (!ipa_obj) {
+		ipa_err("IPA object is NULL");
+		return false;
+	}
+
+	return wlan_ipa_set_perf_level_bw_enabled(ipa_obj);
+}
+
+void ipa_set_perf_level_bw(struct wlan_objmgr_pdev *pdev,
+			   enum wlan_ipa_bw_level lvl)
+{
+	struct wlan_ipa_priv *ipa_obj;
+
+	if (!ipa_config_is_enabled())
+		return;
+
+	if (!ipa_cb_is_ready())
+		return;
+
+	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+	if (!ipa_obj) {
+		ipa_err("IPA object is NULL");
+		return;
+	}
+
+	wlan_ipa_set_perf_level_bw(ipa_obj, lvl);
+}
+

@@ -25,7 +25,6 @@
 #include "host_diag_core_event.h"
 #include "wlan_reg_services_api.h"
 
-#ifdef IPA_OFFLOAD
 QDF_STATUS wlan_ipa_set_perf_level(struct wlan_ipa_priv *ipa_ctx,
 				    uint64_t tx_packets,
 				    uint64_t rx_packets)
@@ -95,8 +94,7 @@ QDF_STATUS wlan_ipa_update_perf_level(struct wlan_ipa_priv *ipa_ctx, int client)
 static inline
 QDF_STATUS wlan_ipa_update_perf_level(struct wlan_ipa_priv *ipa_ctx, int client)
 {
-	return cdp_ipa_set_perf_level(ipa_ctx->dp_soc,
-				      client,
+	return cdp_ipa_set_perf_level(ipa_ctx->dp_soc, client,
 				      WLAN_IPA_MAX_BANDWIDTH, ipa_ctx->hdl);
 }
 #endif
@@ -125,6 +123,54 @@ QDF_STATUS wlan_ipa_init_perf_level(struct wlan_ipa_priv *ipa_ctx)
 	}
 
 	return QDF_STATUS_SUCCESS;
+}
+
+bool wlan_ipa_set_perf_level_bw_enabled(struct wlan_ipa_priv *ipa_ctx)
+{
+	/*
+	 * Do bandwidth-based IPA perf vote only when all below are met.
+	 * a. IPA is enabled.
+	 * b. IPA clk scaling is _not_ enabled.
+	 * c. IPA force voting is enabled.
+	 */
+	return wlan_ipa_is_enabled(ipa_ctx->config) &&
+	       !wlan_ipa_is_clk_scaling_enabled(ipa_ctx->config) &&
+	       ipa_ctx->config->ipa_force_voting;
+}
+
+void wlan_ipa_set_perf_level_bw(struct wlan_ipa_priv *ipa_ctx,
+				enum wlan_ipa_bw_level lvl)
+{
+	uint32_t max_mbps;
+	int ret;
+
+	if (!wlan_ipa_set_perf_level_bw_enabled(ipa_ctx))
+		return;
+
+	ipa_debug("Set perf level to %d", lvl);
+
+	if (lvl == WLAN_IPA_BW_LEVEL_HIGH)
+		max_mbps = ipa_ctx->config->ipa_bw_high;
+	else if (lvl == WLAN_IPA_BW_LEVEL_MEDIUM)
+		max_mbps = ipa_ctx->config->ipa_bw_medium;
+	else
+		max_mbps = ipa_ctx->config->ipa_bw_low;
+
+	ret = cdp_ipa_set_perf_level(ipa_ctx->dp_soc,
+				     QDF_IPA_CLIENT_WLAN1_CONS,
+				     max_mbps,
+				     ipa_ctx->hdl);
+	if (ret) {
+		ipa_err("CONS set perf profile failed: %d", ret);
+		return;
+	}
+
+	ret = cdp_ipa_set_perf_level(ipa_ctx->dp_soc,
+				     QDF_IPA_CLIENT_WLAN1_PROD,
+				     max_mbps,
+				     ipa_ctx->hdl);
+	if (ret)
+		ipa_err("PROD set perf profile failed: %d", ret);
 }
 
 #ifdef FEATURE_METERING
@@ -543,4 +589,3 @@ bool wlan_ipa_is_rm_released(struct wlan_ipa_priv *ipa_ctx)
 	return true;
 }
 #endif /* CONFIG_IPA_WDI_UNIFIED_API */
-#endif

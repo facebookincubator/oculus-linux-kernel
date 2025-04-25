@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -53,9 +53,9 @@ static inline uint32_t wma_ndp_get_eventid_from_tlvtag(uint32_t tag)
  * @add_sta: Parameters of ADD_STA command
  *
  * Sends CREATE_PEER command to firmware
- * Return: none
+ * Return: QDF status
  */
-void wma_add_sta_ndi_mode(tp_wma_handle wma, tpAddStaParams add_sta);
+QDF_STATUS  wma_add_sta_ndi_mode(tp_wma_handle wma, tpAddStaParams add_sta);
 
 /**
  * wma_update_hdd_cfg_ndp() - Update target device NAN datapath capability

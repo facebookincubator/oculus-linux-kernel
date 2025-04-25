@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2018,The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -112,6 +113,9 @@ qdf_nbuf_t ol_tx_ll(ol_txrx_vdev_handle vdev, qdf_nbuf_t msdu_list)
 			if (!tx_desc)
 				return msdu;
 
+			ol_tx_trace_pkt(msdu, tx_desc->id, vdev->vdev_id,
+					vdev->qdf_opmode);
+
 			/*
 			 * If this is a jumbo nbuf, then increment the number
 			 * of nbuf users for each additional segment of the msdu
@@ -173,6 +177,9 @@ qdf_nbuf_t ol_tx_ll(ol_txrx_vdev_handle vdev, qdf_nbuf_t msdu_list)
 		tx_desc = ol_tx_prepare_ll(vdev, msdu, &msdu_info);
 		if (!tx_desc)
 			return msdu;
+
+		ol_tx_trace_pkt(msdu, tx_desc->id, vdev->vdev_id,
+				vdev->qdf_opmode);
 
 		TXRX_STATS_MSDU_INCR(vdev->pdev, tx.from_stack, msdu);
 

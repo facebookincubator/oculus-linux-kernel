@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -81,7 +81,7 @@
 /* WLAN 5GHz channel number 170 freq */
 #define DFS_CHAN_170_FREQ        (5852)
 
-
+#define IS_CHAN_DFS(_flags) ((_flags) & REGULATORY_CHAN_RADAR)
 
 extern struct dfs_to_mlme global_dfs_to_mlme;
 
@@ -226,11 +226,10 @@ QDF_STATUS utils_dfs_stacac_stop(struct wlan_objmgr_pdev *pdev);
  */
 QDF_STATUS utils_dfs_get_usenol(struct wlan_objmgr_pdev *pdev,
 		uint16_t *usenol);
-/*
- * utils_dfs_radar_disable() - Disables the radar.
+
+/**
+ * utils_dfs_is_spruce_spur_war_applicable() - Is Spruce spur WAR applicable
  * @pdev: Pointer to DFS pdev object.
- *
- * Return: true if Spruce spur WAR is applicable else false.
  *
  * Spur or leakage transmissions is observed in Spruce HW in
  * frequencies from 5260MHz to 5320MHz when one of the following
@@ -252,6 +251,8 @@ QDF_STATUS utils_dfs_get_usenol(struct wlan_objmgr_pdev *pdev,
  * should make sure to prevent moving to the adjacent channels 36/44/48 in
  * 80MHz mode. Failing to do so will cause spur transmissions in channel 52
  * through 64.
+ *
+ * Return: true if Spruce spur WAR is applicable else false.
  */
 bool utils_dfs_is_spruce_spur_war_applicable(struct wlan_objmgr_pdev *pdev);
 
@@ -311,7 +312,7 @@ QDF_STATUS utils_dfs_get_nol_timeout(struct wlan_objmgr_pdev *pdev,
 /**
  * utils_dfs_nol_addchan() - Add channel to NOL.
  * @pdev: Pointer to DFS pdev object.
- * @chan: channel t o add NOL.
+ * @freq: channel frequency to add to NOL.
  * @dfs_nol_timeout: NOL timeout.
  *
  * wrapper function for dfs_nol_addchan(). this
@@ -343,11 +344,11 @@ QDF_STATUS utils_dfs_second_segment_radar_disable(
 /**
  * utils_dfs_fetch_nol_ie_info() - Fills the arguments with NOL information
  * needed for sending RCSA.
- * pdev: Pointer to DFS pdev object.
- * nol_ie_bandwidth: Minimum DFS subchannel Bandwidth.
- * nol_ie_startfreq: Radar affected channel list start subchannel's centre
+ * @pdev: Pointer to DFS pdev object.
+ * @nol_ie_bandwidth: Minimum DFS subchannel Bandwidth.
+ * @nol_ie_startfreq: Radar affected channel list start subchannel's centre
  * frequency.
- * nol_ie_bitmap: Bitmap of radar affected subchannels.
+ * @nol_ie_bitmap: Bitmap of radar affected subchannels.
  */
 QDF_STATUS utils_dfs_fetch_nol_ie_info(struct wlan_objmgr_pdev *pdev,
 				       uint8_t *nol_ie_bandwidth,
@@ -357,9 +358,9 @@ QDF_STATUS utils_dfs_fetch_nol_ie_info(struct wlan_objmgr_pdev *pdev,
 /**
  * utils_dfs_set_rcsa_flags() - Set flags that are required for sending
  * RCSA and NOL IE.
- * pdev: Pointer to DFS pdev object.
- * is_rcsa_ie_sent: Boolean to check if RCSA IE should be sent or not.
- * is_nol_ie_sent: Boolean to check if NOL IE should be sent or not.
+ * @pdev: Pointer to DFS pdev object.
+ * @is_rcsa_ie_sent: Boolean to check if RCSA IE should be sent or not.
+ * @is_nol_ie_sent: Boolean to check if NOL IE should be sent or not.
  */
 
 QDF_STATUS utils_dfs_set_rcsa_flags(struct wlan_objmgr_pdev *pdev,
@@ -369,9 +370,9 @@ QDF_STATUS utils_dfs_set_rcsa_flags(struct wlan_objmgr_pdev *pdev,
 /**
  * utils_dfs_get_rcsa_flags() - Get flags that are required for sending
  * RCSA and NOL IE.
- * pdev: Pointer to DFS pdev object.
- * is_rcsa_ie_sent: Boolean to check if RCSA IE should be sent or not.
- * is_nol_ie_sent: Boolean to check if NOL IE should be sent or not.
+ * @pdev: Pointer to DFS pdev object.
+ * @is_rcsa_ie_sent: Boolean to check if RCSA IE should be sent or not.
+ * @is_nol_ie_sent: Boolean to check if NOL IE should be sent or not.
  */
 
 QDF_STATUS utils_dfs_get_rcsa_flags(struct wlan_objmgr_pdev *pdev,
@@ -381,11 +382,11 @@ QDF_STATUS utils_dfs_get_rcsa_flags(struct wlan_objmgr_pdev *pdev,
 /**
  * utils_dfs_process_nol_ie_bitmap() - Update NOL with external radar
  * information.
- * pdev: Pointer to DFS pdev object.
- * nol_ie_bandwidth: Minimum DFS subchannel Bandwidth.
- * nol_ie_startfreq: Radar affected channel list start channel's
+ * @pdev: Pointer to DFS pdev object.
+ * @nol_ie_bandwidth: Minimum DFS subchannel Bandwidth.
+ * @nol_ie_startfreq: Radar affected channel list start channel's
  * centre frequency.
- * nol_ie_bitmap: Bitmap of radar affected subchannels.
+ * @nol_ie_bitmap: Bitmap of radar affected subchannels.
  *
  * Return: True if NOL IE should be propagated, else false.
  */
@@ -465,7 +466,7 @@ utils_dfs_get_random_channel_for_freq(struct wlan_objmgr_pdev *pdev,
  * @flags: random channel selection flags.
  * @ch_params: current channel params.
  * @hw_mode: current operating mode.
- * @target_chan: Pointer to target_chan_freq.
+ * @target_chan_freq: Pointer to target_chan_freq.
  * @acs_info: acs range info.
  *
  * Get random channel based on vdev interface type. If the vdev is null,
@@ -485,7 +486,7 @@ QDF_STATUS utils_dfs_get_vdev_random_channel_for_freq(
  * @pdev: Pointer to DFS pdev object.
  * @ch_params: current channel params.
  * @hw_mode: current operating mode.
- * @target_chan: Pointer to target_chan freq.
+ * @target_chan_freq: Pointer to target_chan freq.
  *
  * wrapper function for get bw_reduced_channel. this
  * function called from outside of dfs component.
@@ -594,7 +595,7 @@ void utils_dfs_reg_update_nol_chan_for_freq(struct wlan_objmgr_pdev *pdev,
 					    bool nol_ch);
 #endif
 /**
- * utils_dfs_freq_to_chan () - convert channel freq to channel number
+ * utils_dfs_freq_to_chan() - convert channel freq to channel number
  * @freq: frequency
  *
  * Return: channel number
@@ -602,7 +603,7 @@ void utils_dfs_reg_update_nol_chan_for_freq(struct wlan_objmgr_pdev *pdev,
 uint8_t utils_dfs_freq_to_chan(uint32_t freq);
 
 /**
- * utils_dfs_chan_to_freq () - convert channel number to frequency
+ * utils_dfs_chan_to_freq() - convert channel number to frequency
  * @chan: channel number
  *
  * Return: frequency
@@ -684,22 +685,23 @@ utils_dfs_can_ignore_radar_event(struct wlan_objmgr_pdev *pdev)
  */
 int utils_get_dfsdomain(struct wlan_objmgr_pdev *pdev);
 
+#if defined(WLAN_DFS_PARTIAL_OFFLOAD) && defined(HOST_DFS_SPOOF_TEST)
 /**
  * utils_dfs_is_spoof_check_failed() - get spoof check status.
  * @pdev: pdev ptr
  * @is_spoof_check_failed: pointer containing the status.
  *
  * Return: QDF_STATUS.
+ */
+QDF_STATUS utils_dfs_is_spoof_check_failed(struct wlan_objmgr_pdev *pdev,
+					   bool *is_spoof_check_failed);
 
+/**
  * utils_dfs_is_spoof_done() - get spoof check status.
  * @pdev: pdev ptr
  *
  * Return: True if dfs_spoof_test_done is set.
  */
-#if defined(WLAN_DFS_PARTIAL_OFFLOAD) && defined(HOST_DFS_SPOOF_TEST)
-QDF_STATUS utils_dfs_is_spoof_check_failed(struct wlan_objmgr_pdev *pdev,
-					   bool *is_spoof_check_failed);
-
 bool utils_dfs_is_spoof_done(struct wlan_objmgr_pdev *pdev);
 #else
 static inline
@@ -747,17 +749,18 @@ void utils_dfs_get_nol_history_chan_list(struct wlan_objmgr_pdev *pdev,
  * utils_dfs_reg_update_nol_history_chan_for_freq() - set nol history channel
  *
  * @pdev: pdev ptr
- * @ch_list: freq channel list to be returned
- * @num_ch: number of channels
- * @nol_history_ch: nol history flag
+ * @freq_list: freq channel list to be returned
+ * @num_chan: number of channels
+ * @nol_history_chan: nol history flag
  *
  * Return: void
  */
 #ifdef CONFIG_CHAN_FREQ_API
-void utils_dfs_reg_update_nol_history_chan_for_freq(struct wlan_objmgr_pdev *,
-						    uint16_t *freq_list,
-						    uint8_t num_ch,
-						    bool nol_history_ch);
+void
+utils_dfs_reg_update_nol_history_chan_for_freq(struct wlan_objmgr_pdev *pdev,
+					       uint16_t *freq_list,
+					       uint8_t num_chan,
+					       bool nol_history_chan);
 #endif
 
 /**
@@ -797,7 +800,8 @@ utils_dfs_is_cac_required_on_dfs_curchan(struct wlan_objmgr_pdev *pdev,
 					 bool *continue_current_cac,
 					 bool is_vap_restart);
 
-/** utils_dfs_is_precac_done() - Check if precac has been done in chosen channel
+/**
+ * utils_dfs_is_precac_done() - Check if precac has been done in chosen channel
  * @pdev: Pointer to DFS pdev object.
  * @wlan_chan: Pointer to wlan channel object that can be accessed by other
  * components.
@@ -814,7 +818,8 @@ bool utils_dfs_is_precac_done(struct wlan_objmgr_pdev *pdev,
  * utils_dfs_get_disable_radar_marking() - Retrieve the value of disable radar.
  * marking.
  * @pdev: Pointer to DFS pdev object.
- * @dis_radar_marking: pointer to retrieve the value of disable_radar_marking.
+ * @disable_radar_marking: pointer to retrieve the value of
+ *                         disable_radar_marking.
  */
 #if defined(WLAN_DFS_FULL_OFFLOAD) && defined(QCA_DFS_NOL_OFFLOAD)
 QDF_STATUS utils_dfs_get_disable_radar_marking(struct wlan_objmgr_pdev *pdev,
@@ -831,7 +836,7 @@ QDF_STATUS utils_dfs_get_disable_radar_marking(struct wlan_objmgr_pdev *pdev,
 /**
  * utils_dfs_deliver_event() - Deliver DFS event to userspace.
  * @pdev: Pointer to DFS pdev object
- * @chan: channel radar hit on
+ * @freq: frequency radar hit on
  * @event: event being sent
  */
 void utils_dfs_deliver_event(struct wlan_objmgr_pdev *pdev, uint16_t freq,
@@ -868,8 +873,8 @@ void utils_dfs_agile_sm_deliver_evt(struct wlan_objmgr_pdev *pdev,
  * utils_dfs_get_rcac_channel() - Get the completed Rolling CAC channel if
  *                                available.
  * @pdev: Pointer to DFS pdev object.
- * @ch_params: current channel params.
- * @target_chan: Pointer to target_chan freq.
+ * @chan_params: current channel params.
+ * @target_chan_freq: Pointer to target_chan freq.
  *
  * Return: QDF_STATUS.
  */
@@ -972,4 +977,55 @@ QDF_STATUS dfs_init_chan_state_array(struct wlan_objmgr_pdev *pdev)
  * Return: QDF_STATUS.
  */
 QDF_STATUS utils_dfs_radar_enable(struct wlan_objmgr_pdev *pdev);
+
+/**
+ * utils_dfs_convert_freq_to_index() - Converts a channel frequency
+ * to the DFS channel state array index. The input frequency should be a 5 GHz
+ * channel frequency and this check should be done in the caller.
+ *
+ * @freq: Input DFS channel frequency.
+ * @index: Output DFS channel state array index.
+ *
+ * Return: None.
+ */
+void utils_dfs_convert_freq_to_index(qdf_freq_t freq, int8_t *index);
+
+/**
+ * utils_dfs_convert_wlan_phymode_to_chwidth() - Map phymode to
+ * channel width.
+ * @phymode: phymode of type wlan_phymode.
+ *
+ * Return channel width of type phy_ch_width
+ */
+enum phy_ch_width
+utils_dfs_convert_wlan_phymode_to_chwidth(enum wlan_phymode phymode);
+
+/**
+ * utils_dfs_get_radar_bitmap_from_nolie() - Read the NOL IE bitmap of the RCSA
+ * frame, puncture the nol infected channels and formulate the radar puncture
+ * bitmap.
+ * @pdev: Pointer to struct wlan_objmgr_pdev
+ * @phy_mode: Phymode of enum wlan_phymode.
+ * @nol_ie_start_freq: Start frequency of the NOL infected channels
+ * @nol_ie_bitmap : NOL IE bitmap
+ *
+ * Return: Punctured radar bitmap
+ */
+#if defined(WLAN_FEATURE_11BE) && defined(QCA_DFS_BW_EXPAND) && \
+	defined(QCA_DFS_RCSA_SUPPORT)
+uint16_t
+utils_dfs_get_radar_bitmap_from_nolie(struct wlan_objmgr_pdev *pdev,
+				      enum wlan_phymode phy_mode,
+				      qdf_freq_t nol_ie_start_freq,
+				      uint8_t nol_ie_bitmap);
+#else
+static inline uint16_t
+utils_dfs_get_radar_bitmap_from_nolie(struct wlan_objmgr_pdev *pdev,
+				      enum wlan_phymode phy_mode,
+				      qdf_freq_t nol_ie_start_freq,
+				      uint8_t nol_ie_bitmap)
+{
+	return NO_SCHANS_PUNC;
+}
+#endif
 #endif /* _WLAN_DFS_UTILS_API_H_ */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -60,13 +60,14 @@ struct hif_ipci_stats {
 #define PCIE_SOC_PCIE_REG_PCIE_SCRATCH_0_SOC_PCIE_REG (0x01E04000 + 0x40)
 
 /* Timeout duration to validate UMAC wake status */
-#define FORCE_WAKE_DELAY_TIMEOUT_MS 500
+#define FORCE_WAKE_DELAY_TIMEOUT_MS 1000
 
 /* Validate UMAC status every 5ms */
 #define FORCE_WAKE_DELAY_MS 5
 #endif /* FORCE_WAKE */
 
-#ifdef FEATURE_HAL_DELAYED_REG_WRITE
+#if defined(FEATURE_HAL_DELAYED_REG_WRITE) || \
+	defined(FEATURE_HIF_DELAYED_REG_WRITE)
 #define EP_VOTE_POLL_TIME_US  50
 #define EP_VOTE_POLL_TIME_CNT 3
 #ifdef CONFIG_WLAN_EXTRA_DEBUG
@@ -77,6 +78,14 @@ struct hif_ipci_stats {
 #define EP_WAKE_DELAY_TIMEOUT_MS 10
 #define EP_WAKE_RESET_DELAY_US 50
 #define EP_WAKE_DELAY_US 200
+#endif
+
+#if defined(QCA_WIFI_WCN6450)
+#define HIF_IPCI_DEVICE_ID WCN6450_DEVICE_ID
+#elif defined(QCA_WIFI_QCA6750)
+#define HIF_IPCI_DEVICE_ID QCA6750_DEVICE_ID
+#else
+#define HIF_IPCI_DEVICE_ID 0
 #endif
 
 struct hif_ipci_softc {
@@ -94,7 +103,8 @@ struct hif_ipci_softc {
 
 	void (*hif_ipci_get_soc_info)(struct hif_ipci_softc *sc,
 				      struct device *dev);
-#ifdef FEATURE_HAL_DELAYED_REG_WRITE
+#if defined(FEATURE_HAL_DELAYED_REG_WRITE) || \
+	defined(FEATURE_HIF_DELAYED_REG_WRITE)
 	uint32_t ep_awake_reset_fail;
 	uint32_t prevent_l1_fail;
 	uint32_t ep_awake_set_fail;

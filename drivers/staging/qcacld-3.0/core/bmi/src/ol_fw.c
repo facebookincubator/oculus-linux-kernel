@@ -1723,6 +1723,7 @@ void ol_dump_target_memory(struct hif_opaque_softc *scn, void *memory_block)
 		case 1:
 			address = AXI_LOCATION;
 			size = AXI_SIZE;
+			break;
 		default:
 			break;
 		}

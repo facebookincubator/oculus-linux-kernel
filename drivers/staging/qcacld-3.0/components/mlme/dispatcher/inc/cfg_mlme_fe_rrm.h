@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2018, 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -96,7 +97,7 @@
 /*
  * <ini>
  * rm_capability - Configure RM enabled capabilities IE
- * @Default: 0x73,0x10,0x91,0x00,0x04
+ * @Default: 0x73,0x1A,0x91,0x00,0x04
  *
  * This ini is used to configure RM enabled capabilities IE.
  * Using this INI, we can set/unset any of the bits in 5 bytes
@@ -117,7 +118,7 @@
 #define CFG_RM_CAPABILITY CFG_INI_STRING("rm_capability", \
 					 24, \
 					 40, \
-					 "0x73,0x10,0x91,0x00,0x04", \
+					 "0x73,0x1A,0x91,0x00,0x04", \
 					 "RM enabled capabilities IE")
 
 #define CFG_FE_RRM_ALL \

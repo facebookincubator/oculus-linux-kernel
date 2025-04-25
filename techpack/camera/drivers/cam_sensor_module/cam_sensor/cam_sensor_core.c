@@ -113,69 +113,6 @@ static void cam_sensor_release_per_frame_resource(
 	}
 }
 
-static int cam_sensor_handle_res_info(struct cam_sensor_res_info *res_info,
-	struct cam_sensor_ctrl_t *s_ctrl)
-{
-	int rc = 0;
-
-	if (!s_ctrl || !res_info) {
-		CAM_ERR(CAM_SENSOR, "Invalid params: res_info: %s, s_ctrl: %s",
-			CAM_IS_NULL_TO_STR(res_info),
-			CAM_IS_NULL_TO_STR(s_ctrl));
-		return -EINVAL;
-	}
-
-	s_ctrl->vc = res_info->vc;
-	s_ctrl->dt = res_info->dt;
-	s_ctrl->frame_duration = res_info->frame_duration;
-
-	/* If request id is 0, it will be during an initial config/acquire */
-	CAM_DBG(CAM_SENSOR,
-		"Sensor[%s] reqId: %llu vc: %d dt: %d FD: %llu ",
-		s_ctrl->sensor_name,
-		res_info->req_id,
-		s_ctrl->vc,
-		s_ctrl->dt,
-		s_ctrl->frame_duration);
-
-	return rc;
-}
-
-static int32_t cam_sensor_generic_blob_handler(void *user_data,
-	uint32_t blob_type, uint32_t blob_size, uint8_t *blob_data)
-{
-	int rc = 0;
-	struct cam_sensor_ctrl_t *s_ctrl =
-		(struct cam_sensor_ctrl_t *) user_data;
-
-	if (!blob_data || !blob_size) {
-		CAM_ERR(CAM_SENSOR, "Invalid blob info %pK %u", blob_data,
-			blob_size);
-		return -EINVAL;
-	}
-
-	switch (blob_type) {
-	case CAM_SENSOR_GENERIC_BLOB_RES_INFO: {
-		struct cam_sensor_res_info *res_info =
-			(struct cam_sensor_res_info *) blob_data;
-
-		if (blob_size < sizeof(struct cam_sensor_res_info)) {
-			CAM_ERR(CAM_SENSOR, "Invalid blob size expected: 0x%x actual: 0x%x",
-				sizeof(struct cam_sensor_res_info), blob_size);
-			return -EINVAL;
-		}
-
-		rc = cam_sensor_handle_res_info(res_info, s_ctrl);
-		break;
-	}
-	default:
-		CAM_WARN(CAM_SENSOR, "Invalid blob type %d", blob_type);
-		break;
-	}
-
-	return rc;
-}
-
 static int32_t cam_sensor_handle_config_no_io(struct cam_sensor_ctrl_t *s_ctrl,
 				void *arg)
 {
@@ -255,6 +192,69 @@ static int32_t cam_sensor_handle_config_no_io(struct cam_sensor_ctrl_t *s_ctrl,
 	rc = cam_sensor_update_req_mgr(s_ctrl, csl_packet);
 
 end:
+	return rc;
+}
+
+static int cam_sensor_handle_res_info(struct cam_sensor_res_info *res_info,
+	struct cam_sensor_ctrl_t *s_ctrl)
+{
+	int rc = 0;
+
+	if (!s_ctrl || !res_info) {
+		CAM_ERR(CAM_SENSOR, "Invalid params: res_info: %s, s_ctrl: %s",
+			CAM_IS_NULL_TO_STR(res_info),
+			CAM_IS_NULL_TO_STR(s_ctrl));
+		return -EINVAL;
+	}
+
+	s_ctrl->vc = res_info->vc;
+	s_ctrl->dt = res_info->dt;
+	s_ctrl->frame_duration = res_info->frame_duration;
+
+	/* If request id is 0, it will be during an initial config/acquire */
+	CAM_DBG(CAM_SENSOR,
+		"Sensor[%s] reqId: %llu vc: %d dt: %d FD: %llu ",
+		s_ctrl->sensor_name,
+		res_info->req_id,
+		s_ctrl->vc,
+		s_ctrl->dt,
+		s_ctrl->frame_duration);
+
+	return rc;
+}
+
+static int32_t cam_sensor_generic_blob_handler(void *user_data,
+	uint32_t blob_type, uint32_t blob_size, uint8_t *blob_data)
+{
+	int rc = 0;
+	struct cam_sensor_ctrl_t *s_ctrl =
+		(struct cam_sensor_ctrl_t *) user_data;
+
+	if (!blob_data || !blob_size) {
+		CAM_ERR(CAM_SENSOR, "Invalid blob info %pK %u", blob_data,
+			blob_size);
+		return -EINVAL;
+	}
+
+	switch (blob_type) {
+	case CAM_SENSOR_GENERIC_BLOB_RES_INFO: {
+		struct cam_sensor_res_info *res_info =
+			(struct cam_sensor_res_info *) blob_data;
+
+		if (blob_size < sizeof(struct cam_sensor_res_info)) {
+			CAM_ERR(CAM_SENSOR, "Invalid blob size expected: 0x%x actual: 0x%x",
+				sizeof(struct cam_sensor_res_info), blob_size);
+			return -EINVAL;
+		}
+
+		rc = cam_sensor_handle_res_info(res_info, s_ctrl);
+		break;
+	}
+	default:
+		CAM_WARN(CAM_SENSOR, "Invalid blob type %d", blob_type);
+		break;
+	}
+
 	return rc;
 }
 

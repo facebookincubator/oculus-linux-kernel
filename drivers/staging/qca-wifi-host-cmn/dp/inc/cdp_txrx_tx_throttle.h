@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2017, 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,8 +18,8 @@
  */
 
 /**
- * @file cdp_txrx_tx_throttle.h
- * @brief Define the host data path transmit throttle API
+ * DOC: cdp_txrx_tx_throttle.h
+ * Define the host data path transmit throttle API
  * functions called by the host control SW and the OS interface
  * module
  */
@@ -52,7 +53,7 @@ cdp_throttle_init_period(ol_txrx_soc_handle soc, uint8_t pdev_id,
 }
 
 /**
- * cdp_throttle_init_period() - init tx throttle period
+ * cdp_throttle_set_level() - init tx throttle level
  * @soc: data path soc handle
  * @pdev_id: id of data path pdev handle
  * @level: throttle level

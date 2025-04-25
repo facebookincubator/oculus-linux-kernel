@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -32,7 +33,7 @@ static int hdd_sysfs_get_tx_stbc(struct hdd_adapter *adapter, int *value)
 	int ret;
 
 	hdd_enter();
-	ret = sme_get_ht_config(mac_handle, adapter->vdev_id,
+	ret = sme_get_ht_config(mac_handle, adapter->deflink->vdev_id,
 				WNI_CFG_HT_CAP_INFO_TX_STBC);
 	if (ret < 0) {
 		hdd_err("Failed to get TX STBC value");

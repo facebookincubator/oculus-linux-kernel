@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -40,6 +40,7 @@ wlan_hdd_btc_chain_mode_handler(struct wlan_objmgr_vdev *vdev)
 	uint8_t vdev_id;
 	uint32_t freq;
 	struct wlan_objmgr_psoc *psoc;
+	struct wlan_hdd_link_info *link_info;
 
 	if (!vdev) {
 		hdd_err("NULL vdev");
@@ -56,12 +57,13 @@ wlan_hdd_btc_chain_mode_handler(struct wlan_objmgr_vdev *vdev)
 		return QDF_STATUS_E_INVAL;
 	}
 
-	adapter = wlan_hdd_get_adapter_from_vdev(psoc, vdev_id);
-	if (!adapter) {
-		hdd_err("NULL adapter");
+	link_info = wlan_hdd_get_link_info_from_vdev(psoc, vdev_id);
+	if (!link_info) {
+		hdd_err("Invalid vdev");
 		return QDF_STATUS_E_INVAL;
 	}
 
+	adapter =  link_info->adapter;
 	status = ucfg_coex_psoc_get_btc_chain_mode(psoc, &mode);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		hdd_err("failed to get cur BTC chain mode, status %d", status);
@@ -78,15 +80,20 @@ wlan_hdd_btc_chain_mode_handler(struct wlan_objmgr_vdev *vdev)
 		mode == WLAN_COEX_BTC_CHAIN_MODE_HYBRID) ? 1 : 2);
 
 	hdd_debug("update nss to %d for vdev %d, device mode %d",
-		  nss, adapter->vdev_id, adapter->device_mode);
+		  nss, link_info->vdev_id, adapter->device_mode);
 	band = NSS_CHAINS_BAND_2GHZ;
 	sme_update_nss_in_mlme_cfg(mac_handle, nss, nss,
 				   adapter->device_mode, band);
 	sme_update_vdev_type_nss(mac_handle, nss, band);
-	hdd_store_nss_chains_cfg_in_vdev(adapter);
-	sme_update_he_cap_nss(mac_handle, adapter->vdev_id, nss);
 
-	freq = hdd_get_adapter_home_channel(adapter);
+	status = wlan_objmgr_vdev_try_get_ref(vdev, WLAN_OSIF_ID);
+	if (QDF_IS_STATUS_SUCCESS(status)) {
+		hdd_store_nss_chains_cfg_in_vdev(adapter->hdd_ctx, vdev);
+		wlan_objmgr_vdev_release_ref(vdev, WLAN_OSIF_ID);
+	}
+
+	sme_update_he_cap_nss(mac_handle, link_info->vdev_id, nss);
+	freq = hdd_get_link_info_home_channel(link_info);
 
 	/*
 	 * BT coex chain mode is for COEX between BT and WiFi-2.4G.
@@ -102,12 +109,12 @@ wlan_hdd_btc_chain_mode_handler(struct wlan_objmgr_vdev *vdev)
 	switch (adapter->device_mode) {
 	case QDF_STA_MODE:
 	case QDF_P2P_CLIENT_MODE:
-		wlan_hdd_cm_issue_disconnect(adapter,
+		wlan_hdd_cm_issue_disconnect(link_info,
 					     REASON_PREV_AUTH_NOT_VALID, false);
 		break;
 	case QDF_SAP_MODE:
 	case QDF_P2P_GO_MODE:
-		hdd_restart_sap(adapter);
+		hdd_restart_sap(link_info);
 		break;
 	default:
 		break;
@@ -160,7 +167,7 @@ static int __wlan_hdd_cfg80211_set_btc_chain_mode(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
-	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_OSIF_ID);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink, WLAN_OSIF_ID);
 	if (!vdev)
 		return -EINVAL;
 

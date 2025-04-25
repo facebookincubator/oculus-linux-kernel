@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -179,3 +179,10 @@ tgt_reg_get_eirp_preferred_support(struct wlan_objmgr_psoc *psoc,
 					      reg_is_eirp_support_preferred);
 }
 #endif
+
+QDF_STATUS tgt_reg_process_r2p_table_update_response(
+						struct wlan_objmgr_psoc *psoc,
+						uint32_t pdev_id)
+{
+	return reg_process_r2p_table_update_response(psoc, pdev_id);
+}

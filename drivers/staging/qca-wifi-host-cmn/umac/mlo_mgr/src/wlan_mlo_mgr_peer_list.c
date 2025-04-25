@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -18,6 +18,7 @@
 #include <wlan_mlo_mgr_cmn.h>
 #include <wlan_mlo_mgr_public_structs.h>
 #include "wlan_mlo_mgr_main.h"
+#include "qdf_module.h"
 #include "qdf_types.h"
 #include "wlan_cmn.h"
 #include "wlan_mlo_mgr_peer.h"
@@ -254,6 +255,8 @@ struct wlan_mlo_peer_context *wlan_mlo_get_mlpeer_by_linkmac(
 	return NULL;
 }
 
+qdf_export_symbol(wlan_mlo_get_mlpeer_by_linkmac);
+
 struct wlan_mlo_peer_context *wlan_mlo_get_mlpeer_by_aid(
 				struct wlan_mlo_dev_context *ml_dev,
 				uint16_t assoc_id)
@@ -294,6 +297,40 @@ struct wlan_mlo_peer_context *wlan_mlo_get_mlpeer_by_mld_mac(
 	return NULL;
 }
 
+qdf_export_symbol(wlan_mlo_get_mlpeer_by_mld_mac);
+
+struct wlan_mlo_peer_context
+*wlan_mlo_get_mlpeer_by_peer_mladdr(struct qdf_mac_addr *mldaddr,
+				struct wlan_mlo_dev_context **mldev)
+{
+	struct wlan_mlo_dev_context *mld_cur;
+	struct wlan_mlo_dev_context *mld_next;
+	struct wlan_mlo_peer_context *ml_peer;
+	qdf_list_t *ml_list;
+	struct mlo_mgr_context *mlo_mgr_ctx = wlan_objmgr_get_mlo_ctx();
+
+	if (!mlo_mgr_ctx)
+		return NULL;
+
+	ml_link_lock_acquire(mlo_mgr_ctx);
+	ml_list = &mlo_mgr_ctx->ml_dev_list;
+	mld_cur = wlan_mlo_list_peek_head(ml_list);
+
+	while (mld_cur) {
+		ml_peer = mlo_get_mlpeer(mld_cur, mldaddr);
+		if (ml_peer != NULL) {
+			*mldev = mld_cur;
+			ml_link_lock_release(mlo_mgr_ctx);
+			return ml_peer;
+		}
+		mld_next = wlan_mlo_get_next_mld_ctx(ml_list, mld_cur);
+		mld_cur = mld_next;
+	}
+	ml_link_lock_release(mlo_mgr_ctx);
+
+	return NULL;
+}
+
 struct wlan_mlo_peer_context *wlan_mlo_get_mlpeer_by_ml_peerid(
 				struct wlan_mlo_dev_context *ml_dev,
 				uint16_t ml_peerid)
@@ -312,6 +349,8 @@ struct wlan_mlo_peer_context *wlan_mlo_get_mlpeer_by_ml_peerid(
 
 	return NULL;
 }
+
+qdf_export_symbol(wlan_mlo_get_mlpeer_by_ml_peerid);
 
 struct wlan_mlo_peer_context *wlan_mlo_get_mlpeer(
 				struct wlan_mlo_dev_context *ml_dev,
@@ -420,6 +459,12 @@ QDF_STATUS mlo_dev_mlpeer_list_init(struct wlan_mlo_dev_context *ml_dev)
 				WLAN_UMAC_PSOC_MAX_PEERS +
 				WLAN_MAX_PSOC_TEMP_PEERS);
 
+	if (ml_dev->ap_ctx) {
+		qdf_spinlock_create(&ml_dev->ap_ctx->assoc_list.list_lock);
+		qdf_list_create(&ml_dev->ap_ctx->assoc_list.peer_list,
+				WLAN_UMAC_PSOC_MAX_PEERS);
+	}
+
 	return QDF_STATUS_SUCCESS;
 }
 
@@ -428,11 +473,15 @@ QDF_STATUS mlo_dev_mlpeer_list_deinit(struct wlan_mlo_dev_context *ml_dev)
 	uint16_t i;
 	struct wlan_mlo_peer_list *mlo_peer_list;
 
-	/* deinit the lock */
+	if (ml_dev->ap_ctx) {
+		qdf_list_destroy(&ml_dev->ap_ctx->assoc_list.peer_list);
+		qdf_spinlock_destroy(&ml_dev->ap_ctx->assoc_list.list_lock);
+	}
+
 	mlo_peer_list = &ml_dev->mlo_peer_list;
-	ml_peerlist_lock_destroy(mlo_peer_list);
 	for (i = 0; i < WLAN_PEER_HASHSIZE; i++)
 		qdf_list_destroy(&mlo_peer_list->peer_hash[i]);
 
+	ml_peerlist_lock_destroy(mlo_peer_list);
 	return QDF_STATUS_SUCCESS;
 }

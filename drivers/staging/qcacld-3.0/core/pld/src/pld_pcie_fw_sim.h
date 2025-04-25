@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -153,6 +154,10 @@ static inline int pld_pcie_fw_sim_exit_power_save(struct device *dev)
 	return 0;
 }
 
+static inline int pld_pcie_fw_sim_get_irq(struct device *dev, int ce_id)
+{
+	return 0;
+}
 #else
 #include <net/cnss2.h>
 
@@ -166,6 +171,7 @@ void pld_pcie_fw_sim_unregister_driver(void);
 int pld_pcie_fw_sim_get_platform_cap(struct device *dev,
 				     struct pld_platform_cap *cap);
 int pld_pcie_fw_sim_get_soc_info(struct device *dev, struct pld_soc_info *info);
+int pld_pcie_fw_sim_get_irq(struct device *dev, int ce_id);
 
 static inline int pld_pcie_fw_sim_get_user_msi_assignment(struct device *dev,
 							  char *user_name,

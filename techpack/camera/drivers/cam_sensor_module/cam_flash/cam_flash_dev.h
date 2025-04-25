@@ -259,4 +259,9 @@ int32_t cam_flash_init_module(void);
  * @brief : API to remove FLASH Hw from platform framework.
  */
 void cam_flash_exit_module(void);
+
+/**
+ * @brief : API to remove FLASH Hw I2c component
+ */
+void cam_flash_i2c_driver_remove(struct i2c_client *client);
 #endif /*_CAM_FLASH_DEV_H_*/

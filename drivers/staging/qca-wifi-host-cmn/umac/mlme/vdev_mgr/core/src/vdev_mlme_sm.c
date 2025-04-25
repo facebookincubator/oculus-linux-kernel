@@ -388,8 +388,8 @@ static bool mlme_vdev_state_dfs_cac_wait_event(void *ctx, uint16_t event,
 		/* stop the CAC timer, then notify state machine */
 		mlme_vdev_dfs_cac_timer_stop(vdev_mlme, event_data_len,
 					     event_data);
-		mlme_vdev_sm_transition_to(vdev_mlme, WLAN_VDEV_S_STOP);
-		mlme_vdev_sm_deliver_event(vdev_mlme, WLAN_VDEV_SM_EV_STOP_REQ,
+		mlme_vdev_sm_transition_to(vdev_mlme, WLAN_VDEV_S_SUSPEND);
+		mlme_vdev_sm_deliver_event(vdev_mlme, WLAN_VDEV_SM_EV_DOWN,
 					   event_data_len, event_data);
 		status = true;
 		break;
@@ -1180,7 +1180,7 @@ static bool mlme_vdev_subst_suspend_suspend_down_event(void *ctx,
 	case WLAN_VDEV_SM_EV_DOWN:
 	case WLAN_VDEV_SM_EV_RESTART_REQ_FAIL:
 		mlme_vdev_disconnect_peers(vdev_mlme,
-					   event_data_len, event_data);
+					   event_data_len, event_data, false);
 		status = true;
 		break;
 
@@ -1258,7 +1258,7 @@ static bool mlme_vdev_subst_suspend_suspend_restart_event(void *ctx,
 	switch (event) {
 	case WLAN_VDEV_SM_EV_SUSPEND_RESTART:
 		mlme_vdev_disconnect_peers(vdev_mlme,
-					   event_data_len, event_data);
+					   event_data_len, event_data, false);
 		status = true;
 		break;
 
@@ -1283,6 +1283,12 @@ static bool mlme_vdev_subst_suspend_suspend_restart_event(void *ctx,
 		mlme_vdev_sm_deliver_event(vdev_mlme,
 					   WLAN_VDEV_SM_EV_CSA_RESTART,
 					   event_data_len, event_data);
+		status = true;
+		break;
+
+	case WLAN_VDEV_SM_EV_SUSPEND_CSA_RESTART:
+		mlme_vdev_disconnect_peers(vdev_mlme,
+					   event_data_len, event_data, true);
 		status = true;
 		break;
 
@@ -1351,7 +1357,7 @@ static bool mlme_vdev_subst_suspend_host_restart_event(void *ctx,
 	switch (event) {
 	case WLAN_VDEV_SM_EV_HOST_RESTART:
 		mlme_vdev_disconnect_peers(vdev_mlme,
-					   event_data_len, event_data);
+					   event_data_len, event_data, false);
 		status = true;
 		break;
 
@@ -1476,7 +1482,7 @@ static bool mlme_vdev_subst_suspend_csa_restart_event(void *ctx,
 				(vdev_mlme,
 				 WLAN_VDEV_SS_SUSPEND_SUSPEND_RESTART);
 			mlme_vdev_sm_deliver_event
-				(vdev_mlme, WLAN_VDEV_SM_EV_SUSPEND_RESTART,
+				(vdev_mlme, WLAN_VDEV_SM_EV_SUSPEND_CSA_RESTART,
 				 event_data_len, event_data);
 		}
 		status = true;
@@ -1728,10 +1734,35 @@ static void mlme_vdev_subst_mlo_sync_wait_entry(void *ctx)
  *
  * Return: void
  */
+#ifdef WLAN_FEATURE_11BE_MLO
+static void mlme_vdev_subst_mlo_sync_wait_exit(void *ctx)
+{
+	struct vdev_mlme_obj *vdev_mlme = (struct vdev_mlme_obj *)ctx;
+	struct wlan_objmgr_vdev *vdev = vdev_mlme->vdev;
+	struct wlan_mlo_dev_context *mld_ctx = vdev->mlo_dev_ctx;
+	enum QDF_OPMODE mode;
+	uint8_t idx;
+
+	if (!vdev->mlo_dev_ctx)
+		return;
+
+	idx = mlo_get_link_vdev_ix(mld_ctx, vdev);
+	if (idx == MLO_INVALID_LINK_IDX)
+		return;
+
+	mode = wlan_vdev_mlme_get_opmode(vdev);
+	if (mode != QDF_SAP_MODE)
+		return;
+
+	wlan_util_change_map_index(mld_ctx->ap_ctx->mlo_vdev_up_bmap,
+				   idx, 0);
+}
+#else
 static void mlme_vdev_subst_mlo_sync_wait_exit(void *ctx)
 {
 	/* NONE */
 }
+#endif
 
 /**
  * mlme_vdev_subst_mlo_sync_wait_event() - Event handler API for mlo sync wait
@@ -1779,6 +1810,7 @@ static bool mlme_vdev_subst_mlo_sync_wait_event(void *ctx, uint16_t event,
 
 	case WLAN_VDEV_SM_EV_RADAR_DETECTED:
 	case WLAN_VDEV_SM_EV_CSA_RESTART:
+	case WLAN_VDEV_SM_EV_FW_VDEV_RESTART:
 		mlme_vdev_sm_transition_to(vdev_mlme, WLAN_VDEV_S_START);
 		mlme_vdev_sm_deliver_event(vdev_mlme,
 					   WLAN_VDEV_SM_EV_RESTART_REQ,
@@ -1975,6 +2007,7 @@ static const char *vdev_sm_event_names[] = {
 	"EV_STOP_REQ",
 	"EV_CHAN_SWITCH_DISABLED",
 	"EV_MLO_SYNC_COMPLETE",
+	"EV_SUSPEND_CSA_RESTART"
 };
 
 struct wlan_sm_state_info sm_info[] = {

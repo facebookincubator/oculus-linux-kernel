@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011, 2014-2018, 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -65,7 +65,7 @@
 
 #include <wlan_cmn.h>
 #include <reg_services_public_struct.h>
-#include "../../qca-wifi-host-cmn/umac/regulatory/core/src/reg_db.h"
+#include "reg_db.h"
 
 #define MIN_TX_PWR_CAP    8
 #define MAX_TX_PWR_CAP    24

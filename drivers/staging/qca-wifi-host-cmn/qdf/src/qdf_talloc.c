@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -99,6 +99,7 @@ static qdf_spinlock_t __qdf_talloc_meta_lock;
 /**
  * struct qdf_talloc_parent_meta - parent/children metadata for memory tracking
  * @entry: entry for membership in the parent hashtable
+ * @key: parent
  * @children: list of associated children
  */
 struct qdf_talloc_parent_meta {
@@ -149,6 +150,7 @@ qdf_talloc_parent_meta_lookup(const void *parent)
  * @func: name of the function that requested the allocation
  * @line: line number of the call site in @func
  * @size: size of the allocation in bytes
+ * @guard: a known value, used to detect out-of-bounds access
  */
 struct qdf_talloc_child_meta {
 	const void *parent;

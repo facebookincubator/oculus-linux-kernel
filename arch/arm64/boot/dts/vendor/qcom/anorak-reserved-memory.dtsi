@@ -74,6 +74,11 @@
 		reg = <0x0 0x81ce4000 0x0 0x10000>;
 	};
 
+	chipinfo_mem: chipinfo_region@81cf4000 {
+	      no-map;
+	      reg = <0x0 0x81cf4000 0x0 0x1000>;
+	};
+
 	secdata_apss_mem: secdata_apss_region@81cff000 {
 		no-map;
 		reg = <0x0 0x81cff000 0x0 0x1000>;

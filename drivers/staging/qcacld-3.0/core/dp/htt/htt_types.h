@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011, 2014-2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -76,17 +76,6 @@ struct htt_host_tx_desc_t {
 		uint32_t dummy_force_align;
 		struct htt_tx_msdu_desc_t tx_desc;
 	} align32;
-};
-
-struct htt_tx_mgmt_desc_buf {
-	qdf_nbuf_t msg_buf;
-	A_BOOL is_inuse;
-	qdf_nbuf_t mgmt_frm;
-};
-
-struct htt_tx_mgmt_desc_ctxt {
-	struct htt_tx_mgmt_desc_buf *pool;
-	A_UINT32 pending_cnt;
 };
 
 struct htt_list_node {
@@ -420,7 +409,6 @@ struct htt_pdev_t {
 #ifdef CONFIG_HL_SUPPORT
 	int cur_seq_num_hl;
 #endif
-	struct htt_tx_mgmt_desc_ctxt tx_mgmt_desc_ctxt;
 	struct targetdef_s *targetdef;
 	struct ce_reg_def *target_ce_def;
 

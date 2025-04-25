@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -46,8 +47,8 @@ static ssize_t __show_channel_number(struct net_device *net_dev, char *buf)
 	if (0 != ret_val)
 		goto exit;
 
-	ap_ctx = WLAN_HDD_GET_AP_CTX_PTR(adapter);
-	if (test_bit(SOFTAP_BSS_STARTED, &adapter->event_flags)) {
+	ap_ctx = WLAN_HDD_GET_AP_CTX_PTR(adapter->deflink);
+	if (test_bit(SOFTAP_BSS_STARTED, &adapter->deflink->link_flags)) {
 		chan_num = wlan_reg_freq_to_chan(hdd_ctx->pdev,
 						 ap_ctx->operating_chan_freq);
 		ret_val = scnprintf(buf, PAGE_SIZE, "%s    getchannel:%d\n",

@@ -7,7 +7,6 @@
 
 #include <linux/crypto-qti-common.h>
 #include <linux/module.h>
-#include <linux/suspend.h>
 #include "crypto-qti-ice-regs.h"
 #include "crypto-qti-platform.h"
 
@@ -302,11 +301,6 @@ int crypto_qti_keyslot_program(const struct ice_mmio_data *mmio_data,
 			       u8 data_unit_mask, int capid)
 {
 	int err = 0;
-	void __iomem *ice_mmio =  mmio_data->ice_base_mmio;
-
-	if (mmio_data->reprogram_key &&
-	    ice_readl(ice_mmio, ICE_LUT_KEYS_CRYPTOCFG_R_16))
-		return err;
 
 	err = crypto_qti_program_key(mmio_data, key, slot,
 				data_unit_mask, capid);

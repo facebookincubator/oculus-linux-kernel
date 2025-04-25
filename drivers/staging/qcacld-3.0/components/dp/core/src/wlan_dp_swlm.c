@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -182,27 +182,15 @@ static void dp_swlm_tcl_flush_timer(void *arg)
 	struct dp_swlm_tcl_params *tcl = arg;
 	struct dp_soc *soc = tcl->soc;
 	struct dp_swlm *swlm = &soc->swlm;
-	hal_ring_handle_t hal_ring_hdl =
-				soc->tcl_data_ring[tcl->ring_id].hal_srng;
+	int ret;
 
-	if (hal_srng_try_access_start(soc->hal_soc, hal_ring_hdl) < 0)
-		goto fail;
-
-	if (hif_rtpm_get(HIF_RTPM_GET_ASYNC, HIF_RTPM_ID_DP)) {
-		hal_srng_access_end_reap(soc->hal_soc, hal_ring_hdl);
-		hal_srng_set_event(hal_ring_hdl, HAL_SRNG_FLUSH_EVENT);
-		hal_srng_inc_flush_cnt(hal_ring_hdl);
-		goto fail;
+	ret = soc->arch_ops.dp_flush_tx_ring(soc->pdev_list[0], tcl->ring_id);
+	if (ret) {
+		DP_STATS_INC(swlm, tcl[tcl->ring_id].timer_flush_fail, 1);
+		return;
 	}
 
 	DP_STATS_INC(swlm, tcl[tcl->ring_id].timer_flush_success, 1);
-	hal_srng_access_end(soc->hal_soc, hal_ring_hdl);
-	hif_rtpm_put(HIF_RTPM_PUT_ASYNC, HIF_RTPM_ID_DP);
-
-	return;
-
-fail:
-	DP_STATS_INC(swlm, tcl[tcl->ring_id].timer_flush_fail, 1);
 }
 
 /**

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -176,7 +177,7 @@ static int __wlan_hdd_cfg80211_p2p_lo_start(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
-	params.vdev_id = adapter->vdev_id;
+	params.vdev_id = adapter->deflink->vdev_id;
 	params.freq = nla_get_u32(tb
 		[QCA_WLAN_VENDOR_ATTR_P2P_LISTEN_OFFLOAD_CHANNEL]);
 	if ((params.freq != 2412) && (params.freq != 2437) &&
@@ -286,7 +287,7 @@ static int wlan_hdd_listen_offload_stop(struct hdd_adapter *adapter)
 		return -EINVAL;
 	}
 
-	vdev_id = (uint32_t)adapter->vdev_id;
+	vdev_id = (uint32_t)adapter->deflink->vdev_id;
 	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	psoc = hdd_ctx->psoc;
 	if (!psoc) {

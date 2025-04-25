@@ -26,6 +26,7 @@
 #include <wlan_objmgr_psoc_obj.h>
 #include <wlan_twt_public_structs.h>
 
+#if defined(WLAN_SUPPORT_TWT) && defined(WLAN_TWT_CONV_SUPPORTED)
 /**
  * ucfg_twt_cfg_get_requestor() - get TWT requestor
  * @psoc: Pointer to global PSOC object
@@ -115,6 +116,7 @@ ucfg_twt_cfg_get_rtwt_requestor(struct wlan_objmgr_psoc *psoc, bool *val);
  */
 QDF_STATUS
 ucfg_twt_cfg_get_flex_sched(struct wlan_objmgr_psoc *psoc, bool *val);
+
 #else
 static inline
 QDF_STATUS ucfg_twt_cfg_get_requestor(struct wlan_objmgr_psoc *psoc, bool *val)
@@ -179,5 +181,5 @@ ucfg_twt_cfg_get_flex_sched(struct wlan_objmgr_psoc *psoc, bool *val)
 	*val = false;
 	return QDF_STATUS_SUCCESS;
 }
-
+#endif /* WLAN_TWT_CONV_SUPPORTED */
 #endif /* _WLAN_TWT_UCFG_EXT_CFG_H_ */

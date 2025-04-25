@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef CAM_FASTRPC_H
@@ -10,7 +10,12 @@
 
 #include <linux/pid.h>
 #include <linux/sched.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+#include <fastrpc.h>
+#else
 #include <linux/fastrpc.h>
+#endif
 #include "cam_mem_mgr.h"
 
 /** struct fastrpc_apps - fastrpc info structure

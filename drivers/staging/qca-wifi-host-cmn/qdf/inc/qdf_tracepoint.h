@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021, 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -259,8 +259,8 @@ void qdf_trace_dp_del_reg_write(uint8_t srng_id, uint32_t enq_val,
 }
 
 /**
- * qdf_trace_dp_ce_tasklet_sched_lat_enabled() - Get the dp_ce_tasklet_sched_lat
- *  tracepoint enabled or disabled state
+ * qdf_trace_dp_ce_tasklet_sched_latency_enabled() - Get the
+ *   dp_ce_tasklet_sched_latency tracepoint enabled or disabled state
  *
  * Return: True if the tracepoint is enabled else false
  */

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2002-2006, Atheros Communications Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -104,8 +104,11 @@ static inline void dfs_free_dfs_pulseline(struct dfs_pulseline *pulses)
  * usenol=2, no CSA and stay on the same channel on radar detect
  */
 
-/**
+/*
  * dfs_task() - The timer function to process the radar pulses.
+ *
+ * NB: not using kernel-doc format since the kernel-doc script doesn't
+ *     handle the os_timer_func() macro
  */
 static os_timer_func(dfs_task)
 {
@@ -118,13 +121,7 @@ static os_timer_func(dfs_task)
 		return;
 	}
 
-	/* Need to take a lock here since dfs filtering data structures are
-	 * freed and re-allocated in dfs_init_radar_filters() during channel
-	 * change which may happen in the middle of dfs pulse processing.
-	 */
-	WLAN_DFS_DATA_STRUCT_LOCK(dfs);
 	dfs_process_radarevent(dfs, dfs->dfs_curchan);
-	WLAN_DFS_DATA_STRUCT_UNLOCK(dfs);
 
 	dfs->wlan_radar_tasksched = 0;
 }

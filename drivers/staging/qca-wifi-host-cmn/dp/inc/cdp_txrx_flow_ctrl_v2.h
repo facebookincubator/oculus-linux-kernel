@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016-2019,2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,9 +18,8 @@
  */
 
 /**
- * @file cdp_txrx_flow_ctrl_v2.h
- * @brief Define the host data path flow control version 2 API
- * functions
+ * DOC: cdp_txrx_flow_ctrl_v2.h
+ * Define the host data path flow control version 2 API functions
  */
 #ifndef _CDP_TXRX_FC_V2_H_
 #define _CDP_TXRX_FC_V2_H_
@@ -28,8 +28,8 @@
 
 /**
  * cdp_register_pause_cb() - Register flow control callback function pointer
- * @soc - data path soc handle
- * @pause_cb - Pause callback intend to register
+ * @soc: data path soc handle
+ * @pause_cb: Pause callback intend to register
  *
  * Register flow control callback function pointer and client context pointer
  *
@@ -55,8 +55,8 @@ cdp_register_pause_cb(ol_txrx_soc_handle soc,
 
 /**
  * cdp_set_desc_global_pool_size() - set global device pool size
- * @soc - data path soc handle
- * @num_msdu_desc - descriptor pool size
+ * @soc: data path soc handle
+ * @num_msdu_desc: descriptor pool size
  *
  * set global device pool size
  *
@@ -82,7 +82,7 @@ cdp_set_desc_global_pool_size(ol_txrx_soc_handle soc,
 
 /**
  * cdp_dump_flow_pool_info() - dump flow pool information
- * @soc - data path soc handle
+ * @soc: data path soc handle
  *
  * dump flow pool information
  *

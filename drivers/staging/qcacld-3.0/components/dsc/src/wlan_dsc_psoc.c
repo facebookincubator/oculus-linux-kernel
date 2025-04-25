@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -80,8 +81,6 @@ static void __dsc_psoc_destroy(struct dsc_psoc **out_psoc)
 	if (!dsc_assert(psoc))
 		return;
 
-	*out_psoc = NULL;
-
 	/* assert no children */
 	dsc_assert(qdf_list_empty(&psoc->vdevs));
 
@@ -99,6 +98,8 @@ static void __dsc_psoc_destroy(struct dsc_psoc **out_psoc)
 	__dsc_trans_deinit(&psoc->trans);
 	qdf_list_destroy(&psoc->vdevs);
 	psoc->driver = NULL;
+
+	*out_psoc = NULL;
 
 	qdf_tfree(psoc);
 }

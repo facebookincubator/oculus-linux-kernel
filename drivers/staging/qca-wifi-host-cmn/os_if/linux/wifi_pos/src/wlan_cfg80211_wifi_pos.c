@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,30 +34,66 @@ u8 wlan_extended_caps_iface_mask[WLAN_EXTCAP_IE_MAX_LEN] = {0};
 
 struct wiphy_iftype_ext_capab iftype_ext_cap;
 
+#if !defined(CNSS_GENL) && (LINUX_VERSION_CODE == KERNEL_VERSION(5, 4, 0))
+/**
+ * wlan_wifi_pos_cfg80211_set_auth_deauth_random_ta_flag() - API to set
+ * NL80211_EXT_FEATURE_AUTH_AND_DEAUTH_RANDOM_TA flag
+ * @wiphy: Pointer to wiphy
+ * @psoc: Pointer to psoc
+ *
+ * Allow random TA to be used with authentication and deauthentication frames
+ * when MAC secured or MAC_PHY secured ranging is supported.
+ *
+ * Return: None
+ */
+static void
+wlan_wifi_pos_cfg80211_set_auth_deauth_random_ta_flag(
+		struct wiphy *wiphy,
+		struct wlan_objmgr_psoc *psoc)
+{
+	if (wlan_psoc_nif_fw_ext2_cap_get(psoc, WLAN_RTT_11AZ_MAC_SEC_SUPPORT) ||
+	    wlan_psoc_nif_fw_ext2_cap_get(psoc, WLAN_RTT_11AZ_MAC_PHY_SEC_SUPPORT))
+		wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_AUTH_AND_DEAUTH_RANDOM_TA);
+}
+#else
+static void
+wlan_wifi_pos_cfg80211_set_auth_deauth_random_ta_flag(
+		struct wiphy *wiphy,
+		struct wlan_objmgr_psoc *psoc)
+{
+}
+#endif
+
 #define WLAN_EXT_RANGING_CAP_IDX  11
 void
 wlan_wifi_pos_cfg80211_set_wiphy_ext_feature(struct wiphy *wiphy,
 					     struct wlan_objmgr_psoc *psoc)
 {
-	bool enable_rsta_11az_ranging;
+	uint32_t enable_rsta_11az_ranging;
 
 	enable_rsta_11az_ranging = ucfg_wifi_pos_get_rsta_11az_ranging_cap();
 	if (!enable_rsta_11az_ranging)
 		return;
 
-	if (wlan_psoc_nif_fw_ext_cap_get(psoc, WLAN_RTT_11AZ_NTB_SUPPORT)) {
+	if ((enable_rsta_11az_ranging & CFG_RESPONDER_11AZ_NTB_SUPPORT) &&
+	    (wlan_psoc_nif_fw_ext_cap_get(psoc, WLAN_RTT_11AZ_NTB_SUPPORT))) {
 		wlan_extended_caps_iface[WLAN_EXT_RANGING_CAP_IDX] |=
 					WLAN_EXT_CAPA11_NTB_RANGING_RESPONDER;
 		wlan_extended_caps_iface_mask[WLAN_EXT_RANGING_CAP_IDX] |=
 					WLAN_EXT_CAPA11_NTB_RANGING_RESPONDER;
 	}
 
-	if (wlan_psoc_nif_fw_ext2_cap_get(psoc, WLAN_RTT_11AZ_TB_SUPPORT)) {
+	if ((enable_rsta_11az_ranging & CFG_RESPONDER_11AZ_TB_SUPPORT) &&
+	    (wlan_psoc_nif_fw_ext2_cap_get(psoc, WLAN_RTT_11AZ_TB_SUPPORT) ||
+	    wlan_psoc_nif_fw_ext2_cap_get(psoc,
+					  WLAN_RTT_11AZ_TB_RSTA_SUPPORT))) {
 		wlan_extended_caps_iface[WLAN_EXT_RANGING_CAP_IDX] |=
 					WLAN_EXT_CAPA11_TB_RANGING_RESPONDER;
 		wlan_extended_caps_iface_mask[WLAN_EXT_RANGING_CAP_IDX] |=
 					WLAN_EXT_CAPA11_TB_RANGING_RESPONDER;
 	}
+
+	wlan_wifi_pos_cfg80211_set_auth_deauth_random_ta_flag(wiphy, psoc);
 
 	iftype_ext_cap.iftype = NL80211_IFTYPE_AP;
 	iftype_ext_cap.extended_capabilities =

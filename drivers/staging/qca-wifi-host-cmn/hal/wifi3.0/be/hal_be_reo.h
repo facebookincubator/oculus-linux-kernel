@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -82,8 +82,8 @@ hal_reo_rx_update_queue_status_be(hal_ring_desc_t ring_desc,
 /**
  * hal_reo_init_cmd_ring_be() - Initialize descriptors of REO command SRNG
  * with command number
- * @hal_soc: Handle to HAL SoC structure
- * @hal_ring: Handle to HAL SRNG structure
+ * @hal_soc_hdl: Handle to HAL SoC structure
+ * @hal_ring_hdl: Handle to HAL SRNG structure
  *
  * Return: none
  */

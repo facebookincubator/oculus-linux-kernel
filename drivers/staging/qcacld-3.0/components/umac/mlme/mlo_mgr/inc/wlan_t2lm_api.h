@@ -246,7 +246,44 @@ wlan_t2lm_clear_all_tid_mapping(struct wlan_objmgr_vdev *vdev);
 QDF_STATUS
 wlan_populate_link_disable_t2lm_frame(struct wlan_objmgr_vdev *vdev,
 				      struct mlo_link_disable_request_evt_params *params);
+
+/**
+ * wlan_update_t2lm_mapping - Update t2lm mapping to fw
+ * @vdev: pointer to vdev
+ * @rx_t2lm: received t2lm mapping from beacon
+ * @tsf: timing sync function value
+ *
+ * Return: qdf status
+ */
+QDF_STATUS wlan_update_t2lm_mapping(
+		struct wlan_objmgr_vdev *vdev,
+		struct wlan_t2lm_context *rx_t2lm,
+		uint64_t tsf);
+
+/**
+ * wlan_t2lm_init_default_mapping - Initialize t2lm to default mapping
+ * @t2lm_ctx: t2lm ctx stored in ml dev ctx
+ *
+ * Return: qdf status
+ */
+QDF_STATUS
+wlan_t2lm_init_default_mapping(struct wlan_t2lm_context *t2lm_ctx);
+
 #else
+static inline QDF_STATUS
+wlan_t2lm_init_default_mapping(struct wlan_t2lm_context *t2lm_ctx)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline QDF_STATUS wlan_update_t2lm_mapping(
+		struct wlan_objmgr_vdev *vdev,
+		struct wlan_t2lm_context *rx_t2lm,
+		uint64_t tsf)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
 static inline QDF_STATUS
 wlan_populate_link_disable_t2lm_frame(struct wlan_objmgr_vdev *vdev,
 				      struct mlo_link_disable_request_evt_params *params)

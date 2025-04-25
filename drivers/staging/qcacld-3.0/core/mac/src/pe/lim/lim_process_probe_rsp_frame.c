@@ -207,6 +207,73 @@ void lim_process_gen_probe_rsp_frame(struct mac_context *mac_ctx,
 	qdf_mem_free(probe_rsp);
 }
 
+#ifdef WLAN_FEATURE_11BE_MLO
+static
+void lim_update_mlo_mgr_prb_info(struct mac_context *mac_ctx,
+				 struct pe_session *session_entry,
+				 struct qdf_mac_addr *mac_addr,
+				 tpSirProbeRespBeacon probe_rsp)
+{
+	if (!(session_entry->lim_join_req &&
+	      session_entry->lim_join_req->is_ml_probe_req_sent &&
+	      probe_rsp->mlo_ie.mlo_ie_present))
+		return;
+
+	lim_update_mlo_mgr_info(mac_ctx, session_entry->vdev, mac_addr,
+				session_entry->lim_join_req->assoc_link_id,
+				probe_rsp->chan_freq);
+}
+#else
+static inline
+void lim_update_mlo_mgr_prb_info(struct mac_context *mac_ctx,
+				 struct pe_session *session_entry,
+				 struct qdf_mac_addr *mac_addr,
+				 tpSirProbeRespBeacon probe_rsp)
+{
+}
+#endif
+
+#ifdef WLAN_FEATURE_11BE_MLO
+static bool
+lim_validate_probe_rsp_mld_addr(struct pe_session *session,
+				tpSirProbeRespBeacon probe_rsp)
+{
+	QDF_STATUS status;
+	struct wlan_mlo_ie *mlo_ie;
+	struct qdf_mac_addr curr_bss_mld;
+	struct qdf_mac_addr *probe_rsp_mld;
+
+	/* If ML-IE is not present or if the VDEV is not MLO return success */
+	if (!probe_rsp->mlo_ie.mlo_ie_present ||
+	    !wlan_vdev_mlme_is_mlo_vdev(session->vdev))
+		return true;
+
+	status = wlan_vdev_get_bss_peer_mld_mac(session->vdev, &curr_bss_mld);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		pe_err("Failed to fetch MLD address for ML VDEV");
+		return false;
+	}
+
+	mlo_ie = &probe_rsp->mlo_ie.mlo_ie;
+	probe_rsp_mld =	(struct qdf_mac_addr *)mlo_ie->mld_mac_addr;
+	if (qdf_is_macaddr_zero(probe_rsp_mld) ||
+	    !qdf_is_macaddr_equal(probe_rsp_mld, &curr_bss_mld)) {
+		pe_err("prb rsp MLD " QDF_MAC_ADDR_FMT ", bss peer MLD " QDF_MAC_ADDR_FMT,
+		       QDF_MAC_ADDR_REF(probe_rsp_mld->bytes),
+		       QDF_MAC_ADDR_REF(curr_bss_mld.bytes));
+		return false;
+	}
+
+	return true;
+}
+#else
+static inline bool
+lim_validate_probe_rsp_mld_addr(struct pe_session *session,
+				tpSirProbeRespBeacon probe_rsp)
+{
+	return true;
+}
+#endif
 /**
  * lim_process_probe_rsp_frame() - processes received Probe Response frame
  * @mac_ctx: Pointer to Global MAC structure
@@ -259,8 +326,7 @@ lim_process_probe_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_Packet_info
 				rx_Packet_info) !=
 		QDF_STATUS_SUCCESS) {
 		pe_err("Parse error ProbeResponse, length=%d", frame_len);
-		qdf_mem_free(probe_rsp);
-		return;
+		goto mem_free;
 	}
 
 	frame_len = WMA_GET_RX_PAYLOAD_LEN(rx_Packet_info);
@@ -271,11 +337,18 @@ lim_process_probe_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_Packet_info
 		body, frame_len, probe_rsp) == QDF_STATUS_E_FAILURE) ||
 		!probe_rsp->ssidPresent) {
 		pe_err("Parse error ProbeResponse, length=%d", frame_len);
-		qdf_mem_free(probe_rsp);
-		return;
+		goto mem_free;
 	}
+
+	if (!lim_validate_probe_rsp_mld_addr(session_entry, probe_rsp))
+		goto mem_free;
+
 	qdf_trace_hex_dump(QDF_MODULE_ID_PE, QDF_TRACE_LEVEL_DEBUG, body,
 			   frame_len);
+
+	lim_update_mlo_mgr_prb_info(mac_ctx, session_entry,
+				    (struct qdf_mac_addr *)header->bssId,
+				    probe_rsp);
 
 	lim_process_bcn_prb_rsp_t2lm(mac_ctx, session_entry, probe_rsp);
 	lim_gen_link_specific_probe_rsp(mac_ctx, session_entry,
@@ -307,7 +380,7 @@ lim_process_probe_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_Packet_info
 		}
 		session_entry->bcnLen =
 			WMA_GET_RX_MPDU_LEN(rx_Packet_info);
-			session_entry->beacon =
+		session_entry->beacon =
 			qdf_mem_malloc(session_entry->bcnLen);
 		if (!session_entry->beacon) {
 			pe_err("No Memory to store beacon");
@@ -325,6 +398,7 @@ lim_process_probe_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_Packet_info
 		lim_check_and_announce_join_success(mac_ctx, probe_rsp,
 						header,
 						session_entry);
+
 	} else if (session_entry->limMlmState ==
 		   eLIM_MLM_LINK_ESTABLISHED_STATE) {
 		/*
@@ -335,8 +409,7 @@ lim_process_probe_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_Packet_info
 		sir_copy_mac_addr(current_bssid, session_entry->bssId);
 		if (qdf_mem_cmp(current_bssid, header->bssId,
 				sizeof(tSirMacAddr))) {
-			qdf_mem_free(probe_rsp);
-			return;
+			goto mem_free;
 		}
 		if (!LIM_IS_CONNECTION_ACTIVE(session_entry)) {
 			pe_warn("Recved Probe Resp from AP,AP-alive");
@@ -352,14 +425,14 @@ lim_process_probe_rsp_frame(struct mac_context *mac_ctx, uint8_t *rx_Packet_info
 							session_entry);
 		}
 
-		if (!cu_flag) {
-			qdf_mem_free(probe_rsp);
-			return;
-		}
+		if (!cu_flag)
+			goto mem_free;
 
 		lim_process_updated_ies_in_probe_rsp(mac_ctx, session_entry,
 						     probe_rsp);
 	}
+
+mem_free:
 	qdf_mem_free(probe_rsp);
 
 	/* Ignore Probe Response frame in all other states */

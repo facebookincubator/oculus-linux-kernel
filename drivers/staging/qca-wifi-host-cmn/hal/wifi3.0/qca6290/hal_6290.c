@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -114,10 +114,10 @@
 #include "hal_li_generic_api.h"
 
 /**
- * hal_rx_get_rx_fragment_number_6290(): Function to retrieve rx fragment number
+ * hal_rx_get_rx_fragment_number_6290() - API to retrieve rx fragment number
+ * @buf: Network buffer
  *
- * @nbuf: Network buffer
- * Returns: rx fragment number
+ * Return: rx fragment number
  */
 static
 uint8_t hal_rx_get_rx_fragment_number_6290(uint8_t *buf)
@@ -131,10 +131,10 @@ uint8_t hal_rx_get_rx_fragment_number_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_da_is_mcbc_get: API to check if pkt is MCBC
- * from rx_msdu_end TLV
+ * hal_rx_msdu_end_da_is_mcbc_get_6290() - API to check if pkt is MCBC
+ *                                         from rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: da_is_mcbc
  */
 static inline uint8_t
@@ -147,10 +147,10 @@ hal_rx_msdu_end_da_is_mcbc_get_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_sa_is_valid_get_6290(): API to get_6290 the
- * sa_is_valid bit from rx_msdu_end TLV
+ * hal_rx_msdu_end_sa_is_valid_get_6290() - API to get_6290 the sa_is_valid bit
+ *                                          from rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: sa_is_valid bit
  */
 static uint8_t
@@ -166,10 +166,10 @@ hal_rx_msdu_end_sa_is_valid_get_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_sa_idx_get_6290(): API to get_6290 the
- * sa_idx from rx_msdu_end TLV
+ * hal_rx_msdu_end_sa_idx_get_6290() - API to get_6290 the sa_idx from
+ *                                     rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: sa_idx (SA AST index)
  */
 static
@@ -186,8 +186,6 @@ uint16_t hal_rx_msdu_end_sa_idx_get_6290(uint8_t *buf)
 
 /**
  * hal_rx_desc_is_first_msdu_6290() - Check if first msdu
- *
- * @hal_soc_hdl: hal_soc handle
  * @hw_desc_addr: hardware descriptor address
  *
  * Return: 0 - success/ non-zero failure
@@ -201,10 +199,10 @@ static uint32_t hal_rx_desc_is_first_msdu_6290(void *hw_desc_addr)
 }
 
 /**
- * hal_rx_msdu_end_l3_hdr_padding_get_6290(): API to get_6290 the
- * l3_header padding from rx_msdu_end TLV
+ * hal_rx_msdu_end_l3_hdr_padding_get_6290() - API to get_6290 the l3_header
+ *                                             padding from rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: number of l3 header padding bytes
  */
 static uint32_t hal_rx_msdu_end_l3_hdr_padding_get_6290(uint8_t *buf)
@@ -218,11 +216,11 @@ static uint32_t hal_rx_msdu_end_l3_hdr_padding_get_6290(uint8_t *buf)
 	return l3_header_padding;
 }
 
-/*
- * @ hal_rx_encryption_info_valid_6290: Returns encryption type.
+/**
+ * hal_rx_encryption_info_valid_6290() - Returns encryption type.
+ * @buf: rx_tlv_hdr of the received packet
  *
- * @ buf: rx_tlv_hdr of the received packet
- * @ Return: encryption type
+ * Return: encryption type
  */
 static uint32_t hal_rx_encryption_info_valid_6290(uint8_t *buf)
 {
@@ -235,8 +233,8 @@ static uint32_t hal_rx_encryption_info_valid_6290(uint8_t *buf)
 	return encryption_info;
 }
 
-/*
- * hal_rx_print_pn_6290: Prints the PN of rx packet.
+/**
+ * hal_rx_print_pn_6290() - Prints the PN of rx packet.
  * @buf: rx_tlv_hdr of the received packet
  *
  * Return: void
@@ -253,15 +251,15 @@ static void hal_rx_print_pn_6290(uint8_t *buf)
 	uint32_t pn_95_64 = HAL_RX_MPDU_PN_95_64_GET(mpdu_info);
 	uint32_t pn_127_96 = HAL_RX_MPDU_PN_127_96_GET(mpdu_info);
 
-	hal_debug("PN number pn_127_96 0x%x pn_95_64 0x%x pn_63_32 0x%x pn_31_0 0x%x ",
+	hal_debug("PN number pn_127_96 0x%x pn_95_64 0x%x pn_63_32 0x%x pn_31_0 0x%x",
 		  pn_127_96, pn_95_64, pn_63_32, pn_31_0);
 }
 
 /**
- * hal_rx_msdu_end_first_msdu_get_6290: API to get first msdu status
- * from rx_msdu_end TLV
- *
+ * hal_rx_msdu_end_first_msdu_get_6290() - API to get first msdu status from
+ *                                         rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
+ *
  * Return: first_msdu
  */
 static uint8_t
@@ -277,10 +275,10 @@ hal_rx_msdu_end_first_msdu_get_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_da_is_valid_get_6290: API to check if da is valid
- * from rx_msdu_end TLV
+ * hal_rx_msdu_end_da_is_valid_get_6290() - API to check if da is valid from
+ *                                          rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: da_is_valid
  */
 static uint8_t hal_rx_msdu_end_da_is_valid_get_6290(uint8_t *buf)
@@ -295,10 +293,10 @@ static uint8_t hal_rx_msdu_end_da_is_valid_get_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_last_msdu_get_6290: API to get last msdu status
- * from rx_msdu_end TLV
+ * hal_rx_msdu_end_last_msdu_get_6290() - API to get last msdu status
+ *                                        from rx_msdu_end TLV
+ * @buf: pointer to the start of RX PKT TLV headers
  *
- * @ buf: pointer to the start of RX PKT TLV headers
  * Return: last_msdu
  */
 static uint8_t hal_rx_msdu_end_last_msdu_get_6290(uint8_t *buf)
@@ -312,11 +310,11 @@ static uint8_t hal_rx_msdu_end_last_msdu_get_6290(uint8_t *buf)
 	return last_msdu;
 }
 
-/*
- * hal_rx_get_mpdu_mac_ad4_valid_6290(): Retrieves if mpdu 4th addr is valid
+/**
+ * hal_rx_get_mpdu_mac_ad4_valid_6290() - Retrieves if mpdu 4th addr is valid
+ * @buf: Network buffer
  *
- * @nbuf: Network buffer
- * Returns: value of mpdu 4th address valid field
+ * Return: value of mpdu 4th address valid field
  */
 static bool hal_rx_get_mpdu_mac_ad4_valid_6290(uint8_t *buf)
 {
@@ -330,7 +328,7 @@ static bool hal_rx_get_mpdu_mac_ad4_valid_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_mpdu_start_sw_peer_id_get_6290: Retrieve sw peer_id
+ * hal_rx_mpdu_start_sw_peer_id_get_6290() - Retrieve sw peer_id
  * @buf: network buffer
  *
  * Return: sw peer_id:
@@ -345,11 +343,10 @@ static uint32_t hal_rx_mpdu_start_sw_peer_id_get_6290(uint8_t *buf)
 		&mpdu_start->rx_mpdu_info_details);
 }
 
-/*
- * hal_rx_mpdu_get_to_ds_6290(): API to get the tods info
- * from rx_mpdu_start
- *
+/**
+ * hal_rx_mpdu_get_to_ds_6290() - API to get the tods info from rx_mpdu_start
  * @buf: pointer to the start of RX PKT TLV header
+ *
  * Return: uint32_t(to_ds)
  */
 
@@ -364,11 +361,10 @@ static uint32_t hal_rx_mpdu_get_to_ds_6290(uint8_t *buf)
 	return HAL_RX_MPDU_GET_TODS(mpdu_info);
 }
 
-/*
- * hal_rx_mpdu_get_fr_ds_6290(): API to get the from ds info
- * from rx_mpdu_start
- *
+/**
+ * hal_rx_mpdu_get_fr_ds_6290() - API to get the from ds info from rx_mpdu_start
  * @buf: pointer to the start of RX PKT TLV header
+ *
  * Return: uint32_t(fr_ds)
  */
 static uint32_t hal_rx_mpdu_get_fr_ds_6290(uint8_t *buf)
@@ -382,12 +378,12 @@ static uint32_t hal_rx_mpdu_get_fr_ds_6290(uint8_t *buf)
 	return HAL_RX_MPDU_GET_FROMDS(mpdu_info);
 }
 
-/*
- * hal_rx_get_mpdu_frame_control_valid_6290(): Retrieves mpdu frame
- * control valid
+/**
+ * hal_rx_get_mpdu_frame_control_valid_6290() - Retrieves mpdu frame control
+ *                                              valid
+ * @buf: Network buffer
  *
- * @nbuf: Network buffer
- * Returns: value of frame control valid field
+ * Return: value of frame control valid field
  */
 static uint8_t hal_rx_get_mpdu_frame_control_valid_6290(uint8_t *buf)
 {
@@ -397,11 +393,11 @@ static uint8_t hal_rx_get_mpdu_frame_control_valid_6290(uint8_t *buf)
 	return HAL_RX_MPDU_GET_FRAME_CONTROL_VALID(rx_mpdu_info);
 }
 
-/*
- * hal_rx_mpdu_get_addr1_6290(): API to check get address1 of the mpdu
- *
+/**
+ * hal_rx_mpdu_get_addr1_6290() - API to check get address1 of the mpdu
  * @buf: pointer to the start of RX PKT TLV headera
  * @mac_addr: pointer to mac address
+ *
  * Return: success/failure
  */
 static QDF_STATUS hal_rx_mpdu_get_addr1_6290(uint8_t *buf, uint8_t *mac_addr)
@@ -430,12 +426,11 @@ static QDF_STATUS hal_rx_mpdu_get_addr1_6290(uint8_t *buf, uint8_t *mac_addr)
 	return QDF_STATUS_E_FAILURE;
 }
 
-/*
- * hal_rx_mpdu_get_addr2_6290(): API to check get address2 of the mpdu
- * in the packet
- *
+/**
+ * hal_rx_mpdu_get_addr2_6290() - API to get address2 of the mpdu in the packet
  * @buf: pointer to the start of RX PKT TLV header
  * @mac_addr: pointer to mac address
+ *
  * Return: success/failure
  */
 static QDF_STATUS hal_rx_mpdu_get_addr2_6290(uint8_t *buf,
@@ -465,12 +460,11 @@ static QDF_STATUS hal_rx_mpdu_get_addr2_6290(uint8_t *buf,
 	return QDF_STATUS_E_FAILURE;
 }
 
-/*
- * hal_rx_mpdu_get_addr3_6290(): API to get address3 of the mpdu
- * in the packet
- *
+/**
+ * hal_rx_mpdu_get_addr3_6290() - API to get address3 of the mpdu in the packet
  * @buf: pointer to the start of RX PKT TLV header
  * @mac_addr: pointer to mac address
+ *
  * Return: success/failure
  */
 static QDF_STATUS hal_rx_mpdu_get_addr3_6290(uint8_t *buf, uint8_t *mac_addr)
@@ -499,12 +493,11 @@ static QDF_STATUS hal_rx_mpdu_get_addr3_6290(uint8_t *buf, uint8_t *mac_addr)
 	return QDF_STATUS_E_FAILURE;
 }
 
-/*
- * hal_rx_mpdu_get_addr4_6290(): API to get address4 of the mpdu
- * in the packet
- *
+/**
+ * hal_rx_mpdu_get_addr4_6290() - API to get address4 of the mpdu in the packet
  * @buf: pointer to the start of RX PKT TLV header
  * @mac_addr: pointer to mac address
+ *
  * Return: success/failure
  */
 static QDF_STATUS hal_rx_mpdu_get_addr4_6290(uint8_t *buf, uint8_t *mac_addr)
@@ -533,12 +526,12 @@ static QDF_STATUS hal_rx_mpdu_get_addr4_6290(uint8_t *buf, uint8_t *mac_addr)
 	return QDF_STATUS_E_FAILURE;
 }
 
-/*
- * hal_rx_get_mpdu_sequence_control_valid_6290(): Get mpdu
- * sequence control valid
+/**
+ * hal_rx_get_mpdu_sequence_control_valid_6290() - Get mpdu sequence control
+ *                                                 valid
+ * @buf: Network buffer
  *
- * @nbuf: Network buffer
- * Returns: value of sequence control valid field
+ * Return: value of sequence control valid field
  */
 static uint8_t hal_rx_get_mpdu_sequence_control_valid_6290(uint8_t *buf)
 {
@@ -549,9 +542,8 @@ static uint8_t hal_rx_get_mpdu_sequence_control_valid_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_is_unicast_6290: check packet is unicast frame or not.
- *
- * @ buf: pointer to rx pkt TLV.
+ * hal_rx_is_unicast_6290() - check packet is unicast frame or not.
+ * @buf: pointer to rx pkt TLV.
  *
  * Return: true on unicast.
  */
@@ -572,9 +564,9 @@ static bool hal_rx_is_unicast_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_tid_get_6290: get tid based on qos control valid.
+ * hal_rx_tid_get_6290() - get tid based on qos control valid.
  * @hal_soc_hdl: hal soc handle
- * @ buf: pointer to rx pkt TLV.
+ * @buf: pointer to rx pkt TLV.
  *
  * Return: tid
  */
@@ -597,7 +589,7 @@ static uint32_t hal_rx_tid_get_6290(hal_soc_handle_t hal_soc_hdl, uint8_t *buf)
 }
 
 /**
- * hal_rx_hw_desc_get_ppduid_get_6290(): retrieve ppdu id
+ * hal_rx_hw_desc_get_ppduid_get_6290() - retrieve ppdu id
  * @rx_tlv_hdr: start address of rx_pkt_tlvs
  * @rxdma_dst_ring_desc: Rx HW descriptor
  *
@@ -616,12 +608,12 @@ static uint32_t hal_rx_hw_desc_get_ppduid_get_6290(void *rx_tlv_hdr,
 }
 
 /**
- * hal_reo_status_get_header_6290 - Process reo desc info
+ * hal_reo_status_get_header_6290() - Process reo desc info
  * @ring_desc: REO status ring descriptor
- * @b - tlv type info
- * @h1 - Pointer to hal_reo_status_header where info to be stored
+ * @b: tlv type info
+ * @h1: Pointer to hal_reo_status_header where info to be stored
  *
- * Return - none.
+ * Return: none.
  *
  */
 static void hal_reo_status_get_header_6290(hal_ring_desc_t ring_desc, int b,
@@ -720,7 +712,7 @@ static void hal_reo_status_get_header_6290(hal_ring_desc_t ring_desc, int b,
 }
 
 /**
- * hal_rx_mpdu_start_mpdu_qos_control_valid_get_6290():
+ * hal_rx_mpdu_start_mpdu_qos_control_valid_get_6290() -
  * Retrieve qos control valid bit from the tlv.
  * @buf: pointer to rx pkt TLV.
  *
@@ -738,7 +730,7 @@ hal_rx_mpdu_start_mpdu_qos_control_valid_get_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_end_sa_sw_peer_id_get_6290(): API to get the
+ * hal_rx_msdu_end_sa_sw_peer_id_get_6290() - API to get the
  * sa_sw_peer_id from rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
@@ -754,7 +746,7 @@ hal_rx_msdu_end_sa_sw_peer_id_get_6290(uint8_t *buf)
 }
 
 /**
- * hal_tx_desc_set_mesh_en_6290 - Set mesh_enable flag in Tx descriptor
+ * hal_tx_desc_set_mesh_en_6290() - Set mesh_enable flag in Tx descriptor
  * @desc: Handle to Tx Descriptor
  * @en:   For raw WiFi frames, this indicates transmission to a mesh STA,
  *        enabling the interpretation of the 'Mesh Control Present' bit
@@ -823,7 +815,7 @@ hal_rx_get_ppdu_id_6290(uint8_t *buf)
 }
 
 /**
- * hal_reo_config_6290(): Set reo config parameters
+ * hal_reo_config_6290() - Set reo config parameters
  * @soc: hal soc handle
  * @reg_val: value to be set
  * @reo_params: reo parameters
@@ -840,9 +832,9 @@ void hal_reo_config_6290(struct hal_soc *soc,
 
 /**
  * hal_rx_msdu_desc_info_get_ptr_6290() - Get msdu desc info ptr
- * @msdu_details_ptr - Pointer to msdu_details_ptr
+ * @msdu_details_ptr: Pointer to msdu_details_ptr
  *
- * Return - Pointer to rx_msdu_desc_info structure.
+ * Return: Pointer to rx_msdu_desc_info structure.
  *
  */
 static void *hal_rx_msdu_desc_info_get_ptr_6290(void *msdu_details_ptr)
@@ -851,10 +843,10 @@ static void *hal_rx_msdu_desc_info_get_ptr_6290(void *msdu_details_ptr)
 }
 
 /**
- * hal_rx_link_desc_msdu0_ptr_6290 - Get pointer to rx_msdu details
- * @link_desc - Pointer to link desc
+ * hal_rx_link_desc_msdu0_ptr_6290() - Get pointer to rx_msdu details
+ * @link_desc: Pointer to link desc
  *
- * Return - Pointer to rx_msdu_details structure
+ * Return: Pointer to rx_msdu_details structure
  *
  */
 static void *hal_rx_link_desc_msdu0_ptr_6290(void *link_desc)
@@ -863,8 +855,8 @@ static void *hal_rx_link_desc_msdu0_ptr_6290(void *link_desc)
 }
 
 /**
- * hal_rx_msdu_flow_idx_get_6290: API to get flow index
- * from rx_msdu_end TLV
+ * hal_rx_msdu_flow_idx_get_6290() - API to get flow index
+ *                                   from rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
  * Return: flow index value from MSDU END TLV
@@ -878,8 +870,8 @@ static inline uint32_t hal_rx_msdu_flow_idx_get_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_flow_idx_invalid_6290: API to get flow index invalid
- * from rx_msdu_end TLV
+ * hal_rx_msdu_flow_idx_invalid_6290() - API to get flow index invalid
+ *                                       from rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
  * Return: flow index invalid value from MSDU END TLV
@@ -893,8 +885,8 @@ static bool hal_rx_msdu_flow_idx_invalid_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_flow_idx_timeout_6290: API to get flow index timeout
- * from rx_msdu_end TLV
+ * hal_rx_msdu_flow_idx_timeout_6290() - API to get flow index timeout
+ *                                       from rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
  * Return: flow index timeout value from MSDU END TLV
@@ -908,8 +900,8 @@ static bool hal_rx_msdu_flow_idx_timeout_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_fse_metadata_get_6290: API to get FSE metadata
- * from rx_msdu_end TLV
+ * hal_rx_msdu_fse_metadata_get_6290() - API to get FSE metadata
+ *                                       from rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
  * Return: fse metadata value from MSDU END TLV
@@ -923,8 +915,8 @@ static uint32_t hal_rx_msdu_fse_metadata_get_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_cce_metadata_get_6290: API to get CCE metadata
- * from rx_msdu_end TLV
+ * hal_rx_msdu_cce_metadata_get_6290() - API to get CCE metadata
+ *                                       from rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  *
  * Return: cce_metadata
@@ -939,8 +931,9 @@ hal_rx_msdu_cce_metadata_get_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_msdu_get_flow_params_6290: API to get flow index, flow index invalid
- * and flow index timeout from rx_msdu_end TLV
+ * hal_rx_msdu_get_flow_params_6290() - API to get flow index, flow index
+ *                                      invalid and flow index timeout from
+ *                                      rx_msdu_end TLV
  * @buf: pointer to the start of RX PKT TLV headers
  * @flow_invalid: pointer to return value of flow_idx_valid
  * @flow_timeout: pointer to return value of flow_idx_timeout
@@ -975,8 +968,8 @@ hal_rx_tlv_get_tcp_chksum_6290(uint8_t *buf)
 }
 
 /**
- * hal_rx_get_rx_sequence_6290(): Function to retrieve rx sequence number
- * @nbuf: Network buffer
+ * hal_rx_get_rx_sequence_6290() - Function to retrieve rx sequence number
+ * @buf: Network buffer
  *
  * Return: rx sequence number
  */
@@ -990,7 +983,7 @@ uint16_t hal_rx_get_rx_sequence_6290(uint8_t *buf)
 }
 
 /**
- * hal_get_window_address_6290(): Function to get hp/tp address
+ * hal_get_window_address_6290() - Function to get hp/tp address
  * @hal_soc: Pointer to hal_soc
  * @addr: address offset of register
  *
@@ -1050,15 +1043,15 @@ void hal_compute_reo_remap_ix2_ix3_6290(uint32_t *ring, uint32_t num_rings,
 
 #ifdef WLAN_FEATURE_MARK_FIRST_WAKEUP_PACKET
 /**
- * hal_get_first_wow_wakeup_packet_6290(): Function to get if the buffer
+ * hal_get_first_wow_wakeup_packet_6290() - Function to get if the buffer
  * is the first one that wakes up host from WoW.
  *
  * @buf: network buffer
  *
  * Dummy function for QCA6290
  *
- * Returns: 1 to indicate it is first packet received that wakes up host from
- *	    WoW. Otherwise 0
+ * Return: 1 to indicate it is first packet received that wakes up host from
+ *	   WoW. Otherwise 0
  */
 static inline uint8_t hal_get_first_wow_wakeup_packet_6290(uint8_t *buf)
 {
@@ -1107,9 +1100,19 @@ static void hal_hw_txrx_ops_attach_6290(struct hal_soc *hal_soc)
 	hal_soc->ops->hal_rx_get_tlv = hal_rx_get_tlv_6290;
 	hal_soc->ops->hal_rx_proc_phyrx_other_receive_info_tlv =
 		hal_rx_proc_phyrx_other_receive_info_tlv_6290;
+
+	hal_soc->ops->hal_rx_dump_msdu_end_tlv = hal_rx_dump_msdu_end_tlv_6290;
+	hal_soc->ops->hal_rx_dump_rx_attention_tlv =
+					hal_rx_dump_rx_attention_tlv_generic_li;
 	hal_soc->ops->hal_rx_dump_msdu_start_tlv =
 					hal_rx_dump_msdu_start_tlv_6290;
-	hal_soc->ops->hal_rx_dump_msdu_end_tlv = hal_rx_dump_msdu_end_tlv_6290;
+	hal_soc->ops->hal_rx_dump_mpdu_start_tlv =
+					hal_rx_dump_mpdu_start_tlv_generic_li;
+	hal_soc->ops->hal_rx_dump_mpdu_end_tlv =
+					hal_rx_dump_mpdu_end_tlv_generic_li;
+	hal_soc->ops->hal_rx_dump_pkt_hdr_tlv =
+					hal_rx_dump_pkt_hdr_tlv_generic_li;
+
 	hal_soc->ops->hal_get_link_desc_size = hal_get_link_desc_size_6290;
 	hal_soc->ops->hal_rx_mpdu_start_tid_get =
 					hal_rx_mpdu_start_tid_get_6290;
@@ -1127,8 +1130,6 @@ static void hal_hw_txrx_ops_attach_6290(struct hal_soc *hal_soc)
 					hal_rx_status_get_tlv_info_generic_li;
 	hal_soc->ops->hal_rx_wbm_err_info_get =
 					hal_rx_wbm_err_info_get_generic_li;
-	hal_soc->ops->hal_rx_dump_mpdu_start_tlv =
-					hal_rx_dump_mpdu_start_tlv_generic_li;
 
 	hal_soc->ops->hal_tx_set_pcp_tid_map =
 					hal_tx_set_pcp_tid_map_generic_li;
@@ -1239,6 +1240,14 @@ static void hal_hw_txrx_ops_attach_6290(struct hal_soc *hal_soc)
 	hal_soc->ops->hal_get_first_wow_wakeup_packet =
 		hal_get_first_wow_wakeup_packet_6290;
 #endif
+	hal_soc->ops->hal_rx_tlv_get_pn_num = hal_rx_tlv_get_pn_num_li;
+	hal_soc->ops->hal_rx_tlv_mic_err_get = hal_rx_tlv_mic_err_get_li;
+	hal_soc->ops->hal_rx_tlv_decrypt_err_get =
+			hal_rx_tlv_decrypt_err_get_li;
+	hal_soc->ops->hal_rx_tlv_get_pkt_capture_flags =
+					hal_rx_tlv_get_pkt_capture_flags_li;
+	hal_soc->ops->hal_rx_mpdu_info_ampdu_flag_get =
+					hal_rx_mpdu_info_ampdu_flag_get_li;
 	hal_soc->ops->hal_compute_reo_remap_ix0 = NULL;
 };
 
@@ -1655,11 +1664,13 @@ struct hal_hw_srng_config hw_srng_table_6290[] = {
 	{ /* TX_MONITOR_BUF */ 0},
 	{ /* TX_MONITOR_DST */ 0},
 	{ /* SW2RXDMA_NEW */ 0},
+	{ /* SW2RXDMA_LINK_RELEASE */ 0},
 };
 
 /**
  * hal_qca6290_attach() - Attach 6290 target specific hal_soc ops,
  *			  offset and srng table
+ * @hal_soc: Pointer to hal_soc
  */
 void hal_qca6290_attach(struct hal_soc *hal_soc)
 {

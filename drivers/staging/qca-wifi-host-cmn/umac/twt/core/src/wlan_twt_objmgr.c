@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -37,6 +37,7 @@ wlan_twt_psoc_obj_create_handler(struct wlan_objmgr_psoc *psoc, void *arg)
 
 	twt_psoc_obj->enable_context.context = NULL;
 	twt_psoc_obj->disable_context.context = NULL;
+	twt_psoc_obj->twt_pmo_disabled = 0;
 
 	status = wlan_objmgr_psoc_component_obj_attach(psoc,
 						       WLAN_UMAC_COMP_TWT,
@@ -204,6 +205,40 @@ wlan_twt_peer_obj_destroy_handler(struct wlan_objmgr_peer *peer, void *arg)
 
 	qdf_mem_free(twt_peer_obj);
 	twt_debug("peer twt object detached");
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+wlan_twt_psoc_set_pmo_disable(struct wlan_objmgr_psoc *psoc,
+			      enum twt_disable_reason reason)
+{
+	struct twt_psoc_priv_obj *twt_psoc_obj;
+
+	twt_psoc_obj = wlan_twt_psoc_get_comp_private_obj(psoc);
+	if (!twt_psoc_obj) {
+		twt_err("twt_psoc_obj is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+	twt_psoc_obj->twt_pmo_disabled |= reason;
+	twt_debug("Psoc twt_disabled %x", twt_psoc_obj->twt_pmo_disabled);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+wlan_twt_psoc_set_pmo_enable(struct wlan_objmgr_psoc *psoc,
+			     enum twt_disable_reason reason)
+{
+	struct twt_psoc_priv_obj *twt_psoc_obj;
+
+	twt_psoc_obj = wlan_twt_psoc_get_comp_private_obj(psoc);
+	if (!twt_psoc_obj) {
+		twt_err("twt_psoc_obj is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+	twt_psoc_obj->twt_pmo_disabled &= ~reason;
+	twt_debug("Psoc twt_disabled %x", twt_psoc_obj->twt_pmo_disabled);
+
 	return QDF_STATUS_SUCCESS;
 }
 

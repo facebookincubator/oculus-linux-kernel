@@ -63,6 +63,8 @@
  * @WLAN_CM_SS_REASSOC:                 Roam substate for reassoc state
  * @WLAN_CM_SS_ROAM_STARTED:            Roaming in progress (LFR 3.0)
  * @WLAN_CM_SS_ROAM_SYNC:               Roam sync indication from FW
+ * @WLAN_CM_SS_IDLE_DUE_TO_LINK_SWITCH: Substate when VDEV moves to INIT state
+ *                                      due to link switch.
  * @WLAN_CM_SS_MAX:                     Max Substate
  */
 enum wlan_cm_sm_state {
@@ -80,7 +82,8 @@ enum wlan_cm_sm_state {
 	WLAN_CM_SS_REASSOC = 11,
 	WLAN_CM_SS_ROAM_STARTED = 12,
 	WLAN_CM_SS_ROAM_SYNC = 13,
-	WLAN_CM_SS_MAX = 14,
+	WLAN_CM_SS_IDLE_DUE_TO_LINK_SWITCH = 14,
+	WLAN_CM_SS_MAX = 15,
 };
 
 /**

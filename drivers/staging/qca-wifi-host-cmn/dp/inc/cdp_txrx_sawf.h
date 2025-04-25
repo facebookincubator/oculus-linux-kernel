@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -76,11 +76,28 @@ cdp_sawf_peer_get_map_conf(ol_txrx_soc_handle soc,
 	return soc->ops->sawf_ops->sawf_def_queues_get_map_report(soc, mac);
 }
 
+static inline QDF_STATUS
+cdp_sawf_peer_get_msduq_info(ol_txrx_soc_handle soc, uint8_t *mac)
+{
+	if (!soc || !soc->ops) {
+		dp_cdp_debug("Invalid Instance");
+		QDF_BUG(0);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	if (!soc->ops->sawf_ops ||
+	    !soc->ops->sawf_ops->sawf_get_peer_msduq_info) {
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return soc->ops->sawf_ops->sawf_get_peer_msduq_info(soc, mac);
+}
+
 #ifdef CONFIG_SAWF
 /**
  * cdp_get_peer_sawf_delay_stats() - Call to get SAWF delay stats
  * @soc: soc handle
- * @svc_class_id: service class ID
+ * @svc_id: service class ID
  * @mac: peer mac address
  * @data: opaque pointer
  *
@@ -107,7 +124,7 @@ cdp_get_peer_sawf_delay_stats(ol_txrx_soc_handle soc, uint32_t svc_id,
 /**
  * cdp_get_peer_sawf_tx_stats() - Call to get SAWF Tx stats
  * @soc: soc handle
- * @svc_class_id: service class ID
+ * @svc_id: service class ID
  * @mac: peer mac address
  * @data: opaque pointer
  *
@@ -179,6 +196,7 @@ cdp_sawf_mpdu_details_stats_req(ol_txrx_soc_handle soc, uint8_t enable)
 
 /**
  * cdp_sawf_set_mov_avg_params - Set moving average pararms
+ * @soc: SOC handle
  * @num_pkt: No of packets per window to calucalte moving average
  * @num_win: No of windows to calucalte moving average
  *
@@ -205,6 +223,7 @@ cdp_sawf_set_mov_avg_params(ol_txrx_soc_handle soc,
 
 /**
  * cdp_sawf_set_sla_params - Set SLA pararms
+ * @soc: SOC handle
  * @num_pkt: No of packets to detect SLA breach
  * @time_secs: Time ins secs to detect breach
  *
@@ -230,7 +249,8 @@ cdp_sawf_set_sla_params(ol_txrx_soc_handle soc,
 }
 
 /**
- * cdp_sawf_init_telemetry_param - Initialize telemetry pararms
+ * cdp_sawf_init_telemtery_params() - Initialize telemetry pararms
+ * @soc: SOC handle
  *
  * Return: none
  */
@@ -319,14 +339,18 @@ cdp_get_drop_stats(ol_txrx_soc_handle soc, void *arg,
  * @tid: TID
  * @service_interval: Service Interval
  * @burst_size: Burst Size
+ * @min_tput: Min throughput
+ * @max_latency: Max latency
  * @add_or_sub: Add or Sub parameters
+ * @peer_id: peer id
  *
  * Return: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_sawf_peer_config_ul(ol_txrx_soc_handle soc, uint8_t *mac_addr, uint8_t tid,
 			uint32_t service_interval, uint32_t burst_size,
-			uint8_t add_or_sub)
+			uint32_t min_tput, uint32_t max_latency,
+			uint8_t add_or_sub, uint16_t peer_id)
 {
 	if (!soc || !soc->ops || !soc->ops->sawf_ops ||
 	    !soc->ops->sawf_ops->peer_config_ul) {
@@ -337,27 +361,60 @@ cdp_sawf_peer_config_ul(ol_txrx_soc_handle soc, uint8_t *mac_addr, uint8_t tid,
 
 	return soc->ops->sawf_ops->peer_config_ul(soc, mac_addr, tid,
 						  service_interval, burst_size,
-						  add_or_sub);
+						  min_tput, max_latency,
+						  add_or_sub, peer_id);
 }
 
-/*
- * cdp_swaf_peer_is_sla_configured() - Check if sla is configured for a peer
- * @soc_hdl: SOC handle
- * @mac_addr: peer mac address
+/**
+ * cdp_sawf_peer_flow_count - Peer flow count in SAWF
+ * @soc: SOC handle
+ * @mac_addr: MAC address
+ * @svc_id: Service Class ID
+ * @direction: Indication of forward or reverse service class match
+ * @start_or_stop: Indication of start or stop
+ * @peer_mac: Peer MAC address
+ * @peer_id: peer id
  *
- * Return: true is peer is sla configured
+ * Return: QDF_STATUS
  */
-static inline bool
-cdp_swaf_peer_is_sla_configured(ol_txrx_soc_handle soc, uint8_t *mac_addr)
+static inline QDF_STATUS
+cdp_sawf_peer_flow_count(ol_txrx_soc_handle soc, uint8_t *mac_addr,
+			 uint8_t svc_id, uint8_t direction,
+			 uint8_t start_or_stop, uint8_t *peer_mac,
+			 uint16_t peer_id)
 {
 	if (!soc || !soc->ops || !soc->ops->sawf_ops ||
-	    !soc->ops->sawf_ops->swaf_peer_is_sla_configured) {
+	    !soc->ops->sawf_ops->sawf_peer_flow_count) {
 		dp_cdp_debug("Invalid Instance");
 		QDF_BUG(0);
 		return false;
 	}
 
-	return soc->ops->sawf_ops->swaf_peer_is_sla_configured(soc, mac_addr);
+	return soc->ops->sawf_ops->sawf_peer_flow_count
+		(soc, mac_addr, svc_id, direction, start_or_stop, peer_mac,
+								peer_id);
+}
+
+/**
+ * cdp_swaf_peer_sla_configuration() - Check if sla is configured for a peer
+ * @soc: SOC handle
+ * @mac_addr: peer mac address
+ * @sla_mask: pointer to SLA mask
+ * Return: QDF_STATUS
+ */
+static inline QDF_STATUS
+cdp_swaf_peer_sla_configuration(ol_txrx_soc_handle soc, uint8_t *mac_addr,
+				uint16_t *sla_mask)
+{
+	if (!soc || !soc->ops || !soc->ops->sawf_ops ||
+	    !soc->ops->sawf_ops->swaf_peer_sla_configuration) {
+		dp_cdp_debug("Invalid Instance");
+		QDF_BUG(0);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	return soc->ops->sawf_ops->swaf_peer_sla_configuration(soc, mac_addr,
+							       sla_mask);
 }
 
 #else
@@ -387,10 +444,44 @@ cdp_get_peer_sawf_tx_stats(ol_txrx_soc_handle soc, uint32_t svc_id,
 	return QDF_STATUS_E_FAILURE;
 }
 
-static inline bool
-cdp_swaf_peer_is_sla_configured(ol_txrx_soc_handle soc, uint8_t *mac_addr)
+static inline QDF_STATUS
+cdp_swaf_peer_sla_configuration(ol_txrx_soc_handle soc, uint8_t *mac_addr,
+				uint16_t *sla_mask)
 {
-	return false;
+	return QDF_STATUS_E_FAILURE;
+}
+#endif
+
+#ifdef WLAN_FEATURE_11BE_MLO_3_LINK_TX
+static inline
+uint16_t cdp_sawf_get_peer_msduq(ol_txrx_soc_handle soc,
+				 struct net_device *netdev, uint8_t *dest_mac,
+				 uint32_t dscp_pcp, bool pcp)
+{
+	if (!soc || !soc->ops || !soc->ops->sawf_ops ||
+	    !soc->ops->sawf_ops->get_peer_msduq) {
+		dp_cdp_debug("Invalid Instance");
+		QDF_BUG(0);
+		return false;
+	}
+
+	return soc->ops->sawf_ops->get_peer_msduq
+		(netdev, dest_mac, dscp_pcp, pcp);
+}
+
+static inline QDF_STATUS
+cdp_sawf_3_link_peer_flow_count(ol_txrx_soc_handle soc, uint8_t *mac_addr,
+				uint16_t peer_id, uint32_t mark_metadata)
+{
+	if (!soc || !soc->ops || !soc->ops->sawf_ops ||
+	    !soc->ops->sawf_ops->sawf_3_link_peer_flow_count) {
+		dp_cdp_debug("Invalid Instance");
+		QDF_BUG(0);
+		return false;
+	}
+
+	return soc->ops->sawf_ops->sawf_3_link_peer_flow_count
+		(soc, mac_addr, peer_id, mark_metadata);
 }
 #endif
 #endif /* _CDP_TXRX_SAWF_H_ */

@@ -43,11 +43,19 @@
  * @WFDS_STOP_TRAFFIC: Stop WFDS traffic
  * @WFDS_START_TRAFFIC: Start WFDS Traffic
  * @WFDS_GET_STATS: Get WFDS traffic stats
+ * @WFDS_START_WHC: Start WHC traffic
+ * @WFDS_START_TSF: Start TSF handshake
+ * @WFDS_CMD_MISC: Miscellaneous test
+ * @WFDS_CMD_MAX: Max test commands
  */
 enum os_if_qmi_wfds_ut_cmd_type {
 	WFDS_STOP_TRAFFIC,
 	WFDS_START_TRAFFIC,
-	WFDS_GET_STATS
+	WFDS_GET_STATS,
+	WFDS_START_WHC,
+	WFDS_START_TSF,
+	WFDS_CMD_MISC,
+	WFDS_CMD_MAX,
 };
 
 /**
@@ -60,6 +68,9 @@ enum os_if_qmi_wfds_ut_cmd_type {
  * @ether_type: ether_type of packet
  * @dest_mac: Destination MAC address
  * @src_mac: Source MAC address
+ * @dest_ip: Destination IPv4 address
+ * @src_ip: Source IPv4 address
+ * @dest_port: Destination port
  */
 struct os_if_qmi_wfds_ut_cmd_info {
 	enum os_if_qmi_wfds_ut_cmd_type cmd;
@@ -68,8 +79,11 @@ struct os_if_qmi_wfds_ut_cmd_info {
 	uint32_t num_pkts;
 	uint32_t buf_size;
 	uint16_t ether_type;
-	struct qdf_mac_addr src_mac;
 	struct qdf_mac_addr dest_mac;
+	struct qdf_mac_addr src_mac;
+	struct qdf_ipv4_addr dest_ip;
+	struct qdf_ipv4_addr src_ip;
+	uint16_t dest_port;
 };
 
 #ifdef QMI_COMPONENT_ENABLE

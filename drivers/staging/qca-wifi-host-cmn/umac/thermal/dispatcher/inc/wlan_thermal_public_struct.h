@@ -1,5 +1,5 @@
 /* Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -45,7 +45,7 @@ enum thermal_stats_request_type {
 };
 
 /**
- * thermal_throt_level_stats - thermal throttle info from Target
+ * struct thermal_throt_level_stats - thermal throttle info from Target
  * @start_temp_level: Start temperature range to capture thermal stats
  * @end_temp_level: End temperature range to capture thermal stats
  * @total_time_ms_lo: Start time for every thermal stats level in msec
