@@ -95,6 +95,20 @@ struct __thermal_zone {
 	struct list_head list;
 	/* sensor interface */
 	struct __sensor_param *senps;
+
+	/* time averaging logic */
+	/* over how many polls to average */
+	int average_polls;
+	/* place to save the history, as a circular buffer */
+	int *historic_temps;
+	/* the size of collected history, up to average_polls */
+	int history_size;
+	/* index of last collected value in the circular buffer, unless history_size==0 */
+	int history_idx;
+	/* sum of all values in history, a precursor for averaging */
+	int sum_temp;
+	/* time of the last historic value, in milliseconds */
+	s64 hist_ms;
 };
 
 /**
@@ -177,6 +191,7 @@ static int of_thermal_get_temp(struct thermal_zone_device *tz,
 			       int *temp)
 {
 	struct __thermal_zone *data = tz->devdata;
+	int ret;
 
 	if (!data->senps || !data->senps->ops->get_temp)
 		return -EINVAL;
@@ -187,7 +202,52 @@ static int of_thermal_get_temp(struct thermal_zone_device *tz,
 		return 0;
 	}
 
-	return data->senps->ops->get_temp(data->senps->sensor_data, temp);
+	ret = data->senps->ops->get_temp(data->senps->sensor_data, temp);
+	if (data->average_polls > 0 && ret == 0) {
+		/*
+		 * There is no guarantee that temperatures get read exactly at polling
+		 * intervals, the reading migt be slightly delayed or there might be
+		 * additional reads in between polling. So be fuzzy and accept whatever
+		 * was the first sample within each period.
+		 */
+		const s64 cur_ms = ktime_to_ms(ktime_get_boottime());
+
+		if (cur_ms - data->hist_ms > data->polling_delay * 3) {
+			/* uh-oh, polling broke, maybe the system was sleeping, reset the history */
+			data->history_size = 0;
+		}
+		if (data->history_size == 0) {
+			/*
+			 * Initialize the history by pushing in two values,
+			 * pretending that 1 ms before the temperature was the same.
+			 */
+			data->history_size = 1;
+			data->history_idx = 0;
+			data->historic_temps[0] = *temp;
+			data->sum_temp = *temp;
+			data->hist_ms = cur_ms;
+		} else if (cur_ms - data->hist_ms >= data->polling_delay) {
+			/* advance time in whole polling periods */
+			while (cur_ms - data->hist_ms >= data->polling_delay)
+				data->hist_ms += data->polling_delay; /* move in whole delay slices */
+
+			/* insert a new data point */
+			if (++data->history_idx >= data->average_polls)
+				data->history_idx = 0; /* wrap on the circular buffer */
+			if (data->history_size < data->average_polls) {
+				++data->history_size;
+			} else {
+				/* drop the oldest value */
+				data->sum_temp -= data->historic_temps[data->history_idx];
+			}
+			data->historic_temps[data->history_idx] = *temp;
+			data->sum_temp += *temp;
+		}
+
+		/* replace the temperature with the average */
+		*temp = data->sum_temp / data->history_size;
+	}
+	return ret;
 }
 
 static int of_thermal_set_trips(struct thermal_zone_device *tz,
@@ -1312,6 +1372,20 @@ __init *thermal_of_build_thermal_zone(struct device_node *np)
 	}
 	tz->polling_delay = prop;
 
+	ret = of_property_read_u32(np, "average-polls", &prop);
+	if (ret == 0 && prop > 1) {
+		if (tz->polling_delay < 1) {
+			pr_err("%pOFn: property average-polls requires non-0 property polling-delay\n", np);
+			goto free_tz;
+		}
+		tz->average_polls = prop;
+		tz->historic_temps = kcalloc(tz->average_polls, sizeof(*tz->historic_temps), GFP_KERNEL);
+		if (!tz->historic_temps) {
+			ret = -ENOMEM;
+			goto free_tz;
+		}
+	}
+
 	tz->default_disable = of_property_read_bool(np,
 					"disable-thermal-zone");
 
@@ -1345,7 +1419,7 @@ __init *thermal_of_build_thermal_zone(struct device_node *np)
 	tz->trips = kcalloc(tz->ntrips, sizeof(*tz->trips), GFP_KERNEL);
 	if (!tz->trips) {
 		ret = -ENOMEM;
-		goto free_tz;
+		goto free_hist;
 	}
 
 	i = 0;
@@ -1397,6 +1471,8 @@ free_trips:
 		of_node_put(tz->trips[i].np);
 	kfree(tz->trips);
 	of_node_put(gchild);
+free_hist:
+	kfree(tz->historic_temps);
 free_tz:
 	kfree(tz);
 	of_node_put(child);
@@ -1414,6 +1490,7 @@ static inline void of_thermal_free_zone(struct __thermal_zone *tz)
 	for (i = 0; i < tz->ntrips; i++)
 		of_node_put(tz->trips[i].np);
 	kfree(tz->trips);
+	kfree(tz->historic_temps);
 	kfree(tz);
 }
 

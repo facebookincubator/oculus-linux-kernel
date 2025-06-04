@@ -363,7 +363,7 @@ enum htt_dbg_ext_stats_type {
      */
     HTT_DBG_EXT_STATS_FSE_RX = 28,
 
-    /** HTT_DBG_EXT_PEER_CTRL_PATH_TXRX_STATS
+    /** HTT_DBG_EXT_STATS_PEER_CTRL_PATH_TXRX
      * PARAMS:
      *   - config_param0: [Bit0] : [1] for mac_addr based request
      *   - config_param1: [Bit31 : Bit0] mac_addr31to0
@@ -371,7 +371,10 @@ enum htt_dbg_ext_stats_type {
      * RESP MSG:
      *   - htt_ctrl_path_txrx_stats_t
      */
-    HTT_DBG_EXT_PEER_CTRL_PATH_TXRX_STATS = 29,
+    HTT_DBG_EXT_STATS_PEER_CTRL_PATH_TXRX = 29,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_PEER_CTRL_PATH_TXRX_STATS =
+            HTT_DBG_EXT_STATS_PEER_CTRL_PATH_TXRX,
 
     /** HTT_DBG_EXT_STATS_PDEV_RX_RATE_EXT
      * PARAMS:
@@ -393,15 +396,18 @@ enum htt_dbg_ext_stats_type {
      */
     HTT_DBG_EXT_STATS_TXBF_OFDMA          = 32,
 
-    /** HTT_DBG_EXT_STA_11AX_UL_STATS
+    /** HTT_DBG_EXT_STATS_STA_11AX_UL
      * PARAMS:
      *   - No Params
      * RESP MSG:
      *   - htt_sta_11ax_ul_stats
      */
-    HTT_DBG_EXT_STA_11AX_UL_STATS = 33,
+    HTT_DBG_EXT_STATS_STA_11AX_UL = 33,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_STA_11AX_UL_STATS =
+            HTT_DBG_EXT_STATS_STA_11AX_UL,
 
-    /** HTT_DBG_EXT_VDEV_RTT_RESP_STATS
+    /** HTT_DBG_EXT_STATS_VDEV_RTT_RESP
      * PARAMS:
      *   - config_param0:
      *      [Bit7 : Bit0]   vdev_id:8
@@ -409,61 +415,89 @@ enum htt_dbg_ext_stats_type {
      * RESP MSG:
      *   -
      */
-    HTT_DBG_EXT_VDEV_RTT_RESP_STATS = 34,
+    HTT_DBG_EXT_STATS_VDEV_RTT_RESP = 34,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_VDEV_RTT_RESP_STATS =
+            HTT_DBG_EXT_STATS_VDEV_RTT_RESP,
 
-    /** HTT_DBG_EXT_PKTLOG_AND_HTT_RING_STATS
+    /** HTT_DBG_EXT_STATS_PKTLOG_AND_HTT_RING
      * PARAMS:
      *   - No Params
      * RESP MSG:
      *   - htt_pktlog_and_htt_ring_stats_t
      */
-    HTT_DBG_EXT_PKTLOG_AND_HTT_RING_STATS = 35,
+    HTT_DBG_EXT_STATS_PKTLOG_AND_HTT_RING = 35,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_PKTLOG_AND_HTT_RING_STATS =
+            HTT_DBG_EXT_STATS_PKTLOG_AND_HTT_RING,
 
-    /** HTT_DBG_EXT_STATS_DLPAGER_STATS
+    /** HTT_DBG_EXT_STATS_DLPAGER
      * PARAMS:
      *
      * RESP MSG:
      *   - htt_dlpager_stats_t
      */
-    HTT_DBG_EXT_STATS_DLPAGER_STATS = 36,
+    HTT_DBG_EXT_STATS_DLPAGER = 36,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_STATS_DLPAGER_STATS =
+            HTT_DBG_EXT_STATS_DLPAGER,
 
-    /** HTT_DBG_EXT_PHY_COUNTERS_AND_PHY_STATS
+    /** HTT_DBG_EXT_STATS_PHY
      * PARAMS:
      *   - No Params
      * RESP MSG:
      *   - htt_phy_counters_and_phy_stats_t
      */
-    HTT_DBG_EXT_PHY_COUNTERS_AND_PHY_STATS = 37,
+    HTT_DBG_EXT_STATS_PHY = 37,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_PHY_COUNTERS_AND_PHY_STATS =
+            HTT_DBG_EXT_STATS_PHY,
 
-    /** HTT_DBG_EXT_VDEVS_TXRX_STATS
+    /** HTT_DBG_EXT_STATS_VDEVS_TXRX
      * PARAMS:
      *   - No Params
      * RESP MSG:
      *   - htt_vdevs_txrx_stats_t
      */
-    HTT_DBG_EXT_VDEVS_TXRX_STATS = 38,
+    HTT_DBG_EXT_STATS_VDEVS_TXRX = 38,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_VDEVS_TXRX_STATS =
+            HTT_DBG_EXT_STATS_VDEVS_TXRX,
 
-    HTT_DBG_EXT_VDEV_RTT_INITIATOR_STATS = 39,
+    HTT_DBG_EXT_STATS_VDEV_RTT_INITIATOR = 39,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_VDEV_RTT_INITIATOR_STATS =
+            HTT_DBG_EXT_STATS_VDEV_RTT_INITIATOR,
 
-    /** HTT_DBG_EXT_PDEV_PER_STATS
+    /** HTT_DBG_EXT_STATS_PDEV_PER
      * PARAMS:
      *   - No Params
      * RESP MSG:
      *   - htt_tx_pdev_per_stats_t
      */
-    HTT_DBG_EXT_PDEV_PER_STATS = 40,
+    HTT_DBG_EXT_STATS_PDEV_PER = 40,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_PDEV_PER_STATS =
+            HTT_DBG_EXT_STATS_PDEV_PER,
 
-    HTT_DBG_EXT_AST_ENTRIES = 41,
+    HTT_DBG_EXT_STATS_AST_ENTRIES = 41,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_AST_ENTRIES =
+            HTT_DBG_EXT_STATS_AST_ENTRIES,
 
-    /** HTT_DBG_EXT_RX_RING_STATS
+    /** HTT_DBG_EXT_STATS_RX_RING
      * PARAMS:
      *    - No Params
      * RESP MSG:
      *    - htt_rx_fw_ring_stats_tlv_v
      */
-    HTT_DBG_EXT_RX_RING_STATS = 42,
+    HTT_DBG_EXT_STATS_RX_RING = 42,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_RX_RING_STATS =
+            HTT_DBG_EXT_STATS_RX_RING,
 
-    /** HTT_STRM_GEN_MPDUS_STATS, HTT_STRM_GEN_MPDUS_DETAILS_STATS
+    /** HTT_DBG_EXT_STATS_STRM_GEN_MPDUS,
+     *  HTT_DBG_EXT_STATS_STRM_GEN_MPDUS_DETAILS
      * PARAMS:
      *   - No params
      * RESP MSG: HTT_T2H STREAMING_STATS_IND (not EXT_STATS_CONF)
@@ -472,25 +506,36 @@ enum htt_dbg_ext_stats_type {
      *   - HTT_STRM_GEN_MPDUS_DETAILS_STATS:
      *     htt_stats_strm_gen_mpdus_details_tlv_t
      */
-    HTT_STRM_GEN_MPDUS_STATS = 43,
-    HTT_STRM_GEN_MPDUS_DETAILS_STATS = 44,
+    HTT_DBG_EXT_STATS_STRM_GEN_MPDUS = 43,
+    HTT_DBG_EXT_STATS_STRM_GEN_MPDUS_DETAILS = 44,
+        /* retain the deprecated names as aliases */
+        HTT_STRM_GEN_MPDUS_STATS =
+            HTT_DBG_EXT_STATS_STRM_GEN_MPDUS,
+        HTT_STRM_GEN_MPDUS_DETAILS_STATS =
+            HTT_DBG_EXT_STATS_STRM_GEN_MPDUS_DETAILS,
 
-    /** HTT_DBG_SOC_ERROR_STATS
+    /** HTT_DBG_EXT_STATS_SOC_ERROR
      * PARAMS:
      *    - No Params
      * RESP MSG:
      *    - htt_dmac_reset_stats_tlv
      */
-    HTT_DBG_SOC_ERROR_STATS = 45,
+    HTT_DBG_EXT_STATS_SOC_ERROR = 45,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_SOC_ERROR_STATS =
+            HTT_DBG_EXT_STATS_SOC_ERROR,
 
-    /** HTT_DBG_PDEV_PUNCTURE_STATS
+    /** HTT_DBG_EXT_STATS_PDEV_PUNCTURE
      * PARAMS:
      *    - param 0: enum from htt_tx_pdev_puncture_stats_upload_t, indicating
      *      the stats to upload
      * RESP MSG:
      *    - one or more htt_pdev_puncture_stats_tlv, depending on param 0
      */
-    HTT_DBG_PDEV_PUNCTURE_STATS = 46,
+    HTT_DBG_EXT_STATS_PDEV_PUNCTURE = 46,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_PDEV_PUNCTURE_STATS =
+            HTT_DBG_EXT_STATS_PDEV_PUNCTURE,
 
     /** HTT_DBG_EXT_STATS_ML_PEERS_INFO
      * PARAMS:
@@ -504,44 +549,59 @@ enum htt_dbg_ext_stats_type {
      */
     HTT_DBG_EXT_STATS_ML_PEERS_INFO = 47,
 
-    /** HTT_DBG_ODD_MANDATORY_STATS
+    /** HTT_DBG_EXT_STATS_ODD_MANDATORY
      * params:
      *          None
      * Response MSG:
      *          htt_odd_mandatory_pdev_stats_tlv
      */
-    HTT_DBG_ODD_MANDATORY_STATS = 48,
+    HTT_DBG_EXT_STATS_ODD_MANDATORY = 48,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_ODD_MANDATORY_STATS =
+            HTT_DBG_EXT_STATS_ODD_MANDATORY,
 
-    /** HTT_DBG_PDEV_SCHED_ALGO_STATS
+    /** HTT_DBG_EXT_STATS_PDEV_SCHED_ALGO
      * PARAMS:
      *      - No Params
      * RESP MSG:
      *   - htt_pdev_sched_algo_ofdma_stats_tlv
      */
-    HTT_DBG_PDEV_SCHED_ALGO_STATS = 49,
+    HTT_DBG_EXT_STATS_PDEV_SCHED_ALGO = 49,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_PDEV_SCHED_ALGO_STATS =
+            HTT_DBG_EXT_STATS_PDEV_SCHED_ALGO,
 
-    /** HTT_DBG_ODD_MANDATORY_MUMIMO_STATS
+    /** HTT_DBG_EXT_STATS_ODD_MANDATORY_MUMIMO
      * params:
      *          None
      * Response MSG:
      *          htt_odd_mandatory_mumimo_pdev_stats_tlv
      */
-    HTT_DBG_ODD_MANDATORY_MUMIMO_STATS = 50,
-    /** HTT_DBG_ODD_MANDATORY_MUOFDMA_STATS
+    HTT_DBG_EXT_STATS_ODD_MANDATORY_MUMIMO = 50,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_ODD_MANDATORY_MUMIMO_STATS =
+            HTT_DBG_EXT_STATS_ODD_MANDATORY_MUMIMO,
+    /** HTT_DBG_EXT_STATS_ODD_MANDATORY_MUOFDMA
      * params:
      *          None
      * Response MSG:
      *          htt_odd_mandatory_muofdma_pdev_stats_tlv
      */
-    HTT_DBG_ODD_MANDATORY_MUOFDMA_STATS = 51,
+    HTT_DBG_EXT_STATS_ODD_MANDATORY_MUOFDMA = 51,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_ODD_MANDATORY_MUOFDMA_STATS =
+            HTT_DBG_EXT_STATS_ODD_MANDATORY_MUOFDMA,
 
-    /** HTT_DBG_EXT_PHY_PROF_CAL_STATS
+    /** HTT_DBG_EXT_STATS_PHY_PROF_CAL
      * params:
      *          None
      * Response MSG:
      *          htt_stats_latency_prof_cal_data_tlv
      */
-    HTT_DBG_EXT_PHY_PROF_CAL_STATS = 52,
+    HTT_DBG_EXT_STATS_PHY_PROF_CAL = 52,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_PHY_PROF_CAL_STATS =
+            HTT_DBG_EXT_STATS_PHY_PROF_CAL,
 
     /** HTT_DBG_EXT_STATS_PDEV_BW_MGR
      * PARAMS:
@@ -551,94 +611,127 @@ enum htt_dbg_ext_stats_type {
      */
     HTT_DBG_EXT_STATS_PDEV_BW_MGR = 53,
 
-    /** HTT_DBG_PDEV_MBSSID_CTRL_FRAME_STATS
+    /** HTT_DBG_EXT_STATS_PDEV_MBSSID_CTRL_FRAME
      * PARAMS:
      *   - No Params
      * RESP MSG:
      *   - htt_pdev_mbssid_ctrl_frame_stats
      */
-    HTT_DBG_PDEV_MBSSID_CTRL_FRAME_STATS = 54,
+    HTT_DBG_EXT_STATS_PDEV_MBSSID_CTRL_FRAME = 54,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_PDEV_MBSSID_CTRL_FRAME_STATS =
+            HTT_DBG_EXT_STATS_PDEV_MBSSID_CTRL_FRAME,
 
-    /** HTT_DBG_SOC_SSR_STATS
+    /** HTT_DBG_EXT_STATS_SOC_SSR
      * Used for non-MLO UMAC recovery stats.
      * PARAMS:
      *    - No Params
      * RESP MSG:
      *    - htt_umac_ssr_stats_tlv
      */
-    HTT_DBG_SOC_SSR_STATS = 55,
+    HTT_DBG_EXT_STATS_SOC_SSR = 55,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_SOC_SSR_STATS =
+            HTT_DBG_EXT_STATS_SOC_SSR,
 
-    /** HTT_DBG_MLO_UMAC_SSR_STATS
+    /** HTT_DBG_EXT_STATS_MLO_UMAC_SSR
      * Used for MLO UMAC recovery stats.
      * PARAMS:
      *    - No Params
      * RESP MSG:
      *    - htt_mlo_umac_ssr_stats_tlv
      */
-    HTT_DBG_MLO_UMAC_SSR_STATS = 56,
+    HTT_DBG_EXT_STATS_MLO_UMAC_SSR = 56,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_MLO_UMAC_SSR_STATS =
+            HTT_DBG_EXT_STATS_MLO_UMAC_SSR,
 
-    /** HTT_DBG_PDEV_TDMA_STATS
+    /** HTT_DBG_EXT_STATS_PDEV_TDMA
      * PARAMS:
      *    - No Params
      * RESP MSG:
      *    - htt_pdev_tdma_stats_tlv
      */
-    HTT_DBG_PDEV_TDMA_STATS = 57,
+    HTT_DBG_EXT_STATS_PDEV_TDMA = 57,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_PDEV_TDMA_STATS =
+            HTT_DBG_EXT_STATS_PDEV_TDMA,
 
-    /** HTT_DBG_CODEL_STATS
+    /** HTT_DBG_EXT_STATS_CODEL
      * PARAMS:
      *    - No Params
      * RESP MSG:
      *    - htt_codel_svc_class_stats_tlv
      *    - htt_codel_msduq_stats_tlv
      */
-    HTT_DBG_CODEL_STATS = 58,
+    HTT_DBG_EXT_STATS_CODEL = 58,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_CODEL_STATS =
+            HTT_DBG_EXT_STATS_CODEL,
 
-    /** HTT_DBG_ODD_PDEV_BE_TX_MU_OFDMA_STATS
+    /** HTT_DBG_EXT_STATS_ODD_PDEV_BE_TX_MU_OFDMA
      * PARAMS:
      *   - No Params
      * RESP MSG:
      *   - htt_tx_pdev_mpdu_stats_tlv
      */
-    HTT_DBG_ODD_PDEV_BE_TX_MU_OFDMA_STATS = 59,
+    HTT_DBG_EXT_STATS_ODD_PDEV_BE_TX_MU_OFDMA = 59,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_ODD_PDEV_BE_TX_MU_OFDMA_STATS =
+            HTT_DBG_EXT_STATS_ODD_PDEV_BE_TX_MU_OFDMA,
 
-    /** HTT_DBG_EXT_STATS_PDEV_UL_TRIGGER
+    /** HTT_DBG_EXT_STATS_ODD_UL_BE_OFDMA
      * PARAMS:
      *   - No Params
      * RESP MSG:
      *   - htt_rx_pdev_be_ul_ofdma_user_stats_tlv
      */
-    HTT_DBG_ODD_UL_BE_OFDMA_STATS = 60,
+    HTT_DBG_EXT_STATS_ODD_UL_BE_OFDMA = 60,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_ODD_UL_BE_OFDMA_STATS =
+            HTT_DBG_EXT_STATS_ODD_UL_BE_OFDMA,
 
-    /** HTT_DBG_ODD_BE_TXBF_OFDMA_STATS
+    /** HTT_DBG_EXT_STATS_ODD_BE_TXBF_OFDMA
      */
-    HTT_DBG_ODD_BE_TXBF_OFDMA_STATS = 61,
+    HTT_DBG_EXT_STATS_ODD_BE_TXBF_OFDMA = 61,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_ODD_BE_TXBF_OFDMA_STATS =
+            HTT_DBG_EXT_STATS_ODD_BE_TXBF_OFDMA,
 
-    /** HTT_DBG_ODD_STATS_PDEV_BE_UL_MUMIMO_TRIG_STATS
+    /** HTT_DBG_EXT_STATS_ODD_STATS_PDEV_BE_UL_MUMIMO_TRIG
      * PARAMS:
      *   - No Params
      * RESP MSG:
      *   - htt_rx_pdev_be_ul_ofdma_user_stats_tlv
      */
-    HTT_DBG_ODD_STATS_PDEV_BE_UL_MUMIMO_TRIG_STATS = 62,
+    HTT_DBG_EXT_STATS_ODD_STATS_PDEV_BE_UL_MUMIMO_TRIG = 62,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_ODD_STATS_PDEV_BE_UL_MUMIMO_TRIG_STATS =
+            HTT_DBG_EXT_STATS_ODD_STATS_PDEV_BE_UL_MUMIMO_TRIG,
 
-    /** HTT_DBG_MLO_SCHED_STATS
+    /** HTT_DBG_EXT_STATS_MLO_SCHED
      * PARAMS:
      *    - No Params
      * RESP MSG:
      *    - htt_pdev_mlo_sched_stats_tlv
      */
-    HTT_DBG_MLO_SCHED_STATS = 63,
+    HTT_DBG_EXT_STATS_MLO_SCHED = 63,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_MLO_SCHED_STATS =
+            HTT_DBG_EXT_STATS_MLO_SCHED,
 
-    /** HTT_DBG_PDEV_MLO_IPC_STATS
+    /** HTT_DBG_EXT_STATS_PDEV_MLO_IPC
      * PARAMS:
      *    - No Params
      * RESP MSG:
      *    - htt_pdev_mlo_ipc_stats_tlv
      */
-    HTT_DBG_PDEV_MLO_IPC_STATS = 64,
+    HTT_DBG_EXT_STATS_PDEV_MLO_IPC = 64,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_PDEV_MLO_IPC_STATS =
+            HTT_DBG_EXT_STATS_PDEV_MLO_IPC,
 
-    /** HTT_DBG_EXT_PDEV_RTT_RESP_STATS
+    /** HTT_DBG_EXT_STATS_PDEV_RTT_RESP
      * PARAMS:
      *    - No Params
      * RESP MSG:
@@ -647,16 +740,22 @@ enum htt_dbg_ext_stats_type {
      *    -  htt_stats_pdev_rtt_tbr_selfgen_queued_stats_tlv
      *    -  htt_stats_pdev_rtt_tbr_cmd_result_stats_tlv
      */
-    HTT_DBG_EXT_PDEV_RTT_RESP_STATS = 65,
+    HTT_DBG_EXT_STATS_PDEV_RTT_RESP = 65,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_PDEV_RTT_RESP_STATS =
+            HTT_DBG_EXT_STATS_PDEV_RTT_RESP,
 
-    /** HTT_DBG_EXT_PDEV_RTT_INITIATOR_STATS
+    /** HTT_DBG_EXT_STATS_PDEV_RTT_INITIATOR
      * PARAMS:
      *    - No Params
      * RESP MSG:
      *    -  htt_stats_pdev_rtt_init_stats_tlv
      *    -  htt_stats_pdev_rtt_hw_stats_tlv
      */
-    HTT_DBG_EXT_PDEV_RTT_INITIATOR_STATS = 66,
+    HTT_DBG_EXT_STATS_PDEV_RTT_INITIATOR = 66,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_EXT_PDEV_RTT_INITIATOR_STATS =
+            HTT_DBG_EXT_STATS_PDEV_RTT_INITIATOR,
 
     /** HTT_DBG_EXT_STATS_LATENCY_PROF_STATS_LO
      *  PARAMS:
@@ -668,13 +767,56 @@ enum htt_dbg_ext_stats_type {
      */
     HTT_DBG_EXT_STATS_LATENCY_PROF_STATS_LO = 67,
 
-    /** HTT_DBG_GTX_STATS
+    /** HTT_DBG_EXT_STATS_GTX
      * PARAMS:
      *    - No Params
      * RESP MSG:
      *    - htt_pdev_gtx_stats_tlv
      */
-    HTT_DBG_GTX_STATS = 68,
+    HTT_DBG_EXT_STATS_GTX = 68,
+        /* retain the deprecated name as an alias */
+        HTT_DBG_GTX_STATS =
+            HTT_DBG_EXT_STATS_GTX,
+
+    /** HTT_DBG_EXT_STATS_TX_VDEV_NSS
+     * PARAMS:
+     *   - No Params
+     * RESP MSG:
+     *    - htt_stats_tx_vdev_nss_tlv
+     */
+    HTT_DBG_EXT_STATS_TX_VDEV_NSS = 69,
+
+    /** HTT_DBG_EXT_STATS_PDEV_RTT_DELAY
+     * PARAMS:
+     *    - No Params
+     * RESP MSG:
+     *    - htt_stats_pdev_rtt_delay_tlv
+     */
+    HTT_DBG_EXT_STATS_PDEV_RTT_DELAY = 70,
+
+    /** HTT_DBG_EXT_STATS_PDEV_SPECTRAL
+     * PARAMS:
+     *    - No Params
+     * RESP MSG:
+     *    - htt_stats_pdev_spectral_tlv
+     */
+    HTT_DBG_EXT_STATS_PDEV_SPECTRAL = 71,
+
+    /** HTT_DBG_EXT_STATS_PDEV_AOA
+     * PARAMS:
+     *    - No Params
+     * RESP MSG:
+     *    - htt_stats_pdev_aoa_tlv
+     */
+    HTT_DBG_EXT_STATS_PDEV_AOA = 72,
+
+    /** HTT_DBG_EXT_STATS_PDEV_FTM_TPCCAL
+     * PARAMS:
+     *   - No Params
+     * RESP MSG:
+     *    - htt_stats_pdev_ftm_tpccal_tlv
+     */
+    HTT_DBG_EXT_STATS_PDEV_FTM_TPCCAL = 73,
 
 
     /* keep this last */
@@ -1071,6 +1213,13 @@ typedef struct {
     A_UINT32 pdev_up_time_us_high;
     /** count of ofdma sequences flushed */
     A_UINT32 ofdma_seq_flush;
+    /* bytes (size of MPDUs) transmitted */
+    struct {
+        /* lower 32 bits of the tx_bytes value */
+        A_UINT32 low_32;
+        /* upper 32 bits of the tx_bytes value */
+        A_UINT32 high_32;
+    } bytes_sent;
 } htt_stats_tx_pdev_cmn_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_tx_pdev_cmn_tlv htt_tx_pdev_stats_cmn_tlv;
@@ -4641,6 +4790,7 @@ typedef struct {
     A_UINT32 incomplete_llc;
     A_UINT32 eapol_duplicate_m3;
     A_UINT32 eapol_duplicate_m4;
+    A_UINT32 eapol_invalid_mac;
 } htt_stats_tx_de_classify_failed_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_tx_de_classify_failed_tlv htt_tx_de_classify_failed_stats_tlv;
@@ -5405,6 +5555,7 @@ typedef struct {
 #define HTT_TX_PDEV_STATS_NUM_LTF 4
 #define HTT_TX_PDEV_STATS_NUM_11AX_TRIGGER_TYPES 6
 #define HTT_TX_PDEV_STATS_NUM_11BE_TRIGGER_TYPES 6
+#define HTT_TX_VDEV_STATS_NUM_SPATIAL_STREAMS 4
 #define HTT_TX_NUM_OF_SOUNDING_STATS_WORDS \
     (HTT_TX_PDEV_STATS_NUM_BW_COUNTERS * \
      HTT_TX_PDEV_STATS_NUM_AX_MUMIMO_USER_STATS)
@@ -5623,6 +5774,20 @@ typedef struct {
 } htt_stats_tx_pdev_rate_stats_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_tx_pdev_rate_stats_tlv htt_tx_pdev_rate_stats_tlv;
+
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+    A_UINT32 vdev_id; /* which vdev produced these per-Nss tx stats */
+    /* tx_nss:
+     * Count how many MPDUs the vdev has sent using each possible number
+     * of spatial streams:
+     * tx_nss[0] -> number of MPDUs transmitted using Nss=1
+     * tx_nss[1] -> number of MPDUs transmitted using Nss=2
+     * tx_nss[2] -> number of MPDUs transmitted using Nss=3
+     * tx_nss[3] -> number of MPDUs transmitted using Nss=4
+     */
+    A_UINT32 tx_nss[HTT_TX_VDEV_STATS_NUM_SPATIAL_STREAMS];
+} htt_stats_tx_vdev_nss_tlv;
 
 typedef struct {
      /* 11be mode pdev rate stats; placed in a separate TLV to adhere to size restrictions */
@@ -6752,6 +6917,16 @@ typedef struct {
     A_UINT32 rx_flush_cnt;
     /** Num rx recovery */
     A_UINT32 rx_recovery_reset_cnt;
+    /* Num prom filter disable */
+    A_UINT32 rx_lwm_prom_filter_dis;
+    /* Num prom filter enable */
+    A_UINT32 rx_hwm_prom_filter_en;
+    struct {
+        /* lower 32 bits of the rx_bytes value */
+        A_UINT32 low_32;
+        /* upper 32 bits of the rx_bytes value */
+        A_UINT32 high_32;
+    } bytes_received;
 } htt_stats_rx_pdev_fw_stats_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_rx_pdev_fw_stats_tlv htt_rx_pdev_fw_stats_tlv;
@@ -8761,6 +8936,381 @@ typedef struct {
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_pktlog_and_htt_ring_stats_tlv
     htt_pktlog_and_htt_ring_stats_tlv;
+
+/* STATS_TYPE: HTT_DBG_EXT_STATS_PDEV_SPECTRAL
+ * TLV_TAGS:
+ *  HTT_STATS_PDEV_SPECTRAL_TAG
+ */
+#define HTT_STATS_PDEV_SPECTRAL_PCFG_MAX_DET (3)
+#define HTT_STATS_PDEV_SPECTRAL_MAX_PCSS_RING_FOR_IPC (3)
+
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+
+    A_UINT32 dbg_num_buf;
+    A_UINT32 dbg_num_events;
+
+    /* HOST_ring_HI */
+    A_UINT32 host_head_idx;
+    A_UINT32 host_tail_idx;
+    A_UINT32 host_shadow_tail_idx;
+
+    /* SHADOW_ring_HI */
+    A_UINT32 in_ring_head_idx;
+    A_UINT32 in_ring_tail_idx;
+    A_UINT32 in_ring_shadow_tail_idx;
+    A_UINT32 in_ring_shadow_head_idx;
+
+    /* OUT_ring_HI */
+    A_UINT32 out_ring_head_idx;
+    A_UINT32 out_ring_tail_idx;
+    A_UINT32 out_ring_shadow_tail_idx;
+    A_UINT32 out_ring_shadow_head_idx;
+
+    /* IPC_ring MAX_PCSS_RING_FOR_IPC */
+    struct {
+        A_UINT32 head_idx;
+        A_UINT32 tail_idx;
+        A_UINT32 shadow_tail_idx;
+        A_UINT32 shadow_head_idx;
+    } ipc_rings[HTT_STATS_PDEV_SPECTRAL_MAX_PCSS_RING_FOR_IPC];
+
+    /* VREG Counters */
+    struct {
+        A_UINT32 scan_priority;
+        A_UINT32 scan_count;
+        A_UINT32 scan_period;
+        A_UINT32 scan_chn_mask;
+        A_UINT32 scan_ena;
+        A_UINT32 scan_update_mask;
+        A_UINT32 scan_ready_intrpt;
+        A_UINT32 scans_performed;
+        A_UINT32 intrpts_sent;
+        A_UINT32 scan_pending_count;
+        A_UINT32 num_pcss_elem_zero;
+        A_UINT32 num_in_elem_zero;
+        A_UINT32 num_out_elem_zero;
+        A_UINT32 num_elem_moved;
+    } pcfg_stats_det[HTT_STATS_PDEV_SPECTRAL_PCFG_MAX_DET];
+
+    struct {
+        A_UINT32 scan_no_ipc_buf_avail;
+        A_UINT32 agile_scan_no_ipc_buf_avail;
+        A_UINT32 scan_FFT_discard_count;
+        A_UINT32 scan_recapture_FFT_discard_count;
+        A_UINT32 scan_recapture_count;
+    } pcfg_stats_vreg;
+} htt_stats_pdev_spectral_tlv;
+
+/* STATS_TYPE: HTT_DBG_EXT_STATS_PDEV_RTT_DELAY
+ * TLV_TAGS:
+ *  HTT_STATS_PDEV_RTT_DELAY_TAG
+ */
+#define HTT_STATS_PDEV_RTT_DELAY_NUM_INSTANCES (2)
+/* HTT_STATS_PDEV_RTT_DELAY_PKT_BW:
+ *   0 ->  20 MHz
+ *   1 ->  40 MHz
+ *   2 ->  80 MHz
+ *   3 -> 160 MHz
+ *   4 -> 320 MHz
+ *   5: reserved
+ */
+#define HTT_STATS_PDEV_RTT_DELAY_PKT_BW (6)
+/* HTT_STATS_PDEV_RTT_TX_RX_INSTANCES
+ *   idx 0 -> Tx instance
+ *   idx 1 -> Rx instance
+ */
+#define HTT_STATS_PDEV_RTT_TX_RX_INSTANCES (2)
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+
+    struct {
+        /* base_delay: picosecond units */
+        A_INT32 base_delay[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES][HTT_STATS_PDEV_RTT_DELAY_PKT_BW];
+        /* final_delay: picosecond units */
+        A_INT32 final_delay[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES][HTT_STATS_PDEV_RTT_DELAY_PKT_BW];
+        A_INT32 per_chan_bias[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES];
+        A_INT32 off_chan_bias[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES];
+        A_INT32 chan_bw_bias[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES];
+        A_UINT32 rtt_11mc_chain_idx[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES];
+        A_UINT32 chan_freq; /* MHz units */
+        A_UINT32 bandwidth; /* MHz units */
+        A_UINT32 vreg_cache;
+        A_UINT32 rtt_11mc_vreg_set_cnt;
+        A_UINT32 cfr_vreg_set_cnt;
+        A_UINT32 cir_vreg_set_cnt;
+        A_UINT32 digital_block_status;
+    } rtt_delay[HTT_STATS_PDEV_RTT_DELAY_NUM_INSTANCES];
+} htt_stats_pdev_rtt_delay_tlv;
+
+/* STATS_TYPE: HTT_DBG_EXT_STATS_PDEV_AOA
+ * TLV_TAGS:
+ *  HTT_STATS_PDEV_AOA_TAG
+ */
+#define HTT_STATS_PDEV_AOA_MAX_HISTOGRAM (10)
+#define HTT_STATS_PDEV_AOA_MAX_CHAINS (4)
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+
+    A_UINT32 gain_idx[HTT_STATS_PDEV_AOA_MAX_HISTOGRAM];
+    /* gain table element values:
+     *   0 -> default gain
+     *   1 -> low gain
+     *   2 -> very low gain
+     */
+    A_UINT32 gain_table[HTT_STATS_PDEV_AOA_MAX_HISTOGRAM];
+    A_UINT32 phase_calculated[HTT_STATS_PDEV_AOA_MAX_HISTOGRAM][HTT_STATS_PDEV_AOA_MAX_CHAINS];
+    A_INT32 phase_in_degree[HTT_STATS_PDEV_AOA_MAX_HISTOGRAM][HTT_STATS_PDEV_AOA_MAX_CHAINS];
+} htt_stats_pdev_aoa_tlv;
+
+/* RTT VREG MASK */
+#define HTT_STATS_RTT_CHAN_CAPTURE_MASK                       0x00000001
+#define HTT_STATS_RTT_HW_FAC_MASK                             0x00000002
+#define HTT_STATS_RTT_11AZ_DELAYED_FEEDBACK_MASK              0x00000004
+#define HTT_STATS_RTT_11AZ_DROP_FIRST_LMR_MASK                0x00000008
+#define HTT_STATS_RTT_CAPTURE_CFR_MASK                        0x00000010
+#define HTT_STATS_RTT_CAPTURE_CIR_MASK                        0x00000020
+#define HTT_STATS_RTT_DET0_REPETITIVE_CHAN_CAPTURE_EN_MASK    0x00000040
+#define HTT_STATS_RTT_CAPTURE_SPARE_1_MASK                    0x00000080
+#define HTT_STATS_RTT_CAPTURE_SPARE_2_MASK                    0x00000100
+
+/* RTT Digital block compensation mask */
+#define HTT_STATS_RTT_TX_IQCORR_COMP_MASK                     0x00000001
+#define HTT_STATS_RTT_TX_PREEMP_FIR_COMP_MASK                 0x00000002
+#define HTT_STATS_RTT_LPC_FILTER_COMP_MASK                    0x00000004
+#define HTT_STATS_RTT_SM_CFR_COMP_MASK                        0x00000008
+#define HTT_STATS_RTT_CAL_PDC_DIS_COMP_MASK                   0x00000010
+#define HTT_STATS_RTT_CAL_PAPRD_COMP_MASK                     0x00000020
+#define HTT_STATS_RTT_CAL_RXCORR_IQCORR_COMP_MASK             0x00000040
+#define HTT_STATS_RTT_CAL_RXCORR_PHASE_COMP_MASK              0x00000080
+#define HTT_STATS_RTT_PHYRF_ICI_CORR_COMP_MASK                0x00000100
+#define HTT_STATS_RTT_VSRC_PRE_FIR_SEL_COMP_MASK              0x00000200
+#define HTT_STATS_RTT_CVSRC_PRE_FIR_SEL2_COMP_MASK            0x00000400
+#define HTT_STATS_RTT_CAL_ENABLE_GAINDEPCORR_COMP_MASK        0x00000800
+#define HTT_STATS_RTT_CAL_DC_NOTCH_FILTER_COMP_MASK           0x00001000
+#define HTT_STATS_RTT_CAL_DET_PATH_COMP_MASK                  0x00002000
+#define HTT_STATS_RTT_CAL_RXCORR_ADC_DC_COMP_MASK             0x00004000
+#define HTT_STATS_RTT_CAL_RXCORR_ADC_GAIN_COMP_MASK           0x00008000
+#define HTT_STATS_RTT_CAL_SPUR_FILTER_PRI_DET_COMP_MASK       0x00010000
+#define HTT_STATS_RTT_CAL_SPUR_FILTER_PRI_COMP_MASK           0x00020000
+
+
+#define HTT_STATS_TPCCAL_LAST_IDX_M 0x000000ff
+#define HTT_STATS_TPCCAL_LAST_IDX_S 0
+
+#define HTT_STATS_TPCCAL_LAST_IDX_GET(_var) \
+    (((_var) & HTT_STATS_TPCCAL_LAST_IDX_M) >> \
+     HTT_STATS_TPCCAL_LAST_IDX_S)
+
+#define HTT_STATS_TPCCAL_STATS_MEASPWR_M 0x0000ffff
+#define HTT_STATS_TPCCAL_STATS_MEASPWR_S 0
+
+#define HTT_STATS_TPCCAL_STATS_MEASPWR_GET(_var) \
+    (((_var) & HTT_STATS_TPCCAL_STATS_MEASPWR_M) >> \
+     HTT_STATS_TPCCAL_STATS_MEASPWR_S)
+
+#define HTT_STATS_TPCCAL_STATS_PDADC_M 0x000000ff
+#define HTT_STATS_TPCCAL_STATS_PDADC_S 0
+
+#define HTT_STATS_TPCCAL_STATS_PDADC_GET(_var) \
+    (((_var) & HTT_STATS_TPCCAL_STATS_PDADC_M) >> \
+     HTT_STATS_TPCCAL_STATS_PDADC_S)
+
+#define HTT_STATS_TPCCAL_STATS_CHANNEL_M 0x0000ffff
+#define HTT_STATS_TPCCAL_STATS_CHANNEL_S 0
+
+#define HTT_STATS_TPCCAL_STATS_CHANNEL_GET(_var) \
+    (((_var) & HTT_STATS_TPCCAL_STATS_CHANNEL_M) >> \
+     HTT_STATS_TPCCAL_STATS_CHANNEL_S)
+
+#define HTT_STATS_TPCCAL_STATS_CHAIN_M 0x00ff0000
+#define HTT_STATS_TPCCAL_STATS_CHAIN_S 16
+
+#define HTT_STATS_TPCCAL_STATS_CHAIN_GET(_var) \
+    (((_var) & HTT_STATS_TPCCAL_STATS_CHAIN_M) >> \
+     HTT_STATS_TPCCAL_STATS_CHAIN_S)
+
+#define HTT_STATS_TPCCAL_STATS_GAININDEX_M 0xff000000
+#define HTT_STATS_TPCCAL_STATS_GAININDEX_S 24
+
+#define HTT_STATS_TPCCAL_STATS_GAININDEX_GET(_var) \
+    (((_var) & HTT_STATS_TPCCAL_STATS_GAININDEX_M) >> \
+     HTT_STATS_TPCCAL_STATS_GAININDEX_S)
+
+#define HTT_STATS_TPCCAL_POSTPROC_CHANNEL_M 0x0000ffff
+#define HTT_STATS_TPCCAL_POSTPROC_CHANNEL_S 0
+
+#define HTT_STATS_TPCCAL_POSTPROC_CHANNEL_GET(_var) \
+    (((_var) & HTT_STATS_TPCCAL_POSTPROC_CHANNEL_M) >> \
+     HTT_STATS_TPCCAL_POSTPROC_CHANNEL_S)
+
+#define HTT_STATS_TPCCAL_POSTPROC_CHAIN_M 0x00ff0000
+#define HTT_STATS_TPCCAL_POSTPROC_CHAIN_S 16
+
+#define HTT_STATS_TPCCAL_POSTPROC_CHAIN_GET(_var) \
+    (((_var) & HTT_STATS_TPCCAL_POSTPROC_CHAIN_M) >> \
+     HTT_STATS_TPCCAL_POSTPROC_CHAIN_S)
+
+#define HTT_STATS_TPCCAL_POSTPROC_BAND_M 0xff000000
+#define HTT_STATS_TPCCAL_POSTPROC_BAND_S 24
+
+#define HTT_STATS_TPCCAL_POSTPROC_BAND_GET(_var) \
+    (((_var) & HTT_STATS_TPCCAL_POSTPROC_BAND_M) >> \
+     HTT_STATS_TPCCAL_POSTPROC_BAND_S)
+
+#define HTT_STATS_TPCCAL_POSTPROC_NUMGAIN_M 0x000000ff
+#define HTT_STATS_TPCCAL_POSTPROC_NUMGAIN_S 0
+
+#define HTT_STATS_TPCCAL_POSTPROC_NUMGAIN_GET(_var) \
+    (((_var) & HTT_STATS_TPCCAL_POSTPROC_NUMGAIN_M) >> \
+     HTT_STATS_TPCCAL_POSTPROC_NUMGAIN_S)
+
+#define HTT_STATS_TPCCAL_POSTPROC_CALDBSTATUS_M 0x0000ff00
+#define HTT_STATS_TPCCAL_POSTPROC_CALDBSTATUS_S 8
+
+#define HTT_STATS_TPCCAL_POSTPROC_CALDBSTATUS_GET(_var) \
+    (((_var) & HTT_STATS_TPCCAL_POSTPROC_CALDBSTATUS_M) >> \
+     HTT_STATS_TPCCAL_POSTPROC_CALDBSTATUS_S)
+
+/* STATS_TYPE : HTT_DBG_EXT_PDEV_STATS_FTM_TPCCAL
+ * TLV_TAGS:
+ *    - HTT_STATS_PDEV_FTM_TPCCAL_TAG
+ */
+#define HTT_MAX_TPCCAL_STATS 25
+#define HTT_STATS_TPC_CAL_MAX_NUM_POINTS 64
+
+typedef struct {
+    htt_tlv_hdr_t   tlv_hdr;
+
+    /* dword__tpccal_last_idx:
+     * Hold the last updated index for circular buffer of tpccal
+     * BIT [7 : 0]   :- tpcccal_last_idx
+     * BIT [31 : 8]  :- rsvd1
+     */
+    union {
+        A_UINT32 dword__tpccal_last_idx;
+        struct {
+            A_UINT32 tpccal_last_idx:8,
+                     rsvd1:24;
+        };
+    };
+
+    /*
+     * Below tpccal_stats struct will have latest values of tpccal data
+     * of array size HTT_MAX_TPCCAL_STATS.
+     * If there have been fewer than HTT_MAX_TPCCAL_STATS TPC calibrations,
+     * the unused elements will be filled with 0x0 values.
+     */
+    struct {
+       /*
+        * dword__measPwr:
+        * BIT [15 : 0]  :- measPwr
+        * BIT [31 : 16] :- rsvd2
+        */
+        union {
+            A_INT32 dword__measPwr;
+            struct {
+                A_INT32 measPwr:16, /* dBm units */
+                         rsvd2:16;
+            };
+        };
+
+       /*
+        * dword__channel_chain_gainIndex:
+        * hold channel chain and gain index values
+        * BIT [15 : 0]  :- channel
+        * BIT [23 : 16] :- chain
+        * BIT [24 : 31] :- gainIndex
+        */
+        union {
+            A_UINT32 dword__channel_chain_gainIndex;
+            struct {
+                A_UINT32 channel:16, /* MHz units */
+                         chain:8,
+                         gainIndex:8;
+            };
+        };
+
+       /*
+        * dword__pdadc:
+        * BIT [7 : 0]  :- pdadc
+        * BIT [31 : 8] :- rsvd3
+        */
+        union {
+            A_UINT32 dword__pdadc;
+            struct {
+                A_UINT32 pdadc:8,
+                         rsvd3:24;
+            };
+        };
+    } tpccal_stats[HTT_MAX_TPCCAL_STATS];
+
+    /*
+     * Below tpccal_stats_postproc struct will have required tpccal data
+     * for failures during postprocessing.
+     */
+    struct {
+       /*
+        * calStatus can be intrepreted with the below values:
+        *   TPCCAL_CALDATA                                 (1 << 0)
+        *   TPCCAL_CALINFO                                 (1 << 1)
+        *   TPCCAL_CALERROR                                (1 << 2)
+        *   bits 6:4 - reserved
+        *   TPCCAL_DONE_MASK                               (1 << 7)
+        *   bits 15:8 - reserved
+        *   TPCCALRSP_MISCFLAGS_CALERROR_GLUTS_NOT_FILLED  (1 << 16)
+        *   TPCCALRSP_MISCFLAGS_CALERROR_PLUT_NON_LINEAR   (1 << 17)
+        *   TPCCALRSP_MISCFLAGS_CALERROR_ATTEMPTS_EXCEEDED (1 << 18)
+        *   bits 31:19 - reserved
+        */
+        A_UINT32 calStatus;
+        /*
+         * The numgain field specifies how many of the
+         * HTT_STATS_TPC_CAL_MAX_NUM_POINTS elements in the below arrays
+         * contain valid data.
+         */
+        A_INT32  measPwr[HTT_STATS_TPC_CAL_MAX_NUM_POINTS]; /* dBm units */
+        A_UINT32 pdadc[HTT_STATS_TPC_CAL_MAX_NUM_POINTS];
+        A_UINT32 gainIndex[HTT_STATS_TPC_CAL_MAX_NUM_POINTS];
+
+        /*
+         * dword__channel_chain_band:
+         * channel, chain, and band values
+         * BIT [15 : 0]  :- channel
+         * BIT [23 : 16] :- chain
+         * BIT [31 : 24] :- band
+         */
+        union {
+            A_UINT32 dword__channel_chain_band;
+            struct {
+                A_UINT32 channel:16, /* MHz units */
+                         chain:8,
+                         band:8; /* 0: 2GHz, 1: 5GHz, 2: 6GHz */
+            };
+        };
+
+       /*
+        * dword__numgain_caldbStatus:
+        * numgain and caldbstatus
+        * BIT [7 : 0]  :- numgain
+        * BIT [15 : 8] :- caldbstatus
+        * BIT [31 : 16] :- rsvd4
+        *
+        * caldbStatus can be interpreted as below
+        *  CALDB_COMPLETED = 0
+        *  CALDB_SKIPPED = 1
+        *  CALDB_INPROGRESS = 2
+        */
+        union {
+            A_UINT32 dword__numgain_caldbStatus;
+            struct {
+                A_UINT32 numgain:8,
+                         caldbStatus:8,
+                         rsvd4:16;
+            };
+        };
+    } tpccal_stats_postproc;
+} htt_stats_pdev_ftm_tpccal_tlv;
 
 #define HTT_DLPAGER_STATS_MAX_HIST            10
 #define HTT_DLPAGER_ASYNC_LOCKED_PAGE_COUNT_M 0x000000FF
@@ -10982,8 +11532,12 @@ typedef struct {
      *  avg_chan_acc_lat_hist[6]: 1000 us <= channel access latency < 1500 us
      *  avg_chan_acc_lat_hist[7]: 1500 us <= channel access latency < 2000 us
      *  avg_chan_acc_lat_hist[8]: channel access latency is >= 2000 us
-    */
+     */
     A_UINT32 avg_chan_acc_lat_hist[HTT_MAX_NUM_CHAN_ACC_LAT_INTR];
+    /** Num of instances where OFDMA NBinWB is selected over MU-MIMO */
+    A_UINT32 dl_ofdma_nbinwb_selected_over_mu_mimo[HTT_NUM_AC_WMM];
+    /** Num of instances where OFDMA NBinWB is selected in standalone */
+    A_UINT32 dl_ofdma_nbinwb_selected_standalone[HTT_NUM_AC_WMM];
 } htt_stats_pdev_sched_algo_ofdma_stats_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_pdev_sched_algo_ofdma_stats_tlv

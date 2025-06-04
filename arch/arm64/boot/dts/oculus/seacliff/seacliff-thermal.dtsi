@@ -118,8 +118,9 @@
 	};
 
 	cpu-1-0-limit {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
 		thermal-sensors = <&tsens0 7>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
@@ -139,8 +140,9 @@
 	};
 
 	cpu-1-1-limit {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
 		thermal-sensors = <&tsens0 8>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
@@ -160,8 +162,9 @@
 	};
 
 	cpu-1-2-limit {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
 		thermal-sensors = <&tsens0 9>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
@@ -181,8 +184,9 @@
 	};
 
 	cpu-1-3-limit {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
 		thermal-sensors = <&tsens0 10>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
@@ -202,8 +206,9 @@
 	};
 
 	cpu-1-4-limit {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
 		thermal-sensors = <&tsens0 11>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
@@ -223,8 +228,9 @@
 	};
 
 	cpu-1-5-limit {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
 		thermal-sensors = <&tsens0 12>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
@@ -244,8 +250,9 @@
 	};
 
 	cpu-1-6-limit {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
 		thermal-sensors = <&tsens0 13>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;
@@ -265,8 +272,9 @@
 	};
 
 	cpu-1-7-limit {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
 		thermal-sensors = <&tsens0 14>;
 		thermal-governor = "single_step";
 		wake-capable-sensor;

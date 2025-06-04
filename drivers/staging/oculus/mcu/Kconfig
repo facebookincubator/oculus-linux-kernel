@@ -104,6 +104,13 @@ config SYNCBOSS_NSYNC
 	help
 	  Syncboss Nsync event notification driver
 
+config SYNCBOSS_TIMESYNC
+	tristate "Syncboss Timesync Interface Support"
+	depends on SYNCBOSS_SPI
+	default n
+	help
+	  Syncboss Timesync event notification driver.
+
 config SYNCBOSS_MISCFIFO
 	tristate "Syncboss MiscFIFO Interface Support"
 	depends on SYNCBOSS_SPI && MISCFIFO

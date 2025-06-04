@@ -2814,6 +2814,18 @@ int mapping_tagged(struct address_space *mapping, int tag)
 }
 EXPORT_SYMBOL(mapping_tagged);
 
+/*
+ * Wait for a page to complete writeback
+ */
+void wait_on_page_writeback(struct page *page)
+{
+	while (PageWriteback(page)) {
+		trace_wait_on_page_writeback(page, page_mapping(page));
+		wait_on_page_bit(page, PG_writeback);
+	}
+}
+EXPORT_SYMBOL_GPL(wait_on_page_writeback);
+
 /**
  * wait_for_stable_page() - wait for writeback to finish, if necessary.
  * @page:	The page to wait on.
