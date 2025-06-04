@@ -283,6 +283,10 @@ static int set_rpm_locked(struct pwm_fan_ctx *ctx, int32_t rpm, bool skip_ramp)
 	int32_t prev_target_rpm_value = ctx->target_rpm_value;
 	int32_t prev_rpm_value = ctx->rpm_value;
 
+	if (rpm > ctx->max_rpm) {
+		rpm = ctx->max_rpm;
+	}
+
 	ctx->target_rpm_value = rpm;
 
 	if (rpm == 0) {

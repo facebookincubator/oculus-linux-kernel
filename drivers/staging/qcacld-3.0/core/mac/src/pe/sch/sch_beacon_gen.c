@@ -468,10 +468,12 @@ sch_set_fixed_beacon_fields(struct mac_context *mac_ctx, struct pe_session *sess
 		/*
 		populate_dot11f_vht_ext_bss_load( mac_ctx, &bcn2.VHTExtBssLoad);
 		*/
-		populate_dot11f_vht_tx_power_env(mac_ctx,
-						 &bcn_2->vht_transmit_power_env,
-						 session->ch_width,
-						 session->curr_op_freq);
+		populate_dot11f_tx_power_env(mac_ctx,
+					     &bcn_2->transmit_power_env[0],
+					     session->ch_width,
+					     session->curr_op_freq,
+					     &bcn_2->num_transmit_power_env,
+					     false);
 		populate_dot11f_qcn_ie(mac_ctx, &bcn_2->qcn_ie,
 				       QCN_IE_ATTR_ID_ALL);
 	}
@@ -735,6 +737,9 @@ void lim_update_probe_rsp_template_ie_bitmap_beacon2(struct mac_context *mac,
 {
 	/* IBSS parameter set - will not be present in probe response tx by AP */
 	/* country */
+	uint8_t i;
+	uint16_t num_tpe = beacon2->num_transmit_power_env;
+
 	if (beacon2->Country.present) {
 		set_probe_rsp_ie_bitmap(DefProbeRspIeBitmap, WLAN_ELEMID_COUNTRY);
 		qdf_mem_copy((void *)&prb_rsp->Country,
@@ -861,6 +866,17 @@ void lim_update_probe_rsp_template_ie_bitmap_beacon2(struct mac_context *mac,
 			     (void *)&beacon2->VHTOperation,
 			     sizeof(beacon2->VHTOperation));
 	}
+
+	for (i = 0; i < num_tpe; i++) {
+		if (beacon2->transmit_power_env[i].present) {
+			set_probe_rsp_ie_bitmap(DefProbeRspIeBitmap,
+						WLAN_ELEMID_VHT_TX_PWR_ENVLP);
+			qdf_mem_copy((void *)&prb_rsp->transmit_power_env[i],
+				     (void *)&beacon2->transmit_power_env[i],
+				     sizeof(beacon2->transmit_power_env[i]));
+		}
+	}
+
 	if (beacon2->VHTExtBssLoad.present) {
 		set_probe_rsp_ie_bitmap(DefProbeRspIeBitmap,
 					WLAN_ELEMID_EXT_BSS_LOAD);

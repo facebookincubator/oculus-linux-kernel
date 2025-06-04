@@ -16650,17 +16650,6 @@ QDF_STATUS csr_send_join_req_msg(struct mac_context *mac, uint32_t sessionId,
 		csr_join_req->txLdpcIniFeatureEnabled =
 			(uint8_t)mac->mlme_cfg->ht_caps.tx_ldpc_enable;
 
-		if ((csr_is11h_supported(mac)) &&
-			(WLAN_REG_IS_5GHZ_CH_FREQ(bss_freq)) &&
-			(pIes->Country.present) &&
-			(!mac->mlme_cfg->sap_cfg.country_code_priority)) {
-			csr_save_to_channel_power2_g_5_g(mac,
-				pIes->Country.num_triplets *
-				sizeof(tSirMacChanInfo),
-				(tSirMacChanInfo *)
-				(&pIes->Country.triplets[0]));
-			csr_apply_power2_current(mac);
-		}
 		/*
 		 * If RX LDPC has been disabled for 2.4GHz channels and enabled
 		 * for 5Ghz for STA like persona then here is how to handle
