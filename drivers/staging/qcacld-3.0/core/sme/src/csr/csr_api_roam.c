@@ -3328,6 +3328,10 @@ void csr_roam_joined_state_msg_processor(struct mac_context *mac, void *msg_buf)
 				eCSR_ASSOC_STATE_TYPE_INFRA_CONNECTED;
 			roam_info->fReassocReq =
 				pUpperLayerAssocCnf->reassocReq;
+			roam_info->vht_mcs_10_11_supp =
+				pUpperLayerAssocCnf->vht_mcs_10_11_supp;
+			roam_info->he_mcs_12_13_map =
+				pUpperLayerAssocCnf->he_mcs_12_13_map;
 			status = csr_roam_call_callback(mac, sessionId,
 						       roam_info,
 						       eCSR_ROAM_INFRA_IND,
@@ -3859,7 +3863,8 @@ csr_send_assoc_ind_to_upper_layer_cnf_msg(struct mac_context *mac,
 			sme_err("Assoc Ie length is too long");
 		}
 	}
-
+	cnf->vht_mcs_10_11_supp = ind->vht_mcs_10_11_supp;
+	cnf->he_mcs_12_13_map = ind->he_mcs_12_13_map;
 	msg.type = eWNI_SME_UPPER_LAYER_ASSOC_CNF;
 	msg.bodyptr = cnf;
 	sys_process_mmh_msg(mac, &msg);

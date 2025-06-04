@@ -822,6 +822,8 @@ enum bss_stop_reason {
  * @nss: number of streams
  * @mcs: mcs index for HT/VHT mode
  * @rate_flags: rate flags for last tx/rx
+ * @gi: Guard interval used
+ * @dcm: dual carrier modulation enabled
  *
  * rate info in HDD
  */
@@ -831,6 +833,8 @@ struct hdd_rate_info {
 	uint8_t nss;
 	uint8_t mcs;
 	enum tx_rate_info rate_flags;
+	enum txrate_gi gi;
+	uint8_t dcm;
 };
 
 enum hdd_work_status {

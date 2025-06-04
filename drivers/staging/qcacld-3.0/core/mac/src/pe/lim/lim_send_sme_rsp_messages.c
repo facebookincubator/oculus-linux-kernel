@@ -156,7 +156,10 @@ lim_get_he_rate_info_flag(tpDphHashNode sta_ds)
 	if (peer_he->chan_width_3 || peer_he->chan_width_2)
 		return TX_RATE_HE160;
 	else if (peer_he->chan_width_1)
-		return TX_RATE_HE80;
+		if (sta_ds->ch_width == CH_WIDTH_80MHZ)
+			return TX_RATE_HE80;
+		else
+			return TX_RATE_HE40;
 	else if (peer_he->chan_width_0)
 		return TX_RATE_HE40;
 	else
@@ -232,16 +235,13 @@ uint32_t lim_get_max_rate_flags(struct mac_context *mac_ctx, tpDphHashNode sta_d
 		} else if (lim_is_sta_he_capable(sta_ds)) {
 			rate_flags |= lim_get_he_rate_info_flag(sta_ds);
 		} else if (sta_ds->mlmStaContext.vhtCapability) {
-			if (WNI_CFG_VHT_CHANNEL_WIDTH_160MHZ ==
-			   sta_ds->vhtSupportedChannelWidthSet ||
-			   WNI_CFG_VHT_CHANNEL_WIDTH_80_PLUS_80MHZ ==
-			   sta_ds->vhtSupportedChannelWidthSet) {
+			if (CH_WIDTH_160MHZ == sta_ds->ch_width ||
+			    CH_WIDTH_80P80MHZ == sta_ds->ch_width) {
 				rate_flags |= TX_RATE_VHT160;
-			} else if (WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ ==
-				sta_ds->vhtSupportedChannelWidthSet) {
+			} else if (CH_WIDTH_80MHZ == sta_ds->ch_width) {
 				rate_flags |= TX_RATE_VHT80;
-			} else if (WNI_CFG_VHT_CHANNEL_WIDTH_20_40MHZ ==
-					sta_ds->vhtSupportedChannelWidthSet) {
+			} else if (CH_WIDTH_40MHZ == sta_ds->ch_width ||
+				   CH_WIDTH_20MHZ == sta_ds->ch_width) {
 				if (sta_ds->htSupportedChannelWidthSet)
 					rate_flags |= TX_RATE_VHT40;
 				else

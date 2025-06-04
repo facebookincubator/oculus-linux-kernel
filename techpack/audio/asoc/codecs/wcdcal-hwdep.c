@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015, 2017-2018, 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 #include <linux/kernel.h>
@@ -60,14 +61,14 @@ static int wcdcal_hwdep_ioctl_shared(struct snd_hwdep *hw,
 	struct firmware_cal **fw = fw_data->fw;
 	void *data;
 
-	if (!test_bit(fw_user.cal_type, fw_data->cal_bit)) {
-		pr_err("%s: codec didn't set this %d!!\n",
-				__func__, fw_user.cal_type);
-		return -EFAULT;
-	}
 	if (fw_user.cal_type >= WCD9XXX_MAX_CAL ||
 		fw_user.cal_type < WCD9XXX_MIN_CAL) {
 		pr_err("%s: wrong cal type sent %d\n",
+				__func__, fw_user.cal_type);
+		return -EFAULT;
+	}
+	if (!test_bit(fw_user.cal_type, fw_data->cal_bit)) {
+		pr_err("%s: codec didn't set this %d!!\n",
 				__func__, fw_user.cal_type);
 		return -EFAULT;
 	}

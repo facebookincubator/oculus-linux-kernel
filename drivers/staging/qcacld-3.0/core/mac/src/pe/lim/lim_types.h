@@ -1838,4 +1838,13 @@ void lim_process_sta_add_bss_rsp_pre_assoc(struct mac_context *mac_ctx,
 					   struct bss_params *add_bss_params,
 					   struct pe_session *session_entry,
 					   QDF_STATUS status);
+
+/**
+ *lim_convert_channel_width_enum() - map between two channel width enums
+ *@ch_width: channel width of enum type phy_ch_width
+ *
+ *Return: channel width of enum type tSirMacHTChannelWidth
+ */
+tSirMacHTChannelWidth
+lim_convert_channel_width_enum(enum phy_ch_width ch_width);
 #endif /* __LIM_TYPES_H */

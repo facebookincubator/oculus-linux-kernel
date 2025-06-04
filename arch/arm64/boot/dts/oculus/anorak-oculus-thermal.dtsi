@@ -1,0 +1,165 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&thermal_zones {
+	cpuss-0 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpuss-1 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-0-0-0 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-0-0-1 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-0-1-0 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-0-1-1 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-1-0-0 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-1-0-1 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-1-1-0 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-1-1-1 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-1-2-0 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-1-2-1 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-1-3-0 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	cpu-1-3-1 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	ddr {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	aoss-1 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	nspss-0 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	nspss-1 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	nspss-2 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	gpuss-0 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	gpuss-1 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	gpuss-2 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	gpuss-3 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	gpuss-4 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	gpuss-5 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	gpuss-6 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+
+	gpuss-7 {
+		polling-delay-passive = <100>;
+		polling-delay = <100>;
+		average-polls = <50>;
+	};
+};

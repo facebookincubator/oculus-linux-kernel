@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -599,6 +599,8 @@ struct csr_roam_info {
 #ifdef WLAN_FEATURE_SAP_ACS_OPTIMIZE
 	uint32_t chan_info_freq;
 #endif
+	uint8_t vht_mcs_10_11_supp;
+	uint16_t he_mcs_12_13_map;
 };
 
 typedef struct sSirSmeAssocIndToUpperLayerCnf {
@@ -645,6 +647,8 @@ typedef struct sSirSmeAssocIndToUpperLayerCnf {
 #ifdef WLAN_FEATURE_11BE_MLO
 	tSirMacAddr peer_mld_addr;
 #endif
+	uint8_t vht_mcs_10_11_supp;
+	uint16_t he_mcs_12_13_map;
 } tSirSmeAssocIndToUpperLayerCnf, *tpSirSmeAssocIndToUpperLayerCnf;
 
 typedef struct tagCsrSummaryStatsInfo {

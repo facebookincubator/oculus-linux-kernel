@@ -38,6 +38,11 @@ DECLARE_HOOK(android_vh_handle_tlb_conf,
 	TP_PROTO(unsigned long addr, unsigned int esr, int *ret),
 	TP_ARGS(addr, esr, ret));
 
+DECLARE_HOOK(android_vh_try_fixup_sea,
+	TP_PROTO(unsigned long addr, unsigned long esr, struct pt_regs *regs,
+		 bool *can_fixup),
+	TP_ARGS(addr, esr, regs, can_fixup));
+
 /* macro versions of hooks are no longer required */
 
 #endif /* _TRACE_HOOK_FAULT_H */

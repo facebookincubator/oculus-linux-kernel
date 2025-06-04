@@ -15,6 +15,10 @@
 /delete-node/ &pcie1;
 /delete-node/ &pcie2;
 
+&aliases {
+	i2c0 = &qupv3_se13_i2c;
+};
+
 &fan_pwm_default {
 	pins = "gpio8";
 };

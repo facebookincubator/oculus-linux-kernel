@@ -109,7 +109,7 @@ static int a5xx_counter_inline_enable(struct adreno_device *adreno_dev,
 		if (ret == -EAGAIN)
 			ret = 0;
 		else
-			dev_err(device->dev,
+			dev_err_ratelimited(device->dev,
 				     "Perfcounter %s/%u/%u start via commands failed %d\n",
 				     group->name, counter, countable, ret);
 	}

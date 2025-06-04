@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -248,6 +248,8 @@ char *sta_info_string_from_dbgid(wlan_sta_info_dbgid id);
  * @tx_pkt_per_mcs: Number of tx rate counts for each MCS
  * @rx_pkt_per_mcs: Number of rx rate counts for each MCS
  * @vlan_id: VLAN id
+ * @vht_mcs_10_11_supp: VHT MCS 10 and 11 supported
+ * @he_mcs_12_13_map: HE MCS 12 and 13 supported
  */
 struct hdd_station_info {
 	qdf_list_node_t sta_node;
@@ -318,6 +320,8 @@ struct hdd_station_info {
 	uint32_t *tx_pkt_per_mcs;
 	uint32_t *rx_pkt_per_mcs;
 	uint16_t vlan_id;
+	uint8_t vht_mcs_10_11_supp;
+	uint16_t he_mcs_12_13_map;
 };
 
 /**

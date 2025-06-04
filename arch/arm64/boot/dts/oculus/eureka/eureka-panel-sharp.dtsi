@@ -31,6 +31,7 @@
 		qcom,mdss-dsi-panel-framerate = <90>; // default initial fps
 		qcom,mdss-dsi-lp11-init;
 		qcom,mdss-dsi-tx-eot-append;
+		qcom,mdss-dsi-panel-orientation = "180";
 		qcom,cmd-sync-wait-broadcast;
 		meta,cont-splash-handoff;
 
