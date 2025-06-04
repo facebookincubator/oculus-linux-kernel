@@ -33,6 +33,7 @@
 		qcom,mdss-dsi-max-refresh-rate = <120>;
 		qcom,mdss-dsi-lp11-init;
 		qcom,mdss-dsi-tx-eot-append;
+		qcom,mdss-dsi-panel-orientation = "180";
 		qcom,cmd-sync-wait-broadcast;
 		meta,cont-splash-handoff;
 

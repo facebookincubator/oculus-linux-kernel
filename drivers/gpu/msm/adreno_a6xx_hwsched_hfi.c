@@ -1424,7 +1424,7 @@ int a6xx_hwsched_counter_inline_enable(struct adreno_device *adreno_dev,
 	}
 
 err:
-	dev_err(device->dev, "Perfcounter %s/%u/%u start via commands failed\n",
+	dev_err_ratelimited(device->dev, "Perfcounter %s/%u/%u start via commands failed\n",
 			group->name, counter, countable);
 	return ret;
 }

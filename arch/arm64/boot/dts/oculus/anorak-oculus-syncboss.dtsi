@@ -44,7 +44,20 @@
 		};
 	};
 
-	syncboss_nsync: syncboss_nsync {
+	syncboss_timesync_active: syncboss_timesync_active {
+		mux {
+			pins = "gpio125";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio125";
+			drive-strength = <6>;
+			bias-disable;
+			output-high;
+		};
+	};
+
+	syncboss_timesync_default: syncboss_timesync_default {
 		mux {
 			pins = "gpio125";
 			function = "gpio";
@@ -199,15 +212,13 @@
 			meta,syncboss-has-prox;
 		};
 
-		nsync: nsync@0 {
-			compatible = "meta,syncboss-nsync", "meta,syncboss-consumer";
+		timesync@0 {
+			compatible = "meta,syncboss-timesync", "meta,syncboss-consumer";
 
-			pinctrl-names = "default";
-			pinctrl-0 = <&syncboss_nsync>;
-
-			interrupt-parent = <&tlmm>;
-			interrupts = <125 IRQ_TYPE_EDGE_RISING>;
-			interrupt-names = "nsync";
+			pinctrl-names = "default", "active";
+			pinctrl-0 = <&syncboss_timesync_default>;
+			pinctrl-1 = <&syncboss_timesync_active>;
+			timesync-gpio = <&tlmm 125 0>;
 		};
 
 		directchannel@0 {

@@ -6902,13 +6902,13 @@ int dsi_panel_control_ddic_cac(struct dsi_panel *panel, bool enable)
 
 	mutex_lock(&panel->panel_lock);
 	if (!panel->panel_initialized) {
-		DSI_WARN("DDIC CAC: Failed to set cac flag, panel not initilized\n");
+		DSI_WARN("[%s] failed to set cac flag, panel not initialized\n", panel->name);
 		rc = -EINVAL;
 		goto error;
 	}
 	dsi = &panel->mipi_device;
 	if (!dsi) {
-		DSI_ERR("DDIC CAC: Failed to set cac flag, no dsi\n");
+		DSI_ERR("[%s] failed to set cac flag, no dsi\n", panel->name);
 		rc = -EINVAL;
 		goto error;
 	}
@@ -6920,10 +6920,8 @@ int dsi_panel_control_ddic_cac(struct dsi_panel *panel, bool enable)
 	else
 		rc = mipi_dsi_dcs_write_queue(dsi, cac_disable_command, sizeof(cac_disable_command), 0, 0);
 
-	DSI_DEBUG("DDIC CAC: Commands excuted. Passed flag: %d Status=%d\n", enable, rc);
-
 	if (rc)
-		DSI_ERR("DDIC CAC: [%s] Failed to set %d flag, rc=%d\n", panel->name, enable, rc);
+		DSI_ERR("[%s] failed to queue dcs commands for cac, rc=%d\n", panel->name, rc);
 
 error:
 	mutex_unlock(&panel->panel_lock);

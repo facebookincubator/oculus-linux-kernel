@@ -19,6 +19,7 @@
 
 #include "anorak-oculus-audio.dtsi"
 #include "anorak-oculus-syncboss.dtsi"
+#include "anorak-oculus-thermal.dtsi"
 
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
@@ -632,6 +633,7 @@
 
 	dwc3@a600000 {
 		qcom,iommu-faults = "non-fatal";
+		maximum-speed = "super-speed";
 		snps,usb2-lpm-disable;
 		snps,usb2-gadget-lpm-disable;
 	};

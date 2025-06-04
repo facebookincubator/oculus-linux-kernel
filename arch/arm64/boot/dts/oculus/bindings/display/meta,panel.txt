@@ -1,0 +1,17 @@
+Meta Panel Properties
+
+- meta,blu-default-duty-cycle:  Specifies the default backlight duty cycle used by backlight
+                                controllers.
+- meta,cont-splash-handoff:     Specifies if continuous splash handoff is enabled to trigger
+                                additional initialization such as running pre-on again in kernel.
+- meta,ddic-family:             Specifies the display ddic family.
+- meta,max-blu-pulse-overlap-us: Specifies the maximum overlap of backlight flash and active
+                                scan out that achieves acceptable ghosting.
+- meta,max-blu-stereo-offset-us: Specifies the maximum offset between left and right backlight
+                                flashes.
+- meta,response-time-curve:     Specifies points of a temperature to settling time curve used
+                                to determine the settling target from the temp sensor input.
+- meta,te-active-low:           Specifies if the tear effect gpio is active low for tracing.
+- meta,te-gpio:                 Specifies the tear effect gpio.
+- meta,thermal-zone:            Specifies the thermal zone dtsi node to be used for
+                                temperature dependent backlight control.

@@ -1,0 +1,12 @@
+Meta DSI Controller Properties
+
+- meta,disable-fifo:            Boolean property that disables the ddic fifo buffer.
+- meta,fifo-trim-lines:         Specifies the default number of external trim lines.
+- meta,internal-1h-time-ns:     Specifies a panel specific internal TFT 1h time that can be used
+                                to calculate backlight and scanline timing.
+- meta,internal-vactive:        Specifies a panel specific internal TFT vactive that can be used
+                                to calculate backlight and scanline timing.
+- meta,mdss-dsi-post-primary-panel-on-command: Specifies a command set of DSI DCS commands to be
+                                sent to DSI 0 on after post on commands are transmitted.
+- meta,mdss-dsi-post-secondary-panel-on-command: Specifies a command set of DSI DCS commands to be
+                                sent to DSI 1 on after post on commands are transmitted.
