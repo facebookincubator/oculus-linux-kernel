@@ -6,6 +6,7 @@
 
 &qupv3_se13_i2c {
 	status = "ok";
+	qcom,clk-freq-out = <100000>;
 	as5510-driver {
 		reg = <0x56>;
 		compatible = "ams,as5510";

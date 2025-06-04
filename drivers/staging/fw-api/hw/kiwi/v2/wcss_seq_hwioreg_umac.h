@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -224,6 +224,11 @@
 #define HWIO_REO_R0_REO2SW1_RING_BASE_MSB_RING_SIZE_BMSK                                                    0xfffff00
 #define HWIO_REO_R0_REO2SW1_RING_BASE_MSB_RING_SIZE_SHFT                                                            8
 #define HWIO_REO_R0_REO2SW1_RING_ID_ADDR(x)                                                                ((x) + 0x4ec)
+#define HWIO_REO_R0_REO2SW1_RING_STATUS_ADDR(x)                                                            ((x) + 0x4f0)
+#define HWIO_REO_R0_REO2SW1_RING_STATUS_NUM_AVAIL_WORDS_BMSK                                                0xffff0000
+#define HWIO_REO_R0_REO2SW1_RING_STATUS_NUM_AVAIL_WORDS_SHFT                                                        16
+#define HWIO_REO_R0_REO2SW1_RING_STATUS_NUM_VALID_WORDS_BMSK                                                    0xffff
+#define HWIO_REO_R0_REO2SW1_RING_STATUS_NUM_VALID_WORDS_SHFT                                                         0
 #define HWIO_REO_R0_REO2SW1_RING_MISC_ADDR(x)                                                              ((x) + 0x4f4)
 #define HWIO_REO_R0_REO2SW1_RING_HP_ADDR_LSB_ADDR(x)                                                       ((x) + 0x4f8)
 #define HWIO_REO_R0_REO2SW1_RING_HP_ADDR_MSB_ADDR(x)                                                       ((x) + 0x4fc)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <asm/dma-iommu.h>
@@ -477,7 +478,6 @@ static int ngd_check_hw_status(struct msm_slim_ctrl *dev)
 
 static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 {
-	DECLARE_COMPLETION_ONSTACK(done);
 	DECLARE_COMPLETION_ONSTACK(tx_sent);
 
 	struct msm_slim_ctrl *dev = slim_get_ctrldata(ctrl);
@@ -490,6 +490,8 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 	u8 wbuf[SLIM_MSGQ_BUF_LEN];
 	bool report_sat = false;
 	bool sync_wr = true;
+
+	reinit_completion(&dev->xfer_done);
 
 	if (txn->mc & SLIM_MSG_CLK_PAUSE_SEQ_FLG)
 		return -EPROTONOSUPPORT;
@@ -649,7 +651,9 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 		wbuf[i++] = txn->wbuf[0];
 		if (txn->mc != SLIM_USR_MC_DISCONNECT_PORT)
 			wbuf[i++] = txn->wbuf[1];
-		ret = ngd_get_tid(ctrl, txn, &wbuf[i++], &done);
+
+		txn->comp = &dev->xfer_done;
+		ret = ngd_get_tid(ctrl, txn, &wbuf[i++], &dev->xfer_done);
 		if (ret) {
 			SLIM_ERR(dev, "TID for connect/disconnect fail:%d\n",
 					ret);
@@ -2015,6 +2019,7 @@ static int ngd_slim_probe(struct platform_device *pdev)
 	init_completion(&dev->reconf);
 	init_completion(&dev->ctrl_up);
 	init_completion(&dev->qmi_up);
+	init_completion(&dev->xfer_done);
 	mutex_init(&dev->tx_lock);
 	mutex_init(&dev->ssr_lock);
 	spin_lock_init(&dev->tx_buf_lock);

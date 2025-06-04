@@ -129,8 +129,6 @@ struct ffs_ep {
 	struct usb_endpoint_descriptor	*descs[3];
 
 	u8				num;
-
-	int				status;	/* P: epfile->mutex */
 };
 
 struct ffs_epfile {
@@ -233,6 +231,9 @@ struct ffs_io_data {
 	struct usb_request *req;
 
 	struct ffs_data *ffs;
+
+	int status;
+	struct completion done;
 };
 
 struct ffs_desc_helper {
@@ -759,12 +760,15 @@ static const struct file_operations ffs_ep0_operations = {
 
 static void ffs_epfile_io_complete(struct usb_ep *_ep, struct usb_request *req)
 {
+	struct ffs_io_data *io_data = req->context;
+
 	ENTER();
-	if (likely(req->context)) {
-		struct ffs_ep *ep = _ep->driver_data;
-		ep->status = req->status ? req->status : req->actual;
-		complete(req->context);
-	}
+	if (likely(req->status))
+		io_data->status = req->status;
+	else
+		io_data->status = req->actual;
+
+	complete(&io_data->done);
 }
 
 static ssize_t ffs_copy_to_iter(void *data, int data_len, struct iov_iter *iter)
@@ -815,9 +819,9 @@ static void ffs_user_copy_worker(struct work_struct *work)
 	struct ffs_io_data *io_data = container_of(work, struct ffs_io_data,
 						   work);
 	struct ffs_data *ffs = io_data->ffs;
-	int ret = io_data->req->status ? io_data->req->status :
-					 io_data->req->actual;
+	int ret = io_data->status;
 	bool kiocb_has_eventfd = io_data->kiocb->ki_flags & IOCB_EVENTFD;
+	unsigned long flags;
 
 	ffs_log("enter: ret %d for %s", ret, io_data->read ? "read" : "write");
 
@@ -836,7 +840,10 @@ static void ffs_user_copy_worker(struct work_struct *work)
 	if (io_data->ffs->ffs_eventfd && !kiocb_has_eventfd)
 		eventfd_signal(io_data->ffs->ffs_eventfd, 1);
 
+	spin_lock_irqsave(&io_data->ffs->eps_lock, flags);
 	usb_ep_free_request(io_data->ep, io_data->req);
+	io_data->req = NULL;
+	spin_unlock_irqrestore(&io_data->ffs->eps_lock, flags);
 
 	if (io_data->read)
 		kfree(io_data->to_free);
@@ -855,6 +862,8 @@ static void ffs_epfile_async_io_complete(struct usb_ep *_ep,
 	ENTER();
 
 	ffs_log("enter");
+
+	io_data->status = req->status ? req->status : req->actual;
 
 	INIT_WORK(&io_data->work, ffs_user_copy_worker);
 	queue_work(ffs->io_completion_wq, &io_data->work);
@@ -1071,14 +1080,14 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 		WARN(1, "%s: data_len == -EINVAL\n", __func__);
 		ret = -EINVAL;
 	} else if (!io_data->aio) {
-		DECLARE_COMPLETION_ONSTACK(done);
 		bool interrupted = false;
 
 		req = ep->req;
 		req->buf      = data;
 		req->length   = data_len;
 
-		req->context  = &done;
+		init_completion(&io_data->done);
+		req->context  = io_data;
 		req->complete = ffs_epfile_io_complete;
 
 		ret = usb_ep_queue(ep->ep, req, GFP_ATOMIC);
@@ -1089,57 +1098,34 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 
 		ffs_log("queued %zd bytes on %s", data_len, epfile->name);
 
-		if (unlikely(wait_for_completion_interruptible(&done))) {
+		if (unlikely(wait_for_completion_interruptible(&io_data->done))) {
+			spin_lock_irq(&epfile->ffs->eps_lock);
+			if (epfile->ep != ep) {
+				ret = -ESHUTDOWN;
+				goto error_lock;
+			}
 			/*
 			 * To avoid race condition with ffs_epfile_io_complete,
 			 * dequeue the request first then check
 			 * status. usb_ep_dequeue API should guarantee no race
 			 * condition with req->complete callback.
 			 */
-			spin_lock_irq(&epfile->ffs->eps_lock);
-			interrupted = true;
-			/*
-			 * While we were acquiring lock endpoint got
-			 * disabled (disconnect) or changed
-			 (composition switch) ?
-			 */
-			if (epfile->ep == ep) {
-				usb_ep_dequeue(ep->ep, req);
-				spin_unlock_irq(&epfile->ffs->eps_lock);
-				wait_for_completion(&done);
-				interrupted = ep->status < 0;
-			} else {
-				spin_unlock_irq(&epfile->ffs->eps_lock);
-			}
+			usb_ep_dequeue(ep->ep, req);
+			spin_unlock_irq(&epfile->ffs->eps_lock);
+			wait_for_completion(&io_data->done);
+			interrupted = io_data->status < 0;
 		}
 
-		ffs_log("%s:ep status %d for req %pK", epfile->name, ep->status,
+		ffs_log("%s:ep status %d for req %pK", epfile->name, io_data->status,
 				req);
 
-		if (interrupted) {
+		if (interrupted)
 			ret = -EINTR;
-			goto error_mutex;
-		}
-
-		ret = -ENODEV;
-		spin_lock_irq(&epfile->ffs->eps_lock);
-		/*
-		 * While we were acquiring lock endpoint got
-		 * disabled (disconnect) or changed
-		 * (composition switch) ?
-		 */
-		if (epfile->ep == ep)
-			ret = ep->status;
-		spin_unlock_irq(&epfile->ffs->eps_lock);
-		if (io_data->read && ret > 0) {
-			if (WARN(ep->status > data_len,
-				"actual length %d > %d", ep->status, data_len)) {
-				ret = -EOVERFLOW;
-				goto error_mutex;
-			}
-			ret = __ffs_epfile_read_data(epfile, data, ep->status,
+		else if (io_data->read && io_data->status > 0)
+			ret = __ffs_epfile_read_data(epfile, data, io_data->status,
 						     &io_data->data);
-		}
+		else
+			ret = io_data->status;
 		goto error_mutex;
 	} else if (!(req = usb_ep_alloc_request(ep->ep, GFP_ATOMIC))) {
 		ret = -ENOMEM;
@@ -3854,7 +3840,6 @@ static void ffs_func_unbind(struct usb_configuration *c,
 		if (ep->ep && ep->req)
 			usb_ep_free_request(ep->ep, ep->req);
 		ep->req = NULL;
-		ep->ep = NULL;
 		++ep;
 	}
 	spin_unlock_irqrestore(&func->ffs->eps_lock, flags);

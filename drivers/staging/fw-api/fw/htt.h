@@ -264,9 +264,10 @@
  * 3.134 Add qdata_refill flag in rx_peer_metadata_v1a.
  * 3.135 Add HTT_HOST4_TO_FW_RXBUF_RING def.
  * 3.136 Add htt_ext_present flag in htt_tx_tcl_global_seq_metadata.
+ * 3.137 Add more HTT_SDWF_MSDUQ_CFG_IND_ERROR codes.
  */
 #define HTT_CURRENT_VERSION_MAJOR 3
-#define HTT_CURRENT_VERSION_MINOR 136
+#define HTT_CURRENT_VERSION_MINOR 137
 
 #define HTT_NUM_TX_FRAG_DESC  1024
 
@@ -833,6 +834,11 @@ typedef enum {
     HTT_STATS_TX_PDEV_WIFI_RADAR_TAG                = 200, /* htt_stats_tx_pdev_wifi_radar_tlv */
     HTT_STATS_TXBF_OFDMA_BE_PARBW_TAG               = 201, /* htt_stats_txbf_ofdma_be_parbw_tlv */
     HTT_STATS_RX_PDEV_RSSI_HIST_TAG                 = 202, /* htt_stats_rx_pdev_rssi_hist_tlv */
+    HTT_STATS_TX_VDEV_NSS_TAG                       = 203, /* htt_stats_tx_vdev_nss_tlv */
+    HTT_STATS_PDEV_SPECTRAL_TAG                     = 204, /* htt_stats_pdev_spectral_tlv */
+    HTT_STATS_PDEV_RTT_DELAY_TAG                    = 205, /* htt_stats_pdev_rtt_delay_tlv */
+    HTT_STATS_PDEV_AOA_TAG                          = 206, /* htt_stats_pdev_aoa_tlv */
+    HTT_STATS_PDEV_FTM_TPCCAL_TAG                   = 207, /* htt_stats_pdev_ftm_tpccal_tlv */
 
     HTT_STATS_MAX_TAG,
 } htt_stats_tlv_tag_t;
@@ -23095,15 +23101,18 @@ typedef struct _htt_tx_latency_stats {
 
 /* HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND */
 typedef enum {
-    HTT_SDWF_MSDUQ_CFG_IND_ERROR_NONE                = 0x00,
-    HTT_SDWF_MSDUQ_CFG_IND_ERROR_PEER_DELETE_IN_PROG = 0x01,
-    HTT_SDWF_MSDUQ_CFG_IND_ERROR_SW_MSDUQ_NULL       = 0x02,
-    HTT_SDWF_MSDUQ_CFG_IND_ERROR_MSDUQ_LOCATE_ERROR  = 0x03,
-    HTT_SDWF_MSDUQ_CFG_IND_ERROR_QPEER_NULL          = 0x04,
-    HTT_SDWF_MSDUQ_CFG_IND_ERROR_DEACTIVATED_MSDUQ   = 0x05,
-    HTT_SDWF_MSDUQ_CFG_IND_ERROR_REACTIVATED_MSDUQ   = 0x06,
-    HTT_SDWF_MSDUQ_CFG_IND_ERROR_INVALID_SVC_CLASS   = 0x07,
-    HTT_SDWF_MSDUQ_CFG_IND_ERROR_TIDQ_LOCATE_ERROR   = 0x08,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_NONE                   = 0x00,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_PEER_DELETE_IN_PROG    = 0x01,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_SW_MSDUQ_NULL          = 0x02,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_MSDUQ_LOCATE_ERROR     = 0x03,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_QPEER_NULL             = 0x04,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_DEACTIVATED_MSDUQ      = 0x05,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_REACTIVATED_MSDUQ      = 0x06,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_INVALID_SVC_CLASS      = 0x07,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_TIDQ_LOCATE_ERROR      = 0x08,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_INCORRECT_SVC_CLASS    = 0x09,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_DISABLED_SVC_CLASS     = 0x0a,
+    HTT_SDWF_MSDUQ_CFG_IND_ERROR_SVC_CLASS_OUT_OF_RANGE = 0x0b,
 } HTT_SDWF_MSDUQ_CFG_IND_ERROR_CODE_E;
 
 PREPACK struct htt_t2h_sdwf_msduq_cfg_ind {

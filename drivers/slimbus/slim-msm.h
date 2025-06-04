@@ -308,6 +308,8 @@ struct msm_slim_ctrl {
 	bool			chan_active;
 	enum msm_ctrl_state	state;
 	struct completion	ctrl_up;
+	struct completion	xfer_done;
+	struct completion	sync_done;
 	int			nsats;
 	u32			ver;
 	struct msm_slim_qmi	qmi;

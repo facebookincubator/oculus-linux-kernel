@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 /*
@@ -2569,15 +2570,8 @@ static int ipa3_wwan_remove(struct platform_device *pdev)
 	if (ipa3_rmnet_res.ipa_napi_enable)
 		netif_napi_del(&(rmnet_ipa3_ctx->wwan_priv->napi));
 	mutex_unlock(&rmnet_ipa3_ctx->pipe_handle_guard);
-	IPAWANDBG("rmnet_ipa unregister_netdev started\n");
-	unregister_netdev(IPA_NETDEV());
-	IPAWANDBG("rmnet_ipa unregister_netdev completed\n");
-	ipa3_wwan_deregister_netdev_pm_client();
 	cancel_work_sync(&ipa3_tx_wakequeue_work);
 	cancel_delayed_work(&ipa_tether_stats_poll_wakequeue_work);
-	if (IPA_NETDEV())
-		free_netdev(IPA_NETDEV());
-	rmnet_ipa3_ctx->wwan_priv = NULL;
 	/* No need to remove wwan_ioctl during SSR */
 	if (!atomic_read(&rmnet_ipa3_ctx->is_ssr))
 		ipa3_wan_ioctl_deinit();
@@ -2778,6 +2772,15 @@ static int ipa3_lcl_mdm_ssr_notifier_cb(struct notifier_block *this,
 		break;
 	case SUBSYS_AFTER_SHUTDOWN:
 		IPAWANINFO("IPA Received MPSS AFTER_SHUTDOWN\n");
+
+		IPAWANINFO("rmnet_ipa unregister_netdev\n");
+		if (IPA_NETDEV())
+			unregister_netdev(IPA_NETDEV());
+		ipa3_wwan_deregister_netdev_pm_client();
+		if (IPA_NETDEV())
+			free_netdev(IPA_NETDEV());
+		rmnet_ipa3_ctx->wwan_priv = NULL;
+
 		if (atomic_read(&rmnet_ipa3_ctx->is_ssr) &&
 			ipa3_ctx->ipa_hw_type < IPA_HW_v4_0)
 			ipa3_q6_post_shutdown_cleanup();
