@@ -21,6 +21,7 @@
 #include "dp_mst_drm.h"
 
 #define DEBUG_NAME "drm_dp"
+#define EDID_ROWSIZE (16u)
 
 struct dp_debug_private {
 	struct dentry *root;
@@ -125,6 +126,76 @@ static void dp_debug_disable_sim_mode(struct dp_debug_private *debug,
 	/* switch to normal mode */
 	if (!debug->sim_mode)
 		debug->aux->set_sim_mode(debug->aux, NULL);
+}
+
+static int dp_debug_check_buffer_overflow(int rc, int *max_size, int *len)
+{
+	if (rc >= *max_size) {
+		DP_ERR("buffer overflow\n");
+		return -EINVAL;
+	}
+	*len += rc;
+	*max_size = SZ_4K - *len;
+
+	return 0;
+}
+
+static ssize_t dp_debug_read_edid(struct file *file,
+		char __user *user_buff, size_t count, loff_t *ppos)
+{
+	struct dp_debug_private *debug = file->private_data;
+	struct drm_connector *connector = NULL;
+	const char *edid = NULL;
+	u32 edid_len = 0;
+	char *buf;
+	u32 len = 0;
+	u32 capacity = SZ_4K;
+	u32 offset = 0;
+	int rc = 0;
+
+	if (*ppos)
+		return 0;
+
+	if (!debug) {
+		DP_ERR("invalid data\n");
+		return -ENODEV;
+	}
+
+	connector = *debug->connector;
+	if (!connector) {
+		DP_ERR("connector is NULL\n");
+		return -EINVAL;
+	}
+
+	if (!connector->edid_blob_ptr) {
+		DP_ERR("edid_blob_ptr is NULL\n");
+		return -EINVAL;
+	}
+
+	edid = (const char *)connector->edid_blob_ptr->data;
+	edid_len = connector->edid_blob_ptr->length;
+
+	buf = kzalloc(SZ_4K, GFP_KERNEL);
+	if (ZERO_OR_NULL_PTR(buf))
+		return -ENOMEM;
+
+	/* convert binary to hex */
+	for (offset = 0; offset < edid_len; offset += EDID_ROWSIZE) {
+		rc = hex_dump_to_buffer(edid + offset, min(EDID_ROWSIZE, edid_len - offset),
+					EDID_ROWSIZE, 1, buf + len, capacity, false);
+		if (dp_debug_check_buffer_overflow(rc, &capacity, &len))
+			break;
+		buf[len++] = '\n';
+	}
+
+	if (copy_to_user(user_buff, buf, len)) {
+		kfree(buf);
+		return -EFAULT;
+	}
+
+	*ppos += len;
+	kfree(buf);
+	return len;
 }
 
 static ssize_t dp_debug_write_edid(struct file *file,
@@ -1032,18 +1103,6 @@ static ssize_t dp_debug_read_hdcp(struct file *file,
 	return len;
 }
 
-static int dp_debug_check_buffer_overflow(int rc, int *max_size, int *len)
-{
-	if (rc >= *max_size) {
-		DP_ERR("buffer overflow\n");
-		return -EINVAL;
-	}
-	*len += rc;
-	*max_size = SZ_4K - *len;
-
-	return 0;
-}
-
 static ssize_t dp_debug_read_edid_modes(struct file *file,
 		char __user *user_buff, size_t count, loff_t *ppos)
 {
@@ -1866,6 +1925,7 @@ static const struct file_operations hpd_fops = {
 
 static const struct file_operations edid_fops = {
 	.open = simple_open,
+	.read = dp_debug_read_edid,
 	.write = dp_debug_write_edid,
 };
 

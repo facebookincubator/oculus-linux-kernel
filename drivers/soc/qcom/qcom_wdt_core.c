@@ -35,6 +35,11 @@
 #define MASK_SIZE        32
 #define COMPARE_RET      -1
 
+/* Disable watchdog initializtion, for debugging purposes. */
+static bool disable_wdt;
+module_param(disable_wdt, bool, 0444);
+MODULE_PARM_DESC(disable_wdt, "skip enabling of the qcom watchdog");
+
 typedef int (*compare_t) (const void *lhs, const void *rhs);
 static struct msm_watchdog_data *wdog_data;
 
@@ -678,10 +683,10 @@ static __ref int qcom_wdt_kthread(void *arg)
 {
 	struct msm_watchdog_data *wdog_dd = arg;
 	unsigned long delay_time = 0;
-	struct sched_param param = {.sched_priority = MAX_RT_PRIO-1};
+	struct sched_param param = {.sched_priority = MAX_PRIO-1};
 	int ret, cpu;
 
-	sched_setscheduler(current, SCHED_FIFO, &param);
+	sched_setscheduler(current, SCHED_NORMAL, &param);
 	while (!kthread_should_stop()) {
 		do {
 			ret = wait_event_interruptible(wdog_dd->pet_complete,
@@ -1011,6 +1016,11 @@ int qcom_wdt_register(struct platform_device *pdev,
 	if (!pdev || !wdog_dd || !wdog_dd_name) {
 		pr_err("wdt_register input incorrect\n");
 		return -EINVAL;
+	}
+
+	if (disable_wdt) {
+		dev_err(&pdev->dev, "watchdog disabled by module param\n");
+		return -ENODEV;
 	}
 
 	qcom_wdt_dt_to_pdata(pdev, wdog_dd);

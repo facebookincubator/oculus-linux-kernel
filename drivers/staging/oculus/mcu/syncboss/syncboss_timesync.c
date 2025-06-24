@@ -46,25 +46,6 @@ static void reset_timesync_values(struct timesync_dev_data *devdata)
 	spin_unlock(&devdata->lock);
 }
 
-static int syncboss_state_handler(struct notifier_block *nb, unsigned long event, void *p)
-{
-	struct timesync_dev_data *devdata = container_of(nb, struct timesync_dev_data, syncboss_state_nb);
-
-	switch (event) {
-	case SYNCBOSS_EVENT_STREAMING_STARTING:
-	case SYNCBOSS_EVENT_STREAMING_RESUMING:
-		devdata->timesync_enabled = false;
-		reset_timesync_values(devdata);
-		return NOTIFY_OK;
-	case SYNCBOSS_EVENT_STREAMING_STOPPING:
-		hrtimer_cancel(&devdata->timer);
-		pinctrl_select_state(devdata->pinctrl, devdata->pinctrl_default_state);
-		return NOTIFY_OK;
-	default:
-		return NOTIFY_DONE;
-	}
-}
-
 static void trigger_timesync_event(struct timesync_dev_data *devdata)
 {
 	unsigned long flags;
@@ -87,6 +68,46 @@ static void trigger_timesync_event(struct timesync_dev_data *devdata)
 
 	udelay(1);
 	gpio_set_value(devdata->gpio, 0);
+}
+
+static void enable_timesync(struct timesync_dev_data *devdata)
+{
+	pinctrl_select_state(devdata->pinctrl, devdata->pinctrl_active_state);
+	trigger_timesync_event(devdata);
+
+	spin_lock(&devdata->lock);
+	devdata->period_ktime = ms_to_ktime(devdata->period_ms);
+	spin_unlock(&devdata->lock);
+
+	hrtimer_start(&devdata->timer, devdata->period_ktime, HRTIMER_MODE_REL);
+}
+
+static void disable_timesync(struct timesync_dev_data *devdata)
+{
+	hrtimer_cancel(&devdata->timer);
+	pinctrl_select_state(devdata->pinctrl, devdata->pinctrl_default_state);
+}
+
+static int syncboss_state_handler(struct notifier_block *nb, unsigned long event, void *p)
+{
+	struct timesync_dev_data *devdata = container_of(nb, struct timesync_dev_data, syncboss_state_nb);
+
+	switch (event) {
+	case SYNCBOSS_EVENT_STREAMING_STARTING:
+	case SYNCBOSS_EVENT_STREAMING_RESUMING:
+		reset_timesync_values(devdata);
+		return NOTIFY_OK;
+	case SYNCBOSS_EVENT_STREAMING_STARTED:
+	case SYNCBOSS_EVENT_STREAMING_RESUMED:
+		enable_timesync(devdata);
+		return NOTIFY_OK;
+	case SYNCBOSS_EVENT_STREAMING_STOPPING:
+	case SYNCBOSS_EVENT_STREAMING_SUSPENDING:
+		disable_timesync(devdata);
+		return NOTIFY_OK;
+	default:
+		return NOTIFY_DONE;
+	}
 }
 
 static void update_stats(struct timesync_dev_data *devdata,
@@ -156,38 +177,6 @@ static void handle_nsync_event(struct timesync_dev_data *devdata, const struct s
 }
 #endif
 
-static void handle_enable_timesync_event(struct timesync_dev_data *devdata, const struct syncboss_data *packet)
-{
-	bool enable;
-
-	if (packet->data_len != sizeof(struct enable_timesync_data)) {
-		dev_err_ratelimited(devdata->dev, "ignoring enable_timesync message with unexpected length\n");
-		return;
-	}
-
-	enable = ((struct enable_timesync_data *)packet->data)->enable;
-	if (enable == devdata->timesync_enabled)
-		return;
-
-	devdata->timesync_enabled = enable;
-
-	if (enable) {
-		reset_timesync_values(devdata);
-
-		pinctrl_select_state(devdata->pinctrl, devdata->pinctrl_active_state);
-		trigger_timesync_event(devdata);
-
-		spin_lock(&devdata->lock);
-		devdata->period_ktime = ms_to_ktime(devdata->period_ms);
-		spin_unlock(&devdata->lock);
-
-		hrtimer_start(&devdata->timer, devdata->period_ktime, HRTIMER_MODE_REL);
-	} else {
-		pinctrl_select_state(devdata->pinctrl, devdata->pinctrl_default_state);
-		hrtimer_cancel(&devdata->timer);
-	}
-}
-
 static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void *pi)
 {
 	struct timesync_dev_data *devdata = container_of(nb, struct timesync_dev_data, rx_packet_nb);
@@ -195,13 +184,6 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 	struct syncboss_driver_data_header_t *header = &packet_info->header;
 	const struct syncboss_data *packet = packet_info->data;
 	int ret = NOTIFY_OK;
-
-	/*
-	 * TODO (T215867889): This check can be removed once coexistence with the old
-	 * syncboss_nsync driver is no longer required.
-	 */
-	if (!devdata->timesync_enabled && type != SYNCBOSS_ENABLE_TIMESYNC_MESSAGE_TYPE)
-		return ret;
 
 	/*
 	 * SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE: used for HMDs.
@@ -222,21 +204,16 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 	case SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE:
 		handle_display_event(devdata, packet);
 		break;
-	case SYNCBOSS_ENABLE_TIMESYNC_MESSAGE_TYPE:
-		handle_enable_timesync_event(devdata, packet);
-		break;
 	default:
 		break;
 	}
 
-	if (devdata->timesync_enabled) {
-		header->nsync_offset_us = devdata->timesync_offset_us;
-		header->nsync_offset_status = devdata->timesync_offset_status;
+	header->nsync_offset_us = devdata->timesync_offset_us;
+	header->nsync_offset_status = devdata->timesync_offset_status;
 #ifdef CONFIG_SYNCBOSS_PERIPHERAL
-		header->remote_offset_us = devdata->remote_offset_us;
-		header->remote_offset_status = devdata->remote_offset_status;
+	header->remote_offset_us = devdata->remote_offset_us;
+	header->remote_offset_status = devdata->remote_offset_status;
 #endif
-	}
 
 	return ret;
 }

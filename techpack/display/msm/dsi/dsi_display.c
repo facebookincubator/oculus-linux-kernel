@@ -1084,7 +1084,7 @@ static int dsi_display_ctrl_get_host_init_state(struct dsi_display *dsi_display,
 }
 
 static int dsi_display_cmd_rx(struct dsi_display *display,
-			      struct dsi_cmd_desc *cmd)
+			      struct dsi_cmd_desc *cmd, bool is_panel_locked)
 {
 	struct dsi_display_ctrl *m_ctrl = NULL;
 	u32 flags = 0;
@@ -1098,7 +1098,9 @@ static int dsi_display_cmd_rx(struct dsi_display *display,
 		return -EINVAL;
 
 	/* acquire panel_lock to make sure no commands are in progress */
-	dsi_panel_acquire_panel_lock(display->panel);
+	if (!is_panel_locked)
+		dsi_panel_acquire_panel_lock(display->panel);
+
 	if (!display->panel->panel_initialized) {
 		DSI_DEBUG("panel not initialized\n");
 		goto release_panel_lock;
@@ -1124,7 +1126,9 @@ enable_error_interrupts:
 	dsi_display_toggle_error_interrupt_status(display, true);
 	dsi_display_clk_ctrl(display->dsi_clk_handle, DSI_ALL_CLKS, DSI_CLK_OFF);
 release_panel_lock:
-	dsi_panel_release_panel_lock(display->panel);
+	if (!is_panel_locked)
+		dsi_panel_release_panel_lock(display->panel);
+
 	return rc;
 }
 
@@ -1321,7 +1325,7 @@ int dsi_display_cmd_receive(void *display, const char *cmd_buf,
 
 	SDE_EVT32(cmd_buf_len, recv_buf_len);
 
-	rc = dsi_display_cmd_rx(dsi_display, &cmd);
+	rc = dsi_display_cmd_rx(dsi_display, &cmd, false);
 	if (rc <= 0)
 		DSI_ERR("[DSI] Display command receive failed, rc=%d\n", rc);
 
@@ -1424,7 +1428,7 @@ int dsi_display_set_power(struct drm_connector *connector,
 
 #ifdef CONFIG_DEBUG_FS
 static int dsi_display_read_ddic(struct dsi_display *display,
-				 char *tx_buffer, size_t read_length)
+				 char *tx_buffer, size_t read_length, bool is_panel_locked)
 {
 	int rc = 0;
 	struct dsi_display_ctrl *ctrl;
@@ -1479,7 +1483,9 @@ static int dsi_display_read_ddic(struct dsi_display *display,
 	cmds->msg.rx_len = read_length;
 	cmds->ctrl_flags = DSI_CTRL_CMD_READ;
 
-	mutex_lock(&display->display_lock);
+	if (!is_panel_locked)
+		mutex_lock(&display->display_lock);
+
 	rc = dsi_display_ctrl_get_host_init_state(display, &state);
 
 	// Handle initiated through sysfs when device is in suspend state
@@ -1496,7 +1502,7 @@ static int dsi_display_read_ddic(struct dsi_display *display,
 	}
 
 	display->cmd_master_idx = display->mipi_dcs_rx_data.num_idx;
-	rc = dsi_display_cmd_rx(display, cmds);
+	rc = dsi_display_cmd_rx(display, cmds, is_panel_locked);
 
 	if (rc <= 0)
 		DSI_ERR("[DSI] Display command receive failed, rc=%d\n", rc);
@@ -1504,7 +1510,8 @@ static int dsi_display_read_ddic(struct dsi_display *display,
 	display->cmd_master_idx = 0;
 
 error_unlock_mutex:
-	mutex_unlock(&display->display_lock);
+	if (!is_panel_locked)
+		mutex_unlock(&display->display_lock);
 error_free_payloads:
 	kfree(cmds->msg.tx_buf);
 error_free_cmds:
@@ -1568,6 +1575,8 @@ static ssize_t debugfs_mipi_dcs_rx_read(struct file *file, char __user *user_buf
 				     size_t user_len, loff_t *ppos)
 {
 	struct dsi_display *display = file->private_data;
+	struct dsi_panel *panel;
+	struct mipi_dsi_device *dsi;
 	char *out_buffer;
 	int rc = 0, len = 0;
 	char *cmd_tx = NULL;
@@ -1575,16 +1584,41 @@ static ssize_t debugfs_mipi_dcs_rx_read(struct file *file, char __user *user_buf
 	int read_total_length = read_length;
 	char *readback_buf = NULL;
 	int i = 0;
+	u8 set_general_page[2] = {0xFF, 0x10};
 
-	if (!display)
+	if (!display || !display->panel)
 		return -ENODEV;
 
 	if (*ppos)
 		return 0;
 
+	panel = display->panel;
+
+	dsi = &panel->mipi_device;
+	if (!dsi) {
+		DSI_ERR("[%s] failed to get dsi device\n", panel->name);
+		return -EINVAL;
+	}
+
 	out_buffer = kzalloc(MIPI_LONG_READ_MAX_LEN, GFP_KERNEL);
 	if (ZERO_OR_NULL_PTR(out_buffer))
 		return -ENOMEM;
+
+	/* Lock the panel mutex to avoid any conflict. */
+	mutex_lock(&panel->panel_lock);
+
+	if (!panel->panel_initialized) {
+		DSI_DEBUG("Panel not initialized\n");
+		goto release_panel_lock;
+	}
+
+	/* Switch to the general command page before reading register. */
+	rc = mipi_dsi_dcs_write_queue(dsi, set_general_page, sizeof(set_general_page), 0, 0);
+
+	if (rc) {
+		DSI_ERR("Failed to send general page mipi command. rc = %d\n", rc);
+		goto release_panel_lock;
+	}
 
 	readback_buf = kcalloc(read_length, sizeof(char), GFP_KERNEL);
 	display->mipi_dcs_rx_data.buf_rx = readback_buf;
@@ -1595,7 +1629,7 @@ static ssize_t debugfs_mipi_dcs_rx_read(struct file *file, char __user *user_buf
 	cmd_tx = kzalloc(2 * sizeof(char), GFP_KERNEL);
 
 	memcpy(cmd_tx, display->mipi_dcs_rx_data.buf_tx, 2 * sizeof(char));
-	rc = dsi_display_read_ddic(display, cmd_tx, read_length);
+	rc = dsi_display_read_ddic(display, cmd_tx, read_length, true);
 	if (rc <= 0) {
 		len = snprintf(
 			out_buffer, MIPI_LONG_READ_MAX_LEN,
@@ -1618,11 +1652,14 @@ error_read_reg:
 	kfree(readback_buf);
 	if (copy_to_user(user_buf, out_buffer, len)) {
 		rc = -EFAULT;
-		goto error;
+		goto release_panel_lock;
 	}
 	*ppos += len;
 
-error:
+release_panel_lock:
+	/* Release the lock for the panel. */
+	mutex_unlock(&panel->panel_lock);
+
 	kfree(out_buffer);
 	return len;
 }
@@ -2241,6 +2278,106 @@ error:
 	return len;
 }
 
+static ssize_t debugfs_ddic_mipi_errors_read(struct file *file,
+				 char __user *user_buf,
+				 size_t user_len,
+				 loff_t *ppos)
+{
+	struct dsi_display *display = file->private_data;
+	struct dsi_panel *panel;
+	struct mipi_dsi_device *dsi;
+	const char *mipi_error_register = "05";
+	char *out_buf = NULL, *readback_buf = NULL, *cmd_tx = NULL;
+	int rc = 0, len = 0, read_length = 1;
+	size_t max_len = min_t(size_t, user_len, MISR_BUFF_SIZE);
+	u8 set_general_page[2] = {0xFF, 0x10};
+
+	if (!display || !display->panel)
+		return -ENODEV;
+
+	if (*ppos)
+		return 0;
+
+	panel = display->panel;
+
+	if (!panel->panel_initialized) {
+		DSI_ERR("[%s] Failed to read register, as panel is off\n", panel->name);
+		return -EINVAL;
+	}
+
+	dsi = &panel->mipi_device;
+	if (!dsi) {
+		DSI_ERR("[%s] failed to get dsi device\n", panel->name);
+		return -EINVAL;
+	}
+
+	/* Allocate buffer for buffer copy. */
+	out_buf = kzalloc(max_len, GFP_KERNEL);
+	if (ZERO_OR_NULL_PTR(out_buf))
+		return -EINVAL;
+
+    /* Lock the panel mutex to avoid any conflict. */
+    mutex_lock(&panel->panel_lock);
+
+	if (!panel->panel_initialized) {
+		DSI_DEBUG("Panel not initialized\n");
+		goto release_panel_lock;
+	}
+
+	/* Switch to the general command page before reading register. */
+	rc = mipi_dsi_dcs_write_queue(dsi, set_general_page, sizeof(set_general_page), 0, 0);
+
+	if (rc) {
+		DSI_ERR("Failed to send general page mipi command. rc = %d\n", rc);
+		goto release_panel_lock;
+	}
+
+	/* Setup parameters for register 5 */
+	readback_buf = kcalloc(read_length, sizeof(char), GFP_KERNEL);
+	memset(readback_buf, 0, read_length);
+	display->mipi_dcs_rx_data.buf_rx = readback_buf;
+	display->mipi_dcs_rx_data.num_input = 1;
+	display->mipi_dcs_rx_data.num_idx = 0;
+
+	cmd_tx = kzalloc(2 * sizeof(char), GFP_KERNEL);
+	memcpy(cmd_tx, mipi_error_register, 2 * sizeof(char));
+
+	/* Read from ddic register. */
+	rc = dsi_display_read_ddic(display, cmd_tx, read_length, true);
+	if (rc <= 0) {
+		DSI_ERR("[%s] Error, suspend & resume the panel and read again\n", panel->name);
+		goto error_read_reg;
+	}
+
+	/* Copy the output to the output buffer. */
+	len += scnprintf(out_buf, max_len, "0x%02x\n", readback_buf[0]);
+	if (len > max_len)
+		len = max_len;
+
+	/* Copy the output to the user buffer. */
+	if (copy_to_user(user_buf, out_buf, len)) {
+		rc = -EFAULT;
+	} else {
+		*ppos += len;
+	}
+
+error_read_reg:
+	/* Free up all the allocated buffers. */
+	kfree(cmd_tx);
+	kfree(readback_buf);
+
+release_panel_lock:
+	/* Release the panel mutex. */
+	mutex_unlock(&panel->panel_lock);
+
+	kfree(out_buf);
+
+	if (rc < 0)
+		return rc;
+
+	return len;
+}
+
 static const struct file_operations dump_info_fops = {
 	.open = simple_open,
 	.read = debugfs_dump_info_read,
@@ -2280,11 +2417,15 @@ static const struct file_operations ddic_family_fops = {
 	.read = debugfs_ddic_family_read,
 };
 
+static const struct file_operations ddic_mipi_errors_fops = {
+	.open = simple_open,
+	.read = debugfs_ddic_mipi_errors_read,
+};
 
 static int dsi_display_debugfs_init(struct dsi_display *display)
 {
 	int rc = 0;
-	struct dentry *dir, *dump_file, *misr_data, *ddic_family;
+	struct dentry *dir, *dump_file, *misr_data, *ddic_family, *ddic_mipi_errors;
 	char name[MAX_NAME_SIZE];
 	char panel_name[SEC_PANEL_NAME_MAX_LEN];
 	char secondary_panel_str[] = "_secondary";
@@ -2432,6 +2573,15 @@ static int dsi_display_debugfs_init(struct dsi_display *display)
 	if (IS_ERR_OR_NULL(ddic_family)) {
 		rc = PTR_ERR(ddic_family);
 		DSI_ERR("[%s] debugfs create ddic_family file failed, rc=%d\n",
+			display->name, rc);
+		goto error_remove_dir;
+	}
+
+	ddic_mipi_errors = debugfs_create_file("ddic_mipi_errors", 0400, dir, display,
+					  &ddic_mipi_errors_fops);
+	if (IS_ERR_OR_NULL(ddic_mipi_errors)) {
+		rc = PTR_ERR(ddic_mipi_errors);
+		DSI_ERR("[%s] debugfs create ddic_mipi_errors file failed, rc=%d\n",
 			display->name, rc);
 		goto error_remove_dir;
 	}

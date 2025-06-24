@@ -4996,6 +4996,25 @@ static inline const char *dp_str_fw_to_hw_delay_bkt(uint8_t index)
 
 	return fw_to_hw_delay_bkt_str[index];
 }
+
+static inline
+uint32_t dp_sum_avg_with_weightage(uint32_t avg1, uint64_t count1,
+				   uint32_t avg2, uint64_t count2)
+{
+	uint8_t weightage1, weightage2;
+
+	weightage1 = (count1 * 100) / (count1 + count2);
+	weightage2 = (count2 * 100) / (count1 + count2);
+
+	return (((weightage1 * avg1) + (weightage2 * avg2)) / 100);
+}
+#else
+static inline
+uint32_t dp_sum_avg_with_weightage(uint32_t avg1, uint64_t count1,
+				   uint32_t avg2, uint64_t count2)
+{
+	return ((avg1 + avg2) >> 1);
+}
 #endif
 
 /**
@@ -5010,12 +5029,23 @@ dp_accumulate_delay_stats(struct cdp_delay_stats *total,
 			  struct cdp_delay_stats *per_ring)
 {
 	uint8_t index;
+	uint64_t count = 0;
 
-	for (index = 0; index < CDP_DELAY_BUCKET_MAX; index++)
+	for (index = 0; index < CDP_DELAY_BUCKET_MAX; index++) {
 		total->delay_bucket[index] += per_ring->delay_bucket[index];
-	total->min_delay = QDF_MIN(total->min_delay, per_ring->min_delay);
+		count += per_ring->delay_bucket[index];
+	}
+
+	if (!count)
+		return;
+
+	total->count += count;
 	total->max_delay = QDF_MAX(total->max_delay, per_ring->max_delay);
-	total->avg_delay = ((total->avg_delay + per_ring->avg_delay) >> 1);
+	total->min_delay = !total->min_delay ? per_ring->min_delay :
+		QDF_MIN(total->min_delay, per_ring->min_delay);
+	total->avg_delay = !total->avg_delay ? per_ring->avg_delay :
+		dp_sum_avg_with_weightage(total->avg_delay, total->count,
+					  per_ring->avg_delay, count);
 }
 #endif
 

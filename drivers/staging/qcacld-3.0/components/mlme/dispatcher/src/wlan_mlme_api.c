@@ -3447,12 +3447,12 @@ int wlan_mlme_get_mcc_duty_cycle_percentage(struct wlan_objmgr_pdev *pdev)
 	for (i = 0; i < count; i++) {
 		if (vdev_id_list[i] == dual_sta_policy->primary_vdev_id) {
 			primary_sta_freq = op_ch_freq_list[i];
-			mlme_debug("primary sta vdev:%d at inxex:%d, freq:%d",
-				   i, vdev_id_list[i], op_ch_freq_list[i]);
+			mlme_debug("primary sta vdev:%d at index:%d, freq:%d",
+				   vdev_id_list[i], i, op_ch_freq_list[i]);
 		} else {
 			secondary_sta_freq = op_ch_freq_list[i];
-			mlme_debug("secondary sta vdev:%d at inxex:%d, freq:%d",
-				   i, vdev_id_list[i], op_ch_freq_list[i]);
+			mlme_debug("secondary sta vdev:%d at index:%d, freq:%d",
+				   vdev_id_list[i], i, op_ch_freq_list[i]);
 		}
 	}
 
@@ -3461,17 +3461,17 @@ int wlan_mlme_get_mcc_duty_cycle_percentage(struct wlan_objmgr_pdev *pdev)
 		return -EINVAL;
 	}
 
-	operating_channel = wlan_freq_to_chan(primary_sta_freq);
+	operating_channel = wlan_reg_freq_to_chan(pdev, primary_sta_freq);
 
 	/*
 	 * The channel numbers for both adapters and the time
 	 * quota for the 1st adapter, i.e., one specified in cmd
 	 * are formatted as a bit vector
-	 * ******************************************************
-	 * |bit 31-24  | bit 23-16 |  bits 15-8  |bits 7-0   |
-	 * |  Unused   | Quota for | chan. # for |chan. # for|
-	 * |           |  1st chan | 1st chan.   |2nd chan.  |
-	 * ******************************************************
+	 * *********************************************************************
+	 * |bit 31-28 |bit 27-26 |bit 25-24 |bit 23-16 |bits 15-8  |bits 7-0   |
+	 * |  Unused  |band mask |band mask |Quota for |chan. # for|chan. # for|
+	 * |          | 2nd chan |1st chan  | 1st chan | 1st chan. |2nd chan.  |
+	 * *********************************************************************
 	 */
 	mlme_debug("First connection channel No.:%d and quota:%dms",
 		   operating_channel, quota_value);
@@ -3483,7 +3483,7 @@ int wlan_mlme_get_mcc_duty_cycle_percentage(struct wlan_objmgr_pdev *pdev)
 	 */
 	quota_value |= operating_channel;
 		/* Second STA Connection */
-	operating_channel = wlan_freq_to_chan(secondary_sta_freq);
+	operating_channel = wlan_reg_freq_to_chan(pdev, secondary_sta_freq);
 	if (!operating_channel)
 		mlme_debug("Secondary adapter op channel is invalid");
 	/*
@@ -3497,7 +3497,15 @@ int wlan_mlme_get_mcc_duty_cycle_percentage(struct wlan_objmgr_pdev *pdev)
 	 * 7-0 of set_value
 	 */
 	quota_value |= operating_channel;
-	mlme_debug("quota value:%x", quota_value);
+	/*
+	 * Band mask for 1st chan 24-25 bits
+	 * Band mask for 2nd chan 26-27 bits
+	 */
+	quota_value |= ((wlan_reg_freq_to_band(primary_sta_freq) << 24) &
+			BAND_MASK_FIRST_FREQ);
+	quota_value |= ((wlan_reg_freq_to_band(secondary_sta_freq) << 26) &
+			BAND_MASK_SECOND_FREQ);
+	mlme_debug("quota value: 0x%x", quota_value);
 
 	return quota_value;
 }
@@ -7039,6 +7047,7 @@ wlan_mlme_get_user_mcc_duty_cycle_percentage(struct wlan_objmgr_psoc *psoc)
 	struct wlan_user_mcc_quota quota;
 	uint8_t operating_channel;
 	int status;
+	struct wlan_objmgr_pdev *pdev;
 
 	quota.vdev_id = WLAN_UMAC_VDEV_ID_MAX;
 	quota.quota = 0;
@@ -7062,20 +7071,27 @@ wlan_mlme_get_user_mcc_duty_cycle_percentage(struct wlan_objmgr_psoc *psoc)
 	if (mcc_freq == INVALID_CHANNEL_ID)
 		return 0;
 
-	operating_channel = wlan_freq_to_chan(ch_freq);
+	pdev = wlan_objmgr_get_pdev_by_id(psoc, 0,
+					  WLAN_MLME_NB_ID);
+	if (!pdev) {
+		sme_err("pdev is NULL");
+		return 0;
+	}
+	operating_channel = wlan_reg_freq_to_chan(pdev, ch_freq);
 	if (!operating_channel) {
 		mlme_debug("Primary op channel is invalid");
+		wlan_objmgr_pdev_release_ref(pdev, WLAN_MLME_NB_ID);
 		return 0;
 	}
 	/*
 	 * The channel numbers for both adapters and the time
 	 * quota for the 1st adapter, i.e., one specified in cmd
 	 * are formatted as a bit vector
-	 * ******************************************************
-	 * |bit 31-24  | bit 23-16 |  bits 15-8  |bits 7-0   |
-	 * |  Unused   | Quota for | chan. # for |chan. # for|
-	 * |           |  1st chan | 1st chan.   |2nd chan.  |
-	 * ******************************************************
+	 * *********************************************************************
+	 * |bit 31-28 |bit 27-26 |bit 25-24 |bit 23-16 |bits 15-8  |bits 7-0   |
+	 * |  Unused  |band mask |band mask |Quota for |chan. # for|chan. # for|
+	 * |          | 2nd chan |1st chan  | 1st chan | 1st chan. |2nd chan.  |
+	 * *********************************************************************
 	 */
 	mlme_debug("Opmode (%d) vdev (%u) channel %u and quota %u",
 		   quota.op_mode, quota.vdev_id,
@@ -7089,9 +7105,10 @@ wlan_mlme_get_user_mcc_duty_cycle_percentage(struct wlan_objmgr_psoc *psoc)
 	 */
 	quota_value |= operating_channel;
 
-	operating_channel = wlan_freq_to_chan(mcc_freq);
+	operating_channel = wlan_reg_freq_to_chan(pdev, mcc_freq);
 	if (!operating_channel) {
 		mlme_debug("Secondary op channel is invalid");
+		wlan_objmgr_pdev_release_ref(pdev, WLAN_MLME_NB_ID);
 		return 0;
 	}
 
@@ -7106,7 +7123,16 @@ wlan_mlme_get_user_mcc_duty_cycle_percentage(struct wlan_objmgr_psoc *psoc)
 	 * 7-0 of set_value
 	 */
 	quota_value |= operating_channel;
-	mlme_debug("quota value:%x", quota_value);
+	/*
+	 * Set band mask for 1st chan 24-25 bits.
+	 * Set band mask for 2nd chan 26-27 bits.
+	 */
+	quota_value |= ((wlan_reg_freq_to_band(ch_freq) << 24) &
+			BAND_MASK_FIRST_FREQ);
+	quota_value |= ((wlan_reg_freq_to_band(mcc_freq) << 26) &
+			BAND_MASK_SECOND_FREQ);
+	mlme_debug("quota value: 0x%x", quota_value);
+	wlan_objmgr_pdev_release_ref(pdev, WLAN_MLME_NB_ID);
 
 	return quota_value;
 }

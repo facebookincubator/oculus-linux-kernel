@@ -52,6 +52,10 @@
 #define RATECODE_V1_NSS_OFFSET  0x4
 #define RATECODE_V1_NSS_MASK    0x7
 
+/* Band mask for first and Second STA frequencies */
+#define BAND_MASK_FIRST_FREQ  0x3000000
+#define BAND_MASK_SECOND_FREQ 0xC000000
+
 #ifdef FEATURE_SET
 /**
  * wlan_mlme_get_feature_info() - Get mlme features

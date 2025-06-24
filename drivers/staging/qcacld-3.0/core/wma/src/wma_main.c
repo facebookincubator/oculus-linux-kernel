@@ -1121,16 +1121,22 @@ static int32_t wma_set_priv_cfg(tp_wma_handle wma_handle,
 			(privcmd->param_value & 0x0000FF00) >> 8;
 		uint8_t adapter_1_quota =
 			(privcmd->param_value & 0x00FF0000) >> 16;
+		uint8_t band_chan_1 =
+			(privcmd->param_value & BAND_MASK_FIRST_FREQ) >> 24;
+		uint8_t band_chan_2 =
+			(privcmd->param_value & BAND_MASK_SECOND_FREQ) >> 26;
 		int ret = -1;
 
-		wma_debug("Parsed input: Channel #1:%d, Channel #2:%d, quota 1:%dms",
+		wma_debug("Parsed input: Channel #1:%d, Channel #2:%d, quota 1:%dms band_1 0x%x band_2 0x%x",
 			  adapter_1_chan_number,
-			  adapter_2_chan_number, adapter_1_quota);
+			  adapter_2_chan_number, adapter_1_quota, band_chan_1,
+			  band_chan_2);
 
 		ret = wma_set_mcc_channel_time_quota(wma_handle,
 						     adapter_1_chan_number,
 						     adapter_1_quota,
-						     adapter_2_chan_number);
+						     adapter_2_chan_number,
+						     band_chan_1, band_chan_2);
 	}
 		break;
 	default:

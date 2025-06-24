@@ -938,7 +938,8 @@ QDF_STATUS wma_set_mcc_channel_time_latency
 QDF_STATUS wma_set_mcc_channel_time_quota
 	(tp_wma_handle wma,
 	uint32_t adapter_1_chan_number,
-	uint32_t adapter_1_quota, uint32_t adapter_2_chan_number);
+	uint32_t adapter_1_quota, uint32_t adapter_2_chan_number,
+	uint8_t band_1, uint8_t band_2);
 
 /**
  * wma_process_rate_update_indate() - rate update indication

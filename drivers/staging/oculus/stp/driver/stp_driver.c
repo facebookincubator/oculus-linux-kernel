@@ -412,7 +412,7 @@ static int spi_stp_probe(struct spi_device *spi)
 
 	_stp_driver_data =
 		devm_kzalloc(&spi->dev, sizeof(*_stp_driver_data), GFP_KERNEL);
-	if (IS_ERR(_stp_driver_data)) {
+	if (! _stp_driver_data) {
 		STP_DRV_LOG_ERR("Failed to allocate driver data");
 		return -ENOMEM;
 	}
@@ -467,14 +467,14 @@ static int spi_stp_probe(struct spi_device *spi)
 	_stp_driver_data->suspended = false;
 
 	_stp_driver_data->controller_rx_buffer = devm_kzalloc(&spi->dev, STP_TOTAL_DATA_SIZE, GFP_KERNEL | GFP_DMA);
-	if (IS_ERR(_stp_driver_data->controller_rx_buffer)) {
+	if (!_stp_driver_data->controller_rx_buffer) {
 		STP_DRV_LOG_ERR("Failed to allocate controller rx buffer");
 		rval = -ENOMEM;
 		goto exit_error;
 	}
 
 	_stp_driver_data->controller_tx_buffer = devm_kzalloc(&spi->dev, STP_TOTAL_DATA_SIZE, GFP_KERNEL | GFP_DMA);
-	if (IS_ERR(_stp_driver_data->controller_tx_buffer)) {
+	if (!_stp_driver_data->controller_tx_buffer) {
 		STP_DRV_LOG_ERR("Failed to allocate controller tx buffer");
 		rval = -ENOMEM;
 		goto exit_error;

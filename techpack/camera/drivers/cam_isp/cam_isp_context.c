@@ -757,10 +757,12 @@ static int __cam_isp_ctx_notify_trigger_util(
 	notify.trigger_id = ctx_isp->trigger_id;
 	notify.curr_req_id = request_id;
 
-	sof_now_latency_ms = (now - ctx_isp->monotonic_timestamp) / 1000000;
-	if (sof_now_latency_ms > CAM_ISP_NOTIFY_TRIGGER_LATENCY_THRESHOLD_MS) {
-		CAM_WARN(CAM_ISP, "sof->now %lld TS %lld latency ms %d exceeded threshold %d ctx: %d",
-			now, ctx_isp->monotonic_timestamp, sof_now_latency_ms, CAM_ISP_NOTIFY_TRIGGER_LATENCY_THRESHOLD_MS, ctx->ctx_id);
+	if (ctx_isp->frame_id) { // skip for the very first frame
+		sof_now_latency_ms = (now - ctx_isp->monotonic_timestamp) / 1000000;
+		if (sof_now_latency_ms > CAM_ISP_NOTIFY_TRIGGER_LATENCY_THRESHOLD_MS) {
+			CAM_WARN(CAM_ISP, "sof->now %lld TS %lld latency ms %d exceeded threshold %d ctx: %d",
+				now, ctx_isp->monotonic_timestamp, sof_now_latency_ms, CAM_ISP_NOTIFY_TRIGGER_LATENCY_THRESHOLD_MS, ctx->ctx_id);
+		}
 	}
 
 	if (ctx_isp->independent_crm_en) {
@@ -1643,7 +1645,7 @@ static void __cam_isp_ctx_send_sof_timestamp(
 	if (request_id && ctx_isp->reported_req_id >= request_id)
 		return;
 
-	if (ctx_isp->reported_frame_id == ctx_isp->frame_id) {
+	if (ctx_isp->frame_id && (ctx_isp->reported_frame_id == ctx_isp->frame_id)) {
 		if (__cam_isp_ctx_recover_sof_timestamp(ctx_isp->base))
 			CAM_WARN(CAM_ISP, "Missed SOF. Unable to recover SOF timestamp.");
 	}

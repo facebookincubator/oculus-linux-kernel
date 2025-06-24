@@ -15,6 +15,7 @@
 #include <linux/usb/phy.h>
 #include <linux/jiffies.h>
 #include <linux/pm_qos.h>
+#include <linux/sysfs.h>
 
 #include "sde_connector.h"
 
@@ -60,6 +61,10 @@
 #define DP_DISPLAY_MAX_VACTIVE			2160
 #define DP_DISPLAY_MAX_VACTIVE_1080P	1080
 #define DP_DISPLAY_MAX_VREFRESH			60
+
+#define DPCD_MAX_READ_OFFSET 0xFFFFF
+#define DPCD_MAX_READ_LEN 32
+#define DPCD_SYMBOL_ERROR_COUNT_LANE0 0x210
 
 enum dp_display_states {
 	DP_STATE_DISCONNECTED           = 0,
@@ -223,6 +228,10 @@ struct dp_display_private {
 	u32 intf_idx[DP_STREAM_MAX];
 	u32 phy_idx;
 	u32 stream_cnt;
+
+	u32 dpcd_read_offset;
+	u32 dpcd_read_length;
+	u8 dpcd_read_buf[DPCD_MAX_READ_LEN];
 };
 
 static const struct dp_display_type_info dp_info = {
@@ -743,6 +752,245 @@ error:
 	return rc;
 }
 
+struct device *sysfs_dpcd_dev;
+static ssize_t dpcd_readb_show(struct device *dev,
+			       struct device_attribute *attr, char *buf)
+{
+	struct dp_display_private *dp;
+	uint8_t dpcd_byte;
+	int ret;
+
+	dp = dev_get_drvdata(dev);
+	if (!dp) {
+		return -ENODEV;
+	}
+	if (!dp->aux) {
+		return -ENODEV;
+	}
+
+	ret = drm_dp_dpcd_readb(dp->aux->drm_aux, dp->dpcd_read_offset,
+				&dpcd_byte);
+
+	DP_INFO("Byte value at 0x%05x: 0x%02x", dp->dpcd_read_offset,
+		dpcd_byte);
+
+	if (ret) {
+		return ret;
+	}
+
+	return scnprintf(buf, PAGE_SIZE, "0x%02x\n", dpcd_byte);
+}
+static ssize_t dpcd_read_show(struct device *dev, struct device_attribute *attr,
+			      char *buf)
+{
+	struct dp_display_private *dp;
+	int ret;
+
+	dp = dev_get_drvdata(dev);
+	if (!dp) {
+		return -ENODEV;
+	}
+	if (!dp->aux) {
+		return -ENODEV;
+	}
+
+	ret = drm_dp_dpcd_read(dp->aux->drm_aux, dp->dpcd_read_offset,
+			       dp->dpcd_read_buf, dp->dpcd_read_length);
+
+	if (ret != dp->dpcd_read_length) {
+		DP_ERR("fail: only read %d of %d bytes from 0x%05x\n", ret,
+		       dp->dpcd_read_length, dp->dpcd_read_offset);
+		return ret;
+	}
+
+	DP_INFO("Byte values starting at 0x%05x: %*ph\n", dp->dpcd_read_offset,
+		dp->dpcd_read_length, dp->dpcd_read_buf);
+
+	return scnprintf(buf, PAGE_SIZE, "%*ph\n", dp->dpcd_read_length,
+			 dp->dpcd_read_buf);
+}
+static ssize_t dpcd_ber_show(struct device *dev, struct device_attribute *attr,
+			     char *buf)
+{
+	struct dp_display_private *dp;
+	int ret;
+	int length;
+	int offset;
+	u16 ber_lanes[4];
+
+	dp = dev_get_drvdata(dev);
+	if (!dp) {
+		return -ENODEV;
+	}
+	if (!dp->aux) {
+		return -ENODEV;
+	}
+
+	// DPCD BER: 2 bytes per lane, 4 contiguous lanes
+	offset = DPCD_SYMBOL_ERROR_COUNT_LANE0;
+	length = 8;
+
+	ret = drm_dp_dpcd_read(dp->aux->drm_aux, offset, dp->dpcd_read_buf,
+			       length);
+
+	if (ret != length) {
+		DP_ERR("fail: only read %d of %d bytes from 0x%05x\n", ret,
+		       length, offset);
+		return ret;
+	}
+
+	ber_lanes[0] = (dp->dpcd_read_buf[1] << 8) | dp->dpcd_read_buf[0];
+	ber_lanes[1] = (dp->dpcd_read_buf[3] << 8) | dp->dpcd_read_buf[2];
+	ber_lanes[2] = (dp->dpcd_read_buf[5] << 8) | dp->dpcd_read_buf[4];
+	ber_lanes[3] = (dp->dpcd_read_buf[7] << 8) | dp->dpcd_read_buf[6];
+
+	DP_INFO("BER address(0x%05x) data: %*ph\n", offset, length / 2,
+		ber_lanes);
+
+	return scnprintf(buf, PAGE_SIZE, "%*ph\n", length / 2, ber_lanes);
+}
+static ssize_t dpcd_offset_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct dp_display_private *dp;
+
+	dp = dev_get_drvdata(dev);
+	if (!dp) {
+		return -ENODEV;
+	}
+
+	return scnprintf(buf, PAGE_SIZE, "0x%05x\n", dp->dpcd_read_offset);
+}
+static ssize_t dpcd_offset_store(struct device *dev,
+				 struct device_attribute *attr, const char *buf,
+				 size_t count)
+{
+	struct dp_display_private *dp;
+	int ret;
+	u32 offset;
+
+	dp = dev_get_drvdata(dev);
+	if (!dp) {
+		return -ENODEV;
+	}
+
+	ret = kstrtou32(buf, 0, &offset);
+	if (ret) {
+		return ret;
+	}
+
+	if ((offset < 0) || (offset > DPCD_MAX_READ_OFFSET)) {
+		DP_ERR("offset %d out of range [0, %d]\n", offset,
+		       DPCD_MAX_READ_OFFSET);
+		return -EINVAL;
+	}
+
+	DP_INFO("updating read register offset from 0x%05x to 0x%05x\n",
+		dp->dpcd_read_offset, offset);
+
+	dp->dpcd_read_offset = offset;
+
+	return count;
+}
+static ssize_t dpcd_length_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct dp_display_private *dp;
+
+	dp = dev_get_drvdata(dev);
+	if (!dp) {
+		return -ENODEV;
+	}
+	return scnprintf(buf, PAGE_SIZE, "%d\n", dp->dpcd_read_length);
+}
+static ssize_t dpcd_length_store(struct device *dev,
+				 struct device_attribute *attr, const char *buf,
+				 size_t count)
+{
+	struct dp_display_private *dp;
+	int ret;
+	u32 length;
+
+	dp = dev_get_drvdata(dev);
+	if (!dp) {
+		return -ENODEV;
+	}
+
+	ret = kstrtou32(buf, 0, &length);
+	if (ret) {
+		return ret;
+	}
+
+	if (length > DPCD_MAX_READ_LEN) {
+		DP_ERR("length %d exceeds max %d. Clipping to max.\n", length,
+		       DPCD_MAX_READ_LEN);
+		length = DPCD_MAX_READ_LEN;
+	}
+
+	DP_INFO("updating read length from %d to %d\n", dp->dpcd_read_length,
+		length);
+
+	dp->dpcd_read_length = length;
+
+	return count;
+}
+static DEVICE_ATTR_RO(dpcd_readb);
+static DEVICE_ATTR_RO(dpcd_read);
+static DEVICE_ATTR_RO(dpcd_ber);
+static DEVICE_ATTR_RW(dpcd_offset);
+static DEVICE_ATTR_RW(dpcd_length);
+
+static struct attribute *drm_dp_dev_attrs[] = {
+	&dev_attr_dpcd_read.attr,   &dev_attr_dpcd_readb.attr,
+	&dev_attr_dpcd_ber.attr,    &dev_attr_dpcd_offset.attr,
+	&dev_attr_dpcd_length.attr, NULL
+};
+
+static const struct attribute_group drm_dp_attr_group = {
+	.attrs = drm_dp_dev_attrs,
+};
+
+static const struct attribute_group *drm_dp_attr_groups[] = {
+	&drm_dp_attr_group,
+	NULL,
+};
+
+static int register_dpcd_sysfs_node(struct dp_display_private *dp_display_priv)
+{
+	if (!dp_display_priv || !dp_display_priv->pdev ||
+	    !(&(dp_display_priv->pdev->dev))) {
+		DP_ERR("dp_display_priv (or ->pdev->dev) null. failed to create dpcd_read node\n");
+		return -EINVAL;
+	}
+	if (!dp_display_priv->pdev->dev.class) {
+		DP_INFO("dp_display class null. creating class drm_dp\n");
+		dp_display_priv->pdev->dev.class =
+			class_create(THIS_MODULE, "drm_dp");
+		if (IS_ERR(dp_display_priv->pdev->dev.class)) {
+			DP_ERR("class_create failed. failed to create dpcd_read node\n");
+			return -EINVAL;
+		}
+	}
+	if (!dp_display_priv->pdev->dev.class->name ||
+	    !dp_display_priv->pdev->dev.parent) {
+		DP_ERR("dp_display classname or parent null. failed to create dpcd_read node\n");
+		return -EINVAL;
+	}
+
+	sysfs_dpcd_dev =
+		device_create_with_groups(dp_display_priv->pdev->dev.class,
+					  dp_display_priv->pdev->dev.parent, 0,
+					  dp_display_priv, drm_dp_attr_groups,
+					  "dpcd");
+
+	if (!sysfs_dpcd_dev) {
+		DP_ERR("sysfs_dpcd_dev null. failed to create drm_dpcd device\n");
+		return -ENODEV;
+	}
+
+	return 0;
+}
+
 static void dp_display_pause_audio(struct dp_display_private *dp, bool pause)
 {
 	struct dp_panel *dp_panel;
@@ -867,6 +1115,7 @@ static int dp_display_bind(struct device *dev, struct device *master,
 
 	dp->dp_display.drm_dev = drm;
 	dp->priv = drm->dev_private;
+	register_dpcd_sysfs_node(dp);
 	msm_register_vm_event(master, dev, &vm_event_ops,
 			(void *)&dp->dp_display);
 end:
@@ -4096,6 +4345,9 @@ static int dp_display_remove(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, dp);
+	if (sysfs_dpcd_dev) {
+		device_unregister(sysfs_dpcd_dev);
+	}
 
 	return 0;
 }

@@ -6824,6 +6824,24 @@ static int _sde_crtc_get_output_fence(struct drm_crtc *crtc,
 	return sde_fence_create(sde_crtc->output_fence, val, offset);
 }
 
+static int _sde_crtc_atomic_timing_property_index(struct sde_crtc *sde_crtc,
+		struct drm_property *property)
+{
+	int idx;
+
+	if (!sde_crtc || !property) {
+		DRM_ERROR("invalid argument(s)\n");
+		return -EINVAL;
+	}
+
+	for (idx = 0; idx < CRTC_TIMING_PROP_COUNT; ++idx) {
+		if (property == sde_crtc->timing_property[idx])
+			return idx;
+	}
+
+	return -EINVAL;
+}
+
 /**
  * sde_crtc_atomic_set_property - atomically set a crtc drm property
  * @crtc: Pointer to drm crtc structure
@@ -6852,7 +6870,17 @@ static int sde_crtc_atomic_set_property(struct drm_crtc *crtc,
 	cstate = to_sde_crtc_state(state);
 
 	SDE_ATRACE_BEGIN("sde_crtc_atomic_set_property");
-	/* check with cp property system first */
+	/*
+	 * Check that we're not trying to set one of the read-only CRTC timing
+	 * properties.
+	 */
+	idx = _sde_crtc_atomic_timing_property_index(sde_crtc, property);
+	if (idx != -EINVAL) {
+		ret = -EPERM;
+		goto exit;
+	}
+
+	/* check with cp property system */
 	ret = sde_cp_crtc_set_property(crtc, state, property, val);
 	if (ret != -ENOENT)
 		goto exit;
@@ -7040,6 +7068,7 @@ static int sde_crtc_atomic_get_property(struct drm_crtc *crtc,
 {
 	struct sde_crtc *sde_crtc;
 	struct sde_crtc_state *cstate;
+	struct dsi_backlight_config *bl_config;
 	int ret = -EINVAL, i;
 
 	if (!crtc || !state) {
@@ -7049,6 +7078,44 @@ static int sde_crtc_atomic_get_property(struct drm_crtc *crtc,
 
 	sde_crtc = to_sde_crtc(crtc);
 	cstate = to_sde_crtc_state(state);
+
+	/* Fastpath for atomic CRTC timing properties. */
+	i = _sde_crtc_atomic_timing_property_index(sde_crtc, property);
+	if (i != -EINVAL) {
+		bl_config = &sde_crtc->vblank_last_cb_bl_config;
+
+		switch (i) {
+		case CRTC_TIMING_PROP_BLU_SCANLINE_DURATION:
+			*val = bl_config->scanline_duration;
+			ret = 0;
+			break;
+		case CRTC_TIMING_PROP_BLU_SCANLINE_OFFSET_0:
+			*val = bl_config->scanline_offset[0];
+			ret = 0;
+			break;
+		case CRTC_TIMING_PROP_BLU_SCANLINE_OFFSET_1:
+			*val = bl_config->scanline_offset[1];
+			ret = 0;
+			break;
+		case CRTC_TIMING_PROP_LINEPTR_TIMESTAMP:
+			*val = sde_crtc->lineptr_last_cb_time;
+			ret = 0;
+			break;
+		case CRTC_TIMING_PROP_LINEPTR_OFFSET:
+			*val = sde_crtc->lineptr_last_cb_offset;
+			ret = 0;
+			break;
+		case CRTC_TIMING_PROP_LINEPTR_HEADROOM:
+			*val = sde_crtc->lineptr_last_cb_headroom;
+			ret = 0;
+			break;
+		default:
+			SDE_ERROR("invalid CRTC timing property\n");
+			break;
+		}
+
+		goto end;
+	}
 
 	i = msm_property_index(&sde_crtc->property_info, property);
 	if (i == CRTC_PROP_OUTPUT_FENCE) {
@@ -8019,6 +8086,67 @@ void sde_crtc_cancel_delayed_work(struct drm_crtc *crtc)
 	SDE_EVT32(DRMID(crtc), cache_status);
 }
 
+static void _sde_crtc_install_timing_property(struct drm_crtc *crtc,
+		const char *name, uint32_t property_idx, bool is_signed)
+{
+	struct sde_crtc *sde_crtc;
+	struct drm_property **propp;
+
+	if (!crtc) {
+		SDE_ERROR("invalid crtc\n");
+		return;
+	}
+
+	sde_crtc = to_sde_crtc(crtc);
+
+	if (!name || property_idx >= CRTC_TIMING_PROP_COUNT) {
+		DRM_ERROR("invalid argument(s), %s\n", name ? name : "null");
+		return;
+	}
+
+	propp = &sde_crtc->timing_property[property_idx];
+	if (*propp) {
+		DRM_ERROR("property %d/%s already exists?\n", property_idx, name);
+		return;
+	}
+
+	if (is_signed)
+		*propp = drm_property_create_signed_range(crtc->dev,
+			DRM_MODE_PROP_ATOMIC, name, S32_MIN, S32_MAX);
+	else
+		*propp = drm_property_create_range(crtc->dev,
+			DRM_MODE_PROP_ATOMIC, name, 0, U64_MAX);
+
+	if (!*propp) {
+		DRM_ERROR("create %s property failed\n", name);
+		return;
+	}
+
+	drm_object_attach_property(&crtc->base, *propp, 0);
+}
+
+static void _sde_crtc_install_timing_properties(struct drm_crtc *crtc)
+{
+	if (!crtc) {
+		SDE_ERROR("invalid crtc\n");
+		return;
+	}
+
+	_sde_crtc_install_timing_property(crtc, "blu_scanline_duration",
+			CRTC_TIMING_PROP_BLU_SCANLINE_DURATION, false);
+	_sde_crtc_install_timing_property(crtc, "blu_scanline_offset_0",
+			CRTC_TIMING_PROP_BLU_SCANLINE_OFFSET_0, false);
+	_sde_crtc_install_timing_property(crtc, "blu_scanline_offset_1",
+			CRTC_TIMING_PROP_BLU_SCANLINE_OFFSET_1, false);
+
+	_sde_crtc_install_timing_property(crtc, "lineptr_timestamp",
+			CRTC_TIMING_PROP_LINEPTR_TIMESTAMP, false);
+	_sde_crtc_install_timing_property(crtc, "lineptr_offset",
+			CRTC_TIMING_PROP_LINEPTR_OFFSET, true /* signed */);
+	_sde_crtc_install_timing_property(crtc, "lineptr_headroom",
+			CRTC_TIMING_PROP_LINEPTR_HEADROOM, true /* signed */);
+}
+
 /* initialize crtc */
 struct drm_crtc *sde_crtc_init(struct drm_device *dev, struct drm_plane *plane)
 {
@@ -8104,6 +8232,9 @@ struct drm_crtc *sde_crtc_init(struct drm_device *dev, struct drm_plane *plane)
 			sizeof(struct sde_crtc_state));
 
 	sde_crtc_install_properties(crtc, kms->catalog);
+
+	/* Install CRTC timing properties */
+	_sde_crtc_install_timing_properties(crtc);
 
 	/* Install color processing properties */
 	sde_cp_crtc_init(crtc);
