@@ -2374,6 +2374,18 @@ static int cam_smmu_unmap_buf_and_remove_from_list(
 		return -EINVAL;
 	}
 
+	if ((mapping_info->list.next == NULL) ||
+		(mapping_info->list.prev == NULL)) {
+		CAM_ERR(CAM_SMMU, "Error: list is empty or invalid list = %p prev = %p next = %p",
+			(void *)&mapping_info->list,
+			(void *)mapping_info->list.prev,
+			(void *)mapping_info->list.next);
+
+		return -EINVAL;
+	}
+
+	list_del_init(&mapping_info->list);
+
 	cam_smmu_update_monitor_array(&iommu_cb_set.cb_info[idx], false,
 		mapping_info);
 
@@ -2434,7 +2446,6 @@ static int cam_smmu_unmap_buf_and_remove_from_list(
 
 	mapping_info->buf = NULL;
 
-	list_del_init(&mapping_info->list);
 	hash_del(&mapping_info->node);
 
 	/* free one buffer */

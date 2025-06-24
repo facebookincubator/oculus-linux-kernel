@@ -28,6 +28,7 @@ obj-$(CONFIG_IIO_CHANNEL_SENSOR)	+= iio_channel_sensor.o
 obj-$(CONFIG_MISCFIFO)			+= miscfifo.o
 obj-$(CONFIG_MISCFIFO_BENCHMARK)	+= miscfifo_benchmark.o
 obj-$(CONFIG_MP3314_BLU)		+= mp3314.o
+obj-$(CONFIG_MP3317_BLU)		+= mp3317.o
 obj-$(CONFIG_NAUTILUS_RESOURCE_MANAGER)	+= nautilus.o
 obj-$(CONFIG_OCULUS_CHARGING_DOCK)	+= charging_dock.o
 obj-$(CONFIG_OCULUS_EXTERNAL_BATTERY)	+= external_battery.o

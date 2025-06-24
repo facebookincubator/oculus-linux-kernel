@@ -141,6 +141,13 @@ config MP3314_BLU
 	help
 	  Basic I2C driver for MP3314 BLU hardware.
 
+config MP3317_BLU
+	tristate "MP3317 BLU I2C driver"
+	default n
+	depends on I2C
+	help
+	  Basic I2C driver for MP3317 BLU hardware.
+
 config NAUTILUS_RESOURCE_MANAGER
 	tristate "Nautilus resource manager kernel driver"
 	default n

@@ -36,9 +36,6 @@ struct timesync_dev_data {
 	/* Timestamp of most recent GPIO toggle */
 	int64_t ap_ts_us;
 
-	/* True if MCU has requested timesync to be started */
-	bool timesync_enabled;
-
 	/* True if IRQ was triggered but we're still waiting for a MCU response. */
 	bool waiting_for_msg;
 

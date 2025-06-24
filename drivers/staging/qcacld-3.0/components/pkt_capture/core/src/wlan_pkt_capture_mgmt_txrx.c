@@ -176,7 +176,7 @@ pkt_capture_mgmtpkt_process(struct wlan_objmgr_psoc *psoc,
 	 */
 	if ((type == IEEE80211_FC0_TYPE_MGT) &&
 	    (sub_type == MGMT_SUBTYPE_AUTH)) {
-		uint8_t chan = wlan_freq_to_chan(txrx_status->chan_freq);
+		uint8_t chan = wlan_reg_freq_to_chan(txrx_status->chan_freq);
 
 		auth = (tSirMacAuthFrameBody *)(qdf_nbuf_data(nbuf) +
 			sizeof(tSirMacMgmtHdr));

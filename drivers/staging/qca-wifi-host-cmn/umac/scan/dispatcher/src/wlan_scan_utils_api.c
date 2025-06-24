@@ -355,7 +355,7 @@ util_scan_get_phymode_11be(struct wlan_objmgr_pdev *pdev,
 #endif
 
 #ifdef CONFIG_BAND_6GHZ
-static struct he_oper_6g_param *util_scan_get_he_6g_params(uint8_t *he_ops)
+struct he_oper_6g_param *util_scan_get_he_6g_params(uint8_t *he_ops)
 {
 	uint8_t len;
 	uint32_t he_oper_params;
@@ -2533,6 +2533,7 @@ util_scan_gen_scan_entry(struct wlan_objmgr_pdev *pdev,
 	scan_entry->pdev_id = wlan_objmgr_pdev_get_pdev_id(pdev);
 
 	recv_freq = rx_param->chan_freq;
+	scan_entry->recv_freq = recv_freq;
 	/* Copy per chain rssi to scan entry */
 	qdf_mem_copy(scan_entry->per_chain_rssi, rx_param->rssi_ctl,
 		     WLAN_MGMT_TXRX_HOST_MAX_ANTENNA);

@@ -111,30 +111,6 @@ uint32_t wlan_chan_to_freq(uint8_t chan)
 		return WLAN_5_GHZ_BASE_FREQ + chan * WLAN_CHAN_SPACING_5MHZ;
 }
 
-uint8_t wlan_freq_to_chan(uint32_t freq)
-{
-	uint8_t chan;
-
-	if (freq == 0)
-		return 0;
-
-	if (freq > WLAN_24_GHZ_BASE_FREQ && freq < WLAN_CHAN_14_FREQ)
-		chan = ((freq - WLAN_24_GHZ_BASE_FREQ) /
-			WLAN_CHAN_SPACING_5MHZ);
-	else if (freq == WLAN_CHAN_14_FREQ)
-		chan = WLAN_24_GHZ_CHANNEL_14;
-	else if ((freq > WLAN_24_GHZ_BASE_FREQ) &&
-		(freq < WLAN_5_GHZ_BASE_FREQ))
-		chan = (((freq - WLAN_CHAN_15_FREQ) /
-			WLAN_CHAN_SPACING_20MHZ) +
-			WLAN_24_GHZ_CHANNEL_15);
-	else
-		chan = (freq - WLAN_5_GHZ_BASE_FREQ) /
-			WLAN_CHAN_SPACING_5MHZ;
-
-	return chan;
-}
-
 void
 wlan_get_320_center_freq(qdf_freq_t freq,
 			 qdf_freq_t *center_freq1,

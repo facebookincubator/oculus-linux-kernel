@@ -153,9 +153,9 @@ module_param(con_enabled, bool, 0644);
 
 /*
  * Number of iterrations required while polling
- * where each iterration has a delay of 100 usecs
+ * where each iterration has a delay of 1 usec
  */
-#define POLL_ITERATIONS		1000
+#define POLL_ITERATIONS		5000 /* 5ms */
 
 #define IPC_LOG_MSG(ctx, x...) ipc_log_string(ctx, x)
 
@@ -580,26 +580,22 @@ static bool geni_wait_for_cmd_done(struct uart_port *uport, bool is_irq_masked)
 		UART_LOG_DBG(msm_port->ipc_log_misc, uport->dev,
 				"%s polling:%d\n", __func__, is_irq_masked);
 	if (is_irq_masked) {
-		/*
-		 * Polling is done for 1000 iterrations with
-		 * 10 usecs interval which in total accumulates
-		 * to 10 msecs
-		 */
+		/* Polling for interrupt to have fired */
 		if (msm_port->m_cmd) {
 			while (!msm_port->m_cmd_done && timeout > 0) {
 				msm_geni_serial_handle_isr(uport, &flags, true);
 				timeout--;
-				udelay(100);
+				udelay(1);
 			}
 		} else if (msm_port->s_cmd) {
 			while (!msm_port->s_cmd_done && timeout > 0) {
 				msm_geni_serial_handle_isr(uport, &flags, true);
 				timeout--;
-				udelay(100);
+				udelay(1);
 			}
 		}
 	} else {
-		/* Waiting for 10 milli second for interrupt to be fired */
+		/* Waiting for interrupt to be fired */
 		if (msm_port->m_cmd)
 			timeout = wait_for_completion_timeout
 					(&msm_port->m_cmd_timeout,

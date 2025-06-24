@@ -85,14 +85,6 @@ wlan_get_320_center_freq(qdf_freq_t freq,
 			 qdf_freq_t *center_freq2);
 
 /**
- * wlan_freq_to_chan() - converts frequency to channel
- * @freq: frequency
- *
- * Return: channel of frequency
- */
-uint8_t wlan_freq_to_chan(uint32_t freq);
-
-/**
  * wlan_is_ie_valid() - Determine if an IE sequence is valid
  * @ie: Pointer to the IE buffer
  * @ie_len: Length of the IE buffer @ie
