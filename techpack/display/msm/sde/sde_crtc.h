@@ -216,6 +216,33 @@ enum sde_crtc_vblank_id {
 };
 
 /**
+ * enum sde_crtc_timing_property - atomic DRM properties for CRTC timing events
+ * @CRTC_TIMING_PROP_BLU_SCANLINE_DURATION: programmed duration (in scanlines)
+ *                                          of the BLU flash.
+ * @CRTC_TIMING_PROP_BLU_SCANLINE_OFFSET_0: programmed offset (in scanlines)
+ *                                          of the first BLU flash.
+ * @CRTC_TIMING_PROP_BLU_SCANLINE_OFFSET_1: programmed offset (in scanlines)
+ *                                          of the second BLU flash, if
+ *                                          applicable.
+ * @CRTC_TIMING_PROP_LINEPTR_TIMESTAMP: last lineptr event timestamp.
+ * @CRTC_TIMING_PROP_LINEPTR_OFFSET: programmed offset (in scanlines) of the
+ *                                   last lineptr event from Vblank.
+ * @CRTC_TIMING_PROP_LINEPTR_HEADROOM: actual offset (in scanlines) of the last
+ *                                     lineptr event from Vblank.
+ */
+enum sde_crtc_timing_property {
+	CRTC_TIMING_PROP_BLU_SCANLINE_DURATION,
+	CRTC_TIMING_PROP_BLU_SCANLINE_OFFSET_0,
+	CRTC_TIMING_PROP_BLU_SCANLINE_OFFSET_1,
+	CRTC_TIMING_PROP_LINEPTR_TIMESTAMP,
+	CRTC_TIMING_PROP_LINEPTR_OFFSET,
+	CRTC_TIMING_PROP_LINEPTR_HEADROOM,
+
+	/* total # of properties */
+	CRTC_TIMING_PROP_COUNT
+};
+
+/**
  * struct sde_crtc - virtualized CRTC data structure
  * @base          : Base drm crtc structure
  * @name          : ASCII description of this crtc
@@ -245,6 +272,7 @@ enum sde_crtc_vblank_id {
  * @lineptr_last_cb_time : time in ns at last lineptr notification
  * @lineptr_last_cb_vtotal : total vert scanlines at last lineptr notification
  * @lineptr_last_cb_offset : lineptr offset at last lineptr notification
+ * @lineptr_last_cb_headroom : lineptr headroom at last lineptr notification
  * @sysfs_dev  : sysfs device node for crtc
  * @vsync_event_sf : Array of vsync event notifiers for sysfs device
  * @lineptr_event_sf : lineptr event notifier sysfs device
@@ -305,6 +333,8 @@ struct sde_crtc {
 	struct msm_property_data property_data[CRTC_PROP_COUNT];
 	struct drm_property_blob *blob_info;
 
+	struct drm_property *timing_property[CRTC_TIMING_PROP_COUNT];
+
 	/* output fence support */
 	struct sde_fence_context *output_fence;
 
@@ -321,6 +351,7 @@ struct sde_crtc {
 	u64 lineptr_last_cb_time;
 	int lineptr_last_cb_vtotal;
 	int lineptr_last_cb_offset;
+	int lineptr_last_cb_headroom;
 	struct sde_crtc_fps_info fps_info;
 	struct device *sysfs_dev;
 	struct kernfs_node *vsync_event_sf[SDE_CRTC_MAX_VBLANKS];

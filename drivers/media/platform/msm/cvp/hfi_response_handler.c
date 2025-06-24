@@ -481,6 +481,7 @@ static int hfi_process_session_cvp_msg(u32 device_id,
 	struct msm_cvp_inst *inst = NULL;
 	struct msm_cvp_core *core;
 	uintptr_t session_id;
+	int rc;
 
 	if (!pkt) {
 		dprintk(CVP_ERR, "%s: invalid param\n", __func__);
@@ -515,8 +516,10 @@ static int hfi_process_session_cvp_msg(u32 device_id,
 
 			msm_cvp_unmap_buf_cpu(inst, ktid);
 
-			return _deprecated_hfi_msg_process(device_id,
+			 rc = _deprecated_hfi_msg_process(device_id,
 				pkt, info, inst);
+			cvp_put_inst(inst);
+			return rc;
 		}
 		dprintk(CVP_ERR, "Invalid deprecate_bitmask %#x\n",
 					inst->deprecate_bitmask);

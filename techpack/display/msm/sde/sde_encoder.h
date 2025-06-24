@@ -121,7 +121,7 @@ void sde_encoder_register_vblank_callback(struct drm_encoder *encoder,
  * @data:	user data provided to callback
  */
 void sde_encoder_register_lineptr_callback(struct drm_encoder *encoder,
-		void (*cb)(void *, u64, int, int, bool), void *data);
+		void (*cb)(void *, u64, int, int, int, bool), void *data);
 
 /**
  * sde_encoder_set_lineptr_value - Set the value of the lineptr interrupt.

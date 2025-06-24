@@ -803,7 +803,7 @@ int stp_create_channel(struct stp_channel_data *const data)
 
 	working_channel = devm_kzalloc(_stp_device->parent_dev,
 				       sizeof(*working_channel), GFP_KERNEL);
-	if (IS_ERR(working_channel)) {
+	if (!working_channel) {
 		STP_DRV_LOG_ERR("c%d cannot allocate", data->channel);
 		return -ENOMEM;
 	}
@@ -908,7 +908,7 @@ int stp_create_device(struct device *dev)
 	}
 
 	_stp_device = devm_kzalloc(dev, sizeof(*_stp_device), GFP_KERNEL);
-	if (IS_ERR(_stp_device))
+	if (!_stp_device)
 		return -ENOMEM;
 
 	major = register_chrdev(0, STP_DEVICE_NAME, &stp_device_fops);

@@ -256,7 +256,7 @@ static int of_thermal_set_trips(struct thermal_zone_device *tz,
 	struct __thermal_zone *data = tz->devdata;
 	int high = INT_MAX, low = INT_MIN, ret = 0;
 
-	if (!data->senps || !data->senps->ops->set_trips)
+	if (!data->senps || !data->senps->ops->set_trips || data->average_polls > 1)
 		return -EINVAL;
 
 	mutex_lock(&data->senps->lock);
@@ -789,9 +789,9 @@ thermal_zone_of_add_sensor(struct device_node *zone,
 
 	/*
 	 * The thermal zone core will calculate the window if they have set the
-	 * optional set_trips pointer.
+	 * optional set_trips pointer. This works only without time averaging.
 	 */
-	if (sens_param->ops->set_trips)
+	if (tz->average_polls <= 1 && sens_param->ops->set_trips)
 		tzd->ops->set_trips = of_thermal_set_trips;
 
 	if (sens_param->ops->set_emul_temp)

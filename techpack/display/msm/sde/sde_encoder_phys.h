@@ -344,6 +344,7 @@ struct sde_encoder_phys {
 	bool cont_splash_enabled;
 	bool in_clone_mode;
 	int vfp_cached;
+	int vfp_fetch_lines_cached;
 	int lineptr_offset_cached;
 	enum frame_trigger_mode_type frame_trigger_mode;
 	bool dsc_4hs_merge_en;

@@ -272,7 +272,7 @@ struct sde_encoder_virt {
 	void *crtc_vblank_cb_data;
 
 	void (*crtc_lineptr_cb)(void *data, u64 sample_time, int vtotal,
-			int lineptr_offset, bool wb_tear);
+			int lineptr_offset, int lineptr_headroom, bool wb_tear);
 	void *crtc_lineptr_cb_data;
 
 	struct dentry *debugfs_root;
@@ -4312,31 +4312,42 @@ static void sde_encoder_underrun_callback(struct drm_encoder *drm_enc,
 }
 
 static bool sde_encoder_calc_lineptr_headroom(struct sde_encoder_virt *sde_enc,
-		u64 *sample_time, int *vtotal_out, int *headroom)
+		u64 *sample_time, int *vtotal_out, int *lineptr_offset,
+		int *lineptr_headroom)
 {
 	struct drm_display_mode *mode;
+	u64 start_time, end_time, external_1h_ns;
 	int cur_line, vtotal;
 
 	/* This should *never* be true, but check anyway */
-	if (!headroom || !vtotal_out || !sde_enc || !sde_enc->cur_master ||
-		        sde_enc->disp_info.intf_type != DRM_MODE_CONNECTOR_DSI ||
+	if (!lineptr_offset || !lineptr_headroom || !vtotal_out || !sde_enc ||
+			!sde_enc->cur_master ||
+			sde_enc->disp_info.intf_type != DRM_MODE_CONNECTOR_DSI ||
 			!sde_enc->cur_master->ops.get_line_count) {
 		*sample_time = ktime_to_ns(ktime_get());
 		return false;
 	}
 
 	mode = &sde_enc->cur_master->cached_mode;
+	*lineptr_offset = sde_enc->cur_master->lineptr_offset_cached -
+			sde_enc->cur_master->vfp_fetch_lines_cached;
 
 	vtotal = mode->vtotal;
+	start_time = ktime_get_ns();
 	cur_line = sde_enc->cur_master->ops.get_line_count(sde_enc->cur_master);
-	*sample_time = ktime_to_ns(ktime_get());
+	end_time = ktime_get_ns();
 
 	/* Wrap cur_line so that headroom is zeroed at Vsync */
 	if (cur_line < vtotal / 2)
 		cur_line += vtotal;
 
 	*vtotal_out = vtotal;
-	*headroom = vtotal - cur_line;
+	*lineptr_headroom = cur_line - vtotal;
+
+	external_1h_ns = 1000000000 / (drm_mode_vrefresh(mode) * vtotal);
+	*sample_time = (start_time + end_time) / 2 + external_1h_ns *
+			(*lineptr_offset - *lineptr_headroom);
+
 	return true;
 }
 
@@ -4372,13 +4383,13 @@ void sde_encoder_trigger_wb_cac(struct drm_device *dev, bool disarm)
 static void sde_encoder_lineptr_callback(struct drm_encoder *drm_enc,
 		struct sde_encoder_phys *phy_enc)
 {
-	struct sde_encoder_virt *sde_enc = NULL;
+	struct sde_encoder_virt *sde_enc = NULL; 
 	struct msm_drm_private *priv;
 	unsigned long lock_flags;
 
 	bool lineptr_headroom_calculated;
 	u64 sample_time = 0;
-	int lineptr_headroom = 0;
+	int lineptr_offset = 0, lineptr_headroom = 0;
 	int vtotal = 0;
 
 	bool wb_tear = false;
@@ -4398,11 +4409,12 @@ static void sde_encoder_lineptr_callback(struct drm_encoder *drm_enc,
 	 * to make sure the completion event fires)
 	 */
 	lineptr_headroom_calculated = sde_encoder_calc_lineptr_headroom(
-			sde_enc, &sample_time, &vtotal, &lineptr_headroom);
+			sde_enc, &sample_time, &vtotal, &lineptr_offset,
+			&lineptr_headroom);
 	if (lineptr_headroom_calculated) {
-		if (lineptr_headroom < (int)priv->wb_mild_tear_threshold)
+		if (-lineptr_headroom < (int)priv->wb_mild_tear_threshold)
 			wb_tear = true;
-		if (lineptr_headroom < (int)priv->wb_severe_tear_threshold) {
+		if (-lineptr_headroom < (int)priv->wb_severe_tear_threshold) {
 			pr_err_ratelimited("late lineptr, headroom %d\n", lineptr_headroom);
 			wb_disarm = true;
 		}
@@ -4420,7 +4432,8 @@ static void sde_encoder_lineptr_callback(struct drm_encoder *drm_enc,
 	spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
 	if (sde_enc->crtc_lineptr_cb)
 		sde_enc->crtc_lineptr_cb(sde_enc->crtc_lineptr_cb_data,
-			sample_time, vtotal, -lineptr_headroom, wb_tear);
+			sample_time, vtotal, lineptr_offset, lineptr_headroom,
+			wb_tear);
 	spin_unlock_irqrestore(&sde_enc->enc_spinlock, lock_flags);
 
 	SDE_ATRACE_END("encoder_lineptr_callback");
@@ -4459,7 +4472,7 @@ void sde_encoder_register_vblank_callback(struct drm_encoder *drm_enc,
 }
 
 void sde_encoder_register_lineptr_callback(struct drm_encoder *drm_enc,
-		void (*lineptr_cb)(void *, u64, int, int, bool),
+		void (*lineptr_cb)(void *, u64, int, int, int, bool),
 		void *lineptr_data)
 {
 	struct sde_encoder_virt *sde_enc = to_sde_encoder_virt(drm_enc);

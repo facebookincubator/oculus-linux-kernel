@@ -57,6 +57,11 @@
 #define NR_TOP_HITTERS		10
 #define COMPARE_RET		-1
 
+/* Disable watchdog initializtion, for debugging purposes. */
+static bool disable_wdt;
+module_param(disable_wdt, bool, 0444);
+MODULE_PARM_DESC(disable_wdt, "skip enabling of the qcom watchdog");
+
 typedef int (*compare_t) (const void *lhs, const void *rhs);
 
 #ifdef CONFIG_QCOM_INITIAL_LOGBUF
@@ -631,10 +636,10 @@ static __ref int watchdog_kthread(void *arg)
 	struct msm_watchdog_data *wdog_dd =
 		(struct msm_watchdog_data *)arg;
 	unsigned long delay_time = 0;
-	struct sched_param param = {.sched_priority = MAX_RT_PRIO-1};
+	struct sched_param param = {.sched_priority = MAX_PRIO-1};
 	int ret, cpu;
 
-	sched_setscheduler(current, SCHED_FIFO, &param);
+	sched_setscheduler(current, SCHED_NORMAL, &param);
 	while (!kthread_should_stop()) {
 		do {
 			ret = wait_event_interruptible(wdog_dd->pet_complete,
@@ -1042,6 +1047,12 @@ static int msm_watchdog_probe(struct platform_device *pdev)
 
 	if (!pdev->dev.of_node || !enable)
 		return -ENODEV;
+
+	if (disable_wdt) {
+		dev_err(&pdev->dev, "watchdog disabled by module param\n");
+		return -ENODEV;
+	}
+
 	wdog_dd = kzalloc(sizeof(struct msm_watchdog_data), GFP_KERNEL);
 	if (!wdog_dd)
 		return -EIO;

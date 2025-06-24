@@ -380,7 +380,7 @@ static struct usb_ss_ep_comp_descriptor ss_ncm_bulk_comp_desc = {
 	.bDescriptorType =	USB_DT_SS_ENDPOINT_COMP,
 
 	/* the following 2 values can be tweaked if necessary */
-	.bMaxBurst =		15,
+	.bMaxBurst =		0,
 	/* .bmAttributes =	0, */
 };
 
@@ -1552,6 +1552,15 @@ static int ncm_bind(struct usb_configuration *c, struct usb_function *f)
 	ss_ncm_notify_desc.bEndpointAddress =
 		fs_ncm_notify_desc.bEndpointAddress;
 
+#ifdef CONFIG_USB_CONFIGFS_NCM_DEBUG
+	/* ss bulk ep max burst is set only during bind, after binding
+	 * and enum, there is no point to set it
+	 */
+	ss_ncm_bulk_comp_desc.bMaxBurst = ncm_opts->ss_bulk_maxburst;
+	DBG(cdev, "ss_ncm_bulk_comp_desc.bMaxBurst is set to %d\n",
+			ss_ncm_bulk_comp_desc.bMaxBurst);
+#endif
+
 	status = usb_assign_descriptors(f, ncm_fs_function, ncm_hs_function,
 			ncm_ss_function, ncm_ss_function);
 	if (status)
@@ -1611,11 +1620,62 @@ USB_ETHERNET_CONFIGFS_ITEM_ATTR_QMULT(ncm);
 /* f_ncm_opts_ifname */
 USB_ETHERNET_CONFIGFS_ITEM_ATTR_IFNAME(ncm);
 
+#ifdef CONFIG_USB_CONFIGFS_NCM_DEBUG
+static ssize_t ncm_opts_ss_bulk_maxburst_show(
+			struct config_item *item, char *page)
+{
+	struct f_ncm_opts *opts = to_f_ncm_opts(item);
+	u8 val;
+
+	mutex_lock(&opts->lock);
+	val = opts->ss_bulk_maxburst;
+	mutex_unlock(&opts->lock);
+	return sprintf(page, "%d\n", val);
+}
+
+static ssize_t ncm_opts_ss_bulk_maxburst_store(
+			struct config_item *item,
+			const char *page, size_t len)
+{
+	struct f_ncm_opts *opts = to_f_ncm_opts(item);
+	u8 val;
+	int ret;
+
+	mutex_lock(&opts->lock);
+	if (opts->refcnt) {
+		ret = -EBUSY;
+		goto out;
+	}
+
+	ret = kstrtou8(page, 0, &val);
+	if (ret)
+		goto out;
+
+	opts->ss_bulk_maxburst = val;
+	ret = len;
+out:
+	mutex_unlock(&opts->lock);
+	return ret;
+	}
+
+/* f_ncm SuperSpeed and SuperSpeedPlus bulk endpoint max burst value */
+static struct configfs_attribute ncm_opts_attr_ss_bulk_maxburst = {
+	.ca_name	= "ss_bulk_maxburst",
+	.ca_mode	= S_IRUGO | S_IWUSR,
+	.ca_owner	= THIS_MODULE,
+	.show		= ncm_opts_ss_bulk_maxburst_show,
+	.store		= ncm_opts_ss_bulk_maxburst_store,
+};
+#endif
+
 static struct configfs_attribute *ncm_attrs[] = {
 	&ncm_opts_attr_dev_addr,
 	&ncm_opts_attr_host_addr,
 	&ncm_opts_attr_qmult,
 	&ncm_opts_attr_ifname,
+#ifdef CONFIG_USB_CONFIGFS_NCM_DEBUG
+	&ncm_opts_attr_ss_bulk_maxburst,
+#endif
 	NULL,
 };
 
@@ -1697,6 +1757,9 @@ static struct usb_function_instance *ncm_alloc_inst(void)
 	if (!opts)
 		return ERR_PTR(-ENOMEM);
 	opts->ncm_os_desc.ext_compat_id = opts->ncm_ext_compat_id;
+#ifdef CONFIG_USB_CONFIGFS_NCM_DEBUG
+	opts->ss_bulk_maxburst = ss_ncm_bulk_comp_desc.bMaxBurst;
+#endif
 
 	mutex_init(&opts->lock);
 	opts->func_inst.free_func_inst = ncm_free_inst;

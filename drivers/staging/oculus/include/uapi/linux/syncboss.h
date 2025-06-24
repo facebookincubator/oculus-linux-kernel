@@ -102,11 +102,6 @@ struct syncboss_display_event {
 } __attribute__((packed));
 #define SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE 85
 
-struct enable_timesync_data {
-	uint8_t enable;
-} __attribute__((packed));
-#define SYNCBOSS_ENABLE_TIMESYNC_MESSAGE_TYPE 8
-
 /*
  * THIS MUST BE ALINGED TO LIBSYNCBOSS Struct used in fbsource hal library -
  * fbsource/arvr/firmware/projects/libsyncboss/os_interface/syncboss_hal_impl_android_driver.c
