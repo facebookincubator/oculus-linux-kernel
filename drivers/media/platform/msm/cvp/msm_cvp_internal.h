@@ -337,6 +337,7 @@ struct msm_cvp_inst {
 	struct cvp_session_prop prop;
 	u32 cur_cmd_type;
 	struct mutex fence_lock;
+	char proc_name[100];
 };
 
 struct msm_cvp_fence_thread_data {

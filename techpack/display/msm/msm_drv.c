@@ -563,7 +563,7 @@ static int msm_drm_display_thread_create(struct sched_param param,
 	of_property_read_s32(dev->of_node, "qcom,sde-lineptr-scanline-advance",
 		&scanline_advance);
 	priv->lineptr_offset_default = (scanline_advance > 0) ?
-		-scanline_advance : -256;
+		-scanline_advance : 0;
 
 	/* Set thresholds for mild and severe tears on the writeback trigger */
 	priv->wb_mild_tear_threshold = 128;

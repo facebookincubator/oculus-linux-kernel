@@ -1068,7 +1068,7 @@ static int pwm_fan_probe(struct platform_device *pdev)
 		uint32_t fan_id = 0;
 
 		of_property_read_u32(pdev->dev.of_node, "reg", &fan_id);
-		if (fan_id > 1) {
+		if (fan_id > 2) {
 			dev_err(&pdev->dev, "Fan ID %d is unsupported\n", fan_id);
 			ret = -EINVAL;
 			goto err_tach_gpio_dir;
@@ -1076,7 +1076,8 @@ static int pwm_fan_probe(struct platform_device *pdev)
 
 		cookie = panel_event_notifier_register(
 				PANEL_EVENT_NOTIFICATION_PRIMARY,
-				fan_id == 1 ? PANEL_EVENT_NOTIFIER_CLIENT_FAN1 : PANEL_EVENT_NOTIFIER_CLIENT_FAN0,
+				fan_id == 2 ? PANEL_EVENT_NOTIFIER_CLIENT_FAN2 :
+				(fan_id == 1 ? PANEL_EVENT_NOTIFIER_CLIENT_FAN1 : PANEL_EVENT_NOTIFIER_CLIENT_FAN0),
 				NULL,
 				&pwm_fan_panel_notifier_cb,
 				&ctx->fb_notif);

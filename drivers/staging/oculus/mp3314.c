@@ -202,7 +202,7 @@ static int parse_dt(struct device *dev, struct mp3314_priv *bld,
 
 static void mp3314_read_initial_state(struct mp3314_priv *bld)
 {
-	unsigned int initial_state[MAX_REGISTER];
+	unsigned int initial_state[MAX_REGISTER + 1];
 	unsigned int reg, reg_val;
 
 	for (reg = 0; reg <= MAX_REGISTER; reg++) {
@@ -489,8 +489,6 @@ static const struct of_device_id match_table[] = {
 		.data = &mp3314_data},
 	{ .compatible = "meta,mp3314a",
 		.data = &mp3314a_data},
-	{ .compatible = "meta,mp3317",
-		.data = &mp3314_data},
 	{ }
 };
 

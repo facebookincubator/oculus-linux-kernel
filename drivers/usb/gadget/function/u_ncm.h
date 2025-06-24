@@ -23,6 +23,9 @@ struct f_ncm_opts {
 	struct config_group		*ncm_interf_group;
 	struct usb_os_desc		ncm_os_desc;
 	char				ncm_ext_compat_id[16];
+#ifdef CONFIG_USB_CONFIGFS_NCM_DEBUG
+	u8				ss_bulk_maxburst;
+#endif
 	/*
 	 * Read/write access to configfs attributes is handled by configfs.
 	 *

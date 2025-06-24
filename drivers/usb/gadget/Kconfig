@@ -316,6 +316,13 @@ config USB_CONFIGFS_NCM
 	  grouping of several ethernet frames into one USB transfer and
 	  different alignment possibilities.
 
+config USB_CONFIGFS_NCM_DEBUG
+	bool "Network Control Model (CDC NCM) debug"
+	depends on USB_CONFIGFS_NCM
+	default n
+	help
+	  For NCM gadget function debug.
+
 config USB_CONFIGFS_ECM
 	bool "Ethernet Control Model (CDC ECM)"
 	depends on USB_CONFIGFS

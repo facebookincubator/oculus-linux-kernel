@@ -342,6 +342,8 @@ static void programmable_fetch_config(struct sde_encoder_phys *phys_enc,
 
 	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
 	phys_enc->hw_intf->ops.setup_prg_fetch(phys_enc->hw_intf, &f);
+	phys_enc->vfp_fetch_lines_cached = (f.enable == 1) ?
+			vert_total - f.fetch_start / horiz_total : 0;
 	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
 }
 
@@ -503,9 +505,6 @@ static void sde_encoder_phys_vid_setup_timing_engine(
 	phys_enc->hw_intf->ops.setup_timing_gen(phys_enc->hw_intf,
 			&timing_params, fmt);
 
-	phys_enc->hw_intf->ops.set_lineptr_value(phys_enc->hw_intf,
-			phys_enc->lineptr_offset_cached);
-
 	if (test_bit(SDE_CTL_ACTIVE_CFG,
 				&phys_enc->hw_ctl->caps->features)) {
 		sde_encoder_helper_update_intf_cfg(phys_enc);
@@ -524,6 +523,15 @@ static void sde_encoder_phys_vid_setup_timing_engine(
 		programmable_fetch_config(phys_enc, &timing_params);
 		skewed_vsync_config(phys_enc, &timing_params);
 	}
+
+	if (phys_enc->hw_intf->ops.set_lineptr_value) {
+		spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
+		phys_enc->hw_intf->ops.set_lineptr_value(phys_enc->hw_intf,
+				phys_enc->lineptr_offset_cached -
+				phys_enc->vfp_fetch_lines_cached);
+		spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
+	}
+
 exit:
 	if (phys_enc->parent_ops.get_qsync_fps)
 		phys_enc->parent_ops.get_qsync_fps(
@@ -869,7 +877,7 @@ static int sde_encoder_phys_vid_set_lineptr_value(
 
 	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
 	rc = phys_enc->hw_intf->ops.set_lineptr_value(phys_enc->hw_intf,
-		offset);
+			offset - phys_enc->vfp_fetch_lines_cached);
 	if (!rc)
 		phys_enc->lineptr_offset_cached = offset;
 	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
@@ -1595,6 +1603,7 @@ struct sde_encoder_phys *sde_encoder_phys_vid_init(
 	phys_enc->enable_state = SDE_ENC_DISABLED;
 
 	phys_enc->lineptr_offset_cached = 0;
+	phys_enc->vfp_fetch_lines_cached = 0;
 
 	SDE_DEBUG_VIDENC(vid_enc, "created intf idx:%d\n", p->intf_idx);
 

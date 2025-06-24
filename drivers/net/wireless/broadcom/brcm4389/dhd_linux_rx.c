@@ -375,6 +375,12 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			if (dev_ingress_queue(ifp->net)) {
 				qdisc = dev_ingress_queue(ifp->net)->qdisc_sleeping;
 				if (qdisc != NULL && (qdisc->flags & TCQ_F_INGRESS)) {
+
+/* TODO: Mitigation for T221532659. Downlink throughput is significantly decreased when multiple interfaces exist.
+ * This seems to be related to the GRO being disabled in such cases.
+ * While the root cause is unknown yet, this temporary macro can prevent the GRO to be disabled.
+ */
+#ifdef ENABLE_DHD_GRO_TOGGLE_FOR_CLS_ACT
 #ifdef CONFIG_NET_CLS_ACT
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0))
 					if (ifp->net->miniq_ingress != NULL)
@@ -387,6 +393,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 						" qdisc rx traffic control\n", __FUNCTION__));
 					}
 #endif /* CONFIG_NET_CLS_ACT */
+#endif /* ENABLE_DHD_GRO_TOGGLE_FOR_CLS_ACT */
 				}
 			}
 		}
