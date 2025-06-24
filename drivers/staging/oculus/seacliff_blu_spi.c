@@ -115,7 +115,7 @@ static irqreturn_t blu_isr(int isr, void *spi_dev);
  * Init the backlight matrix back buffer, brightness buffer, and BRO buffer
  * with messages to be transferred in SPI to BLU devices.
  */
-static void init_buffers(struct blu_device *blu);
+static int init_buffers(struct blu_device *blu);
 
 /* Setup the sysnode for LED framework to control the backlight level */
 static int blu_spi_panel_backlight_node_setup(struct blu_device *blu);
@@ -191,17 +191,25 @@ static void blu_spi_update_backlight(struct blu_device *blu, u32 bl_lvl)
 	}
 }
 
-static void init_buffers(struct blu_device *blu)
+static int init_buffers(struct blu_device *blu)
 {
 	blu->back_buffer = devm_kmalloc(&blu->spi->dev, blu->matrix_size, GFP_KERNEL | GFP_DMA);
 	blu->brightness_buffer = devm_kmalloc(&blu->spi->dev, blu->matrix_size, GFP_KERNEL | GFP_DMA);
 	blu->bro_profile_buffer = devm_kmalloc(&blu->spi->dev, blu->rolloff_size, GFP_KERNEL | GFP_DMA);
 	blu->brightness_buffer_adj = devm_kzalloc(&blu->spi->dev, blu->matrix_size, GFP_KERNEL | GFP_DMA);
 
+	if (!blu->back_buffer || !blu->brightness_buffer
+		|| !blu->bro_profile_buffer || !blu->brightness_buffer_adj) {
+		dev_err(&blu->spi->dev, "Memory allocation failed\n");
+		return -ENOMEM;
+	}
+
 	/* ensure the correct SPI values are also in the intermediate buffers */
 	memcpy(blu->back_buffer, blu->backlight_matrix, blu->matrix_size);
 	memcpy(blu->brightness_buffer, blu->backlight_matrix, blu->matrix_size);
 	memcpy(blu->bro_profile_buffer, blu->bro_profile_default, blu->rolloff_size);
+
+	return 0;
 }
 
 static void swap_buffers(u8 **buffer1, u8 **buffer2)
@@ -900,6 +908,10 @@ static int blu_spi_probe(struct spi_device *spi)
 	}
 
 	blu->backlight_matrix = devm_kzalloc(&blu->spi->dev, blu->matrix_size, GFP_KERNEL | GFP_DMA);
+	if (!blu->backlight_matrix) {
+		dev_err(&blu->spi->dev, "Memory allocation failed\n");
+		return -ENOMEM;
+	}
 
 	ret = of_property_read_u8_array(spi->dev.of_node, "oculus,blu-init-matrix",
 		blu->backlight_matrix, blu->matrix_size);
@@ -920,6 +932,10 @@ static int blu_spi_probe(struct spi_device *spi)
 
 	blu->bro_profile_default = devm_kzalloc(&blu->spi->dev, blu->rolloff_size,
 		GFP_KERNEL | GFP_DMA);
+	if (!blu->bro_profile_default) {
+		dev_err(&blu->spi->dev, "Memory allocation failed\n");
+		return -ENOMEM;
+	}
 
 	ret = of_property_read_u8_array(spi->dev.of_node, "oculus,blu-rolloff-comp",
 		blu->bro_profile_default, blu->rolloff_size);
@@ -939,6 +955,10 @@ static int blu_spi_probe(struct spi_device *spi)
 
 	blu->corner_zone_indices = devm_kzalloc(&blu->spi->dev, (blu->zone_size * sizeof(u32)),
 		GFP_KERNEL | GFP_DMA);
+	if (!blu->corner_zone_indices) {
+		dev_err(&blu->spi->dev, "Memory allocation failed\n");
+		return -ENOMEM;
+	}
 
 	ret = of_property_read_u32_array(spi->dev.of_node, "oculus,blu-corner-zones",
 		blu->corner_zone_indices, blu->zone_size);
@@ -959,7 +979,11 @@ static int blu_spi_probe(struct spi_device *spi)
 	/* enable cross eye brightness by default */
 	blu->ceb_en = 1;
 
-	init_buffers(blu);
+	ret = init_buffers(blu);
+	if (ret) {
+		dev_err(&spi->dev, "failed to init buffers ret=%d\n", ret);
+		return ret;
+	}
 
 	ret = devm_request_threaded_irq(&spi->dev,
 			blu->irq, NULL, blu_isr,
