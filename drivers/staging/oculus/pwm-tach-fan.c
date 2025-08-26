@@ -41,7 +41,8 @@
 
 #define RECOVERY_STEP_SIZE 50
 #define FAN_MIN_OFF_TIME_MS 400
-#define FAN_STALL_DETECT_TIME_MS 6000
+#define FAN_CHECK_PERIOD_MS 5000
+#define FAN_STALL_DETECT_TIME_MS (FAN_CHECK_PERIOD_MS + 1000)
 #define FAN_STALL_REPORT_TIME_MS 9000 /* starting after stall detection */
 #define FAN_STARTUP_IRQ_IGNORE_TIME_MS 2300
 #define COLD_BOOT_PWM 84U
@@ -68,11 +69,10 @@ struct pwm_fan_ctx {
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *active_state;
 	struct pinctrl_state *idle_state;
-	struct hrtimer fan_timer;
 	struct thermal_cooling_device *cdev;
 	struct regulator *vdd_supply;
 	struct workqueue_struct *wq;
-	struct work_struct fan_work;
+	struct delayed_work fan_dwork;
 	struct work_struct fan_recovery_work;
 #if IS_ENABLED(CONFIG_DRM)
 	bool use_panel_notifiers;
@@ -113,19 +113,21 @@ struct pwm_fan_ctx {
 	bool force_failure;
 	bool ignore_tach_irqs;
 	bool fan_stalled;
+	bool vdd_enabled;
 	int reset_count;
+	bool target_acquired;
 };
 
-static ktime_t get_rpm_delay(int32_t rpm)
+static uint32_t get_rpm_delay_ms(int32_t rpm)
 {
 	if (rpm > 2000)
-		return ms_to_ktime(50);
+		return 50;
 	else if (rpm >= 1100)
-		return ms_to_ktime(100);
+		return 100;
 	else if (rpm >= 600)
-		return ms_to_ktime(150);
+		return 150;
 	else if (rpm >= 0)
-		return ms_to_ktime(200);
+		return 200;
 	return 0;
 }
 
@@ -156,18 +158,19 @@ static void reset_counters(struct pwm_fan_ctx *ctx)
 	ctx->tach_periods = 0;
 }
 
-static int enable_fan_notimestamp(struct pwm_fan_ctx *ctx)
+static int enable_fan_notimestamp_locked(struct pwm_fan_ctx *ctx)
 {
 	int ret;
 	ktime_t min_enable_time;
 	s64 delay_ms = 0;
 
-	if (ctx->vdd_supply != NULL) {
+	if (ctx->vdd_supply != NULL && !ctx->vdd_enabled) {
 		ret = regulator_enable(ctx->vdd_supply);
 		if (ret < 0) {
 			dev_err(&ctx->cdev->device, "regulator enable failed: %d\n", ret);
 			return ret;
 		}
+		ctx->vdd_enabled = true;
 		delay_ms = ctx->vdd_to_pwm_delay_ms;
 	}
 
@@ -196,30 +199,28 @@ static int enable_fan_notimestamp(struct pwm_fan_ctx *ctx)
 	reset_counters(ctx);
 	enable_irq(ctx->irq);
 	/* Allow fan enough time to start from idle */
-	hrtimer_start(&ctx->fan_timer,
-			ms_to_ktime(FAN_STARTUP_IRQ_IGNORE_TIME_MS),
-			HRTIMER_MODE_REL);
+	queue_delayed_work(ctx->wq, &ctx->fan_dwork,
+			   msecs_to_jiffies(FAN_STARTUP_IRQ_IGNORE_TIME_MS));
 
 	return 0;
 }
 
-static int enable_fan(struct pwm_fan_ctx *ctx)
+static int enable_fan_locked(struct pwm_fan_ctx *ctx)
 {
 	int ret;
 
-	ret = enable_fan_notimestamp(ctx);
+	ret = enable_fan_notimestamp_locked(ctx);
 	if (!ret)
 		ctx->last_enable_timestamp = ktime_get();
 
 	return ret;
 }
 
-static void disable_fan_notimestamp(struct pwm_fan_ctx *ctx)
+static void disable_fan_notimestamp_locked(struct pwm_fan_ctx *ctx)
 {
 	int rc;
 
-	hrtimer_cancel(&ctx->fan_timer);
-	cancel_work_sync(&ctx->fan_work);
+	cancel_delayed_work_sync(&ctx->fan_dwork);
 	disable_irq(ctx->irq);
 	if (ctx->idle_state) {
 		rc = pinctrl_select_state(ctx->pinctrl, ctx->idle_state);
@@ -229,16 +230,19 @@ static void disable_fan_notimestamp(struct pwm_fan_ctx *ctx)
 	pwm_disable(ctx->pwm);
 	atomic64_set(&ctx->rpm, 0);
 
-	if (ctx->vdd_supply != NULL) {
+	if (ctx->vdd_supply != NULL && ctx->vdd_enabled) {
 		int rc = regulator_disable(ctx->vdd_supply);
-		if (rc < 0)
+		if (rc < 0) {
 			dev_err(&ctx->cdev->device, "regulator disable failed: %d\n", rc);
+			return;
+		}
+		ctx->vdd_enabled = false;
 	}
 }
 
-static void disable_fan(struct pwm_fan_ctx *ctx)
+static void disable_fan_locked(struct pwm_fan_ctx *ctx)
 {
-	disable_fan_notimestamp(ctx);
+	disable_fan_notimestamp_locked(ctx);
 	ctx->last_disable_timestamp = ktime_get();
 }
 
@@ -253,7 +257,7 @@ static int set_pwm_locked(struct pwm_fan_ctx *ctx, int32_t pwm)
 		return ret;
 
 	if (pwm == 0) {
-		disable_fan(ctx);
+		disable_fan_locked(ctx);
 		goto set_pwm_success;
 	}
 
@@ -267,7 +271,7 @@ static int set_pwm_locked(struct pwm_fan_ctx *ctx, int32_t pwm)
 		return ret;
 
 	if (ctx->pwm_value == 0) {
-		ret = enable_fan(ctx);
+		ret = enable_fan_locked(ctx);
 		if (ret)
 			return ret;
 	}
@@ -319,9 +323,9 @@ static void reset_fan_locked(struct pwm_fan_ctx *ctx, int32_t pwm)
 	 * Toggle fan off and back on. Do this without updating the disable timestamp,
 	 * so fan failure state isn't reset.
 	 */
-	disable_fan_notimestamp(ctx);
+	disable_fan_notimestamp_locked(ctx);
 	set_pwm_locked(ctx, pwm);
-	enable_fan_notimestamp(ctx);
+	enable_fan_notimestamp_locked(ctx);
 	ctx->reset_count++;
 }
 
@@ -750,15 +754,15 @@ static int32_t calc_rpm_step(struct pwm_fan_ctx *ctx)
 
 static void fan_work_func(struct work_struct *work)
 {
-	struct pwm_fan_ctx *ctx = container_of(work, struct pwm_fan_ctx,
-			fan_work);
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct pwm_fan_ctx *ctx = container_of(dwork, struct pwm_fan_ctx, fan_dwork);
 	int32_t rpm_mid = 0;
 	int32_t rpm_history_idx = ctx->timer_ticks;
 	int32_t tolerance;
 	bool fan_failed;
 
 	if (!mutex_trylock(&ctx->lock))
-		return;
+		goto end;
 
 	/*
 	 * Some fans emit spurious tach interrupts during start-up even
@@ -767,6 +771,25 @@ static void fan_work_func(struct work_struct *work)
 	 * that come in during the first FAN_STARTUP_IRQ_IGNORE_TIME_MS.
 	 */
 	ctx->ignore_tach_irqs = false;
+
+	if (ctx->target_acquired) {
+		/*
+		 * RPM monitoring was paused because the PWM was resulting
+		 * in the desired rate last we checked (FAN_CHECK_PERIOD_MS
+		 * ago). It's now time to re-evaluate to make sure the RPM
+		 * is still on target.
+		 */
+		dev_dbg(&ctx->cdev->device, "performing fan health check\n");
+		ctx->target_acquired = false;
+		reset_counters(ctx);
+		enable_irq(ctx->irq);
+
+		/*
+		 * Return early to give some time for some IRQs to come in,
+		 * for a more accurate RPM measurement.
+		 */
+		goto end_unlock;
+	}
 
 	if (ctx->rpm_value != ctx->target_rpm_value) {
 		int32_t prev_rpm = ctx->rpm_value;
@@ -808,7 +831,7 @@ static void fan_work_func(struct work_struct *work)
 			}
 			queue_work(ctx->wq, &ctx->fan_recovery_work);
 		}
-		goto end_work_func;
+		goto end_unlock;
 	}
 
 	if (ctx->fan_stalled) {
@@ -828,7 +851,7 @@ static void fan_work_func(struct work_struct *work)
 
 	/* Require filled RPM history buffer to determine median */
 	if (ctx->timer_ticks < MAX_RPM_HISTORY)
-		goto end_work_func;
+		goto end_unlock;
 
 	/* Take median of last 3 historical RPM values */
 	/* TODO(ethanc): Take median across N samples */
@@ -843,26 +866,35 @@ static void fan_work_func(struct work_struct *work)
 	 */
 	tolerance = get_tolerance(ctx->rpm_value);
 	if (ctx->force_failure || abs(rpm_mid - ctx->rpm_value) > tolerance) {
-		int32_t pwm = (rpm_mid > ctx->rpm_value) ? (ctx->pwm_value - 1) : (ctx->pwm_value + 1);
+		int32_t pwm;
+
+		/* PWM needs adjustment as RPM is off-target. */
+		ctx->target_acquired = false;
+
+		pwm = (rpm_mid > ctx->rpm_value) ? (ctx->pwm_value - 1) : (ctx->pwm_value + 1);
 		/* Restrict to PWM range */
 		pwm = max(min(ctx->max_pwm, pwm), ctx->min_pwm);
 		set_pwm_locked(ctx, pwm);
 
 		ctx->last_rpm_update_timestamp = ktime_get();
+
+	} else {
+		/*
+		 * PWM is resulting in desired RPM. RPM IRQ can be disabled
+		 * until the next fan status check (ex. FAN_CHECK_PERIOD_MS)
+		 */
+		dev_dbg(&ctx->cdev->device, "fan rpm reached target\n");
+		ctx->target_acquired = true;
+		disable_irq(ctx->irq);
 	}
-end_work_func:
+
+end_unlock:
 	mutex_unlock(&ctx->lock);
-}
-
-static enum hrtimer_restart fan_timer_func(struct hrtimer *timer)
-{
-	struct pwm_fan_ctx *ctx = container_of(timer, struct pwm_fan_ctx,
-			fan_timer);
-
-	queue_work(ctx->wq, &ctx->fan_work);
-	hrtimer_forward_now(&ctx->fan_timer,
-			get_rpm_delay(atomic64_read(&ctx->rpm)));
-	return HRTIMER_RESTART;
+end:
+	queue_delayed_work(ctx->wq, &ctx->fan_dwork,
+			   msecs_to_jiffies(ctx->target_acquired ?
+				FAN_CHECK_PERIOD_MS :
+				get_rpm_delay_ms(atomic64_read(&ctx->rpm))));
 }
 
 static int pwm_fan_of_get_cooling_data(struct device *dev,
@@ -1011,11 +1043,9 @@ static int pwm_fan_probe(struct platform_device *pdev)
 		goto err_exit;
 	}
 
-	INIT_WORK(&ctx->fan_work, fan_work_func);
+	INIT_DELAYED_WORK(&ctx->fan_dwork, fan_work_func);
 	INIT_WORK(&ctx->fan_recovery_work, fan_recovery_work_func);
 	mutex_init(&ctx->lock);
-	hrtimer_init(&ctx->fan_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	ctx->fan_timer.function = fan_timer_func;
 
 	ret = platform_get_irq_byname(pdev, "fan_irq");
 	if (ret < 0) {
@@ -1196,7 +1226,7 @@ static int pwm_fan_remove(struct platform_device *pdev)
 	thermal_cooling_device_unregister(ctx->cdev);
 	mutex_lock(&ctx->lock);
 	if (ctx->pwm_value)
-		disable_fan(ctx);
+		disable_fan_locked(ctx);
 	mutex_unlock(&ctx->lock);
 
 	destroy_workqueue(ctx->wq);

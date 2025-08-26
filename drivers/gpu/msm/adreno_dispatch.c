@@ -546,6 +546,13 @@ static int dispatcher_queue_context(struct adreno_device *adreno_dev,
 	return ret;
 }
 
+/*
+ * Calculate the time delta from the sync in nsecs by converting from GPU ticks
+ * (which operates on a 19.2 MHz timer) and add that to the sync ktime.
+ */
+ #define SYNC_TICKS(ticks) \
+	(node->sync_ktime + (int64_t)((ticks) - node->sync_ticks) * 10000 / 192)
+
 /**
  * sendcmd() - Send a drawobj to the GPU hardware
  * @dispatcher: Pointer to the adreno dispatcher struct
@@ -564,10 +571,12 @@ static int sendcmd(struct adreno_device *adreno_dev,
 	struct adreno_dispatcher_drawqueue *dispatch_q =
 				ADRENO_DRAWOBJ_DISPATCH_DRAWQUEUE(drawobj);
 	struct kgsl_thread_private *thread = drawctxt->base.thread_priv;
+	struct kgsl_threadstats_history_node *node;
 	struct adreno_submit_time time;
 	uint64_t profile_offset;
 	uint64_t secs = 0;
 	unsigned long nsecs = 0;
+	unsigned long flags;
 	int ret;
 
 	mutex_lock(&device->mutex);
@@ -689,27 +698,33 @@ static int sendcmd(struct adreno_device *adreno_dev,
 		dispatch_q->expires = jiffies +
 			msecs_to_jiffies(adreno_drawobj_timeout);
 
-	thread->sync_ktime = time.ktime;
-	thread->sync_ticks = time.ticks;
-	thread->stats[KGSL_THREADSTATS_SUBMITTED] = time.ktime;
-	thread->stats[KGSL_THREADSTATS_SUBMITTED_ID] = drawobj->timestamp;
-	thread->stats[KGSL_THREADSTATS_SUBMITTED_COUNT]++;
-
-	/*
-	 * Update the thread-local time sync. This can be used to adjust
-	 * the ALWAYSON performance counter output back to the kernel's
-	 * monotonic clock.
-	 */
-	thread->stats[KGSL_THREADSTATS_SYNC_DELTA] = thread->sync_ktime -
-			thread->sync_ticks * 10000 / 192;
-
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_SUBMITTED_EVENT]);
-
 	trace_adreno_cmdbatch_submitted(drawobj, (int) dispatcher->inflight,
 		time.ticks, (unsigned long) secs, nsecs / 1000, drawctxt->rb,
 		adreno_get_rptr(drawctxt->rb));
 
 	mutex_unlock(&device->mutex);
+
+	/*
+	 * Look this entry up in the history and update its submitted time if
+	 * found.
+	 */
+	spin_lock_irqsave(&thread->history_lock, flags);
+	list_for_each_entry(node, &thread->history_list, node) {
+		struct kgsl_threadstats_entry *entry = &node->entry;
+
+		if (entry->timestamp == drawobj->timestamp) {
+			node->sync_ktime = time.ktime;
+			node->sync_ticks = time.ticks;
+
+			thread->stats[KGSL_THREADSTATS_SUBMITTED] = time.ktime;
+			thread->stats[KGSL_THREADSTATS_SUBMITTED_ID] = drawobj->timestamp;
+			thread->stats[KGSL_THREADSTATS_SUBMITTED_COUNT]++;
+
+			entry->submitted = time.ktime;
+			break;
+		}
+	}
+	spin_unlock_irqrestore(&thread->history_lock, flags);
 
 	cmdobj->submit_ticks = time.ticks;
 
@@ -1215,22 +1230,43 @@ static unsigned int _check_context_state_to_queue_cmds(
 static void _queue_drawobj(struct adreno_context *drawctxt,
 	struct kgsl_drawobj *drawobj)
 {
-	ktime_t t;
-	struct kgsl_thread_private *thread = drawctxt->base.thread_priv;
-
 	/* Put the command into the queue */
 	drawctxt->drawqueue[drawctxt->drawqueue_tail] = drawobj;
 	drawctxt->drawqueue_tail = (drawctxt->drawqueue_tail + 1) %
 			ADRENO_CONTEXT_DRAWQUEUE_SIZE;
 	drawctxt->queued++;
 
-	/* Get the kernel monotonic clock */
-	t = ktime_get();
-	thread->stats[KGSL_THREADSTATS_QUEUED] = ktime_to_ns(t);
-	thread->stats[KGSL_THREADSTATS_QUEUED_ID] = drawobj->timestamp;
-	thread->stats[KGSL_THREADSTATS_QUEUED_COUNT]++;
+	if (drawobj->timestamp != 0 && (drawobj->type & CMDOBJ_TYPE) != 0) {
+		struct kgsl_thread_private *thread = drawctxt->base.thread_priv;
+		struct kgsl_threadstats_history_node *node;
+		struct kgsl_threadstats_entry *entry;
+		uint64_t count, ktime;
+		unsigned long flags;
 
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_QUEUED_EVENT]);
+		/* Get the kernel monotonic clock */
+		ktime = ktime_get_ns();
+
+		spin_lock_irqsave(&thread->history_lock, flags);
+
+		thread->stats[KGSL_THREADSTATS_QUEUED] = ktime;
+		thread->stats[KGSL_THREADSTATS_QUEUED_ID] = drawobj->timestamp;
+		count = thread->stats[KGSL_THREADSTATS_QUEUED_COUNT]++;
+
+		node = &thread->history_entries[count % KGSL_THREADSTATS_HISTORY_LENGTH];
+		list_del_init(&node->node);
+		list_add(&node->node, &thread->history_list);
+
+		/* Initialize the history entry. */
+		node->sync_ktime = 0;
+		node->sync_ticks = 0;
+
+		entry = &node->entry;
+		memset(entry, 0, sizeof(struct kgsl_threadstats_entry));
+		entry->timestamp = (uint64_t)drawobj->timestamp;
+		entry->queued = ktime;
+
+		spin_unlock_irqrestore(&thread->history_lock, flags);
+	}
 
 	trace_adreno_cmdbatch_queued(drawobj, drawctxt->queued);
 }
@@ -2377,80 +2413,6 @@ static void cmdobj_profile_ticks(struct adreno_device *adreno_dev,
 	*retire = entry->retired;
 }
 
-
-/*
- * Calculate the time delta from the sync in nsecs by converting from GPU
- * ticks (which operates on a 19.2 MHz timer) and add that to the sync
- * ktime. Global sync times are updated on cmdobj submission, so we need
- * to handle event timing on either side of the sync update hence the
- * conversion to int64_t.
- */
-#define _gpu_ticks_to_ns(delta_ticks) ((int64_t)(delta_ticks) * 10000 / 192)
-
-static uint64_t _calculate_sync_relative_time(
-		struct kgsl_thread_private *thread, uint64_t event_ticks)
-{
-	return thread->sync_ktime +
-		_gpu_ticks_to_ns(event_ticks - thread->sync_ticks);
-}
-
-static void consume_cmdobj(struct adreno_device *adreno_dev,
-		struct kgsl_drawobj_cmd *cmdobj)
-{
-	struct adreno_dispatcher *dispatcher = &adreno_dev->dispatcher;
-	struct kgsl_drawobj *drawobj = DRAWOBJ(cmdobj);
-	struct adreno_context *drawctxt = ADRENO_CONTEXT(drawobj->context);
-	struct kgsl_thread_private *thread = drawctxt->base.thread_priv;
-	uint64_t start = 0;
-	uint64_t secs;
-	uint64_t nsecs;
-
-	/* Early out if this cmdobj has already been consumed */
-	if (test_bit(CMDOBJ_CONSUMED, &cmdobj->priv))
-		return;
-
-	if (test_bit(CMDOBJ_PROFILE, &cmdobj->priv)) {
-		void *ptr = adreno_dev->profile_kptr;
-		struct adreno_drawobj_profile_entry *entry;
-
-		entry = (struct adreno_drawobj_profile_entry *)
-			(ptr + (cmdobj->profile_index * sizeof(*entry)) +
-			 ADRENO_DRAWOBJ_PROFILE_BASE);
-
-		/* Make sure that we're reading the latest value. */
-		smp_rmb();
-		start = entry->started;
-
-		thread->stats[KGSL_THREADSTATS_CONSUMED] =
-			_calculate_sync_relative_time(thread, start);
-	}
-
-	thread->stats[KGSL_THREADSTATS_CONSUMED_ID] = drawobj->timestamp;
-	thread->stats[KGSL_THREADSTATS_CONSUMED_COUNT]++;
-
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_CONSUMED_EVENT]);
-
-	secs = thread->stats[KGSL_THREADSTATS_CONSUMED];
-	nsecs = do_div(secs, 1000000000);
-
-	/*
-	 * For A3xx we still get the rptr from the CP_RB_RPTR instead of
-	 * rptr scratch out address. At this point GPU clocks turned off.
-	 * So avoid reading GPU register directly for A3xx.
-	 */
-	if (adreno_is_a3xx(adreno_dev))
-		trace_adreno_cmdbatch_consumed(drawobj,
-			(int) dispatcher->inflight, start, secs, nsecs,
-			drawctxt->rb, 0);
-	else
-		trace_adreno_cmdbatch_consumed(drawobj,
-			(int) dispatcher->inflight, start, secs, nsecs,
-			drawctxt->rb, adreno_get_rptr(drawctxt->rb));
-
-	/* Mark that this cmdobj has been consumed */
-	set_bit(CMDOBJ_CONSUMED, &cmdobj->priv);
-}
-
 static int adreno_dispatch_consume_drawqueue(struct adreno_device *adreno_dev,
 		struct adreno_dispatcher_drawqueue *drawqueue)
 {
@@ -2465,7 +2427,8 @@ static int adreno_dispatch_consume_drawqueue(struct adreno_device *adreno_dev,
 
 		if (kgsl_check_timestamp_consumed(device, drawobj->context,
 			drawobj->timestamp)) {
-			consume_cmdobj(adreno_dev, cmdobj);
+			/* Mark that this cmdobj has been consumed */
+			set_bit(CMDOBJ_CONSUMED, &cmdobj->priv);
 			count++;
 		}
 
@@ -2489,24 +2452,53 @@ static void retire_cmdobj(struct adreno_device *adreno_dev,
 		_print_recovery(KGSL_DEVICE(adreno_dev), cmdobj);
 	}
 
-	if (test_bit(CMDOBJ_PROFILE, &cmdobj->priv)) {
+	if (test_bit(CMDOBJ_PROFILE, &cmdobj->priv))
 		cmdobj_profile_ticks(adreno_dev, cmdobj, &start, &active, &end);
 
-		thread->stats[KGSL_THREADSTATS_RETIRED] =
-			_calculate_sync_relative_time(thread, end);
+	if ((active != 0 || start != 0) && end != 0) {
+		struct kgsl_threadstats_history_node *node;
+		uint64_t consumed_ktime = 0;
+		uint64_t retired_ktime;
+		uint64_t active_ktime;
+		unsigned long flags;
 
 		/* Add any active time that hasn't yet been accounted for. */
 		if (active > 0 && active < end)
 			thread->stats[KGSL_THREADSTATS_ACTIVE_TIME] +=
-				_gpu_ticks_to_ns(end - active);
+				(end - active) * 10000 / 192;
+
+		/*
+		 * Look this entry up in the history and update its consumed,
+		 * retired, and active times if found.
+		 */
+		spin_lock_irqsave(&thread->history_lock, flags);
+		list_for_each_entry(node, &thread->history_list, node) {
+			struct kgsl_threadstats_entry *entry = &node->entry;
+
+			if (entry->timestamp == drawobj->timestamp) {
+				retired_ktime = SYNC_TICKS(end);
+				/* TODO: Handle preemption properly. */
+				active_ktime = retired_ktime;
+				if (start != 0) {
+					consumed_ktime = SYNC_TICKS(start);
+					active_ktime -= consumed_ktime;
+				} else
+					active_ktime -= entry->submitted;
+
+				thread->stats[KGSL_THREADSTATS_RETIRED] =
+						retired_ktime;
+				thread->stats[KGSL_THREADSTATS_RETIRED_ID] =
+						drawobj->timestamp;
+				thread->stats[KGSL_THREADSTATS_RETIRED_COUNT]++;
+
+				entry->consumed = consumed_ktime;
+				entry->retired = retired_ktime;
+				entry->active = active_ktime;
+				break;
+			}
+		}
+		spin_unlock_irqrestore(&thread->history_lock, flags);
 	}
-
-	thread->stats[KGSL_THREADSTATS_RETIRED_ID] = drawobj->timestamp;
-	thread->stats[KGSL_THREADSTATS_RETIRED_COUNT]++;
-
-	sysfs_notify_dirent(thread->event_sd[KGSL_THREADSTATS_RETIRED_EVENT]);
-	sysfs_notify_dirent(
-		thread->event_sd[KGSL_THREADSTATS_ACTIVE_TIME_EVENT]);
 
 	/*
 	 * For A3xx we still get the rptr from the CP_RB_RPTR instead of
