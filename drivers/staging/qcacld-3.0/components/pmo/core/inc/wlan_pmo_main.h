@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -386,36 +386,21 @@ pmo_intersect_packet_filter(struct pmo_psoc_priv_obj *psoc_ctx)
 }
 
 /*
- * pmo_host_action_on_page_fault() - Returns action host will take on page fault
- * @psoc: PSOC object manager pointer.
- *
- * Returns: Host action on page fault event
- */
-enum pmo_page_fault_action
-pmo_host_action_on_page_fault(struct wlan_objmgr_psoc *psoc);
-
-#define pmo_is_host_pagefault_action(_psoc, _action) \
-		(pmo_host_action_on_page_fault(_psoc) == (_action))
-
-static inline bool pmo_no_op_on_page_fault(struct wlan_objmgr_psoc *psoc)
-{
-	return pmo_is_host_pagefault_action(psoc, PMO_PF_HOST_ACTION_NO_OP);
-}
-
-static inline bool pmo_enable_ssr_on_page_fault(struct wlan_objmgr_psoc *psoc)
-{
-	return pmo_is_host_pagefault_action(psoc, PMO_PF_HOST_ACTION_TRIGGER_SSR);
-}
-
-/*
- * pmo_get_min_pagefault_wakeups_for_action() - get pagefault wakeups for host
- * to initiate action
+ * pmo_enable_ssr_on_page_fault: Enable/disable ssr on pagefault
  * @psoc: objmgr psoc
  *
- * Return: Min wakeups interval for host action on pagefault
+ * Return: True if SSR is enabled on pagefault
+ */
+bool pmo_enable_ssr_on_page_fault(struct wlan_objmgr_psoc *psoc);
+
+/*
+ * pmo_get_max_pagefault_wakeups_for_ssr: get pagefault wakeups for ssr
+ * @psoc: objmgr psoc
+ *
+ * Return: SSR interval for pagefault
  */
 uint8_t
-pmo_get_min_pagefault_wakeups_for_action(struct wlan_objmgr_psoc *psoc);
+pmo_get_max_pagefault_wakeups_for_ssr(struct wlan_objmgr_psoc *psoc);
 
 /*
  * pmo_get_interval_for_pagefault_wakeup_counts: get ssr interval for pagefault
@@ -433,7 +418,6 @@ pmo_get_interval_for_pagefault_wakeup_counts(struct wlan_objmgr_psoc *psoc);
  * Return: SSR frequency on pagefault
  */
 uint32_t pmo_get_ssr_frequency_on_pagefault(struct wlan_objmgr_psoc *psoc);
-
 /**
  * pmo_get_vdev_bridge_addr() - API to get Bridge mac address
  * @vdev: vdev object

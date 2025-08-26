@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -79,7 +78,7 @@
 
 /*
  * <ini>
- * adapt_dwell_lpf_weight - weight to calculate avg low pass filter.
+ * adapt_dwell_lpf_weight - weight to caclulate avg low pass filter.
  * @Min: 0
  * @Max: 100
  * @Default: 80

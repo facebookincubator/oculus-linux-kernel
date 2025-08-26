@@ -39,30 +39,19 @@
  */
 static uint32_t dp_txrx_get_tx_ack_count(struct wlan_dp_intf *dp_intf)
 {
-	struct cdp_soc_t *soc = cds_get_context(QDF_MODULE_ID_SOC);
-	struct wlan_dp_link *dp_link;
-	struct wlan_dp_link *dp_link_next;
-	uint32_t ack_count = 0;
-
-	dp_for_each_link_held_safe(dp_intf, dp_link, dp_link_next) {
-		ack_count += cdp_get_tx_ack_stats(soc, dp_link->link_id);
-	}
-
-	return ack_count;
+	return cdp_get_tx_ack_stats(cds_get_context(QDF_MODULE_ID_SOC),
+				    dp_intf->intf_id);
 }
 
 void dp_nud_set_gateway_addr(struct wlan_objmgr_vdev *vdev,
 			     struct qdf_mac_addr gw_mac_addr)
 {
-	struct wlan_dp_link *dp_link = dp_get_vdev_priv_obj(vdev);
-	struct wlan_dp_intf *dp_intf;
+	struct wlan_dp_intf *dp_intf = dp_get_vdev_priv_obj(vdev);
 
-	if (!dp_link) {
-		dp_err("Unable to get DP link");
+	if (!dp_intf) {
+		dp_err("Unable to get DP Interface");
 		return;
 	}
-
-	dp_intf = dp_link->dp_intf;
 	qdf_mem_copy(dp_intf->nud_tracking.gw_mac_addr.bytes,
 		     gw_mac_addr.bytes,
 		     sizeof(struct qdf_mac_addr));
@@ -88,6 +77,11 @@ void dp_nud_incr_gw_rx_pkt_cnt(struct wlan_dp_intf *dp_intf,
 void dp_nud_flush_work(struct wlan_dp_intf *dp_intf)
 {
 	struct wlan_dp_psoc_context *dp_ctx = dp_intf->dp_ctx;
+	struct wlan_dp_psoc_callbacks *dp_ops = &dp_ctx->dp_ops;
+
+	if (dp_ops->dp_is_link_adapter(dp_ops->callback_ctx,
+				       dp_intf->intf_id))
+		return;
 
 	if (dp_intf->device_mode == QDF_STA_MODE &&
 	    dp_ctx->dp_cfg.enable_nud_tracking) {
@@ -149,7 +143,7 @@ static void dp_nud_stats_info(struct wlan_dp_intf *dp_intf)
 	struct wlan_dp_psoc_callbacks *cb = &dp_intf->dp_ctx->dp_ops;
 	uint32_t pause_map;
 
-	vdev = dp_objmgr_get_vdev_by_user(dp_intf->def_link, WLAN_DP_ID);
+	vdev = dp_objmgr_get_vdev_by_user(dp_intf, WLAN_DP_ID);
 	if (!vdev) {
 		return;
 	}
@@ -167,7 +161,7 @@ static void dp_nud_stats_info(struct wlan_dp_intf *dp_intf)
 	cb->os_if_dp_nud_stats_info(vdev);
 
 	pause_map = cb->dp_get_pause_map(cb->callback_ctx,
-					 dp_intf->dev);
+					 dp_intf->intf_id);
 	dp_info("Current pause_map value %x", pause_map);
 	dp_objmgr_put_vdev_by_user(vdev, WLAN_DP_ID);
 }
@@ -219,7 +213,7 @@ static bool dp_nud_honour_failure(struct wlan_dp_intf *dp_intf)
 	uint8_t bssid[QDF_MAC_ADDR_SIZE];
 	bool ap_is_gateway;
 
-	vdev = dp_objmgr_get_vdev_by_user(dp_intf->def_link, WLAN_DP_ID);
+	vdev = dp_objmgr_get_vdev_by_user(dp_intf, WLAN_DP_ID);
 	if (!vdev)
 		goto fail;
 	wlan_vdev_mgr_get_param_bssid(vdev, bssid);
@@ -285,7 +279,7 @@ static void dp_nud_failure_work(void *data)
 	}
 
 	dp_ctx->dp_ops.dp_nud_failure_work(dp_ctx->dp_ops.callback_ctx,
-					   dp_intf->dev);
+					   dp_intf->intf_id);
 }
 
 void dp_nud_init_tracking(struct wlan_dp_intf *dp_intf)
@@ -352,7 +346,6 @@ static void dp_nud_filter_netevent(struct qdf_mac_addr *netdev_addr,
 {
 	int status;
 	struct wlan_dp_intf *dp_intf;
-	struct wlan_dp_link *dp_link;
 	struct wlan_dp_psoc_context *dp_ctx;
 	struct wlan_objmgr_vdev *vdev;
 
@@ -390,13 +383,7 @@ static void dp_nud_filter_netevent(struct qdf_mac_addr *netdev_addr,
 		return;
 	}
 
-	/*
-	 * NUD is used for STATION mode only, where all the MLO links
-	 * are assumed to be connected. Hence use the deflink here to check
-	 * if the interface is connected.
-	 */
-	dp_link = dp_intf->def_link;
-	vdev = dp_objmgr_get_vdev_by_user(dp_link, WLAN_DP_ID);
+	vdev = dp_objmgr_get_vdev_by_user(dp_intf, WLAN_DP_ID);
 	if (!vdev)
 		return;
 
@@ -406,8 +393,7 @@ static void dp_nud_filter_netevent(struct qdf_mac_addr *netdev_addr,
 		return;
 	}
 	dp_objmgr_put_vdev_by_user(vdev, WLAN_DP_ID);
-
-	if (!dp_link->conn_info.is_authenticated) {
+	if (!dp_intf->conn_info.is_authenticated) {
 		dp_info("client " QDF_MAC_ADDR_FMT
 			" is in the middle of WPS/EAPOL exchange.",
 			QDF_MAC_ADDR_REF(dp_intf->mac_addr.bytes));
@@ -477,15 +463,12 @@ void dp_nud_netevent_cb(struct qdf_mac_addr *netdev_addr,
 
 void dp_nud_indicate_roam(struct wlan_objmgr_vdev *vdev)
 {
-	struct wlan_dp_link *dp_link = dp_get_vdev_priv_obj(vdev);
-	struct wlan_dp_intf *dp_intf;
+	struct wlan_dp_intf *dp_intf = dp_get_vdev_priv_obj(vdev);
 
-	if (!dp_link) {
-		dp_err("Unable to get DP link");
+	if (!dp_intf) {
+		dp_err("Unable to get DP Interface");
 		return;
 	}
-
-	dp_intf = dp_link->dp_intf;
 	dp_nud_set_tracking(dp_intf, DP_NUD_NONE, false);
 }
 #endif

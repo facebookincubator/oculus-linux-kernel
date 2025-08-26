@@ -28,8 +28,6 @@
 #include <wlan_vdev_mlme_api.h>
 #include "cfg_ucfg_api.h"
 #include <wlan_serialization_api.h>
-#include "wlan_cm_api.h"
-#include "host_diag_core_event.h"
 
 /* CRC polynomial 0xedb88320 */
 static unsigned long const wlan_shortssid_table[] = {
@@ -203,83 +201,6 @@ static const uint8_t *wlan_get_ie_ptr_from_eid_n_oui(uint8_t eid,
 	}
 
 	return NULL;
-}
-
-void wlan_iecap_set(uint8_t *iecap,
-		    uint8_t bit_pos,
-		    uint8_t tot_bits,
-		    uint32_t value)
-{
-	uint8_t fit_bits;
-	uint8_t byte_cnt;
-	uint8_t prev_fit_bits = 0;
-	uint32_t shift_value;
-
-	/* calculate byte position of the field in IE capability */
-	byte_cnt = bit_pos / 8;
-	/* calculate the bit position in the start byte that needs to be set */
-	bit_pos = bit_pos % 8;
-	fit_bits = 8 - bit_pos;
-	fit_bits = (tot_bits > fit_bits) ? 8 - bit_pos : tot_bits;
-
-	while ((bit_pos + tot_bits) > 8) {
-		/* clear the target bit */
-		QDF_SET_BITS(iecap[byte_cnt], bit_pos, fit_bits, value);
-		tot_bits = tot_bits - fit_bits;
-		bit_pos = bit_pos + fit_bits;
-		if (bit_pos == 8) {
-			bit_pos = 0;
-			byte_cnt++;
-		}
-		prev_fit_bits = prev_fit_bits + fit_bits;
-		fit_bits = 8 - bit_pos;
-		fit_bits = (tot_bits > fit_bits) ? 8 - bit_pos : tot_bits;
-	}
-
-	if ((bit_pos + tot_bits) <= 8) {
-		/* clear the target bit */
-		shift_value = value >> prev_fit_bits;
-		QDF_SET_BITS(iecap[byte_cnt], bit_pos, fit_bits, shift_value);
-	}
-}
-
-uint32_t wlan_iecap_get(uint8_t *iecap,
-			uint8_t bit_pos,
-			uint32_t tot_bits)
-{
-	uint8_t fit_bits;
-	uint8_t byte_cnt;
-	uint8_t temp_val;
-	uint8_t cur_bit_pos = 0;
-	uint32_t val = 0;
-
-	/* calculate byte position of the field in IE capability */
-	byte_cnt = bit_pos / 8;
-	temp_val = *(iecap + byte_cnt);
-	/* calculate the bit position in the start byte */
-	bit_pos = bit_pos % 8;
-	fit_bits = 8 - bit_pos;
-	fit_bits = (tot_bits > fit_bits) ? 8 - bit_pos : tot_bits;
-
-	while ((tot_bits + bit_pos) > 8) {
-		val |= QDF_GET_BITS(temp_val, bit_pos, fit_bits) << cur_bit_pos;
-		tot_bits = tot_bits - fit_bits;
-		bit_pos = bit_pos + fit_bits;
-		if (bit_pos == 8) {
-			bit_pos = 0;
-			byte_cnt++;
-			temp_val = *(iecap + byte_cnt);
-		}
-		cur_bit_pos = cur_bit_pos + fit_bits;
-
-		fit_bits = 8 - bit_pos;
-		fit_bits = (tot_bits > fit_bits) ? 8 - bit_pos : tot_bits;
-	}
-
-	if ((bit_pos + tot_bits) <= 8)
-		val |= QDF_GET_BITS(temp_val, bit_pos, fit_bits) << cur_bit_pos;
-
-	return val;
 }
 
 const uint8_t *wlan_get_ie_ptr_from_eid(uint8_t eid,
@@ -1684,9 +1605,6 @@ static void wlan_vdev_down_pending(struct wlan_objmgr_pdev *pdev,
 	if (!psoc)
 		return;
 
-	if (wlan_vdev_mlme_is_mlo_bridge_vdev(vdev))
-		return;
-
 	cmd_type = wlan_serialization_get_vdev_active_cmd_type(vdev);
 	wlan_vdev_obj_lock(vdev);
 	if ((wlan_vdev_mlme_is_init_state(vdev) != QDF_STATUS_SUCCESS) ||
@@ -1717,9 +1635,6 @@ static void wlan_vdev_ap_down_pending(struct wlan_objmgr_pdev *pdev,
 		return;
 
 	if (wlan_vdev_mlme_get_opmode(vdev) != QDF_SAP_MODE)
-		return;
-
-	if (wlan_vdev_mlme_is_mlo_bridge_vdev(vdev))
 		return;
 
 	cmd_type = wlan_serialization_get_vdev_active_cmd_type(vdev);
@@ -1851,14 +1766,11 @@ static void wlan_get_connected_vdev_handler(struct wlan_objmgr_psoc *psoc,
 
 	if (context->connected)
 		return;
-
 	op_mode = wlan_vdev_mlme_get_opmode(vdev);
 	if (op_mode != QDF_STA_MODE && op_mode != QDF_P2P_CLIENT_MODE)
 		return;
-
-	if (wlan_cm_is_vdev_disconnected(vdev))
+	if (wlan_vdev_is_up(vdev) != QDF_STATUS_SUCCESS)
 		return;
-
 	if (wlan_vdev_get_bss_peer_mac(vdev, &bss_peer_mac) !=
 	    QDF_STATUS_SUCCESS)
 		return;
@@ -1962,42 +1874,6 @@ bool wlan_get_connected_vdev_by_mld_addr(struct wlan_objmgr_psoc *psoc,
 
 	return context.connected;
 }
-#endif
-
-#if defined(WLAN_FEATURE_11BE)
-enum wlan_phymode
-wlan_eht_chan_phy_mode(uint32_t freq,
-		       uint16_t bw_val,
-		       enum phy_ch_width chan_width)
-{
-	if (wlan_reg_is_24ghz_ch_freq(freq)) {
-		if (bw_val == 20)
-			return WLAN_PHYMODE_11BEG_EHT20;
-		else if (bw_val == 40)
-			return WLAN_PHYMODE_11BEG_EHT40;
-	} else {
-		if (bw_val == 20)
-			return WLAN_PHYMODE_11BEA_EHT20;
-		else if (bw_val == 40)
-			return WLAN_PHYMODE_11BEA_EHT40;
-		else if (bw_val == 80)
-			return WLAN_PHYMODE_11BEA_EHT80;
-		else if (chan_width == CH_WIDTH_160MHZ)
-			return WLAN_PHYMODE_11BEA_EHT160;
-		else if (chan_width == CH_WIDTH_320MHZ)
-			return WLAN_PHYMODE_11BEA_EHT320;
-	}
-	return WLAN_PHYMODE_AUTO;
-}
-#else
-enum wlan_phymode
-wlan_eht_chan_phy_mode(uint32_t freq,
-		       uint16_t bw_val,
-		       enum phy_ch_width chan_width)
-{
-	return WLAN_PHYMODE_AUTO;
-}
-
 #endif
 
 static void wlan_pdev_chan_match(struct wlan_objmgr_pdev *pdev, void *object,

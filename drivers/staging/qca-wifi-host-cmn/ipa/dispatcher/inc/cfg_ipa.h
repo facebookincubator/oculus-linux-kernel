@@ -92,7 +92,7 @@
  * <ini>
  * gIPAHighBandwidthMbps - IPA high bw threshold
  * @Min: 200
- * @Max: 4294967295UL
+ * @Max: 1000
  * @Default: 400
  *
  * This ini specifies the IPA high bw threshold
@@ -108,7 +108,7 @@
  #define CFG_DP_IPA_HIGH_BANDWIDTH_MBPS \
 		CFG_INI_UINT("gIPAHighBandwidthMbps", \
 		200, \
-		4294967295UL, \
+		1000, \
 		400, \
 		CFG_VALUE_OR_DEFAULT, "IPA high bw threshold")
 
@@ -116,7 +116,7 @@
  * <ini>
  * gIPAMediumBandwidthMbps - IPA medium bw threshold
  * @Min: 100
- * @Max: 4294967295UL
+ * @Max: 400
  * @Default: 200
  *
  * This ini specifies the IPA medium bw threshold
@@ -132,7 +132,7 @@
  #define CFG_DP_IPA_MEDIUM_BANDWIDTH_MBPS \
 		CFG_INI_UINT("gIPAMediumBandwidthMbps", \
 		100, \
-		4294967295UL, \
+		400, \
 		200, \
 		CFG_VALUE_OR_DEFAULT, "IPA medium bw threshold")
 
@@ -140,7 +140,7 @@
  * <ini>
  * gIPALowBandwidthMbps - IPA low bw threshold
  * @Min: 0
- * @Max: 4294967295UL
+ * @Max: 100
  * @Default: 100
  *
  * This ini specifies the IPA low bw threshold
@@ -156,7 +156,7 @@
  #define CFG_DP_IPA_LOW_BANDWIDTH_MBPS \
 		CFG_INI_UINT("gIPALowBandwidthMbps", \
 		0, \
-		4294967295UL, \
+		100, \
 		100, \
 		CFG_VALUE_OR_DEFAULT, "IPA low bw threshold")
 

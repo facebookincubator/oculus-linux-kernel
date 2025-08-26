@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -190,24 +190,6 @@ size_t peer_delete_mlo_params_size(struct peer_delete_cmd_params *req);
 uint8_t *peer_delete_add_mlo_params(uint8_t *buf_ptr,
 				    struct peer_delete_cmd_params *req);
 
-/**
- * vdev_stop_mlo_params_size() - Get MLO params size in vdev stop
- * @params: VDEV stop request params
- *
- * Return: size of MLO params in VDEV stop
- */
-size_t vdev_stop_mlo_params_size(struct vdev_stop_params *params);
-
-/**
- * vdev_stop_add_mlo_params() - Add MLO params in VDEV stop cmd
- * @buf_ptr: Pointer to VDEV stop cmd buffer.
- * @params: VDEV stop request params
- *
- * Return: Pointer to new offset of cmd buffer.
- */
-uint8_t *vdev_stop_add_mlo_params(uint8_t *buf_ptr,
-				  struct vdev_stop_params *params);
-
 /** wmi_11be_tlv_attach_tlv - Attach 11be relaated callbacks
  *  @wmi_handle: WMI handle
  */
@@ -350,18 +332,6 @@ static size_t peer_delete_mlo_params_size(struct peer_delete_cmd_params *req)
 
 static uint8_t *peer_delete_add_mlo_params(uint8_t *buf_ptr,
 					   struct peer_delete_cmd_params *req)
-{
-	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC, 0);
-	return buf_ptr + WMI_TLV_HDR_SIZE;
-}
-
-static inline size_t vdev_stop_mlo_params_size(struct vdev_stop_params *params)
-{
-	return WMI_TLV_HDR_SIZE;
-}
-
-static inline uint8_t *vdev_stop_add_mlo_params(uint8_t *buf_ptr,
-						struct vdev_stop_params *params)
 {
 	WMITLV_SET_HDR(buf_ptr, WMITLV_TAG_ARRAY_STRUC, 0);
 	return buf_ptr + WMI_TLV_HDR_SIZE;

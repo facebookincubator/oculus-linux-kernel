@@ -21,7 +21,7 @@
  * DOC: wlan_cp_stats_mc_defs.h
  *
  * This file provide definition for structure/enums/defines related to control
- * path stats component
+ * path stats componenet
  */
 
 #ifndef __WLAN_CP_STATS_MC_DEFS_H__
@@ -53,6 +53,8 @@
 #define IS_LSB_SET(__num) ((__num) & BIT(0))
 
 #define VDEV_ALL                    0xFF
+
+#define NOISE_FLOOR_INVALID         (-128)
 
 /**
  * enum stats_req_type - enum indicating bit position of various stats type in
@@ -332,24 +334,6 @@ struct pdev_mc_cp_extd_stats {
 	uint32_t rx_other_11ax_msdu_cnt;
 };
 
-/* Max supported bandwidth is 320Mhz, so max 16 subbands for 20Mhz */
-#define MAX_WIDE_BAND_SCAN_CHAN 16
-
-/**
- * struct wide_band_scan_chan_info - wide band scan channel info
- * @vdev_id: vdev id
- * @num_chan: number of channels (for each subbands fo 20Mhz)
- * @is_wide_band_scan: wide band scan or not
- * @cca_busy_subband_info: CCA busy for each possible 20Mhz subbands
- * of the wideband scan channel
- */
-struct wide_band_scan_chan_info {
-	uint32_t vdev_id;
-	uint8_t num_chan;
-	bool is_wide_band_scan;
-	uint32_t cca_busy_subband_info[MAX_WIDE_BAND_SCAN_CHAN];
-};
-
 /**
  * struct channel_status
  * @channel_freq: Channel freq
@@ -365,7 +349,6 @@ struct wide_band_scan_chan_info {
  * @mac_clk_mhz: sample frequency
  * @channel_id: channel index
  * @cmd_flags: indicate which stat event is this status coming from
- * @subband_info: wide band scan channel info
  */
 struct channel_status {
 	uint32_t    channel_freq;
@@ -381,7 +364,6 @@ struct channel_status {
 	uint32_t    mac_clk_mhz;
 	uint32_t    channel_id;
 	uint32_t    cmd_flags;
-	struct wide_band_scan_chan_info subband_info;
 };
 
 /**
@@ -777,7 +759,6 @@ struct peer_stats_info_ext_event {
  * @tx_rate_flags: tx rate flags, (enum tx_rate_info)
  * @last_event: The LSB indicates if the event is the last event or not and the
  *              MSB indicates if this feature is supported by FW or not.
- * @mac_seq_num: sequence number of event when fw update to host
  * @num_peer_stats_info_ext: number of peer extended stats info
  * @peer_stats_info_ext: peer extended stats info
  * @bcn_protect_stats: pmf bcn protect stats
@@ -808,7 +789,6 @@ struct stats_event {
 	uint32_t rx_rate;
 	enum tx_rate_info tx_rate_flags;
 	uint32_t last_event;
-	uint8_t mac_seq_num;
 	uint32_t num_peer_stats_info_ext;
 	struct peer_stats_info_ext_event *peer_stats_info_ext;
 	struct pmf_bcn_protect_stats bcn_protect_stats;
@@ -872,4 +852,10 @@ typedef struct {
 	uint32_t *rx_pkt_per_mcs;
 } wmi_host_peer_stats_info;
 
+static inline bool is_noise_floor_invalid(uint32_t noise_floor)
+{
+	if (!noise_floor || noise_floor == NOISE_FLOOR_INVALID)
+		return true;
+	return false;
+}
 #endif /* __WLAN_CP_STATS_MC_DEFS_H__ */

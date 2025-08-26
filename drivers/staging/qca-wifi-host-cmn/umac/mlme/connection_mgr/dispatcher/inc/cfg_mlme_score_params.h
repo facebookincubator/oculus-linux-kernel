@@ -26,16 +26,10 @@
 #define RoamAPScore_RSSIWeight_min 0
 #define RoamAPScore_RSSIWeight_max 100
 #define RoamAPScore_RSSIWeight_default 65
-# define ROAMAPSCORE_CUWEIGHT_MIN 0
-# define ROAMAPSCORE_CUWEIGHT_MAX 100
-# define ROAMAPSCORE_CUWEIGHT_DEFAULT 35
 #else
 #define RoamAPScore_RSSIWeight_min 0
 #define RoamAPScore_RSSIWeight_max 100
 #define RoamAPScore_RSSIWeight_default 20
-# define ROAMAPSCORE_CUWEIGHT_MIN 0
-# define ROAMAPSCORE_CUWEIGHT_MAX 100
-# define ROAMAPSCORE_CUWEIGHT_DEFAULT 25
 #endif
 /*
  * <ini>
@@ -283,7 +277,7 @@
 
 /*
  * <ini>
- * channel_congestion_weightage - channel Congestion
+ * channel_congestion_weightage/RoamAPScore_CUWeight - channel Congestion
  * Weightage to
  * calculate best candidate
  * @Min: 0
@@ -301,32 +295,11 @@
  *
  * </ini>
  */
-
-/*
- * <ini>
- * RoamAPScore_CUWeight - roamapscore cu weight
- * Weightage to
- * calculate best candidate
- * @Min: 0
- * @Max: 100
- * @Default: 35
- *
- * This ini is used to increase/decrease channel congestion weightage in
- * candidate selection. Congestion is measured with the help of ESP/QBSS load.
- *
- * Related: num_esp_qbss_slots
- *
- * Supported Feature: STA Candidate selection
- *
- * Usage: External
- *
- * </ini>
- */
 #define CFG_SCORING_CHAN_CONGESTION_WEIGHTAGE CFG_INI_UINT( \
 	"channel_congestion_weightage RoamAPScore_CUWeight", \
-	ROAMAPSCORE_CUWEIGHT_MIN, \
-	ROAMAPSCORE_CUWEIGHT_MAX, \
-	ROAMAPSCORE_CUWEIGHT_DEFAULT, \
+	0, \
+	100, \
+	25, \
 	CFG_VALUE_OR_DEFAULT, \
 	"Channel Congestion Weightage")
 

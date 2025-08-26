@@ -99,19 +99,12 @@ static void pld_pcie_remove(struct pci_dev *pdev)
 	struct osif_psoc_sync *psoc_sync;
 
 	errno = osif_psoc_sync_trans_start_wait(&pdev->dev, &psoc_sync);
-
-#ifdef ENFORCE_PLD_REMOVE
-	if (errno && errno != -EINVAL)
-		return;
-#else
 	if (errno)
 		return;
-#endif
 
 	osif_psoc_sync_unregister(&pdev->dev);
 
-	if (psoc_sync)
-		osif_psoc_sync_wait_for_ops(psoc_sync);
+	osif_psoc_sync_wait_for_ops(psoc_sync);
 
 	pld_context = pld_get_global_context();
 
@@ -123,10 +116,8 @@ static void pld_pcie_remove(struct pci_dev *pdev)
 	pld_del_dev(pld_context, &pdev->dev);
 
 out:
-	if (psoc_sync) {
-		osif_psoc_sync_trans_stop(psoc_sync);
-		osif_psoc_sync_destroy(psoc_sync);
-	}
+	osif_psoc_sync_trans_stop(psoc_sync);
+	osif_psoc_sync_destroy(psoc_sync);
 }
 
 /**
@@ -304,9 +295,6 @@ static void pld_pcie_uevent(struct pci_dev *pdev, uint32_t status)
 		break;
 	case CNSS_FW_DOWN:
 		data.uevent = PLD_FW_DOWN;
-		break;
-	case CNSS_SYS_REBOOT:
-		data.uevent = PLD_SYS_REBOOT;
 		break;
 	default:
 		goto out;

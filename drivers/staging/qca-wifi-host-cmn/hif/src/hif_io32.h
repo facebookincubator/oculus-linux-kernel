@@ -33,7 +33,6 @@
 #define MAX_UNWINDOWED_ADDRESS 0x80000
 #if defined(QCA_WIFI_QCA6390) || defined(QCA_WIFI_QCA6490) || \
 	defined(QCA_WIFI_QCN9000) || defined(QCA_WIFI_QCA6750) || \
-	defined(QCA_WIFI_QCN6432) || \
 	defined(QCA_WIFI_QCN9224) || defined(QCA_WIFI_KIWI)
 #define WINDOW_ENABLE_BIT 0x40000000
 #else
@@ -302,12 +301,7 @@ static inline uint32_t hif_read32_mb_reg_window(void *scn, void __iomem *addr)
 }
 #endif
 
-#if defined(HIF_HAL_REG_ACCESS_SUPPORT)
-#define A_TARGET_READ(scn, offset) \
-	hif_reg_window_read(scn, offset)
-#define A_TARGET_WRITE(scn, offset, value) \
-	hif_reg_window_write(scn, offset, value)
-#elif defined(CONFIG_IO_MEM_ACCESS_DEBUG)
+#ifdef CONFIG_IO_MEM_ACCESS_DEBUG
 uint32_t hif_target_read_checked(struct hif_softc *scn,
 					uint32_t offset);
 void hif_target_write_checked(struct hif_softc *scn, uint32_t offset,
@@ -322,11 +316,6 @@ void hif_target_write_checked(struct hif_softc *scn, uint32_t offset,
 	hif_read32_mb(scn, scn->mem + (offset))
 #define A_TARGET_WRITE(scn, offset, value) \
 	hif_write32_mb(scn, (scn->mem) + (offset), value)
-#endif
-
-#ifdef FEATURE_HIF_DELAYED_REG_WRITE
-#define A_TARGET_DELAYED_REG_WRITE(scn, ctrl_addr, val) \
-	hif_delayed_reg_write(scn, ctrl_addr, val)
 #endif
 
 void hif_irq_enable(struct hif_softc *scn, int irq_id);

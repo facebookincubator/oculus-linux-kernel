@@ -614,6 +614,11 @@ struct dwc3_msm {
 /* unfortunately, dwc3 core doesn't manage multiple dwc3 instances for trace */
 void *dwc_trace_ipc_log_ctxt;
 
+/* Enable USB3 Gen2 for internal developers use */
+static bool usb3gen2en;
+module_param(usb3gen2en, bool, 0444);
+MODULE_PARM_DESC(usb3gen2en, "enable USB3 Gen2 for iternal developer use");
+
 static void dwc3_pwr_event_handler(struct dwc3_msm *mdwc);
 static int get_chg_type(struct dwc3_msm *mdwc);
 
@@ -5263,6 +5268,12 @@ static int dwc3_msm_parse_core_params(struct dwc3_msm *mdwc, struct device_node 
 	if (!ret)
 		ret = match_string(speed_names, ARRAY_SIZE(speed_names), prop_string);
 	mdwc->max_hw_supp_speed = (ret < 0) ? USB_SPEED_UNKNOWN : ret;
+
+	if (usb3gen2en) {
+		mdwc->max_hw_supp_speed = USB_SPEED_SUPER_PLUS;
+		dev_info(mdwc->dev, "usb3gen2en set.  Overriding max_hw_supp_speed to USB_SPEED_SUPER_PLUS\n");
+	}
+
 	dwc3_msm_set_max_speed(mdwc, mdwc->max_hw_supp_speed);
 
 	ret = of_property_read_string(dwc3_node, "dr_mode", &prop_string);

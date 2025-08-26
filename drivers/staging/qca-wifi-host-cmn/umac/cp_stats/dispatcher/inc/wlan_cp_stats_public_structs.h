@@ -125,7 +125,7 @@ struct bmiss_infra_cp_stats_event  {
 };
 #endif /* CONFIG_WLAN_BMISS */
 
-#ifdef WLAN_CONFIG_TELEMETRY_AGENT
+#ifdef WLAN_TELEMETRY_STATS_SUPPORT
 /**
  * struct ctrl_path_pmlo_telemetry_stats_struct - pmlo telemetry
  * stats struct
@@ -175,54 +175,6 @@ struct ctrl_path_pmlo_telemetry_stats_struct {
 #endif
 
 /**
- * struct group_id_0: stats for group id 0
- * @group_transmitted_frame_count: group transmitted frame count
- * @failed_count: failed count
- * @group_received_frame_count: group received frame count
- * @fcs_error_count: fcs error count
- * @transmitted_frame_count: transmitted frame count
- */
-struct group_id_0 {
-	uint32_t group_transmitted_frame_count;
-	uint32_t failed_count;
-	uint32_t group_received_frame_count;
-	uint32_t fcs_error_count;
-	uint32_t transmitted_frame_count;
-};
-
-/**
- * struct group_id_1: stats of group id 1
- * @rts_success_count: rts success count
- * @rts_failure_count: rts failure count
- * @ack_failure_count: ack failure count
- */
-struct group_id_1 {
-	uint32_t rts_success_count;
-	uint32_t rts_failure_count;
-	uint32_t ack_failure_count;
-};
-
-/**
- * struct group_id_stats : stats for group provided group id
- * @counter_stats: stats for group id 0
- * @mac_stats: stats for group id 1
- */
-struct group_id_stats {
-	struct group_id_0 counter_stats;
-	struct group_id_1 mac_stats;
-};
-
-/**
- * struct cp_sta_stats - cp sta stats
- * @sta_stats_group_id: group id
- * @group: group for group stats
- */
-struct cp_sta_stats {
-	uint8_t sta_stats_group_id;
-	struct group_id_stats group;
-};
-
-/**
  * struct infra_cp_stats_event - Event structure to store stats
  * @action: action for which this response was received
  *          (get/reset/start/stop)
@@ -232,8 +184,8 @@ struct cp_sta_stats {
  *                          available
  * @twt_infra_cp_stats: pointer to TWT session statistics structures
  * @bmiss_infra_cp_stats: pointer to beacon miss statistics
- * @telemetry_stats: pointer to pmlo telemetry stats struct
- * @sta_stats: pointer to RRM sta stats struct
+ * @ctrl_path_pmlo_telemetry_stats_struct: pointer to pmlo telemetry
+ *                                         stats struct
  *
  * This structure is used to store the statistics information
  * extracted from firmware event(wmi_pdev_cp_fwstats_eventid)
@@ -249,10 +201,9 @@ struct infra_cp_stats_event {
 #ifdef CONFIG_WLAN_BMISS
 	struct bmiss_infra_cp_stats_event *bmiss_infra_cp_stats;
 #endif
-#ifdef WLAN_CONFIG_TELEMETRY_AGENT
+#ifdef WLAN_TELEMETRY_STATS_SUPPORT
 	struct ctrl_path_pmlo_telemetry_stats_struct *telemetry_stats;
 #endif
-	struct cp_sta_stats *sta_stats;
 	/* Extend with other required infra_cp_stats structs */
 };
 
@@ -271,7 +222,6 @@ enum infra_cp_stats_id {
 	TYPE_REQ_CTRL_PATH_TWT_STAT,
 	TYPE_REQ_CTRL_PATH_BMISS_STAT,
 	TYPE_REQ_CTRL_PATH_PMLO_STAT,
-	TYPE_REQ_CTRL_PATH_RRM_STA_STAT,
 };
 
 /**
@@ -291,7 +241,6 @@ enum infra_cp_stats_id {
  *             valid dialog_id's representing a single TWT session.
  *             255 represents all twt sessions
  * @infra_cp_stats_resp_cb: callback function to handle the response
- * @stat_periodicity: WMI ctrl-path stats event periodicity
  */
 struct infra_cp_stats_cmd_info {
 	enum infra_cp_stats_id stats_id;

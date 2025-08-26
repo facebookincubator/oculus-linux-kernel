@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,8 +18,8 @@
  */
 
 /**
- * DOC: cdp_txrx_misc.h
- * Define the host data path miscellaneous API functions
+ * @file cdp_txrx_misc.h
+ * @brief Define the host data path miscellaneous API functions
  * called by the host control SW and the OS interface module
  */
 #ifndef _CDP_TXRX_MISC_H_
@@ -141,7 +141,7 @@ static inline QDF_STATUS cdp_data_stall_cb_register(ol_txrx_soc_handle soc,
  * cdp_data_stall_cb_deregister() - de-register data stall callback
  * @soc: data path soc handle
  * @pdev_id: id of data path pdev handle
- * @cb: callback function
+ * @cb - callback function
  *
  * Return: QDF_STATUS_SUCCESS de-register success
  */
@@ -293,13 +293,15 @@ cdp_hl_tdls_flag_reset(ol_txrx_soc_handle soc, uint8_t vdev_id, bool flag)
  * @soc: data path soc handle
  * @vdev_id: id of vdev
  *
- * Return: virtual device operational mode
+ * Return virtual device operational mode
  *      op_mode_ap,
  *      op_mode_ibss,
  *      op_mode_sta,
  *      op_mode_monitor,
  *      op_mode_ocb,
- *	etc.
+ *
+ * return interface id
+ *        0 unknown interface
  */
 static inline int
 cdp_get_opmode(ol_txrx_soc_handle soc, uint8_t vdev_id)
@@ -318,12 +320,12 @@ cdp_get_opmode(ol_txrx_soc_handle soc, uint8_t vdev_id)
 
 /**
  * cdp_get_vdev_id() - get vdev id
- * @soc: data path soc handle
- * @vdev: virtual interface instance
+ * @soc - data path soc handle
+ * @vdev - virtual interface instance
  *
  * get virtual interface id
  *
- * Return: interface id
+ * return interface id
  *        0 unknown interface
  */
 static inline uint16_t
@@ -342,10 +344,10 @@ cdp_get_vdev_id(ol_txrx_soc_handle soc, struct cdp_vdev *vdev)
 
 /**
  * cdp_get_tx_ack_stats() - get tx ack count for vdev
- * @soc: data path soc handle
- * @vdev_id: vdev id
+ * @soc - data path soc handle
+ * @vdev_id - vdev id
  *
- * Return: tx ack count
+ * return tx ack count
  *          0 invalid count
  */
 static inline uint32_t
@@ -445,7 +447,7 @@ static inline void cdp_mark_first_wakeup_packet(ol_txrx_soc_handle soc,
 
 
 /**
- * cdp_update_mac_id() - update mac_id for vdev
+ * cds_update_mac_id() - update mac_id for vdev
  * @psoc: data path soc handle
  * @vdev_id: vdev id
  * @mac_id: mac id
@@ -492,7 +494,7 @@ static inline void cdp_flush_rx_frames(ol_txrx_soc_handle soc, uint8_t pdev_id,
 	return;
 }
 
-/**
+/*
  * cdp_get_intra_bss_fwd_pkts_count() - to get the total tx and rx packets
  *   that has been forwarded from txrx layer without going to upper layers.
  * @soc: Datapath soc handle
@@ -690,8 +692,8 @@ typedef void (*rx_refill_thread_sched_cb)(ol_txrx_soc_handle soc);
 /**
  * cdp_register_rx_refill_thread_sched_handler() - API to register RX refill
  *                                                 thread schedule handler
+ *
  * @soc: soc handle
- * @rx_sched_cb: Rx refill thread scheduler callback function
  *
  * Return: void
  */
@@ -710,7 +712,7 @@ cdp_register_rx_refill_thread_sched_handler(ol_txrx_soc_handle soc,
 
 /**
  * cdp_pdev_reset_driver_del_ack() - reset driver TCP delayed ack flag
- * @psoc: data path soc handle
+ * @soc: data path soc handle
  * @pdev_id: pdev id
  *
  * Return: none
@@ -731,7 +733,7 @@ static inline void cdp_pdev_reset_driver_del_ack(void *psoc,
 								     pdev_id);
 }
 
-/**
+/*
  * cdp_vdev_set_driver_del_ack_enable() - set driver delayed ack enabled flag
  * @soc: data path soc handle
  * @vdev_id: vdev id
@@ -793,12 +795,12 @@ static inline void cdp_pdev_reset_bundle_require_flag(ol_txrx_soc_handle soc,
 }
 
 /**
- * cdp_txrx_ext_stats_request() - request dp tx and rx extended stats
+ * cdp_txrx_ext_stats_request(): request dp tx and rx extended stats
  * @soc: soc handle
  * @pdev_id: pdev id
  * @req: stats request structure to fill
  *
- * Return: QDF_STATUS
+ * return: status
  */
 static inline QDF_STATUS
 cdp_txrx_ext_stats_request(ol_txrx_soc_handle soc, uint8_t pdev_id,
@@ -817,11 +819,11 @@ cdp_txrx_ext_stats_request(ol_txrx_soc_handle soc, uint8_t pdev_id,
 }
 
 /**
- * cdp_request_rx_hw_stats() - request rx hw stats
+ * cdp_request_rx_hw_stats(): request rx hw stats
  * @soc: soc handle
  * @vdev_id: vdev id
  *
- * Return: QDF_STATUS
+ * return: none
  */
 static inline QDF_STATUS
 cdp_request_rx_hw_stats(ol_txrx_soc_handle soc, uint8_t vdev_id)
@@ -838,7 +840,7 @@ cdp_request_rx_hw_stats(ol_txrx_soc_handle soc, uint8_t vdev_id)
 }
 
 /**
- * cdp_reset_rx_hw_ext_stats() - reset rx hw ext stats
+ * cdp_reset_rx_hw_ext_stats(): reset rx hw ext stats
  * @soc: soc handle
  *
  * Return: none
@@ -861,7 +863,7 @@ cdp_reset_rx_hw_ext_stats(ol_txrx_soc_handle soc)
  * @vdev_id: vdev id
  * @action: Action to be performed (Add/Delete)
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_vdev_inform_ll_conn(ol_txrx_soc_handle soc, uint8_t vdev_id,
@@ -884,7 +886,7 @@ cdp_vdev_inform_ll_conn(ol_txrx_soc_handle soc, uint8_t vdev_id,
  * @soc: soc handle
  * @value: value (enable/disable)
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_soc_set_swlm_enable(ol_txrx_soc_handle soc, uint8_t value)
@@ -905,7 +907,7 @@ cdp_soc_set_swlm_enable(ol_txrx_soc_handle soc, uint8_t value)
  *			       enabled or not
  * @soc: soc handle
  *
- * Return: 1 if enabled, 0 if disabled
+ * Returns: 1 if enabled, 0 if disabled
  */
 static inline uint8_t
 cdp_soc_is_swlm_enabled(ol_txrx_soc_handle soc)
@@ -925,20 +927,18 @@ cdp_soc_is_swlm_enabled(ol_txrx_soc_handle soc)
  * cdp_display_txrx_hw_info() - Dump the DP rings info
  * @soc: soc handle
  *
- * Return: rings are empty
+ * Return: none
  */
-static inline bool
+static inline void
 cdp_display_txrx_hw_info(ol_txrx_soc_handle soc)
 {
 	if (!soc || !soc->ops || !soc->ops->misc_ops) {
 		dp_cdp_debug("Invalid Instance:");
-		return true;
+		return;
 	}
 
 	if (soc->ops->misc_ops->display_txrx_hw_info)
 		return soc->ops->misc_ops->display_txrx_hw_info(soc);
-
-	return true;
 }
 
 /**
@@ -996,7 +996,7 @@ cdp_set_peer_txq_flush_config(ol_txrx_soc_handle soc, uint8_t vdev_id,
 #endif /* WLAN_FEATURE_PEER_TXQ_FLUSH_CONF */
 #ifdef FEATURE_RX_LINKSPEED_ROAM_TRIGGER
 /**
- * cdp_set_bus_vote_lvl_high() - have a vote on bus bandwidth lvl
+ * cdp_set_bus_vote_lvl() - have a vote on bus bandwidth lvl
  * @soc: datapath soc handle
  * @high: whether TPUT level is high or not
  *
@@ -1015,7 +1015,7 @@ cdp_set_bus_vote_lvl_high(ol_txrx_soc_handle soc, bool high)
 }
 
 /**
- * cdp_get_bus_lvl_high() - get high bus bandwidth lvl from dp
+ * cdp_get_bus_vote_lvl() - get bus bandwidth lvl from dp
  * @soc: datapath soc handle
  *
  * Return: bool, whether TPUT level is high or not

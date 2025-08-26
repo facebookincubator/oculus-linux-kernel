@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -268,9 +268,7 @@ void lim_ft_prepare_add_bss_req(struct mac_context *mac,
 			if (lim_is_session_he_capable(ft_session) &&
 				pBeaconStruct->he_cap.present)
 				lim_intersect_ap_he_caps(ft_session,
-							 pAddBssParams,
-							 pBeaconStruct, NULL,
-							 bssDescription);
+					pAddBssParams, pBeaconStruct, NULL);
 
 			if (lim_is_session_eht_capable(ft_session) &&
 			    pBeaconStruct->eht_cap.present)
@@ -513,119 +511,30 @@ static void lim_fill_dot11mode(struct mac_context *mac_ctx,
 #endif
 
 #if defined(WLAN_FEATURE_HOST_ROAM) || defined(WLAN_FEATURE_ROAM_OFFLOAD)
-/**
- * lim_fill_session_power_info() - to fill power info in session
- * @mac_ctx: pointer to mac ctx
- * @pbssDescription: Pointer to pbssDescription
- * @ft_session: Pointer to FT session
- * @pe_session: Pointer to PE session
- *
- * Return: QDF_STATUS
- */
-static QDF_STATUS lim_fill_session_power_info(
-				struct mac_context *mac,
-				struct bss_description *pbssDescription,
-				struct pe_session *ft_session,
-				struct pe_session *pe_session)
-{
-	uint8_t currentBssUapsd;
-	int8_t localPowerConstraint = 0;
-	int8_t regMax = 0;
-	bool is_pwr_constraint = false;
-	struct vdev_mlme_obj *mlme_obj;
-	enum reg_6g_ap_type power_type_6g;
-	QDF_STATUS status;
-
-	mlme_obj = wlan_vdev_mlme_get_cmpt_obj(pe_session->vdev);
-	if (!mlme_obj) {
-		pe_err("vdev component object is NULL");
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	lim_extract_ap_capability(mac, (uint8_t *)pbssDescription->ieFields,
-		lim_get_ielen_from_bss_description(pbssDescription),
-		&ft_session->limCurrentBssQosCaps,
-		&currentBssUapsd,
-		&localPowerConstraint, ft_session, &is_pwr_constraint);
-
-	mlme_obj->reg_tpc_obj.is_power_constraint_abs = !is_pwr_constraint;
-
-	if (wlan_reg_is_6ghz_chan_freq(pbssDescription->chan_freq)) {
-		status = wlan_reg_get_best_6g_power_type(
-				mac->psoc, mac->pdev,
-				&power_type_6g,
-				ft_session->ap_defined_power_type_6g,
-				pbssDescription->chan_freq);
-		if (QDF_IS_STATUS_ERROR(status))
-			return status;
-
-		ft_session->best_6g_power_type = power_type_6g;
-		mlme_set_best_6g_power_type(ft_session->vdev, power_type_6g);
-	}
-
-	if (wlan_reg_is_ext_tpc_supported(mac->psoc)) {
-		mlme_obj->reg_tpc_obj.ap_constraint_power =
-						localPowerConstraint;
-	} else {
-		regMax = wlan_reg_get_channel_reg_power_for_freq(
-				mac->pdev, ft_session->curr_op_freq);
-		if (is_pwr_constraint)
-			localPowerConstraint = regMax - localPowerConstraint;
-		if (!localPowerConstraint)
-			localPowerConstraint = regMax;
-
-		mlme_obj->reg_tpc_obj.reg_max[0] = regMax;
-		mlme_obj->reg_tpc_obj.ap_constraint_power =
-						localPowerConstraint;
-		mlme_obj->reg_tpc_obj.frequency[0] = ft_session->curr_op_freq;
-
-#ifdef FEATURE_WLAN_ESE
-		ft_session->maxTxPower = lim_get_max_tx_power(mac, mlme_obj);
-#else
-		ft_session->maxTxPower = QDF_MIN(regMax, localPowerConstraint);
-#endif
-		ft_session->def_max_tx_pwr = ft_session->maxTxPower;
-	}
-
-	/*
-	 * for mdm platform which QCA_NL80211_VENDOR_SUBCMD_LL_STATS_GET
-	 * will not call from android framework every 3 seconds, and tx
-	 * power will never update. So we use iw dev get tx power need
-	 * set maxTxPower non-zero value, that firmware can calc a non-zero
-	 * tx power, and update to host driver.
-	 */
-	if (ft_session->maxTxPower == 0)
-		ft_session->maxTxPower =
-			wlan_reg_get_channel_reg_power_for_freq(mac->pdev,
-						ft_session->curr_op_freq);
-
-	pe_debug("Reg max: %d local pwr: %d, max tx pwr: %d", regMax,
-		 localPowerConstraint, ft_session->maxTxPower);
-
-	return QDF_STATUS_SUCCESS;
-}
-
 /*------------------------------------------------------------------
  *
  * Setup the new session for the pre-auth AP.
  * Return the newly created session entry.
  *
  *------------------------------------------------------------------*/
-QDF_STATUS
-lim_fill_ft_session(struct mac_context *mac,
-		    struct bss_description *pbssDescription,
-		    struct pe_session *ft_session,
-		    struct pe_session *pe_session,
-		    enum wlan_phymode bss_phymode)
+void lim_fill_ft_session(struct mac_context *mac,
+			 struct bss_description *pbssDescription,
+			 struct pe_session *ft_session,
+			 struct pe_session *pe_session,
+			 enum wlan_phymode bss_phymode)
 {
+	uint8_t currentBssUapsd;
 	uint8_t bss_chan_id;
+	int8_t localPowerConstraint;
+	int8_t regMax;
 	tSchBeaconStruct *pBeaconStruct;
-	uint8_t cb_mode;
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
+	ePhyChanBondState cbEnabledMode;
+	struct vdev_mlme_obj *mlme_obj;
+	bool is_pwr_constraint;
 
 	pBeaconStruct = qdf_mem_malloc(sizeof(tSchBeaconStruct));
 	if (!pBeaconStruct)
-		return QDF_STATUS_E_NOMEM;
+		return;
 
 	/* Retrieve the session that was already created and update the entry */
 	ft_session->limWmeEnabled = pe_session->limWmeEnabled;
@@ -685,15 +594,13 @@ lim_fill_ft_session(struct mac_context *mac,
 		 && pBeaconStruct->HTCaps.present);
 
 	if (IS_DOT11_MODE_HE(ft_session->dot11mode) &&
-	    pBeaconStruct->he_cap.present) {
+	    pBeaconStruct->he_cap.present)
 		lim_update_session_he_capable(mac, ft_session);
-		lim_copy_join_req_he_cap(ft_session);
-	}
+
 	if (IS_DOT11_MODE_EHT(ft_session->dot11mode) &&
-	    pBeaconStruct->eht_cap.present) {
+	    pBeaconStruct->eht_cap.present)
 		lim_update_session_eht_capable(mac, ft_session);
-		lim_copy_join_req_eht_cap(ft_session);
-	}
+
 	/* Assign default configured nss value in the new session */
 	if (!wlan_reg_is_24ghz_ch_freq(ft_session->curr_op_freq))
 		ft_session->vdev_nss = mac->vdev_type_nss_5g.sta;
@@ -702,12 +609,14 @@ lim_fill_ft_session(struct mac_context *mac,
 
 	ft_session->nss = ft_session ->vdev_nss;
 
-	cb_mode = lim_get_cb_mode_for_freq(mac, ft_session,
-					   ft_session->curr_op_freq);
-
+	if (ft_session->limRFBand == REG_BAND_2G) {
+		cbEnabledMode = mac->roam.configParam.channelBondingMode24GHz;
+	} else {
+		cbEnabledMode = mac->roam.configParam.channelBondingMode5GHz;
+	}
 	ft_session->htSupportedChannelWidthSet =
 	    (pBeaconStruct->HTInfo.present) ?
-	    (cb_mode && pBeaconStruct->HTInfo.recommendedTxWidthSet &&
+	    (cbEnabledMode && pBeaconStruct->HTInfo.recommendedTxWidthSet &&
 	     pBeaconStruct->HTCaps.supportedChannelWidthSet) : 0;
 	ft_session->htRecommendedTxWidthSet =
 		ft_session->htSupportedChannelWidthSet;
@@ -794,23 +703,51 @@ lim_fill_ft_session(struct mac_context *mac,
 		ft_session->shortSlotTimeSupported = true;
 	}
 
-	status = lim_fill_session_power_info(mac, pbssDescription, ft_session,
-					     pe_session);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		pe_err("Failed to fill power info in ft session");
-		goto exit;
+	mlme_obj = wlan_vdev_mlme_get_cmpt_obj(pe_session->vdev);
+	if (!mlme_obj) {
+		pe_err("vdev component object is NULL");
+		qdf_mem_free(pBeaconStruct);
+		return;
 	}
+
+	regMax = wlan_reg_get_channel_reg_power_for_freq(
+		mac->pdev, ft_session->curr_op_freq);
+	localPowerConstraint = regMax;
+	lim_extract_ap_capability(mac, (uint8_t *) pbssDescription->ieFields,
+		lim_get_ielen_from_bss_description(pbssDescription),
+		&ft_session->limCurrentBssQosCaps,
+		&currentBssUapsd,
+		&localPowerConstraint, ft_session, &is_pwr_constraint);
+	if (is_pwr_constraint)
+		localPowerConstraint = regMax - localPowerConstraint;
 
 	ft_session->limReassocBssQosCaps =
 		ft_session->limCurrentBssQosCaps;
 
 	ft_session->is11Rconnection = pe_session->is11Rconnection;
-
 #ifdef FEATURE_WLAN_ESE
+	ft_session->isESEconnection = pe_session->isESEconnection;
 	ft_session->is_ese_version_ie_present =
 		pBeaconStruct->is_ese_ver_ie_present;
 #endif
+	ft_session->isFastTransitionEnabled =
+		pe_session->isFastTransitionEnabled;
 
+	ft_session->isFastRoamIniFeatureEnabled =
+		pe_session->isFastRoamIniFeatureEnabled;
+
+	mlme_obj->reg_tpc_obj.reg_max[0] = regMax;
+	mlme_obj->reg_tpc_obj.ap_constraint_power = localPowerConstraint;
+	mlme_obj->reg_tpc_obj.frequency[0] = ft_session->curr_op_freq;
+
+#ifdef FEATURE_WLAN_ESE
+	ft_session->maxTxPower = lim_get_max_tx_power(mac, mlme_obj);
+#else
+	ft_session->maxTxPower = QDF_MIN(regMax, (localPowerConstraint));
+#endif
+
+	pe_debug("Reg max: %d local pwr: %d, max tx pwr: %d", regMax,
+		 localPowerConstraint, ft_session->maxTxPower);
 	if (!lim_is_roam_synch_in_progress(mac->psoc, pe_session)) {
 		ft_session->limPrevSmeState = ft_session->limSmeState;
 		ft_session->limSmeState = eLIM_SME_WT_REASSOC_STATE;
@@ -824,6 +761,8 @@ lim_fill_ft_session(struct mac_context *mac,
 	/* Load default OBSS parameters to session entry */
 	lim_init_obss_params(mac, ft_session);
 
+	ft_session->enableHtSmps = pe_session->enableHtSmps;
+	ft_session->htSmpsvalue = pe_session->htSmpsvalue;
 	/*
 	 * By default supported NSS 1x1 is set to true
 	 * and later on updated while determining session
@@ -832,13 +771,11 @@ lim_fill_ft_session(struct mac_context *mac,
 	 */
 	ft_session->supported_nss_1x1 = true;
 	pe_debug("FT enable smps: %d mode: %d supported nss 1x1: %d",
-		mac->mlme_cfg->ht_caps.enable_smps,
-		mac->mlme_cfg->ht_caps.smps,
+		ft_session->enableHtSmps,
+		ft_session->htSmpsvalue,
 		ft_session->supported_nss_1x1);
 
-exit:
 	qdf_mem_free(pBeaconStruct);
-	return status;
 }
 #endif
 

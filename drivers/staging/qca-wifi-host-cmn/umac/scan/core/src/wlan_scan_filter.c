@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -264,6 +264,9 @@ static void scm_check_and_update_adaptive_11r_key_mgmt_support(
 		return;
 	}
 
+	scm_debug("First AKM:%d present in RSN IE of bcn/Probe rsp at index:%d",
+		  first_key_mgmt, i);
+
 	if (first_key_mgmt == WLAN_CRYPTO_KEY_MGMT_IEEE8021X)
 		QDF_SET_PARAM(ap_crypto->key_mgmt,
 			      WLAN_CRYPTO_KEY_MGMT_FT_IEEE8021X);
@@ -320,6 +323,8 @@ static bool scm_check_rsn(struct scan_filter *filter,
 	if (is_adaptive_11r)
 		scm_check_and_update_adaptive_11r_key_mgmt_support(ap_crypto);
 
+	scm_debug("ap_crypto->key_mgmt:%d, filter->key_mgmt:%d",
+		  ap_crypto->key_mgmt, filter->key_mgmt);
 	match = scm_chk_crypto_params(filter, ap_crypto, is_adaptive_11r,
 				      db_entry, security);
 	qdf_mem_free(ap_crypto);
@@ -696,30 +701,14 @@ static bool scm_check_dot11mode(struct scan_cache_entry *db_entry,
 }
 
 #ifdef WLAN_FEATURE_11BE_MLO
-static bool scm_mlo_filter_match(struct wlan_objmgr_pdev *pdev,
-				 struct scan_filter *filter,
-				 struct scan_cache_entry *db_entry)
+static bool util_mlo_filter_match(struct wlan_objmgr_pdev *pdev,
+				  struct scan_filter *filter,
+				  struct scan_cache_entry *db_entry)
 {
 	uint8_t i, band_bitmap, assoc_band_bitmap;
 	enum reg_wifi_band band;
 	struct partner_link_info *partner_link;
 	bool is_disabled;
-	struct qdf_mac_addr *mld_addr;
-
-	/* If MLD address of scan entry doesn't match the MLD address in scan
-	 * filter, then drop the scan entry even if the BSSID matches.
-	 * This is to filter out entries from APs with similar BSSID
-	 * but different MLD address.
-	 */
-	if (filter->match_mld_addr) {
-		mld_addr = util_scan_entry_mldaddr(db_entry);
-		if (!mld_addr ||
-		    !qdf_is_macaddr_equal(&filter->mld_addr, mld_addr)) {
-			scm_debug("Scan filter MLD mismatch " QDF_MAC_ADDR_FMT,
-				  QDF_MAC_ADDR_REF(filter->mld_addr.bytes));
-			return false;
-		}
-	}
 
 	if (!db_entry->ie_list.multi_link_bv)
 		return true;
@@ -732,9 +721,9 @@ static bool scm_mlo_filter_match(struct wlan_objmgr_pdev *pdev,
 	band = wlan_reg_freq_to_band(db_entry->channel.chan_freq);
 	if ((assoc_band_bitmap && !(band_bitmap & BIT(band) & assoc_band_bitmap)) ||
 	    (!assoc_band_bitmap && !(band_bitmap & BIT(band)))) {
-		scm_debug(QDF_MAC_ADDR_FMT ": Ignore as bss freq %d not match band bitmap: 0x%x",
-			  QDF_MAC_ADDR_REF(db_entry->bssid.bytes),
-			  db_entry->channel.chan_freq, filter->band_bitmap);
+		scm_debug("bss freq %d not match band bitmap: 0x%x",
+			  db_entry->channel.chan_freq,
+			  filter->band_bitmap);
 		return false;
 	}
 	for (i = 0; i < db_entry->ml_info.num_links; i++) {
@@ -746,33 +735,38 @@ static bool scm_mlo_filter_match(struct wlan_objmgr_pdev *pdev,
 				    partner_link->freq,
 				    REG_BEST_PWR_MODE);
 		if (is_disabled) {
-			scm_debug(QDF_MAC_ADDR_FMT ": Partner " QDF_MAC_ADDR_FMT " link id %d freq %d disabled",
-				  QDF_MAC_ADDR_REF(db_entry->bssid.bytes),
-				  QDF_MAC_ADDR_REF(
-				  partner_link->link_addr.bytes),
+			scm_debug("partner link id %d freq %d disabled : "QDF_MAC_ADDR_FMT,
 				  partner_link->link_id,
-				  partner_link->freq);
+				  partner_link->freq,
+				  QDF_MAC_ADDR_REF(
+				  partner_link->link_addr.bytes));
 			continue;
 		}
-		if (band_bitmap & BIT(band))
+		if (band_bitmap & BIT(band)) {
+			scm_debug("partner link id %d freq %d match band bitmap: 0x%x "QDF_MAC_ADDR_FMT,
+				  partner_link->link_id,
+				  partner_link->freq,
+				  filter->band_bitmap,
+				  QDF_MAC_ADDR_REF(
+				  partner_link->link_addr.bytes));
 			partner_link->is_valid_link = true;
+		}
 	}
 
 	return true;
 }
 #else
-static inline bool scm_mlo_filter_match(struct wlan_objmgr_pdev *pdev,
-					struct scan_filter *filter,
-					struct scan_cache_entry *db_entry)
+static bool util_mlo_filter_match(struct wlan_objmgr_pdev *pdev,
+				  struct scan_filter *filter,
+				  struct scan_cache_entry *db_entry)
 {
 	return true;
 }
 #endif
 
 #ifdef WLAN_FEATURE_11BE
-
 /**
- * scm_eht_puncture_valid(): The function finds the puncturing pattern from the
+ * util_eht_puncture_valid(): The function finds the puncturing pattern from the
  * IE. If the primary channel is in the punctured list then the channel cannot
  * be used, and this function returns false/invalid.
  * @pdev: pdev device.
@@ -780,8 +774,8 @@ static inline bool scm_mlo_filter_match(struct wlan_objmgr_pdev *pdev,
  *
  * Return - false if the primary channel is punctured and true if otherwise.
  */
-static bool scm_eht_puncture_valid(struct wlan_objmgr_pdev *pdev,
-				   struct scan_cache_entry *db_entry)
+static bool util_eht_puncture_valid(struct wlan_objmgr_pdev *pdev,
+				    struct scan_cache_entry *db_entry)
 {
 	struct wlan_ie_ehtops *eht_ops;
 	int8_t orig_width;
@@ -791,7 +785,7 @@ static bool scm_eht_puncture_valid(struct wlan_objmgr_pdev *pdev,
 	uint16_t new_puncture_bitmap = 0;
 	QDF_STATUS status;
 	uint32_t cfreq1;
-	uint8_t band_mask;
+	uint8_t band_mask = BIT(REG_BAND_6G);
 
 	eht_ops = (struct wlan_ie_ehtops *)util_scan_entry_ehtop(db_entry);
 	if (!eht_ops)
@@ -817,9 +811,6 @@ static bool scm_eht_puncture_valid(struct wlan_objmgr_pdev *pdev,
 	orig_width = QDF_GET_BITS(eht_ops->control,
 				  EHTOP_INFO_CHAN_WIDTH_IDX,
 				  EHTOP_INFO_CHAN_WIDTH_BITS);
-
-	band_mask = BIT(wlan_reg_freq_to_band(db_entry->channel.chan_freq));
-
 	/* Check if CCFS bits are present */
 	if (QDF_GET_BITS(eht_ops->ehtop_param,
 			 EHTOP_INFO_PRESENT_IDX, EHTOP_INFO_PRESENT_BITS))
@@ -854,8 +845,8 @@ static bool scm_eht_puncture_valid(struct wlan_objmgr_pdev *pdev,
 	}
 }
 #else
-static inline bool scm_eht_puncture_valid(struct wlan_objmgr_pdev *pdev,
-					  struct scan_cache_entry *db_entry)
+static bool util_eht_puncture_valid(struct wlan_objmgr_pdev *pdev,
+				    struct scan_cache_entry *db_entry)
 {
 	return true;
 }
@@ -1038,8 +1029,11 @@ bool scm_filter_match(struct wlan_objmgr_psoc *psoc,
 		return false;
 	}
 
-	if (!scm_mlo_filter_match(pdev, filter, db_entry))
+	if (!util_mlo_filter_match(pdev, filter, db_entry)) {
+		scm_debug(QDF_MAC_ADDR_FMT ": Ignore as mlo filter didn't match",
+			  QDF_MAC_ADDR_REF(db_entry->bssid.bytes));
 		return false;
+	}
 
 	pdev = wlan_objmgr_get_pdev_by_id(psoc, db_entry->pdev_id,
 					  WLAN_SCAN_ID);
@@ -1048,7 +1042,7 @@ bool scm_filter_match(struct wlan_objmgr_psoc *psoc,
 			QDF_MAC_ADDR_REF(db_entry->bssid.bytes));
 		return false;
 	}
-	if (!scm_eht_puncture_valid(pdev, db_entry)) {
+	if (!util_eht_puncture_valid(pdev, db_entry)) {
 		wlan_objmgr_pdev_release_ref(pdev, WLAN_SCAN_ID);
 		return false;
 	}

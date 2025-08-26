@@ -4633,6 +4633,12 @@ static int cam_vfe_bus_ver3_enable_irq_vfe_out(void *bus_priv, void *res_irq_mas
 			if (is_fastpath && !rsrc_data->primary_port_en)
 				continue;
 
+			if ((!bus_private->common_data.buf_done_evt_control) ||
+				(bus_private->common_data.buf_done_evt_control &&
+					rsrc_data->primary_port_en))
+				rc = cam_vfe_bus_ver3_start_comp_grp(rsrc_data,
+				rsrc_data->stored_irq_masks[CAM_VFE_BUS_VER3_BUF_DONE_MASK]);
+
 			if (is_fastpath && rsrc_data->primary_port_en) {
 				CAM_DBG(CAM_ISP, "Enabling fastpath on VFE:%d out_type:0x%x",
 					rsrc_data->common_data->core_index, rsrc_data->out_type);

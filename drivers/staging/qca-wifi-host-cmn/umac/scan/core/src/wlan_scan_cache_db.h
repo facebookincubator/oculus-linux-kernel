@@ -17,7 +17,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/**
+/*
  * DOC: contains scan cache entry api
  */
 
@@ -35,12 +35,10 @@
 	(((const uint8_t *)(addr))[QDF_MAC_ADDR_SIZE - 1] % SCAN_HASH_SIZE)
 
 #define ADJACENT_CHANNEL_RSSI_THRESHOLD -80
-#define ADJACENT_CHANNEL_RSSI_DIFF_THRESHOLD 40
 
 /**
  * struct scan_dbs - scan cache data base definition
  * @num_entries: number of scan entries
- * @scan_db_lock: lock for @scan_hash_tbl
  * @scan_hash_tbl: link list of bssid hashed scan cache entries for a pdev
  */
 struct scan_dbs {
@@ -174,7 +172,7 @@ scm_iterate_scan_db(struct wlan_objmgr_pdev *pdev,
 /**
  * scm_scan_register_bcn_cb() - API to register api to indicate bcn/probe
  * as soon as they are received
- * @psoc: psoc
+ * @pdev: psoc
  * @cb: callback to be registered
  * @type: Type of callback to be registered
  *
@@ -193,15 +191,6 @@ QDF_STATUS scm_scan_register_bcn_cb(struct wlan_objmgr_psoc *psoc,
  */
 QDF_STATUS scm_scan_register_mbssid_cb(struct wlan_objmgr_psoc *psoc,
 				       update_mbssid_bcn_prb_rsp cb);
-
-/**
- * scm_reset_scan_chan_info() - API to reset the scan channel info
- * @psoc: psoc object
- * @pdev_id: pdev id of which info need to be reset
- *
- * Return: void
- */
-void scm_reset_scan_chan_info(struct wlan_objmgr_psoc *psoc, uint8_t pdev_id);
 
 /**
  * scm_db_init() - API to init scan db
@@ -232,7 +221,7 @@ struct channel_list_db *scm_get_rnr_channel_db(struct wlan_objmgr_psoc *psoc);
 /**
  * scm_get_chan_meta() - API to return channel meta
  * @psoc: psoc
- * @chan_freq: channel frequency
+ * @freq: channel frequency
  *
  * Return: channel meta information
  */
@@ -277,7 +266,7 @@ void scm_update_rnr_from_scan_cache(struct wlan_objmgr_pdev *pdev);
  *                             during pno scan request
  * @vdev: vdev
  * @short_ssid: short ssid
- * @chan_list: channel list
+ * @pno_chan_list: channel list
  *
  * Remove FLAG_SCAN_ONLY_IF_RNR_FOUND flag in channel if ssid is different for
  * colocated AP, in pno scan request
@@ -313,7 +302,6 @@ scm_filter_rnr_flag_pno(struct wlan_objmgr_vdev *vdev,
  * scm_scan_update_mlme_by_bssinfo() - updates scan entry with mlme data
  * @pdev: pdev object
  * @bss_info: BSS information
- * @mlme: scan entry MLME info
  *
  * This function updates scan db with scan_entry->mlme_info
  *
@@ -389,21 +377,6 @@ scm_get_mld_addr_by_link_addr(struct wlan_objmgr_pdev *pdev,
 	return QDF_STATUS_E_NOSUPPORT;
 }
 #endif
-
-/**
- * scm_scan_entries_contain_cmn_akm() - Check if two entries have common
- * RSN capabilities.
- * @entry1: Primary scan entry for comparison
- * @entry2: Secondary scan entry for comparison
- *
- * Checks various RSN parameters of two scan entries to determine
- * whether both have similar capabilities or not.
- *
- * Return: bool
- */
-bool scm_scan_entries_contain_cmn_akm(struct scan_cache_entry *entry1,
-				      struct scan_cache_entry *entry2);
-
 #ifdef CONFIG_BAND_6GHZ
 /**
  * util_scan_get_he_6g_params() - Function provides HE 6GHz params from HE ops
@@ -416,8 +389,7 @@ struct he_oper_6g_param *util_scan_get_he_6g_params(uint8_t *he_ops);
 static inline struct
 he_oper_6g_param *util_scan_get_he_6g_params(uint8_t *he_ops)
 {
-	return NULL;
+ return NULL;
 }
 #endif
-
 #endif

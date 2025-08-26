@@ -874,7 +874,7 @@ target_if_cp_stats_extract_vdev_extd_stats(struct wmi_unified *wmi_hdl,
 	if (!ev->num_vdev_extd_stats)
 		return QDF_STATUS_SUCCESS;
 
-	if (ev->num_vdev_extd_stats > WLAN_MAX_VDEVS) {
+	if (ev->num_vdev_extd_stats > WLAN_MAX_MLD) {
 		cp_stats_err("num_vdev_extd_stats is invalid: %u",
 			     ev->num_vdev_extd_stats);
 		return QDF_STATUS_E_INVAL;
@@ -901,9 +901,9 @@ target_if_cp_stats_extract_vdev_extd_stats(struct wmi_unified *wmi_hdl,
 			qdf_mem_free(stats);
 			goto end;
 		}
-		ev->vdev_extd_stats[i].vdev_id = stats[0].vdev_id;
+		ev->vdev_extd_stats[i].vdev_id = stats[i].vdev_id;
 		ev->vdev_extd_stats[i].is_mlo_vdev_active =
-						stats[0].is_mlo_vdev_active;
+						stats[i].is_mlo_vdev_active;
 		ev->vdev_extd_stats[i].vdev_tx_power = stats[i].vdev_tx_power;
 	}
 
@@ -921,7 +921,6 @@ static QDF_STATUS target_if_cp_stats_extract_event(struct wmi_unified *wmi_hdl,
 						   uint8_t *data)
 {
 	QDF_STATUS status;
-	static uint8_t mac_seq = 0;
 	wmi_host_stats_event stats_param = {0};
 
 	status = wmi_extract_stats_param(wmi_hdl, data, &stats_param);
@@ -950,12 +949,6 @@ static QDF_STATUS target_if_cp_stats_extract_event(struct wmi_unified *wmi_hdl,
 			    stats_param.stats_id);
 
 	ev->last_event = stats_param.last_event;
-	ev->mac_seq_num = mac_seq;
-	if (IS_MSB_SET(ev->last_event) && IS_LSB_SET(ev->last_event))
-		mac_seq = 0;
-	else
-		mac_seq++;
-
 	status = target_if_cp_stats_extract_pdev_stats(wmi_hdl, &stats_param,
 						       ev, data);
 	if (QDF_IS_STATUS_ERROR(status))
@@ -1690,11 +1683,6 @@ target_if_set_pdev_stats_update_period(struct wlan_objmgr_psoc *psoc,
 	struct pdev_params pdev_param = {0};
 
 	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
-
-	if (!wmi_handle) {
-		cp_stats_err("wmi_handle is null");
-		return QDF_STATUS_E_INVAL;
-	}
 
 	pdev_param.param_id = wmi_pdev_param_pdev_stats_update_period;
 	pdev_param.param_value = val;

@@ -916,35 +916,3 @@ int cds_get_gfp_flags(void)
 
 	return flags;
 }
-
-/**
- * cds_get_rx_thread_pending(): get rx thread status
- * @soc: ol_txrx_soc_handle object
- *
- * Return: 1 if rx thread is not empty.
- *	   0 if rx thread is empty
- */
-#ifdef WLAN_DP_LEGACY_OL_RX_THREAD
-int cds_get_rx_thread_pending(ol_txrx_soc_handle soc)
-{
-	p_cds_sched_context cds_sched_context = get_cds_sched_ctxt();
-
-	if (!cds_sched_context) {
-		cds_err("cds_sched_context is NULL");
-		return 0;
-	}
-
-	spin_lock_bh(&cds_sched_context->ol_rx_queue_lock);
-
-	if (list_empty(&cds_sched_context->ol_rx_thread_queue)) {
-		spin_unlock_bh(&cds_sched_context->ol_rx_queue_lock);
-		return 0;
-	}
-
-	/* In helium there is no scope to get no of pending frames
-	 * in rx thread, Hence return 1 if frames are queued
-	 */
-	spin_unlock_bh(&cds_sched_context->ol_rx_queue_lock);
-	return 1;
-}
-#endif

@@ -95,7 +95,6 @@ enum wmi_init_status {
  * @magic: magic for target if ctx
  * @get_psoc_hdl_cb:  function pointer to get psoc
  * @get_pdev_hdl_cb:  function pointer to get pdev
- * @service_ready_cb: function pointeer for service ready callback
  * @lock: spin lock for protecting the ctx
  */
 struct target_if_ctx {
@@ -191,26 +190,22 @@ struct target_version_info {
  * @wmi_timeout: wait timeout for target events
  * @event: qdf_event for target events
  * @service_bitmap: WMI service bitmap
- * @target_caps: target capabilities
- * @service_ext_param: ext service params
+ * @target_cap: target capabilities
  * @service_ext2_param: service ready ext2 event params
+ * @service_ext_param: ext service params
  * @mac_phy_cap: phy caps array
  * @mac_phy_caps_ext2: mac phy caps ext2 params
  * @dbr_ring_cap: dbr_ring capability info
+ * @reg_cap: regulatory caps array
  * @scaling_params: Spectral bin scaling parameters
  * @num_mem_chunks: number of mem chunks allocated
+ * @hw_mode_caps: HW mode caps of preferred mode
  * @mem_chunks: allocated memory blocks for FW
- * @hw_mode_cap: HW mode caps of preferred mode
- * @hw_modes: supported hardware modes
- * @pdev_id_to_phy_id_map: pdev id to phy id map
- * @is_pdevid_to_phyid_map: true if @pdev_id_to_phy_id_map is valid
  * @scan_radio_caps: scan radio capabilities
  * @msdu_idx_qtype_map: HTT msdu index to qtype mapping table
  * @device_mode: Global Device mode
  * @sbs_lower_band_end_freq: sbs lower band end frequency
- * @health_mon_param: health monitor params
- * @aux_dev_caps: aux device capability
- * @aoa_caps: aoa capabilities from target
+ * @health_mon_params: health monitor params
  */
 struct tgt_info {
 	struct host_fw_ver version;
@@ -250,10 +245,6 @@ struct tgt_info {
 #ifdef HEALTH_MON_SUPPORT
 	struct wmi_health_mon_params health_mon_param;
 #endif /* HEALTH_MON_SUPPORT */
-	struct wlan_psoc_host_aux_dev_caps *aux_dev_caps;
-#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
-	struct wlan_psoc_host_rcc_enh_aoa_caps_ext2 *aoa_caps;
-#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
 };
 
 /**
@@ -276,11 +267,9 @@ struct tgt_info {
  * @set_default_tgt_config: Sets target config with default values
  * @sw_version_check: Checks the SW version
  * @smart_log_enable: Enable Smart Logs feature
- * @eapol_minrate_enable: Enable EAPOL minimum rate configuration
  * @cfr_support_enable: CFR support enable
  * @set_pktlog_checksum: Set the pktlog checksum from FW ready event to pl_dev
  * @csa_switch_count_status: CSA event handler
- * @ema_init: Initialize Enhanced MBSSID advertisement feature
  * @mlo_capable: Checks if the SoC is MLO capable
  * @mlo_get_group_id: Get the MLO group id of the SoC
  * @mlo_setup_done_event: MLO setup sequence complete event handler
@@ -354,6 +343,8 @@ struct target_ops {
 #endif
 };
 
+
+
 /**
  * struct target_psoc_info - target psoc information
  * @hdls: component handles (htc/htt/wmi) sub structure
@@ -405,7 +396,8 @@ struct target_mu_caps {
 
 /**
  * target_if_init() - target_if Initialization
- * @psoc_hdl_cb: function pointer to get wmi handle
+ * @get_wmi_handle: function pointer to get wmi handle
+ *
  *
  * Return: QDF_STATUS
  */
@@ -413,6 +405,7 @@ QDF_STATUS target_if_init(get_psoc_handle_callback psoc_hdl_cb);
 
 /**
  * target_if_deinit() - Close target_if
+ * @scn_handle: scn handle
  *
  * Return: QDF_STATUS_SUCCESS - in case of success
  */
@@ -428,7 +421,7 @@ QDF_STATUS target_if_store_pdev_target_if_ctx(
 		get_pdev_handle_callback pdev_hdl_cb);
 
 /**
- * target_if_get_ctx() - Get target if ctx
+ * wlan_get_tgt_if_ctx() -Get target if ctx
  *
  * Return: target if ctx
  */
@@ -458,8 +451,7 @@ struct wlan_objmgr_psoc *target_if_get_psoc_from_scn_hdl(void *scn_handle);
  */
 struct wlan_objmgr_pdev *target_if_get_pdev_from_scn_hdl(void *scn_handle);
 
-/**
- * target_if_register_tx_ops() - register tx_ops
+/** target_if_register_tx_ops() - register tx_ops
  * @tx_ops: tx_ops structure
  *
  * This function is to be used by components to populate
@@ -522,18 +514,6 @@ QDF_STATUS target_if_free_pdev_tgt_info(struct wlan_objmgr_pdev *pdev);
  * Return: SUCCESS on successful memory allocation or Failure
  */
 QDF_STATUS target_if_alloc_psoc_tgt_info(struct wlan_objmgr_psoc *psoc);
-
-/**
- * target_if_psoc_tgt_info_mem_free() - free memory which attached in
- *                                      psoc tgt info
- * @tgt_psoc_info: target psoc info object
- *
- * API to free allocated memory for target_psoc_info
- *
- * Return: SUCCESS on successful memory deallocation or Failure
- */
-QDF_STATUS target_if_psoc_tgt_info_mem_free(
-		struct target_psoc_info *tgt_psoc_info);
 
 /**
  * target_if_free_psoc_tgt_info() - free psoc tgt info
@@ -602,31 +582,12 @@ bool target_is_tgt_type_qcn6122(uint32_t target_type);
 bool target_is_tgt_type_qcn9160(uint32_t target_type);
 
 /**
- * target_is_tgt_type_qcn6432() - Check if the target type is QCN6432 (Pebble)
- * @target_type: target type to be checked.
- *
- * Return: true if the target_type is QCN6432, else false.
- */
-bool target_is_tgt_type_qcn6432(uint32_t target_type);
-
-/**
  * target_is_tgt_type_qcn7605() - Check if the target type is QCN7605
  * @target_type: target type to be checked.
  *
  * Return: true if the target_type is QCN7605, else false.
  */
 bool target_is_tgt_type_qcn7605(uint32_t target_type);
-
-/**
- * target_if_is_vdev_valid - vdev id is valid or not
- * @vdev_id: vdev id
- *
- * Return: true or false
- */
-static inline bool target_if_is_vdev_valid(uint8_t vdev_id)
-{
-	return (vdev_id < WLAN_UMAC_PSOC_MAX_VDEVS ? true : false);
-}
 
 /**
  * target_psoc_set_wlan_init_status() - set info wlan_init_status
@@ -958,7 +919,8 @@ static inline void target_psoc_set_num_radios(
 /**
  * target_psoc_set_pdev_id_to_phy_id_map() - set pdev to phy id mapping
  * @psoc_info:  pointer to structure target_psoc_info
- * @phy_id_map: phy_id
+ * @pdev_id: pdev id
+ * @phy_id: phy_id
  *
  * API to set pdev id to phy id mapping
  *
@@ -996,7 +958,6 @@ static inline uint8_t target_psoc_get_num_radios
 /**
  * target_psoc_get_num_radios_for_mode() - get number of radios for a hw-mode
  * @psoc_info:  pointer to structure target_psoc_info
- * @mode: hardware mode
  *
  * API to get number_of_radios for a HW mode
  *
@@ -1054,9 +1015,9 @@ static inline uint32_t *target_psoc_get_service_bitmap
 }
 
 /**
- * target_psoc_set_num_mem_chunks() - set num_mem_chunks
+ * target_psoc_set_num_mem_chunks - set num_mem_chunks
  * @psoc_info:  pointer to structure target_psoc_info
- * @num_mem_chunks: Num Memory chunks allocated for FW
+ & @num_mem_chunks: Num Memory chunks allocated for FW
  *
  * API to set num_mem_chunks
  *
@@ -1086,9 +1047,8 @@ static inline uint32_t target_psoc_get_num_mem_chunks
 
 	return psoc_info->info.num_mem_chunks;
 }
-
 /**
- * target_psoc_set_hif_hdl() - set hif_hdl
+ * target_psoc_set_hif_hdl - set hif_hdl
  * @psoc_info:  pointer to structure target_psoc_info
  * @hif_hdl:    HIF handle
  *
@@ -1124,7 +1084,7 @@ static inline struct hif_opaque_softc *target_psoc_get_hif_hdl
 }
 
 /**
- * target_psoc_set_htc_hdl() - set htc_hdl
+ * target_psoc_set_hif_hdl - set htc_hdl
  * @psoc_info:  pointer to structure target_psoc_info
  * @htc_hdl:    HTC handle
  *
@@ -1158,9 +1118,8 @@ static inline HTC_HANDLE target_psoc_get_htc_hdl
 
 	return psoc_info->hdls.htc_hdl;
 }
-
 /**
- * target_psoc_set_wmi_hdl() - set wmi_hdl
+ * target_psoc_set_wmi_hdl - set wmi_hdl
  * @psoc_info:  pointer to structure target_psoc_info
  * @wmi_hdl:    WMI handle
  *
@@ -1196,7 +1155,7 @@ static inline struct wmi_unified *target_psoc_get_wmi_hdl
 }
 
 /**
- * target_psoc_set_accelerator_hdl() - set accelerator_hdl
+ * target_psoc_set_accelerator_hdl - set accelerator_hdl
  * @psoc_info:  pointer to structure target_psoc_info
  * @accelerator_hdl: Accelator handle
  *
@@ -1233,7 +1192,7 @@ struct common_accelerator_handle *target_psoc_get_accelerator_hdl
 }
 
 /**
- * target_psoc_set_feature_ptr() - set feature_ptr
+ * target_psoc_set_feature_ptr - set feature_ptr
  * @psoc_info:  pointer to structure target_psoc_info
  * @feature_ptr: set feature pointer
  *
@@ -1346,7 +1305,7 @@ static inline uint32_t target_psoc_get_target_rev
 }
 
 /**
- * target_psoc_set_dbglog_hdl() - set dbglog_hdl
+ * target_psoc_set_dbglog_hdl - set dbglog_hdl
  * @psoc_info:  pointer to structure target_psoc_info
  * @dbglog_hdl:    dbglog handle
  *
@@ -1416,7 +1375,7 @@ static inline wmi_host_ext_resource_config *target_psoc_get_wlan_ext_res_cfg
 }
 
 /**
- * target_psoc_get_event() - get event queue
+ * target_psoc_get_event_queue() - get event_queue
  * @psoc_info:  pointer to structure target_psoc_info
  *
  * API to get event_queue
@@ -1468,24 +1427,6 @@ static inline struct wlan_psoc_host_service_ext_param
 }
 
 /**
- * target_psoc_get_service_ext2_param() - get service_ext2_param
- * @psoc_info:  pointer to structure target_psoc_info
- *
- * API to get service_ext2_param
- *
- * Return: structure pointer to wlan_psoc_host_service_ext2_param
- */
-static inline struct wlan_psoc_host_service_ext2_param
-		*target_psoc_get_service_ext2_param
-		(struct target_psoc_info *psoc_info)
-{
-	if (!psoc_info)
-		return NULL;
-
-	return &psoc_info->info.service_ext2_param;
-}
-
-/**
  * target_psoc_get_num_dbr_ring_caps() - get no of dbr_ring_caps
  * @psoc_info:  pointer to structure target_psoc_info
  *
@@ -1504,26 +1445,6 @@ static inline uint32_t target_psoc_get_num_dbr_ring_caps
 
 	return psoc_info->info.service_ext2_param.num_dbr_ring_caps;
 }
-
-/**
- * target_psoc_get_aoa_caps() - get aoa_caps
- * @psoc_info:  pointer to structure target_psoc_info
- *
- * API to get aoa_caps
- *
- * Return: structure pointer to wlan_psoc_host_rcc_enh_aoa_caps_ext2
- */
-#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
-static inline
-struct wlan_psoc_host_rcc_enh_aoa_caps_ext2 *target_psoc_get_aoa_caps
-		(struct target_psoc_info *psoc_info)
-{
-	if (!psoc_info)
-		return NULL;
-
-	return psoc_info->info.aoa_caps;
-}
-#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
 
 /**
  * target_psoc_get_num_scan_radio_caps() - get no of scan_radio_caps
@@ -1545,7 +1466,6 @@ static inline uint32_t target_psoc_get_num_scan_radio_caps
 /**
  * target_psoc_get_mac_phy_cap_for_mode() - get mac_phy_cap for a hw-mode
  * @psoc_info:  pointer to structure target_psoc_info
- * @mode: hardware mode
  *
  * API to get mac_phy_cap for a specified hw-mode
  *
@@ -1757,7 +1677,7 @@ static inline struct target_ops *target_psoc_get_tif_ops
 }
 
 /**
- * target_pdev_set_feature_ptr() - set feature_ptr
+ * target_pdev_set_feature_ptr - set feature_ptr
  * @pdev_info:  pointer to structure target_pdev_info
  * @feature_ptr: Feature pointer
  *
@@ -1792,7 +1712,7 @@ static inline void *target_pdev_get_feature_ptr
 }
 
 /**
- * target_pdev_set_wmi_handle() - set wmi_handle
+ * target_pdev_set_wmi_handle - set wmi_handle
  * @pdev_info:  pointer to structure target_pdev_info
  * @wmi_handle: WMI handle
  *
@@ -1811,7 +1731,7 @@ static inline void target_pdev_set_wmi_handle
 }
 
 /**
- * target_pdev_get_wmi_handle() - get wmi_handle
+ * target_pdev_get_wmi_handle - get wmi_handle
  * @pdev_info:  pointer to structure target_dev_info
  *
  * API to get wmi_handle
@@ -1828,7 +1748,7 @@ static inline struct wmi_unified *target_pdev_get_wmi_handle
 }
 
 /**
- * target_pdev_set_accelerator_hdl() - set accelerator_hdl
+ * target_pdev_set_accelerator_hdl - set accelerator_hdl
  * @pdev_info:  pointer to structure target_pdev_info
  * @accelerator_hdl: Accelator handle
  *
@@ -1847,7 +1767,7 @@ static inline void target_pdev_set_accelerator_hdl
 }
 
 /**
- * target_pdev_get_accelerator_hdl() - get accelerator_hdl
+ * target_pdev_get_accelerator_hdl - get accelerator_hdl
  * @pdev_info:  pointer to structure target_dev_info
  *
  * API to get accelerator_hdl
@@ -1864,7 +1784,7 @@ target_pdev_get_accelerator_hdl(struct target_pdev_info *pdev_info)
 }
 
 /**
- * target_pdev_set_pdev_idx() - set pdev_idx
+ * target_pdev_set_pdev_idx - set pdev_idx
  * @pdev_info:  pointer to structure target_pdev_info
  * @pdev_idx:   PDEV id of FW
  *
@@ -1882,7 +1802,7 @@ static inline void target_pdev_set_pdev_idx
 }
 
 /**
- * target_pdev_get_pdev_idx() - get pdev_idx
+ * target_pdev_get_pdev_idx  - get pdev_idx
  * @pdev_info:  pointer to structure target_dev_info
  *
  * API to get pdev_idx
@@ -1899,7 +1819,7 @@ static inline int32_t  target_pdev_get_pdev_idx
 }
 
 /**
- * target_pdev_set_phy_idx() - set phy_idx
+ * target_pdev_set_phy_idx - set phy_idx
  * @pdev_info:  pointer to structure target_pdev_info
  * @phy_idx:    phy ID of FW
  *
@@ -1917,7 +1837,7 @@ static inline void target_pdev_set_phy_idx
 }
 
 /**
- * target_pdev_get_phy_idx() - get phy_idx
+ * target_pdev_get_phy_idx  - get phy_idx
  * @pdev_info:  pointer to structure target_dev_info
  *
  * API to get phy_idx
@@ -1934,7 +1854,7 @@ static inline int32_t target_pdev_get_phy_idx
 }
 
 /**
- * GET_WMI_HDL_FROM_PSOC() - get wmi handle from psoc
+ * GET_WMI_HDL_FROM_PSOC - get wmi handle from psoc
  * @psoc:  psoc object
  *
  * API to get wmi_handle from psoc
@@ -1960,7 +1880,7 @@ static inline struct wmi_unified *GET_WMI_HDL_FROM_PSOC(
 }
 
 /**
- * GET_WMI_HDL_FROM_PDEV() - get wmi handle from pdev
+ * GET_WMI_HDL_FROM_PDEV - get wmi handle from pdev
  * @pdev:  pdev object
  *
  * API to get wmi_handle from pdev
@@ -1986,7 +1906,7 @@ static inline struct wmi_unified *GET_WMI_HDL_FROM_PDEV(
 }
 
 /**
- * get_wmi_unified_hdl_from_psoc() - get wmi handle from psoc
+ * get_wmi_unified_hdl_from_psoc - get wmi handle from psoc
  * @psoc:  psoc object
  *
  * API to get wmi_handle from psoc
@@ -2001,7 +1921,7 @@ get_wmi_unified_hdl_from_psoc(struct wlan_objmgr_psoc *psoc)
 }
 
 /**
- * get_wmi_unified_hdl_from_pdev() - get wmi handle from pdev
+ * get_wmi_unified_hdl_from_pdev - get wmi handle from pdev
  * @pdev:  pdev object
  *
  * API to get wmi_handle from pdev
@@ -2016,7 +1936,7 @@ get_wmi_unified_hdl_from_pdev(struct wlan_objmgr_pdev *pdev)
 }
 
 /**
- * target_if_ext_res_cfg_enable() - Enable ext resource config
+ * target_if_ext_res_cfg_enable - Enable ext resource config
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  * @evt_buf: Event buffer received from FW
@@ -2035,7 +1955,7 @@ static inline void target_if_ext_res_cfg_enable(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * target_if_peer_cfg_enable() - Enable peer config
+ * target_if_peer_cfg_enable - Enable peer config
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  * @evt_buf: Event buffer received from FW
@@ -2053,7 +1973,7 @@ static inline void target_if_peer_cfg_enable(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * target_if_mesh_support_enable() - Enable MESH mode support
+ * target_if_mesh_support_enable - Enable MESH mode support
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  * @evt_buf: Event buffer received from FW
@@ -2071,7 +1991,7 @@ static inline void target_if_mesh_support_enable(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * target_if_eapol_minrate_enable() - Enable EAPOL Minrate in Tunnel Mode
+ * target_if_eapol_minrate_enable - Enable EAPOL Minrate in Tunnel Mode
  * @psoc: psoc object
  * @tgt_hdl: target_psoc_info pointer
  * @evt_buf: Event buffer received from FW
@@ -2089,7 +2009,7 @@ static inline void target_if_eapol_minrate_enable(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * target_if_smart_antenna_enable() - Enable Smart antenna module
+ * target_if_smart_antenna_enable - Enable Smart antenna module
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  * @evt_buf: Event buffer received from FW
@@ -2107,7 +2027,7 @@ static inline void target_if_smart_antenna_enable(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * target_if_cfr_support_enable() - Enable cfr support
+ * target_if_cfr_support_enable - Enable cfr support
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  * @evt_buf: Event buffer received from FW
@@ -2125,7 +2045,7 @@ static inline void target_if_cfr_support_enable(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * target_if_set_pktlog_checksum() - Set pktlog checksum
+ * target_if_set_pktlog_checksum - Set pktlog checksum
  * @pdev: pdev object
  * @tgt_hdl: target_psoc_info pointer
  * @checksum: checksum received from FW
@@ -2143,7 +2063,7 @@ static inline void target_if_set_pktlog_checksum(struct wlan_objmgr_pdev *pdev,
 }
 
 /**
- * target_if_atf_cfg_enable() - Enable ATF config
+ * target_if_atf_cfg_enable - Enable ATF config
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  * @evt_buf: Event buffer received from FW
@@ -2161,7 +2081,7 @@ static inline void target_if_atf_cfg_enable(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * target_if_btcoex_cfg_enable() - Enable BT coex config
+ * target_if_btcoex_cfg_enable - Enable BT coex config
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  * @evt_buf: Event buffer received from FW
@@ -2179,7 +2099,7 @@ static inline void target_if_btcoex_cfg_enable(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * target_if_lteu_cfg_enable() - Enable LTEU config
+ * target_if_lteu_cfg_enable - Enable LTEU config
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  * @evt_buf: Event buffer received from FW
@@ -2198,7 +2118,7 @@ static inline void target_if_lteu_cfg_enable(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * target_if_set_init_cmd_dev_param() - Set init command params
+ * target_if_set_init_cmd_dev_param - Set init command params
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  *
@@ -2217,7 +2137,7 @@ static inline void target_if_set_init_cmd_dev_param(
 }
 
 /**
- * target_if_alloc_pdevs() - Allocate PDEVs
+ * target_if_alloc_pdevs - Allocate PDEVs
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  *
@@ -2241,7 +2161,7 @@ static inline QDF_STATUS target_if_alloc_pdevs(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * target_if_update_pdev_tgt_info() - Update PDEVs info
+ * target_if_update_pdev_tgt_info - Update PDEVs info
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  *
@@ -2266,7 +2186,7 @@ static inline QDF_STATUS target_if_update_pdev_tgt_info(
 }
 
 /**
- * target_if_print_service_ready_ext_param() - Print Service ready ext param
+ * target_if_print_service_ready_ext_param - Print Service ready ext param
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  *
@@ -2285,7 +2205,7 @@ static inline void target_if_print_service_ready_ext_param(
 }
 
 /**
- * target_if_add_11ax_modes() - Add 11ax modes explicitly
+ * target_if_add_11ax_modes - Add 11ax modes explicitly
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  *
@@ -2310,7 +2230,7 @@ static inline void target_if_add_11ax_modes(struct wlan_objmgr_psoc *psoc,
 #endif
 
 /**
- * target_if_csa_switch_count_status() - Calls a function to process CSA event
+ * target_if_csa_switch_count_status - Calls a function to process CSA event
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  * @csa_status: CSA switch count status event param
@@ -2330,7 +2250,7 @@ static inline int target_if_csa_switch_count_status(
 }
 
 /**
- * target_if_set_default_config() - Set default config in init command
+ * target_if_set_default_config - Set default config in init command
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  *
@@ -2348,7 +2268,7 @@ static inline void target_if_set_default_config(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * target_if_sw_version_check() - SW version check
+ * target_if_sw_version_check - SW version check
  * @psoc:  psoc object
  * @tgt_hdl: target_psoc_info pointer
  * @evt_buf: Event buffer received from FW
@@ -2375,7 +2295,7 @@ static inline QDF_STATUS target_if_sw_version_check(
 }
 
 /**
- * target_if_get_phy_capability()  - get phy capability
+ * target_if_get_phy_capability  - get phy capability
  * @target_psoc_info:  pointer to structure target_psoc_info
  *
  * API to get phy capability from the target caps
@@ -2392,9 +2312,9 @@ static inline int32_t target_if_get_phy_capability
 }
 
 /**
- * target_if_set_phy_capability()  - set phy capability
+ * target_if_set_phy_capability  - set phy capability
  * @target_psoc_info:  pointer to structure target_psoc_info
- * @phy_capability: PHY capabilities
+ * @phy_capab: PHY capabilities
  *
  * API to set phy capability in the target caps
  *
@@ -2410,7 +2330,7 @@ static inline void target_if_set_phy_capability
 }
 
 /**
- * target_if_set_max_frag_entry() - set Maximum frag entries
+ * target_if_set_max_frag_entry  - set Maximum frag entries
  * @target_psoc_info:  pointer to structure target_psoc_info
  * @max_frag_entry: Maximum frag entries
  *
@@ -2428,7 +2348,7 @@ static inline void target_if_set_max_frag_entry
 }
 
 /**
- * target_if_get_max_frag_entry() - get Maximum frag entries
+ * target_if_get_max_frag_entry  - get Maximum frag entries
  * @target_psoc_info:  pointer to structure target_psoc_info
  *
  * API to get Maximum frag entries from the target caps
@@ -2445,7 +2365,7 @@ static inline int32_t target_if_get_max_frag_entry
 }
 
 /**
- * target_if_get_ht_cap_info() - get ht capabilities info
+ * target_if_get_ht_cap_info  - get ht capabilities info
  * @target_psoc_info:  pointer to structure target_psoc_info
  *
  * API to get ht capabilities info from the target caps
@@ -2462,7 +2382,7 @@ static inline int32_t target_if_get_ht_cap_info
 }
 
 /**
- * target_if_get_vht_cap_info() - get vht capabilities info
+ * target_if_get_vht_cap_info  - get vht capabilities info
  * @target_psoc_info:  pointer to structure target_psoc_info
  *
  * API to get vht capabilities info from the target caps
@@ -2479,7 +2399,7 @@ static inline int32_t target_if_get_vht_cap_info
 }
 
 /**
- * target_if_get_num_rf_chains() - get Number of RF chains supported
+ * target_if_get_num_rf_chains  - get Number of RF chains supported
  * @target_psoc_info:  pointer to structure target_psoc_info
  *
  * API to get Number of RF chains supported from the target caps
@@ -2496,7 +2416,7 @@ static inline int32_t target_if_get_num_rf_chains
 }
 
 /**
- * target_if_get_fw_version() - get firmware version
+ * target_if_get_fw_version  - get firmware version
  * @target_psoc_info:  pointer to structure target_psoc_info
  *
  * API to get firmware version from the target caps
@@ -2513,7 +2433,7 @@ static inline int32_t target_if_get_fw_version
 }
 
 /**
- * target_if_get_wmi_fw_sub_feat_caps() - FW sub feature capabilities
+ * target_if_get_wmi_fw_sub_feat_caps  - FW sub feature capabilities
  * @target_psoc_info:  pointer to structure target_psoc_info
  *
  * API to get FW sub feature capabilities from the target caps
@@ -2530,7 +2450,7 @@ static inline int32_t target_if_get_wmi_fw_sub_feat_caps
 }
 
 /**
- * target_if_get_conc_scan_config_bits() - Default concurrenct scan config
+ * target_if_get_conc_scan_config_bits  - Default concurrenct scan config
  * @tgt_hdl:  pointer to structure target_psoc_info
  *
  * API to get Default concurrenct scan config from the target caps
@@ -2547,7 +2467,7 @@ static inline int32_t target_if_get_conc_scan_config_bits
 }
 
 /**
- * target_if_get_fw_config_bits() - Default HW config bits
+ * target_if_get_fw_config_bits  - Default HW config bits
  * @tgt_hdl:  pointer to structure target_psoc_info
  *
  * API to get Default HW config bits from the target caps
@@ -2564,7 +2484,7 @@ static inline int32_t target_if_get_fw_config_bits
 }
 
 /**
- * target_psoc_get_num_hw_modes() - get number of dbs hardware modes
+ * target_psoc_get_num_hw_modes  - get number of dbs hardware modes
  * @tgt_hdl:  pointer to structure target_psoc_info
  *
  * API to get Number of Dual Band Simultaneous (DBS) hardware modes
@@ -2579,38 +2499,6 @@ static inline int32_t target_psoc_get_num_hw_modes
 
 	return tgt_hdl->info.service_ext_param.num_hw_modes;
 }
-
-#ifdef WLAN_FEATURE_11BE_MLO
-static inline
-uint32_t target_psoc_get_num_max_mlo_link(struct target_psoc_info *tgt_hdl)
-{
-	if (!tgt_hdl)
-		return 0;
-
-	return tgt_hdl->info.service_ext2_param.num_max_mlo_link_per_ml_bss_supp;
-}
-
-static inline
-uint16_t target_if_res_cfg_get_num_max_mlo_link(struct target_psoc_info *tgt_hdl)
-{
-	if (!tgt_hdl)
-		return 0;
-
-	return tgt_hdl->info.wlan_res_cfg.num_max_mlo_link_per_ml_bss;
-}
-#else
-static inline
-uint32_t target_psoc_get_num_max_mlo_link(struct target_psoc_info *tgt_hdl)
-{
-	return 0;
-}
-
-static inline
-uint16_t target_if_res_cfg_get_num_max_mlo_link(struct target_psoc_info *tgt_hdl)
-{
-	return 0;
-}
-#endif
 
 #ifdef WLAN_SUPPORT_TWT
 #ifdef WLAN_TWT_AP_PDEV_COUNT_NUM_PHY
@@ -2707,7 +2595,7 @@ static inline uint32_t target_psoc_get_chan_width_switch_num_peers(
 }
 
 /**
- * target_pdev_is_scan_radio_supported() - API to check scan radio
+ * target_if_is_scan_radio_supported() - API to check scan radio
  * support for the given radio
  * @pdev: pointer to pdev
  * @is_scan_radio_supported: pointer to scan radio support flag
@@ -2735,21 +2623,6 @@ target_pdev_is_scan_radio_supported(struct wlan_objmgr_pdev *pdev,
 QDF_STATUS
 target_pdev_scan_radio_is_dfs_enabled(struct wlan_objmgr_pdev *pdev,
 				      bool *is_dfs_en);
-
-/**
- * target_is_scan_blanking_enabled() - API to check
- * whether scan blanking needs to be enabled/disabled for scan radio.
- * @pdev:  pointer to pdev
- * @blanking_en: Pointer to scan blanking enable flag
- *
- * API to check whether scan blanking needs to be enabled/disabled for
- * scan radio. This API should be used only for a scan radio pdev.
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS
-target_is_scan_blanking_enabled(struct wlan_objmgr_pdev *pdev,
-				bool *blanking_en);
 
 /**
  * target_psoc_get_preamble_puncture_cap() - Get Preamble Puncturing capability
@@ -2929,13 +2802,13 @@ void target_psoc_get_twt_ack_cap(struct target_psoc_info *psoc_info, bool *val)
 }
 
 /**
- * target_psoc_get_target_cap_flags() - get flags containing information
- *                                      about target capabilities
+ * target_psoc_target_cap_flags() - flags containing information about target
+ * capabilities
  * @psoc_info:  pointer to structure target_psoc_info
  *
  * API to get flags containing information about target capabilities
  *
- * Return: target_cap_flags
+ * Return: no of target_cap_flags
  */
 static inline uint32_t target_psoc_get_target_cap_flags
 		(struct target_psoc_info *psoc_info)
@@ -2946,37 +2819,21 @@ static inline uint32_t target_psoc_get_target_cap_flags
 	return psoc_info->info.service_ext2_param.target_cap_flags;
 }
 
-/**
- * target_psoc_get_target_dp_peer_meta_data_ver() - Get DP RX peer metadata
- *                                                  version reported by target
- * @psoc_info:  pointer to structure target_psoc_info
- *
- * Return: value of DP RX peer metadata version
- */
-static inline uint8_t target_psoc_get_target_dp_peer_meta_data_ver(
-				struct target_psoc_info *psoc_info)
-{
-	if (!psoc_info)
-		return 0;
-
-	return psoc_info->info.service_ext2_param.dp_peer_meta_data_ver;
-}
-
 #if defined(WLAN_FEATURE_11BE_MLO) && defined(WLAN_MLO_MULTI_CHIP)
-#define PDEV_INVALID_HW_LINK_ID 0xFFFF
-
 /**
- * target_if_pdev_get_hw_link_id() - get hw_link_id
+ * target_pdev_get_hw_link_id  - get hw_link_id
  * @pdev:  pointer to structure target_pdev_info
  *
  * API to get hw_link_id
  *
- * Return: hw link id if valid, otherwise %PDEV_INVALID_HW_LINK_ID
+ * Return: uint16_t
  */
-uint16_t  target_if_pdev_get_hw_link_id(struct wlan_objmgr_pdev *pdev);
+#define PDEV_INVALID_HW_LINK_ID 0xFFFF
+uint16_t  target_if_pdev_get_hw_link_id
+		(struct wlan_objmgr_pdev *pdev);
 
 /**
- * target_pdev_set_hw_link_id() - set hw_link_id
+ * target_pdev_set_hw_link_id - set hw_link_id
  * @pdev:  pointer to structure target_pdev_info
  * @hw_link_id: unique hw link id of pdev across psoc
  *
@@ -2984,11 +2841,11 @@ uint16_t  target_if_pdev_get_hw_link_id(struct wlan_objmgr_pdev *pdev);
  *
  * Return: void
  */
-void target_pdev_set_hw_link_id(struct wlan_objmgr_pdev *pdev,
-				uint16_t hw_link_id);
+void target_pdev_set_hw_link_id
+		(struct wlan_objmgr_pdev *pdev, uint16_t hw_link_id);
 
 /**
- * target_if_mlo_setup_req() - API to trigger MLO setup sequence
+ * target_if_mlo_setup_req - API to trigger MLO setup sequence
  * @pdev: Array of pointers to pdev object that are part of ML group
  * @num_pdevs: Number of pdevs in above array
  * @grp_id: ML Group ID
@@ -2999,7 +2856,7 @@ QDF_STATUS target_if_mlo_setup_req(struct wlan_objmgr_pdev **pdev,
 				   uint8_t num_pdevs, uint8_t grp_id);
 
 /**
- * target_if_mlo_ready() - API to send MLO ready
+ * target_if_mlo_ready - API to send MLO ready
  * @pdev: Array of pointers to pdev object that are part of ML group
  * @num_pdevs: Number of pdevs in above array
  *
@@ -3009,24 +2866,21 @@ QDF_STATUS target_if_mlo_ready(struct wlan_objmgr_pdev **pdev,
 			       uint8_t num_pdevs);
 
 /**
- * target_if_mlo_teardown_req() - API to trigger MLO teardown sequence
- * @pdev: Pointer to pdev object
+ * target_if_mlo_teardown_req - API to trigger MLO teardown sequence
+ * @pdev: Array of pointers to pdev object that are part of ML group
+ * @num_pdevs: Number of pdevs in above array
  * @reason: Reason for triggering teardown
- * @reset: UMAC reset for mode1 SSR
- * @standby_active: Active radio while in standby mode
  *
  * Return: QDF_STATUS codes
  */
-QDF_STATUS target_if_mlo_teardown_req(struct wlan_objmgr_pdev *pdev,
-				      uint32_t reason, bool reset,
-				      bool standby_active);
+QDF_STATUS target_if_mlo_teardown_req(struct wlan_objmgr_pdev **pdev,
+				      uint8_t num_pdevs, uint32_t reason);
 #endif /*WLAN_FEATURE_11BE_MLO && WLAN_MLO_MULTI_CHIP*/
 
 /**
- * target_if_is_platform_eht_capable() - API to check if the platform
- *                                       is EHT capable
- * @psoc: psoc object
- * @pdev_id: pdev id
+ * target_if_is_platform_eht_capable():
+ * API to check if the platform is EHT capable
+ * @pdev: pdev object
  *
  * Return: True if platform is 11BE capable; else False
  */
@@ -3046,8 +2900,7 @@ static inline void target_if_set_reo_shared_qref_feature(struct wlan_objmgr_psoc
 	}
 
 	if (target_psoc_get_target_type(tgt_hdl) == TARGET_TYPE_QCN9224 ||
-	    target_psoc_get_target_type(tgt_hdl) == TARGET_TYPE_QCA5332 ||
-	    target_psoc_get_target_type(tgt_hdl) == TARGET_TYPE_QCN6432)
+	    target_psoc_get_target_type(tgt_hdl) == TARGET_TYPE_QCA5332)
 		info->wlan_res_cfg.reo_qdesc_shared_addr_table_enabled = true;
 	else
 		info->wlan_res_cfg.reo_qdesc_shared_addr_table_enabled = false;
@@ -3063,18 +2916,6 @@ static inline void target_if_set_reo_shared_qref_feature(struct wlan_objmgr_psoc
 #endif
 
 /**
- * target_if_phy_ch_width_to_wmi_chan_width() - convert host ch_width to fw format
- *
- * @ch_width: enum phy_ch_width
- *
- * Convert host driver chan width value to fw recognizable value.
- *
- * return: wmi_host_channel_width
- */
-wmi_host_channel_width
-target_if_phy_ch_width_to_wmi_chan_width(enum phy_ch_width ch_width);
-
-/**
  * target_if_wmi_chan_width_to_phy_ch_width() - convert channel width from
  * wmi_host_channel_width to phy_ch_width
  *
@@ -3084,30 +2925,4 @@ target_if_phy_ch_width_to_wmi_chan_width(enum phy_ch_width ch_width);
  */
 enum phy_ch_width
 target_if_wmi_chan_width_to_phy_ch_width(wmi_host_channel_width ch_width);
-
-#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
-static inline void target_if_set_num_max_mlo_link(struct wlan_objmgr_psoc *psoc,
-						  struct tgt_info *info)
-{
-	struct target_psoc_info *tgt_hdl;
-	uint16_t value;
-
-	tgt_hdl = wlan_psoc_get_tgt_if_handle(psoc);
-	if (!tgt_hdl)
-		return;
-
-	if (!target_psoc_get_num_max_mlo_link(tgt_hdl))
-		value = WLAN_MAX_ML_DEFAULT_LINK;
-	else
-		value = QDF_MIN(target_psoc_get_num_max_mlo_link(tgt_hdl),
-				info->wlan_res_cfg.num_max_mlo_link_per_ml_bss);
-
-	info->wlan_res_cfg.num_max_mlo_link_per_ml_bss = value;
-}
-#else
-static inline void target_if_set_num_max_mlo_link(struct wlan_objmgr_psoc *psoc,
-						  struct tgt_info *info)
-{
-}
-#endif
 #endif

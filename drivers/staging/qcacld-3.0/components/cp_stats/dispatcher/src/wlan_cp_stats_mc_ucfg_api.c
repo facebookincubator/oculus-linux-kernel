@@ -1048,72 +1048,6 @@ void ucfg_mc_cp_stats_register_lost_link_info_cb(
 	psoc_cp_stats_priv->legacy_stats_cb = lost_link_cp_stats_info_cb;
 }
 
-#ifdef QCA_SUPPORT_CP_STATS
-uint8_t wlan_cp_stats_get_rx_clear_count(struct wlan_objmgr_psoc *psoc,
-					 uint8_t vdev_id, qdf_freq_t req_freq)
-{
-	struct wlan_objmgr_pdev *pdev;
-	struct wlan_objmgr_vdev *vdev;
-	struct pdev_cp_stats *pdev_cp_stats_priv;
-	struct per_channel_stats *channel_stats;
-	struct channel_status *channel_status_list;
-	uint8_t total_channel, chan_load = 0;
-	uint8_t i;
-	uint32_t rx_clear_count = 0, cycle_count = 0;
-	bool found = false;
-
-	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
-						    WLAN_CP_STATS_ID);
-	if (!vdev)
-		return 0;
-
-	pdev = wlan_vdev_get_pdev(vdev);
-	if (!pdev) {
-		cp_stats_err("pdev object is null");
-		goto release_ref;
-	}
-
-	pdev_cp_stats_priv = wlan_cp_stats_get_pdev_stats_obj(pdev);
-	if (!pdev_cp_stats_priv) {
-		cp_stats_err("pdev cp stats object is null");
-		goto release_ref;
-	}
-
-	channel_stats = &pdev_cp_stats_priv->pdev_stats->chan_stats;
-	channel_status_list = channel_stats->channel_status_list;
-	total_channel = channel_stats->total_channel;
-
-	for (i = 0; i < total_channel; i++) {
-		if (channel_status_list[i].channel_freq == req_freq) {
-			rx_clear_count = channel_status_list[i].rx_clear_count;
-			cycle_count = channel_status_list[i].cycle_count;
-			found = true;
-			break;
-		}
-	}
-
-	if (!found) {
-		cp_stats_debug("no channel found for freq:%d", req_freq);
-		goto release_ref;
-	}
-
-	if (cycle_count == 0) {
-		cp_stats_debug("cycle_count is zero");
-		goto release_ref;
-	}
-
-	chan_load = ((rx_clear_count * 255) / cycle_count);
-
-	cp_stats_debug("t_chan:%d, freq:%d, rcc:%u, cc:%u, chan_load:%d",
-		       total_channel, req_freq, rx_clear_count, cycle_count,
-		       chan_load);
-
-release_ref:
-	wlan_objmgr_vdev_release_ref(vdev, WLAN_CP_STATS_ID);
-	return chan_load;
-}
-#endif
-
 #ifdef WLAN_POWER_MANAGEMENT_OFFLOAD
 static QDF_STATUS
 ucfg_mc_cp_stats_suspend_req_handler(struct wlan_objmgr_psoc *psoc)
@@ -1177,162 +1111,8 @@ void ucfg_mc_cp_stats_register_pmo_handler(void)
 				    ucfg_mc_cp_stats_resume_handler, NULL);
 }
 
-/**
- * wlan_cp_stats_get_ch_width_from_chan_info - get ch_width as per num channel
- * present in scan event
- * @channel_stat: struct scan_chan_info
- *
- * Return: phy_ch_width.
- */
-static enum phy_ch_width
-wlan_cp_stats_get_ch_width_from_chan_info(struct channel_status *channel_stat)
-{
-	enum phy_ch_width scanned_ch_width;
-
-	switch (channel_stat->subband_info.num_chan) {
-	case 1:
-		scanned_ch_width = CH_WIDTH_20MHZ;
-		break;
-	case 2:
-		scanned_ch_width = CH_WIDTH_40MHZ;
-		break;
-	case 4:
-		scanned_ch_width = CH_WIDTH_80MHZ;
-		break;
-	case 8:
-		scanned_ch_width = CH_WIDTH_160MHZ;
-		break;
-	default:
-		scanned_ch_width = CH_WIDTH_INVALID;
-		break;
-	}
-
-	return scanned_ch_width;
-}
-
-/**
- * wlan_cp_stats_update_per_channel_stats - update per channel stats as per
- * data present in scan event
- * @channel_stats: per channel stats
- * @ev_channel_stat: channel stats per scan event
- * @freq: freq to update channel stats
- * @rx_clear_count: rx clear count for a freq
- *
- * Return: none.
- */
-static void
-wlan_cp_stats_update_per_channel_stats(struct per_channel_stats *channel_stats,
-				       struct channel_status *ev_channel_stat,
-				       uint32_t freq, uint32_t rx_clear_count)
-{
-	struct channel_status *channel_status_list;
-	uint8_t total_channel, i;
-	bool found = false;
-
-	channel_status_list = channel_stats->channel_status_list;
-	total_channel = channel_stats->total_channel;
-
-	for (i = 0; i < total_channel; i++) {
-		if (channel_status_list[i].channel_freq == freq) {
-			cp_stats_debug("update rcc: %d, cc:%d at index: %d, freq: %d",
-				       ev_channel_stat->rx_clear_count,
-				       ev_channel_stat->cycle_count, i, freq);
-
-			channel_status_list[i].rx_clear_count = rx_clear_count;
-			channel_status_list[i].cycle_count =
-					ev_channel_stat->cycle_count;
-			found = true;
-			break;
-		}
-	}
-
-	if (!found) {
-		if (total_channel < NUM_CHANNELS) {
-			ev_channel_stat->rx_clear_count = rx_clear_count;
-			ev_channel_stat->channel_freq = freq;
-
-			cp_stats_debug("Add rcc: %d cc: %d, at index: %d, freq: %d",
-				       ev_channel_stat->rx_clear_count,
-				       ev_channel_stat->rx_clear_count,
-				       total_channel, freq);
-
-			qdf_mem_copy(&channel_status_list[total_channel++],
-				     ev_channel_stat,
-				     sizeof(*channel_status_list));
-			channel_stats->total_channel = total_channel;
-		} else {
-			cp_stats_debug("Chan cnt exceed, channel_id: %d",
-				       ev_channel_stat->channel_id);
-		}
-	}
-}
-
-/**
- * wlan_cp_stats_update_channel_stats - wrapper api to update per channel stats
- * as per data present in scan event
- * @channel_stats: per channel stats
- * @ev_channel_stat: channel stats per scan event
- *
- * Return: none.
- */
-static void
-wlan_cp_stats_update_channel_stats(struct per_channel_stats *channel_stats,
-				   struct channel_status *ev_channel_stat)
-{
-	uint8_t index, freq_info_num;
-	enum phy_ch_width scanned_ch_width;
-	const struct bonded_channel_freq *range = NULL;
-	uint16_t start_freq, end_freq;
-	uint32_t rx_clear_count;
-
-	scanned_ch_width =
-		wlan_cp_stats_get_ch_width_from_chan_info(ev_channel_stat);
-	if (scanned_ch_width == CH_WIDTH_INVALID) {
-		cp_stats_debug("Invalid scanned_ch_width");
-		return;
-	}
-
-	if (scanned_ch_width == CH_WIDTH_20MHZ) {
-		start_freq = ev_channel_stat->channel_freq;
-		end_freq = ev_channel_stat->channel_freq;
-	} else {
-		range =
-		   wlan_reg_get_bonded_chan_entry(ev_channel_stat->channel_freq,
-						  scanned_ch_width, 0);
-		if (!range) {
-			cp_stats_debug("range is NULL for freq %d, ch_width %d",
-				       ev_channel_stat->channel_freq,
-				       scanned_ch_width);
-			return;
-		}
-		start_freq = range->start_freq;
-		end_freq = range->end_freq;
-	}
-
-	freq_info_num = ev_channel_stat->subband_info.num_chan;
-	index = 0;
-
-	cp_stats_debug("freq :%d bw %d, range [%d-%d], num_freq:%d",
-		       ev_channel_stat->channel_freq, scanned_ch_width,
-		       start_freq, end_freq, freq_info_num);
-
-	for (; start_freq <= end_freq;) {
-		if (index >= freq_info_num || index >= MAX_WIDE_BAND_SCAN_CHAN)
-			break;
-		rx_clear_count =
-		    ev_channel_stat->subband_info.cca_busy_subband_info[index];
-		wlan_cp_stats_update_per_channel_stats(channel_stats,
-						       ev_channel_stat,
-						       start_freq,
-						       rx_clear_count);
-
-		start_freq += BW_20_MHZ;
-		index++;
-	}
-}
-
 void wlan_cp_stats_update_chan_info(struct wlan_objmgr_psoc *psoc,
-				    struct channel_status *ev_channel_stat,
+				    struct channel_status *channel_stat,
 				    uint8_t vdev_id)
 {
 	struct wlan_objmgr_pdev *pdev;
@@ -1350,11 +1130,8 @@ void wlan_cp_stats_update_chan_info(struct wlan_objmgr_psoc *psoc,
 		return;
 
 	pdev = wlan_vdev_get_pdev(vdev);
-	if (!pdev) {
-		wlan_objmgr_vdev_release_ref(vdev, WLAN_CP_STATS_ID);
-		cp_stats_err("pdev object is null");
+	if (!pdev)
 		return;
-	}
 
 	pdev_cp_stats_priv = wlan_cp_stats_get_pdev_stats_obj(pdev);
 	if (!pdev_cp_stats_priv) {
@@ -1367,33 +1144,26 @@ void wlan_cp_stats_update_chan_info(struct wlan_objmgr_psoc *psoc,
 	channel_status_list = channel_stats->channel_status_list;
 	total_channel = channel_stats->total_channel;
 
-	if (ev_channel_stat->subband_info.is_wide_band_scan) {
-		wlan_cp_stats_update_channel_stats(channel_stats,
-						   ev_channel_stat);
-		wlan_objmgr_vdev_release_ref(vdev, WLAN_CP_STATS_ID);
-		return;
-	}
-
 	for (i = 0; i < total_channel; i++) {
 		if (channel_status_list[i].channel_id ==
-		    ev_channel_stat->channel_id) {
-			if (ev_channel_stat->cmd_flags ==
+		    channel_stat->channel_id) {
+			if (channel_stat->cmd_flags ==
 			    WMI_CHAN_InFO_END_RESP &&
 			    channel_status_list[i].cmd_flags ==
 			    WMI_CHAN_InFO_START_RESP) {
 				/* adjust to delta value for counts */
-				ev_channel_stat->rx_clear_count -=
+				channel_stat->rx_clear_count -=
 				    channel_status_list[i].rx_clear_count;
-				ev_channel_stat->cycle_count -=
+				channel_stat->cycle_count -=
 				    channel_status_list[i].cycle_count;
-				ev_channel_stat->rx_frame_count -=
+				channel_stat->rx_frame_count -=
 				    channel_status_list[i].rx_frame_count;
-				ev_channel_stat->tx_frame_count -=
+				channel_stat->tx_frame_count -=
 				    channel_status_list[i].tx_frame_count;
-				ev_channel_stat->bss_rx_cycle_count -=
+				channel_stat->bss_rx_cycle_count -=
 				    channel_status_list[i].bss_rx_cycle_count;
 			}
-			qdf_mem_copy(&channel_status_list[i], ev_channel_stat,
+			qdf_mem_copy(&channel_status_list[i], channel_stat,
 				     sizeof(*channel_status_list));
 			found = true;
 			break;
@@ -1403,12 +1173,12 @@ void wlan_cp_stats_update_chan_info(struct wlan_objmgr_psoc *psoc,
 	if (!found) {
 		if (total_channel < NUM_CHANNELS) {
 			qdf_mem_copy(&channel_status_list[total_channel++],
-				     ev_channel_stat,
+				     channel_stat,
 				     sizeof(*channel_status_list));
 			channel_stats->total_channel = total_channel;
 		} else {
 			cp_stats_err("Chan cnt exceed, channel_id=%d",
-				     ev_channel_stat->channel_id);
+				     channel_stat->channel_id);
 		}
 	}
 

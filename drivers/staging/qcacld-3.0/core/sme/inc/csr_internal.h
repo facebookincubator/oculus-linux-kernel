@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -115,6 +115,12 @@ struct csr_channel {
 	uint32_t channel_freq_list[CFG_VALID_CHANNEL_LIST_LEN];
 };
 
+struct bss_config_param {
+	tSirMacSSid SSID;
+	enum csr_cfgdot11mode uCfgDot11Mode;
+	tSirMacCapabilityInfo BssCap;
+};
+
 struct roam_cmd {
 	enum csr_roam_reason roamReason;
 	tSirMacAddr peerMac;
@@ -167,6 +173,7 @@ struct csr_channel_powerinfo {
 struct csr_scanstruct {
 	struct csr_channel channels11d;
 	struct channel_power defaultPowerTable[CFG_VALID_CHANNEL_LIST_LEN];
+	uint32_t numChannelsDefault;
 	struct csr_channel base_channels;  /* The channel base to work on */
 	tDblLinkList channelPowerInfoList24;
 	tDblLinkList channelPowerInfoList5G;
@@ -478,21 +485,10 @@ uint32_t csr_get_beaconing_concurrent_channel(struct mac_context *mac_ctx,
 					      uint8_t vdev_id_to_skip);
 
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
-/**
- * csr_check_concurrent_channel_overlap() - To check concurrent overlap chnls
- * @mac: Pointer to mac context
- * @sap_freq: Requested SAP freq
- * @sap_phymode: SAP phy mode
- * @cc_switch_mode: concurrent switch mode
- * @vdev_id: vdev id of SAP/GO requesting
- *
- * This routine will be called to check concurrent overlap channels
- *
- * Return: uint16_t
- */
-uint16_t csr_check_concurrent_channel_overlap(struct mac_context *mac,
-				uint32_t sap_freq, eCsrPhyMode sap_phymode,
-				uint8_t cc_switch_mode, uint8_t vdev_id);
+uint16_t csr_check_concurrent_channel_overlap(
+		struct mac_context *mac,
+		uint32_t sap_ch_freq, eCsrPhyMode sap_phymode,
+		uint8_t cc_switch_mode, uint8_t vdev_id);
 #endif
 
 /* Returns whether the current association is a 11r assoc or not */

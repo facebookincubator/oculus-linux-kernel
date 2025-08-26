@@ -165,13 +165,6 @@ struct probe_time_dwell_time {
 /* Passive dwell time if bt_a2dp is enabled. Time in msecs*/
 #define PASSIVE_DWELL_TIME_BT_A2DP_ENABLED 28
 
-/* Aux Scan Flags */
-#define SCAN_FLAG_EXT_AUX_LOW_LATENCY_SCAN	0x00008000
-#define SCAN_FLAG_EXT_AUX_RELIABLE_SCAN		0x00010000
-#define SCAN_FLAG_EXT_AUX_LOW_POWER_SCAN	0x00040000
-#define SCAN_FLAG_EXT_AUX_FAST_SCAN		0x00020000
-
-#define SCAN_FLAG_EXT_STOP_IF_BSSID_FOUND	0x00080000
 /**
  * struct cb_handler - defines scan event handler
  * call back function and arguments
@@ -185,8 +178,7 @@ struct cb_handler {
 
 /**
  * struct pdev_scan_ev_handler - pdev scan event handlers
- * @handler_cnt: number of valid entries in @cb_handler
- * @cb_handlers: array of registered scan handlers
+ * @cb_handler: array of registered scan handlers
  */
 struct pdev_scan_ev_handler {
 	uint32_t handler_cnt;
@@ -195,7 +187,7 @@ struct pdev_scan_ev_handler {
 
 /**
  * struct global_scan_ev_handlers - per pdev registered scan event handlers
- * @pdev_ev_handlers: per pdev registered scan event handlers
+ * @pdev_scan_ev_handler: per pdev registered scan event handlers
  */
 struct global_scan_ev_handlers {
 	struct pdev_scan_ev_handler pdev_ev_handlers[WLAN_UMAC_MAX_PDEVS];
@@ -221,7 +213,6 @@ struct scan_requester_info {
  * @custom_chan_list: scan only these channels
  * @conf_bssid: configured bssid of the hidden AP
  * @conf_ssid: configured desired ssid
- * @chan_scan_info: channel list scan info
  */
 struct pdev_scan_info {
 	bool wide_band_scan;
@@ -254,10 +245,10 @@ struct scan_vdev_obj {
  * @top_k_num_of_channels: def top K number of channels are used for tanimoto
  * distance calculation.
  * @stationary_thresh: def threshold val to determine that STA is stationary.
- * @adaptive_dwell_mode: def adaptive dwelltime mode for pno scan
+ * @pnoscan_adaptive_dwell_mode: def adaptive dwelltime mode for pno scan
  * @channel_prediction_full_scan: def periodic timer upon which full scan needs
  * to be triggered.
- * @dfs_chnl_scan_enabled: Enable dfs channel PNO scan
+ * @dfs_chnl_scan_enable: Enable dfs channel PNO scan
  * @scan_support_enabled: PNO scan support enabled/disabled
  * @scan_timer_repeat_value: PNO scan timer repeat value
  * @slow_scan_multiplier: PNO slow scan timer multiplier
@@ -340,22 +331,16 @@ struct extscan_def_config {
  * @burst_duration: default burst duration
  * @max_scan_time: default max scan time
  * @num_probes: default maximum number of probes to sent
- * @scan_cache_aging_time: default scan cache aging time
- * @select_5ghz_margin: Prefer connecting to 5 GHz AP even if
- *      its RSSI is lower by @select_5ghz_margin dbm than 2.4 GHz AP.
+ * @cache_aging_time: default scan cache aging time
+ * @select_5gh_margin: Prefer connecting to 5G AP even if
+ *      its RSSI is lower by select_5gh_margin dbm than 2.4G AP.
  *      applicable if prefer_5ghz is set.
  * @enable_mac_spoofing: enable mac address spoof in scan
- * @usr_cfg_probe_rpt_time:
- * @usr_cfg_num_probes:
  * @max_bss_per_pdev: maximum number of bss entries to be maintained per pdev
  * @max_active_scans_allowed: maximum number of active parallel scan allowed
  *                            per psoc
- * @sta_scan_burst_duration:
- * @p2p_scan_burst_duration:
- * @go_scan_burst_duration:
- * @ap_scan_burst_duration:
- * @scan_mode_6g: scan mode in 6 GHz
- * @duty_cycle_6ghz: Enable optimization on 6 GHz channels for every full scan
+ * @scan_mode_6g: scan mode in 6Ghz
+ * @duty_cycle_6ghz: Enable optimization on 6g channels for every full scan
  *                   except the duty cycle. So that every nth scan(depending on
  *                   duty cycle) is a full scan and rest are all optimized scans
  * @enable_connected_scan: enable scans after connection
@@ -364,7 +349,7 @@ struct extscan_def_config {
  * @adaptive_dwell_time_mode_nc: adaptive dwell mode without connection
  * @honour_nl_scan_policy_flags: honour nl80211 scan policy flags
  * @extscan_adaptive_dwell_mode: Adaptive dwell mode during ext scan
- * @skip_6g_and_indoor_freq: skip 6 GHz and 5 GHz indoor freq channel for
+ * @skip_6g_and_indoor_freq: skip 6Ghz and 5Gh indoor freq channel for
  * STA scan if hw is non-DBS and SAP is present
  * @last_scan_ageout_time: use last full scan results for provided time in ms
  * @scan_f_passive: passively scan all channels including active channels
@@ -409,6 +394,7 @@ struct extscan_def_config {
  * @scan_ev_resumed: notify scan resumed event
  * @scan_events: variable to read and set scan_ev_* flags in one shot
  *               can be used to dump all scan_ev_* flags for debug
+ * @roam_params: roam related params
  */
 struct scan_default_params {
 	uint32_t active_dwell;
@@ -549,15 +535,11 @@ struct scan_cb {
  * @scan_start_request_buff: buffer used to pass
  *      scan config to event handlers
  * @rnr_channel_db: RNR channel list database
- * @scan_listener_cb_exe_dur:
- * @scm_scan_event_duration:
- * @scm_scan_to_post_scan_duration:
  * @duty_cycle_cnt_6ghz: Scan count to track the full scans and decide whether
  *                        to optimizate 6g channels in the scan request based
  *                        on the ini scan_mode_6ghz_duty_cycle.
- * @allow_bss_with_incomplete_ie: Continue scan entry even if any corrupted
- *                                IEs are present.
- * @aux_mac_support: advertise aux mac support from FW
+ * @allow_bss_with_incomplete_ie: Continue scan entry even if any corrupted IES are
+ *			    present.
  */
 struct wlan_scan_obj {
 	uint32_t scan_disabled;
@@ -594,7 +576,6 @@ struct wlan_scan_obj {
 #endif
 	uint16_t duty_cycle_cnt_6ghz;
 	bool allow_bss_with_incomplete_ie;
-	bool aux_mac_support;
 };
 
 #ifdef ENABLE_SCAN_PROFILE
@@ -736,7 +717,7 @@ wlan_psoc_get_scan_obj_fl(struct wlan_objmgr_psoc *psoc,
 
 /**
  * wlan_pdev_get_scan_obj() - private API to get scan object from pdev
- * @pdev: pdev object
+ * @psoc: pdev object
  *
  * Return: scan object
  */
@@ -752,7 +733,7 @@ wlan_pdev_get_scan_obj(struct wlan_objmgr_pdev *pdev)
 
 /**
  * wlan_vdev_get_scan_obj() - private API to get scan object from vdev
- * @vdev: vdev object
+ * @psoc: vdev object
  *
  * Return: scan object
  */
@@ -803,7 +784,7 @@ wlan_scan_vdev_get_pdev_id(struct wlan_objmgr_vdev *vdev)
 /**
  * wlan_pdev_get_pdev_scan_ev_handlers() - private API to get
  * pdev scan event handlers
- * @pdev: pdev object
+ * @vdev: pdev object
  *
  * Return: pdev_scan_ev_handler object
  */
@@ -944,7 +925,7 @@ QDF_STATUS wlan_scan_psoc_created_notification(struct wlan_objmgr_psoc *psoc,
 	void *arg_list);
 
 /**
- * wlan_scan_psoc_destroyed_notification() - scan psoc delete handler
+ * wlan_scan_psoc_deleted_notification() - scan psoc delete handler
  * @psoc: psoc object
  * @arg_list: Argument list
  *

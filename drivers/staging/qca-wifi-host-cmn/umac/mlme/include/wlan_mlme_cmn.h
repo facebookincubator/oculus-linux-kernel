@@ -25,9 +25,6 @@
 #include <include/wlan_pdev_mlme.h>
 #include <include/wlan_vdev_mlme.h>
 #include "wlan_cm_public_struct.h"
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-#include "wlan_cm_roam_public_struct.h"
-#endif
 #include "wlan_twt_public_structs.h"
 
 /**
@@ -80,15 +77,6 @@
  * @mlme_cm_roam_cmpl_cb: Roam sync complete cb
  * @vdev: vdev pointer
  *
- * @mlme_cm_roam_get_scan_ie_cb: Get scan ie cb
- * @vdev: vdev pointer
- * @scan_ie: scan ie element pointer
- * @dot11mode_filter: dot11mode filter enumn pointer
- *
- * @mlme_cm_roam_rt_stats_cb: Roam stats cb
- * @roam_stats_event: roam_stats_event pointer
- * @idx: TLV idx for roam_stats_event
- *
  * @mlme_cm_ft_preauth_cmpl_cb: Roam ft preauth complete cb
  * @vdev: vdev pointer
  * @rsp: preauth response pointer
@@ -101,8 +89,6 @@
  * @psoc: psoc pointer
  * @rsp: vendor handoff response pointer
  * @vendor_handoff_context: vendor handoff context
- *
- * @mlme_cm_perfd_reset_cpufreq_ctrl_cb: callback to reset CPU min freq
  */
 struct mlme_cm_ops {
 	QDF_STATUS (*mlme_cm_connect_complete_cb)(
@@ -119,8 +105,7 @@ struct mlme_cm_ops {
 					struct wlan_objmgr_vdev *vdev,
 					struct wlan_cm_discon_rsp *rsp);
 	QDF_STATUS (*mlme_cm_disconnect_start_cb)(
-					struct wlan_objmgr_vdev *vdev,
-					enum wlan_cm_source source);
+					struct wlan_objmgr_vdev *vdev);
 #ifdef CONN_MGR_ADV_FEATURE
 	QDF_STATUS (*mlme_cm_roam_sync_cb)(struct wlan_objmgr_vdev *vdev);
 	QDF_STATUS (*mlme_cm_pmksa_candidate_notify_cb)(
@@ -140,8 +125,6 @@ struct mlme_cm_ops {
 	QDF_STATUS (*mlme_cm_roam_get_scan_ie_cb)(struct wlan_objmgr_vdev *vdev,
 				struct element_info *scan_ie,
 				enum dot11_mode_filter *dot11mode_filter);
-	void (*mlme_cm_roam_rt_stats_cb)(struct roam_stats_event *roam_stats,
-					 uint8_t idx);
 #endif
 #ifdef WLAN_FEATURE_PREAUTH_ENABLE
 	QDF_STATUS (*mlme_cm_ft_preauth_cmpl_cb)(
@@ -157,9 +140,6 @@ struct mlme_cm_ops {
 	QDF_STATUS (*mlme_cm_get_vendor_handoff_params_cb)(
 				struct wlan_objmgr_psoc *psoc,
 				void *vendor_handoff_context);
-#endif
-#ifdef WLAN_BOOST_CPU_FREQ_IN_ROAM
-	void (*mlme_cm_perfd_reset_cpufreq_ctrl_cb)(void);
 #endif
 };
 
@@ -883,12 +863,10 @@ mlme_cm_osif_disconnect_complete(struct wlan_objmgr_vdev *vdev,
 /**
  * mlme_cm_osif_disconnect_start_ind() - osif Disconnect start indication
  * @vdev: vdev pointer
- * @source: Source of disconnect
  *
  * Return: QDF_STATUS
  */
-QDF_STATUS mlme_cm_osif_disconnect_start_ind(struct wlan_objmgr_vdev *vdev,
-					     enum wlan_cm_source source);
+QDF_STATUS mlme_cm_osif_disconnect_start_ind(struct wlan_objmgr_vdev *vdev);
 
 #ifdef WLAN_VENDOR_HANDOFF_CONTROL
 /**
@@ -991,14 +969,6 @@ QDF_STATUS mlme_cm_osif_roam_abort_ind(struct wlan_objmgr_vdev *vdev);
  */
 QDF_STATUS mlme_cm_osif_roam_complete(struct wlan_objmgr_vdev *vdev);
 
-/**
- * mlme_cm_osif_roam_rt_stats() - osif Roam stats callback
- * @roam_stats: roam_stats_event pointer
- * @idx: TLV idx for roam_stats_event
- *
- * Return: void
- */
-void mlme_cm_osif_roam_rt_stats(struct roam_stats_event *roam_stats, uint8_t idx);
 /**
  * mlme_cm_osif_roam_get_scan_params() - osif Roam get scan params callback
  * @vdev: vdev pointer
@@ -1369,21 +1339,4 @@ void mlme_vdev_reconfig_timer_cb(void *arg);
  * Return: True if reassoc on mlo reconfig link add ie enable
  */
 bool mlme_mlo_is_reconfig_reassoc_enable(struct wlan_objmgr_psoc *psoc);
-
-#ifdef WLAN_BOOST_CPU_FREQ_IN_ROAM
-/**
- * mlme_cm_osif_perfd_reset_cpufreq() - Function to reset CPU freq
- *
- * This function is to reset the CPU freq
- *
- * Return: None
- */
-void mlme_cm_osif_perfd_reset_cpufreq(void);
-#else
-static inline
-void mlme_cm_osif_perfd_reset_cpufreq(void)
-{
-}
-#endif
-
 #endif

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -62,7 +62,6 @@ typedef enum eSmeCommandType {
 	e_sme_command_nss_update,
 	e_sme_command_set_dual_mac_config,
 	e_sme_command_set_antenna_mode,
-	e_sme_command_sap_ch_width_update,
 } eSmeCommandType;
 
 typedef enum eSmeState {
@@ -507,7 +506,7 @@ struct sme_context {
 			(const struct oem_data *oem_event_data);
 #endif
 
-	QDF_STATUS (*pagefault_action_cb)(void *buf, uint32_t data);
+	void (*ssr_on_pagefault_cb)(void);
 
 #ifdef MULTI_CLIENT_LL_SUPPORT
 	void (*latency_level_event_handler_cb)
@@ -522,6 +521,10 @@ struct sme_context {
 #endif
 #if defined(CLD_PM_QOS) && defined(WLAN_FEATURE_LL_MODE)
 	void (*beacon_latency_event_cb)(uint32_t latency_level);
+#endif
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
+	void (*roam_rt_stats_cb)(hdd_handle_t hdd_handle, uint8_t idx,
+				 struct roam_stats_event *roam_stats);
 #endif
 	QDF_STATUS (*sme_vdev_del_cb)(mac_handle_t mac_handle,
 				      struct wlan_objmgr_vdev *vdev);

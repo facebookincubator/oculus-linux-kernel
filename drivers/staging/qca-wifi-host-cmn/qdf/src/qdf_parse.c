@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -113,13 +113,6 @@ static QDF_STATUS qdf_ini_read_values(char **main_cursor,
 				return QDF_STATUS_SUCCESS;
 			}
 		} else if (key[0] != '\0') {
-			if (!__qdf_str_cmp(key, "END")) {
-				key[3] = '\0';
-				*section_item = 0;
-				*main_cursor = cursor;
-				*read_key = key;
-				return QDF_STATUS_SUCCESS;
-			}
 			qdf_err("Invalid *.ini syntax '%s'", key);
 			return QDF_STATUS_E_INVAL;
 		}
@@ -157,9 +150,6 @@ QDF_STATUS qdf_ini_parse(const char *ini_path, void *context,
 
 	while (qdf_ini_read_values(&cursor, &read_key, &read_value,
 				   &section_item) == QDF_STATUS_SUCCESS) {
-		if (!__qdf_str_cmp(read_key, "END"))
-			break;
-
 		if (!section_item) {
 			status = item_cb(context, read_key, read_value);
 			if (QDF_IS_STATUS_ERROR(status))
@@ -224,9 +214,6 @@ QDF_STATUS qdf_ini_section_parse(const char *ini_path, void *context,
 
 	while (qdf_ini_read_values(&cursor, &read_key, &read_value,
 				   &section_item) == QDF_STATUS_SUCCESS) {
-		if (!__qdf_str_cmp(read_key, "END"))
-			break;
-
 		if (section_item) {
 			if (qdf_str_cmp(read_key, section_name) == 0) {
 				section_found = 1;
@@ -268,64 +255,9 @@ QDF_STATUS qdf_ini_section_parse(const char *ini_path, void *context,
 
 qdf_export_symbol(qdf_ini_section_parse);
 
-/**
- * qdf_validate_key() - Check if ini key is valid
- * @key: Pointer to key
- *
- * Return: Return SUCCESS if key is valid else return INVALID
- */
-static QDF_STATUS qdf_validate_key(char *key)
-{
-	int i;
-
-	for (i = 0; key[i] != '\0' ; i++) {
-		if ((key[i] >= 'a' && key[i] <= 'z') ||
-		    (key[i] >= 'A' && key[i] <= 'Z') ||
-		    (key[i] >= '0' && key[i] <= '9') ||
-		    (key[i] == '_'))
-			continue;
-		else
-			return QDF_STATUS_E_INVAL;
-	}
-	return QDF_STATUS_SUCCESS;
-}
-
-/**
- * qdf_validate_value() - Validate ini value
- * @value: Pointer to ini value
- *
- * Return: Return SUCCESS if value is valid else return INVALID
- */
-static QDF_STATUS qdf_validate_value(char *value)
-{
-	int i;
-
-	for (i = 0; value[i] != '\0'; i++) {
-		if ((value[i] >= '0' && value[i] <= '9') ||
-		    (value[i] >= 'A' && value[i] <= 'Z') ||
-		    (value[i] >= 'a' && value[i] <= 'z') ||
-		    value[i] == ',' || value[i] == ':' ||
-		    value[i] == '-' || value[i] == '+')
-			continue;
-		else
-			return QDF_STATUS_E_INVAL;
-	}
-	return QDF_STATUS_SUCCESS;
-}
-
-/**
- * qdf_check_ini_validity() - Check if inis are valid
- * @main_cursor: Pointer to main cursor
- *
- * Return: Return true if all inis are valid else false
- */
-static bool qdf_check_ini_validity(char **main_cursor)
+static bool is_valid_key(char **main_cursor)
 {
 	char *cursor = *main_cursor;
-	char *read_key;
-	char *read_value;
-	bool section_item;
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
 	while (*cursor != '\0') {
 		unsigned char *val = (unsigned char *)cursor;
@@ -345,7 +277,6 @@ static bool qdf_check_ini_validity(char **main_cursor)
 		case '-':
 		case ' ':
 		case ':':
-		case ',':
 			cursor++;
 			break;
 
@@ -358,29 +289,6 @@ static bool qdf_check_ini_validity(char **main_cursor)
 			break;
 		}
 	}
-
-	cursor = *main_cursor;
-	while ((status = qdf_ini_read_values(main_cursor, &read_key,
-			&read_value, &section_item)) == QDF_STATUS_SUCCESS) {
-		if (!section_item) {
-			if (!__qdf_str_cmp(read_key, "END"))
-				return true;
-			status = qdf_validate_key(read_key);
-			if (QDF_IS_STATUS_ERROR(status)) {
-				status = QDF_STATUS_E_INVAL;
-				goto out;
-			}
-			status = qdf_validate_value(read_value);
-			if (QDF_IS_STATUS_ERROR(status)) {
-				status = QDF_STATUS_E_INVAL;
-				goto out;
-			}
-		}
-	}
-
-out:
-	if (QDF_IS_STATUS_ERROR(status))
-		return false;
 	return true;
 }
 
@@ -403,7 +311,7 @@ bool qdf_valid_ini_check(const char  *ini_path)
 	/* foreach line */
 	cursor = fbuf;
 
-	is_valid = qdf_check_ini_validity(&cursor);
+	is_valid = is_valid_key(&cursor);
 
 	if (qdf_str_eq(QDF_WIFI_MODULE_PARAMS_FILE, ini_path))
 		qdf_module_param_file_free(fbuf);

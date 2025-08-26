@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2017 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -33,7 +32,7 @@
 #include <linux/inet_lro.h>
 
 /**
- * struct qdf_lro_desc_entry - defines the LRO descriptor
+ * qdf_lro_desc_entry - defines the LRO descriptor
  * element stored in the list
  * @lro_node: node of the list
  * @lro_desc: the LRO descriptor contained in this list entry
@@ -44,7 +43,7 @@ struct qdf_lro_desc_entry {
 };
 
 /**
- * struct qdf_lro_desc_pool - pool of free LRO descriptors
+ * qdf_lro_desc_pool - pool of free LRO descriptors
  * @lro_desc_array: array of LRO descriptors allocated
  * @lro_free_list_head: head of the list
  * @lro_pool_lock: lock to protect access to the list
@@ -55,7 +54,7 @@ struct qdf_lro_desc_pool {
 };
 
 /**
- * struct qdf_lro_desc_table - defines each entry of the LRO hash table
+ * qdf_lro_desc_table - defines each entry of the LRO hash table
  * @lro_desc_list: list of LRO descriptors
  */
 struct qdf_lro_desc_table {
@@ -63,7 +62,7 @@ struct qdf_lro_desc_table {
 };
 
 /**
- * struct qdf_lro_desc_info - structure containing the LRO descriptor
+ * qdf_lro_desc_info - structure containing the LRO descriptor
  * information
  * @lro_hash_table: hash table used for a quick desc. look-up
  * @lro_hash_lock: lock to protect access to the hash table
@@ -75,9 +74,11 @@ struct qdf_lro_desc_info {
 };
 
 /**
- * struct qdf_lro_s - LRO information
+ * qdf_lro_info_s - LRO information
  * @lro_mgr: LRO manager
  * @lro_desc_info: LRO descriptor information
+ * @lro_mgr_arr_access_lock: Lock to access LRO manager array.
+ * @lro_stats: LRO statistics
  */
 struct qdf_lro_s {
 	struct net_lro_mgr *lro_mgr;

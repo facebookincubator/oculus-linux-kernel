@@ -470,7 +470,3 @@ void hif_dummy_set_grp_intr_affinity(struct hif_softc *scn,
 {
 }
 #endif
-
-void hif_dummy_affinity_mgr_set_affinity(struct hif_softc *scn)
-{
-}

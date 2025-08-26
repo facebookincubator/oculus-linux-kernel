@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -37,32 +37,15 @@
 /* Preprocessor definitions and constants */
 #define QDF_MAX_SGLIST 4
 
-/* Define a QDF macro for declaring flexible arrays */
-#define QDF_FLEX_ARRAY(type, name) \
-	union { \
-		type name ## _first_element; \
-		struct { \
-			struct {} dummy_struct; \
-			type name[]; \
-		}; \
-	}
-
-/*
- * Add more levels here based on the number of perf clusters in SoC
- * Also modify hif_get_perf_cluster_bitmap
- */
 #define CPU_CLUSTER_TYPE_LITTLE 0
 #define CPU_CLUSTER_TYPE_PERF 1
-#if defined(NUM_SOC_PERF_CLUSTER) && (NUM_SOC_PERF_CLUSTER > 1)
-#define CPU_CLUSTER_TYPE_PERF2 2
-#endif
 
 /**
  * struct qdf_sglist - scatter-gather list
  * @nsegs: total number of segments
- * @sg_segs: scatter-gather segment list
- * @sg_segs.vaddr: Virtual address of the segment
- * @sg_segs.len: Length of the segment
+ * @struct sg_segs - scatter-gather segment list
+ * @vaddr: Virtual address of the segment
+ * @len: Length of the segment
  */
 typedef struct qdf_sglist {
 	uint32_t nsegs;
@@ -74,9 +57,6 @@ typedef struct qdf_sglist {
 
 #define QDF_MAX_SCATTER __QDF_MAX_SCATTER
 #define QDF_NSEC_PER_MSEC __QDF_NSEC_PER_MSEC
-#define QDF_NSEC_PER_USEC __QDF_NSEC_PER_USEC
-#define QDF_USEC_PER_MSEC __QDF_USEC_PER_MSEC
-#define QDF_NSEC_PER_SEC __QDF_NSEC_PER_SEC
 
 /**
  * QDF_SWAP_U16 - swap input u16 value
@@ -114,21 +94,6 @@ typedef struct qdf_sglist {
  */
 #define qdf_toupper __qdf_toupper
 
-/* set if the flags were changed */
-#define QDF_MONITOR_FLAG_CHANGED __QDF_MONITOR_FLAG_CHANGED
-/* Pass frames with bad FCS */
-#define QDF_MONITOR_FLAG_FCSFAIL __QDF_MONITOR_FLAG_FCSFAIL
-/* Pass frames with bad PLCP */
-#define QDF_MONITOR_FLAG_PLCPFAIL __QDF_MONITOR_FLAG_PLCPFAIL
-/* Pass control frames */
-#define QDF_MONITOR_FLAG_CONTROL __QDF_MONITOR_FLAG_CONTROL
-/* Disable BSSID filtering */
-#define QDF_MONITOR_FLAG_OTHER_BSS __QDF_MONITOR_FLAG_OTHER_BSS
-/* Report frames after processing */
-#define QDF_MONITOR_FLAG_COOK_FRAMES __QDF_MONITOR_FLAG_COOK_FRAMES
-/* Use the configured MAC address and ACK incoming unicast packets */
-#define QDF_MONITOR_FLAG_ACTIVE __QDF_MONITOR_FLAG_ACTIVE
-
 typedef void *qdf_net_handle_t;
 
 typedef void *qdf_netlink_handle_t;
@@ -136,12 +101,12 @@ typedef void *qdf_drv_handle_t;
 typedef void *qdf_os_handle_t;
 typedef void *qdf_pm_t;
 
-/*
+/**
  * typedef qdf_handle_t - handles opaque to each other
  */
 typedef void *qdf_handle_t;
 
-/*
+/**
  * typedef qdf_freq_t - define frequency as a 16 bit/32 bit
  * unsigned integer depending on the requirement
  */
@@ -181,7 +146,7 @@ typedef __qdf_off_t   qdf_off_t;
 typedef __qdf_dma_map_t qdf_dma_map_t;
 
 /**
- * typedef qdf_dma_addr_t - DMA address.
+ * tyepdef qdf_dma_addr_t - DMA address.
  */
 typedef __qdf_dma_addr_t qdf_dma_addr_t;
 
@@ -191,7 +156,7 @@ typedef __qdf_dma_addr_t qdf_dma_addr_t;
 typedef __qdf_dma_size_t qdf_dma_size_t;
 
 /**
- * typedef qdf_dma_context_t - DMA context.
+ * tyepdef qdf_dma_context_t - DMA context.
  */
 typedef __qdf_dma_context_t qdf_dma_context_t;
 
@@ -199,7 +164,7 @@ typedef __qdf_mem_info_t qdf_mem_info_t;
 typedef __sgtable_t sgtable_t;
 
 /**
- * typedef qdf_cpu_mask - CPU Mask
+ * typepdef qdf_cpu_mask - CPU Mask
  */
 typedef __qdf_cpu_mask qdf_cpu_mask;
 
@@ -226,9 +191,9 @@ typedef __qdf_dummy_netdev_t qdf_dummy_netdev_t;
 /**
  * struct qdf_dma_map_info - Information inside a DMA map.
  * @nsegs: total number mapped segments
- * @dma_segs: list of segments
- * @dma_segs.paddr: physical(dma'able) address of the segment
- * @dma_segs.len: length of the segment
+ * @struct dma_segs - list of segments
+ * @paddr: physical(dam'able) address of the segment
+ * @len: length of the segment
  */
 typedef struct qdf_dma_map_info {
 	uint32_t nsegs;
@@ -238,15 +203,12 @@ typedef struct qdf_dma_map_info {
 	} dma_segs[QDF_MAX_SCATTER];
 } qdf_dmamap_info_t;
 
-/*
+/**
  * struct qdf_shared_mem - Shared memory resource
  * @mem_info: memory info struct
  * @vaddr: virtual address
  * @sgtable: scatter-gather table
  * @qdf_dma_mem_context: dma address
- *
- * NB: not using kernel-doc format since the kernel-doc script doesn't
- *     handle the qdf_dma_mem_context() macro
  */
 typedef struct qdf_shared_mem {
 	qdf_mem_info_t mem_info;
@@ -258,7 +220,7 @@ typedef struct qdf_shared_mem {
 #define qdf_iomem_t __qdf_iomem_t
 
 /**
- * typedef QDF_TIMER_TYPE - QDF timer type
+ * typedef enum QDF_TIMER_TYPE - QDF timer type
  * @QDF_TIMER_TYPE_SW: Deferrable SW timer it will not cause CPU to wake up
  * on expiry
  * @QDF_TIMER_TYPE_WAKE_APPS: Non deferrable timer which will cause CPU to
@@ -273,7 +235,7 @@ typedef enum {
 } QDF_TIMER_TYPE;
 
 /**
- * typedef qdf_resource_type_t - hw resources
+ * tyepdef enum qdf_resource_type_t - hw resources
  * @QDF_RESOURCE_TYPE_MEM: memory resource
  * @QDF_RESOURCE_TYPE_IO: io resource
  * Define the hw resources the OS has allocated for the device
@@ -285,7 +247,7 @@ typedef enum {
 } qdf_resource_type_t;
 
 /**
- * typedef qdf_resource_t - representation of a h/w resource.
+ * tyepdef struct qdf_resource_t - representation of a h/w resource.
  * @start: start
  * @end: end
  * @type: resource type
@@ -339,7 +301,7 @@ typedef bool (*qdf_irqlocked_func_t)(void *);
 #define qdf_offsetof(type, field) offsetof(type, field)
 
 /**
- * typedef QDF_MODULE_ID  - Debug category level
+ * typedef enum QDF_MODULE_ID  - Debug category level
  * @QDF_MODULE_ID_MIN: The smallest/starting module id
  * @QDF_MODULE_ID_TDLS: TDLS
  * @QDF_MODULE_ID_ACS: auto channel selection
@@ -484,14 +446,7 @@ typedef bool (*qdf_irqlocked_func_t)(void *);
  * @QDF_MODULE_ID_SCS: SCS module ID
  * @QDF_MODULE_ID_COAP: Constrained Application Protocol module ID
  * @QDF_MODULE_ID_QMI: QMI module ID
- * @QDF_MODULE_ID_SOUNDING: txbf SOUNDING
- * @QDF_MODULE_ID_SAWF: SAWF module ID
- * @QDF_MODULE_ID_EPCS: EPCS module ID
- * @QDF_MODULE_ID_LL_SAP: LL SAP module ID
  * @QDF_MODULE_ID_ANY: anything
- * @QDF_MODULE_ID_COHOSTED_BSS : Co-hosted BSS module ID
- * @QDF_MODULE_ID_TELEMETRY_AGENT: Telemetry Agent Module ID
- * @QDF_MODULE_ID_RF_PATH_SWITCH: RF path switch Module ID
  * @QDF_MODULE_ID_MAX: Max place holder module ID
  *
  * New module ID needs to be added in qdf trace along with this enum.
@@ -570,7 +525,7 @@ typedef enum {
 	QDF_MODULE_ID_DP,
 	QDF_MODULE_ID_HAL,
 	QDF_MODULE_ID_SOC,
-	QDF_MODULE_ID_OS_IF = 72,
+	QDF_MODULE_ID_OS_IF,
 	QDF_MODULE_ID_TARGET_IF,
 	QDF_MODULE_ID_SCHEDULER,
 	QDF_MODULE_ID_MGMT_TXRX,
@@ -578,7 +533,7 @@ typedef enum {
 	QDF_MODULE_ID_PMO,
 	QDF_MODULE_ID_P2P,
 	QDF_MODULE_ID_POLICY_MGR,
-	QDF_MODULE_ID_CONFIG = 80,
+	QDF_MODULE_ID_CONFIG,
 	QDF_MODULE_ID_REGULATORY,
 	QDF_MODULE_ID_SA_API,
 	QDF_MODULE_ID_NAN,
@@ -586,7 +541,7 @@ typedef enum {
 	QDF_MODULE_ID_SON,
 	QDF_MODULE_ID_SPECTRAL,
 	QDF_MODULE_ID_OBJ_MGR,
-	QDF_MODULE_ID_NSS = 88,
+	QDF_MODULE_ID_NSS,
 	QDF_MODULE_ID_ROAM_DEBUG,
 	QDF_MODULE_ID_CDP,
 	QDF_MODULE_ID_DIRECT_BUF_RX,
@@ -594,7 +549,7 @@ typedef enum {
 	QDF_MODULE_ID_GREEN_AP,
 	QDF_MODULE_ID_FTM,
 	QDF_MODULE_ID_FD,
-	QDF_MODULE_ID_OCB = 96,
+	QDF_MODULE_ID_OCB,
 	QDF_MODULE_ID_IPA,
 	QDF_MODULE_ID_CP_STATS,
 	QDF_MODULE_ID_ACTION_OUI,
@@ -602,7 +557,7 @@ typedef enum {
 	QDF_MODULE_ID_MBSSIE,
 	QDF_MODULE_ID_FWOL,
 	QDF_MODULE_ID_SM_ENGINE,
-	QDF_MODULE_ID_CMN_MLME = 104,
+	QDF_MODULE_ID_CMN_MLME,
 	QDF_MODULE_ID_BSSCOLOR,
 	QDF_MODULE_ID_CFR,
 	QDF_MODULE_ID_DP_TX_CAPTURE,
@@ -610,7 +565,7 @@ typedef enum {
 	QDF_MODULE_ID_DENYLIST_MGR,
 	QDF_MODULE_ID_QLD,
 	QDF_MODULE_ID_DYNAMIC_MODE_CHG,
-	QDF_MODULE_ID_COEX = 112,
+	QDF_MODULE_ID_COEX,
 	QDF_MODULE_ID_FTM_TIME_SYNC,
 	QDF_MODULE_ID_PKT_CAPTURE,
 	QDF_MODULE_ID_MON_FILTER,
@@ -618,7 +573,7 @@ typedef enum {
 	QDF_MODULE_ID_RPTR,
 	QDF_MODULE_ID_6GHZ,
 	QDF_MODULE_ID_IOT_SIM,
-	QDF_MODULE_ID_IFMGR = 120,
+	QDF_MODULE_ID_IFMGR,
 	QDF_MODULE_ID_MSCS,
 	QDF_MODULE_ID_GPIO,
 	QDF_MODULE_ID_DIAG,
@@ -626,7 +581,7 @@ typedef enum {
 	QDF_MODULE_ID_DP_TX,
 	QDF_MODULE_ID_DP_RX,
 	QDF_MODULE_ID_DP_STATS,
-	QDF_MODULE_ID_DP_HTT = 128,
+	QDF_MODULE_ID_DP_HTT,
 	QDF_MODULE_ID_DP_PEER,
 	QDF_MODULE_ID_DP_RX_ERROR,
 	QDF_MODULE_ID_DP_HTT_TX_STATS,
@@ -634,7 +589,7 @@ typedef enum {
 	QDF_MODULE_ID_DP_RX_MON_DEST,
 	QDF_MODULE_ID_DP_REO,
 	QDF_MODULE_ID_DP_TX_COMP,
-	QDF_MODULE_ID_DP_VDEV = 136,
+	QDF_MODULE_ID_DP_VDEV,
 	QDF_MODULE_ID_DP_CDP,
 	QDF_MODULE_ID_TSO,
 	QDF_MODULE_ID_ME,
@@ -642,7 +597,7 @@ typedef enum {
 	QDF_MODULE_ID_DBDC_REP,
 	QDF_MODULE_ID_EXT_AP,
 	QDF_MODULE_ID_MLO,
-	QDF_MODULE_ID_MLOIE = 144,
+	QDF_MODULE_ID_MLOIE,
 	QDF_MODULE_ID_MBSS,
 	QDF_MODULE_ID_MON,
 	QDF_MODULE_ID_MGMT_RX_REO,
@@ -650,25 +605,18 @@ typedef enum {
 	QDF_MODULE_ID_WIFI_RADAR,
 	QDF_MODULE_ID_TWT,
 	QDF_MODULE_ID_DP_UMAC_RESET,
-	QDF_MODULE_ID_WLAN_PRE_CAC = 152,
+	QDF_MODULE_ID_WLAN_PRE_CAC,
 	QDF_MODULE_ID_T2LM,
 	QDF_MODULE_ID_DP_SAWF,
 	QDF_MODULE_ID_SCS,
 	QDF_MODULE_ID_COAP,
 	QDF_MODULE_ID_QMI,
-	QDF_MODULE_ID_SOUNDING,
-	QDF_MODULE_ID_SAWF,
-	QDF_MODULE_ID_EPCS = 160,
-	QDF_MODULE_ID_LL_SAP,
-	QDF_MODULE_ID_COHOSTED_BSS,
-	QDF_MODULE_ID_TELEMETRY_AGENT,
-	QDF_MODULE_ID_RF_PATH_SWITCH,
 	QDF_MODULE_ID_ANY,
 	QDF_MODULE_ID_MAX,
 } QDF_MODULE_ID;
 
 /**
- * typedef QDF_TRACE_LEVEL - Debug verbose level
+ * typedef enum QDF_TRACE_LEVEL - Debug verbose level
  * @QDF_TRACE_LEVEL_NONE: no trace will be logged. This value is in place
  *			  for the qdf_trace_setlevel() to allow the user
  *			  to turn off all traces
@@ -935,32 +883,6 @@ QDF_STATUS qdf_bool_parse(const char *bool_str, bool *out_bool);
 QDF_STATUS qdf_int32_parse(const char *int_str, int32_t *out_int);
 
 /**
- * qdf_uint8_parse() - parse the given string as a 8-bit unsigned integer
- * @int_str: the input integer string to parse
- * @out_int: the output integer value, populated on success
- *
- * Supports binary (0b), octal (0o), decimal (no prefix), and hexadecimal (0x)
- * encodings via typical prefix notation. Leading/trailing whitespace is
- * ignored.
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS qdf_uint8_parse(const char *int_str, uint8_t *out_int);
-
-/**
- * qdf_uint16_parse() - parse the given string as a 16-bit unsigned integer
- * @int_str: the input integer string to parse
- * @out_int: the output integer value, populated on success
- *
- * Supports binary (0b), octal (0o), decimal (no prefix), and hexadecimal (0x)
- * encodings via typical prefix notation. Leading/trailing whitespace is
- * ignored.
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS qdf_uint16_parse(const char *int_str, uint16_t *out_int);
-
-/**
  * qdf_uint32_parse() - parse the given string as a 32-bit unsigned integer
  * @int_str: the input integer string to parse
  * @out_int: the output integer value, populated on success
@@ -1001,32 +923,36 @@ QDF_STATUS qdf_uint64_parse(const char *int_str, uint64_t *out_int);
 
 #define QDF_MAC_ADDR_SIZE 6
 
-/*
- * If the feature WLAN_TRACE_HIDE_MAC_ADDRESS is enabled,
- * then the requirement is to hide 4th and 5th octet of the
+/**
+ * If the feature CONFIG_WLAN_TRACE_HIDE_MAC_ADDRESS is enabled,
+ * then the requirement is to hide 2nd, 3rd and 4th octet of the
  * MAC address in the kernel logs and driver logs.
+ * But other management interfaces like ioctl, debugfs, sysfs,
+ * wext, unit test code or non-production simulator sw (iot_sim)
+ * should continue to log the full mac address.
  *
- * Developers must use QDF_MAC_ADDR_FMT instead of "%pM",
+ * Developers must use QDF_FULL_MAC_FMT instead of "%pM",
  * as this macro helps avoid accidentally breaking the feature
- * WLAN_TRACE_HIDE_MAC_ADDRESS if enabled and code auditing
+ * CONFIG_WLAN_TRACE_HIDE_MAC_ADDRESS if enabled and code auditing
  * becomes easy.
  */
+#define QDF_FULL_MAC_FMT "%pM"
+#define QDF_FULL_MAC_REF(a) (a)
 
 #if defined(WLAN_TRACE_HIDE_MAC_ADDRESS)
-#define QDF_MAC_ADDR_FMT "%02x:%02x:%02x:**:**:%02x"
+#define QDF_MAC_ADDR_FMT "%02x:**:**:**:%02x:%02x"
 
 /*
  * The input data type for QDF_MAC_ADDR_REF can be pointer or an array.
  * In case of array, compiler was throwing following warning
  * 'address of array will always evaluate as ‘true’
  * and if the pointer is NULL, zero is passed to the format specifier
- * which results in zero mac address (00:00:00:**:**:00)
+ * which results in zero mac address (00:**:**:**:00:00)
  * For this reason, input data type is typecasted to (uintptr_t).
  */
 #define QDF_MAC_ADDR_REF(a) \
 	(((uintptr_t)NULL != (uintptr_t)(a)) ? (a)[0] : 0), \
-	(((uintptr_t)NULL != (uintptr_t)(a)) ? (a)[1] : 0), \
-	(((uintptr_t)NULL != (uintptr_t)(a)) ? (a)[2] : 0), \
+	(((uintptr_t)NULL != (uintptr_t)(a)) ? (a)[4] : 0), \
 	(((uintptr_t)NULL != (uintptr_t)(a)) ? (a)[5] : 0)
 #else
 #define QDF_MAC_ADDR_FMT "%pM"
@@ -1090,30 +1016,15 @@ struct qdf_mac_addr {
  * @QDF_ROAM_EVENTID: roam eventid from fw
  * @QDF_PROTO_DNS_QUERY: dns query
  * @QDF_PROTO_DNS_RES: dns response
- * @QDF_PROTO_EAP_REQUEST: EAP Request
- * @QDF_PROTO_EAP_RESPONSE: EAP Response
- * @QDF_PROTO_EAP_SUCCESS: EAP Success
- * @QDF_PROTO_EAP_FAILURE: EAP Filure
- * @QDF_PROTO_EAP_INITIATE: EAP Initiate
- * @QDF_PROTO_EAP_FINISH: EAP Finish
- * @QDF_PROTO_EAPOL_START: EAPOL-Start message
- * @QDF_PROTO_EAPOL_LOGOFF: EAPOL Log Off message.
- * @QDF_PROTO_EAPOL_ASF: ASF Alert message
- * @QDF_PROTO_EAP_REQ_ID: EAP identify request
- * @QDF_PROTO_EAP_RSP_ID: EAP identify response
- * @QDF_PROTO_EAP_M1: EAP expanded type M1
- * @QDF_PROTO_EAP_M2: EAP expanded type M2
- * @QDF_PROTO_EAP_M3: EAP expanded type M3
- * @QDF_PROTO_EAP_M4: EAP expanded type M4
- * @QDF_PROTO_EAP_M5: EAP expanded type M5
- * @QDF_PROTO_EAP_M6: EAP expanded type M6
- * @QDF_PROTO_EAP_M7: EAP expanded type M7
- * @QDF_PROTO_EAP_M8: EAP expanded type M8
- * @QDF_PROTO_EAP_WSC_START: EAP expanded type WSC start
- * @QDF_PROTO_EAP_WSC_ACK: EAP expanded type WSC ACK
- * @QDF_PROTO_EAP_WSC_NACK: EAP expanded type WSC NACK
- * @QDF_PROTO_EAP_WSC_DONE: EAP expanded type WSC DONE
- * @QDF_PROTO_EAP_WSC_FRAG_ACK: EAP expanded type WSC frag ACK
+ * QDF_PROTO_EAP_REQUEST: EAP Request
+ * QDF_PROTO_EAP_RESPONSE: EAP Response
+ * QDF_PROTO_EAP_SUCCESS: EAP Success
+ * QDF_PROTO_EAP_FAILURE: EAP Filure
+ * QDF_PROTO_EAP_INITIATE: EAP Initiate
+ * QDF_PROTO_EAP_FINISH: EAP Finish
+ * QDF_PROTO_EAPOL_START: EAPOL-Start message
+ * QDF_PROTO_EAPOL_LOGOFF: EAPOL Log Off message.
+ * QDF_PROTO_EAPOL_ASF: ASF Alert message
  * @QDF_PROTO_SUBTYPE_MAX: subtype max
  */
 enum qdf_proto_subtype {
@@ -1162,21 +1073,6 @@ enum qdf_proto_subtype {
 	QDF_PROTO_EAPOL_START,
 	QDF_PROTO_EAPOL_LOGOFF,
 	QDF_PROTO_EAPOL_ASF,
-	QDF_PROTO_EAP_REQ_ID,
-	QDF_PROTO_EAP_RSP_ID,
-	QDF_PROTO_EAP_M1,
-	QDF_PROTO_EAP_M2,
-	QDF_PROTO_EAP_M3,
-	QDF_PROTO_EAP_M4,
-	QDF_PROTO_EAP_M5,
-	QDF_PROTO_EAP_M6,
-	QDF_PROTO_EAP_M7,
-	QDF_PROTO_EAP_M8,
-	QDF_PROTO_EAP_WSC_START,
-	QDF_PROTO_EAP_WSC_ACK,
-	QDF_PROTO_EAP_WSC_NACK,
-	QDF_PROTO_EAP_WSC_DONE,
-	QDF_PROTO_EAP_WSC_FRAG_ACK,
 	QDF_PROTO_SUBTYPE_MAX
 };
 
@@ -1370,7 +1266,7 @@ struct qdf_tso_frag_t {
  * @syn: syn
  * @rst: reset
  * @psh: push
- * @ack: acknowledge
+ * @ack: aknowledge
  * @urg: urg
  * @ece: ece
  * @cwr: cwr
@@ -1469,7 +1365,7 @@ struct qdf_tso_seg_t {
  * @TSOSEG_LOC_GETINFO: get info
  * @TSOSEG_LOC_FILLHTTSEG: fill HTT segment
  * @TSOSEG_LOC_FILLCMNSEG: fill CMN segment
- * @TSOSEG_LOC_PREPARETSO: prepare TSO
+ * TSOSEG_LOC_PREPARETSO: prepare TSO
  * @TSOSEG_LOC_TXPREPLLFAST: tx prep LL fast
  * @TSOSEG_LOC_UNMAPTSO: unmap TSO
  * @TSOSEG_LOC_UNMAPLAST: unmap last
@@ -1513,11 +1409,6 @@ struct qdf_tso_seg_dbg_t {
  * struct qdf_tso_seg_elem_t - tso segment element
  * @next: pointer to the next segment
  * @seg: instance of segment
- * @cookie:
- * @on_freelist:
- * @sent_to_target:
- * @force_free:
- * @dbg: debug struct
  */
 struct qdf_tso_seg_elem_t {
 	struct qdf_tso_seg_elem_t *next;
@@ -1574,6 +1465,27 @@ struct qdf_tso_info_t {
 	uint32_t msdu_stats_idx;
 };
 
+/*
+ * Used to set classify bit in CE desc.
+ */
+#define QDF_CE_TX_CLASSIFY_BIT_S   5
+
+/**
+ * QDF_CE_TX_PKT_TYPE_BIT_S - 2 bits starting at bit 6 in CE desc.
+ */
+#define QDF_CE_TX_PKT_TYPE_BIT_S   6
+
+/**
+ * QDF_CE_TX_PKT_OFFSET_BIT_S - 12 bits --> 16-27, in the CE descriptor
+ *  the length of HTT/HTC descriptor
+ */
+#define QDF_CE_TX_PKT_OFFSET_BIT_S  16
+
+/**
+ * QDF_CE_TX_PKT_OFFSET_BIT_M - Mask for packet offset in the CE descriptor.
+ */
+#define QDF_CE_TX_PKT_OFFSET_BIT_M   0x0fff0000
+
 /**
  * enum qdf_suspend_type - type of suspend
  * @QDF_SYSTEM_SUSPEND: System suspend triggered wlan suspend
@@ -1620,26 +1532,6 @@ enum qdf_suspend_type {
  * @QDF_TX_DESC_LEAK: tx desc leak
  * @QDF_HOST_WAKEUP_REASON_PAGEFAULT: Host wakeup because of pagefault
  * @QDF_SCHED_TIMEOUT: Scheduler watchdog timedout
- * @QDF_SELF_PEER_DEL_FAILED: Failed to send self peer deletion cmd to fw
- * @QDF_DEL_SELF_STA_FAILED: Received del self sta without del bss
- * @QDF_FLUSH_LOGS : Recovery needed when sending flush completion to userspace
- * @QDF_VDEV_MAC_ADDR_UPDATE_RESPONSE_TIMED_OUT: VDEV MAC address update
- * request for Link switch timedout.
- * @QDF_MGMT_RX_REO_INCONSISTENT_SNAPSHOT: Inconsistent management Rx reorder
- * snapshots
- * @QDF_MGMT_RX_REO_OUT_OF_ORDER_PKT: Reception of management packet with out
- * of order packet counter values
- * @QDF_MGMT_RX_REO_ZERO_DURATION_PKT: Reception of management packet with zero
- * packet duration
- * @QDF_VDEV_ACTIVE_SER_CONNECT_TIMEOUT: Active connect cmd in serialization
- * timed out.
- * @QDF_VDEV_ACTIVE_SER_DISCONNECT_TIMEOUT: Active disconnect cmd in
- * serialization timed out.
- * @QDF_VDEV_ACTIVE_SER_REASSOC_TIMEOUT:  Active reassoc cmd in serialization
- * timed out.
- * @QDF_VDEV_ACTIVE_SER_LINK_SWITCH_TIMEOUT: Active link switch cmd in
- * serialization timed out.
- * @QDF_ENABLE_IRQ_FAILURE: Failed to enable IRQs
  */
 enum qdf_hang_reason {
 	QDF_REASON_UNSPECIFIED,
@@ -1673,18 +1565,6 @@ enum qdf_hang_reason {
 	QDF_TX_DESC_LEAK,
 	QDF_HOST_WAKEUP_REASON_PAGEFAULT,
 	QDF_SCHED_TIMEOUT,
-	QDF_SELF_PEER_DEL_FAILED,
-	QDF_DEL_SELF_STA_FAILED,
-	QDF_FLUSH_LOGS,
-	QDF_VDEV_MAC_ADDR_UPDATE_RESPONSE_TIMED_OUT,
-	QDF_MGMT_RX_REO_INCONSISTENT_SNAPSHOT,
-	QDF_MGMT_RX_REO_OUT_OF_ORDER_PKT,
-	QDF_MGMT_RX_REO_ZERO_DURATION_PKT,
-	QDF_VDEV_ACTIVE_SER_CONNECT_TIMEOUT,
-	QDF_VDEV_ACTIVE_SER_DISCONNECT_TIMEOUT,
-	QDF_VDEV_ACTIVE_SER_REASSOC_TIMEOUT,
-	QDF_VDEV_ACTIVE_SER_LINK_SWITCH_TIMEOUT,
-	QDF_ENABLE_IRQ_FAILURE,
 };
 
 /**
@@ -1852,7 +1732,6 @@ enum qdf_iommu_attr {
 /**
  * enum qdf_dp_desc_type - source type for multiple pages allocation
  * @QDF_DP_TX_DESC_TYPE: DP SW TX descriptor
- * @QDF_DP_TX_SPCL_DESC_TYPE: DP SW TX special descriptor
  * @QDF_DP_TX_PPEDS_DESC_TYPE: DP PPE-DS Tx descriptor
  * @QDF_DP_TX_EXT_DESC_TYPE: DP TX msdu extension descriptor
  * @QDF_DP_TX_EXT_DESC_LINK_TYPE: DP link descriptor for msdu ext_desc
@@ -1862,7 +1741,6 @@ enum qdf_iommu_attr {
  * @QDF_DP_RX_DESC_STATUS_TYPE: DP RX SW descriptor for monitor status
  * @QDF_DP_HW_LINK_DESC_TYPE: DP HW link descriptor
  * @QDF_DP_HW_CC_SPT_PAGE_TYPE: DP pages for HW CC secondary page table
- * @QDF_DP_TX_TCL_DESC_TYPE: DP TCL descriptor
  * @QDF_DP_TX_DIRECT_LINK_CE_BUF_TYPE: DP tx direct link CE source ring buf
  *  pages
  * @QDF_DP_TX_DIRECT_LINK_BUF_TYPE: DP tx direct link buffer pages
@@ -1871,7 +1749,6 @@ enum qdf_iommu_attr {
  */
 enum qdf_dp_desc_type {
 	QDF_DP_TX_DESC_TYPE,
-	QDF_DP_TX_SPCL_DESC_TYPE,
 	QDF_DP_TX_PPEDS_DESC_TYPE,
 	QDF_DP_TX_EXT_DESC_TYPE,
 	QDF_DP_TX_EXT_DESC_LINK_TYPE,
@@ -1881,7 +1758,6 @@ enum qdf_dp_desc_type {
 	QDF_DP_RX_DESC_STATUS_TYPE,
 	QDF_DP_HW_LINK_DESC_TYPE,
 	QDF_DP_HW_CC_SPT_PAGE_TYPE,
-	QDF_DP_TX_TCL_DESC_TYPE,
 #ifdef FEATURE_DIRECT_LINK
 	QDF_DP_TX_DIRECT_LINK_CE_BUF_TYPE,
 	QDF_DP_TX_DIRECT_LINK_BUF_TYPE,

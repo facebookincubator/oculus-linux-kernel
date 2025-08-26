@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -28,7 +28,6 @@
 
 struct vdev_mlme_obj;
 struct cnx_mgr;
-struct ml_rv_info;
 
 /* Requestor ID for multiple vdev restart */
 #define MULTIPLE_VDEV_RESTART_REQ_ID 0x1234
@@ -52,7 +51,6 @@ struct ml_rv_info;
 #define WLAN_VDEV_MLME_SUBTYPE_MESH 0x5
 #define WLAN_VDEV_MLME_SUBTYPE_MESH_11S   0x6
 #define WLAN_VDEV_MLME_SUBTYPE_SMART_MONITOR 0x7
-#define WLAN_VDEV_MLME_SUBTYPE_MLO_BRIDGE 0x8
 
 /* vdev control flags (per bits) */
 #define WLAN_VDEV_MLME_FLAGS_NON_MBSSID_AP      0x00000001
@@ -379,7 +377,6 @@ struct vdev_mlme_proto {
  * @he_curr_non_srg_pd_threshold: current configured NON-SRG PD threshold
  * @he_curr_srg_pd_threshold: current configured SRG PD threshold
  * @is_pd_threshold_present: PD threshold is present in SR enable command or not
- * @disable_fd_in_6ghz_band: Disable FD in 6 GHz if OOB discovery is enabled
  */
 struct vdev_mlme_mgmt_generic {
 	uint32_t rts_threshold;
@@ -394,7 +391,7 @@ struct vdev_mlme_mgmt_generic {
 	uint8_t maxregpower;
 	uint8_t antennamax;
 	uint8_t reg_class_id;
-	uint16_t ampdu;
+	uint8_t ampdu;
 	uint8_t amsdu;
 	char ssid[WLAN_SSID_MAX_LEN + 1];
 	uint8_t ssid_len;
@@ -421,15 +418,17 @@ struct vdev_mlme_mgmt_generic {
 	int32_t he_curr_srg_pd_threshold;
 	bool is_pd_threshold_present;
 #endif
-	bool disable_fd_in_6ghz_band;
 };
 
-/**
+/*
  * struct wlan_vdev_aid_mgr - AID manager
  * @aid_bitmap: AID bitmap array
  * @start_aid: start of AID index
  * @max_aid: Max allowed AID
  * @ref_cnt:  to share AID across VDEVs for MBSSID
+ *
+ * NB: Not using kernel-doc comment since the kernel-doc script
+ *     doesn't handle the qdf_bitmap() macro.
  */
 struct wlan_vdev_aid_mgr {
 	qdf_bitmap(aid_bitmap, WLAN_UMAC_MAX_AID);
@@ -489,7 +488,6 @@ struct vdev_mlme_inactivity_params {
  * @WLAN_VDEV_RATEMASK_TYPE_HT: phy type ht
  * @WLAN_VDEV_RATEMASK_TYPE_VHT: phy type vht
  * @WLAN_VDEV_RATEMASK_TYPE_HE: phy type he
- * @WLAN_VDEV_RATEMASK_TYPE_EHT: phy type eht
  * @WLAN_VDEV_RATEMASK_TYPE_MAX: Maximum enumeration
  */
 enum vdev_ratemask_type {
@@ -497,7 +495,6 @@ enum vdev_ratemask_type {
 	WLAN_VDEV_RATEMASK_TYPE_HT,
 	WLAN_VDEV_RATEMASK_TYPE_VHT,
 	WLAN_VDEV_RATEMASK_TYPE_HE,
-	WLAN_VDEV_RATEMASK_TYPE_EHT,
 	WLAN_VDEV_RATEMASK_TYPE_MAX,
 };
 
@@ -724,8 +721,6 @@ enum vdev_start_resp_type {
  *                                      the first ml reconfig IE
  * @mlme_vdev_reconfig_timer_complete:  callback to process ml reconfing
  *                                      operation
- * @mlme_vdev_reconfig_notify_standby: callback to notify to process standby
- *                                      link removal
  * @mlme_vdev_notify_mlo_sync_wait_entry:
  */
 struct vdev_mlme_ops {
@@ -769,8 +764,7 @@ struct vdev_mlme_ops {
 				uint16_t event_data_len, void *event_data);
 	QDF_STATUS (*mlme_vdev_disconnect_peers)(
 				struct vdev_mlme_obj *vdev_mlme,
-				uint16_t event_data_len, void *event_data,
-				bool discon_legacy_only);
+				uint16_t event_data_len, void *event_data);
 	QDF_STATUS (*mlme_vdev_dfs_cac_timer_stop)(
 				struct vdev_mlme_obj *vdev_mlme,
 				uint16_t event_data_len, void *event_data);
@@ -811,9 +805,6 @@ struct vdev_mlme_ops {
 				uint16_t *tbtt_count, uint16_t bcn_int);
 	void (*mlme_vdev_reconfig_timer_complete)(
 				struct vdev_mlme_obj *vdev_mlme);
-	QDF_STATUS (*mlme_vdev_reconfig_notify_standby)(
-				struct vdev_mlme_obj *vdev_mlme,
-				struct ml_rv_info *reconfig_info);
 	QDF_STATUS (*mlme_vdev_notify_mlo_sync_wait_entry)(
 				struct vdev_mlme_obj *vdev_mlme);
 };

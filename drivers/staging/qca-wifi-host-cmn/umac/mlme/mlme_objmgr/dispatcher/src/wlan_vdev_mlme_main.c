@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -35,7 +35,6 @@
 #include <wlan_lmac_if_def.h>
 #include <target_if_vdev_mgr_tx_ops.h>
 #include "connection_mgr/core/src/wlan_cm_main.h"
-#include <wlan_mlo_mgr_public_api.h>
 
 static QDF_STATUS mlme_vdev_obj_create_handler(struct wlan_objmgr_vdev *vdev,
 					       void *arg)
@@ -77,13 +76,9 @@ static QDF_STATUS mlme_vdev_obj_create_handler(struct wlan_objmgr_vdev *vdev,
 
 	status = txops->psoc_vdev_rsp_timer_inuse(psoc, wlan_vdev_get_id(vdev));
 	if (QDF_IS_STATUS_ERROR(status)) {
-		if (status == QDF_STATUS_E_ALREADY) {
-			mlme_err("Go through, since timer initializes later.");
-		} else {
-			mlme_err("The vdev response is pending for VDEV_%d status:%d",
-				 wlan_vdev_get_id(vdev), status);
-			return QDF_STATUS_E_FAILURE;
-		}
+		mlme_err("The vdev response is pending for VDEV_%d status:%d",
+			 wlan_vdev_get_id(vdev), status);
+		return QDF_STATUS_E_FAILURE;
 	}
 
 	pdev_mlme = wlan_pdev_mlme_get_cmpt_obj(pdev);
@@ -331,17 +326,5 @@ QDF_STATUS wlan_vdev_mlme_send_set_mac_addr(struct qdf_mac_addr mac_addr,
 					    struct wlan_objmgr_vdev *vdev)
 {
 	return mlme_vdev_ops_send_set_mac_address(mac_addr, mld_addr, vdev);
-}
-
-void wlan_vdev_mlme_notify_set_mac_addr_response(struct wlan_objmgr_vdev *vdev,
-						 uint8_t resp_status)
-{
-	if (wlan_vdev_mlme_is_mlo_link_switch_in_progress(vdev)) {
-		wlan_mlo_mgr_link_switch_set_mac_addr_resp(vdev, resp_status);
-		return;
-	}
-
-	mlme_vdev_mgr_notify_set_mac_addr_response(wlan_vdev_get_id(vdev),
-						   resp_status);
 }
 #endif

@@ -826,7 +826,7 @@ void __exit lirc_dev_exit(void)
 	unregister_chrdev_region(lirc_base_dev, RC_DEV_MAX);
 }
 
-struct rc_dev *rc_dev_get_from_fd(int fd)
+struct rc_dev *rc_dev_get_from_fd(int fd, bool write)
 {
 	struct fd f = fdget(fd);
 	struct lirc_fh *fh;
@@ -838,6 +838,11 @@ struct rc_dev *rc_dev_get_from_fd(int fd)
 	if (f.file->f_op != &lirc_fops) {
 		fdput(f);
 		return ERR_PTR(-EINVAL);
+	}
+
+	if (write && !(f.file->f_mode & FMODE_WRITE)) {
+		fdput(f);
+		return ERR_PTR(-EPERM);
 	}
 
 	fh = f.file->private_data;

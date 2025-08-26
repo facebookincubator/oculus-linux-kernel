@@ -1967,6 +1967,70 @@ int msm_ioctl_display_cac_control_ops(struct drm_device *dev, void *data,
 	return 0;
 }
 
+/**
+ * msm_ioctl_dpu_histogram_control_ops - Enable/Disable DPU Histogram
+ * @dev: drm device for the ioctl
+ * @data: data pointer for the ioctl
+ * @file_priv: drm file for the ioctl call
+ */
+int msm_ioctl_dpu_histogram_control_ops(struct drm_device *dev, void *data,
+			struct drm_file *file_priv)
+{
+	struct drm_msm_dpu_histogram_control *dpu_histogram_control = data;
+	struct msm_drm_private *priv = dev->dev_private;
+	struct drm_crtc *crtc = NULL;
+	struct sde_crtc *sde_crtc = NULL;
+	const int default_crtc_id = 0;
+	const int dpu_histogram_read_interval_max = 1000; /* 0 to 1000 msec */
+	int ret = 0;
+
+	SDE_ATRACE_BEGIN(__func__);
+
+	if (!priv || !dpu_histogram_control) {
+		DRM_ERROR("invalid arguments");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	crtc = priv->crtcs[default_crtc_id];
+	if (!crtc) {
+		DRM_ERROR("could not find crtc id:%d\n", default_crtc_id);
+		ret = -ENOENT;
+		goto out;
+	}
+
+	sde_crtc = to_sde_crtc(crtc);
+	if (!sde_crtc) {
+		DRM_ERROR("could not find sde_crtc for crtc id:%d\n", default_crtc_id);
+		ret = -ENOENT;
+		goto out;
+	}
+
+	/* Log the passed parameters. */
+	SDE_EVT32(dpu_histogram_control->histogram_enable);
+	SDE_EVT32(dpu_histogram_control->regdma_enable);
+	SDE_EVT32(dpu_histogram_control->read_interval_msec);
+
+	/* Validate the inputs values. */
+	if ((dpu_histogram_control->read_interval_msec < 1) ||
+	    (dpu_histogram_control->read_interval_msec >
+	     dpu_histogram_read_interval_max)) {
+		DSI_ERR("DPU Histogram Read Interval: Input value for read out of range.\n");
+		ret = -EINVAL;
+	} else {
+		sde_crtc->histogram_interval_msec =
+			dpu_histogram_control->read_interval_msec;
+		sde_crtc->histogram_enable =
+			dpu_histogram_control->histogram_enable;
+		sde_crtc->regdma_enable = dpu_histogram_control->regdma_enable;
+	}
+
+out:
+	SDE_ATRACE_END(__func__);
+
+	return ret;
+}
+
 static u64 msm_vsync_trigger_next_vsync_ns(u64 last_vsync_ns, u32 min_fps)
 {
 	u64 res;
@@ -2096,6 +2160,8 @@ static const struct drm_ioctl_desc msm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(MSM_DISPLAY_CAC, msm_ioctl_display_cac_control_ops,
 			DRM_AUTH|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(MSM_SETTLE_TIME_SCALE, msm_ioctl_settle_time_scalar_control_ops,
+			DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(MSM_DPU_HISTOGRAM_CONTROL, msm_ioctl_dpu_histogram_control_ops,
 			DRM_RENDER_ALLOW),
 };
 

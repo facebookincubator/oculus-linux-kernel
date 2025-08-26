@@ -4324,6 +4324,8 @@ static int walt_module_init(void)
 	if (topology_update_done)
 		schedule_work(&walt_init_work);
 
+	/* We expect WALT to never run so we can use its vendor fields */
+	BUG();
 	return 0;
 }
 

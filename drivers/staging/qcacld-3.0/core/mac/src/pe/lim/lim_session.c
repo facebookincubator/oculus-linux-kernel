@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022,2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -40,7 +40,6 @@
 #include "lim_send_messages.h"
 #include "cfg_ucfg_api.h"
 #include <lim_assoc_utils.h>
-#include <lim_process_fils.h>
 
 #ifdef WLAN_ALLOCATE_GLOBAL_BUFFERS_DYNAMICALLY
 static struct sDphHashNode *g_dph_node_array;
@@ -287,6 +286,7 @@ pe_init_pmf_comeback_timer(tpAniSirGlobal mac_ctx, struct pe_session *session)
 	if (session->opmode != QDF_STA_MODE)
 		return;
 
+	pe_debug("init pmf comeback timer for vdev %d", session->vdev_id);
 	session->pmf_retry_timer_info.mac = mac_ctx;
 	session->pmf_retry_timer_info.vdev_id = session->vdev_id;
 	session->pmf_retry_timer_info.retried = false;
@@ -427,8 +427,8 @@ void lim_set_bcn_probe_filter(struct mac_context *mac_ctx,
 	bssid = &session->bssId;
 
 	if (session_id >= WLAN_MAX_VDEVS) {
-		pe_err("vdev %d Invalid session_id %d of type %d",
-		       session->vdev_id, session_id, bss_type);
+		pe_err("Invalid session_id %d of type %d",
+			session_id, bss_type);
 		return;
 	}
 
@@ -437,14 +437,22 @@ void lim_set_bcn_probe_filter(struct mac_context *mac_ctx,
 	if (eSIR_INFRASTRUCTURE_MODE == bss_type) {
 		filter->num_sta_sessions++;
 		sir_copy_mac_addr(filter->sta_bssid[session_id], *bssid);
+		pe_debug("Set filter for STA Session %d bssid "QDF_MAC_ADDR_FMT,
+			session_id, QDF_MAC_ADDR_REF(*bssid));
 	} else if (eSIR_INFRA_AP_MODE == bss_type) {
 		if (!sap_channel) {
-			pe_err("vdev %d with invalid chan", session->vdev_id);
-			return;
+			pe_err("SAP Type with invalid channel");
+			goto done;
 		}
 		filter->num_sap_sessions++;
 		filter->sap_channel[session_id] = sap_channel;
+		pe_debug("Set filter for SAP session %d channel %d",
+			session_id, sap_channel);
 	}
+
+done:
+	pe_debug("sta %d sap %d", filter->num_sta_sessions,
+		 filter->num_sap_sessions);
 }
 
 void lim_reset_bcn_probe_filter(struct mac_context *mac_ctx,
@@ -570,6 +578,11 @@ struct pe_session *pe_create_session(struct mac_context *mac,
 	session_ptr->limCurrentAuthType = eSIR_OPEN_SYSTEM;
 	pe_init_beacon_params(mac, &mac->lim.gpSession[i]);
 	session_ptr->is11Rconnection = false;
+#ifdef FEATURE_WLAN_ESE
+	session_ptr->isESEconnection = false;
+#endif
+	session_ptr->isFastTransitionEnabled = false;
+	session_ptr->isFastRoamIniFeatureEnabled = false;
 	*sessionId = i;
 	session_ptr->peSessionId = i;
 	session_ptr->bssType = bssType;
@@ -670,7 +683,6 @@ struct pe_session *pe_create_session(struct mac_context *mac,
 	session_ptr->prev_auth_seq_num = 0xFFFF;
 
 	session_ptr->user_edca_set = 0;
-	session_ptr->join_probe_cnt = 0;
 
 	return &mac->lim.gpSession[i];
 
@@ -1016,6 +1028,9 @@ void pe_delete_session(struct mac_context *mac_ctx, struct pe_session *session)
 
 	session->mac_ctx = NULL;
 
+	qdf_mem_zero(session->WEPKeyMaterial,
+		     sizeof(session->WEPKeyMaterial));
+
 	if (session->access_policy_vendor_ie)
 		qdf_mem_free(session->access_policy_vendor_ie);
 
@@ -1098,101 +1113,6 @@ struct pe_session *pe_find_session_by_scan_id(struct mac_context *mac_ctx,
 	}
 	return NULL;
 }
-
-void lim_dump_session_info(struct mac_context *mac_ctx,
-			   struct pe_session *pe_session)
-{
-	if (!mac_ctx || !pe_session)
-		return;
-
-	pe_nofl_debug("vdev_id %d freq %d ch_bw %d freq0 %d freq1 %d, smps %d mode %d action %d, nss_1x1 %d vdev_nss %d nss %d, cbMode %d, dot11Mode %d, subfer %d subfee %d csn %d, is_cisco %d, WPS %d OSEN %d FILS %d AKM %d",
-		      pe_session->vdev_id, pe_session->curr_op_freq,
-		      pe_session->ch_width, pe_session->ch_center_freq_seg0,
-		      pe_session->ch_center_freq_seg1,
-		      mac_ctx->mlme_cfg->ht_caps.enable_smps,
-		      mac_ctx->mlme_cfg->ht_caps.smps,
-		      pe_session->send_smps_action,
-		      pe_session->supported_nss_1x1, pe_session->vdev_nss,
-		      pe_session->nss, pe_session->htSupportedChannelWidthSet,
-		      pe_session->dot11mode,
-		      pe_session->vht_config.su_beam_former,
-		      pe_session->vht_config.su_beam_formee,
-		      pe_session->vht_config.csnof_beamformer_antSup,
-		      pe_session->isCiscoVendorAP, pe_session->wps_registration,
-		      pe_session->isOSENConnection,
-		      lim_is_fils_connection(pe_session),
-		      pe_session->connected_akm);
-
-	pe_nofl_debug(" MaxTxPwr %d RMF %d force_20_24 %d UAPSD flag 0x%2x auth type %d privacy %d",
-		      pe_session->maxTxPower, pe_session->limRmfEnabled,
-		      wlan_cm_get_force_20mhz_in_24ghz(pe_session->vdev),
-		      pe_session->gUapsdPerAcBitmask,
-		      mac_ctx->mlme_cfg->wep_params.auth_type,
-		      mac_ctx->mlme_cfg->wep_params.is_privacy_enabled);
-}
-
-#ifdef WLAN_FEATURE_11AX
-void lim_dump_he_info(struct mac_context *mac, struct pe_session *session)
-{
-	struct mlme_legacy_priv *mlme_priv;
-
-	if (!session->he_capable)
-		return;
-
-	mlme_priv = wlan_vdev_mlme_get_ext_hdl(session->vdev);
-	if (!mlme_priv)
-		return;
-
-	pe_nofl_debug(" HE info: bss_color %d default_pe %d ul mu %d, rx_pream_puncturing %d MCS LT_80: tx: 0x%x, rx: 0x%x, 160: tx: 0x%x, rx: 0x%x",
-		      session->he_op.bss_color, session->he_op.default_pe,
-		      session->he_config.ul_mu,
-		      mac->he_cap_5g.rx_pream_puncturing,
-		      mlme_priv->he_config.tx_he_mcs_map_lt_80,
-		      mlme_priv->he_config.rx_he_mcs_map_lt_80,
-		      *(uint16_t *)mlme_priv->he_config.tx_he_mcs_map_160,
-		      *(uint16_t *)mlme_priv->he_config.rx_he_mcs_map_160);
-}
-#endif
-
-#ifdef WLAN_FEATURE_11BE_MLO
-void lim_dump_eht_info(struct pe_session *session)
-{
-	bool is_emlsr;
-	struct mlo_partner_info *partner_info;
-	struct qdf_mac_addr mld_addr = {0};
-	uint8_t buffer[100] = {0};
-	uint8_t idx, len = 0, buf_len = QDF_ARRAY_SIZE(buffer);
-
-	if (!session->eht_capable)
-		return;
-
-	wlan_vdev_obj_lock(session->vdev);
-	is_emlsr = wlan_vdev_mlme_cap_get(session->vdev, WLAN_VDEV_C_EMLSR_CAP);
-	wlan_vdev_obj_unlock(session->vdev);
-
-	wlan_vdev_get_bss_peer_mld_mac(session->vdev, &mld_addr);
-
-	if (!session->lim_join_req)
-		return;
-
-	partner_info =  &session->lim_join_req->partner_info;
-	for (idx = 0; idx < partner_info->num_partner_links; idx++) {
-		if (len >= buf_len)
-			break;
-
-		len += qdf_scnprintf(buffer + len, buf_len - len, "Link %d: " QDF_MAC_ADDR_FMT,
-				     partner_info->partner_link_info[idx].link_id,
-				     QDF_MAC_ADDR_REF(partner_info->partner_link_info[idx].link_addr.bytes));
-	}
-
-	pe_nofl_debug(" 802.11be D-3.0, MLD: " QDF_MAC_ADDR_FMT " 320MHz %d num_sounding_dim_320 %d, eMLSR %d, partner_links %d, %s",
-		      QDF_MAC_ADDR_REF(mld_addr.bytes),
-		      session->eht_config.support_320mhz_6ghz,
-		      session->eht_config.num_sounding_dim_320mhz, is_emlsr,
-		      partner_info->num_partner_links,
-		      len ? buffer : '\0');
-}
-#endif
 
 /**
  * pe_get_active_session_count() - function to return active pe session count

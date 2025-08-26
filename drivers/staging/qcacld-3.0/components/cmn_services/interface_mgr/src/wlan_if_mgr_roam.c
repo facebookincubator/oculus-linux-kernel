@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -37,9 +37,6 @@
 #include "wlan_scan_api.h"
 #include "wlan_mlo_mgr_roam.h"
 #include "wlan_mlo_mgr_sta.h"
-#include "wlan_mlo_mgr_link_switch.h"
-#include <wlan_action_oui_main.h>
-
 
 #ifdef WLAN_FEATURE_11BE_MLO
 static inline bool
@@ -68,7 +65,7 @@ if_mgr_is_assoc_link_of_vdev(struct wlan_objmgr_pdev *pdev,
 			     struct wlan_objmgr_vdev *vdev,
 			     uint8_t cur_vdev_id)
 {
-	return false;
+	return true;
 }
 #endif
 
@@ -170,25 +167,17 @@ if_mgr_enable_roaming_on_connected_sta(struct wlan_objmgr_pdev *pdev,
 				       struct wlan_objmgr_vdev *vdev)
 {
 	struct wlan_objmgr_psoc *psoc;
-	uint8_t vdev_id = wlan_vdev_get_id(vdev);
-
-	if (wlan_vdev_mlme_get_opmode(vdev) != QDF_STA_MODE)
-		return QDF_STATUS_E_FAILURE;
-
-	/*
-	 * When link switch is in progress, don't send RSO Enable before vdev
-	 * is up. RSO Enable will be sent as part of install keys once
-	 * link switch connect sequence is complete.
-	 */
-	if (mlo_mgr_is_link_switch_in_progress(vdev))
-		return QDF_STATUS_SUCCESS;
+	uint8_t vdev_id;
 
 	psoc = wlan_vdev_get_psoc(vdev);
 	if (!psoc)
 		return QDF_STATUS_E_FAILURE;
 
 	if (policy_mgr_is_sta_active_connection_exists(psoc) &&
+	    wlan_vdev_mlme_get_opmode(vdev) == QDF_STA_MODE &&
 	    mlo_is_enable_roaming_on_connected_sta_allowed(vdev)) {
+		vdev_id = wlan_vdev_get_id(vdev);
+		ifmgr_debug("Enable roaming on connected sta for vdev_id %d", vdev_id);
 		wlan_cm_enable_roaming_on_connected_sta(pdev, vdev_id);
 		policy_mgr_set_pcl_for_connected_vdev(psoc, vdev_id, true);
 	}
@@ -797,56 +786,23 @@ if_mgr_get_conc_ext_flags(struct wlan_objmgr_vdev *vdev,
 }
 
 static void if_mgr_update_candidate(struct wlan_objmgr_psoc *psoc,
-				    struct wlan_objmgr_vdev *vdev,
 				    struct validate_bss_data *candidate_info)
 {
 	struct scan_cache_entry *scan_entry = candidate_info->scan_entry;
-	struct action_oui_search_attr attr;
-	int8_t i, allowed_partner_links = 0;
-	uint8_t mlo_support_link_num;
 
 	if (!(scan_entry->ie_list.multi_link_bv || scan_entry->ie_list.ehtcap ||
 	      scan_entry->ie_list.ehtop))
 		return;
 
-	attr.ie_data = util_scan_entry_ie_data(scan_entry);
-	attr.ie_length = util_scan_entry_ie_len(scan_entry);
-
-	if (!mlme_get_bss_11be_allowed(psoc, &candidate_info->peer_addr,
-				       attr.ie_data, attr.ie_length) ||
-	    wlan_vdev_mlme_get_user_dis_eht_flag(vdev) ||
-	    !wlan_reg_phybitmap_support_11be(wlan_vdev_get_pdev(vdev))) {
-		scan_entry->ie_list.multi_link_bv = NULL;
-		scan_entry->ie_list.ehtcap = NULL;
-		scan_entry->ie_list.ehtop = NULL;
-		qdf_mem_zero(&scan_entry->ml_info, sizeof(scan_entry->ml_info));
-		candidate_info->is_mlo = false;
+	if (mlme_get_bss_11be_allowed(psoc, &candidate_info->peer_addr,
+				      util_scan_entry_ie_data(scan_entry),
+				      util_scan_entry_ie_len(scan_entry)))
 		return;
-	}
-
-	mlo_support_link_num = wlan_mlme_get_sta_mlo_conn_max_num(psoc);
-
-	if (mlo_support_link_num <= WLAN_MAX_ML_DEFAULT_LINK)
-		return;
-
-	if (!wlan_action_oui_search(psoc, &attr,
-				    ACTION_OUI_RESTRICT_MAX_MLO_LINKS))
-		return;
-
-	for (i = 0; i < scan_entry->ml_info.num_links; i++) {
-		if (i < WLAN_MAX_ML_DEFAULT_LINK - 1) {
-			allowed_partner_links++;
-			continue;
-		}
-
-		scan_entry->ml_info.link_info[i].is_valid_link = false;
-	}
-
-	if (allowed_partner_links != scan_entry->ml_info.num_links)
-		ifmgr_nofl_debug("Downgrade " QDF_MAC_ADDR_FMT " partner links from %d to %d",
-				 QDF_MAC_ADDR_REF(scan_entry->ml_info.mld_mac_addr.bytes),
-				 scan_entry->ml_info.num_links,
-				 allowed_partner_links);
+	scan_entry->ie_list.multi_link_bv = NULL;
+	scan_entry->ie_list.ehtcap = NULL;
+	scan_entry->ie_list.ehtop = NULL;
+	qdf_mem_zero(&scan_entry->ml_info, sizeof(scan_entry->ml_info));
+	candidate_info->is_mlo = false;
 }
 #else
 static inline uint32_t
@@ -857,7 +813,6 @@ if_mgr_get_conc_ext_flags(struct wlan_objmgr_vdev *vdev,
 }
 
 static void if_mgr_update_candidate(struct wlan_objmgr_psoc *psoc,
-				    struct wlan_objmgr_vdev *vdev,
 				    struct validate_bss_data *candidate_info)
 {
 }
@@ -886,7 +841,7 @@ QDF_STATUS if_mgr_validate_candidate(struct wlan_objmgr_vdev *vdev,
 	if (!psoc)
 		return QDF_STATUS_E_FAILURE;
 
-	if_mgr_update_candidate(psoc, vdev, candidate_info);
+	if_mgr_update_candidate(psoc, candidate_info);
 	/*
 	 * Do not allow STA to connect on 6Ghz or indoor channel for non dbs
 	 * hardware if SAP and skip_6g_and_indoor_freq_scan ini are present
@@ -901,15 +856,6 @@ QDF_STATUS if_mgr_validate_candidate(struct wlan_objmgr_vdev *vdev,
 		return QDF_STATUS_E_INVAL;
 	}
 
-	/*
-	 * This is a temporary check and will be removed once ll_lt_sap CSA
-	 * support is added.
-	 */
-	if (policy_mgr_get_ll_lt_sap_freq(psoc) == chan_freq) {
-		ifmgr_debug("STA connection not allowed on LL_LT_SAP freq %d",
-			    chan_freq);
-		return QDF_STATUS_E_INVAL;
-	}
 	/*
 	 * Ignore the BSS if any other vdev is already connected to it.
 	 */
@@ -933,8 +879,7 @@ QDF_STATUS if_mgr_validate_candidate(struct wlan_objmgr_vdev *vdev,
 	 * If concurrency enabled take the concurrent connected channel first.
 	 * Valid multichannel concurrent sessions exempted
 	 */
-	mode = policy_mgr_qdf_opmode_to_pm_con_mode(psoc, op_mode,
-						    wlan_vdev_get_id(vdev));
+	mode = policy_mgr_convert_device_mode_to_qdf_type(op_mode);
 
 	/* If concurrency is not allowed select next bss */
 	conc_ext_flags = if_mgr_get_conc_ext_flags(vdev, candidate_info);

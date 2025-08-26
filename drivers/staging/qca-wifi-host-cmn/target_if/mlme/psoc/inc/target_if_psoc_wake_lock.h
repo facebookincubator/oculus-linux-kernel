@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,7 +31,7 @@
 
 #ifdef FEATURE_VDEV_OPS_WAKELOCK
 /**
- *  struct psoc_mlme_wakelock - psoc wake lock sub structure
+ *  struct wlan_vdev_wakelock - vdev wake lock sub structure
  *  @start_wakelock: wakelock for vdev start
  *  @stop_wakelock: wakelock for vdev stop
  *  @delete_wakelock: wakelock for vdev delete
@@ -60,8 +60,9 @@ enum wakelock_mode {
 #ifdef FEATURE_VDEV_OPS_WAKELOCK
 
 /**
- * target_if_wake_lock_init() - API to initialize wakelocks:
- *                              start, stop and delete.
+ * target_if_wake_lock_init() - API to initialize
+				wakelocks:start,
+				stop and delete.
  * @psoc: pointer to psoc
  *
  * This also initialize the runtime lock
@@ -71,8 +72,8 @@ enum wakelock_mode {
 void target_if_wake_lock_init(struct wlan_objmgr_psoc *psoc);
 
 /**
- * target_if_wake_lock_deinit() - API to destroy wakelocks:
- *                                start, stop and delete.
+ * target_if_wake_lock_deinit() - API to destroy
+			wakelocks:start, stop and delete.
  * @psoc: pointer to psoc
  *
  * This also destroy the runtime lock
@@ -82,9 +83,9 @@ void target_if_wake_lock_init(struct wlan_objmgr_psoc *psoc);
 void target_if_wake_lock_deinit(struct wlan_objmgr_psoc *psoc);
 
 /**
- * target_if_wake_lock_timeout_acquire() - acquire the start wakelock
+ * target_if_start_wake_lock_timeout_acquire() - acquire the
+					vdev start wakelock
  * @psoc: pointer to psoc
- * @mode: wakelock mode
  *
  * This also acquires the target_if runtime pm lock.
  *
@@ -93,9 +94,9 @@ void target_if_wake_lock_deinit(struct wlan_objmgr_psoc *psoc);
 QDF_STATUS target_if_wake_lock_timeout_acquire(struct wlan_objmgr_psoc *psoc,
 					       enum wakelock_mode mode);
 /**
- * target_if_wake_lock_timeout_release() - release the start wakelock
+ * target_if_start_wake_lock_timeout_release() - release the
+						start wakelock
  * @psoc: pointer to psoc
- * @mode: wakelock mode
  *
  * This also release the target_if runtime pm lock.
  *
@@ -106,7 +107,7 @@ QDF_STATUS target_if_wake_lock_timeout_release(struct wlan_objmgr_psoc *psoc,
 
 /**
  * target_if_vdev_start_link_handler() - check for SAP mode and DFS freq
- *						to handle link up/down
+						to handle link up/down
  * @vdev: pointer to vdev
  * @is_restart: flag to check if it is vdev restart
  *

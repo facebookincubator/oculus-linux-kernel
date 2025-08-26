@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2017-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,24 +33,20 @@
 /**
  * hdd_enable_default_pkt_filters() - Enable default packet filters based
  * on, filters bit map provided in INI, when target goes to suspend mode
- * @hdd_ctx: Global HDD Context
- * @vdev_id: vdev_id
+ * @adapter: Adapter context for which default filters to be configure
  *
  * Return: zero if success, non-zero otherwise
  */
-int
-hdd_enable_default_pkt_filters(struct hdd_context *hdd_ctx, uint8_t vdev_id);
+int hdd_enable_default_pkt_filters(struct hdd_adapter *adapter);
 
 /**
  * hdd_disable_default_pkt_filters() - Disable default packet filters based
  * on, filters bit map provided in INI, when target resumes
- * @hdd_ctx: Global HDD Context
- * @vdev_id: vdev_id
+ * @adapter: Adapter context for which default filters to be cleared
  *
  * Return: zero if success, non-zero otherwise
  */
-int
-hdd_disable_default_pkt_filters(struct hdd_context *hdd_ctx, uint8_t vdev_id);
+int hdd_disable_default_pkt_filters(struct hdd_adapter *adapter);
 
 /**
  * wlan_hdd_set_filter() - Set packet filter
@@ -68,13 +63,13 @@ int wlan_hdd_set_filter(struct hdd_context *hdd_ctx,
 #else /* WLAN_FEATURE_PACKET_FILTERING */
 
 static inline int
-hdd_enable_default_pkt_filters(struct hdd_context *hdd_ctx, uint8_t vdev_id)
+hdd_enable_default_pkt_filters(struct hdd_adapter *adapter)
 {
 	return 0;
 }
 
 static inline int
-hdd_disable_default_pkt_filters(struct hdd_context *hdd_ctx, uint8_t vdev_id)
+hdd_disable_default_pkt_filters(struct hdd_adapter *adapter)
 {
 	return 0;
 }

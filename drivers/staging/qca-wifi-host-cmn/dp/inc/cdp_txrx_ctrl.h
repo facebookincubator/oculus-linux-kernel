@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,8 +18,8 @@
  */
 
 /**
- * DOC: cdp_txrx_ctrl.h
- * Define the host data path control API functions
+ * @file cdp_txrx_ctrl.h
+ * @brief Define the host data path control API functions
  * called by the host control SW and the OS interface module
  */
 
@@ -67,16 +67,16 @@ cdp_mempools_attach(ol_txrx_soc_handle soc)
 
 #if defined(ATH_SUPPORT_NAC) || defined(ATH_SUPPORT_NAC_RSSI)
 /**
- * cdp_update_filter_neighbour_peers() - update the neighbour peer addresses
- * @soc: the pointer to soc object
- * @vdev_id: id of the pointer to vdev
- * @cmd: add/del entry into peer table
- * @macaddr: the address of neighbour peer
- *
+ * @brief update the neighbour peer addresses
+ * @details
  *  This defines interface function to update neighbour peers addresses
  *  which needs to be filtered
  *
- * Return: int
+ * @param soc - the pointer to soc object
+ * @param vdev_id - id of the pointer to vdev
+ * @param cmd - add/del entry into peer table
+ * @param macaddr - the address of neighbour peer
+ * @return - int
  */
 static inline int
 cdp_update_filter_neighbour_peers(ol_txrx_soc_handle soc,
@@ -88,25 +88,25 @@ cdp_update_filter_neighbour_peers(ol_txrx_soc_handle soc,
 		return 0;
 	}
 
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->txrx_update_filter_neighbour_peers)
+	if (!soc->ops->ctrl_ops ||
+	    !soc->ops->ctrl_ops->txrx_update_filter_neighbour_peers)
 		return 0;
 
-	return soc->ops->mon_ops->txrx_update_filter_neighbour_peers
+	return soc->ops->ctrl_ops->txrx_update_filter_neighbour_peers
 			(soc, vdev_id, cmd, macaddr);
 }
 #endif /* ATH_SUPPORT_NAC || ATH_SUPPORT_NAC_RSSI*/
 
 /**
- * cdp_update_mon_mac_filter() - update the monitor buffer and status filter
- * @soc: the pointer to soc object
- * @vdev_id: id of the pointer to vdev
- * @cmd: add/del entry into peer table
+ * @brief update the monitor buffer and status filter
+ * @details
+ *  This defines interface function to set/reset monitor filter
+ *  in case of special vap (scan radio)
  *
- * This defines interface function to set/reset monitor filter
- * in case of special vap (scan radio)
- *
- * Return: QDF_STATUS
+ * @param soc - the pointer to soc object
+ * @param vdev_id - id of the pointer to vdev
+ * @param cmd - add/del entry into peer table
+ * @return - QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_update_mon_mac_filter(ol_txrx_soc_handle soc,
@@ -118,28 +118,27 @@ cdp_update_mon_mac_filter(ol_txrx_soc_handle soc,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->txrx_update_mon_mac_filter)
+	if (!soc->ops->ctrl_ops ||
+	    !soc->ops->ctrl_ops->txrx_update_mon_mac_filter)
 		return QDF_STATUS_E_FAILURE;
 
-	return soc->ops->mon_ops->txrx_update_mon_mac_filter
+	return soc->ops->ctrl_ops->txrx_update_mon_mac_filter
 			(soc, vdev_id, cmd);
 }
 
 #ifdef WLAN_SUPPORT_MSCS
 /**
- * cdp_record_vdev_mscs_params() - record the MSCS data and send it to the
- *                                 Data path
- * @soc: the pointer to soc object
- * @vdev_id: id of the pointer to vdev
- * @macaddr: the address of neighbour peer
- * @mscs_params: Structure having MSCS params obtained from handshake
- * @active: Flag to set MSCS active/inactive
+ * @brief record the MSCS data and send it to the Data path
+ * @details
+ *  This defines interface function to record the MSCS procedure
+ *  based data parameters so that the data path layer can access it
  *
- * This defines interface function to record the MSCS procedure
- * based data parameters so that the data path layer can access it
- *
- * Return: QDF_STATUS
+ * @param soc - the pointer to soc object
+ * @param vdev_id - id of the pointer to vdev
+ * @param macaddr - the address of neighbour peer
+ * @param mscs_params - Structure having MSCS params
+ * obtained from handshake
+ * @return - QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_record_vdev_mscs_params(ol_txrx_soc_handle soc, uint8_t
@@ -161,14 +160,14 @@ cdp_record_vdev_mscs_params(ol_txrx_soc_handle soc, uint8_t
 #endif
 
 /**
- * cdp_set_pdev_reo_dest() - set the Reo Destination ring for the pdev
- * @soc: pointer to the soc
- * @pdev_id: id of the data physical device object
- * @val: the Reo destination ring index (1 to 4)
+ * @brief set the Reo Destination ring for the pdev
+ * @details
+ *  This will be used to configure the Reo Destination ring for this pdev.
  *
- * This will be used to configure the Reo Destination ring for this pdev.
- *
- * Return: QDF_STATUS
+ * @param soc - pointer to the soc
+ * @param pdev_id - id of the data physical device object
+ * @param val - the Reo destination ring index (1 to 4)
+ * @return - QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_set_pdev_reo_dest(ol_txrx_soc_handle soc,
@@ -189,11 +188,11 @@ cdp_set_pdev_reo_dest(ol_txrx_soc_handle soc,
 }
 
 /**
- * cdp_get_pdev_reo_dest() - get the Reo Destination ring for the pdev
- * @soc: pointer to the soc
- * @pdev_id: id of physical device object
+ * @brief get the Reo Destination ring for the pdev
  *
- * Return: the Reo destination ring index (1 to 4), 0 if not supported.
+ * @param soc - pointer to the soc
+ * @param pdev_id - id of physical device object
+ * @return - the Reo destination ring index (1 to 4), 0 if not supported.
  */
 static inline enum cdp_host_reo_dest_ring
 cdp_get_pdev_reo_dest(ol_txrx_soc_handle soc, uint8_t pdev_id)
@@ -212,19 +211,19 @@ cdp_get_pdev_reo_dest(ol_txrx_soc_handle soc, uint8_t pdev_id)
 }
 
 /* Is this similar to ol_txrx_peer_state_update() in MCL */
-
 /**
- * cdp_peer_authorize() - Update the authorize peer object at association time
- * @soc: pointer to the soc
- * @vdev_id: id of the pointer to vdev
- * @peer_mac: mac address of the node's object
- * @authorize: either to authorize or unauthorize peer
+ * @brief Update the authorize peer object at association time
+ * @details
+ *  For the host-based implementation of rate-control, it
+ *  updates the peer/node-related parameters within rate-control
+ *  context of the peer at association.
  *
- * For the host-based implementation of rate-control, it
- * updates the peer/node-related parameters within rate-control
- * context of the peer at association.
+ * @param soc - pointer to the soc
+ * @param vdev_id - id of the pointer to vdev
+ * @param peer_mac - mac address of the node's object
+ * @authorize - either to authorize or unauthorize peer
  *
- * Return: QDF_STATUS
+ * @return QDF_STATUS
  */
 static inline QDF_STATUS
 cdp_peer_authorize(ol_txrx_soc_handle soc, uint8_t vdev_id, uint8_t *peer_mac,
@@ -245,10 +244,11 @@ cdp_peer_authorize(ol_txrx_soc_handle soc, uint8_t vdev_id, uint8_t *peer_mac,
 }
 
 /**
- * cdp_peer_get_authorize() - Get per authorize status
- * @soc: pointer to the soc
- * @vdev_id: id of the pointer to vdev
- * @peer_mac: mac address of the node's object
+ * cdp_peer_get_authorize Get per authorize status
+ *
+ * @soc - pointer to the soc
+ * @vdev_id - id of the pointer to vdev
+ * @peer_mac - mac address of the node's object
  *
  * Return: true is peer is authorized, false otherwise
  */
@@ -402,9 +402,10 @@ void cdp_vdev_reset_vdev_stats_id(ol_txrx_soc_handle soc,
 #ifdef VDEV_PEER_PROTOCOL_COUNT
 /**
  * cdp_set_vdev_peer_protocol_count() - set per-peer protocol count tracking
- * @soc: pointer to the soc
- * @vdev_id: the data virtual device object
- * @enable: enable per-peer protocol count
+ *
+ * @soc - pointer to the soc
+ * @vdev - the data virtual device object
+ * @enable - enable per-peer protocol count
  *
  * Set per-peer protocol count feature enable
  *
@@ -430,13 +431,14 @@ void cdp_set_vdev_peer_protocol_count(ol_txrx_soc_handle soc, int8_t vdev_id,
 
 /**
  * cdp_set_vdev_peer_protocol_drop_mask() - set per-peer protocol drop mask
- * @soc: pointer to the soc
- * @vdev_id: ID of the data virtual device object
- * @drop_mask: drop_mask
+ *
+ * @soc - pointer to the soc
+ * @vdev - the data virtual device object
+ * @drop_mask - drop_mask
  *
  * Set per-peer protocol drop_mask
  *
- * Return: void
+ * Return - void
  */
 static inline
 void cdp_set_vdev_peer_protocol_drop_mask(ol_txrx_soc_handle soc,
@@ -459,8 +461,9 @@ void cdp_set_vdev_peer_protocol_drop_mask(ol_txrx_soc_handle soc,
 /**
  * cdp_is_vdev_peer_protocol_count_enabled() - whether peer-protocol tracking
  *                                             enabled
- * @soc: pointer to the soc
- * @vdev_id: ID of the data virtual device object
+ *
+ * @soc - pointer to the soc
+ * @vdev - the data virtual device object
  *
  * Get whether peer protocol count feature enabled or not
  *
@@ -486,8 +489,9 @@ int cdp_is_vdev_peer_protocol_count_enabled(ol_txrx_soc_handle soc,
 
 /**
  * cdp_get_peer_protocol_drop_mask() - get per-peer protocol count drop-mask
- * @soc: pointer to the soc
- * @vdev_id: ID of the data virtual device object
+ *
+ * @soc - pointer to the soc
+ * @vdev - the data virtual device object
  *
  * Get peer-protocol-count drop-mask
  *
@@ -668,7 +672,7 @@ static inline QDF_STATUS cdp_txrx_get_pdev_param(ol_txrx_soc_handle soc,
 /**
  * cdp_txrx_peer_protocol_cnt() - set peer protocol count
  * @soc: opaque soc handle
- * @vdev_id: vdev id
+ * @vdev: opaque vdev handle
  * @nbuf: data packet
  * @is_egress: whether egress or ingress
  * @is_rx: whether tx or rx
@@ -702,6 +706,7 @@ cdp_txrx_peer_protocol_cnt(ol_txrx_soc_handle soc,
 
 /**
  * cdp_enable_peer_based_pktlog()- Set flag in peer structure
+ *
  * @soc: pointer to the soc
  * @pdev_id: id of the data physical device object
  * @enable: enable or disable peer based filter based pktlog
@@ -735,6 +740,7 @@ cdp_enable_peer_based_pktlog(ol_txrx_soc_handle soc, uint8_t pdev_id,
 
 /**
  * cdp_calculate_delay_stats()- get rx delay stats
+ *
  * @soc: pointer to the soc
  * @vdev_id: id of vdev handle
  * @nbuf: nbuf which is passed
@@ -761,20 +767,20 @@ cdp_calculate_delay_stats(ol_txrx_soc_handle soc, uint8_t vdev_id,
 }
 
 /**
- * cdp_wdi_event_sub() - Subscribe to a specified WDI event.
- * @soc: pointer to the soc
- * @pdev_id: id of the data physical device object
- * @event_cb_sub: the callback and context for the event subscriber
- * @event: which event's notifications are being subscribed to
+ * @brief Subscribe to a specified WDI event.
+ * @details
+ *  This function adds the provided wdi_event_subscribe object to a list of
+ *  subscribers for the specified WDI event.
+ *  When the event in question happens, each subscriber for the event will
+ *  have their callback function invoked.
+ *  The order in which callback functions from multiple subscribers are
+ *  invoked is unspecified.
  *
- * This function adds the provided wdi_event_subscribe object to a list of
- * subscribers for the specified WDI event.
- * When the event in question happens, each subscriber for the event will
- * have their callback function invoked.
- * The order in which callback functions from multiple subscribers are
- * invoked is unspecified.
- *
- * Return: int
+ * @param soc - pointer to the soc
+ * @param pdev_id - id of the data physical device object
+ * @param event_cb_sub - the callback and context for the event subscriber
+ * @param event - which event's notifications are being subscribed to
+ * @return - int
  */
 static inline int
 cdp_wdi_event_sub(ol_txrx_soc_handle soc, uint8_t pdev_id,
@@ -796,18 +802,18 @@ cdp_wdi_event_sub(ol_txrx_soc_handle soc, uint8_t pdev_id,
 }
 
 /**
- * cdp_wdi_event_unsub() - Unsubscribe from a specified WDI event.
- * @soc: pointer to the soc
- * @pdev_id: id of the data physical device object
- * @event_cb_sub: the callback and context for the event subscriber
- * @event: which event's notifications are being subscribed to
+ * @brief Unsubscribe from a specified WDI event.
+ * @details
+ *  This function removes the provided event subscription object from the
+ *  list of subscribers for its event.
+ *  This function shall only be called if there was a successful prior call
+ *  to event_sub() on the same wdi_event_subscribe object.
  *
- * This function removes the provided event subscription object from the
- * list of subscribers for its event.
- * This function shall only be called if there was a successful prior call
- * to cdp_wdi_event_sub() on the same wdi_event_subscribe object.
- *
- * Return: int
+ * @param soc - pointer to the soc
+ * @param pdev_id - id of the data physical device object
+ * @param event_cb_sub - the callback and context for the event subscriber
+ * @param event - which event's notifications are being subscribed to
+ * @return - int
  */
 static inline int
 cdp_wdi_event_unsub(ol_txrx_soc_handle soc,
@@ -830,17 +836,17 @@ cdp_wdi_event_unsub(ol_txrx_soc_handle soc,
 }
 
 /**
- * cdp_get_sec_type() - Get security type from the from peer.
- * @soc: pointer to the soc
- * @vdev_id: id of vdev handle
- * @peer_mac: peer mac address
- * @sec_idx: mcast or ucast frame type.
- *
+ * @brief Get security type from the from peer.
+ * @details
  * This function gets the Security information from the peer handler.
  * The security information is got from the rx descriptor and filled in
  * to the peer handler.
  *
- * Return: int
+ * @param soc - pointer to the soc
+ * @param vdev_id - id of vdev handle
+ * @param peer mac - peer mac address
+ * @param sec_idx - mcast or ucast frame type.
+ * @return - int
  */
 static inline int
 cdp_get_sec_type(ol_txrx_soc_handle soc, uint8_t vdev_id, uint8_t *peer_mac,
@@ -861,12 +867,11 @@ cdp_get_sec_type(ol_txrx_soc_handle soc, uint8_t vdev_id, uint8_t *peer_mac,
 }
 
 /**
-  * cdp_set_mgmt_tx_power() - function to set tx power for mgmt frames
-  * @soc: pointer to the soc
+  * cdp_set_mgmt_tx_power(): function to set tx power for mgmt frames
+  * @param soc - pointer to the soc
   * @vdev_id : id of vdev handle
-  * @subtype: subtype
+  * @subtype_index: subtype
   * @tx_power: Tx power
-  *
   * Return: QDF_STATUS
   */
 static inline QDF_STATUS
@@ -933,10 +938,10 @@ cdp_cfr_filter(ol_txrx_soc_handle soc,
 		return;
 	}
 
-	if (!soc->ops->mon_ops || !soc->ops->mon_ops->txrx_cfr_filter)
+	if (!soc->ops->cfr_ops || !soc->ops->cfr_ops->txrx_cfr_filter)
 		return;
 
-	soc->ops->mon_ops->txrx_cfr_filter(soc, pdev_id, enable, filter_val,
+	soc->ops->cfr_ops->txrx_cfr_filter(soc, pdev_id, enable, filter_val,
 					   cfr_enable_monitor_mode);
 }
 
@@ -989,6 +994,7 @@ void cdp_set_cfr_rcc(ol_txrx_soc_handle soc, uint8_t pdev_id, bool enable)
 
 /**
  * cdp_get_cfr_dbg_stats() - Get debug statistics for CFR
+ *
  * @soc: SOC TXRX handle
  * @pdev_id: ID of the physical device object
  * @buf: CFR RCC debug statistics buffer
@@ -1014,6 +1020,7 @@ cdp_get_cfr_dbg_stats(ol_txrx_soc_handle soc, uint8_t pdev_id,
 
 /**
  * cdp_cfr_clr_dbg_stats() - Clear debug statistics for CFR
+ *
  * @soc: SOC TXRX handle
  * @pdev_id: ID of the physical device object
  */
@@ -1101,11 +1108,10 @@ cdp_update_pdev_rx_protocol_tag(ol_txrx_soc_handle soc,
 #ifdef WLAN_SUPPORT_RX_TAG_STATISTICS
 /**
  * cdp_dump_pdev_rx_protocol_tag_stats() - wrapper function to dump the protocol
- *				tag statistics for given or all protocols
+				tag statistics for given or all protocols
  * @soc: SOC TXRX handle
  * @pdev_id: id of CDP pdev pointer
  * @protocol_type: Protocol type for which the tag should be update
- *
  * Return: Returns QDF_STATUS_SUCCESS/FAILURE
  */
 static inline QDF_STATUS
@@ -1132,7 +1138,7 @@ cdp_dump_pdev_rx_protocol_tag_stats(ol_txrx_soc_handle soc,
 
 #ifdef ATH_SUPPORT_NAC_RSSI
 /**
-  * cdp_vdev_config_for_nac_rssi() - To invoke dp callback for nac rssi config
+  * cdp_vdev_config_for_nac_rssi(): To invoke dp callback for nac rssi config
   * @soc: soc pointer
   * @vdev_id: id of vdev
   * @nac_cmd: specifies nac_rss config action add, del, list
@@ -1153,16 +1159,16 @@ static inline QDF_STATUS cdp_vdev_config_for_nac_rssi(ol_txrx_soc_handle soc,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (!soc->ops->mon_ops ||
-			!soc->ops->mon_ops->txrx_vdev_config_for_nac_rssi)
+	if (!soc->ops->ctrl_ops ||
+			!soc->ops->ctrl_ops->txrx_vdev_config_for_nac_rssi)
 		return QDF_STATUS_E_FAILURE;
 
-	return soc->ops->mon_ops->txrx_vdev_config_for_nac_rssi(soc, vdev_id,
+	return soc->ops->ctrl_ops->txrx_vdev_config_for_nac_rssi(soc, vdev_id,
 			nac_cmd, bssid, client_macaddr, chan_num);
 }
 
-/**
- * cdp_vdev_get_neighbour_rssi() - invoke dp callback to get rssi value of nac
+/*
+ * cdp_vdev_get_neighbour_rssi(): To invoke dp callback to get rssi value of nac
  * @soc: soc pointer
  * @vdev_id: id of vdev
  * @macaddr: Non-Associated client MAC
@@ -1182,11 +1188,11 @@ static inline QDF_STATUS cdp_vdev_get_neighbour_rssi(ol_txrx_soc_handle soc,
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->txrx_vdev_get_neighbour_rssi)
+	if (!soc->ops->ctrl_ops ||
+	    !soc->ops->ctrl_ops->txrx_vdev_get_neighbour_rssi)
 		return QDF_STATUS_E_FAILURE;
 
-	return soc->ops->mon_ops->txrx_vdev_get_neighbour_rssi(soc, vdev_id,
+	return soc->ops->ctrl_ops->txrx_vdev_get_neighbour_rssi(soc, vdev_id,
 								macaddr,
 								rssi);
 }
@@ -1251,9 +1257,9 @@ cdp_dump_rx_flow_tag_stats(ol_txrx_soc_handle soc, uint8_t pdev_id,
 
 /**
  * cdp_txrx_peer_flush_frags() - flush frags for peer
- * @soc: pointer to the soc
- * @vdev_id: vdev id
- * @peer_mac: peer MAC address
+ *
+ * @soc - pointer to the soc
+ * @vdev - the data virtual device object
  *
  * Get peer-protocol-count drop-mask
  *
@@ -1277,7 +1283,7 @@ void cdp_txrx_peer_flush_frags(ol_txrx_soc_handle soc, uint8_t vdev_id,
 							 peer_mac);
 }
 
-#if defined(WLAN_FEATURE_TSF_AUTO_REPORT) || defined(WLAN_CONFIG_TX_DELAY)
+#if defined(WLAN_FEATURE_TSF_UPLINK_DELAY) || defined(WLAN_CONFIG_TX_DELAY)
 /**
  * cdp_set_delta_tsf() - wrapper function to set delta_tsf
  * @soc: SOC TXRX handle
@@ -1364,8 +1370,8 @@ static inline QDF_STATUS cdp_get_uplink_delay(ol_txrx_soc_handle soc,
  * cdp_txrx_set_pdev_phyrx_error_mask() - set phyrx error mask
  * @soc: opaque soc handle
  * @pdev_id: id of data path pdev handle
- * @mask: mask to configure 0 to 31 phy error
- * @mask_cont: mask to configure 32 to 63 phy error
+ * @mask1: mask to configure 0 to 31 phy error
+ * @mask2: mask to configure 32 to 63 phy error
  *
  * Return: status: 0 - Success, non-zero: Failure
  */
@@ -1408,73 +1414,4 @@ QDF_STATUS cdp_txrx_get_pdev_phyrx_error_mask(ol_txrx_soc_handle soc,
 }
 #endif
 
-#ifdef DP_UMAC_HW_RESET_SUPPORT
-/**
- * cdp_get_umac_reset_in_progress_state() - API to get the umac reset in
- *                                          progress state
- * @soc: opaque soc handle
- *
- * Return: Umac reset in progress state
- */
-static inline enum cdp_umac_reset_state
-cdp_get_umac_reset_in_progress_state(ol_txrx_soc_handle soc)
-{
-	if (!soc || !soc->ops) {
-		dp_cdp_debug("Invalid soc or soc->ops:");
-		return CDP_UMAC_RESET_INVALID_STATE;
-	}
-
-	if (!soc->ops->ctrl_ops ||
-	    !soc->ops->ctrl_ops->get_umac_reset_in_progress_state)
-		return CDP_UMAC_RESET_INVALID_STATE;
-
-	return soc->ops->ctrl_ops->get_umac_reset_in_progress_state(soc);
-}
-
-/**
- * cdp_umac_reset_is_inprogress() - API to check if umac reset is in progress
- * @soc: opaque soc handle
- *
- * Return: true if umac reset is in progress, else false.
- */
-static inline bool
-cdp_umac_reset_is_inprogress(ol_txrx_soc_handle soc)
-{
-	enum cdp_umac_reset_state state;
-
-	state = cdp_get_umac_reset_in_progress_state(soc);
-
-	if (state == CDP_UMAC_RESET_IN_PROGRESS ||
-	    state == CDP_UMAC_RESET_IN_PROGRESS_DURING_BUFFER_WINDOW)
-		return true;
-	else
-		return false;
-}
-#else
-static inline bool
-cdp_umac_reset_is_inprogress(ol_txrx_soc_handle soc)
-{
-	return false;
-}
-#endif
-
-#ifdef WLAN_SUPPORT_RX_FISA
-static inline
-QDF_STATUS cdp_txrx_fisa_config(struct cdp_soc_t *soc, uint8_t pdev_id,
-				enum cdp_fisa_config_id config_id,
-				union cdp_fisa_config *cfg)
-{
-	if (!soc || !soc->ops) {
-		dp_cdp_debug("Invalid Instance:");
-		QDF_BUG(0);
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	if (!soc->ops->ctrl_ops || !soc->ops->ctrl_ops->txrx_fisa_config)
-		return QDF_STATUS_E_FAILURE;
-
-	return soc->ops->ctrl_ops->txrx_fisa_config(soc, pdev_id, config_id,
-						    cfg);
-}
-#endif
 #endif /* _CDP_TXRX_CTRL_H_ */

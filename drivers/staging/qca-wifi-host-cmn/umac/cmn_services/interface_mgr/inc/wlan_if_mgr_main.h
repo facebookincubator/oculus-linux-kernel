@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/**
+/*
  * DOC: contains Interface MGR init/deinit public api
  */
 
@@ -69,7 +68,7 @@
 #define ifmgr_hex_dump(level, data, buf_len) \
 		qdf_trace_hex_dump(QDF_MODULE_ID_IFMGR, level, data, buf_len)
 
-/**
+/*
  * wlan_if_mgr_init() - Interface manager module initialization API
  *
  * Return: QDF_STATUS
@@ -92,9 +91,8 @@ QDF_STATUS wlan_if_mgr_deinit(void);
  */
 QDF_STATUS wlan_if_mgr_psoc_created_notification(struct wlan_objmgr_psoc *psoc,
 						 void *arg_list);
-
 /**
- * wlan_if_mgr_psoc_destroyed_notification() - scan psoc delete handler
+ * wlan_scan_psoc_deleted_notification() - scan psoc delete handler
  * @psoc: psoc object
  * @arg_list: Argument list
  *

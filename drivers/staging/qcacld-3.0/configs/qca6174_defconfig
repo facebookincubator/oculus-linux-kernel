@@ -167,6 +167,12 @@ endif
 #Flag to disable NAN
 CONFIG_QCACLD_FEATURE_NAN := n
 
+ifneq ($(CONFIG_MOBILE_ROUTER), y)
+	#Flag to enable NAN Data path
+	CONFIG_WLAN_FEATURE_NAN_DATAPATH := y
+	CONFIG_NAN_CONVERGENCE := y
+endif
+
 #Flag to enable Linux QCMBR feature as default feature
 ifeq ($(CONFIG_ROME_IF),usb)
 	CONFIG_LINUX_QCMBR :=y
@@ -330,11 +336,13 @@ ifeq ($(CONFIG_DEBUG_FS), y)
        CONFIG_WLAN_POWER_DEBUGFS := y
 endif
 
+# Feature flags which are not (currently) configurable via Kconfig
+
 #Whether to build debug version
-CONFIG_WLAN_DEBUG_VERSION := y
+BUILD_DEBUG_VERSION := y
 
 #Enable this flag to build driver in diag version
-CONFIG_WLAN_DIAG_VERSION := y
+BUILD_DIAG_VERSION := y
 
 ifeq ($(CONFIG_WLAN_EXTRA_DEBUG), y)
 	PANIC_ON_BUG := y
@@ -569,8 +577,6 @@ endif
 
 CONFIG_CP_STATS := y
 
-CONFIG_QCA_TARGET_IF_MLME := y
-
 CONFIG_FEATURE_WLAN_WAPI := y
 
 CONFIG_AGEIE_ON_SCAN_RESULTS := y
@@ -727,8 +733,6 @@ CONFIG_SM_ENG_HIST := n
 #Enable Beacon Reception Stats
 ifeq ($(CONFIG_WLAN_SYSFS), y)
 CONFIG_FEATURE_BECN_STATS := y
-CONFIG_WLAN_WOWL_ADD_PTRN := y
-CONFIG_WLAN_WOWL_DEL_PTRN := y
 endif
 
 ifeq (y,$(findstring y,$(CONFIG_ARCH_MSM) $(CONFIG_ARCH_QCOM)))
@@ -749,16 +753,3 @@ CONFIG_PCI_LOW_POWER_INT_REG := y
 
 #Enable Usable channel feature
 CONFIG_WLAN_FEATURE_GET_USABLE_CHAN_LIST := y
-
-ifeq ($(CONFIG_CNSS_GENL), m)
-CONFIG_CNSS_GENL_MODULE := y
-endif
-
-ifeq ($(CONFIG_CNSS_UTILS), m)
-CONFIG_CNSS_UTILS_MODULE := y
-endif
-
-#Enable thermal throttle
-CONFIG_FW_THERMAL_THROTTLE := y
-
-CONFIG_ALLOC_CONTIGUOUS_MULTI_PAGE := y

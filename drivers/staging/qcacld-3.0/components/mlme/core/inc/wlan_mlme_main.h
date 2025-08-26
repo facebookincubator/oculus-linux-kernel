@@ -38,8 +38,6 @@
 #define JOIN_PROBE_REQ_TIMER_MS              200
 #define MAX_JOIN_PROBE_REQ                   5
 
-#define MAX_WAKELOCK_FOR_BSS_COLOR_CHANGE    2000
-
 /* If AP reported link delete timer less than such value,
  * host will do link removel directly without wait for the
  * timer timeout.
@@ -80,7 +78,6 @@
 #define mlme_legacy_info(params...) QDF_TRACE_INFO(QDF_MODULE_ID_MLME, params)
 #define mlme_legacy_debug(params...) QDF_TRACE_DEBUG(QDF_MODULE_ID_MLME, params)
 #define MAC_B_PR_SSID_OFFSET 12
-
 enum size_of_len_field {
 	ONE_BYTE = 1,
 	TWO_BYTE = 2
@@ -120,33 +117,10 @@ struct peer_disconnect_stats_param {
 };
 
 /**
- * struct wlan_mlme_rx_ops  - structure of tx function pointers for
- * roaming related commands
- * @peer_oper_mode_eventid : Rx ops function pointer for operating mode event
- */
-struct wlan_mlme_rx_ops {
-	QDF_STATUS (*peer_oper_mode_eventid)(struct wlan_objmgr_psoc *psoc,
-					     struct peer_oper_mode_event *data);
-};
-
-/**
- * struct wlan_mlme_tx_ops - structure of mlme tx function pointers
- * @send_csa_event_status_ind: Tx ops function to send csa event indication
- *
- */
-struct wlan_mlme_tx_ops {
-	QDF_STATUS
-		(*send_csa_event_status_ind)(struct wlan_objmgr_vdev *vdev,
-					     uint8_t csa_status);
-};
-
-/**
  * struct wlan_mlme_psoc_ext_obj -MLME ext psoc priv object
  * @cfg:     cfg items
  * @rso_tx_ops: Roam Tx ops to send roam offload commands to firmware
  * @rso_rx_ops: Roam Rx ops to receive roam offload events from firmware
- * @mlme_rx_ops: mlme Rx ops to receive events from firmware
- * @mlme_tx_ops: mlme tx ops
  * @wfa_testcmd: WFA config tx ops to send to FW
  * @disconnect_stats_param: Peer disconnect stats related params for SAP case
  * @scan_requester_id: mlme scan requester id
@@ -155,8 +129,6 @@ struct wlan_mlme_psoc_ext_obj {
 	struct wlan_mlme_cfg cfg;
 	struct wlan_cm_roam_tx_ops rso_tx_ops;
 	struct wlan_cm_roam_rx_ops rso_rx_ops;
-	struct wlan_mlme_rx_ops mlme_rx_ops;
-	struct wlan_mlme_tx_ops mlme_tx_ops;
 	struct wlan_mlme_wfa_cmd wfa_testcmd;
 	struct peer_disconnect_stats_param disconnect_stats_param;
 	wlan_scan_requester scan_requester_id;
@@ -200,7 +172,6 @@ struct sae_auth_retry {
  * @peer_set_key_runtime_wakelock: runtime pm wakelock for set key
  * @is_key_wakelock_set: flag to check if key wakelock is pending to release
  * @assoc_rsp: assoc rsp IE received during connection
- * @peer_ind_bw: peer indication channel bandwidth
  */
 struct peer_mlme_priv_obj {
 	uint8_t last_pn_valid;
@@ -220,7 +191,6 @@ struct peer_mlme_priv_obj {
 	qdf_runtime_lock_t peer_set_key_runtime_wakelock;
 	bool is_key_wakelock_set;
 	struct element_info assoc_rsp;
-	enum phy_ch_width peer_ind_bw;
 };
 
 /**
@@ -252,9 +222,7 @@ struct wlan_mlme_roam_state_info {
  * @roam_trigger_bitmap: Master bitmap of roaming triggers. If the bitmap is
  *  zero, roaming module will be deinitialized at firmware for this vdev.
  * @supplicant_disabled_roaming: Enable/disable roam scan in firmware; will be
- *  used by supplicant to do roam invoke after disabling roam scan in firmware,
- *  it is only effective for current connection, it will be cleared during new
- *  connection.
+ *  used by supplicant to do roam invoke after disabling roam scan in firmware
  */
 struct wlan_mlme_roaming_config {
 	uint32_t roam_trigger_bitmap;
@@ -399,17 +367,13 @@ struct ft_context {
 };
 
 /**
- * struct assoc_channel_info - store channel info at the time of association
- * @assoc_ch_width: channel width at the time of initial connection
- * @omn_ie_ch_width: ch width present in operating mode notification IE of bcn
+ * struct connect_chan_info - store channel info at the time of association
+ * @ch_width_orig: channel width at the time of initial connection
  * @sec_2g_freq: secondary 2 GHz freq
- * @cen320_freq: 320 MHz center freq
  */
-struct assoc_channel_info {
-	enum phy_ch_width assoc_ch_width;
-	enum phy_ch_width omn_ie_ch_width;
+struct connect_chan_info {
+	enum phy_ch_width ch_width_orig;
 	qdf_freq_t sec_2g_freq;
-	qdf_freq_t cen320_freq;
 };
 
 /**
@@ -431,9 +395,8 @@ struct assoc_channel_info {
  * @ese_tspec_info: ese tspec info
  * @ext_cap_ie: Ext CAP IE
  * @assoc_btm_cap: BSS transition management cap used in (re)assoc req
- * @assoc_chan_info: store channel info at the time of association
+ * @chan_info_orig: store channel info at the time of association
  * @force_20mhz_in_24ghz: Only 20 MHz BW allowed in 2.4 GHz
- *
  */
 struct mlme_connect_info {
 	uint8_t timing_meas_cap;
@@ -459,7 +422,7 @@ struct mlme_connect_info {
 #endif
 	uint8_t ext_cap_ie[DOT11F_IE_EXTCAP_MAX_LEN + 2];
 	bool assoc_btm_cap;
-	struct assoc_channel_info assoc_chan_info;
+	struct connect_chan_info chan_info_orig;
 	bool force_20mhz_in_24ghz;
 };
 
@@ -479,8 +442,6 @@ struct wait_for_key_timer {
  * @update_required_scc_sta_power: Change the 6 GHz power type of the
  * concurrent STA
  * @ap_policy: Concurrent ap policy config
- * @oper_ch_width: SAP current operating ch_width
- * @psd_20mhz: PSD power(dBm/MHz) of SAP operating in 20 MHz
  */
 struct mlme_ap_config {
 	qdf_freq_t user_config_sap_ch_freq;
@@ -488,286 +449,6 @@ struct mlme_ap_config {
 	bool update_required_scc_sta_power;
 #endif
 	enum host_concurrent_ap_policy ap_policy;
-	enum phy_ch_width oper_ch_width;
-	uint8_t psd_20mhz;
-};
-
-/**
- * struct roam_trigger_per - per roam trigger related information
- * @rx_rate_thresh_percent:  percentage of lower than rx rate threshold
- * @tx_rate_thresh_percent:  percentage of lower than tx rate threshold
- */
-struct roam_trigger_per {
-	uint8_t rx_rate_thresh_percent;
-	uint8_t tx_rate_thresh_percent;
-};
-
-/**
- * struct roam_trigger_bmiss - bmiss roam trigger related information
- * @final_bmiss_cnt:        final beacon miss count
- * @consecutive_bmiss_cnt:  consecutive beacon miss count
- * @qos_null_success:       is Qos-Null tx Success: 0: success, 1:fail
- */
-struct roam_trigger_bmiss {
-	uint32_t final_bmiss_cnt;
-	uint32_t consecutive_bmiss_cnt;
-	bool qos_null_success;
-};
-
-/**
- * struct roam_trigger_poor_rssi - low rssi roam trigger
- * related information
- * @current_rssi:         Connected AP rssi in dBm
- * @roam_rssi_threshold:  rssi threshold value in dBm
- * @rx_linkspeed_status:  rx linkspeed status, 0:good linkspeed, 1:bad
- */
-struct roam_trigger_poor_rssi {
-	int8_t current_rssi;
-	int8_t roam_rssi_threshold;
-	bool rx_linkspeed_status;
-};
-
-/**
- * struct roam_trigger_better_rssi - high rssi roam trigger
- * related information
- * @current_rssi:      Connected AP rssi in dBm
- * @hi_rssi_threshold:  roam high RSSI threshold
- */
-struct roam_trigger_better_rssi {
-	int8_t current_rssi;
-	int8_t hi_rssi_threshold;
-};
-
-/**
- * struct roam_trigger_congestion - congestion roam trigger
- * related information
- * @rx_tput:         RX Throughput in bytes per second in dense env
- * @tx_tput:         TX Throughput in bytes per second in dense env
- * @roamable_count:  roamable AP count info in dense env
- */
-struct roam_trigger_congestion {
-	uint32_t rx_tput;
-	uint32_t tx_tput;
-	uint8_t roamable_count;
-};
-
-/**
- * struct roam_trigger_user_trigger - user roam trigger related information
- * @invoke_reason: defined in roam_invoke_reason
- */
-struct roam_trigger_user_trigger {
-	enum roam_invoke_reason invoke_reason;
-};
-
-/**
- * struct roam_trigger_background -  roam trigger related information
- * @current_rssi:         Connected AP rssi in dBm
- * @data_rssi:            data frame rssi in dBm
- * @data_rssi_threshold:  data rssi threshold in dBm
- */
-struct roam_trigger_background {
-	int8_t current_rssi;
-	int8_t data_rssi;
-	int8_t data_rssi_threshold;
-};
-
-/**
- * struct roam_trigger_btm - BTM roam trigger related information
- * @btm_request_mode: mode values are defined in IEEE Std
- *  802.11-2020, 9.6.13.9
- * @disassoc_imminent_timer:     disassoc time in milliseconds
- * @validity_internal:           Preferred candidate list validity interval in
- *  milliseconds
- * @candidate_list_count:        Number of preferred candidates from BTM request
- * @btm_response_status_code:    Response status values are enumerated in
- *  IEEE Std 802.11-2020, Table 9-428 (BTM status code definitions)
- * @btm_bss_termination_timeout: BTM BSS termination timeout value in
- *  milliseconds
- * @btm_mbo_assoc_retry_timeout: BTM MBO assoc retry timeout value in
- *  milliseconds
- * @btm_req_dialog_token:        btm_req_dialog_token: dialog token number in
- *  BTM request frame
- */
-
-struct roam_trigger_btm {
-	uint8_t btm_request_mode;
-	uint32_t disassoc_imminent_timer;
-	uint32_t validity_internal;
-	uint8_t candidate_list_count;
-	uint8_t btm_response_status_code;
-	uint32_t btm_bss_termination_timeout;
-	uint32_t btm_mbo_assoc_retry_timeout;
-	uint8_t btm_req_dialog_token;
-};
-
-/**
- * struct roam_trigger_bss_load - BSS Load roam trigger parameters
- * @cu_load: percentage of Connected AP channel congestion utilization
- */
-struct roam_trigger_bss_load {
-	uint8_t cu_load;
-};
-
-/**
- * struct roam_trigger_disconnection - Deauth roaming trigger related
- * parameters
- * @deauth_type:   1- Deauthentication 2- Disassociation
- * @deauth_reason: Status code of the Deauth/Disassoc received, Values
- *  are enumerated in IEEE Std 802.11-2020, Table 9-49 (Reason codes).
- */
-struct roam_trigger_disconnection {
-	uint8_t deauth_type;
-	uint16_t deauth_reason;
-};
-
-/**
- * struct roam_trigger_periodic - periodic roam trigger
- * related information
- * @periodic_timer_ms: roam scan periodic, milliseconds
- */
-struct roam_trigger_periodic {
-	uint32_t periodic_timer_ms;
-};
-
-/**
- * struct roam_trigger_tx_failures - tx failures roam trigger
- * related information
- * @kickout_threshold:  consecutive tx failure threshold
- * @kickout_reason:     defined in roam_tx_failures_reason
- */
-struct roam_trigger_tx_failures {
-	uint32_t kickout_threshold;
-	enum roam_tx_failures_reason kickout_reason;
-};
-
-/**
- * union roam_trigger_condition - union of all types roam trigger info
- * structures
- * @roam_per: per roam trigger related information
- * @roam_bmiss: bmiss roam trigger related information
- * @roam_poor_rssi: low rssi roam trigger related information
- * @roam_better_rssi: high rssi roam trigger related information
- * @roam_congestion: congestion roam trigger related information
- * @roam_user_trigger: user trigger roam related information
- * @roam_btm: btm roam trigger related information
- * @roam_bss_load: bss load roam trigger related information
- * @roam_disconnection: disconnect roam trigger related information
- * @roam_periodic: periodic roam trigger related information
- * @roam_background: background roam trigger related information
- * @roam_tx_failures: tx failures roam trigger related information
- */
-union roam_trigger_condition {
-	struct roam_trigger_per roam_per;
-	struct roam_trigger_bmiss roam_bmiss;
-	struct roam_trigger_poor_rssi roam_poor_rssi;
-	struct roam_trigger_better_rssi roam_better_rssi;
-	struct roam_trigger_congestion roam_congestion;
-	struct roam_trigger_user_trigger roam_user_trigger;
-	struct roam_trigger_btm roam_btm;
-	struct roam_trigger_bss_load roam_bss_load;
-	struct roam_trigger_disconnection roam_disconnection;
-	struct roam_trigger_periodic roam_periodic;
-	struct roam_trigger_background roam_background;
-	struct roam_trigger_tx_failures roam_tx_failures;
-};
-
-/**
- * struct roam_trigger_abort_reason - roam abort related information
- * @abort_reason_code:    detail in roam_abort_reason
- * @data_rssi:            data rssi in dBm
- * @data_rssi_threshold:  data rssi threshold in dBm
- * @rx_linkspeed_status:  rx linkspeed status, 0:good linkspeed, 1:bad
- */
-struct roam_trigger_abort_reason {
-	enum roam_abort_reason abort_reason_code;
-	int8_t data_rssi;
-	int8_t data_rssi_threshold;
-	bool rx_linkspeed_status;
-};
-
-/**
- * struct eroam_trigger_info - roam trigger related information
- * @timestamp: timestamp of roaming start
- * @trigger_reason: roam trigger reason, enum in roam_trigger_reason
- * @condition: roam trigger detail information
- * @abort: roam abort related information
- * @roam_scan_type: roam scan type, enum in roam_stats_scan_type
- * @roam_status: roam result, 0 - Roaming is success, 1 - Roaming is failed
- * @roam_fail_reason: roam fail reason, enum in wlan_roam_failure_reason_code
- */
-struct eroam_trigger_info {
-	uint64_t timestamp;
-	uint32_t trigger_reason;
-	union roam_trigger_condition condition;
-	struct roam_trigger_abort_reason abort;
-	enum roam_stats_scan_type roam_scan_type;
-	uint8_t roam_status;
-	enum wlan_roam_failure_reason_code roam_fail_reason;
-};
-
-/**
- * struct roam_scan_chn - each roam scan channel information
- * @chan_freq: roam scan channel frequency(MHz)
- * @dwell_type: indicate channel dwell type, enum in roam_scan_dwell_type
- * @max_dwell_time: max dwell time of each channel
- */
-struct roam_scan_chn {
-	uint16_t chan_freq;
-	enum roam_scan_dwell_type dwell_type;
-	uint32_t max_dwell_time;
-};
-
-/**
- * struct eroam_scan_info - all roam scan channel related information
- * @num_channels: total number of channels scanned during roam scan
- * @roam_chn: each roam scan channel information
- * @total_scan_time: total scan time of all roam channel
- * @original_bssid: connected AP before roam happens, regardless of
- *  the roam resulting in success or failure.
- *  For non-MLO scenario, it indicates the original connected AP BSSID.
- *  For MLO scenario, it indicates the original BSSID of the link
- *  for which the reassociation occurred during the roam.
- * @roamed_bssid: roamed AP BSSID when roam succeeds.
- *  For non-MLO case, it indicates new AP BSSID which has been
- *  successfully roamed.
- *  For MLO case, it indicates the new AP BSSID of the link on
- *  which the reassociation occurred during the roam.
- */
-struct eroam_scan_info {
-	uint8_t num_channels;
-	struct roam_scan_chn roam_chn[MAX_ROAM_SCAN_CHAN];
-	uint32_t total_scan_time;
-	struct qdf_mac_addr original_bssid;
-	struct qdf_mac_addr roamed_bssid;
-};
-
-/**
- * struct eroam_frame_info - frame information during roaming
- * @frame_type: frame subtype defined in eroam_frame_subtype
- * @status: frame status defined in eroam_roam_status
- * @timestamp: timestamp of the auth/assoc/eapol-M1/M2/M3/M4 frame,
- *  if status is successful, indicate received or send success,
- *  if status is failed, timestamp indicate roaming fail at that time
- * @bssid: Source address for auth/assoc/eapol frame.
- */
-struct eroam_frame_info {
-	enum eroam_frame_subtype frame_type;
-	enum eroam_frame_status status;
-	uint64_t timestamp;
-	struct qdf_mac_addr bssid;
-
-};
-
-/**
- * struct enhance_roam_info - enhance roam information
- * @trigger: roam trigger information
- * @scan: roam scan information
- * @timestamp: types of frame information during roaming
- */
-struct enhance_roam_info {
-	struct eroam_trigger_info trigger;
-	struct eroam_scan_info scan;
-	struct eroam_frame_info timestamp[WLAN_ROAM_MAX_FRAME_INFO];
 };
 
 /**
@@ -790,11 +471,6 @@ struct enhance_roam_info {
  * @cm_roam: Roaming configuration
  * @auth_log: Cached log records for SAE authentication frame
  * related information.
- * @roam_info: enhanced roam information include trigger, scan and
- *  frame information.
- * @roam_cache_num: number of roam information cached in driver
- * @roam_write_index: indicate current write position of ring buffer
- * @roam_rd_wr_lock: protect roam buffer write and read
  * @bigtk_vdev_support: BIGTK feature support for this vdev (SAP)
  * @sae_retry: SAE auth retry information
  * @roam_reason_better_ap: roam due to better AP found
@@ -811,23 +487,17 @@ struct enhance_roam_info {
  * @connect_info: mlme connect information
  * @wait_key_timer: wait key timer
  * @eht_config: Eht capability configuration
+ * @is_mlo_sta_link_removed: link on vdev has been removed by AP
  * @last_delba_sent_time: Last delba sent time to handle back to back delba
  *			  requests from some IOT APs
  * @ba_2k_jump_iot_ap: This is set to true if connected to the ba 2k jump IOT AP
  * @is_usr_ps_enabled: Is Power save enabled
  * @notify_co_located_ap_upt_rnr: Notify co located AP to update RNR or not
- * @is_user_std_set: true if user set the @wifi_std
- * @wifi_std: wifi standard version
  * @max_mcs_index: Max supported mcs index of vdev
  * @vdev_traffic_type: to set if vdev is LOW_LATENCY or HIGH_TPUT
  * @country_ie_for_all_band: take all band channel info in country ie
  * @mlme_ap: SAP related vdev private configurations
  * @is_single_link_mlo_roam: Single link mlo roam flag
- * @bss_color_change_wakelock: wakelock to complete bss color change
- *				operation on bss color collision detection
- * @bss_color_change_runtime_lock: runtime lock to complete bss color change
- * @disconnect_runtime_lock: runtime lock to complete disconnection
- * @best_6g_power_type: best 6g power type
  */
 struct mlme_legacy_priv {
 	bool chan_switch_in_progress;
@@ -853,14 +523,6 @@ struct mlme_legacy_priv {
 	struct wlan_diag_packet_info
 	    auth_log[MAX_ROAM_CANDIDATE_AP][WLAN_ROAM_MAX_CACHED_AUTH_FRAMES];
 #endif
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-#ifdef WLAN_FEATURE_ROAM_INFO_STATS
-	struct enhance_roam_info *roam_info;
-	uint32_t roam_cache_num;
-	uint32_t roam_write_index;
-	qdf_mutex_t roam_rd_wr_lock;
-#endif
-#endif
 	bool bigtk_vdev_support;
 	struct sae_auth_retry sae_retry;
 	bool roam_reason_better_ap;
@@ -881,12 +543,13 @@ struct mlme_legacy_priv {
 #ifdef WLAN_FEATURE_11BE
 	tDot11fIEeht_cap eht_config;
 #endif
+#if defined(WLAN_FEATURE_11BE_MLO)
+	bool is_mlo_sta_link_removed;
+#endif
 	qdf_time_t last_delba_sent_time;
 	bool ba_2k_jump_iot_ap;
 	bool is_usr_ps_enabled;
 	bool notify_co_located_ap_upt_rnr;
-	bool is_user_std_set;
-	WMI_HOST_WIFI_STANDARD wifi_std;
 #ifdef WLAN_FEATURE_SON
 	uint8_t max_mcs_index;
 #endif
@@ -896,10 +559,6 @@ struct mlme_legacy_priv {
 #if defined(WLAN_FEATURE_11BE_MLO) && defined(WLAN_FEATURE_ROAM_OFFLOAD)
 	bool is_single_link_mlo_roam;
 #endif
-	qdf_wake_lock_t bss_color_change_wakelock;
-	qdf_runtime_lock_t bss_color_change_runtime_lock;
-	qdf_runtime_lock_t disconnect_runtime_lock;
-	enum reg_6g_ap_type best_6g_power_type;
 };
 
 /**
@@ -1121,24 +780,6 @@ void mlme_set_follow_ap_edca_flag(struct wlan_objmgr_vdev *vdev, bool flag);
 bool mlme_get_follow_ap_edca_flag(struct wlan_objmgr_vdev *vdev);
 
 /**
- * mlme_set_best_6g_power_type() - Set best 6g power type
- * @vdev: vdev pointer
- * @best_6g_power_type: best 6g power type
- *
- * Return: None
- */
-void mlme_set_best_6g_power_type(struct wlan_objmgr_vdev *vdev,
-				 enum reg_6g_ap_type best_6g_power_type);
-
-/**
- * mlme_get_best_6g_power_type() - Get best 6g power type
- * @vdev: vdev pointer
- *
- * Return: value of best 6g power type
- */
-enum reg_6g_ap_type mlme_get_best_6g_power_type(struct wlan_objmgr_vdev *vdev);
-
-/**
  * mlme_set_reconn_after_assoc_timeout_flag() - Set reconn after assoc timeout
  * flag
  * @psoc: soc object
@@ -1234,24 +875,6 @@ QDF_STATUS wlan_mlme_get_bssid_vdev_id(struct wlan_objmgr_pdev *pdev,
 				       struct qdf_mac_addr *bss_peer_mac);
 
 /**
- * mlme_update_freq_in_scan_start_req() - Fill frequencies in wide
- * band scan req for mlo connection
- * @vdev: vdev common object
- * @req: pointer to scan request
- * @scan_ch_width: Channel width for which to trigger a wide band scan
- * @scan_freq: frequency for which to trigger a wide band RRM scan
- * @cen320_freq: 320 MHz center freq
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS
-mlme_update_freq_in_scan_start_req(struct wlan_objmgr_vdev *vdev,
-				   struct scan_start_request *req,
-				   enum phy_ch_width scan_ch_width,
-				   qdf_freq_t scan_freq,
-				   qdf_freq_t cen320_freq);
-
-/**
  * wlan_get_operation_chan_freq() - get operating chan freq of
  * given vdev
  * @vdev: vdev
@@ -1270,6 +893,16 @@ qdf_freq_t wlan_get_operation_chan_freq(struct wlan_objmgr_vdev *vdev);
  */
 qdf_freq_t wlan_get_operation_chan_freq_vdev_id(struct wlan_objmgr_pdev *pdev,
 						uint8_t vdev_id);
+
+/**
+ * wlan_get_opmode_vdev_id() - get operating mode of given vdev id
+ * @pdev: Pointer to pdev
+ * @vdev_id: vdev id
+ *
+ * Return: opmode
+ */
+enum QDF_OPMODE wlan_get_opmode_vdev_id(struct wlan_objmgr_pdev *pdev,
+					uint8_t vdev_id);
 
 /**
  * wlan_vdev_set_dot11mode - Set the dot11mode of the vdev
@@ -1660,16 +1293,6 @@ wlan_set_sap_user_config_freq(struct wlan_objmgr_vdev *vdev,
 void wlan_clear_mlo_sta_link_removed_flag(struct wlan_objmgr_vdev *vdev);
 
 /**
- * wlan_get_mlo_link_agnostic_flag() - Update mlo link agnostic flag
- *
- * @vdev: pointer to vdev
- * @dest_addr: destination address
- *
- * Return: true/false
- */
-bool wlan_get_mlo_link_agnostic_flag(struct wlan_objmgr_vdev *vdev,
-				     uint8_t *dest_addr);
-/**
  * wlan_set_vdev_link_removed_flag_by_vdev_id() - Set link removal flag
  * on vdev
  * @psoc: psoc object
@@ -1706,13 +1329,6 @@ bool wlan_drop_mgmt_frame_on_link_removal(struct wlan_objmgr_vdev *vdev);
 static inline void
 wlan_clear_mlo_sta_link_removed_flag(struct wlan_objmgr_vdev *vdev)
 {
-}
-
-static inline
-bool wlan_get_mlo_link_agnostic_flag(struct wlan_objmgr_vdev *vdev,
-				     uint8_t *dest_addr)
-{
-	return false;
 }
 
 static inline QDF_STATUS
@@ -1774,20 +1390,6 @@ wlan_set_tpc_update_required_for_sta(struct wlan_objmgr_vdev *vdev, bool value)
 #endif
 
 /**
- * wlan_mlme_get_sta_num_tx_chains() - API to get station num tx chains
- *
- * @psoc: psoc context
- * @vdev: pointer to vdev
- * @tx_chains : tx_chains out parameter
- *
- * Return: QDF_STATUS_SUCCESS or QDF_STATUS_FAILURE
- */
-QDF_STATUS
-wlan_mlme_get_sta_num_tx_chains(struct wlan_objmgr_psoc *psoc,
-				struct wlan_objmgr_vdev *vdev,
-				uint8_t *tx_chains);
-
-/**
  * wlan_mlme_get_sta_tx_nss() - API to get station tx NSS
  *
  * @psoc: psoc context
@@ -1800,20 +1402,6 @@ QDF_STATUS
 wlan_mlme_get_sta_tx_nss(struct wlan_objmgr_psoc *psoc,
 			 struct wlan_objmgr_vdev *vdev,
 			 uint8_t *tx_nss);
-
-/**
- * wlan_mlme_get_sta_num_rx_chains() - API to get station num rx chains
- *
- * @psoc: psoc context
- * @vdev: pointer to vdev
- * @rx_chains : rx_chains out parameter
- *
- * Return: QDF_STATUS_SUCCESS or QDF_STATUS_FAILURE
- */
-QDF_STATUS
-wlan_mlme_get_sta_num_rx_chains(struct wlan_objmgr_psoc *psoc,
-				struct wlan_objmgr_vdev *vdev,
-				uint8_t *rx_chains);
 
 /**
  * wlan_mlme_get_sta_rx_nss() - API to get station rx NSS
@@ -1918,92 +1506,4 @@ static inline int mlme_sr_is_enable(struct wlan_objmgr_vdev *vdev)
 	return 0;
 }
 #endif /* WLAN_FEATURE_SR */
-
-/**
- * mlme_peer_oper_mode_change_event_handler() - Handle peer oper mode event
- * @scn: handle
- * @event: Event data received from firmware
- * @len: Event data length received from firmware
- */
-int mlme_peer_oper_mode_change_event_handler(ol_scn_t scn, uint8_t *event,
-					     uint32_t len);
-
-/**
- * wmi_extract_peer_oper_mode_event() - Extract the peer operating
- * mode change event and update the new bandwidth
- * @wmi_handle: wmi handle
- * @event: Event data received from firmware
- * @len: Event data length received from firmware
- * @data: Extract the event and fill in data
- */
-QDF_STATUS
-wmi_extract_peer_oper_mode_event(wmi_unified_t wmi_handle,
-				 uint8_t *event,
-				 uint32_t len,
-				 struct peer_oper_mode_event *data);
-
-/**
- * wlan_mlme_register_rx_ops - Target IF mlme API to register mlme
- * related rx op.
- * @rx_ops: Pointer to rx ops fp struct
- *
- * Return: none
- */
-void wlan_mlme_register_rx_ops(struct wlan_mlme_rx_ops *rx_ops);
-
-/**
- * mlme_get_rx_ops - Get mlme rx ops from psoc
- * @psoc: psoc
- *
- * Return: Pointer to rx ops fp struct
- */
-struct wlan_mlme_rx_ops *
-mlme_get_rx_ops(struct wlan_objmgr_psoc *psoc);
-
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-/**
- * wlan_mlme_register_common_events - Wrapper to register common events
- * @psoc: psoc
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS wlan_mlme_register_common_events(struct wlan_objmgr_psoc *psoc);
-#else
-static inline QDF_STATUS
-wlan_mlme_register_common_events(struct wlan_objmgr_psoc *psoc)
-{
-	return QDF_STATUS_SUCCESS;
-}
-#endif
-
-/**
- * wlan_mlme_send_csa_event_status_ind_cmd() - send csa event status indication
- * @vdev: vdev obj
- * @csa_status: csa status
- *
- *  Return: QDF_STATUS
- */
-QDF_STATUS
-wlan_mlme_send_csa_event_status_ind_cmd(struct wlan_objmgr_vdev *vdev,
-					uint8_t csa_status);
-
-/**
- * wlan_mlme_get_sap_psd_for_20mhz() - Get the PSD power for 20 MHz
- * frequency
- * @vdev: pointer to vdev object
- *
- * Return: psd power
- */
-uint8_t wlan_mlme_get_sap_psd_for_20mhz(struct wlan_objmgr_vdev *vdev);
-
-/**
- * wlan_mlme_set_sap_psd_for_20mhz() - Set the PSD power for 20 MHz
- * frequency
- * @vdev: pointer to vdev object
- * @psd_power : psd power
- *
- * Return: None
- */
-QDF_STATUS wlan_mlme_set_sap_psd_for_20mhz(struct wlan_objmgr_vdev *vdev,
-					   uint8_t psd_power);
 #endif

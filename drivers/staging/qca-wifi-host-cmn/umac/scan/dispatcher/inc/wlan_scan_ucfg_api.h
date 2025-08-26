@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,7 +17,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/**
+/*
  * DOC: contains scan north bound interface api
  */
 
@@ -97,14 +97,6 @@ wlan_scan_id ucfg_scan_get_scan_id(struct wlan_objmgr_psoc *psoc)
 	return wlan_scan_get_scan_id(psoc);
 }
 
-/**
- * ucfg_scan_get_entry_frame_len() - API to get scan entry frame length
- * @scan_entry: Scan entry
- *
- * Return: scan entry frame length
- */
-uint32_t ucfg_scan_get_entry_frame_len(struct scan_cache_entry *scan_entry);
-
 #ifdef FEATURE_WLAN_SCAN_PNO
 /**
  * ucfg_scan_pno_start() - Public API to start PNO
@@ -135,7 +127,7 @@ void ucfg_scan_add_flags_to_pno_chan_list(struct wlan_objmgr_vdev *vdev,
 
 /**
  * ucfg_is_6ghz_pno_scan_optimization_supported() - Public API to check
- * 6 GHz pno scan optimization supported in fw
+ * 6ghz pno scan optimization supported in fw
  * @psoc: psoc object
  *
  * Return: 0 for success.
@@ -146,6 +138,7 @@ ucfg_is_6ghz_pno_scan_optimization_supported(struct wlan_objmgr_psoc *psoc);
 /**
  * ucfg_scan_pno_stop() - Public API to stop PNO
  * @vdev: vdev pointer
+ * @req: pno req params
  *
  * Return: 0 for success or error code.
  */
@@ -226,7 +219,7 @@ static inline QDF_STATUS ucfg_scan_start(struct scan_start_request *req)
 }
 
 /**
- * ucfg_scan_psoc_set_enable() - Public API to enable scans for psoc
+ * ucfg_scan_set_psoc_enable() - Public API to enable scans for psoc
  * @psoc: psoc on which scans need to be disabled
  * @reason: reason for enable/disabled
  *
@@ -247,7 +240,7 @@ QDF_STATUS ucfg_scan_psoc_set_disable(struct wlan_objmgr_psoc *psoc,
 
 /**
  * ucfg_scan_vdev_set_enable() - Public API to enable scans for vdev
- * @vdev: vdev on which scans need to be disabled
+ * @psoc: psoc on which scans need to be disabled
  * @reason: reason for enable/disabled
  *
  * Return: QDF_STATUS.
@@ -257,13 +250,15 @@ QDF_STATUS ucfg_scan_vdev_set_enable(struct wlan_objmgr_vdev *vdev,
 
 /**
  * ucfg_scan_vdev_set_disable() - Public API to disable scans for vdev
- * @vdev: vdev on which scans need to be disabled
+ * @psoc: psoc on which scans need to be disabled
  * @reason: reason for enable/disabled
  *
  * Return: QDF_STATUS.
  */
 QDF_STATUS ucfg_scan_vdev_set_disable(struct wlan_objmgr_vdev *vdev,
 				      enum scan_disable_reason reason);
+
+
 
 /**
  * ucfg_scan_set_miracast() - Public API to disable/enable miracast flag
@@ -302,7 +297,7 @@ ucfg_scan_get_global_config(struct wlan_objmgr_psoc *psoc,
 /**
  * ucfg_scan_set_obss_scan_offload() - Public API to set obss scan flag
  * @psoc: psoc context
- * @value: the value to be set
+ * @val: the value to be set
  *
  * Return: void.
  */
@@ -337,9 +332,8 @@ bool ucfg_scan_get_wide_band_scan(struct wlan_objmgr_pdev *pdev);
  */
 QDF_STATUS ucfg_scan_set_custom_scan_chan_list(
 		struct wlan_objmgr_pdev *pdev, struct chan_list *chan_list);
-
 /**
- * ucfg_scan_config_hidden_ssid_for_bssid() - API to configure
+ * ucfg_scan_set_ssid_bssid_hidden_ssid_beacon() - API to configure
  * ssid, bssid of hidden beacon
  * @pdev: psoc on which ssid bssid need to configure
  * @bssid: bssid of the hidden AP
@@ -456,7 +450,7 @@ ucfg_scan_db_iterate(struct wlan_objmgr_pdev *pdev,
  * ucfg_scan_update_mlme_by_bssinfo() - The Public API to update mlme
  * info in the scan entry
  * @pdev: pdev object
- * @bss_info: bssid info to find the matching scan entry
+ * @bssid: bssid info to find the matching scan entry
  * @mlme_info: mlme info to be updated.
  *
  * The Public API to update mlme info in the scan entry.
@@ -578,7 +572,7 @@ ucfg_scan_get_pdev_status(struct wlan_objmgr_pdev *pdev);
 /**
  * ucfg_scan_register_bcn_cb() - API to register api
  * to inform/update bcn/probe as soon as they are received
- * @psoc: psoc
+ * @pdev: psoc
  * @cb: callback to be registered
  * @type: Type of callback to be registered
  *
@@ -587,7 +581,7 @@ ucfg_scan_get_pdev_status(struct wlan_objmgr_pdev *pdev);
 QDF_STATUS ucfg_scan_register_bcn_cb(struct wlan_objmgr_psoc *psoc,
 	update_beacon_cb cb, enum scan_cb_type type);
 
-/**
+/*
  * ucfg_scan_update_user_config() - Update scan cache user config
  * @psoc: psoc
  * @scan_cfg: scan user config
@@ -597,7 +591,7 @@ QDF_STATUS ucfg_scan_register_bcn_cb(struct wlan_objmgr_psoc *psoc,
 QDF_STATUS ucfg_scan_update_user_config(struct wlan_objmgr_psoc *psoc,
 	struct scan_user_cfg *scan_cfg);
 
-/**
+/*
  * ucfg_scan_init() - Scan module initialization API
  *
  * Return: QDF_STATUS
@@ -620,7 +614,7 @@ QDF_STATUS ucfg_scan_deinit(void);
 QDF_STATUS ucfg_scan_psoc_enable(struct wlan_objmgr_psoc *psoc);
 
 /**
- * ucfg_scan_psoc_disable() - Scan module disable API
+ * ucfg_scan_psoc_enable() - Scan module disable API
  * @psoc: psoc object
  *
  * Return: QDF_STATUS
@@ -915,7 +909,7 @@ void ucfg_scan_cfg_set_conc_passive_dwelltime(struct wlan_objmgr_psoc *psoc,
 /**
  * ucfg_scan_cfg_get_dfs_chan_scan_allowed() - API to get dfs scan enabled
  * @psoc: pointer to psoc object
- * @dfs_scan_enable: Set DFS scan enabled or not.
+ * @enable_dfs_scan: DFS scan enabled or not.
  *
  * Return: None
  */
@@ -927,9 +921,9 @@ void ucfg_scan_cfg_get_dfs_chan_scan_allowed(struct wlan_objmgr_psoc *psoc,
 }
 
 /**
- * ucfg_scan_cfg_set_dfs_chan_scan_allowed() - API to set dfs scan enabled
+ * ucfg_scan_cfg_set_dfs_channel_scan() - API to set dfs scan enabled
  * @psoc: pointer to psoc object
- * @dfs_scan_enable: Set DFS scan enabled or not.
+ * @enable_dfs_scan: Set DFS scan enabled or not.
  *
  * Return: None
  */
@@ -1003,7 +997,7 @@ bool ucfg_scan_is_pno_offload_enabled(struct wlan_objmgr_psoc *psoc);
  * ucfg_scan_set_pno_offload() - API to set pno offload flag based on the
  * capability received from the firmware.
  * @psoc: pointer to psoc object
- * @value: pno offload flag value
+ * @rest_time: scan concurrent min rest time
  *
  * Return: scan concurrent min rest time
  */
@@ -1083,12 +1077,11 @@ bool
 ucfg_scan_get_user_config_sched_scan_plan(struct wlan_objmgr_psoc *psoc);
 
 #ifdef WLAN_POLICY_MGR_ENABLE
-/**
+/*
  * ucfg_scan_update_pno_dwell_time() - update active and passive dwell time
  * depending on active concurrency modes
  * @vdev: vdev object pointer
- * @req: pno scan request parameters
- * @scan_def: scan default parameters
+ * @req: scan request
  *
  * Return: void
  */

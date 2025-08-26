@@ -33,7 +33,7 @@
 #define SET_11AC_RATES 1
 #define SET_11AX_RATES 2
 
-#if defined(WLAN_SYSFS) && defined(CONFIG_WLAN_SYSFS_BITRATES)
+#if defined(WLAN_SYSFS) && defined(WLAN_SYSFS_BITRATES)
 /**
  * hdd_sysfs_sta_bitrates_create() - API to create sta_bitrates
  * @adapter: hdd adapter

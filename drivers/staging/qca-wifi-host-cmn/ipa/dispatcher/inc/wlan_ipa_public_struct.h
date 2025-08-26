@@ -80,18 +80,6 @@ enum wlan_ipa_wlan_event {
 	WLAN_IPA_WLAN_EVENT_MAX
 };
 
-/**
- * enum wlan_ipa_bw_level -ipa bandwidth level
- * @WLAN_IPA_BW_LEVEL_LOW: vote for low bandwidth
- * @WLAN_IPA_BW_LEVEL_MEDIUM: vote for medium bandwidth
- * @WLAN_IPA_BW_LEVEL_HIGH: vote for high bandwidth
- */
-enum wlan_ipa_bw_level {
-	WLAN_IPA_BW_LEVEL_LOW,
-	WLAN_IPA_BW_LEVEL_MEDIUM,
-	WLAN_IPA_BW_LEVEL_HIGH,
-};
-
 #ifdef IPA_OPT_WIFI_DP
 /**
  * enum wlan_ipa_cce_super_rule_flt_hdl - Filter hdl values for cce super rules

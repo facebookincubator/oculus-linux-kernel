@@ -354,6 +354,18 @@ struct drm_msm_settle_time_scale {
 	__u32 settle_time_scale_factor;
 };
 
+/**
+ * struct drm_msm_control_dpu_histogram: Control the DPU histogram
+ * @histogram_enable: Flag to control DPU histogram.
+ * @regdma_enable: Flag to control regdma.
+ * @read_interval_msec: interval in millisecond between two reads.
+ */
+struct drm_msm_dpu_histogram_control {
+	__u32 histogram_enable;
+	__u32 regdma_enable;
+	__u32 read_interval_msec;
+};
+
 #define DRM_MSM_GET_PARAM              0x00
 /* placeholder:
 #define DRM_MSM_SET_PARAM              0x01
@@ -375,6 +387,7 @@ struct drm_msm_settle_time_scale {
 #define DRM_MSM_BACKLIGHT_SCALE        0x0E
 #define DRM_MSM_DISPLAY_CAC            0x0F
 #define DRM_MSM_SETTLE_TIME_SCALE      0x10
+#define DRM_MSM_DPU_HISTOGRAM_CONTROL  0x11
 
 #define DRM_IOCTL_MSM_GET_PARAM        DRM_IOWR(DRM_COMMAND_BASE + DRM_MSM_GET_PARAM, struct drm_msm_param)
 #define DRM_IOCTL_MSM_GEM_NEW          DRM_IOWR(DRM_COMMAND_BASE + DRM_MSM_GEM_NEW, struct drm_msm_gem_new)
@@ -391,6 +404,7 @@ struct drm_msm_settle_time_scale {
 #define DRM_IOCTL_MSM_BACKLIGHT_SCALE    DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_BACKLIGHT_SCALE, struct drm_msm_backlight_scale)
 #define DRM_IOCTL_MSM_DISPLAY_CAC        DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_DISPLAY_CAC, struct drm_msm_display_cac)
 #define DRM_IOCTL_MSM_SETTLE_TIME_SCALE  DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_SETTLE_TIME_SCALE, struct drm_msm_settle_time_scale)
+#define DRM_IOCTL_MSM_DPU_HISTOGRAM_CONTROL  DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_DPU_HISTOGRAM_CONTROL, struct drm_msm_dpu_histogram_control)
 
 #if defined(__cplusplus)
 }

@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2016-2017, 2019, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,8 +17,8 @@
  */
 
 /**
- * DOC: cdp_txrx_raw.h
- * Define the host data path raw mode API functions
+ * @file cdp_txrx_raw.h
+ * @brief Define the host data path raw mode API functions
  * called by the host control SW and the OS interface module
  */
 #ifndef _CDP_TXRX_RAW_H_
@@ -30,16 +29,16 @@
 #include <cdp_txrx_cmn.h>
 
 /**
- * cdp_rawsim_get_astentry() - finds the ast entry for the packet
- * @soc: soc handle
- * @vdev_id: id of the data virtual device object
- * @pnbuf: pointer to nbuf
- * @raw_ast: pointer to fill ast information
+ * @brief finds the ast entry for the packet
+ * @details: Finds the ast entry i.e 4th address for the packet based on the
+ *               details in the netbuf.
  *
- * Finds the ast entry i.e 4th address for the packet based on the
- * details in the netbuf.
+ * @param soc - soc handle
+ * @param vdev_id - id of the data virtual device object
+ * @param pnbuf - pointer to nbuf
+ * @param raw_ast - pointer to fill ast information
  *
- * Return: 0 on success, -1 on error, 1 if more nbufs need to be consumed.
+ * @return - 0 on success, -1 on error, 1 if more nbufs need to be consumed.
  */
 
 static inline QDF_STATUS

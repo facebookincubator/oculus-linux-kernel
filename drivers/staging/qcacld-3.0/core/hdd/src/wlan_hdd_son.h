@@ -80,13 +80,14 @@ int hdd_son_deliver_assoc_disassoc_event(struct hdd_adapter *adapter,
 					 enum assoc_disassoc_event flag);
 /**
  * hdd_son_deliver_peer_authorize_event() - Deliver peer auth event to SON
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: objmgr adapter
  * @peer_mac: Peer mac address
  *
  * Return: Void
  */
-void hdd_son_deliver_peer_authorize_event(struct wlan_hdd_link_info *link_info,
-					  uint8_t *peer_mac);
+void
+hdd_son_deliver_peer_authorize_event(struct hdd_adapter *adapter,
+				     uint8_t *peer_mac);
 
 /**
  * hdd_son_send_set_wifi_generic_command() - Send Generic SET command to SON
@@ -160,7 +161,7 @@ static inline int
 }
 
 static inline void
-hdd_son_deliver_peer_authorize_event(struct wlan_hdd_link_info *link_info,
+hdd_son_deliver_peer_authorize_event(struct hdd_adapter *adapter,
 				     uint8_t *peer_mac)
 {
 }

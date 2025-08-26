@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2019,2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -139,8 +139,7 @@ static enum hrtimer_restart __qdf_hrtimer_cb(struct hrtimer *arg)
  * @timer: pointer to the hrtimer object
  * @cback: callback function to be fired
  * @clock: clock id
- * @mode: mode of hrtimer
- * @ctx:  interrupt context mode
+ * @hrtimer_mode: mode of hrtimer
  *
  * starts hrtimer in a context passed as per the context
  *

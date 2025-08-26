@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -155,66 +155,6 @@ out:
 	return status;
 }
 
-static QDF_STATUS
-target_if_multi_rx_reorder_queue_setup(struct scheduler_msg *msg)
-{
-	struct multi_rx_reorder_queue_setup_params param = {0};
-	struct wmi_unified *pdev_wmi_handle;
-	struct multi_reorder_q_setup *q_params;
-	QDF_STATUS status;
-	struct wlan_objmgr_pdev *pdev;
-	struct wlan_objmgr_psoc *psoc;
-	int tid;
-
-	if (!(msg->bodyptr)) {
-		target_if_err("rx_reorder: Invalid message body");
-		return QDF_STATUS_E_INVAL;
-	}
-
-	q_params = msg->bodyptr;
-	psoc = (struct wlan_objmgr_psoc *)q_params->psoc;
-
-	pdev = wlan_objmgr_get_pdev_by_id(psoc, q_params->pdev_id,
-					  WLAN_PDEV_TARGET_IF_ID);
-	if (!pdev) {
-		target_if_err("pdev with id %d is NULL", q_params->pdev_id);
-		return QDF_STATUS_E_INVAL;
-	}
-
-	pdev_wmi_handle = lmac_get_pdev_wmi_handle(pdev);
-	if (!pdev_wmi_handle) {
-		target_if_err("pdev wmi handle NULL");
-		status = QDF_STATUS_E_FAILURE;
-		goto out;
-	}
-
-	param.tid_bitmap = q_params->tid_bitmap;
-	param.vdev_id = q_params->vdev_id;
-	param.peer_macaddr = q_params->peer_mac;
-	param.tid_num = q_params->tid_num;
-
-	for (tid = 0; tid < DP_MAX_TIDS; tid++) {
-		if (!(BIT(tid) & q_params->tid_bitmap))
-			continue;
-		param.queue_params_list[tid].hw_qdesc_paddr =
-			q_params->q_setup_list[tid].hw_qdesc_paddr;
-		param.queue_params_list[tid].queue_no =
-			q_params->q_setup_list[tid].queue_no;
-		param.queue_params_list[tid].ba_window_size_valid =
-			q_params->q_setup_list[tid].ba_window_size_valid;
-		param.queue_params_list[tid].ba_window_size =
-			q_params->q_setup_list[tid].ba_window_size;
-	}
-
-	status = wmi_unified_peer_multi_rx_reorder_queue_setup_send(
-		pdev_wmi_handle, &param);
-out:
-	wlan_objmgr_pdev_release_ref(pdev, WLAN_PDEV_TARGET_IF_ID);
-	qdf_mem_free(q_params);
-
-	return status;
-}
-
 QDF_STATUS
 target_if_peer_rx_reorder_queue_setup(struct cdp_ctrl_objmgr_psoc *psoc,
 				      uint8_t pdev_id,
@@ -254,53 +194,8 @@ target_if_peer_rx_reorder_queue_setup(struct cdp_ctrl_objmgr_psoc *psoc,
 	return status;
 }
 
-QDF_STATUS
-target_if_peer_multi_rx_reorder_queue_setup(struct cdp_ctrl_objmgr_psoc *psoc,
-		uint8_t pdev_id,
-		struct multi_rx_reorder_queue_setup_params *tid_params)
-{
-	struct scheduler_msg msg = {0};
-	struct multi_reorder_q_setup *q_params;
-	QDF_STATUS status;
-	int tid;
-
-	q_params = qdf_mem_malloc(sizeof(*q_params));
-	if (!q_params)
-		return QDF_STATUS_E_NOMEM;
-
-	q_params->psoc = psoc;
-	q_params->vdev_id = tid_params->vdev_id;
-	q_params->pdev_id = pdev_id;
-	q_params->tid_bitmap = tid_params->tid_bitmap;
-	q_params->tid_num = tid_params->tid_num;
-	qdf_mem_copy(q_params->peer_mac, tid_params->peer_macaddr,
-		     QDF_MAC_ADDR_SIZE);
-
-	for (tid = 0; tid < DP_MAX_TIDS; tid++) {
-		if (!(BIT(tid) & tid_params->tid_bitmap))
-			continue;
-		q_params->q_setup_list[tid].hw_qdesc_paddr =
-			tid_params->queue_params_list[tid].hw_qdesc_paddr;
-		q_params->q_setup_list[tid].queue_no =
-			tid_params->queue_params_list[tid].queue_no;
-		q_params->q_setup_list[tid].ba_window_size_valid =
-			tid_params->queue_params_list[tid].ba_window_size_valid;
-		q_params->q_setup_list[tid].ba_window_size =
-			tid_params->queue_params_list[tid].ba_window_size;
-	}
-
-	msg.bodyptr = q_params;
-	msg.callback = target_if_multi_rx_reorder_queue_setup;
-	status = scheduler_post_message(QDF_MODULE_ID_TARGET_IF,
-					QDF_MODULE_ID_TARGET_IF,
-					QDF_MODULE_ID_TARGET_IF, &msg);
-
-	if (status != QDF_STATUS_SUCCESS)
-		qdf_mem_free(q_params);
-
-	return status;
-}
 #else
+
 QDF_STATUS
 target_if_peer_rx_reorder_queue_setup(struct cdp_ctrl_objmgr_psoc *psoc,
 				      uint8_t pdev_id,
@@ -339,35 +234,6 @@ target_if_peer_rx_reorder_queue_setup(struct cdp_ctrl_objmgr_psoc *psoc,
 
 	status = wmi_unified_peer_rx_reorder_queue_setup_send(pdev_wmi_handle,
 							      &param);
-	wlan_objmgr_pdev_release_ref(pdev, WLAN_PDEV_TARGET_IF_ID);
-
-	return status;
-}
-
-QDF_STATUS
-target_if_peer_multi_rx_reorder_queue_setup(struct cdp_ctrl_objmgr_psoc *psoc,
-		uint8_t pdev_id,
-		struct multi_rx_reorder_queue_setup_params *tid_params)
-{
-	struct wmi_unified *pdev_wmi_handle;
-	QDF_STATUS status;
-	struct wlan_objmgr_pdev *pdev =
-		wlan_objmgr_get_pdev_by_id((struct wlan_objmgr_psoc *)psoc,
-					   pdev_id, WLAN_PDEV_TARGET_IF_ID);
-	if (!pdev) {
-		target_if_err("pdev with id %d is NULL", pdev_id);
-		return QDF_STATUS_E_INVAL;
-	}
-
-	pdev_wmi_handle = lmac_get_pdev_wmi_handle(pdev);
-	if (!pdev_wmi_handle) {
-		wlan_objmgr_pdev_release_ref(pdev, WLAN_PDEV_TARGET_IF_ID);
-		target_if_err("pdev wmi handle NULL");
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	status = wmi_unified_peer_multi_rx_reorder_queue_setup_send(
-						pdev_wmi_handle, tid_params);
 	wlan_objmgr_pdev_release_ref(pdev, WLAN_PDEV_TARGET_IF_ID);
 
 	return status;

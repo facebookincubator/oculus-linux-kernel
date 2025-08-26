@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -49,6 +49,12 @@
 
 #define WMA_WMM_EXPO_TO_VAL(val)        ((1 << (val)) - 1)
 
+#define MAX_HT_MCS_IDX 8
+#define MAX_VHT_MCS_IDX 10
+#ifdef WLAN_FEATURE_11AX
+#define MAX_HE_MCS_IDX 12
+#define MAX_HE_MCS12_13_IDX 14
+#endif
 #define INVALID_MCS_IDX 255
 
 #define IS_MCS_HAS_DCM_RATE(val)  \
@@ -166,6 +172,17 @@ QDF_STATUS wma_set_ppsconfig(uint8_t vdev_id, uint16_t pps_param,
  */
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
+int wma_roam_synch_event_handler(void *handle, uint8_t *event,
+					uint32_t len);
+
+/**
+ * wma_register_roam_vdev_disc_event_handler() - API to register handler for
+ * roam vdev disconnect event id
+ * @wma_handle: wma handle
+ *
+ * Return: void
+ */
+void wma_register_roam_vdev_disc_event_handler(tp_wma_handle wma_handle);
 
 #ifdef WLAN_FEATURE_FIPS
 /**
@@ -329,6 +346,9 @@ int wma_passpoint_match_event_handler(void *handle,
 
 #endif
 
+int wma_handle_btm_denylist_event(void *handle, uint8_t *cmd_param_info,
+				  uint32_t len);
+
 #ifdef FEATURE_WLAN_EXTSCAN
 int wma_extscan_wow_event_callback(void *handle, void *event, uint32_t len);
 
@@ -488,6 +508,9 @@ QDF_STATUS wma_scan_probe_setoui(tp_wma_handle wma,
 				 struct scan_mac_oui *set_oui);
 
 void wma_roam_better_ap_handler(tp_wma_handle wma, uint32_t vdev_id);
+
+int wma_roam_event_callback(WMA_HANDLE handle, uint8_t *event_buf,
+			    uint32_t len);
 
 /*
  * wma_dev_if.c functions declarations
@@ -928,6 +951,10 @@ int32_t wmi_unified_send_txbf(tp_wma_handle wma, tpAddStaParams params);
  */
 QDF_STATUS wma_check_txrx_chainmask(int num_rf_chains, int cmd_value);
 
+int wma_peer_state_change_event_handler(void *handle,
+					       uint8_t *event_buff,
+					       uint32_t len);
+
 QDF_STATUS wma_set_enable_disable_mcc_adaptive_scheduler(uint32_t
 						mcc_adaptive_scheduler);
 
@@ -1078,10 +1105,15 @@ int wma_link_status_event_handler(void *handle, uint8_t *cmd_param_info,
  */
 int wma_rso_cmd_status_event_handler(uint8_t vdev_id, uint32_t notif);
 
+int wma_stats_event_handler(void *handle, uint8_t *cmd_param_info,
+			    uint32_t len);
+
 QDF_STATUS wma_send_link_speed(uint32_t link_speed);
 
 int wma_link_speed_event_handler(void *handle, uint8_t *cmd_param_info,
 				 uint32_t len);
+
+QDF_STATUS wma_wni_cfg_dnld(tp_wma_handle wma_handle);
 
 int wma_unified_debug_print_event_handler(void *handle, uint8_t *datap,
 					  uint32_t len);
@@ -1246,7 +1278,7 @@ QDF_STATUS wma_capture_tsf(tp_wma_handle wma_handle, uint32_t vdev_id);
 QDF_STATUS wma_reset_tsf_gpio(tp_wma_handle wma_handle, uint32_t vdev_id);
 QDF_STATUS wma_set_tsf_gpio_pin(WMA_HANDLE handle, uint32_t pin);
 
-#ifdef WLAN_FEATURE_TSF_AUTO_REPORT
+#ifdef WLAN_FEATURE_TSF_UPLINK_DELAY
 /**
  * wma_set_tsf_auto_report() - Set TSF auto report in firmware
  * @wma_handle: wma handle
@@ -1258,14 +1290,14 @@ QDF_STATUS wma_set_tsf_gpio_pin(WMA_HANDLE handle, uint32_t pin);
  */
 QDF_STATUS wma_set_tsf_auto_report(WMA_HANDLE handle, uint32_t vdev_id,
 				   uint32_t param_id, bool ena);
-#else /* !WLAN_FEATURE_TSF_AUTO_REPORT */
+#else /* !WLAN_FEATURE_TSF_UPLINK_DELAY */
 static inline QDF_STATUS wma_set_tsf_auto_report(WMA_HANDLE handle,
 						 uint32_t vdev_id,
 						 uint32_t param_id, bool ena)
 {
-	return QDF_STATUS_E_NOSUPPORT;
+	return QDF_STATUS_E_FAILURE;
 }
-#endif /* WLAN_FEATURE_TSF_AUTO_REPORT */
+#endif /* WLAN_FEATURE_TSF_UPLINK_DELAY */
 
 #else
 static inline QDF_STATUS wma_capture_tsf(tp_wma_handle wma_handle,
@@ -1771,17 +1803,4 @@ uint16_t wma_mcs_rate_match(uint16_t raw_rate, bool is_he,
 QDF_STATUS
 wma_update_edca_pifs_param(WMA_HANDLE handle,
 			   struct edca_pifs_vparam *edca_pifs_param);
-
-/**
- * wma_update_bss_peer_phy_mode() - Update phymode of peer object
- * @des_chan: des_chan object which has channel information
- * @vdev: pointer to vdev object
- *
- * This is a helper function to update phymode of peer object
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS
-wma_update_bss_peer_phy_mode(struct wlan_channel *des_chan,
-			     struct wlan_objmgr_vdev *vdev);
 #endif

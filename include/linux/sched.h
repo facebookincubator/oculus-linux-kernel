@@ -14,13 +14,13 @@
 #include <linux/pid.h>
 #include <linux/sem.h>
 #include <linux/shm.h>
-#include <linux/kcov.h>
 #include <linux/mutex.h>
 #include <linux/plist.h>
 #include <linux/hrtimer.h>
 #include <linux/irqflags.h>
 #include <linux/seccomp.h>
 #include <linux/nodemask.h>
+#include <linux/orchestrator_types.h>
 #include <linux/rcupdate.h>
 #include <linux/refcount.h>
 #include <linux/resource.h>
@@ -1386,7 +1386,7 @@ struct task_struct {
 	int				mce_count;
 #endif
 #ifdef CONFIG_ORCHESTRATOR_AGENT
-	u64				orchestrator_flags;
+	struct orchestrator		orchestrator;
 #endif
 	ANDROID_VENDOR_DATA_ARRAY(1, 64);
 	ANDROID_OEM_DATA_ARRAY(1, 32);
@@ -2163,5 +2163,9 @@ int sched_trace_rq_cpu_capacity(struct rq *rq);
 int sched_trace_rq_nr_running(struct rq *rq);
 
 const struct cpumask *sched_trace_rd_span(struct root_domain *rd);
+
+#ifdef CONFIG_ORCHESTRATOR_AGENT
+const struct cpumask *task_group_preferred_mask(struct task_struct *p);
+#endif
 
 #endif

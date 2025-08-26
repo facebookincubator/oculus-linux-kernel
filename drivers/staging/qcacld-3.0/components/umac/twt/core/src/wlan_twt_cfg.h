@@ -15,10 +15,6 @@
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
  */
-
-#ifndef _WLAN_TWT_CFG_H
-#define _WLAN_TWT_CFG_H
-
 #include <wlan_objmgr_psoc_obj.h>
 
 #if defined(WLAN_SUPPORT_TWT) && defined(WLAN_TWT_CONV_SUPPORTED)
@@ -233,14 +229,6 @@ wlan_twt_cfg_get_support_in_11n_mode(struct wlan_objmgr_psoc *psoc,
 QDF_STATUS
 wlan_twt_get_restricted_support(struct wlan_objmgr_psoc *psoc, bool *val);
 
-/**
- * wlan_twt_get_pmo_allowed() - Get pmo allowed
- * @psoc: psoc handler
- *
- * Return: True if twt pmo is allowed otherwise false
- */
-bool
-wlan_twt_get_pmo_allowed(struct wlan_objmgr_psoc *psoc);
 #else
 
 static inline QDF_STATUS wlan_twt_cfg_init(struct wlan_objmgr_psoc *psoc)
@@ -356,12 +344,5 @@ wlan_twt_get_restricted_support(struct wlan_objmgr_psoc *psoc, bool *val)
 {
 	return QDF_STATUS_SUCCESS;
 }
-
-static inline bool
-wlan_twt_get_pmo_allowed(struct wlan_objmgr_psoc *psoc)
-{
-	return true;
-}
 #endif
 
-#endif /* End of _WLAN_TWT_CFG_H */

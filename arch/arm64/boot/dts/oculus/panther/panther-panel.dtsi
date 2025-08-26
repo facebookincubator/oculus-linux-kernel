@@ -24,6 +24,7 @@
 
 &mdss_mdp0 {
 	qcom,sde-lineptr-scanline-advance = <16>;
+	meta,freerun-histogram;
 };
 
 &panther_panel_boe {

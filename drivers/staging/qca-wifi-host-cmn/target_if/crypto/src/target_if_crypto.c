@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -211,8 +211,10 @@ QDF_STATUS target_if_crypto_set_key(struct wlan_objmgr_vdev *vdev,
 	qdf_mem_copy(&params.key_rsc_counter,
 		     &req->keyrsc[0], sizeof(uint64_t));
 
-	target_if_debug("key_type %d, mac: " QDF_MAC_ADDR_FMT,
-			key_type, QDF_MAC_ADDR_REF(req->macaddr));
+	target_if_debug("key_type %d, mac: %02x:%02x:%02x:%02x:%02x:%02x",
+			key_type, req->macaddr[0], req->macaddr[1],
+			req->macaddr[2], req->macaddr[3], req->macaddr[4],
+			req->macaddr[5]);
 
 	if (wlan_vdev_mlme_get_opmode(vdev) != QDF_NAN_DISC_MODE) {
 		peer_exist = cdp_find_peer_exist(soc,

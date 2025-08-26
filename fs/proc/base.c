@@ -95,7 +95,6 @@
 #include <linux/sched/stat.h>
 #include <linux/posix-timers.h>
 #include <linux/time_namespace.h>
-#include <linux/orchestrator.h>
 #include <linux/resctrl.h>
 #include <linux/cpufreq_times.h>
 #include <trace/events/oom.h>
@@ -3544,50 +3543,6 @@ static const struct inode_operations proc_tid_comm_inode_operations = {
 		.permission	= proc_tid_comm_permission,
 };
 
-#ifdef CONFIG_ORCHESTRATOR_AGENT
-static ssize_t proc_orchestrator_flags_op(struct file *file,
-				          const char __user *ubuf,
-                                          size_t count, loff_t *ppos,
-				          bool write)
-{
-	struct inode * inode = file_inode(file);
-	struct task_struct *task = get_proc_task(inode);
-	ssize_t ret;
-
-	if (!task)
-		return -ESRCH;
-
-	if (write)
-		ret = orchestrator_flags_write_procfs(task, ubuf, count, ppos);
-	else
-		ret = orchestrator_flags_read_procfs(task, (char *)((uintptr_t)ubuf),
-					             count, ppos);
-
-	put_task_struct(task);
-	return ret;
-}
-
-static ssize_t proc_orchestrator_flags_read(struct file *file,
-					    char __user *ubuf,
-                                            size_t count, loff_t *ppos)
-{
-	return proc_orchestrator_flags_op(file, ubuf, count, ppos, false);
-}
-
-static ssize_t proc_orchestrator_flags_write(struct file *file,
-					     const char __user *ubuf,
-                                             size_t count, loff_t *ppos)
-{
-	return proc_orchestrator_flags_op(file, ubuf, count, ppos, true);
-}
-
-static const struct file_operations proc_orchestrator_operations = {
-        .read           = proc_orchestrator_flags_read,
-        .write          = proc_orchestrator_flags_write,
-        .llseek         = generic_file_llseek,
-};
-#endif /* CONFIG_ORCHESTRATOR_AGENT */
-
 /*
  * Tasks
  */
@@ -3689,7 +3644,7 @@ static const struct pid_entry tid_base_stuff[] = {
 #endif
 #ifdef CONFIG_ORCHESTRATOR_AGENT
 	REG("orchestrator_flags", S_IRUGO|S_IWUGO,
-	    proc_orchestrator_operations),
+	    proc_orchestrator_flag_ops),
 #endif
 };
 

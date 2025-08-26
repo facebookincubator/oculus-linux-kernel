@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -117,11 +117,11 @@
 				0, \
 				"HE Ofdma Ra")
 
-#define CFG_HE_MAX_AMPDU_LEN CFG_INI_UINT( \
+#define CFG_HE_MAX_AMPDU_LEN CFG_UINT( \
 				"he_max_ampdu_len", \
 				0, \
 				3, \
-				3, \
+				0, \
 				CFG_VALUE_OR_DEFAULT, \
 				"HE Max Ampdu Len")
 
@@ -132,7 +132,7 @@
 
 #define CFG_HE_FLEX_TWT_SCHED CFG_BOOL( \
 				"he_flex_twt_sched", \
-				1, \
+				0, \
 				"HE Flex Twt Sched")
 
 #define CFG_HE_RX_CTRL CFG_BOOL( \
@@ -855,29 +855,6 @@
 				CFG_VALUE_OR_DEFAULT, \
 				"He Configure MCS_12_13 bits")
 
-/*
- * <ini>
- * disable_mcs_12_13_sap - Bitmask to disable HE MCS 12 13 support for SAP
- * @Min: 0
- * @Max: 4095
- * @Default: 0
- *
- * This ini is used to disable HE MCS_12_13 for SAP.
- * Currently only support is present to disable 2.4 GHz 40 MHz SAP for value
- * 2 i.e. 2nd bit set.
- *
- * Related: NA
- *
- * Usage: External
- *
- * </ini>
- */
-#define CFG_DISABLE_MCS_12_13_SAP CFG_INI_UINT( \
-			"disable_mcs_12_13_sap", \
-			0, 4095, 0, \
-			CFG_VALUE_OR_DEFAULT, \
-			"Disable HE MCS_12_13 for SAP")
-
 #define CFG_HE_CAPS_ALL \
 	CFG(CFG_HE_CONTROL) \
 	CFG(CFG_HE_FRAGMENTATION) \
@@ -968,8 +945,7 @@
 	CFG(CFG_ENABLE_UL_MIMO) \
 	CFG(CFG_ENABLE_UL_OFDMA) \
 	CFG(CFG_HE_STA_OBSSPD) \
-	CFG(CFG_HE_MCS_12_13_SUPPORT) \
-	CFG(CFG_DISABLE_MCS_12_13_SAP)
+	CFG(CFG_HE_MCS_12_13_SUPPORT)
 
 #endif /* __CFG_MLME_HE_CAPS_H */
 

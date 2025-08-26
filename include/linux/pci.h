@@ -150,6 +150,15 @@ enum pci_interrupt_pin {
 #define PCI_NUM_INTX	4
 
 /*
+ * Reading from a device that doesn't respond typically returns ~0.  A
+ * successful read from a device may also return ~0, so you need additional
+ * information to reliably identify errors.
+ */
+#define PCI_ERROR_RESPONSE		(~0ULL)
+#define PCI_SET_ERROR_RESPONSE(val)	(*(val) = ((typeof(*(val))) PCI_ERROR_RESPONSE))
+#define PCI_POSSIBLE_ERROR(val)		((val) == ((typeof(val)) PCI_ERROR_RESPONSE))
+
+/*
  * pci_power_t values must match the bits in the Capabilities PME_Support
  * and Control/Status PowerState fields in the Power Management capability.
  */
@@ -2220,6 +2229,11 @@ static inline struct pci_dev *pcie_find_root_port(struct pci_dev *dev)
 	}
 
 	return NULL;
+}
+
+static inline bool pci_dev_is_disconnected(const struct pci_dev *dev)
+{
+	return dev->error_state == pci_channel_io_perm_failure;
 }
 
 void pci_request_acs(void);

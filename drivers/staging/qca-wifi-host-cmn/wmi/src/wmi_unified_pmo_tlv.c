@@ -671,12 +671,8 @@ static QDF_STATUS send_multiple_add_clear_mcbc_filter_cmd_tlv(
 	mac_addr_dst_ptr = (wmi_mac_addr *)
 			(buf_ptr + WMI_TLV_HDR_SIZE);
 
-	wmi_debug("multicast addr cnt: %u", filter_param->multicast_addr_cnt);
 	for (i = 0; i < filter_param->multicast_addr_cnt; i++) {
 		WMI_CHAR_ARRAY_TO_MAC_ADDR(mac_addr_src_ptr, mac_addr_dst_ptr);
-		wmi_nofl_debug("mac addr[%d]: " QDF_MAC_ADDR_FMT, i,
-			       QDF_MAC_ADDR_REF(
-					filter_param->multicast_addr[i].bytes));
 		mac_addr_src_ptr += ATH_MAC_LEN;
 		mac_addr_dst_ptr++;
 	}

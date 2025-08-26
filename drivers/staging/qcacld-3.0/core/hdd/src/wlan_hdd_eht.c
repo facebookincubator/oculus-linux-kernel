@@ -271,7 +271,7 @@ int hdd_set_11be_rate_code(struct hdd_adapter *adapter, uint16_t rate_code)
 	struct sap_config *sap_config = NULL;
 
 	if (adapter->device_mode == QDF_SAP_MODE)
-		sap_config = &adapter->deflink->session.ap.sap_config;
+		sap_config = &adapter->session.ap.sap_config;
 
 	if (!sap_config) {
 		if (!sme_is_feature_supported_by_fw(DOT11BE)) {
@@ -297,7 +297,7 @@ int hdd_set_11be_rate_code(struct hdd_adapter *adapter, uint16_t rate_code)
 	hdd_debug("SET_11BE_RATE rate_code %d rix %d preamble %x nss %d",
 		  rate_code, rix, preamble, nss);
 
-	ret = wma_cli_set_command(adapter->deflink->vdev_id,
+	ret = wma_cli_set_command(adapter->vdev_id,
 				  wmi_vdev_param_fixed_rate,
 				  rate_code, VDEV_CMD);
 

@@ -1,6 +1,6 @@
  /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -91,7 +91,6 @@
 #include "wlan_cm_roam_api.h"
 #include "wlan_mlo_mgr_roam.h"
 #include "lim_mlo.h"
-#include "wlan_dp_api.h"
 #ifdef FEATURE_WLAN_EXTSCAN
 #define WMA_EXTSCAN_CYCLE_WAKE_LOCK_DURATION WAKELOCK_DURATION_RECOMMENDED
 
@@ -298,17 +297,14 @@ cm_handle_auth_offload(struct auth_offload_event *auth_event)
 				auth_event->vdev_id,
 				auth_event->ta);
 
-	wlan_cm_store_mlo_roam_peer_address(mac_ctx->pdev, auth_event);
-
-	status =
-		wlan_cm_update_offload_ssid_from_candidate(mac_ctx->pdev,
-							   auth_event->vdev_id,
-							   &auth_event->ap_bssid);
-
+	status = wlan_cm_update_offload_ssid_from_candidate(mac_ctx->pdev,
+				auth_event->vdev_id, &auth_event->ap_bssid);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		wma_err_rl("Set offload ssid failed %d", status);
 		return QDF_STATUS_E_FAILURE;
 	}
+
+	wlan_cm_store_mlo_roam_peer_address(mac_ctx->pdev, auth_event);
 
 	status = wma->csr_roam_auth_event_handle_cb(mac_ctx, auth_event->vdev_id,
 						    auth_event->ap_bssid,
@@ -775,12 +771,6 @@ wma_roam_update_vdev(tp_wma_handle wma,
 					 vdev_id,
 					 mac_addr.bytes);
 
-	if (wlan_vdev_mlme_get_opmode(wma->interfaces[vdev_id].vdev) ==
-								QDF_STA_MODE)
-		wlan_cdp_set_peer_freq(wma->psoc, mac_addr.bytes,
-				       wma->interfaces[vdev_id].ch_freq,
-				       vdev_id);
-
 	/* Update new peer's uc cipher */
 	uc_cipher = wlan_crypto_get_param(wma->interfaces[vdev_id].vdev,
 					   WLAN_CRYPTO_PARAM_UCAST_CIPHER);
@@ -864,7 +854,7 @@ static void wma_update_phymode_on_roam(tp_wma_handle wma,
 	qdf_mem_copy(bss_chan, des_chan, sizeof(struct wlan_channel));
 
 	/* Till conversion is not done in WMI we need to fill fw phy mode */
-	vdev_mlme->mgmt.generic.phy_mode = wmi_host_to_fw_phymode(bss_phymode);
+	vdev_mlme->mgmt.generic.phy_mode = wma_host_to_fw_phymode(bss_phymode);
 
 	/* update new phymode to peer */
 	wma_objmgr_set_peer_mlme_phymode(wma, bssid->bytes, bss_phymode);
@@ -2704,8 +2694,7 @@ void wma_handle_roam_sync_timeout(tp_wma_handle wma_handle,
 					CM_ROAM_NOTIF_ROAM_ABORT);
 }
 
-void cm_invalid_roam_reason_handler(uint32_t vdev_id, enum cm_roam_notif notif,
-				    uint32_t reason)
+void cm_invalid_roam_reason_handler(uint32_t vdev_id, enum cm_roam_notif notif)
 {
 	tp_wma_handle wma_handle = cds_get_context(QDF_MODULE_ID_WMA);
 
@@ -2719,7 +2708,7 @@ void cm_invalid_roam_reason_handler(uint32_t vdev_id, enum cm_roam_notif notif,
 	    notif == CM_ROAM_NOTIF_SCAN_END)
 		cm_report_roam_rt_stats(wma_handle->psoc, vdev_id,
 					ROAM_RT_STATS_TYPE_SCAN_STATE,
-					NULL, notif, 0, reason);
+					NULL, notif, 0);
 }
 #endif
 
@@ -2884,7 +2873,7 @@ cm_handle_roam_reason_invoke_roam_fail(uint8_t vdev_id,	uint32_t notif_params,
 						notif_params);
 	cm_report_roam_rt_stats(wma_handle->psoc, vdev_id,
 				ROAM_RT_STATS_TYPE_INVOKE_FAIL_REASON,
-				NULL, notif_params, 0, 0);
+				NULL, notif_params, 0);
 }
 
 void
@@ -3148,35 +3137,15 @@ QDF_STATUS wma_send_ht40_obss_scanind(tp_wma_handle wma,
 }
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
-void cm_roam_update_vdev(struct wlan_objmgr_vdev *vdev,
-			 struct roam_offload_synch_ind *sync_ind)
+void cm_roam_update_vdev(struct roam_offload_synch_ind *sync_ind,
+			 uint8_t vdev_id)
 {
 	tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
-	struct qdf_mac_addr *self_mac_addr;
-	uint8_t vdev_id;
 
 	if (!wma)
 		return;
 
-	vdev_id = wlan_vdev_get_id(vdev);
-
 	wma_roam_update_vdev(wma, sync_ind, vdev_id);
-
-	if (!wlan_vdev_mlme_is_mlo_vdev(vdev)) {
-		self_mac_addr =
-			(struct qdf_mac_addr *)wlan_vdev_mlme_get_macaddr(vdev);
-		goto update_deflink;
-	}
-
-	if (wlan_vdev_mlme_is_mlo_vdev(vdev) &&
-	    wlan_vdev_mlme_is_mlo_link_vdev(vdev))
-		return;
-
-	self_mac_addr = (struct qdf_mac_addr *)wlan_vdev_mlme_get_mldaddr(vdev);
-
-update_deflink:
-	/* Set the assoc vdev as DP deflink after roaming */
-	wlan_dp_update_def_link(wma->psoc, self_mac_addr, vdev);
 }
 
 QDF_STATUS
@@ -3249,10 +3218,3 @@ wlan_cm_fw_to_host_phymode(WMI_HOST_WLAN_PHY_MODE phymode)
 	return wma_fw_to_host_phymode(phymode);
 }
 #endif
-
-QDF_STATUS
-wlan_update_peer_phy_mode(struct wlan_channel *des_chan,
-			  struct wlan_objmgr_vdev *vdev)
-{
-	return wma_update_bss_peer_phy_mode(des_chan, vdev);
-}

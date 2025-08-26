@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2838,8 +2838,9 @@ static void wlan_objmgr_psoc_peer_ref_print(struct wlan_objmgr_psoc *psoc,
 	vdev_id = wlan_vdev_get_id(wlan_peer_get_vdev(peer));
 	wlan_peer_obj_unlock(peer);
 
-	obj_mgr_alert("Peer MAC:" QDF_MAC_ADDR_FMT "state:%d vdev_id:%d",
-		      QDF_MAC_ADDR_REF(macaddr), obj_state, vdev_id);
+	obj_mgr_alert("Peer MAC:%02x:%02x:%02x:%02x:%02x:%02x state:%d vdev_id:%d",
+		  macaddr[0], macaddr[1], macaddr[2], macaddr[3],
+		  macaddr[4], macaddr[5], obj_state, vdev_id);
 	wlan_objmgr_print_peer_ref_ids(peer, QDF_TRACE_LEVEL_FATAL);
 }
 

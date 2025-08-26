@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -25,8 +24,6 @@
 #include <wlan_crypto_global_def.h>
 #include <wlan_objmgr_vdev_obj.h>
 #include <wlan_crypto_global_api.h>
-#include "wlan_crypto_def_i.h"
-
 QDF_STATUS ucfg_crypto_set_key_req(struct wlan_objmgr_vdev *vdev,
 				   struct wlan_crypto_key *req,
 				   enum wlan_crypto_key_type key_type)
@@ -44,14 +41,3 @@ QDF_STATUS ucfg_crypto_set_key_req(struct wlan_objmgr_vdev *vdev,
 	return wlan_crypto_set_key_req(vdev, req, key_type);
 }
 
-void ucfg_crypto_flush_entries(struct wlan_objmgr_psoc *psoc)
-{
-	crypto_flush_entries(psoc);
-}
-
-void ucfg_crypto_free_key_by_link_id(struct wlan_objmgr_psoc *psoc,
-				     struct qdf_mac_addr *link_addr,
-				     uint8_t link_id)
-{
-	wlan_crypto_free_key_by_link_id(psoc, link_addr, link_id);
-}

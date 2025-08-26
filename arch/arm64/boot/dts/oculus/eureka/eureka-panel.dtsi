@@ -2,8 +2,6 @@
 
 #include <dt-bindings/clock/qcom,dispcc-anorak.h>
 
-#include "../unknown7/unknown7-dsi-panel-jdi-nvt-dsc-2392x2560-90hz-video.dtsi"
-#include "../unknown7/unknown7-dsi-panel-sharp-nvt-dsc-2392x2560-90hz-video.dtsi"
 #include "eureka-panel-boe.dtsi"
 #include "eureka-panel-jdi.dtsi"
 #include "eureka-panel-jdi-experimental.dtsi"
@@ -17,9 +15,7 @@
 
 &vendor {
 	display_panels: display_panels {
-		panels = <&dsi_jdi_nvt_2392x2560_90Hz_dsc_video
-			&dsi_sharp_nvt_2392x2560_90Hz_dsc_video
-			&eureka_panel_jdi
+		panels = <&eureka_panel_jdi
 			&eureka_panel_jdi_experimental
 			&eureka_panel_sharp
 			&eureka_panel_sharp_experimental
@@ -40,6 +36,7 @@
 
 &mdss_mdp0 {
 	qcom,sde-lineptr-scanline-advance = <16>;
+	meta,freerun-histogram;
 };
 
 &qupv3_se2_i2c {
@@ -184,56 +181,6 @@
 			qcom,supply-disable-load = <0>;
 			qcom,supply-post-on-sleep = <0>;
 			qcom,supply-pre-on-sleep = <10>;
-		};
-	};
-};
-
-&dsi_jdi_nvt_2392x2560_90Hz_dsc_video {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
-	meta,blu-default-duty-cycle = <100>; /* 10% duty */
-	qcom,mdss-dsi-bl-min-level = <0>;
-	qcom,mdss-dsi-bl-max-level = <1000>;
-	qcom,platform-reset-gpio = <&tlmm 108 0>;
-	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
-	qcom,mdss-dsi-reset-off-delay = <0>;
-	qcom,mdss-dsi-sec-reset-off-delay = <30>;
-	qcom,mdss-dsi-t-clk-post = <0x0F>;
-	qcom,mdss-dsi-t-clk-pre = <0x1F>;
-	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
-
-	meta,settling-time-target-us = <5430>;
-
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,display-topology = <4 4 2>;
-			qcom,default-topology-index = <0>;
-			qcom,disable-default-pps;
-		};
-	};
-};
-
-&dsi_sharp_nvt_2392x2560_90Hz_dsc_video {
-	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
-	meta,blu-default-duty-cycle = <100>; /* 10% duty */
-	qcom,mdss-dsi-bl-min-level = <0>;
-	qcom,mdss-dsi-bl-max-level = <1000>;
-	qcom,platform-reset-gpio = <&tlmm 108 0>;
-	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
-	qcom,mdss-dsi-reset-off-delay = <0>;
-	qcom,mdss-dsi-sec-reset-off-delay = <30>;
-	qcom,mdss-dsi-t-clk-post = <0x0F>;
-	qcom,mdss-dsi-t-clk-pre = <0x1F>;
-	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
-
-	meta,settling-time-target-us = <5430>;
-
-	qcom,mdss-dsi-display-timings {
-		timing@0{
-			qcom,display-topology = <4 4 2>;
-			qcom,default-topology-index = <0>;
-			qcom,disable-default-pps;
 		};
 	};
 };

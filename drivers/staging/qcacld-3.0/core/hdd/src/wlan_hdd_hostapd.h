@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -242,26 +242,25 @@ QDF_STATUS hdd_hostapd_sap_event_cb(struct sap_event *sap_event,
  * hdd_init_ap_mode() - to init the AP adaptor
  * @adapter: SAP/GO adapter
  * @reinit: true if re-init, otherwise initial init
- * @rtnl_held: true if rtnl lock is taken, otherwise false
  *
  * This API can be called to open the SAP session as well as
  * to create and store the vdev object. It also initializes necessary
  * SAP adapter related params.
  */
-QDF_STATUS hdd_init_ap_mode(struct hdd_adapter *adapter,
-			    bool reinit,
-			    bool rtnl_held);
+QDF_STATUS hdd_init_ap_mode(struct hdd_adapter *adapter, bool reinit);
 
 /**
  * hdd_deinit_ap_mode() - to deinit the AP adaptor
- * @link_info: Link info pointer in HDD adapter
+ * @hdd_ctx: pointer to hdd_ctx
+ * @adapter: SAP/GO adapter
+ * @rtnl_held: flag to indicate if RTNL lock needs to be acquired
  *
  * This API can be called to close the SAP session as well as
  * release the vdev object completely. It also deinitializes necessary
  * SAP adapter related params.
  */
-void hdd_deinit_ap_mode(struct wlan_hdd_link_info *link_info);
-
+void hdd_deinit_ap_mode(struct hdd_context *hdd_ctx,
+			struct hdd_adapter *adapter, bool rtnl_held);
 void hdd_set_ap_ops(struct net_device *dev);
 /**
  * hdd_sap_create_ctx() - Wrapper API to create SAP context
@@ -275,14 +274,14 @@ void hdd_set_ap_ops(struct net_device *dev);
 bool hdd_sap_create_ctx(struct hdd_adapter *adapter);
 /**
  * hdd_sap_destroy_ctx() - Wrapper API to destroy SAP context
- * @link_info: Pointer of link_info in adapter
+ * @adapter: pointer to adapter
  *
  * This wrapper API can be called to destroy the sap context. It will
  * eventually calls SAP API to destroy the sap context
  *
  * Return: true or false based on overall success or failure
  */
-bool hdd_sap_destroy_ctx(struct wlan_hdd_link_info *link_info);
+bool hdd_sap_destroy_ctx(struct hdd_adapter *adapter);
 /**
  * hdd_sap_destroy_ctx_all() - Wrapper API to destroy all SAP context
  * @hdd_ctx: pointer to HDD context
@@ -465,26 +464,16 @@ void hdd_stop_sap_due_to_invalid_channel(struct work_struct *work);
  */
 bool hdd_is_any_sta_connecting(struct hdd_context *hdd_ctx);
 
-/**
- * wlan_hdd_configure_twt_responder() - configure twt responder in sap_config
- * @hdd_ctx: Pointer to hdd context
- * @twt_responder: twt responder configure value
- *
- * Return: none
- */
-void
-wlan_hdd_configure_twt_responder(struct hdd_context *hdd_ctx,
-				 bool twt_responder);
 #ifdef WLAN_FEATURE_11BE_MLO
 /**
  * wlan_hdd_mlo_reset() - reset mlo configuration if start bss fails
- * @link_info: Pointer to link_info in hostapd adapter
+ * @adapter: Pointer to hostapd adapter
  *
  * Return: void
  */
-void wlan_hdd_mlo_reset(struct wlan_hdd_link_info *link_info);
+void wlan_hdd_mlo_reset(struct hdd_adapter *adapter);
 #else
-static inline void wlan_hdd_mlo_reset(struct wlan_hdd_link_info *link_info)
+static inline void wlan_hdd_mlo_reset(struct hdd_adapter *adapter)
 {
 }
 #endif /* end WLAN_FEATURE_11BE_MLO */
@@ -504,99 +493,4 @@ bool hdd_sap_is_acs_in_progress(struct wlan_objmgr_vdev *vdev)
 	return false;
 }
 #endif
-
-#ifdef WLAN_CHIPSET_STATS
-/*
- * hdd_cp_stats_cstats_sap_go_start_event() - chipset stats for sap/go start
- * event
- *
- * @link_info: pointer to link_info object
- * @sap_event: pointer to sap_event object
- *
- * Return : void
- */
-void
-hdd_cp_stats_cstats_sap_go_start_event(struct wlan_hdd_link_info *link_info,
-				       struct sap_event *sap_event);
-
-/**
- * hdd_cp_stats_cstats_sap_go_stop_event() - chipset stats for sap/go stop event
- *
- * @link_info: pointer to link_info object
- * @sap_event: pointer to sap_event object
- *
- * Return : void
- */
-void
-hdd_cp_stats_cstats_sap_go_stop_event(struct wlan_hdd_link_info *link_info,
-				      struct sap_event *sap_event);
-
-/**
- * hdd_cp_stats_cstats_log_sap_go_sta_disassoc_event() - chipset stats for
- * sap/go STA disconnect event
- *
- * @li: pointer to link_info object
- * @sap_evt: pointer to sap_event object
- *
- * Return : void
- */
-void
-hdd_cp_stats_cstats_log_sap_go_sta_disassoc_event(struct wlan_hdd_link_info *li,
-						  struct sap_event *sap_evt);
-
-/**
- * hdd_cp_stats_cstats_log_sap_go_sta_assoc_reassoc_event() - chipset stats for
- * sap/go STA assoc event
- *
- * @li: pointer to link_info object
- * @sap_evt: pointer to sap_event object
- *
- * Return : void
- */
-void
-hdd_cp_stats_cstats_log_sap_go_sta_assoc_reassoc_event
-		     (struct wlan_hdd_link_info *li, struct sap_event *sap_evt);
-
-/**
- * hdd_cp_stats_cstats_log_sap_go_dfs_event() - chipset stats for
- * sap/go dfs event
- *
- * @li: pointer to link_info object
- * @event_id: eSapHddEvent event
- *
- * Return : void
- */
-void hdd_cp_stats_cstats_log_sap_go_dfs_event(struct wlan_hdd_link_info *li,
-					      eSapHddEvent event_id);
-#else
-static inline void
-hdd_cp_stats_cstats_sap_go_start_event(struct wlan_hdd_link_info *link_info,
-				       struct sap_event *sap_event)
-{
-}
-
-static inline void
-hdd_cp_stats_cstats_sap_go_stop_event(struct wlan_hdd_link_info *link_info,
-				      struct sap_event *sap_event)
-{
-}
-
-static inline void
-hdd_cp_stats_cstats_log_sap_go_sta_disassoc_event(struct wlan_hdd_link_info *li,
-						  struct sap_event *sap_evt)
-{
-}
-
-static inline void
-hdd_cp_stats_cstats_log_sap_go_sta_assoc_reassoc_event
-		     (struct wlan_hdd_link_info *li, struct sap_event *sap_evt)
-{
-}
-
-static inline void
-hdd_cp_stats_cstats_log_sap_go_dfs_event(struct wlan_hdd_link_info *li,
-					 eSapHddEvent event_id)
-{
-}
-#endif /* WLAN_CHIPSET_STATS */
 #endif /* end #if !defined(WLAN_HDD_HOSTAPD_H) */

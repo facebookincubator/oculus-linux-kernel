@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -68,12 +68,12 @@ const struct dp_rx_defrag_cipher dp_f_gcmp = {
 	WLAN_IEEE80211_GCMP_MICLEN,
 };
 
-/**
- * dp_rx_defrag_frames_free() - Free fragment chain
+/*
+ * dp_rx_defrag_frames_free(): Free fragment chain
  * @frames: Fragment chain
  *
  * Iterates through the fragment chain and frees them
- * Return: None
+ * Returns: None
  */
 static void dp_rx_defrag_frames_free(qdf_nbuf_t frames)
 {
@@ -86,16 +86,15 @@ static void dp_rx_defrag_frames_free(qdf_nbuf_t frames)
 	}
 }
 
-#ifndef WLAN_SOFTUMAC_SUPPORT /* WLAN_SOFTUMAC_SUPPORT */
-/**
- * dp_rx_clear_saved_desc_info() - Clears descriptor info
- * @txrx_peer: Pointer to the peer data structure
+/*
+ * dp_rx_clear_saved_desc_info(): Clears descriptor info
+ * @txrx peer: Pointer to the peer data structure
  * @tid: Transmit ID (TID)
  *
  * Saves MPDU descriptor info and MSDU link pointer from REO
  * ring descriptor. The cache is created per peer, per TID
  *
- * Return: None
+ * Returns: None
  */
 static void dp_rx_clear_saved_desc_info(struct dp_txrx_peer *txrx_peer,
 					unsigned int tid)
@@ -141,19 +140,16 @@ static void dp_rx_return_head_frag_desc(struct dp_txrx_peer *txrx_peer,
 				  "%s: Failed to return link desc", __func__);
 	}
 }
-#else
 
-static void dp_rx_clear_saved_desc_info(struct dp_txrx_peer *txrx_peer,
-					unsigned int tid)
-{
-}
-
-static void dp_rx_return_head_frag_desc(struct dp_txrx_peer *txrx_peer,
-					unsigned int tid)
-{
-}
-#endif /* WLAN_SOFTUMAC_SUPPORT */
-
+/*
+ * dp_rx_reorder_flush_frag(): Flush the frag list
+ * @txrx_peer: Pointer to the peer data structure
+ * @tid: Transmit ID (TID)
+ *
+ * Flush the per-TID frag list
+ *
+ * Returns: None
+ */
 void dp_rx_reorder_flush_frag(struct dp_txrx_peer *txrx_peer,
 			      unsigned int tid)
 {
@@ -169,6 +165,14 @@ void dp_rx_reorder_flush_frag(struct dp_txrx_peer *txrx_peer,
 	dp_rx_defrag_cleanup(txrx_peer, tid);
 }
 
+/*
+ * dp_rx_defrag_waitlist_flush(): Flush SOC defrag wait list
+ * @soc: DP SOC
+ *
+ * Flush fragments of all waitlisted TID's
+ *
+ * Returns: None
+ */
 void dp_rx_defrag_waitlist_flush(struct dp_soc *soc)
 {
 	struct dp_rx_tid_defrag *waitlist_elem = NULL;
@@ -240,8 +244,17 @@ void dp_rx_defrag_waitlist_flush(struct dp_soc *soc)
 	}
 }
 
-void dp_rx_defrag_waitlist_add(struct dp_txrx_peer *txrx_peer,
-			       unsigned int tid)
+/*
+ * dp_rx_defrag_waitlist_add(): Update per-PDEV defrag wait list
+ * @txrx_peer: Pointer to the peer data structure
+ * @tid: Transmit ID (TID)
+ *
+ * Appends per-tid fragments to global fragment wait list
+ *
+ * Returns: None
+ */
+static void dp_rx_defrag_waitlist_add(struct dp_txrx_peer *txrx_peer,
+				      unsigned int tid)
 {
 	struct dp_soc *psoc = txrx_peer->vdev->pdev->soc;
 	struct dp_rx_tid_defrag *waitlist_elem = &txrx_peer->rx_tid[tid];
@@ -261,6 +274,15 @@ void dp_rx_defrag_waitlist_add(struct dp_txrx_peer *txrx_peer,
 	qdf_spin_unlock_bh(&psoc->rx.defrag.defrag_lock);
 }
 
+/*
+ * dp_rx_defrag_waitlist_remove(): Remove fragments from waitlist
+ * @txrx peer: Pointer to the peer data structure
+ * @tid: Transmit ID (TID)
+ *
+ * Remove fragments from waitlist
+ *
+ * Returns: None
+ */
 void dp_rx_defrag_waitlist_remove(struct dp_txrx_peer *txrx_peer,
 				  unsigned int tid)
 {
@@ -295,7 +317,20 @@ void dp_rx_defrag_waitlist_remove(struct dp_txrx_peer *txrx_peer,
 	qdf_spin_unlock_bh(&soc->rx.defrag.defrag_lock);
 }
 
-QDF_STATUS
+/*
+ * dp_rx_defrag_fraglist_insert(): Create a per-sequence fragment list
+ * @txrx_peer: Pointer to the peer data structure
+ * @tid: Transmit ID (TID)
+ * @head_addr: Pointer to head list
+ * @tail_addr: Pointer to tail list
+ * @frag: Incoming fragment
+ * @all_frag_present: Flag to indicate whether all fragments are received
+ *
+ * Build a per-tid, per-sequence fragment list.
+ *
+ * Returns: Success, if inserted
+ */
+static QDF_STATUS
 dp_rx_defrag_fraglist_insert(struct dp_txrx_peer *txrx_peer, unsigned int tid,
 			     qdf_nbuf_t *head_addr, qdf_nbuf_t *tail_addr,
 			     qdf_nbuf_t frag, uint8_t *all_frag_present)
@@ -317,7 +352,7 @@ dp_rx_defrag_fraglist_insert(struct dp_txrx_peer *txrx_peer, unsigned int tid,
 	rx_desc_info = qdf_nbuf_data(frag);
 	cur_fragno = dp_rx_frag_get_mpdu_frag_number(soc, rx_desc_info);
 
-	dp_debug("cur_fragno %d", cur_fragno);
+	dp_debug("cur_fragno %d\n", cur_fragno);
 	/* If this is the first fragment */
 	if (!(*head_addr)) {
 		*head_addr = *tail_addr = frag;
@@ -407,15 +442,14 @@ insert_fail:
 }
 
 
-/**
- * dp_rx_defrag_tkip_decap() - decap tkip encrypted fragment
- * @soc: DP SOC
+/*
+ * dp_rx_defrag_tkip_decap(): decap tkip encrypted fragment
  * @msdu: Pointer to the fragment
  * @hdrlen: 802.11 header length (mostly useful in 4 addr frames)
  *
  * decap tkip encrypted fragment
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static QDF_STATUS
 dp_rx_defrag_tkip_decap(struct dp_soc *soc,
@@ -440,15 +474,14 @@ dp_rx_defrag_tkip_decap(struct dp_soc *soc,
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * dp_rx_defrag_ccmp_demic() - Remove MIC information from CCMP fragment
- * @soc: DP SOC
+/*
+ * dp_rx_defrag_ccmp_demic(): Remove MIC information from CCMP fragment
  * @nbuf: Pointer to the fragment buffer
  * @hdrlen: 802.11 header length (mostly useful in 4 addr frames)
  *
  * Remove MIC information from CCMP fragment
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static QDF_STATUS
 dp_rx_defrag_ccmp_demic(struct dp_soc *soc, qdf_nbuf_t nbuf, uint16_t hdrlen)
@@ -469,15 +502,14 @@ dp_rx_defrag_ccmp_demic(struct dp_soc *soc, qdf_nbuf_t nbuf, uint16_t hdrlen)
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * dp_rx_defrag_ccmp_decap() - decap CCMP encrypted fragment
- * @soc: DP SOC
+/*
+ * dp_rx_defrag_ccmp_decap(): decap CCMP encrypted fragment
  * @nbuf: Pointer to the fragment
  * @hdrlen: length of the header information
  *
  * decap CCMP encrypted fragment
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static QDF_STATUS
 dp_rx_defrag_ccmp_decap(struct dp_soc *soc, qdf_nbuf_t nbuf, uint16_t hdrlen)
@@ -494,15 +526,14 @@ dp_rx_defrag_ccmp_decap(struct dp_soc *soc, qdf_nbuf_t nbuf, uint16_t hdrlen)
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * dp_rx_defrag_wep_decap() - decap WEP encrypted fragment
- * @soc: DP SOC
+/*
+ * dp_rx_defrag_wep_decap(): decap WEP encrypted fragment
  * @msdu: Pointer to the fragment
  * @hdrlen: length of the header information
  *
  * decap WEP encrypted fragment
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static QDF_STATUS
 dp_rx_defrag_wep_decap(struct dp_soc *soc, qdf_nbuf_t msdu, uint16_t hdrlen)
@@ -518,14 +549,14 @@ dp_rx_defrag_wep_decap(struct dp_soc *soc, qdf_nbuf_t msdu, uint16_t hdrlen)
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * dp_rx_defrag_hdrsize() - Calculate the header size of the received fragment
+/*
+ * dp_rx_defrag_hdrsize(): Calculate the header size of the received fragment
  * @soc: soc handle
  * @nbuf: Pointer to the fragment
  *
  * Calculate the header size of the received fragment
  *
- * Return: header size (uint16_t)
+ * Returns: header size (uint16_t)
  */
 static uint16_t dp_rx_defrag_hdrsize(struct dp_soc *soc, qdf_nbuf_t nbuf)
 {
@@ -561,14 +592,14 @@ static uint16_t dp_rx_defrag_hdrsize(struct dp_soc *soc, qdf_nbuf_t nbuf)
 	return size;
 }
 
-/**
- * dp_rx_defrag_michdr() - Calculate a pseudo MIC header
+/*
+ * dp_rx_defrag_michdr(): Calculate a pseudo MIC header
  * @wh0: Pointer to the wireless header of the fragment
  * @hdr: Array to hold the pseudo header
  *
  * Calculate a pseudo MIC header
  *
- * Return: None
+ * Returns: None
  */
 static void dp_rx_defrag_michdr(const struct ieee80211_frame *wh0,
 				uint8_t hdr[])
@@ -622,9 +653,8 @@ static void dp_rx_defrag_michdr(const struct ieee80211_frame *wh0,
 	hdr[13] = hdr[14] = hdr[15] = 0;	/* reserved */
 }
 
-/**
- * dp_rx_defrag_mic() - Calculate MIC header
- * @soc: DP SOC
+/*
+ * dp_rx_defrag_mic(): Calculate MIC header
  * @key: Pointer to the key
  * @wbuf: fragment buffer
  * @off: Offset
@@ -633,7 +663,7 @@ static void dp_rx_defrag_michdr(const struct ieee80211_frame *wh0,
  *
  * Calculate a pseudo MIC header
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static QDF_STATUS dp_rx_defrag_mic(struct dp_soc *soc, const uint8_t *key,
 				   qdf_nbuf_t wbuf, uint16_t off,
@@ -749,16 +779,15 @@ static QDF_STATUS dp_rx_defrag_mic(struct dp_soc *soc, const uint8_t *key,
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * dp_rx_defrag_tkip_demic() - Remove MIC header from the TKIP frame
- * @soc: DP SOC
+/*
+ * dp_rx_defrag_tkip_demic(): Remove MIC header from the TKIP frame
  * @key: Pointer to the key
  * @msdu: fragment buffer
  * @hdrlen: Length of the header information
  *
  * Remove MIC information from the TKIP frame
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static QDF_STATUS dp_rx_defrag_tkip_demic(struct dp_soc *soc,
 					  const uint8_t *key,
@@ -826,15 +855,14 @@ static QDF_STATUS dp_rx_defrag_tkip_demic(struct dp_soc *soc,
 	return QDF_STATUS_SUCCESS;
 }
 
-/**
- * dp_rx_frag_pull_hdr() - Pulls the RXTLV & the 802.11 headers
- * @soc: DP SOC
+/*
+ * dp_rx_frag_pull_hdr(): Pulls the RXTLV & the 802.11 headers
  * @nbuf: buffer pointer
  * @hdrsize: size of the header to be pulled
  *
  * Pull the RXTLV & the 802.11 headers
  *
- * Return: None
+ * Returns: None
  */
 static void dp_rx_frag_pull_hdr(struct dp_soc *soc,
 				qdf_nbuf_t nbuf, uint16_t hdrsize)
@@ -847,14 +875,13 @@ static void dp_rx_frag_pull_hdr(struct dp_soc *soc,
 		 (uint32_t)qdf_nbuf_len(nbuf), hdrsize);
 }
 
-/**
- * dp_rx_defrag_pn_check() - Check the PN of current fragmented with prev PN
- * @soc: DP SOC
+/*
+ * dp_rx_defrag_pn_check(): Check the PN of current fragmented with prev PN
  * @msdu: msdu to get the current PN
  * @cur_pn128: PN extracted from current msdu
  * @prev_pn128: Prev PN
  *
- * Return: 0 on success, non zero on failure
+ * Returns: 0 on success, non zero on failure
  */
 static int dp_rx_defrag_pn_check(struct dp_soc *soc, qdf_nbuf_t msdu,
 				 uint64_t *cur_pn128, uint64_t *prev_pn128)
@@ -871,16 +898,15 @@ static int dp_rx_defrag_pn_check(struct dp_soc *soc, qdf_nbuf_t msdu,
 	return out_of_order;
 }
 
-/**
- * dp_rx_construct_fraglist() - Construct a nbuf fraglist
- * @txrx_peer: Pointer to the txrx peer
- * @tid: Transmit ID (TID)
+/*
+ * dp_rx_construct_fraglist(): Construct a nbuf fraglist
+ * @txrx peer: Pointer to the txrx peer
  * @head: Pointer to list of fragments
  * @hdrsize: Size of the header to be pulled
  *
  * Construct a nbuf fraglist
  *
- * Return: None
+ * Returns: None
  */
 static int
 dp_rx_construct_fraglist(struct dp_txrx_peer *txrx_peer, int tid,
@@ -954,9 +980,16 @@ dp_rx_construct_fraglist(struct dp_txrx_peer *txrx_peer, int tid,
 }
 
 /**
- * dp_rx_defrag_err() - rx defragmentation error handler
- * @vdev: handle to vdev object
- * @nbuf: packet buffer
+ * dp_rx_defrag_err() - rx err handler
+ * @pdev: handle to pdev object
+ * @vdev_id: vdev id
+ * @peer_mac_addr: peer mac address
+ * @tid: TID
+ * @tsf32: TSF
+ * @err_type: error type
+ * @rx_frame: rx frame
+ * @pn: PN Number
+ * @key_id: key id
  *
  * This function handles rx error and send MIC error notification
  *
@@ -993,17 +1026,16 @@ static void dp_rx_defrag_err(struct dp_vdev *vdev, qdf_nbuf_t nbuf)
 }
 
 
-/**
- * dp_rx_defrag_nwifi_to_8023() - Transcap 802.11 to 802.3
+/*
+ * dp_rx_defrag_nwifi_to_8023(): Transcap 802.11 to 802.3
  * @soc: dp soc handle
  * @txrx_peer: txrx_peer handle
- * @tid: Transmit ID (TID)
  * @nbuf: Pointer to the fragment buffer
  * @hdrsize: Size of headers
  *
  * Transcap the fragment from 802.11 to 802.3
  *
- * Return: None
+ * Returns: None
  */
 static void
 dp_rx_defrag_nwifi_to_8023(struct dp_soc *soc, struct dp_txrx_peer *txrx_peer,
@@ -1107,13 +1139,13 @@ dp_rx_defrag_nwifi_to_8023(struct dp_soc *soc, struct dp_txrx_peer *txrx_peer,
 }
 
 #ifdef RX_DEFRAG_DO_NOT_REINJECT
-/**
- * dp_rx_defrag_deliver() - Deliver defrag packet to stack
- * @txrx_peer: Pointer to the peer
+/*
+ * dp_rx_defrag_deliver(): Deliver defrag packet to stack
+ * @peer: Pointer to the peer
  * @tid: Transmit Identifier
  * @head: Nbuf to be delivered
  *
- * Return: None
+ * Returns: None
  */
 static inline void dp_rx_defrag_deliver(struct dp_txrx_peer *txrx_peer,
 					unsigned int tid,
@@ -1137,15 +1169,15 @@ static inline void dp_rx_defrag_deliver(struct dp_txrx_peer *txrx_peer,
 			       deliver_list_tail);
 }
 
-/**
- * dp_rx_defrag_reo_reinject() - Reinject the fragment chain back into REO
- * @txrx_peer: Pointer to the peer
+/*
+ * dp_rx_defrag_reo_reinject(): Reinject the fragment chain back into REO
+ * @txrx peer: Pointer to the peer
  * @tid: Transmit Identifier
  * @head: Buffer to be reinjected back
  *
  * Reinject the fragment chain back into REO
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static QDF_STATUS dp_rx_defrag_reo_reinject(struct dp_txrx_peer *txrx_peer,
 					    unsigned int tid, qdf_nbuf_t head)
@@ -1170,7 +1202,7 @@ static QDF_STATUS dp_rx_defrag_reo_reinject(struct dp_txrx_peer *txrx_peer,
  * @sw_cookie: SW cookie of the buffer reinjected to SW2REO ring
  * @rbm: Return buffer manager of the buffer reinjected to SW2REO ring
  *
- * Return: None
+ * Returns: None
  */
 static inline void
 dp_rx_reinject_ring_record_entry(struct dp_soc *soc, uint64_t paddr,
@@ -1201,15 +1233,15 @@ dp_rx_reinject_ring_record_entry(struct dp_soc *soc, uint64_t paddr,
 }
 #endif
 
-/**
- * dp_rx_defrag_reo_reinject() - Reinject the fragment chain back into REO
+/*
+ * dp_rx_defrag_reo_reinject(): Reinject the fragment chain back into REO
  * @txrx_peer: Pointer to the txrx_peer
  * @tid: Transmit Identifier
  * @head: Buffer to be reinjected back
  *
  * Reinject the fragment chain back into REO
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static QDF_STATUS dp_rx_defrag_reo_reinject(struct dp_txrx_peer *txrx_peer,
 					    unsigned int tid, qdf_nbuf_t head)
@@ -1388,15 +1420,15 @@ static QDF_STATUS dp_rx_defrag_reo_reinject(struct dp_txrx_peer *txrx_peer,
 }
 #endif
 
-/**
- * dp_rx_defrag_gcmp_demic() - Remove MIC information from GCMP fragment
+/*
+ * dp_rx_defrag_gcmp_demic(): Remove MIC information from GCMP fragment
  * @soc: Datapath soc structure
  * @nbuf: Pointer to the fragment buffer
  * @hdrlen: 802.11 header length
  *
  * Remove MIC information from GCMP fragment
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static QDF_STATUS dp_rx_defrag_gcmp_demic(struct dp_soc *soc, qdf_nbuf_t nbuf,
 					  uint16_t hdrlen)
@@ -1420,9 +1452,20 @@ static QDF_STATUS dp_rx_defrag_gcmp_demic(struct dp_soc *soc, qdf_nbuf_t nbuf,
 	return QDF_STATUS_SUCCESS;
 }
 
-QDF_STATUS dp_rx_defrag(struct dp_txrx_peer *txrx_peer, unsigned int tid,
-			qdf_nbuf_t frag_list_head,
-			qdf_nbuf_t frag_list_tail)
+/*
+ * dp_rx_defrag(): Defragment the fragment chain
+ * @txrx peer: Pointer to the peer
+ * @tid: Transmit Identifier
+ * @frag_list_head: Pointer to head list
+ * @frag_list_tail: Pointer to tail list
+ *
+ * Defragment the fragment chain
+ *
+ * Returns: QDF_STATUS
+ */
+static QDF_STATUS dp_rx_defrag(struct dp_txrx_peer *txrx_peer, unsigned int tid,
+			       qdf_nbuf_t frag_list_head,
+			       qdf_nbuf_t frag_list_tail)
 {
 	qdf_nbuf_t tmp_next;
 	qdf_nbuf_t cur = frag_list_head, msdu;
@@ -1574,6 +1617,13 @@ QDF_STATUS dp_rx_defrag(struct dp_txrx_peer *txrx_peer, unsigned int tid,
 	return QDF_STATUS_SUCCESS;
 }
 
+/*
+ * dp_rx_defrag_cleanup(): Clean up activities
+ * @txrx_peer: Pointer to the peer
+ * @tid: Transmit Identifier
+ *
+ * Returns: None
+ */
 void dp_rx_defrag_cleanup(struct dp_txrx_peer *txrx_peer, unsigned int tid)
 {
 	struct dp_rx_reorder_array_elem *rx_reorder_array_elem =
@@ -1597,9 +1647,46 @@ void dp_rx_defrag_cleanup(struct dp_txrx_peer *txrx_peer, unsigned int tid)
 	txrx_peer->rx_tid[tid].curr_seq_num = 0;
 }
 
+/*
+ * dp_rx_defrag_save_info_from_ring_desc(): Save info from REO ring descriptor
+ * @soc: Pointer to the SOC data structure
+ * @ring_desc: Pointer to the dst ring descriptor
+ * @txrx_peer: Pointer to the peer
+ * @tid: Transmit Identifier
+ *
+ * Returns: None
+ */
+static QDF_STATUS
+dp_rx_defrag_save_info_from_ring_desc(struct dp_soc *soc,
+				      hal_ring_desc_t ring_desc,
+				      struct dp_rx_desc *rx_desc,
+				      struct dp_txrx_peer *txrx_peer,
+				      unsigned int tid)
+{
+	void *dst_ring_desc;
+
+	dst_ring_desc = qdf_mem_malloc(hal_srng_get_entrysize(soc->hal_soc,
+							      REO_DST));
+
+	if (!dst_ring_desc) {
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
+			"%s: Memory alloc failed !", __func__);
+		QDF_ASSERT(0);
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	qdf_mem_copy(dst_ring_desc, ring_desc,
+		     hal_srng_get_entrysize(soc->hal_soc, REO_DST));
+
+	txrx_peer->rx_tid[tid].dst_ring_desc = dst_ring_desc;
+	txrx_peer->rx_tid[tid].head_frag_desc = rx_desc;
+
+	return QDF_STATUS_SUCCESS;
+}
+
 #ifdef DP_RX_DEFRAG_ADDR1_CHECK_WAR
 #ifdef WLAN_FEATURE_11BE_MLO
-/**
+/*
  * dp_rx_defrag_vdev_mac_addr_cmp() - function to check whether mac address
  *				matches VDEV mac
  * @vdev: dp_vdev object of the VDEV on which this data packet is received
@@ -1664,166 +1751,16 @@ static inline bool dp_rx_defrag_addr1_check(struct dp_soc *soc,
 }
 #endif
 
-QDF_STATUS dp_rx_defrag_add_last_frag(struct dp_soc *soc,
-				      struct dp_txrx_peer *txrx_peer,
-				      uint16_t tid,
-				      uint16_t rxseq, qdf_nbuf_t nbuf)
-{
-	struct dp_rx_tid_defrag *rx_tid = &txrx_peer->rx_tid[tid];
-	struct dp_rx_reorder_array_elem *rx_reorder_array_elem;
-	uint8_t all_frag_present;
-	uint32_t msdu_len;
-	QDF_STATUS status;
-
-	rx_reorder_array_elem = txrx_peer->rx_tid[tid].array;
-
-	/*
-	 * HW may fill in unexpected peer_id in RX PKT TLV,
-	 * if this peer_id related peer is valid by coincidence,
-	 * but actually this peer won't do dp_peer_rx_init(like SAP vdev
-	 * self peer), then invalid access to rx_reorder_array_elem happened.
-	 */
-	if (!rx_reorder_array_elem) {
-		dp_verbose_debug(
-			"peer id:%d drop rx frame!",
-			txrx_peer->peer_id);
-		DP_STATS_INC(soc, rx.err.defrag_peer_uninit, 1);
-		dp_rx_nbuf_free(nbuf);
-		goto fail;
-	}
-
-	if (rx_reorder_array_elem->head &&
-	    rxseq != rx_tid->curr_seq_num) {
-		/* Drop stored fragments if out of sequence
-		 * fragment is received
-		 */
-		dp_rx_reorder_flush_frag(txrx_peer, tid);
-
-		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
-			  "%s: No list found for TID %d Seq# %d",
-				__func__, tid, rxseq);
-		dp_rx_nbuf_free(nbuf);
-		goto fail;
-	}
-
-	msdu_len = hal_rx_msdu_start_msdu_len_get(soc->hal_soc,
-						  qdf_nbuf_data(nbuf));
-
-	qdf_nbuf_set_pktlen(nbuf, (msdu_len + soc->rx_pkt_tlv_size));
-
-	status = dp_rx_defrag_fraglist_insert(txrx_peer, tid,
-					      &rx_reorder_array_elem->head,
-			&rx_reorder_array_elem->tail, nbuf,
-			&all_frag_present);
-
-	if (QDF_IS_STATUS_ERROR(status)) {
-		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
-			  "%s Fragment insert failed", __func__);
-
-		goto fail;
-	}
-
-	if (soc->rx.flags.defrag_timeout_check)
-		dp_rx_defrag_waitlist_remove(txrx_peer, tid);
-
-	if (!all_frag_present) {
-		uint32_t now_ms =
-			qdf_system_ticks_to_msecs(qdf_system_ticks());
-
-		txrx_peer->rx_tid[tid].defrag_timeout_ms =
-			now_ms + soc->rx.defrag.timeout_ms;
-
-		dp_rx_defrag_waitlist_add(txrx_peer, tid);
-
-		return QDF_STATUS_SUCCESS;
-	}
-
-	status = dp_rx_defrag(txrx_peer, tid, rx_reorder_array_elem->head,
-			      rx_reorder_array_elem->tail);
-
-	if (QDF_IS_STATUS_ERROR(status)) {
-		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
-			  "%s Fragment processing failed", __func__);
-
-		dp_rx_return_head_frag_desc(txrx_peer, tid);
-		dp_rx_defrag_cleanup(txrx_peer, tid);
-
-		goto fail;
-	}
-
-	/* Re-inject the fragments back to REO for further processing */
-	status = dp_rx_defrag_reo_reinject(txrx_peer, tid,
-					   rx_reorder_array_elem->head);
-	if (QDF_IS_STATUS_SUCCESS(status)) {
-		rx_reorder_array_elem->head = NULL;
-		rx_reorder_array_elem->tail = NULL;
-		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_INFO,
-			  "%s: Frag seq successfully reinjected",
-			__func__);
-	} else {
-		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
-			  "%s: Frag seq reinjection failed", __func__);
-		dp_rx_return_head_frag_desc(txrx_peer, tid);
-	}
-
-	dp_rx_defrag_cleanup(txrx_peer, tid);
-	return QDF_STATUS_SUCCESS;
-
-fail:
-	return QDF_STATUS_E_DEFRAG_ERROR;
-}
-
-#ifndef WLAN_SOFTUMAC_SUPPORT /* WLAN_SOFTUMAC_SUPPORT */
-/**
- * dp_rx_defrag_save_info_from_ring_desc() - Save info from REO ring descriptor
- * @soc: Pointer to the SOC data structure
- * @ring_desc: Pointer to the dst ring descriptor
- * @rx_desc: Pointer to rx descriptor
- * @txrx_peer: Pointer to the peer
- * @tid: Transmit Identifier
- *
- * Return: None
- */
-static QDF_STATUS
-dp_rx_defrag_save_info_from_ring_desc(struct dp_soc *soc,
-				      hal_ring_desc_t ring_desc,
-				      struct dp_rx_desc *rx_desc,
-				      struct dp_txrx_peer *txrx_peer,
-				      unsigned int tid)
-{
-	void *dst_ring_desc;
-
-	dst_ring_desc = qdf_mem_malloc(hal_srng_get_entrysize(soc->hal_soc,
-							      REO_DST));
-
-	if (!dst_ring_desc) {
-		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
-			"%s: Memory alloc failed !", __func__);
-		QDF_ASSERT(0);
-		return QDF_STATUS_E_NOMEM;
-	}
-
-	qdf_mem_copy(dst_ring_desc, ring_desc,
-		     hal_srng_get_entrysize(soc->hal_soc, REO_DST));
-
-	txrx_peer->rx_tid[tid].dst_ring_desc = dst_ring_desc;
-	txrx_peer->rx_tid[tid].head_frag_desc = rx_desc;
-
-	return QDF_STATUS_SUCCESS;
-}
-
-/**
- * dp_rx_defrag_store_fragment() - Store incoming fragments
+/*
+ * dp_rx_defrag_store_fragment(): Store incoming fragments
  * @soc: Pointer to the SOC data structure
  * @ring_desc: Pointer to the ring descriptor
- * @head:
- * @tail:
  * @mpdu_desc_info: MPDU descriptor info
  * @tid: Traffic Identifier
  * @rx_desc: Pointer to rx descriptor
  * @rx_bfs: Number of bfs consumed
  *
- * Return: QDF_STATUS
+ * Returns: QDF_STATUS
  */
 static QDF_STATUS
 dp_rx_defrag_store_fragment(struct dp_soc *soc,
@@ -1849,8 +1786,8 @@ dp_rx_defrag_store_fragment(struct dp_soc *soc,
 	uint32_t msdu_len;
 
 	if (qdf_nbuf_len(frag) > 0) {
-		dp_info("Dropping unexpected packet with skb_len: %d "
-			"data len: %d cookie: %d",
+		dp_info("Dropping unexpected packet with skb_len: %d,"
+			"data len: %d, cookie: %d",
 			(uint32_t)qdf_nbuf_len(frag), frag->data_len,
 			rx_desc->cookie);
 		DP_STATS_INC(soc, rx.rx_frag_err_len_error, 1);
@@ -1968,10 +1905,10 @@ dp_rx_defrag_store_fragment(struct dp_soc *soc,
 	/* Check if the fragment is for the same sequence or a different one */
 	dp_debug("rx_tid %d", tid);
 	if (rx_reorder_array_elem->head) {
-		dp_debug("rxseq %d", rxseq);
+		dp_debug("rxseq %d\n", rxseq);
 		if (rxseq != rx_tid->curr_seq_num) {
 
-			dp_debug("mismatch cur_seq %d rxseq %d",
+			dp_debug("mismatch cur_seq %d rxseq %d\n",
 				 rx_tid->curr_seq_num, rxseq);
 			/* Drop stored fragments if out of sequence
 			 * fragment is received
@@ -1980,7 +1917,7 @@ dp_rx_defrag_store_fragment(struct dp_soc *soc,
 
 			DP_STATS_INC(soc, rx.rx_frag_oor, 1);
 
-			dp_debug("cur rxseq %d", rxseq);
+			dp_debug("cur rxseq %d\n", rxseq);
 			/*
 			 * The sequence number for this fragment becomes the
 			 * new sequence number to be processed
@@ -1995,7 +1932,7 @@ dp_rx_defrag_store_fragment(struct dp_soc *soc,
 			qdf_spin_unlock_bh(&rx_tid->defrag_tid_lock);
 			goto discard_frag;
 		}
-		dp_debug("cur rxseq %d", rxseq);
+		dp_debug("cur rxseq %d\n", rxseq);
 		/* Start of a new sequence */
 		dp_rx_defrag_cleanup(txrx_peer, tid);
 		rx_tid->curr_seq_num = rxseq;
@@ -2128,6 +2065,25 @@ end:
 	return QDF_STATUS_E_DEFRAG_ERROR;
 }
 
+/**
+ * dp_rx_frag_handle() - Handles fragmented Rx frames
+ *
+ * @soc: core txrx main context
+ * @ring_desc: opaque pointer to the REO error ring descriptor
+ * @mpdu_desc_info: MPDU descriptor information from ring descriptor
+ * @head: head of the local descriptor free-list
+ * @tail: tail of the local descriptor free-list
+ * @quota: No. of units (packets) that can be serviced in one shot.
+ *
+ * This function implements RX 802.11 fragmentation handling
+ * The handling is mostly same as legacy fragmentation handling.
+ * If required, this function can re-inject the frames back to
+ * REO ring (with proper setting to by-pass fragmentation check
+ * but use duplicate detection / re-ordering and routing these frames
+ * to a different core.
+ *
+ * Return: uint32_t: No. of elements processed
+ */
 uint32_t dp_rx_frag_handle(struct dp_soc *soc, hal_ring_desc_t ring_desc,
 			   struct hal_rx_mpdu_desc_info *mpdu_desc_info,
 			   struct dp_rx_desc *rx_desc,
@@ -2201,4 +2157,111 @@ uint32_t dp_rx_frag_handle(struct dp_soc *soc, hal_ring_desc_t ring_desc,
 	return rx_bufs_used;
 }
 
-#endif /* WLAN_SOFTUMAC_SUPPORT */
+QDF_STATUS dp_rx_defrag_add_last_frag(struct dp_soc *soc,
+				      struct dp_txrx_peer *txrx_peer,
+				      uint16_t tid,
+				      uint16_t rxseq, qdf_nbuf_t nbuf)
+{
+	struct dp_rx_tid_defrag *rx_tid = &txrx_peer->rx_tid[tid];
+	struct dp_rx_reorder_array_elem *rx_reorder_array_elem;
+	uint8_t all_frag_present;
+	uint32_t msdu_len;
+	QDF_STATUS status;
+
+	rx_reorder_array_elem = txrx_peer->rx_tid[tid].array;
+
+	/*
+	 * HW may fill in unexpected peer_id in RX PKT TLV,
+	 * if this peer_id related peer is valid by coincidence,
+	 * but actually this peer won't do dp_peer_rx_init(like SAP vdev
+	 * self peer), then invalid access to rx_reorder_array_elem happened.
+	 */
+	if (!rx_reorder_array_elem) {
+		dp_verbose_debug(
+			"peer id:%d drop rx frame!",
+			txrx_peer->peer_id);
+		DP_STATS_INC(soc, rx.err.defrag_peer_uninit, 1);
+		dp_rx_nbuf_free(nbuf);
+		goto fail;
+	}
+
+	if (rx_reorder_array_elem->head &&
+	    rxseq != rx_tid->curr_seq_num) {
+		/* Drop stored fragments if out of sequence
+		 * fragment is received
+		 */
+		dp_rx_reorder_flush_frag(txrx_peer, tid);
+
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
+			  "%s: No list found for TID %d Seq# %d",
+				__func__, tid, rxseq);
+		dp_rx_nbuf_free(nbuf);
+		goto fail;
+	}
+
+	msdu_len = hal_rx_msdu_start_msdu_len_get(soc->hal_soc,
+						  qdf_nbuf_data(nbuf));
+
+	qdf_nbuf_set_pktlen(nbuf, (msdu_len + soc->rx_pkt_tlv_size));
+
+	status = dp_rx_defrag_fraglist_insert(txrx_peer, tid,
+					      &rx_reorder_array_elem->head,
+			&rx_reorder_array_elem->tail, nbuf,
+			&all_frag_present);
+
+	if (QDF_IS_STATUS_ERROR(status)) {
+		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
+			  "%s Fragment insert failed", __func__);
+
+		goto fail;
+	}
+
+	if (soc->rx.flags.defrag_timeout_check)
+		dp_rx_defrag_waitlist_remove(txrx_peer, tid);
+
+	if (!all_frag_present) {
+		uint32_t now_ms =
+			qdf_system_ticks_to_msecs(qdf_system_ticks());
+
+		txrx_peer->rx_tid[tid].defrag_timeout_ms =
+			now_ms + soc->rx.defrag.timeout_ms;
+
+		dp_rx_defrag_waitlist_add(txrx_peer, tid);
+
+		return QDF_STATUS_SUCCESS;
+	}
+
+	status = dp_rx_defrag(txrx_peer, tid, rx_reorder_array_elem->head,
+			      rx_reorder_array_elem->tail);
+
+	if (QDF_IS_STATUS_ERROR(status)) {
+		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
+			  "%s Fragment processing failed", __func__);
+
+		dp_rx_return_head_frag_desc(txrx_peer, tid);
+		dp_rx_defrag_cleanup(txrx_peer, tid);
+
+		goto fail;
+	}
+
+	/* Re-inject the fragments back to REO for further processing */
+	status = dp_rx_defrag_reo_reinject(txrx_peer, tid,
+					   rx_reorder_array_elem->head);
+	if (QDF_IS_STATUS_SUCCESS(status)) {
+		rx_reorder_array_elem->head = NULL;
+		rx_reorder_array_elem->tail = NULL;
+		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_INFO,
+			  "%s: Frag seq successfully reinjected",
+			__func__);
+	} else {
+		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
+			  "%s: Frag seq reinjection failed", __func__);
+		dp_rx_return_head_frag_desc(txrx_peer, tid);
+	}
+
+	dp_rx_defrag_cleanup(txrx_peer, tid);
+	return QDF_STATUS_SUCCESS;
+
+fail:
+	return QDF_STATUS_E_DEFRAG_ERROR;
+}

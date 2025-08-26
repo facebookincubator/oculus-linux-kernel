@@ -195,7 +195,7 @@ QDF_STATUS wmi_extract_nan_event_rsp(wmi_unified_t wmi_handle, void *evt_buf,
 
 /**
  * wmi_extract_ndp_host_event - api to extract ndp event from event buffer
- * @wmi_handle: wmi handle
+ * @wmi_hdl: wmi handle
  * @data: event buffer
  * @evt: event buffer to populate
  *

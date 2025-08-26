@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -48,9 +47,9 @@ void hdd_dcs_register_cb(struct hdd_context *hdd_ctx);
  *
  * Return: None
  */
-QDF_STATUS hdd_dcs_hostapd_set_chan(struct hdd_context *hdd_ctx,
-				    uint8_t vdev_id,
-				    qdf_freq_t dcs_ch_freq);
+void hdd_dcs_hostapd_set_chan(struct hdd_context *hdd_ctx,
+			      uint8_t vdev_id,
+			      qdf_freq_t dcs_ch_freq);
 
 /**
  * hdd_dcs_chan_select_complete() - dcs triggered channel select
@@ -79,11 +78,10 @@ static inline void hdd_dcs_register_cb(struct hdd_context *hdd_ctx)
 {
 }
 
-static inline QDF_STATUS hdd_dcs_hostapd_set_chan(struct hdd_context *hdd_ctx,
-						  uint8_t vdev_id,
-						  qdf_freq_t dcs_ch_freq)
+static inline void hdd_dcs_hostapd_set_chan(struct hdd_context *hdd_ctx,
+					    uint8_t vdev_id,
+					    qdf_freq_t dcs_ch_freq)
 {
-	return QDF_STATUS_SUCCESS;
 }
 
 static inline void hdd_dcs_chan_select_complete(struct hdd_adapter *adapter)

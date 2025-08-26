@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -67,47 +66,49 @@ void hdd_lpass_populate_pmo_config(struct pmo_psoc_cfg *pmo_config,
 
 /**
  * hdd_lpass_notify_connect() - Notify LPASS of interface connect
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: The adapter that connected
  *
  * This function is used to notify the LPASS feature that an adapter
  * has connected.
  *
  * Return: none
  */
-void hdd_lpass_notify_connect(struct wlan_hdd_link_info *link_info);
+void hdd_lpass_notify_connect(struct hdd_adapter *adapter);
 
 /**
  * hdd_lpass_notify_disconnect() - Notify LPASS of interface disconnect
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: The adapter that connected
  *
  * This function is used to notify the LPASS feature that an adapter
  * has disconnected.
  *
  * Return: none
  */
-void hdd_lpass_notify_disconnect(struct wlan_hdd_link_info *link_info);
+void hdd_lpass_notify_disconnect(struct hdd_adapter *adapter);
 
 /**
  * hdd_lpass_notify_mode_change() - Notify LPASS of interface mode change
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: The adapter whose mode was changed
  *
  * This function is used to notify the LPASS feature that an adapter
  * had its mode changed.
  *
  * Return: none
  */
-void hdd_lpass_notify_mode_change(struct wlan_hdd_link_info *link_info);
+void hdd_lpass_notify_mode_change(struct hdd_adapter *adapter);
 
 /**
  * hdd_lpass_notify_start() - Notify LPASS of driver start
- * @link_info: Link info pointer in HDD adapter
+ * @hdd_ctx: The global HDD context
+ * @adapter: adapter for which notification is send
  *
  * This function is used to notify the LPASS feature that the wlan
  * driver has (re-)started.
  *
  * Return: none
  */
-void hdd_lpass_notify_start(struct wlan_hdd_link_info *link_info);
+void hdd_lpass_notify_start(struct hdd_context *hdd_ctx,
+			    struct hdd_adapter *adapter);
 
 /**
  * hdd_lpass_notify_stop() - Notify LPASS of driver stop
@@ -155,23 +156,18 @@ void hdd_lpass_populate_pmo_config(struct pmo_psoc_cfg *pmo_config,
 {
 }
 
-static inline void
-hdd_lpass_notify_connect(struct wlan_hdd_link_info *link_info)
+static inline void hdd_lpass_notify_connect(struct hdd_adapter *adapter)
+{
+}
+static inline void hdd_lpass_notify_disconnect(struct hdd_adapter *adapter)
+{
+}
+static inline void hdd_lpass_notify_mode_change(struct hdd_adapter *adapter)
 {
 }
 
-static inline void
-hdd_lpass_notify_disconnect(struct wlan_hdd_link_info *link_info)
-{
-}
-
-static inline void
-hdd_lpass_notify_mode_change(struct wlan_hdd_link_info *link_info)
-{
-}
-
-static inline void
-hdd_lpass_notify_start(struct wlan_hdd_link_info *link_info)
+static inline void hdd_lpass_notify_start(struct hdd_context *hdd_ctx,
+					  struct hdd_adapter *adapter)
 {
 }
 

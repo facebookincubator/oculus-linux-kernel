@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2017, 2019-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,7 +16,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/**
+/*
  * DOC: contains scan internal api
  */
 
@@ -26,7 +25,7 @@
 
 /**
  * scm_filter_match() - private API to check if entry is match to filter
- * @psoc: psoc ptr;
+ * psoc: psoc ptr;
  * @db_entry: db entry
  * @filter: filter
  * @security: negotiated security if match is found
@@ -42,7 +41,6 @@ bool scm_filter_match(struct wlan_objmgr_psoc *psoc,
  * wlan_pdevid_get_scan_db() - private API to get scan db from pdev id
  * @psoc: psoc object
  * @pdev_id: Pdev_id
- *
  * Return: scan db for the pdev id
  */
 static inline struct scan_dbs *

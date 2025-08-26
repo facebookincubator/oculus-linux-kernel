@@ -331,14 +331,14 @@ struct cam_req_mgr_link_control {
 
 /**
  * struct cam_req_mgr_thread_prop_control
- * @version:       UAPI Version
- * @session_hdl:   Identifier for CSL session
- * @link_hdl:      Identifier for CSL link
+ * @version:       Version
+ * @session_hdl:   Identifier for session
+ * @link_hdl:      Identifier for link
  * @dev_hdl:       device handle
- * @policy:        Scheduling Policy
- * @priority:      Scheduling Priority
- * @priority:      nice value for scheduling
- * @affinity:      Core Affinity
+ * @policy:        Scheduling Policy ie: SCHED_FIFO, SCHED_RR, SCHED_OTHER
+ * @priority:      Scheduling Priority for realtime scheduling policy
+ * @nice:          nice value for scheduling in CFS policy
+ * @affinity:      Core Affinity mask
  *
  * @opcode: CAM_REQ_MGR_THREAD_PROP_CONTROL
  */

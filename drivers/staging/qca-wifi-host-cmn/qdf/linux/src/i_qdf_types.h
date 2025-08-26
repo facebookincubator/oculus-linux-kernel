@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -65,10 +65,6 @@
 #ifdef IPA_OFFLOAD
 #include <linux/ipa.h>
 #endif
-#ifdef WLAN_SUPPORT_DPDK
-#include <linux/uio_driver.h>
-#endif
-#include <net/cfg80211.h>
 
 #define __qdf_must_check __must_check
 
@@ -146,20 +142,6 @@ typedef unsigned long __sgtable_t;
  */
 #define __QDF_MAX_SCATTER        1
 #define __QDF_NSEC_PER_MSEC NSEC_PER_MSEC
-#define __QDF_NSEC_PER_USEC NSEC_PER_USEC
-#define __QDF_USEC_PER_MSEC USEC_PER_MSEC
-#define __QDF_NSEC_PER_SEC NSEC_PER_SEC
-
-/*
- * Monitor flags defined in kernel "enum monitor_flags"
- */
-#define __QDF_MONITOR_FLAG_CHANGED MONITOR_FLAG_CHANGED
-#define __QDF_MONITOR_FLAG_FCSFAIL MONITOR_FLAG_FCSFAIL
-#define __QDF_MONITOR_FLAG_PLCPFAIL MONITOR_FLAG_PLCPFAIL
-#define __QDF_MONITOR_FLAG_CONTROL MONITOR_FLAG_CONTROL
-#define __QDF_MONITOR_FLAG_OTHER_BSS MONITOR_FLAG_OTHER_BSS
-#define __QDF_MONITOR_FLAG_COOK_FRAMES MONITOR_FLAG_COOK_FRAMES
-#define __QDF_MONITOR_FLAG_ACTIVE MONITOR_FLAG_ACTIVE
 
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 #define QDF_LITTLE_ENDIAN_MACHINE
@@ -228,9 +210,9 @@ typedef struct __qdf_shared_mem_info {
 #define qdf_get_dma_mem_context(var, field)   ((qdf_dma_context_t)(var->field))
 
 /**
- * typedef __qdf_resource_t - qdf resource type
+ * typedef struct __qdf_resource - qdf resource type
  * @paddr: Physical address
- * @vaddr: Virtual address
+ * @paddr: Virtual address
  * @len: Length
  */
 typedef struct __qdf_resource {
@@ -379,10 +361,6 @@ enum __qdf_net_wireless_evcode {
 #define __QDF_DMA_FROM_DEVICE    DMA_TO_DEVICE
 #endif
 #define __qdf_inline             inline
-
-#if defined(WLAN_SUPPORT_DPDK) && defined(__KERNEL__)
-typedef struct uio_info qdf_uio_info_t;
-#endif
 
 /*
  * 1. GNU C/C++ Compiler

@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2016-2019,2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,8 +17,8 @@
  */
 
 /**
- * DOC: cdp_txrx_cfg.h
- *      Define the host data path configuration API functions
+ * @file cdp_txrx_cfg.h
+ * @brief Define the host data path configuration API functions
  */
 #ifndef _CDP_TXRX_CFG_H_
 #define _CDP_TXRX_CFG_H_
@@ -28,9 +27,9 @@
 
 /**
  * cdp_cfg_set_rx_fwd_disabled() - enable/disable rx forwarding
- * @soc: data path soc handle
- * @cfg_pdev: data path device instance
- * @disable_rx_fwd: enable or disable rx forwarding
+ * @soc - data path soc handle
+ * @pdev - data path device instance
+ * @disable_rx_fwd - enable or disable rx forwarding
  *
  * enable/disable rx forwarding
  *
@@ -56,9 +55,9 @@ cdp_cfg_set_rx_fwd_disabled(ol_txrx_soc_handle soc, struct cdp_cfg *cfg_pdev,
 
 /**
  * cdp_cfg_set_packet_log_enabled() - enable/disable packet log
- * @soc: data path soc handle
- * @cfg_pdev: data path device instance
- * @val: enable or disable packet log
+ * @soc - data path soc handle
+ * @pdev - data path device instance
+ * @val - enable or disable packet log
  *
  * packet log enable or disable
  *
@@ -84,9 +83,9 @@ cdp_cfg_set_packet_log_enabled(ol_txrx_soc_handle soc,
 
 /**
  * cdp_cfg_attach() - attach config module
- * @soc: data path soc handle
- * @osdev: os instance
- * @cfg_param: configuration parameter should be propagated
+ * @soc - data path soc handle
+ * @osdev - os instance
+ * @cfg_param - configuration parameter should be propagated
  *
  * Allocate configuration module instance, and propagate configuration values
  *
@@ -111,9 +110,9 @@ static inline struct cdp_cfg
 
 /**
  * cdp_cfg_vdev_rx_set_intrabss_fwd() - enable/disable intra bass forwarding
- * @soc: data path soc handle
- * @vdev_id: virtual interface id
- * @val: enable or disable intra bss forwarding
+ * @soc - data path soc handle
+ * @vdev_id - virtual interface id
+ * @val - enable or disable intra bss forwarding
  *
  * ap isolate, do not forward intra bss traffic
  *
@@ -138,8 +137,8 @@ cdp_cfg_vdev_rx_set_intrabss_fwd(ol_txrx_soc_handle soc,
 
 /**
  * cdp_cfg_is_rx_fwd_disabled() - get vdev rx forward
- * @soc: data path soc handle
- * @vdev: virtual interface instance
+ * @soc - data path soc handle
+ * @vdev - virtual interface instance
  *
  * Return rx forward feature enable status
  *
@@ -165,8 +164,8 @@ cdp_cfg_is_rx_fwd_disabled(ol_txrx_soc_handle soc, struct cdp_vdev *vdev)
 
 /**
  * cdp_cfg_tx_set_is_mgmt_over_wmi_enabled() - mgmt tx over wmi enable/disable
- * @soc: data path soc handle
- * @value: feature enable or disable
+ * @soc - data path soc handle
+ * @value - feature enable or disable
  *
  * Enable or disable management packet TX over WMI feature
  *
@@ -191,8 +190,8 @@ cdp_cfg_tx_set_is_mgmt_over_wmi_enabled(ol_txrx_soc_handle soc,
 
 /**
  * cdp_cfg_is_high_latency() - query data path is in high or low latency
- * @soc: data path soc handle
- * @cfg_pdev: data path device instance
+ * @soc - data path soc handle
+ * @pdev - data path device instance
  *
  * query data path is in high or low latency
  *
@@ -217,9 +216,9 @@ cdp_cfg_is_high_latency(ol_txrx_soc_handle soc, struct cdp_cfg *cfg_pdev)
 
 /**
  * cdp_cfg_set_flow_control_parameters() - set flow control params
- * @soc: data path soc handle
- * @cfg_pdev: dp config module instance
- * @param: parameters should set
+ * @soc - data path soc handle
+ * @cfg - dp config module instance
+ * @param - parameters should set
  *
  * set flow control params
  *
@@ -246,9 +245,9 @@ cdp_cfg_set_flow_control_parameters(ol_txrx_soc_handle soc,
 /**
  * cdp_cfg_set_flow_steering - Set Rx flow steering config based on CFG ini
  *			config.
- * @soc: data path soc handle
- * @cfg_pdev: handle to the physical device
- * @val: 0 - disable, 1 - enable
+ *
+ * @pdev - handle to the physical device
+ * @val - 0 - disable, 1 - enable
  *
  * Return: None
  */
@@ -275,9 +274,9 @@ static inline void cdp_cfg_get_max_peer_id(ol_txrx_soc_handle soc,
 
 /**
  * cdp_cfg_set_ptp_rx_opt_enabled() - enable/disable ptp rx timestamping
- * @soc: data path soc handle
- * @cfg_pdev: data path device instance
- * @val: enable or disable packet log
+ * @soc - data path soc handle
+ * @pdev - data path device instance
+ * @val - enable or disable packet log
  *
  * ptp rx timestamping enable or disable
  *
@@ -302,8 +301,8 @@ cdp_cfg_set_ptp_rx_opt_enabled(ol_txrx_soc_handle soc,
 
 /**
  * cdp_cfg_set_new_htt_msg_format() - set htt h2t msg feature
- * @soc: datapath soc handle
- * @val: enable or disable new htt h2t msg feature
+ * @soc - datapath soc handle
+ * @val - enable or disable new htt h2t msg feature
  *
  * Enable whether htt h2t message length includes htc header length
  *
@@ -327,8 +326,8 @@ cdp_cfg_set_new_htt_msg_format(ol_txrx_soc_handle soc,
 
 /**
  * cdp_cfg_set_peer_unmap_conf_support() - set peer unmap conf feature
- * @soc: datapath soc handle
- * @val: enable or disable peer unmap conf feature
+ * @soc - datapath soc handle
+ * @val - enable or disable peer unmap conf feature
  *
  * Set if peer unmap confirmation feature is supported by both FW and in INI
  *
@@ -352,7 +351,7 @@ cdp_cfg_set_peer_unmap_conf_support(ol_txrx_soc_handle soc, bool val)
 
 /**
  * cdp_cfg_get_peer_unmap_conf_support() - check peer unmap conf feature
- * @soc: datapath soc handle
+ * @soc - datapath soc handle
  *
  * Check if peer unmap confirmation feature is enabled
  *

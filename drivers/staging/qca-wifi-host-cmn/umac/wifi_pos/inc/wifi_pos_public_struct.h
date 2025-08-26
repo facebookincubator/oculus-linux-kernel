@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -59,10 +59,6 @@ enum wifi_pos_pasn_peer_delete_actions {
 #define WIFI_POS_IS_FLUSH_KEYS_REQUIRED(flag) \
 			((flag) & WIFI_POS_PEER_DELETE_ACTION_FLUSH_KEYS)
 
-#define CFG_RESPONDER_11AZ_NTB_SUPPORT 0x1
-#define CFG_RESPONDER_11AZ_TB_SUPPORT 0x2
-#define CFG_RESPONDER_11AZ_MAX_SUPPORT (CFG_RESPONDER_11AZ_NTB_SUPPORT | \
-		CFG_RESPONDER_11AZ_TB_SUPPORT)
 /**
  * struct wlan_pasn_request  - PASN peer create request data
  * @peer_mac: Peer mac address

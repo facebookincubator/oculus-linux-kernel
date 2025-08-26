@@ -128,10 +128,10 @@ static int of_thermal_get_temp(struct thermal_zone_device *tz,
 		return -EINVAL;
 
 	ret = data->senps->ops->get_temp(data->senps->sensor_data, temp);
-	if (data->average_polls > 0 && ret == 0) {
+	if (data->average_polls > 1 && ret == 0) {
 		/*
 		 * There is no guarantee that temperatures get read exactly at polling
-		 * intervals, the reading migt be slightly delayed or there might be
+		 * intervals, the reading might be slightly delayed or there might be
 		 * additional reads in between polling. So be fuzzy and accept whatever
 		 * was the first sample within each period.
 		 */
@@ -180,7 +180,7 @@ static int of_thermal_set_trips(struct thermal_zone_device *tz,
 {
 	struct __thermal_zone *data = tz->devdata;
 
-	if (!data->senps || !data->senps->ops->set_trips)
+	if (!data->senps || !data->senps->ops->set_trips || data->average_polls > 1)
 		return -EINVAL;
 
 	return data->senps->ops->set_trips(data->senps->sensor_data, low, high);
@@ -385,7 +385,8 @@ static int of_thermal_set_trip_temp(struct thermal_zone_device *tz, int trip,
 	if (trip >= data->ntrips || trip < 0)
 		return -EDOM;
 
-	if (data->senps && data->senps->ops->set_trip_temp) {
+	if (data->senps && data->senps->ops->set_trip_temp &&
+			data->average_polls <= 1) {
 		int ret;
 
 		ret = data->senps->ops->set_trip_temp(data->senps->sensor_data,
@@ -481,9 +482,9 @@ thermal_zone_of_add_sensor(struct device_node *zone,
 
 	/*
 	 * The thermal zone core will calculate the window if they have set the
-	 * optional set_trips pointer.
+	 * optional set_trips pointer. This works only without time averaging.
 	 */
-	if (sens_param->ops->set_trips)
+	if (tz->average_polls <= 1 && sens_param->ops->set_trips)
 		tzd->ops->set_trips = of_thermal_set_trips;
 
 	if (sens_param->ops->set_emul_temp)
@@ -994,7 +995,7 @@ __init *thermal_of_build_thermal_zone(struct device_node *np)
 	ret = of_property_read_u32(np, "average-polls", &prop);
 	if (ret == 0 && prop > 1) {
 		if (tz->polling_delay < 1) {
-			pr_err("%pOFn: property average-polls requires non-0 property polling-delay\n", np);
+			pr_err("%pOFn: property average-polls above 1 requires non-0 property polling-delay\n", np);
 			goto free_tz;
 		}
 		tz->average_polls = prop;

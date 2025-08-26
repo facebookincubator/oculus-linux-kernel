@@ -774,7 +774,7 @@ static ssize_t log_store(struct device *dev,
 	mutex_lock(&ddev->lock);
 
 	if (!ddev->docked || ddev->gathering_log) {
-		dev_err(ddev->dev, "Error: not docked or already gathering log");
+		dev_dbg(ddev->dev, "Not docked or already gathering log");
 		goto log_store_unlock;
 	}
 

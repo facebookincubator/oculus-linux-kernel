@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2017-2018 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -35,7 +34,7 @@ struct wlan_objmgr_psoc;
 /**
  * target_if_nlo_match_event_handler() - nlo match event handler
  * @scn: scn handle
- * @data: event data
+ * @event: event data
  * @len: data length
  *
  * Record NLO match event comes from FW. It's a indication that
@@ -44,12 +43,12 @@ struct wlan_objmgr_psoc;
  * Return: 0 for success or error code.
  */
 int target_if_nlo_match_event_handler(ol_scn_t scn, uint8_t *data,
-				      uint32_t len);
+	uint32_t len);
 
 /**
  * target_if_nlo_complete_handler() - nlo complete event handler
  * @scn: scn handle
- * @data: event data
+ * @event: event data
  * @len: data length
  *
  * Record NLO match event comes from FW. It's a indication that
@@ -58,7 +57,7 @@ int target_if_nlo_match_event_handler(ol_scn_t scn, uint8_t *data,
  * Return: 0 for success or error code.
  */
 int target_if_nlo_complete_handler(ol_scn_t scn, uint8_t *data,
-				   uint32_t len);
+	uint32_t len);
 #endif
 
 /**
@@ -71,7 +70,7 @@ int target_if_nlo_complete_handler(ol_scn_t scn, uint8_t *data,
  */
 QDF_STATUS
 target_if_scan_register_event_handler(struct wlan_objmgr_psoc *psoc,
-				      void *arg);
+		void *arg);
 
 /**
  * target_if_scan_unregister_event_handler() - lmac handler API
@@ -83,7 +82,7 @@ target_if_scan_register_event_handler(struct wlan_objmgr_psoc *psoc,
  */
 QDF_STATUS
 target_if_scan_unregister_event_handler(struct wlan_objmgr_psoc *psoc,
-					void *arg);
+		void *arg);
 
 /**
  * target_if_scan_start() - lmac handler API to start scan
@@ -95,7 +94,7 @@ target_if_scan_unregister_event_handler(struct wlan_objmgr_psoc *psoc,
 
 QDF_STATUS
 target_if_scan_start(struct wlan_objmgr_pdev *pdev,
-		     struct scan_start_request *req);
+		struct scan_start_request *req);
 
 /**
  * target_if_scan_cancel() - lmac handler API to cancel a previous active scan
@@ -106,7 +105,7 @@ target_if_scan_start(struct wlan_objmgr_pdev *pdev,
  */
 QDF_STATUS
 target_if_scan_cancel(struct wlan_objmgr_pdev *pdev,
-		      struct scan_cancel_param *req);
+		struct scan_cancel_param *req);
 
 /**
  * target_if_scan_tx_ops_register() - lmac handler to register scan tx_ops
@@ -128,16 +127,6 @@ target_if_scan_tx_ops_register(struct wlan_lmac_if_tx_ops *tx_ops);
  */
 QDF_STATUS
 target_if_scan_set_max_active_scans(struct wlan_objmgr_psoc *psoc,
-				    uint32_t max_active_scans);
-/**
- * target_if_update_aux_support() - update aux mac support in scan
- * object via service bit from FW
- * @psoc: psoc object
- *
- * This function updates aux mac support bit in scan object via service bit
- * from FW.
- *
- */
-QDF_STATUS target_if_update_aux_support(struct wlan_objmgr_psoc *psoc);
+		uint32_t max_active_scans);
 
 #endif

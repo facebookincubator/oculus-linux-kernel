@@ -758,7 +758,6 @@ static uint32_t wlan_dcs_get_pcl_for_sap(struct wlan_objmgr_vdev *vdev,
 	enum channel_state state;
 	QDF_STATUS status;
 	int i, j;
-	enum policy_mgr_con_mode mode;
 
 	psoc = wlan_vdev_get_psoc(vdev);
 	if (!psoc)
@@ -772,11 +771,9 @@ static uint32_t wlan_dcs_get_pcl_for_sap(struct wlan_objmgr_vdev *vdev,
 	if (!pcl)
 		return 0;
 
-	mode = policy_mgr_qdf_opmode_to_pm_con_mode(psoc, QDF_SAP_MODE,
-						    wlan_vdev_get_id(vdev));
-
-	status = policy_mgr_get_pcl_for_vdev_id(psoc, mode, pcl->pcl_list,
-						&pcl->pcl_len,
+	status = policy_mgr_get_pcl_for_vdev_id(psoc,
+						PM_SAP_MODE,
+						pcl->pcl_list, &pcl->pcl_len,
 						pcl->weight_list,
 						QDF_ARRAY_SIZE(pcl->weight_list),
 						wlan_vdev_get_id(vdev));
@@ -1509,9 +1506,8 @@ static enum phy_ch_width wlan_dcs_afc_reduce_bw(struct wlan_objmgr_pdev *pdev,
 		return input_bw;
 
 	while (input_bw > CH_WIDTH_20MHZ) {
-		state = wlan_reg_get_5g_bonded_channel_and_state_for_pwrmode(
-				pdev, freq, input_bw, &bonded_chan_ptr,
-				REG_CURRENT_PWR_MODE, NO_SCHANS_PUNC);
+		state = wlan_reg_get_5g_bonded_channel_and_state_for_freq(
+				pdev, freq, input_bw, &bonded_chan_ptr);
 		if (state != CHANNEL_STATE_ENABLE) {
 			input_bw = wlan_reg_get_next_lower_bandwidth(input_bw);
 			continue;
@@ -1563,8 +1559,7 @@ wlan_sap_update_tpc_on_channel(struct wlan_objmgr_pdev *pdev, uint8_t vdev_id,
 		return;
 
 	if (wlan_reg_decide_6ghz_power_within_bw_for_freq(
-		pdev, freq, bw, &is_psd, &tx_power, &psd_eirp, &power_type,
-		REG_CURRENT_PWR_MODE, NO_SCHANS_PUNC) !=
+		pdev, freq, bw, &is_psd, &tx_power, &psd_eirp, &power_type) !=
 	    QDF_STATUS_SUCCESS)
 		return;
 

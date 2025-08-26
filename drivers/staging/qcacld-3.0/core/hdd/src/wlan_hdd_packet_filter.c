@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -28,11 +27,16 @@
 #include "wlan_hdd_packet_filter_api.h"
 #include "wlan_hdd_packet_filter_rules.h"
 
-int
-hdd_enable_default_pkt_filters(struct hdd_context *hdd_ctx, uint8_t vdev_id)
+int hdd_enable_default_pkt_filters(struct hdd_adapter *adapter)
 {
+	struct hdd_context *hdd_ctx;
 	uint8_t filters = 0, i = 0, filter_id = 1;
 
+	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	if (!hdd_ctx) {
+		hdd_err("HDD context is Null!!!");
+		return -EINVAL;
+	}
 	if (hdd_ctx->user_configured_pkt_filter_rules) {
 		hdd_info("user has defined pkt filter run hence skipping default packet filter rule");
 		return 0;
@@ -47,7 +51,7 @@ hdd_enable_default_pkt_filters(struct hdd_context *hdd_ctx, uint8_t vdev_id)
 			packet_filter_default_rules[i].filter_id = filter_id;
 			wlan_hdd_set_filter(hdd_ctx,
 					    &packet_filter_default_rules[i],
-					    vdev_id);
+					    adapter->vdev_id);
 			filter_id++;
 		}
 		filters = filters >> 1;
@@ -57,11 +61,18 @@ hdd_enable_default_pkt_filters(struct hdd_context *hdd_ctx, uint8_t vdev_id)
 	return 0;
 }
 
-int
-hdd_disable_default_pkt_filters(struct hdd_context *hdd_ctx, uint8_t vdev_id)
+int hdd_disable_default_pkt_filters(struct hdd_adapter *adapter)
 {
+	struct hdd_context *hdd_ctx;
 	uint8_t filters = 0, i = 0, filter_id = 1;
+
 	struct pkt_filter_cfg packet_filter_default_rules = {0};
+
+	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	if (!hdd_ctx) {
+		hdd_err("HDD context is Null!!!");
+		return -EINVAL;
+	}
 
 	if (hdd_ctx->user_configured_pkt_filter_rules) {
 		hdd_info("user has defined pkt filter run hence skipping default packet filter rule");
@@ -79,7 +90,7 @@ hdd_disable_default_pkt_filters(struct hdd_context *hdd_ctx, uint8_t vdev_id)
 			packet_filter_default_rules.filter_id = filter_id;
 			wlan_hdd_set_filter(hdd_ctx,
 					    &packet_filter_default_rules,
-					    vdev_id);
+					    adapter->vdev_id);
 			filter_id++;
 		}
 		filters = filters >> 1;

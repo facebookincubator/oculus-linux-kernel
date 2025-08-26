@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -292,8 +292,8 @@ pkt_capture_process_tx_data(void *soc, void *log_data, u_int16_t vdev_id,
 	/* nss not available */
 	pktcapture_hdr.nss = 0;
 	pktcapture_hdr.rssi_comb = tx_comp_status.ack_frame_rssi;
-	/* update rate from available mcs */
-	pktcapture_hdr.rate = tx_comp_status.mcs;
+	/* rate not available */
+	pktcapture_hdr.rate = 0;
 	pktcapture_hdr.stbc = tx_comp_status.stbc;
 	pktcapture_hdr.sgi = tx_comp_status.sgi;
 	pktcapture_hdr.ldpc = tx_comp_status.ldpc;
@@ -406,7 +406,7 @@ pkt_capture_process_tx_data(void *soc, void *log_data, u_int16_t vdev_id,
  * Return: true, if filter bit is set
  *         false, if filter bit is not set
  */
-bool
+static bool
 pkt_capture_is_frame_filter_set(qdf_nbuf_t buf,
 				struct pkt_capture_frame_filter *frame_filter,
 				bool direction)
@@ -594,6 +594,8 @@ void pkt_capture_callback(void *soc, enum WDI_EVENT event, void *log_data,
 		struct htt_tx_offload_deliver_ind_hdr_t *offload_deliver_msg;
 		bool is_pkt_during_roam = false;
 		uint32_t freq = 0;
+		qdf_nbuf_t buf = log_data +
+				sizeof(struct htt_tx_offload_deliver_ind_hdr_t);
 
 		if (!frame_filter->data_tx_frame_filter) {
 			pkt_capture_vdev_put_ref(vdev);
@@ -613,9 +615,17 @@ void pkt_capture_callback(void *soc, enum WDI_EVENT event, void *log_data,
 			vdev_id = offload_deliver_msg->vdev_id;
 		}
 
-		pkt_capture_offload_deliver_indication_handler(
+		if (frame_filter->data_tx_frame_filter &
+		    PKT_CAPTURE_DATA_FRAME_TYPE_ALL) {
+			pkt_capture_offload_deliver_indication_handler(
 							log_data,
 							vdev_id, bssid, soc);
+		} else if (pkt_capture_is_frame_filter_set(
+			   buf, frame_filter, IEEE80211_FC1_DIR_TODS)) {
+			pkt_capture_offload_deliver_indication_handler(
+							log_data,
+							vdev_id, bssid, soc);
+		}
 		break;
 	}
 
@@ -765,10 +775,6 @@ pkt_capture_register_callbacks(struct wlan_objmgr_vdev *vdev,
 		goto send_mode_fail;
 	}
 
-	qdf_wake_lock_acquire(&vdev_priv->wake_lock,
-			      WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE);
-	qdf_runtime_pm_prevent_suspend(&vdev_priv->runtime_lock);
-
 	return QDF_STATUS_SUCCESS;
 
 send_mode_fail:
@@ -838,10 +844,6 @@ QDF_STATUS pkt_capture_deregister_callbacks(struct wlan_objmgr_vdev *vdev)
 
 	vdev_priv->cb_ctx->mon_cb = NULL;
 	vdev_priv->cb_ctx->mon_ctx = NULL;
-
-	qdf_wake_lock_release(&vdev_priv->wake_lock,
-			      WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE);
-	qdf_runtime_pm_allow_suspend(&vdev_priv->runtime_lock);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -1095,8 +1097,6 @@ pkt_capture_vdev_create_notification(struct wlan_objmgr_vdev *vdev, void *arg)
 	}
 	qdf_spinlock_create(&vdev_priv->lock_q);
 	qdf_list_create(&vdev_priv->ppdu_stats_q, PPDU_STATS_Q_MAX_SIZE);
-	qdf_wake_lock_create(&vdev_priv->wake_lock, "pkt_capture_mode");
-	qdf_runtime_lock_init(&vdev_priv->runtime_lock);
 
 	return status;
 
@@ -1132,9 +1132,6 @@ pkt_capture_vdev_destroy_notification(struct wlan_objmgr_vdev *vdev, void *arg)
 		pkt_capture_err("vdev priv is NULL");
 		return QDF_STATUS_E_FAILURE;
 	}
-
-	qdf_runtime_lock_deinit(&vdev_priv->runtime_lock);
-	qdf_wake_lock_destroy(&vdev_priv->wake_lock);
 
 	while (qdf_list_remove_front(&vdev_priv->ppdu_stats_q, &node)
 	       == QDF_STATUS_SUCCESS) {
@@ -1246,7 +1243,7 @@ QDF_STATUS pkt_capture_set_filter(struct pkt_capture_frame_filter frame_filter,
 	ol_txrx_soc_handle soc;
 	QDF_STATUS status;
 	enum pkt_capture_config config = 0;
-	bool send_bcn = 0;
+	bool check_enable_beacon = 0, send_bcn = 0;
 	struct vdev_mlme_obj *vdev_mlme;
 	uint32_t bcn_interval, nth_beacon_value;
 
@@ -1331,13 +1328,16 @@ QDF_STATUS pkt_capture_set_filter(struct pkt_capture_frame_filter frame_filter,
 		    PKT_CAPTURE_MGMT_CONNECT_NO_BEACON) {
 			mode |= PACKET_CAPTURE_MODE_MGMT_ONLY;
 			config |= PACKET_CAPTURE_CONFIG_NO_BEACON_ENABLE;
+		} else {
+			check_enable_beacon = 1;
 		}
+	}
 
+	if (check_enable_beacon) {
 		if (vdev_priv->frame_filter.mgmt_rx_frame_filter &
-		    PKT_CAPTURE_MGMT_CONNECT_BEACON) {
+		    PKT_CAPTURE_MGMT_CONNECT_BEACON)
 			if (!send_bcn)
 				config |= PACKET_CAPTURE_CONFIG_BEACON_ENABLE;
-		}
 
 		if (vdev_priv->frame_filter.mgmt_rx_frame_filter &
 		    PKT_CAPTURE_MGMT_CONNECT_SCAN_BEACON)
@@ -1390,10 +1390,7 @@ QDF_STATUS pkt_capture_set_filter(struct pkt_capture_frame_filter frame_filter,
 					      WLAN_MLME_CFG_BEACON_INTERVAL,
 					      &bcn_interval);
 
-		if (bcn_interval &&
-		    (vdev_priv->frame_filter.connected_beacon_interval >
-		    bcn_interval || vdev_priv->
-		    frame_filter.connected_beacon_interval == 0)) {
+		if (bcn_interval) {
 			nth_beacon_value =
 				vdev_priv->
 				frame_filter.connected_beacon_interval /
@@ -1407,11 +1404,6 @@ QDF_STATUS pkt_capture_set_filter(struct pkt_capture_frame_filter frame_filter,
 				pkt_capture_err("send beacon interval fail");
 				return status;
 			}
-		} else {
-			pkt_capture_debug(
-			"Failed to set beacon interval %d, it should be >= %d",
-			vdev_priv->frame_filter.connected_beacon_interval,
-			bcn_interval);
 		}
 	}
 	return QDF_STATUS_SUCCESS;

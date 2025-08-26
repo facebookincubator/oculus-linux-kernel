@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -18,73 +18,17 @@
 #define _CDP_TXRX_PPE_H_
 
 /**
- * cdp_ppesds_vp_setup_fw_recovery() - Setup DS VP on FW recovery.
- * @soc: data path soc handle
- * @vdev_id: vdev id
- * @profile_idx: DS profile index.
- *
- * return: qdf_status where DS VP setup is done or not.
- */
-static inline
-QDF_STATUS cdp_ppesds_vp_setup_fw_recovery(struct cdp_soc_t *soc,
-					   uint8_t vdev_id,
-					   uint16_t profile_idx)
-{
-	if (!soc || !soc->ops || !soc->ops->ppeds_ops) {
-		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_FATAL,
-			  "%s invalid instance", __func__);
-		return QDF_STATUS_E_NOSUPPORT;
-	}
-
-	if (soc->ops->ppeds_ops->ppeds_vp_setup_recovery)
-		return soc->ops->ppeds_ops->ppeds_vp_setup_recovery(soc,
-								    vdev_id,
-								    profile_idx);
-
-	return QDF_STATUS_E_INVAL;
-}
-
-/*
- * cdp_ppesds_update_dev_stats() - Update dev stats for PPE-DS mode.
- * @soc: data path soc handle
- * @vp_params: VP params
- * @vdev_id: vdev id
- * @stats: stats pointer from ppe
- *
- * return: void
- */
-static inline
-void cdp_ppesds_update_dev_stats(struct cdp_soc_t *soc,
-				 struct cdp_ds_vp_params *vp_params,
-				 uint16_t vdev_id, void *stats)
-{
-	if (!soc || !soc->ops || !soc->ops->ppeds_ops) {
-		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_FATAL,
-			  "%s invalid instance", __func__);
-		return;
-	}
-
-	if (soc->ops->ppeds_ops->ppeds_stats_sync)
-		return soc->ops->ppeds_ops->ppeds_stats_sync(soc,
-							     vdev_id,
-							     vp_params,
-							     stats);
-}
-
-/**
  * cdp_ppesds_entry_attach() - attach the ppe vp interface.
  * @soc: data path soc handle
  * @vdev_id: vdev id
  * @vpai: PPE VP opaque
  * @ppe_vp_num: Allocated VP Port number
- * @vp_params: VP params
  *
  * return: qdf_status where vp entry got allocated or not.
  */
 static inline
 QDF_STATUS cdp_ppesds_entry_attach(struct cdp_soc_t *soc, uint8_t vdev_id,
-				   void *vpai, int32_t *ppe_vp_num,
-				   struct cdp_ds_vp_params *vp_params)
+				   void *vpai, int32_t *ppe_vp_num)
 {
 	if (!soc || !soc->ops || !soc->ops->ppeds_ops) {
 		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_FATAL,
@@ -95,8 +39,7 @@ QDF_STATUS cdp_ppesds_entry_attach(struct cdp_soc_t *soc, uint8_t vdev_id,
 	if (soc->ops->ppeds_ops->ppeds_entry_attach)
 		return soc->ops->ppeds_ops->ppeds_entry_attach(soc, vdev_id,
 							       vpai,
-							       ppe_vp_num,
-							       vp_params);
+							       ppe_vp_num);
 
 	return QDF_STATUS_E_INVAL;
 }
@@ -105,13 +48,11 @@ QDF_STATUS cdp_ppesds_entry_attach(struct cdp_soc_t *soc, uint8_t vdev_id,
  * cdp_ppesds_entry_detach() - Detach the PPE VP interface.
  * @soc: data path soc handle
  * @vdev_id: vdev ID
- * @vp_params: VP params
  *
  * return: void
  */
 static inline
-void cdp_ppesds_entry_detach(struct cdp_soc_t *soc, uint8_t vdev_id,
-			     struct cdp_ds_vp_params *vp_params)
+void cdp_ppesds_entry_detach(struct cdp_soc_t *soc, uint8_t vdev_id)
 {
 	if (!soc || !soc->ops || !soc->ops->ppeds_ops) {
 		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_FATAL,
@@ -120,24 +61,7 @@ void cdp_ppesds_entry_detach(struct cdp_soc_t *soc, uint8_t vdev_id,
 	}
 
 	if (soc->ops->ppeds_ops->ppeds_entry_detach)
-		return soc->ops->ppeds_ops->ppeds_entry_detach(soc,
-							       vdev_id,
-							       vp_params);
-}
-
-/**
- * cdp_ppeds_attached() - Check whether ppeds attached
- * @soc: data path soc handle
- *
- * return: true for ppeds attached otherwise false.
- */
-static inline
-QDF_STATUS cdp_ppeds_attached(struct cdp_soc_t *soc)
-{
-	if (!soc || !soc->ops || !soc->ops->ppeds_ops)
-		return false;
-
-	return true;
+		return soc->ops->ppeds_ops->ppeds_entry_detach(soc, vdev_id);
 }
 
 /**

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -109,29 +109,6 @@ ucfg_coex_psoc_get_btc_chain_mode(struct wlan_objmgr_psoc *psoc,
 QDF_STATUS
 ucfg_coex_send_btc_chain_mode(struct wlan_objmgr_vdev *vdev,
 			      enum coex_btc_chain_mode mode);
-
-/**
- * ucfg_coex_send_multi_config() - API to send coex multiple config to target
- * @vdev: pointer to vdev object
- * @param: pointer to coex multiple config parameters
- *
- * Return: status of operation
- */
-QDF_STATUS
-ucfg_coex_send_multi_config(struct wlan_objmgr_vdev *vdev,
-			    struct coex_multi_config *param);
-
-/**
- * ucfg_coex_send_logging_config() - API to send BT coex logging config to
- * target if
- * @psoc: pointer to psoc object
- * @apps_args: pointer to argument
- *
- * Return : status of operation
- */
-QDF_STATUS
-ucfg_coex_send_logging_config(struct wlan_objmgr_psoc *psoc,
-			      uint32_t *apps_args);
 #else
 static inline QDF_STATUS
 ucfg_coex_register_cfg_updated_handler(struct wlan_objmgr_psoc *psoc,
@@ -156,20 +133,6 @@ ucfg_coex_send_btc_chain_mode(struct wlan_objmgr_vdev *vdev,
 			      enum coex_btc_chain_mode mode)
 {
 	return QDF_STATUS_SUCCESS;
-}
-
-static inline QDF_STATUS
-ucfg_coex_send_multi_config(struct wlan_objmgr_vdev *vdev,
-			    struct coex_multi_config *param)
-{
-	return QDF_STATUS_E_NOSUPPORT;
-}
-
-static inline QDF_STATUS
-ucfg_coex_send_logging_config(struct wlan_objmgr_psoc *psoc,
-			      uint32_t *apps_args)
-{
-	return QDF_STATUS_E_NOSUPPORT;
 }
 #endif
 #ifdef WLAN_FEATURE_DBAM_CONFIG

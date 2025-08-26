@@ -25,6 +25,7 @@
 #include "../../io_uring/io-wq.h"
 #include "../smpboot.h"
 
+#include "orchestrator.h"
 #include "pelt.h"
 #include "smp.h"
 
@@ -8646,6 +8647,13 @@ static struct cftype cpu_legacy_files[] = {
 		.read_u64 = cpu_shares_read_u64,
 		.write_u64 = cpu_shares_write_u64,
 	},
+#ifdef CONFIG_ORCHESTRATOR_AGENT
+	{
+		.name = "preferred_mask",
+		.seq_show = preferred_mask_read,
+		.write = preferred_mask_write,
+	},
+#endif
 #endif
 #ifdef CONFIG_CFS_BANDWIDTH
 	{

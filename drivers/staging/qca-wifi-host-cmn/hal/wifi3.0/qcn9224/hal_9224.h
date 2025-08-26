@@ -39,8 +39,7 @@
 #include <uniform_reo_status_header.h>
 #include <wbm_release_ring_tx.h>
 #include <phyrx_location.h>
-#if defined(WLAN_PKT_CAPTURE_TX_2_0) || \
-defined(WLAN_PKT_CAPTURE_RX_2_0)
+#ifdef QCA_MONITOR_2_0_SUPPORT
 #include <mon_ingress_ring.h>
 #include <mon_destination_ring.h>
 #endif
@@ -99,7 +98,7 @@ defined(WLAN_PKT_CAPTURE_RX_2_0)
 #define UNIFIED_WBM_RELEASE_RING_6_TX_RATE_STATS_INFO_TX_RATE_STATS_LSB \
 	WBM_RELEASE_RING_TX_TX_RATE_STATS_PPDU_TRANSMISSION_TSF_LSB
 
-#if defined(WLAN_PKT_CAPTURE_TX_2_0) || defined(WLAN_PKT_CAPTURE_RX_2_0)
+#ifdef QCA_MONITOR_2_0_SUPPORT
 #include "hal_be_api_mon.h"
 #endif
 
@@ -140,7 +139,8 @@ defined(WLAN_PKT_CAPTURE_RX_2_0)
 #define PMM_REG_BASE_QCN9224 0xB500F8
 
 /**
- * hal_read_pmm_scratch_reg() - API to read PMM Scratch register
+ * hal_read_pmm_scratch_reg(): API to read PMM Scratch register
+ *
  * @soc: HAL soc
  * @base_addr: Base PMM register
  * @reg_enum: Enum of the scratch register
@@ -159,7 +159,8 @@ uint32_t hal_read_pmm_scratch_reg(struct hal_soc *soc,
 }
 
 /**
- * hal_get_tsf2_scratch_reg_qcn9224() - API to read tsf2 scratch register
+ * hal_get_tsf2_scratch_reg_qcn9224(): API to read tsf2 scratch register
+ *
  * @hal_soc_hdl: HAL soc context
  * @mac_id: mac id
  * @value: Pointer to update tsf2 value
@@ -187,7 +188,8 @@ static void hal_get_tsf2_scratch_reg_qcn9224(hal_soc_handle_t hal_soc_hdl,
 }
 
 /**
- * hal_get_tqm_scratch_reg_qcn9224() - API to read tqm scratch register
+ * hal_get_tqm_scratch_reg_qcn9224(): API to read tqm scratch register
+ *
  * @hal_soc_hdl: HAL soc context
  * @value: Pointer to update tqm value
  *
@@ -215,7 +217,7 @@ static void hal_get_tqm_scratch_reg_qcn9224(hal_soc_handle_t hal_soc_hdl,
 #define HAL_PPE_VP_SEARCH_IDX_REG_MAX 8
 
 /**
- * hal_get_link_desc_size_9224() - API to get the link desc size
+ * hal_get_link_desc_size_9224(): API to get the link desc size
  *
  * Return: uint32_t
  */
@@ -225,9 +227,9 @@ static uint32_t hal_get_link_desc_size_9224(void)
 }
 
 /**
- * hal_rx_get_tlv_9224() - API to get the tlv
- * @rx_tlv: TLV data extracted from the rx packet
+ * hal_rx_get_tlv_9224(): API to get the tlv
  *
+ * @rx_tlv: TLV data extracted from the rx packet
  * Return: uint8_t
  */
 static uint8_t hal_rx_get_tlv_9224(void *rx_tlv)
@@ -236,9 +238,10 @@ static uint8_t hal_rx_get_tlv_9224(void *rx_tlv)
 }
 
 /**
- * hal_rx_wbm_err_msdu_continuation_get_9224() - API to check if WBM msdu
- *                                               continuation bit is set
- * @wbm_desc: wbm release ring descriptor
+ * hal_rx_wbm_err_msdu_continuation_get_9224 () - API to check if WBM
+ * msdu continuation bit is set
+ *
+ *@wbm_desc: wbm release ring descriptor
  *
  * Return: true if msdu continuation bit is set.
  */
@@ -254,130 +257,122 @@ uint8_t hal_rx_wbm_err_msdu_continuation_get_9224(void *wbm_desc)
 }
 
 #if (defined(WLAN_SA_API_ENABLE)) && (defined(QCA_WIFI_QCA9574))
-#define HAL_RX_EVM_DEMF_SEGMENT_SIZE 128
-#define HAL_RX_EVM_DEMF_MAX_STREAMS 2
-#define HAL_RX_SU_EVM_MEMBER_LEN 4
+#define HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, evm, pilot) \
+	(ppdu_info)->evm_info.pilot_evm[pilot] = HAL_RX_GET(rx_tlv, \
+				PHYRX_OTHER_RECEIVE_INFO, \
+				SU_EVM_DETAILS_##evm##_PILOT_##pilot##_EVM)
+
 static inline void
 hal_rx_update_su_evm_info(void *rx_tlv,
 			  void *ppdu_info_hdl)
 {
-	uint32_t nss_count, pilot_count;
-	uint16_t istream = 0, ipilot = 0;
-	uint8_t pilot_shift = 0;
-	uint8_t *pilot_ptr = NULL;
-	uint16_t segment = 0;
-
 	struct hal_rx_ppdu_info *ppdu_info =
 			(struct hal_rx_ppdu_info *)ppdu_info_hdl;
-	nss_count = ppdu_info->evm_info.nss_count;
-	pilot_count = ppdu_info->evm_info.pilot_count;
 
-	if (nss_count * pilot_count > HAL_RX_MAX_SU_EVM_COUNT)
-		return;
-
-	/* move rx_tlv by 4 to skip no_of_data_sym, nss_cnt and pilot_cnt */
-	rx_tlv = (uint8_t *)rx_tlv + HAL_RX_SU_EVM_MEMBER_LEN;
-
-	/* EVM values = number_of_streams * number_of_pilots
-	 * each EVM value is 8 bits, So, each variable acc_linear_evm_x_y
-	 * is (32 bits) will contain 4 EVM values.
-	 * For ex:
-	 * acc_linear_evm_0_0 : <Pilot0, stream0>, <Pilot0, stream1>,
-	 * <Pilot1, stream0>, <Pilot1, stream1>
-	 * .....
-	 * acc_linear_evm_1_15 : <Pilot62, stream0>, <Pilot62, stream1>,
-	 * <Pilot63, stream0>, <Pilot63, stream1> ...
-	 */
-
-	for (istream = 0; istream < nss_count; istream++) {
-		segment = HAL_RX_EVM_DEMF_SEGMENT_SIZE * (istream / HAL_RX_EVM_DEMF_MAX_STREAMS);
-		pilot_ptr = (uint8_t *)rx_tlv + segment;
-		for (ipilot = 0; ipilot < pilot_count; ipilot++) {
-			/* In case there is one stream in Demf segment,
-			 * pilots are one after the other
-			 */
-			if (nss_count == 1 ||
-			    ((nss_count == HAL_RX_EVM_DEMF_MAX_STREAMS + 1) &&
-			     (istream == HAL_RX_EVM_DEMF_MAX_STREAMS)))
-				pilot_shift = ipilot;
-			/* In case there are more than one stream in DemF
-			 * segment, pilot 0 of all streams come one after the
-			 * other before pilot 1
-			 */
-			else
-				pilot_shift = (ipilot * HAL_RX_EVM_DEMF_MAX_STREAMS)
-				 + (istream % HAL_RX_EVM_DEMF_MAX_STREAMS);
-
-			ppdu_info->evm_info.pilot_evm[segment + pilot_shift] =
-					*(pilot_ptr + pilot_shift);
-		}
-	}
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 1, 0);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 2, 1);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 3, 2);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 4, 3);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 5, 4);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 6, 5);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 7, 6);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 8, 7);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 9, 8);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 10, 9);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 11, 10);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 12, 11);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 13, 12);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 14, 13);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 15, 14);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 16, 15);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 17, 16);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 18, 17);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 19, 18);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 20, 19);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 21, 20);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 22, 21);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 23, 22);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 24, 23);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 25, 24);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 26, 25);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 27, 26);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 28, 27);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 29, 28);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 30, 29);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 31, 30);
+	HAL_RX_UPDATE_SU_EVM_INFO(rx_tlv, ppdu_info, 32, 31);
 }
 
-/**
- * hal_rx_proc_phyrx_other_receive_info_tlv_9224() - API to get tlv info
- * @rx_tlv_hdr: RX TLV header
- * @ppdu_info_hdl: Handle to PPDU info to update
- *
- * Return: None
- */
-static inline
-void hal_rx_proc_phyrx_other_receive_info_tlv_9224(void *rx_tlv_hdr,
-						   void *ppdu_info_hdl)
+static void hal_rx_get_evm_info(void *rx_tlv_hdr, void *ppdu_info_hdl)
 {
-	uint32_t tlv_len, tlv_tag;
-	void *rx_tlv;
 	struct hal_rx_ppdu_info *ppdu_info  = ppdu_info_hdl;
+	void *rx_tlv = (uint8_t *)rx_tlv_hdr + HAL_RX_TLV32_HDR_SIZE;
+	uint32_t tlv_tag;
 
-	tlv_len = HAL_RX_GET_USER_TLV32_LEN(rx_tlv_hdr);
-	rx_tlv = (uint8_t *)rx_tlv_hdr + HAL_RX_TLV64_HDR_SIZE;
-
-	if (!tlv_len)
-		return;
-
-	tlv_tag = HAL_RX_GET_USER_TLV32_TYPE(rx_tlv);
-	tlv_len = HAL_RX_GET_USER_TLV32_LEN(rx_tlv);
-
-	if (!tlv_len)
-		return;
+	tlv_tag = HAL_RX_GET_USER_TLV32_TYPE(rx_tlv_hdr);
 
 	switch (tlv_tag) {
 	case WIFIPHYRX_OTHER_RECEIVE_INFO_EVM_DETAILS_E:
+
 		/* Skip TLV length to get TLV content */
-		rx_tlv = (uint8_t *)rx_tlv + HAL_RX_TLV64_HDR_SIZE;
+		rx_tlv = (uint8_t *)rx_tlv + HAL_RX_TLV32_HDR_SIZE;
+
 		ppdu_info->evm_info.number_of_symbols = HAL_RX_GET(rx_tlv,
 				PHYRX_OTHER_RECEIVE_INFO,
-				EVM_DETAILS_NUMBER_OF_DATA_SYM);
+				SU_EVM_DETAILS_0_NUMBER_OF_SYMBOLS);
 		ppdu_info->evm_info.pilot_count = HAL_RX_GET(rx_tlv,
 				PHYRX_OTHER_RECEIVE_INFO,
-				EVM_DETAILS_NUMBER_OF_PILOTS);
+				SU_EVM_DETAILS_0_PILOT_COUNT);
 		ppdu_info->evm_info.nss_count = HAL_RX_GET(rx_tlv,
 				PHYRX_OTHER_RECEIVE_INFO,
-				EVM_DETAILS_NUMBER_OF_STREAMS);
+				SU_EVM_DETAILS_0_NSS_COUNT);
 		hal_rx_update_su_evm_info(rx_tlv, ppdu_info_hdl);
-		break;
-	default:
-		QDF_TRACE(QDF_MODULE_ID_HAL, QDF_TRACE_LEVEL_DEBUG,
-			  "%s unhandled TLV type: %d, TLV len:%d",
-			  __func__, tlv_tag, tlv_len);
 		break;
 	}
 }
+#else /* WLAN_SA_API_ENABLE && QCA_WIFI_QCA9574 */
+static void hal_rx_get_evm_info(void *tlv_tag, void *ppdu_info_hdl)
+{
+}
+#endif /* WLAN_SA_API_ENABLE && QCA_WIFI_QCA9574 */
 
-#else
 /**
- * hal_rx_proc_phyrx_other_receive_info_tlv_9224() - API to get tlv info
- * @rx_tlv_hdr: RX TLV header
- * @ppdu_info_hdl: Handle to PPDU info to update
+ * hal_rx_proc_phyrx_other_receive_info_tlv_9224(): API to get tlv info
  *
- * Return: None
+ * Return: uint32_t
  */
 static inline
 void hal_rx_proc_phyrx_other_receive_info_tlv_9224(void *rx_tlv_hdr,
 						   void *ppdu_info_hdl)
 {
+	uint32_t tlv_tag, tlv_len;
+	uint32_t temp_len, other_tlv_len, other_tlv_tag;
+	void *rx_tlv = (uint8_t *)rx_tlv_hdr + HAL_RX_TLV32_HDR_SIZE;
+	void *other_tlv_hdr = NULL;
+	void *other_tlv = NULL;
+
+	/* Get evm info for Smart Antenna */
+	hal_rx_get_evm_info(rx_tlv_hdr, ppdu_info_hdl);
+
+	tlv_tag = HAL_RX_GET_USER_TLV32_TYPE(rx_tlv_hdr);
+	tlv_len = HAL_RX_GET_USER_TLV32_LEN(rx_tlv_hdr);
+	temp_len = 0;
+
+	other_tlv_hdr = rx_tlv + HAL_RX_TLV32_HDR_SIZE;
+	other_tlv_tag = HAL_RX_GET_USER_TLV32_TYPE(other_tlv_hdr);
+	other_tlv_len = HAL_RX_GET_USER_TLV32_LEN(other_tlv_hdr);
+
+	temp_len += other_tlv_len;
+	other_tlv = other_tlv_hdr + HAL_RX_TLV32_HDR_SIZE;
+
+	switch (other_tlv_tag) {
+	default:
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
+			  "%s unhandled TLV type: %d, TLV len:%d",
+			  __func__, other_tlv_tag, other_tlv_len);
+	break;
+	}
 }
-#endif /* WLAN_SA_API_ENABLE && QCA_WIFI_QCA9574 */
 
 #if defined(WLAN_CFR_ENABLE) && defined(WLAN_ENH_CFR_ENABLE)
 static inline
@@ -464,9 +459,9 @@ void hal_rx_get_rtt_info_9224(void *rx_tlv, void *ppdu_info_hdl)
 
 #ifdef CONFIG_WORD_BASED_TLV
 /**
- * hal_rx_dump_mpdu_start_tlv_9224() - dump RX mpdu_start TLV in structured
- *                                     human readable format.
- * @mpdustart: pointer the rx_attention TLV in pkt.
+ * hal_rx_dump_mpdu_start_tlv_9224: dump RX mpdu_start TLV in structured
+ *			       human readable format.
+ * @mpdu_start: pointer the rx_attention TLV in pkt.
  * @dbg_level: log level.
  *
  * Return: void
@@ -564,10 +559,10 @@ static inline void hal_rx_dump_mpdu_start_tlv_9224(void *mpdustart,
 }
 
 /**
- * hal_rx_dump_msdu_end_tlv_9224() - dump RX msdu_end TLV in structured human
- *                                   readable format.
- * @msduend: pointer the msdu_end TLV in pkt.
- * @dbg_level: log level.
+ * hal_rx_dump_msdu_end_tlv_9224: dump RX msdu_end TLV in structured
+ *			     human readable format.
+ * @ msdu_end: pointer the msdu_end TLV in pkt.
+ * @ dbg_level: log level.
  *
  * Return: void
  */
@@ -814,12 +809,12 @@ static void hal_rx_dump_msdu_end_tlv_9224(void *msduend,
 #endif
 
 /**
- * hal_reo_status_get_header_9224() - Process reo desc info
- * @ring_desc: Pointer to reo descriptor
- * @b: tlv type info
- * @h1: Pointer to hal_reo_status_header where info to be stored
+ * hal_reo_status_get_header_9224 - Process reo desc info
+ * @d - Pointer to reo descriptor
+ * @b - tlv type info
+ * @h1 - Pointer to hal_reo_status_header where info to be stored
  *
- * Return: none.
+ * Return - none.
  *
  */
 static void hal_reo_status_get_header_9224(hal_ring_desc_t ring_desc,
@@ -942,7 +937,7 @@ void *hal_dst_mpdu_desc_info_9224(void *dst_ring_desc)
 }
 
 /**
- * hal_reo_config_9224() - Set reo config parameters
+ * hal_reo_config_9224(): Set reo config parameters
  * @soc: hal soc handle
  * @reg_val: value to be set
  * @reo_params: reo parameters
@@ -959,9 +954,9 @@ hal_reo_config_9224(struct hal_soc *soc,
 
 /**
  * hal_rx_msdu_desc_info_get_ptr_9224() - Get msdu desc info ptr
- * @msdu_details_ptr: Pointer to msdu_details_ptr
+ * @msdu_details_ptr - Pointer to msdu_details_ptr
  *
- * Return: Pointer to rx_msdu_desc_info structure.
+ * Return - Pointer to rx_msdu_desc_info structure.
  *
  */
 static void *hal_rx_msdu_desc_info_get_ptr_9224(void *msdu_details_ptr)
@@ -970,10 +965,10 @@ static void *hal_rx_msdu_desc_info_get_ptr_9224(void *msdu_details_ptr)
 }
 
 /**
- * hal_rx_link_desc_msdu0_ptr_9224() - Get pointer to rx_msdu details
- * @link_desc: Pointer to link desc
+ * hal_rx_link_desc_msdu0_ptr_9224 - Get pointer to rx_msdu details
+ * @link_desc - Pointer to link desc
  *
- * Return: Pointer to rx_msdu_details structure
+ * Return - Pointer to rx_msdu_details structure
  *
  */
 static void *hal_rx_link_desc_msdu0_ptr_9224(void *link_desc)
@@ -982,7 +977,7 @@ static void *hal_rx_link_desc_msdu0_ptr_9224(void *link_desc)
 }
 
 /**
- * hal_get_window_address_9224() - Function to get hp/tp address
+ * hal_get_window_address_9224(): Function to get hp/tp address
  * @hal_soc: Pointer to hal_soc
  * @addr: address offset of register
  *
@@ -1130,9 +1125,9 @@ void hal_compute_reo_remap_ix0_9224(struct hal_soc *soc)
 
 /**
  * hal_rx_flow_setup_fse_9224() - Setup a flow search entry in HW FST
- * @rx_fst: Pointer to the Rx Flow Search Table
+ * @fst: Pointer to the Rx Flow Search Table
  * @table_offset: offset into the table where the flow is to be setup
- * @rx_flow: Flow Parameters
+ * @flow: Flow Parameters
  *
  * Return: Success/Failure
  */
@@ -1254,14 +1249,14 @@ hal_rx_flow_setup_fse_9224(uint8_t *rx_fst, uint32_t table_offset,
 	return fse;
 }
 
+#ifndef NO_RX_PKT_HDR_TLV
 /**
- * hal_rx_dump_pkt_hdr_tlv_9224() - dump RX pkt header TLV in hex format
- * @pkt_tlvs: pointer the pkt_hdr_tlv in pkt.
- * @dbg_level: log level.
+ * hal_rx_dump_pkt_hdr_tlv: dump RX pkt header TLV in hex format
+ * @ pkt_hdr_tlv: pointer the pkt_hdr_tlv in pkt.
+ * @ dbg_level: log level.
  *
  * Return: void
  */
-#ifndef NO_RX_PKT_HDR_TLV
 static inline void hal_rx_dump_pkt_hdr_tlv_9224(struct rx_pkt_tlvs *pkt_tlvs,
 						uint8_t dbg_level)
 {
@@ -1270,21 +1265,28 @@ static inline void hal_rx_dump_pkt_hdr_tlv_9224(struct rx_pkt_tlvs *pkt_tlvs,
 	hal_verbose_debug("\n---------------\n"
 			  "rx_pkt_hdr_tlv\n"
 			  "---------------\n"
-			  "phy_ppdu_id 0x%x ",
+			  "phy_ppdu_id %llu ",
 			  pkt_hdr_tlv->phy_ppdu_id);
 
 	hal_verbose_hex_dump(pkt_hdr_tlv->rx_pkt_hdr,
 			     sizeof(pkt_hdr_tlv->rx_pkt_hdr));
 }
 #else
+/**
+ * hal_rx_dump_pkt_hdr_tlv: dump RX pkt header TLV in hex format
+ * @ pkt_hdr_tlv: pointer the pkt_hdr_tlv in pkt.
+ * @ dbg_level: log level.
+ *
+ * Return: void
+ */
 static inline void hal_rx_dump_pkt_hdr_tlv_9224(struct rx_pkt_tlvs *pkt_tlvs,
 						uint8_t dbg_level)
 {
 }
 #endif
 
-/**
- * hal_tx_dump_ppe_vp_entry_9224() - API to print PPE VP entries
+/*
+ * hal_tx_dump_ppe_vp_entry_9224()
  * @hal_soc_hdl: HAL SoC handle
  *
  * Return: void
@@ -1306,7 +1308,7 @@ void hal_tx_dump_ppe_vp_entry_9224(hal_soc_handle_t hal_soc_hdl)
 }
 
 /**
- * hal_rx_dump_pkt_tlvs_9224() - API to print RX Pkt TLVS QCN9224
+ * hal_rx_dump_pkt_tlvs_9224(): API to print RX Pkt TLVS QCN9224
  * @hal_soc_hdl: hal_soc handle
  * @buf: pointer the pkt buffer
  * @dbg_level: log level
@@ -1364,7 +1366,7 @@ static void hal_cmem_write_9224(hal_soc_handle_t hal_soc_hdl,
 /**
  * hal_tx_get_num_tcl_banks_9224() - Get number of banks in target
  *
- * Return: number of bank
+ * Returns: number of bank
  */
 static uint8_t hal_tx_get_num_tcl_banks_9224(void)
 {
@@ -1469,11 +1471,8 @@ static uint16_t hal_get_rx_max_ba_window_qcn9224(int tid)
 }
 
 /**
- * hal_qcn9224_get_reo_qdesc_size() - Get the reo queue descriptor size from the
- *                                    given Block-Ack window size
- * @ba_window_size: Block-Ack window size
- * @tid: Traffic id
- *
+ * hal_qcn9224_get_reo_qdesc_size()- Get the reo queue descriptor size
+ *			  from the give Block-Ack window size
  * Return: reo queue descriptor size
  */
 static uint32_t hal_qcn9224_get_reo_qdesc_size(uint32_t ba_window_size, int tid)
@@ -1514,8 +1513,8 @@ static uint32_t hal_qcn9224_get_reo_qdesc_size(uint32_t ba_window_size, int tid)
 		sizeof(struct rx_reo_queue_1k);
 }
 
-/**
- * hal_tx_get_num_ppe_vp_tbl_entries_9224() - get number of PPE VP entries
+/*
+ * hal_tx_get_num_ppe_vp_tbl_entries_9224()
  * @hal_soc_hdl: HAL SoC handle
  *
  * Return: Number of PPE VP entries
@@ -1526,9 +1525,8 @@ uint32_t hal_tx_get_num_ppe_vp_tbl_entries_9224(hal_soc_handle_t hal_soc_hdl)
 	return HAL_PPE_VP_ENTRIES_MAX;
 }
 
-/**
- * hal_tx_get_num_ppe_vp_search_idx_reg_entries_9224() - get number of PPE VP
- *                                                       search index registers
+/*
+ * hal_tx_get_num_ppe_vp_search_idx_reg_entries_9224()
  * @hal_soc_hdl: HAL SoC handle
  *
  * Return: Number of PPE VP search index registers
@@ -1541,9 +1539,8 @@ uint32_t hal_tx_get_num_ppe_vp_search_idx_reg_entries_9224(hal_soc_handle_t hal_
 
 /**
  * hal_rx_tlv_msdu_done_copy_get_9224() - Get msdu done copy bit from rx_tlv
- * @buf: pointer the RX TLV
  *
- * Return: msdu done copy bit
+ * Returns: msdu done copy bit
  */
 static inline uint32_t hal_rx_tlv_msdu_done_copy_get_9224(uint8_t *buf)
 {
@@ -1611,7 +1608,7 @@ static void hal_hw_txrx_ops_attach_qcn9224(struct hal_soc *hal_soc)
 					hal_rx_link_desc_msdu0_ptr_9224;
 	hal_soc->ops->hal_reo_status_get_header =
 					hal_reo_status_get_header_9224;
-#ifdef WLAN_PKT_CAPTURE_RX_2_0
+#ifdef QCA_MONITOR_2_0_SUPPORT
 	hal_soc->ops->hal_rx_status_get_tlv_info =
 					hal_rx_status_get_tlv_info_wrapper_be;
 #endif
@@ -1754,12 +1751,12 @@ static void hal_hw_txrx_ops_attach_qcn9224(struct hal_soc *hal_soc)
 	hal_soc->ops->hal_rx_mpdu_get_addr4 = hal_rx_mpdu_get_addr4_be;
 	hal_soc->ops->hal_rx_hw_desc_get_ppduid_get =
 		hal_rx_hw_desc_get_ppduid_get_be;
+	hal_soc->ops->hal_rx_get_ppdu_id = hal_rx_get_ppdu_id_be;
 	hal_soc->ops->hal_rx_tlv_phy_ppdu_id_get =
 					hal_rx_attn_phy_ppdu_id_get_be;
 	hal_soc->ops->hal_rx_get_filter_category =
 						hal_rx_get_filter_category_be;
 #endif
-	hal_soc->ops->hal_rx_get_ppdu_id = hal_rx_get_ppdu_id_be;
 	hal_soc->ops->hal_rx_tlv_msdu_len_set =
 					hal_rx_msdu_start_msdu_len_set_be;
 	hal_soc->ops->hal_rx_tlv_sgi_get = hal_rx_tlv_sgi_get_be;
@@ -1793,7 +1790,7 @@ static void hal_hw_txrx_ops_attach_qcn9224(struct hal_soc *hal_soc)
 					hal_get_rx_max_ba_window_qcn9224;
 	hal_soc->ops->hal_get_reo_qdesc_size = hal_qcn9224_get_reo_qdesc_size;
 	/* TX MONITOR */
-#ifdef WLAN_PKT_CAPTURE_TX_2_0
+#ifdef QCA_MONITOR_2_0_SUPPORT
 	hal_soc->ops->hal_txmon_is_mon_buf_addr_tlv =
 				hal_txmon_is_mon_buf_addr_tlv_generic_be;
 	hal_soc->ops->hal_txmon_populate_packet_info =
@@ -1802,14 +1799,7 @@ static void hal_hw_txrx_ops_attach_qcn9224(struct hal_soc *hal_soc)
 				hal_txmon_status_parse_tlv_generic_be;
 	hal_soc->ops->hal_txmon_status_get_num_users =
 				hal_txmon_status_get_num_users_generic_be;
-#if defined(TX_MONITOR_WORD_MASK)
-	hal_soc->ops->hal_txmon_get_word_mask =
-				hal_txmon_get_word_mask_qcn9224;
-#else
-	hal_soc->ops->hal_txmon_get_word_mask =
-				hal_txmon_get_word_mask_generic_be;
-#endif /* TX_MONITOR_WORD_MASK */
-#endif /* WLAN_PKT_CAPTURE_TX_2_0 */
+#endif /* QCA_MONITOR_2_0_SUPPORT */
 	hal_soc->ops->hal_compute_reo_remap_ix0 = NULL;
 	hal_soc->ops->hal_tx_vdev_mismatch_routing_set =
 		hal_tx_vdev_mismatch_routing_set_generic_be;
@@ -1844,7 +1834,6 @@ static void hal_hw_txrx_ops_attach_qcn9224(struct hal_soc *hal_soc)
 					hal_tx_ppe2tcl_ring_halt_done_9224;
 	hal_soc->ops->hal_tx_get_num_ppe_vp_search_idx_tbl_entries =
 			hal_tx_get_num_ppe_vp_search_idx_reg_entries_9224;
-	hal_soc->ops->hal_tx_ring_halt_get = hal_tx_ppe2tcl_ring_halt_get_9224;
 };
 
 /**

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -24,38 +24,21 @@
 #include "dp_tx.h"
 #include "dp_internal.h"
 
-/*
+/**
  * 21 bits cookie
- * 1 bit special pool indicator
- * 3 bits unused
  * 2 bits pool id 0 ~ 3,
  * 10 bits page id 0 ~ 1023
  * 5 bits offset id 0 ~ 31 (Desc size = 128, Num descs per page = 4096/128 = 32)
  */
 /* ???Ring ID needed??? */
-
-/* TODO: Need to revisit this change for Rhine */
-#ifdef WLAN_SOFTUMAC_SUPPORT
-#define DP_TX_DESC_ID_SPCL_MASK    0x100000
-#define DP_TX_DESC_ID_SPCL_OS      20
-#define DP_TX_DESC_ID_POOL_MASK    0x018000
-#define DP_TX_DESC_ID_POOL_OS      15
-#define DP_TX_DESC_ID_PAGE_MASK    0x007FF0
-#define DP_TX_DESC_ID_PAGE_OS      4
-#define DP_TX_DESC_ID_OFFSET_MASK  0x00000F
-#define DP_TX_DESC_ID_OFFSET_OS    0
-#else
-#define DP_TX_DESC_ID_SPCL_MASK    0x100000
-#define DP_TX_DESC_ID_SPCL_OS      20
 #define DP_TX_DESC_ID_POOL_MASK    0x018000
 #define DP_TX_DESC_ID_POOL_OS      15
 #define DP_TX_DESC_ID_PAGE_MASK    0x007FE0
 #define DP_TX_DESC_ID_PAGE_OS      5
 #define DP_TX_DESC_ID_OFFSET_MASK  0x00001F
 #define DP_TX_DESC_ID_OFFSET_OS    0
-#endif /* WLAN_SOFTUMAC_SUPPORT */
 
-/*
+/**
  * Compilation assert on tx desc size
  *
  * if assert is hit please update POOL_MASK,
@@ -124,357 +107,37 @@ static inline void dp_tx_desc_set_magic(struct dp_tx_desc_s *tx_desc,
 }
 #endif
 
-/**
- * dp_tx_desc_pool_alloc() - Allocate Tx Descriptor pool(s)
- * @soc: Handle to DP SoC structure
- * @pool_id: pool to allocate
- * @num_elem: Number of descriptor elements per pool
- * @spcl_tx_desc: if special desc
- *
- * This function allocates memory for SW tx descriptors
- * (used within host for tx data path).
- * The number of tx descriptors required will be large
- * since based on number of clients (1024 clients x 3 radios),
- * outstanding MSDUs stored in TQM queues and LMAC queues will be significantly
- * large.
- *
- * To avoid allocating a large contiguous memory, it uses multi_page_alloc qdf
- * function to allocate memory
- * in multiple pages. It then iterates through the memory allocated across pages
- * and links each descriptor
- * to next descriptor, taking care of page boundaries.
- *
- * Since WiFi 3.0 HW supports multiple Tx rings, multiple pools are allocated,
- * one for each ring;
- * This minimizes lock contention when hard_start_xmit is called
- * from multiple CPUs.
- * Alternately, multiple pools can be used for multiple VDEVs for VDEV level
- * flow control.
- *
- * Return: Status code. 0 for success.
- */
 QDF_STATUS dp_tx_desc_pool_alloc(struct dp_soc *soc, uint8_t pool_id,
-				 uint32_t num_elem, bool spcl_tx_desc);
-
-/**
- * dp_tx_desc_pool_init() - Initialize Tx Descriptor pool(s)
- * @soc: Handle to DP SoC structure
- * @pool_id: pool to allocate
- * @num_elem: Number of descriptor elements per pool
- * @spcl_tx_desc: if special desc
- *
- * Return: QDF_STATUS_SUCCESS
- *	   QDF_STATUS_E_FAULT
- */
+				 uint32_t num_elem);
 QDF_STATUS dp_tx_desc_pool_init(struct dp_soc *soc, uint8_t pool_id,
-				uint32_t num_elem, bool spcl_tx_desc);
+				uint32_t num_elem);
+void dp_tx_desc_pool_free(struct dp_soc *soc, uint8_t pool_id);
+void dp_tx_desc_pool_deinit(struct dp_soc *soc, uint8_t pool_id);
 
-/**
- * dp_tx_desc_pool_free() -  Free the tx dexcriptor pools
- * @soc: Handle to DP SoC structure
- * @pool_id: pool to free
- * @spcl_tx_desc: if special desc
- *
- */
-void dp_tx_desc_pool_free(struct dp_soc *soc, uint8_t pool_id,
-			  bool spcl_tx_desc);
-
-/**
- * dp_tx_desc_pool_deinit() - de-initialize Tx Descriptor pool(s)
- * @soc: Handle to DP SoC structure
- * @pool_id: pool to de-initialize
- * @spcl_tx_desc: if special desc
- *
- */
-void dp_tx_desc_pool_deinit(struct dp_soc *soc, uint8_t pool_id,
-			    bool spcl_tx_desc);
-
-/**
- * dp_tx_ext_desc_pool_alloc_by_id() - allocate TX extension Descriptor pool
- *                                     based on pool ID
- * @soc: Handle to DP SoC structure
- * @num_elem: Number of descriptor elements per pool
- * @pool_id: Pool ID
- *
- * Return - QDF_STATUS_SUCCESS
- *	    QDF_STATUS_E_NOMEM
- */
-QDF_STATUS dp_tx_ext_desc_pool_alloc_by_id(struct dp_soc *soc,
-					   uint32_t num_elem,
-					   uint8_t pool_id);
-/**
- * dp_tx_ext_desc_pool_alloc() - allocate Tx extension Descriptor pool(s)
- * @soc: Handle to DP SoC structure
- * @num_pool: Number of pools to allocate
- * @num_elem: Number of descriptor elements per pool
- *
- * Return: QDF_STATUS_SUCCESS
- *	   QDF_STATUS_E_NOMEM
- */
-QDF_STATUS dp_tx_ext_desc_pool_alloc(struct dp_soc *soc, uint8_t num_pool,
+QDF_STATUS dp_tx_ext_desc_pool_alloc(struct dp_soc *soc, uint8_t pool_id,
 				     uint32_t num_elem);
-
-/**
- * dp_tx_ext_desc_pool_init_by_id() - initialize Tx extension Descriptor pool
- *                                    based on pool ID
- * @soc: Handle to DP SoC structure
- * @num_elem: Number of descriptor elements per pool
- * @pool_id: Pool ID
- *
- * Return - QDF_STATUS_SUCCESS
- *	    QDF_STATUS_E_FAULT
- */
-QDF_STATUS dp_tx_ext_desc_pool_init_by_id(struct dp_soc *soc, uint32_t num_elem,
-					  uint8_t pool_id);
-
-/**
- * dp_tx_ext_desc_pool_init() - initialize Tx extension Descriptor pool(s)
- * @soc: Handle to DP SoC structure
- * @num_pool: Number of pools to initialize
- * @num_elem: Number of descriptor elements per pool
- *
- * Return: QDF_STATUS_SUCCESS
- *	   QDF_STATUS_E_NOMEM
- */
-QDF_STATUS dp_tx_ext_desc_pool_init(struct dp_soc *soc, uint8_t num_pool,
+QDF_STATUS dp_tx_ext_desc_pool_init(struct dp_soc *soc, uint8_t pool_id,
 				    uint32_t num_elem);
+void dp_tx_ext_desc_pool_free(struct dp_soc *soc, uint8_t pool_id);
+void dp_tx_ext_desc_pool_deinit(struct dp_soc *soc, uint8_t pool_id);
 
-/**
- * dp_tx_ext_desc_pool_free_by_id() - free TX extension Descriptor pool
- *                                    based on pool ID
- * @soc: Handle to DP SoC structure
- * @pool_id: Pool ID
- *
- */
-void dp_tx_ext_desc_pool_free_by_id(struct dp_soc *soc, uint8_t pool_id);
-
-/**
- * dp_tx_ext_desc_pool_free() -  free Tx extension Descriptor pool(s)
- * @soc: Handle to DP SoC structure
- * @num_pool: Number of pools to free
- *
- */
-void dp_tx_ext_desc_pool_free(struct dp_soc *soc, uint8_t num_pool);
-
-/**
- * dp_tx_ext_desc_pool_deinit_by_id() - deinit Tx extension Descriptor pool
- *                                      based on pool ID
- * @soc: Handle to DP SoC structure
- * @pool_id: Pool ID
- *
- */
-void dp_tx_ext_desc_pool_deinit_by_id(struct dp_soc *soc, uint8_t pool_id);
-
-/**
- * dp_tx_ext_desc_pool_deinit() -  deinit Tx extension Descriptor pool(s)
- * @soc: Handle to DP SoC structure
- * @num_pool: Number of pools to de-initialize
- *
- */
-void dp_tx_ext_desc_pool_deinit(struct dp_soc *soc, uint8_t num_pool);
-
-/**
- * dp_tx_tso_desc_pool_alloc_by_id() - allocate TSO Descriptor pool based
- *                                     on pool ID
- * @soc: Handle to DP SoC structure
- * @num_elem: Number of descriptor elements per pool
- * @pool_id: Pool ID
- *
- * Return - QDF_STATUS_SUCCESS
- *	    QDF_STATUS_E_NOMEM
- */
-QDF_STATUS dp_tx_tso_desc_pool_alloc_by_id(struct dp_soc *soc, uint32_t num_elem,
-					   uint8_t pool_id);
-
-/**
- * dp_tx_tso_desc_pool_alloc() - allocate TSO Descriptor pool(s)
- * @soc: Handle to DP SoC structure
- * @num_pool: Number of pools to allocate
- * @num_elem: Number of descriptor elements per pool
- *
- * Return: QDF_STATUS_SUCCESS
- *	   QDF_STATUS_E_NOMEM
- */
-QDF_STATUS dp_tx_tso_desc_pool_alloc(struct dp_soc *soc, uint8_t num_pool,
+QDF_STATUS dp_tx_tso_desc_pool_alloc(struct dp_soc *soc, uint8_t pool_id,
 				     uint32_t num_elem);
-
-/**
- * dp_tx_tso_desc_pool_init_by_id() - initialize TSO Descriptor pool
- *                                    based on pool ID
- * @soc: Handle to DP SoC structure
- * @num_elem: Number of descriptor elements per pool
- * @pool_id: Pool ID
- *
- * Return - QDF_STATUS_SUCCESS
- *	    QDF_STATUS_E_NOMEM
- */
-QDF_STATUS dp_tx_tso_desc_pool_init_by_id(struct dp_soc *soc, uint32_t num_elem,
-					  uint8_t pool_id);
-
-/**
- * dp_tx_tso_desc_pool_init() - initialize TSO Descriptor pool(s)
- * @soc: Handle to DP SoC structure
- * @num_pool: Number of pools to initialize
- * @num_elem: Number of descriptor elements per pool
- *
- * Return: QDF_STATUS_SUCCESS
- *	   QDF_STATUS_E_NOMEM
- */
-QDF_STATUS dp_tx_tso_desc_pool_init(struct dp_soc *soc, uint8_t num_pool,
+QDF_STATUS dp_tx_tso_desc_pool_init(struct dp_soc *soc, uint8_t pool_id,
 				    uint32_t num_elem);
+void dp_tx_tso_desc_pool_free(struct dp_soc *soc, uint8_t pool_id);
+void dp_tx_tso_desc_pool_deinit(struct dp_soc *soc, uint8_t pool_id);
 
-/**
- * dp_tx_tso_desc_pool_free_by_id() - free TSO Descriptor pool based on pool ID
- * @soc: Handle to DP SoC structure
- * @pool_id: Pool ID
- */
-void dp_tx_tso_desc_pool_free_by_id(struct dp_soc *soc, uint8_t pool_id);
-
-/**
- * dp_tx_tso_desc_pool_free() - free TSO Descriptor pool(s)
- * @soc: Handle to DP SoC structure
- * @num_pool: Number of pools to free
- *
- */
-void dp_tx_tso_desc_pool_free(struct dp_soc *soc, uint8_t num_pool);
-
-/**
- * dp_tx_tso_desc_pool_deinit_by_id() - deinitialize TSO Descriptor pool
- *                                      based on pool ID
- * @soc: Handle to DP SoC structure
- * @pool_id: Pool ID
- */
-void dp_tx_tso_desc_pool_deinit_by_id(struct dp_soc *soc, uint8_t pool_id);
-
-/**
- * dp_tx_tso_desc_pool_deinit() - deinitialize TSO Descriptor pool(s)
- * @soc: Handle to DP SoC structure
- * @num_pool: Number of pools to free
- *
- */
-void dp_tx_tso_desc_pool_deinit(struct dp_soc *soc, uint8_t num_pool);
-
-/**
- * dp_tx_tso_num_seg_pool_alloc_by_id() - Allocate descriptors that tracks the
- *                             fragments in each tso segment based on pool ID
- * @soc: handle to dp soc structure
- * @num_elem: total number of descriptors to be allocated
- * @pool_id: Pool ID
- *
- * Return - QDF_STATUS_SUCCESS
- *	    QDF_STATUS_E_NOMEM
- */
-QDF_STATUS dp_tx_tso_num_seg_pool_alloc_by_id(struct dp_soc *soc,
-					      uint32_t num_elem,
-					      uint8_t pool_id);
-
-/**
- * dp_tx_tso_num_seg_pool_alloc() - Allocate descriptors that tracks the
- *                              fragments in each tso segment
- *
- * @soc: handle to dp soc structure
- * @num_pool: number of pools to allocate
- * @num_elem: total number of descriptors to be allocated
- *
- * Return: QDF_STATUS_SUCCESS
- *	   QDF_STATUS_E_NOMEM
- */
-QDF_STATUS dp_tx_tso_num_seg_pool_alloc(struct dp_soc *soc, uint8_t num_pool,
-					uint32_t num_elem);
-
-/**
- * dp_tx_tso_num_seg_pool_init_by_id() - Initialize descriptors that tracks the
- *                              fragments in each tso segment based on pool ID
- *
- * @soc: handle to dp soc structure
- * @num_elem: total number of descriptors to be initialized
- * @pool_id: Pool ID
- *
- * Return - QDF_STATUS_SUCCESS
- *	    QDF_STATUS_E_FAULT
- */
-QDF_STATUS dp_tx_tso_num_seg_pool_init_by_id(struct dp_soc *soc,
-					     uint32_t num_elem,
-					     uint8_t pool_id);
-
-/**
- * dp_tx_tso_num_seg_pool_init() - Initialize descriptors that tracks the
- *                              fragments in each tso segment
- *
- * @soc: handle to dp soc structure
- * @num_pool: number of pools to initialize
- * @num_elem: total number of descriptors to be initialized
- *
- * Return: QDF_STATUS_SUCCESS
- *	   QDF_STATUS_E_FAULT
- */
-QDF_STATUS dp_tx_tso_num_seg_pool_init(struct dp_soc *soc, uint8_t num_pool,
+QDF_STATUS dp_tx_tso_num_seg_pool_alloc(struct dp_soc *soc, uint8_t pool_id,
+		uint32_t num_elem);
+QDF_STATUS dp_tx_tso_num_seg_pool_init(struct dp_soc *soc, uint8_t pool_id,
 				       uint32_t num_elem);
-
-/**
- * dp_tx_tso_num_seg_pool_free_by_id() - free descriptors that tracks the
- *                              fragments in each tso segment based on pool ID
- *
- * @soc: handle to dp soc structure
- * @pool_id: Pool ID
- */
-void dp_tx_tso_num_seg_pool_free_by_id(struct dp_soc *soc, uint8_t pool_id);
-
-/**
- * dp_tx_tso_num_seg_pool_free() - free descriptors that tracks the
- *                              fragments in each tso segment
- *
- * @soc: handle to dp soc structure
- * @num_pool: number of pools to free
- */
-void dp_tx_tso_num_seg_pool_free(struct dp_soc *soc, uint8_t num_pool);
-
-/**
- * dp_tx_tso_num_seg_pool_deinit_by_id() - de-initialize descriptors that tracks
- *                           the fragments in each tso segment based on pool ID
- * @soc: handle to dp soc structure
- * @pool_id: Pool ID
- */
-void dp_tx_tso_num_seg_pool_deinit_by_id(struct dp_soc *soc, uint8_t pool_id);
-
-/**
- * dp_tx_tso_num_seg_pool_deinit() - de-initialize descriptors that tracks the
- *                              fragments in each tso segment
- *
- * @soc: handle to dp soc structure
- * @num_pool: number of pools to de-initialize
- *
- * Return: QDF_STATUS_SUCCESS
- *	   QDF_STATUS_E_FAULT
- */
-void dp_tx_tso_num_seg_pool_deinit(struct dp_soc *soc, uint8_t num_pool);
+void dp_tx_tso_num_seg_pool_free(struct dp_soc *soc, uint8_t pool_id);
+void dp_tx_tso_num_seg_pool_deinit(struct dp_soc *soc, uint8_t pool_id);
 
 #ifdef DP_UMAC_HW_RESET_SUPPORT
-/**
- * dp_tx_desc_pool_cleanup() -  Clean up the tx dexcriptor pools
- * @soc: Handle to DP SoC structure
- * @nbuf_list: nbuf list for delayed free
- * @cleanup: cleanup the pool
- *
- */
-void dp_tx_desc_pool_cleanup(struct dp_soc *soc, qdf_nbuf_t *nbuf_list,
-			     bool cleanup);
+void dp_tx_desc_pool_cleanup(struct dp_soc *soc, qdf_nbuf_t *nbuf_list);
 #endif
-
-/**
- * dp_tx_desc_clear() - Clear contents of tx desc
- * @tx_desc: descriptor to free
- *
- * Return: none
- */
-static inline void
-dp_tx_desc_clear(struct dp_tx_desc_s *tx_desc)
-{
-	tx_desc->vdev_id = DP_INVALID_VDEV_ID;
-	tx_desc->nbuf = NULL;
-	tx_desc->flags = 0;
-	tx_desc->next = NULL;
-}
 
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
 void dp_tx_flow_control_init(struct dp_soc *);
@@ -514,7 +177,7 @@ struct dp_tx_desc_s *dp_tx_get_desc_flow_pool(struct dp_tx_desc_pool_s *pool)
 }
 
 /**
- * dp_tx_put_desc_flow_pool() - put descriptor to flow pool freelist
+ * ol_tx_put_desc_flow_pool() - put descriptor to flow pool freelist
  * @pool: flow pool
  * @tx_desc: tx descriptor
  *
@@ -531,18 +194,11 @@ void dp_tx_put_desc_flow_pool(struct dp_tx_desc_pool_s *pool,
 	pool->avail_desc++;
 }
 
-static inline void
-dp_tx_desc_free_list(struct dp_tx_desc_pool_s *pool,
-		     struct dp_tx_desc_s *head_desc,
-		     struct dp_tx_desc_s *tail_desc,
-		     uint32_t fast_desc_count)
-{
-}
-
 #ifdef QCA_AC_BASED_FLOW_CONTROL
 
 /**
  * dp_tx_flow_pool_member_clean() - Clean the members of TX flow pool
+ *
  * @pool: flow pool
  *
  * Return: None
@@ -561,6 +217,7 @@ dp_tx_flow_pool_member_clean(struct dp_tx_desc_pool_s *pool)
 
 /**
  * dp_tx_is_threshold_reached() - Check if current avail desc meet threshold
+ *
  * @pool: flow pool
  * @avail_desc: available descriptor number
  *
@@ -583,6 +240,7 @@ dp_tx_is_threshold_reached(struct dp_tx_desc_pool_s *pool, uint16_t avail_desc)
 
 /**
  * dp_tx_adjust_flow_pool_state() - Adjust flow pool state
+ *
  * @soc: dp soc
  * @pool: flow pool
  */
@@ -637,6 +295,7 @@ dp_tx_adjust_flow_pool_state(struct dp_soc *soc,
 
 /**
  * dp_tx_desc_alloc() - Allocate a Software Tx descriptor from given pool
+ *
  * @soc: Handle to DP SoC structure
  * @desc_pool_id: ID of the flow control fool
  *
@@ -731,10 +390,11 @@ dp_tx_desc_alloc(struct dp_soc *soc, uint8_t desc_pool_id)
 }
 
 /**
- * dp_tx_desc_free() - Free a tx descriptor and attach it to free list
+ * dp_tx_desc_free() - Fee a tx descriptor and attach it to free list
+ *
  * @soc: Handle to DP SoC structure
  * @tx_desc: the tx descriptor to be freed
- * @desc_pool_id: ID of the flow control pool
+ * @desc_pool_id: ID of the flow control fool
  *
  * Return: None
  */
@@ -808,22 +468,22 @@ dp_tx_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 		break;
 	case FLOW_POOL_INVALID:
 		if (pool->avail_desc == pool->pool_size) {
-			dp_tx_desc_pool_deinit(soc, desc_pool_id, false);
-			dp_tx_desc_pool_free(soc, desc_pool_id, false);
+			dp_tx_desc_pool_deinit(soc, desc_pool_id);
+			dp_tx_desc_pool_free(soc, desc_pool_id);
 			qdf_spin_unlock_bh(&pool->flow_pool_lock);
-			dp_err_rl("pool %d is freed!!", desc_pool_id);
+			QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
+				  "%s %d pool is freed!!",
+				  __func__, __LINE__);
 			return;
 		}
 		break;
 
 	case FLOW_POOL_ACTIVE_UNPAUSED:
 		break;
-
-	case FLOW_POOL_ACTIVE_UNPAUSED_REATTACH:
-		fallthrough;
 	default:
-		dp_err_rl("pool %d status: %d",
-			  desc_pool_id, pool->status);
+		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_ERROR,
+			  "%s %d pool is INACTIVE State!!",
+			  __func__, __LINE__);
 		break;
 	};
 
@@ -831,18 +491,6 @@ dp_tx_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 		soc->pause_cb(pool->flow_pool_id,
 			      act, reason);
 	qdf_spin_unlock_bh(&pool->flow_pool_lock);
-}
-
-static inline void
-dp_tx_spcl_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
-		     uint8_t desc_pool_id)
-{
-}
-
-static inline struct dp_tx_desc_s *dp_tx_spcl_desc_alloc(struct dp_soc *soc,
-							 uint8_t desc_pool_id)
-{
-	return NULL;
 }
 #else /* QCA_AC_BASED_FLOW_CONTROL */
 
@@ -857,10 +505,11 @@ dp_tx_is_threshold_reached(struct dp_tx_desc_pool_s *pool, uint16_t avail_desc)
 
 /**
  * dp_tx_desc_alloc() - Allocate a Software Tx Descriptor from given pool
- * @soc: Handle to DP SoC structure
- * @desc_pool_id:
  *
- * Return: Tx descriptor or NULL
+ * @soc Handle to DP SoC structure
+ * @pool_id
+ *
+ * Return:
  */
 static inline struct dp_tx_desc_s *
 dp_tx_desc_alloc(struct dp_soc *soc, uint8_t desc_pool_id)
@@ -898,16 +547,12 @@ dp_tx_desc_alloc(struct dp_soc *soc, uint8_t desc_pool_id)
 	return tx_desc;
 }
 
-static inline struct dp_tx_desc_s *dp_tx_spcl_desc_alloc(struct dp_soc *soc,
-							 uint8_t desc_pool_id)
-{
-	return NULL;
-}
 /**
- * dp_tx_desc_free() - Free a tx descriptor and attach it to free list
- * @soc: Handle to DP SoC structure
- * @tx_desc: Descriptor to free
- * @desc_pool_id: Descriptor pool Id
+ * dp_tx_desc_free() - Fee a tx descriptor and attach it to free list
+ *
+ * @soc Handle to DP SoC structure
+ * @pool_id
+ * @tx_desc
  *
  * Return: None
  */
@@ -934,8 +579,8 @@ dp_tx_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 		break;
 	case FLOW_POOL_INVALID:
 		if (pool->avail_desc == pool->pool_size) {
-			dp_tx_desc_pool_deinit(soc, desc_pool_id, false);
-			dp_tx_desc_pool_free(soc, desc_pool_id, false);
+			dp_tx_desc_pool_deinit(soc, desc_pool_id);
+			dp_tx_desc_pool_free(soc, desc_pool_id);
 			qdf_spin_unlock_bh(&pool->flow_pool_lock);
 			qdf_print("%s %d pool is freed!!",
 				  __func__, __LINE__);
@@ -954,11 +599,6 @@ dp_tx_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 	qdf_spin_unlock_bh(&pool->flow_pool_lock);
 }
 
-static inline void
-dp_tx_spcl_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
-		     uint8_t desc_pool_id)
-{
-}
 #endif /* QCA_AC_BASED_FLOW_CONTROL */
 
 static inline bool
@@ -1017,18 +657,17 @@ void dp_tx_prefetch_desc(struct dp_tx_desc_s *tx_desc)
 
 /**
  * dp_tx_desc_alloc() - Allocate a Software Tx Descriptor from given pool
- * @soc: Handle to DP SoC structure
- * @desc_pool_id: pool id
  *
- * Return: Tx Descriptor or NULL
+ * @param soc Handle to DP SoC structure
+ * @param pool_id
+ *
+ * Return:
  */
 static inline struct dp_tx_desc_s *dp_tx_desc_alloc(struct dp_soc *soc,
 						uint8_t desc_pool_id)
 {
 	struct dp_tx_desc_s *tx_desc = NULL;
-	struct dp_tx_desc_pool_s *pool = NULL;
-
-	pool = dp_get_tx_desc_pool(soc, desc_pool_id);
+	struct dp_tx_desc_pool_s *pool = &soc->tx_desc[desc_pool_id];
 
 	TX_DESC_LOCK_LOCK(&pool->lock);
 
@@ -1046,37 +685,6 @@ static inline struct dp_tx_desc_s *dp_tx_desc_alloc(struct dp_soc *soc,
 	dp_tx_prefetch_desc(pool->freelist);
 
 	tx_desc->flags = DP_TX_DESC_FLAG_ALLOCATED;
-
-	TX_DESC_LOCK_UNLOCK(&pool->lock);
-
-	return tx_desc;
-}
-
-static inline struct dp_tx_desc_s *dp_tx_spcl_desc_alloc(struct dp_soc *soc,
-							 uint8_t desc_pool_id)
-{
-	struct dp_tx_desc_s *tx_desc = NULL;
-	struct dp_tx_desc_pool_s *pool = NULL;
-
-	pool = dp_get_spcl_tx_desc_pool(soc, desc_pool_id);
-
-	TX_DESC_LOCK_LOCK(&pool->lock);
-
-	tx_desc = pool->freelist;
-
-	/* Pool is exhausted */
-	if (!tx_desc) {
-		TX_DESC_LOCK_UNLOCK(&pool->lock);
-		return NULL;
-	}
-
-	pool->freelist = pool->freelist->next;
-	pool->num_allocated++;
-	pool->num_free--;
-	dp_tx_prefetch_desc(pool->freelist);
-
-	tx_desc->flags = DP_TX_DESC_FLAG_ALLOCATED;
-	tx_desc->flags |= DP_TX_DESC_FLAG_SPECIAL;
 
 	TX_DESC_LOCK_UNLOCK(&pool->lock);
 
@@ -1087,21 +695,19 @@ static inline struct dp_tx_desc_s *dp_tx_spcl_desc_alloc(struct dp_soc *soc,
  * dp_tx_desc_alloc_multiple() - Allocate batch of software Tx Descriptors
  *                            from given pool
  * @soc: Handle to DP SoC structure
- * @desc_pool_id: pool id should pick up
+ * @pool_id: pool id should pick up
  * @num_requested: number of required descriptor
  *
  * allocate multiple tx descriptor and make a link
  *
- * Return: first descriptor pointer or NULL
+ * Return: h_desc first descriptor pointer
  */
 static inline struct dp_tx_desc_s *dp_tx_desc_alloc_multiple(
 		struct dp_soc *soc, uint8_t desc_pool_id, uint8_t num_requested)
 {
 	struct dp_tx_desc_s *c_desc = NULL, *h_desc = NULL;
 	uint8_t count;
-	struct dp_tx_desc_pool_s *pool = NULL;
-
-	pool = dp_get_tx_desc_pool(soc, desc_pool_id);
+	struct dp_tx_desc_pool_s *pool = &soc->tx_desc[desc_pool_id];
 
 	TX_DESC_LOCK_LOCK(&pool->lock);
 
@@ -1135,55 +741,27 @@ static inline struct dp_tx_desc_s *dp_tx_desc_alloc_multiple(
 }
 
 /**
- * dp_tx_desc_free() - Free a tx descriptor and attach it to free list
- * @soc: Handle to DP SoC structure
- * @tx_desc: descriptor to free
- * @desc_pool_id: ID of the free pool
+ * dp_tx_desc_free() - Fee a tx descriptor and attach it to free list
+ *
+ * @soc Handle to DP SoC structure
+ * @pool_id
+ * @tx_desc
  */
 static inline void
 dp_tx_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
 		uint8_t desc_pool_id)
 {
 	struct dp_tx_desc_pool_s *pool = NULL;
+	tx_desc->vdev_id = DP_INVALID_VDEV_ID;
+	tx_desc->nbuf = NULL;
+	tx_desc->flags = 0;
 
-	dp_tx_desc_clear(tx_desc);
-	pool = dp_get_tx_desc_pool(soc, desc_pool_id);
+	pool = &soc->tx_desc[desc_pool_id];
 	TX_DESC_LOCK_LOCK(&pool->lock);
 	tx_desc->next = pool->freelist;
 	pool->freelist = tx_desc;
 	pool->num_allocated--;
 	pool->num_free++;
-	TX_DESC_LOCK_UNLOCK(&pool->lock);
-}
-
-static inline void
-dp_tx_spcl_desc_free(struct dp_soc *soc, struct dp_tx_desc_s *tx_desc,
-		     uint8_t desc_pool_id)
-{
-	struct dp_tx_desc_pool_s *pool = NULL;
-
-	dp_tx_desc_clear(tx_desc);
-
-	pool = dp_get_spcl_tx_desc_pool(soc, desc_pool_id);
-	TX_DESC_LOCK_LOCK(&pool->lock);
-	tx_desc->next = pool->freelist;
-	pool->freelist = tx_desc;
-	pool->num_allocated--;
-	pool->num_free++;
-	TX_DESC_LOCK_UNLOCK(&pool->lock);
-}
-
-static inline void
-dp_tx_desc_free_list(struct dp_tx_desc_pool_s *pool,
-		     struct dp_tx_desc_s *head_desc,
-		     struct dp_tx_desc_s *tail_desc,
-		     uint32_t fast_desc_count)
-{
-	TX_DESC_LOCK_LOCK(&pool->lock);
-	pool->num_allocated -= fast_desc_count;
-	pool->num_free += fast_desc_count;
-	tail_desc->next = pool->freelist;
-	pool->freelist = head_desc;
 	TX_DESC_LOCK_UNLOCK(&pool->lock);
 }
 
@@ -1192,8 +770,9 @@ dp_tx_desc_free_list(struct dp_tx_desc_pool_s *pool,
 #ifdef QCA_DP_TX_DESC_ID_CHECK
 /**
  * dp_tx_is_desc_id_valid() - check is the tx desc id valid
- * @soc: Handle to DP SoC structure
- * @tx_desc_id:
+ *
+ * @soc Handle to DP SoC structure
+ * @tx_desc_id
  *
  * Return: true or false
  */
@@ -1282,14 +861,10 @@ static inline void dp_tx_desc_update_fast_comp_flag(struct dp_soc *soc,
 						    uint8_t allow_fast_comp)
 {
 	if (qdf_likely(!(desc->flags & DP_TX_DESC_FLAG_TO_FW)) &&
-	    qdf_likely(allow_fast_comp))
+	    qdf_likely(allow_fast_comp)) {
 		desc->flags |= DP_TX_DESC_FLAG_SIMPLE;
-
-	if (qdf_likely(desc->nbuf->is_from_recycler) &&
-	    qdf_likely(desc->nbuf->fast_xmit))
-		desc->flags |= DP_TX_DESC_FLAG_FAST;
+	}
 }
-
 #else
 static inline void dp_tx_desc_update_fast_comp_flag(struct dp_soc *soc,
 						    struct dp_tx_desc_s *desc,
@@ -1299,27 +874,18 @@ static inline void dp_tx_desc_update_fast_comp_flag(struct dp_soc *soc,
 #endif /* QCA_DP_TX_DESC_FAST_COMP_ENABLE */
 
 /**
- * dp_tx_desc_find() - find dp tx descriptor from pool/page/offset
- * @soc: handle for the device sending the data
- * @pool_id: pool id
- * @page_id: page id
- * @offset: offset from base address
- * @spcl_pool: bit to indicate if this is a special pool
+ * dp_tx_desc_find() - find dp tx descriptor from cokie
+ * @soc - handle for the device sending the data
+ * @tx_desc_id - the ID of the descriptor in question
+ * @return the descriptor object that has the specified ID
  *
- * Use page and offset to find the corresponding descriptor object in
- * the given descriptor pool.
+ *  Use a tx descriptor ID to find the corresponding descriptor object.
  *
- * Return: the descriptor object that has the specified ID
  */
-static inline
-struct dp_tx_desc_s *dp_tx_desc_find(struct dp_soc *soc,
-				     uint8_t pool_id, uint16_t page_id,
-				     uint16_t offset, bool spcl_pool)
+static inline struct dp_tx_desc_s *dp_tx_desc_find(struct dp_soc *soc,
+		uint8_t pool_id, uint16_t page_id, uint16_t offset)
 {
-	struct dp_tx_desc_pool_s *tx_desc_pool = NULL;
-
-	tx_desc_pool = spcl_pool ? dp_get_spcl_tx_desc_pool(soc, pool_id) :
-				dp_get_tx_desc_pool(soc, pool_id);
+	struct dp_tx_desc_pool_s *tx_desc_pool = &soc->tx_desc[pool_id];
 
 	return tx_desc_pool->desc_pages.cacheable_pages[page_id] +
 		tx_desc_pool->elem_size * offset;
@@ -1328,7 +894,7 @@ struct dp_tx_desc_s *dp_tx_desc_find(struct dp_soc *soc,
 /**
  * dp_tx_ext_desc_alloc() - Get tx extension descriptor from pool
  * @soc: handle for the device sending the data
- * @desc_pool_id: target pool id
+ * @pool_id: target pool id
  *
  * Return: None
  */
@@ -1338,7 +904,6 @@ struct dp_tx_ext_desc_elem_s *dp_tx_ext_desc_alloc(struct dp_soc *soc,
 {
 	struct dp_tx_ext_desc_elem_s *c_elem;
 
-	desc_pool_id = dp_tx_ext_desc_pool_override(desc_pool_id);
 	qdf_spin_lock_bh(&soc->tx_ext_desc[desc_pool_id].lock);
 	if (soc->tx_ext_desc[desc_pool_id].num_free <= 0) {
 		qdf_spin_unlock_bh(&soc->tx_ext_desc[desc_pool_id].lock);
@@ -1355,15 +920,14 @@ struct dp_tx_ext_desc_elem_s *dp_tx_ext_desc_alloc(struct dp_soc *soc,
 /**
  * dp_tx_ext_desc_free() - Release tx extension descriptor to the pool
  * @soc: handle for the device sending the data
+ * @pool_id: target pool id
  * @elem: ext descriptor pointer should release
- * @desc_pool_id: target pool id
  *
  * Return: None
  */
 static inline void dp_tx_ext_desc_free(struct dp_soc *soc,
 	struct dp_tx_ext_desc_elem_s *elem, uint8_t desc_pool_id)
 {
-	desc_pool_id = dp_tx_ext_desc_pool_override(desc_pool_id);
 	qdf_spin_lock_bh(&soc->tx_ext_desc[desc_pool_id].lock);
 	elem->next = soc->tx_ext_desc[desc_pool_id].freelist;
 	soc->tx_ext_desc[desc_pool_id].freelist = elem;
@@ -1373,7 +937,7 @@ static inline void dp_tx_ext_desc_free(struct dp_soc *soc,
 }
 
 /**
- * dp_tx_ext_desc_free_multiple() - Free multiple tx extension descriptor and
+ * dp_tx_ext_desc_free_multiple() - Fee multiple tx extension descriptor and
  *                           attach it to free list
  * @soc: Handle to DP SoC structure
  * @desc_pool_id: pool id should pick up
@@ -1404,7 +968,6 @@ static inline void dp_tx_ext_desc_free_multiple(struct dp_soc *soc,
 	/* caller should always guarantee atleast list of num_free nodes */
 	qdf_assert_always(tail);
 
-	desc_pool_id = dp_tx_ext_desc_pool_override(desc_pool_id);
 	qdf_spin_lock_bh(&soc->tx_ext_desc[desc_pool_id].lock);
 	tail->next = soc->tx_ext_desc[desc_pool_id].freelist;
 	soc->tx_ext_desc[desc_pool_id].freelist = head;
@@ -1493,11 +1056,11 @@ void dp_tso_num_seg_free(struct dp_soc *soc,
 }
 #endif
 
-/**
- * dp_tx_me_alloc_buf() - Alloc descriptor from me pool
- * @pdev: DP_PDEV handle for datapath
+/*
+ * dp_tx_me_alloc_buf() Alloc descriptor from me pool
+ * @pdev DP_PDEV handle for datapath
  *
- * Return: tx descriptor on success, NULL on error
+ * Return:dp_tx_me_buf_t(buf)
  */
 static inline struct dp_tx_me_buf_t*
 dp_tx_me_alloc_buf(struct dp_pdev *pdev)
@@ -1518,7 +1081,7 @@ dp_tx_me_alloc_buf(struct dp_pdev *pdev)
 	return buf;
 }
 
-/**
+/*
  * dp_tx_me_free_buf() - Unmap the buffer holding the dest
  * address, free me descriptor and add it to the free-pool
  * @pdev: DP_PDEV handle for datapath

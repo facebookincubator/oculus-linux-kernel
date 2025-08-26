@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,7 +27,7 @@
 #include <qdf_module.h>
 
 #ifdef WDI_EVENT_ENABLE
-/**
+/*
  * dp_wdi_event_next_sub() - Return handle for Next WDI event
  * @wdi_sub: WDI Event handle
  *
@@ -47,13 +47,12 @@ dp_wdi_event_next_sub(wdi_event_subscribe *wdi_sub)
 }
 
 
-/**
- * dp_wdi_event_del_subs() - Delete Event subscription
+/*
+ * dp_wdi_event_del_subs() -Delete Event subscription
  * @wdi_sub: WDI Event handle
  * @event_index: Event index from list
  *
  * This API will delete subscribed event from list
- *
  * Return: None
  */
 static inline void
@@ -63,12 +62,12 @@ dp_wdi_event_del_subs(wdi_event_subscribe *wdi_sub, int event_index)
 }
 
 
-/**
+/*
  * dp_wdi_event_iter_sub() - Iterate through all WDI event in the list
  * and pass WDI event to callback function
  * @pdev: DP pdev handle
  * @event_index: Event index in list
- * @wdi_sub: WDI event subscriber
+ * @wdi_event: WDI event handle
  * @data: pointer to data
  * @peer_id: peer id number
  * @status: HTT rx status
@@ -96,6 +95,19 @@ dp_wdi_event_iter_sub(
 }
 
 
+/*
+ * dp_wdi_event_handler() - Event handler for WDI event
+ * @event: wdi event number
+ * @soc: soc handle
+ * @data: pointer to data
+ * @peer_id: peer id number
+ * @status: HTT rx status
+ * @pdev_id: id of pdev
+ *
+ * It will be called to register WDI event
+ *
+ * Return: None
+ */
 void
 dp_wdi_event_handler(
 	enum WDI_EVENT event,
@@ -137,6 +149,15 @@ dp_wdi_event_handler(
 
 qdf_export_symbol(dp_wdi_event_handler);
 
+/*
+ * dp_wdi_event_sub() - Subscribe WDI event
+ * @soc: soc handle
+ * @pdev_id: id of pdev
+ * @event_cb_sub_handle: subscribe event handle
+ * @event: Event to be subscribe
+ *
+ * Return: 0 for success. nonzero for failure.
+ */
 int
 dp_wdi_event_sub(
 	struct cdp_soc_t *soc, uint8_t pdev_id,
@@ -201,6 +222,16 @@ dp_wdi_event_sub(
 
 }
 
+/*
+ * dp_wdi_event_unsub() - WDI event unsubscribe
+ * @soc: soc handle
+ * @pdev_id: id of pdev
+ * @event_cb_sub_handle: subscribed event handle
+ * @event: Event to be unsubscribe
+ *
+ *
+ * Return: 0 for success. nonzero for failure.
+ */
 int
 dp_wdi_event_unsub(
 	struct cdp_soc_t *soc, uint8_t pdev_id,
@@ -239,6 +270,12 @@ dp_wdi_event_unsub(
 }
 
 
+/*
+ * dp_wdi_event_attach() - Attach wdi event
+ * @txrx_pdev: DP pdev handle
+ *
+ * Return: 0 for success. nonzero for failure.
+ */
 int
 dp_wdi_event_attach(struct dp_pdev *txrx_pdev)
 {
@@ -260,6 +297,13 @@ dp_wdi_event_attach(struct dp_pdev *txrx_pdev)
 	return 0;
 }
 
+
+/*
+ * dp_wdi_event_detach() - Detach WDI event
+ * @txrx_pdev: DP pdev handle
+ *
+ * Return: 0 for success. nonzero for failure.
+ */
 int
 dp_wdi_event_detach(struct dp_pdev *txrx_pdev)
 {
@@ -281,4 +325,4 @@ dp_wdi_event_detach(struct dp_pdev *txrx_pdev)
 	qdf_mem_free(txrx_pdev->wdi_event_list);
 	return 0;
 }
-#endif
+#endif /* CONFIG_WIN */

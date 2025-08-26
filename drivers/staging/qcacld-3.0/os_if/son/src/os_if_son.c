@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -1323,8 +1323,7 @@ int os_if_son_reg_get_ap_hw_cap(struct wlan_objmgr_pdev *pdev,
 		return nsoc;
 	}
 	status = wlan_reg_get_opclass_details(pdev, reg_ap_cap, &n_opclasses,
-					      max_supp_op_class, true,
-					      REG_CURRENT_PWR_MODE);
+					      max_supp_op_class, true);
 	if (status == QDF_STATUS_E_FAILURE) {
 		osif_err("Failed to get SAP regulatory capabilities");
 		goto end_reg_get_ap_hw_cap;
@@ -1392,8 +1391,7 @@ static void os_if_son_reg_get_op_channels(struct wlan_objmgr_pdev *pdev,
 		return;
 	}
 	status = wlan_reg_get_opclass_details(pdev, reg_ap_cap, &n_opclasses,
-					      max_supp_op_class, true,
-					      REG_CURRENT_PWR_MODE);
+					      max_supp_op_class, true);
 	if (status == QDF_STATUS_E_FAILURE) {
 		osif_err("Failed to get SAP regulatory capabilities");
 		goto end_reg_get_op_channels;
@@ -1478,8 +1476,7 @@ static void os_if_son_reg_get_opclass_details(struct wlan_objmgr_pdev *pdev,
 		return;
 	}
 	status = wlan_reg_get_opclass_details(pdev, reg_ap_cap, &n_opclasses,
-					      max_supp_op_class, true,
-					      REG_CURRENT_PWR_MODE);
+					      max_supp_op_class, true);
 	if (status == QDF_STATUS_E_FAILURE) {
 		osif_err("Failed to get SAP regulatory capabilities");
 		goto end_reg_get_opclass_details;

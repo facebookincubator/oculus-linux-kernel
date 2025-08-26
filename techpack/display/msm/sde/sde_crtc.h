@@ -487,6 +487,12 @@ struct sde_crtc {
 
 	/* qsync information */
 	u32 qsync_min_fps;
+
+	/* DPU Histogram controls. */
+	bool histogram_enable;
+	bool regdma_enable;
+	s32 histogram_interval_msec;
+	ktime_t regdma_histogram_last_exec_time;
 };
 
 enum sde_crtc_dirty_flags {

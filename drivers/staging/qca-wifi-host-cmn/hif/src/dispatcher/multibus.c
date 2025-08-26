@@ -71,8 +71,6 @@ static void hif_initialize_default_ops(struct hif_softc *hif_sc)
 #ifdef FEATURE_IRQ_AFFINITY
 	bus_ops->hif_set_grp_intr_affinity = &hif_dummy_set_grp_intr_affinity;
 #endif
-	bus_ops->hif_affinity_mgr_set_affinity =
-		&hif_dummy_affinity_mgr_set_affinity;
 }
 
 #define NUM_OPS (sizeof(struct hif_bus_ops) / sizeof(void *))
@@ -636,7 +634,7 @@ void hif_config_irq_clear_cpu_affinity(struct hif_opaque_softc *scn,
 							  intr_ctxt_id, cpu);
 }
 
-qdf_export_symbol(hif_config_irq_clear_cpu_affinity);
+qdf_export_symbol(hif_config_irq_clear_affinity);
 #endif
 
 #ifdef HIF_BUS_LOG_INFO
@@ -725,16 +723,3 @@ void hif_set_grp_intr_affinity(struct hif_opaque_softc *scn,
 						  perf);
 }
 #endif
-
-void hif_affinity_mgr_set_affinity(struct hif_opaque_softc *scn)
-{
-	struct hif_softc *hif_sc = HIF_GET_SOFTC(scn);
-
-	if (!hif_sc)
-		return;
-
-	if (!hif_sc->bus_ops.hif_affinity_mgr_set_affinity)
-		return;
-
-	hif_sc->bus_ops.hif_affinity_mgr_set_affinity(hif_sc);
-}

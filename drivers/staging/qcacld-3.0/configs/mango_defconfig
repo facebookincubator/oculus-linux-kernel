@@ -18,9 +18,6 @@ CONFIG_CFG_MAX_STA_VDEVS := 4
 #Enable 11BE MLO
 CONFIG_WLAN_FEATURE_11BE_MLO := y
 
-#Enable Peer table transition history
-CONFIG_WLAN_FEATURE_PEER_TRANS_HIST := y
-
 #BMISS offload max vdev config
 CONFIG_CFG_BMISS_OFFLOAD_MAX_VDEV := 4
 

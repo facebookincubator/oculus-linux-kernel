@@ -70,8 +70,6 @@
  * @WLAN_CM_SM_EV_HO_ROAM_DISCONNECT_DONE: Disconnect done for hands off/roaming
  * @WLAN_CM_SM_EV_RSO_STOP_RSP:           Event to continue disconnect after
  *                                        RSO stop response is received
- * @WLAN_CM_SM_EV_BEARER_SWITCH_COMPLETE: Event to continue connect after bearer
- *                                       switch complete
  * @WLAN_CM_SM_EV_MAX:                    Max event
  */
 enum wlan_cm_sm_evt {
@@ -113,7 +111,6 @@ enum wlan_cm_sm_evt {
 	WLAN_CM_SM_EV_REASSOC_TIMER = 35,
 	WLAN_CM_SM_EV_HO_ROAM_DISCONNECT_DONE = 36,
 	WLAN_CM_SM_EV_RSO_STOP_RSP = 37,
-	WLAN_CM_SM_EV_BEARER_SWITCH_COMPLETE = 38,
 	WLAN_CM_SM_EV_MAX,
 };
 

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -670,15 +670,6 @@ void
 wmi_flush_endpoint(wmi_unified_t wmi_handle);
 
 /**
- * wmi_get_endpoint() - API to get endpoint ID
- * @wmi_handle: handle to WMI.
- *
- * Return Handle to endpoint
- */
-HTC_ENDPOINT_ID
-wmi_get_endpoint(wmi_unified_t wmi_handle);
-
-/**
  * wmi_interface_sequence_stop() - API to stop wmi sequence check
  *
  * @wmi_handle: handle to WMI.
@@ -817,20 +808,6 @@ QDF_STATUS wmi_unified_soc_set_hw_mode_cmd(wmi_unified_t wmi_handle,
 					   uint32_t hw_mode_index);
 
 /**
- * wmi_unified_soc_set_rf_path_cmd() - WMI_PDEV_SET_RF_PATH_CMDID to FW
- * @wmi_handle: wmi handle
- * @rf_path_index: RF path index to switch to
- * @pdev_id: pdev id
- *
- * Request RF path change to WLAN firmware
- *
- * Return: QDF_STATUS_SUCCESS on success and QDF_STATUS_E_FAILURE for failure
- */
-QDF_STATUS wmi_unified_soc_set_rf_path_cmd(wmi_unified_t wmi_handle,
-					   uint32_t rf_path_index,
-					   uint8_t pdev_id);
-
-/**
  * wmi_unified_extract_hw_mode_resp() - Extract HW mode change response
  * @wmi: WMI handle
  * @evt_buf: Buffer holding event data
@@ -840,19 +817,6 @@ QDF_STATUS wmi_unified_soc_set_rf_path_cmd(wmi_unified_t wmi_handle,
  */
 QDF_STATUS
 wmi_unified_extract_hw_mode_resp(wmi_unified_t wmi,
-				 void *evt_buf,
-				 uint32_t *cmd_status);
-
-/**
- * wmi_unified_extract_rf_path_resp() - Extract RF path change response
- * @wmi: WMI handle
- * @evt_buf: Buffer holding event data
- * @cmd_status: command status
- *
- * Return: QDF_STATUS_SUCCESS if success, else returns proper error code.
- */
-QDF_STATUS
-wmi_unified_extract_rf_path_resp(wmi_unified_t wmi,
 				 void *evt_buf,
 				 uint32_t *cmd_status);
 
@@ -957,12 +921,12 @@ wmi_unified_vdev_nss_chain_params_send(
 /**
  * wmi_unified_vdev_stop_send() - send vdev stop command to fw
  * @wmi_handle: wmi handle
- * @params: VDEV stop params
+ * @vdev_id: vdev id
  *
  * Return: QDF_STATUS_SUCCESS on success and QDF_STATUS_E_FAILURE for failure
  */
 QDF_STATUS wmi_unified_vdev_stop_send(wmi_unified_t wmi_handle,
-				      struct vdev_stop_params *params);
+				      uint8_t vdev_id);
 
 /**
  * wmi_unified_vdev_up_send() - send vdev up command in fw
@@ -2071,7 +2035,7 @@ QDF_STATUS wmi_unified_send_apf_read_work_memory_cmd(wmi_unified_t wmi,
  * @evt_buf: Pointer to the event buffer
  * @read_mem_evt: pointer to memory to extract event parameters into
  *
- * This function extracts read mem response event into the given structure ptr
+ * This function exctracts read mem response event into the given structure ptr
  *
  * Return: QDF_STATUS_SUCCESS on success and QDF_STATUS_E_FAILURE for failure
  */
@@ -2140,18 +2104,6 @@ wmi_unified_send_btcoex_wlan_priority_cmd(wmi_unified_t wmi_handle,
 QDF_STATUS
 wmi_unified_send_btcoex_duty_cycle_cmd(wmi_unified_t wmi_handle,
 				       struct btcoex_cfg_params *param);
-/**
- *  wmi_unified_send_egid_info_cmd() - send ESL egid_info commands
- * @wmi_handle: wmi handle
- * @param: esl_egid params
- *
- * Send WMI_ESL_EGID_CMDID parameters to fw.
- *
- * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
- */
-QDF_STATUS
-wmi_unified_send_egid_info_cmd(wmi_unified_t wmi_handle,
-			       struct esl_egid_params *param);
 
 /**
  * wmi_unified_send_coex_ver_cfg_cmd() - send coex ver cfg command
@@ -2178,20 +2130,6 @@ wmi_unified_send_coex_ver_cfg_cmd(wmi_unified_t wmi_handle,
 QDF_STATUS
 wmi_unified_send_coex_config_cmd(wmi_unified_t wmi_handle,
 				 struct coex_config_params *param);
-
-/**
- * wmi_unified_send_coex_multi_config_cmd() - send multiple coex config
- * @wmi_handle: wmi handle
- * @param: wmi coex multiple cfg cmd params
- *
- * Send WMI_COEX_MULTIPLE_CONFIG_CMDID parameters to fw.
- *
- * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
- */
-QDF_STATUS
-wmi_unified_send_coex_multi_config_cmd(wmi_unified_t wmi_handle,
-				       struct coex_multi_config *param);
-
 #ifdef WLAN_FEATURE_DBAM_CONFIG
 /**
  * wmi_unified_send_dbam_config_cmd() - send dbam config command
@@ -3756,18 +3694,6 @@ QDF_STATUS wmi_unified_peer_rx_reorder_queue_setup_send(
 		struct rx_reorder_queue_setup_params *param);
 
 /**
- * wmi_unified_peer_multi_rx_reorder_queue_setup_send() - send
- *        multi rx reorder queue setup command to fw
- * @wmi_handle: wmi handle
- * @param: Multi rx reorder queue setup parameters
- *
- * Return: QDF_STATUS for success and QDF_STATUS_E_FAILURE for failure
- */
-QDF_STATUS wmi_unified_peer_multi_rx_reorder_queue_setup_send(
-		wmi_unified_t wmi_handle,
-		struct multi_rx_reorder_queue_setup_params *param);
-
-/**
  * wmi_unified_peer_rx_reorder_queue_remove_send() - send rx reorder queue
  *      remove command to fw
  * @wmi_handle: wmi handle
@@ -3983,21 +3909,6 @@ QDF_STATUS wmi_extract_spectral_scaling_params_service_ready_ext(
 			wmi_unified_t wmi_handle,
 			uint8_t *evt_buf, uint8_t idx,
 			struct wlan_psoc_host_spectral_scaling_params *param);
-
-#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
-/**
- * wmi_extract_aoa_caps_service_ready_ext2: Extract AoA capabilities received
- *                                          through extended service ready event
- * @wmi_handle: WMI handle
- * @evt_buf: Event buffer
- * @aoa_cap: Pointer to aoa cap
- *
- * Return: QDF status of operation
- */
-QDF_STATUS wmi_extract_aoa_caps_service_ready_ext2(
-			wmi_unified_t wmi_handle, uint8_t *evt_buf,
-			struct wlan_psoc_host_rcc_enh_aoa_caps_ext2 *aoa_cap);
-#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
 
 /**
  * wmi_extract_pdev_utf_event() -
@@ -5230,20 +5141,6 @@ QDF_STATUS wmi_extract_sap_coex_cap_service_ready_ext2(
 			wmi_unified_t wmi_handle,
 			uint8_t *evt_buf,
 			struct wmi_host_coex_fix_chan_cap *cap);
-
-/**
- * wmi_extract_aux_dev_cap_service_ready_ext2() - extract aux dev capability
- * @wmi_handle: wmi handle
- * @evt_buf: pointer to event buffer
- * @idx: capability index
- * @param: psoc aux dev capability struct
- *
- * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
- */
-QDF_STATUS wmi_extract_aux_dev_cap_service_ready_ext2(
-		wmi_unified_t wmi_handle,
-		uint8_t *evt_buf, uint8_t idx,
-		struct wlan_psoc_host_aux_dev_caps *param);
 
 /**
  * wmi_extract_csa_ie_received_event() - extract csa IE received event

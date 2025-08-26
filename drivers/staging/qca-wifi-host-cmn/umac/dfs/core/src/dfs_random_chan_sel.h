@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -188,7 +188,6 @@ struct chan_bonding_bitmap {
 /**
  * struct dfs_tx_leak_info - DFS leakage info
  * @leak_chan: leak channel.
- * @leak_chan_freq: leak channel frequency.
  * @leak_lvl: tx leakage lvl.
  */
 struct dfs_tx_leak_info {
@@ -200,8 +199,7 @@ struct dfs_tx_leak_info {
 /**
  * struct dfs_matrix_tx_leak_info - DFS leakage matrix info for dfs channel.
  * @channel: channel to switch from
- * @channel_freq: channel frequency
- * @chan_matrix: DFS leakage matrix info for given dfs channel.
+ * @chan_matrix DFS leakage matrix info for given dfs channel.
  */
 struct dfs_matrix_tx_leak_info {
 	uint8_t channel;
@@ -236,9 +234,10 @@ QDF_STATUS dfs_mark_leaking_chan_for_freq(struct wlan_dfs *dfs,
  * from the list of available channels.
  * @dfs: dfs handler.
  * @chan_list: channel list.
- * @chan_cnt: Number of channels in given list.
+ * @ch_count: Number of channels in given list.
  * @flags: DFS_RANDOM_CH_FLAG_*
- * @chan_params: channel parameters
+ * @chan_wd: input channel width, used same variable to return new ch width.
+ * @cur_chan: current channel.
  * @dfs_region: DFS region.
  * @acs_info: acs channel range information.
  *
@@ -251,8 +250,8 @@ QDF_STATUS dfs_mark_leaking_chan_for_freq(struct wlan_dfs *dfs,
  */
 #ifdef CONFIG_CHAN_FREQ_API
 uint16_t dfs_prepare_random_channel_for_freq(struct wlan_dfs *dfs,
-					     struct dfs_channel *chan_list,
-					     uint32_t chan_cnt,
+					     struct dfs_channel *ch_list,
+					     uint32_t chan_count,
 					     uint32_t flags,
 					     struct ch_params *chan_params,
 					     uint8_t dfs_region,

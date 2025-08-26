@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,8 +17,8 @@
  */
 
 /**
- * DOC: cdp_txrx_tx_delay.h
- * Define the host data path histogram API functions
+ * @file cdp_txrx_tx_delay.h
+ * @brief Define the host data path histogram API functions
  * called by the host control SW and the OS interface module
  */
 #ifndef _CDP_TXRX_COMPUTE_TX_DELAY_H_
@@ -81,7 +80,6 @@ cdp_tx_delay_hist(ol_txrx_soc_handle soc, uint8_t pdev_id,
  * cdp_tx_packet_count() - get tx packet count
  * @soc: data path soc handle
  * @pdev_id: id of data path pdev handle
- * @out_packet_count: packet count
  * @out_packet_loss_count: packet loss count
  * @category: packet category
  *

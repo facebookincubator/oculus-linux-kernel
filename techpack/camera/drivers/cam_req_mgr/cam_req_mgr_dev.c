@@ -716,18 +716,19 @@ static long cam_private_ioctl(struct file *file, void *fh,
 				return -EINVAL;
 
 			if (copy_from_user(&cmd,
-				u64_to_user_ptr(k_ioctl->handle), sizeof(struct cam_req_mgr_thread_prop_control))) {
+				u64_to_user_ptr(k_ioctl->handle),
+					sizeof(struct cam_req_mgr_thread_prop_control))) {
 				rc = -EFAULT;
 				break;
 			}
 			if (cmd.session_hdl || cmd.link_hdl || cmd.dev_hdl) {
 				CAM_ERR(CAM_REQ, "Property setting of all threads supported only");
-				return -EINVAL;
+				return -EOPNOTSUPP;
 			}
 			rc  = cam_req_mgr_set_thread_prop(&cmd);
 		} else {
 			CAM_ERR(CAM_REQ, "version %d not supported", version);
-			return -EINVAL;
+			return -EOPNOTSUPP;
 		}
 		}
 		break;
