@@ -203,7 +203,7 @@ static int of_thermal_get_temp(struct thermal_zone_device *tz,
 	}
 
 	ret = data->senps->ops->get_temp(data->senps->sensor_data, temp);
-	if (data->average_polls > 0 && ret == 0) {
+	if (data->average_polls > 1 && ret == 0) {
 		/*
 		 * There is no guarantee that temperatures get read exactly at polling
 		 * intervals, the reading migt be slightly delayed or there might be
@@ -1375,7 +1375,7 @@ __init *thermal_of_build_thermal_zone(struct device_node *np)
 	ret = of_property_read_u32(np, "average-polls", &prop);
 	if (ret == 0 && prop > 1) {
 		if (tz->polling_delay < 1) {
-			pr_err("%pOFn: property average-polls requires non-0 property polling-delay\n", np);
+			pr_err("%pOFn: property average-polls above 1 requires non-0 property polling-delay\n", np);
 			goto free_tz;
 		}
 		tz->average_polls = prop;

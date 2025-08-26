@@ -18,9 +18,6 @@ enum {
 	KGSL_THREADSTATS_SUBMITTED = 0,
 	KGSL_THREADSTATS_SUBMITTED_ID,
 	KGSL_THREADSTATS_SUBMITTED_COUNT,
-	KGSL_THREADSTATS_CONSUMED,
-	KGSL_THREADSTATS_CONSUMED_ID,
-	KGSL_THREADSTATS_CONSUMED_COUNT,
 	KGSL_THREADSTATS_RETIRED,
 	KGSL_THREADSTATS_RETIRED_ID,
 	KGSL_THREADSTATS_RETIRED_COUNT,
@@ -28,19 +25,37 @@ enum {
 	KGSL_THREADSTATS_QUEUED_ID,
 	KGSL_THREADSTATS_QUEUED_COUNT,
 	KGSL_THREADSTATS_ACTIVE_TIME,
-	KGSL_THREADSTATS_SYNC_DELTA,
 	KGSL_THREADSTATS_MAX
 };
 
 enum {
 	KGSL_THREADSTATS_SUBMITTED_EVENT = 0,
-	KGSL_THREADSTATS_CONSUMED_EVENT,
 	KGSL_THREADSTATS_RETIRED_EVENT,
 	KGSL_THREADSTATS_QUEUED_EVENT,
 	KGSL_THREADSTATS_ACTIVE_TIME_EVENT,
-	KGSL_THREADSTATS_SYNC_DELTA_EVENT,
 	KGSL_THREADSTATS_EVENT_MAX
 };
+
+struct kgsl_threadstats_entry {
+	u64 timestamp;
+	u64 queued;
+	u64 submitted;
+	u64 consumed;
+	u64 retired;
+	u64 active;
+};
+
+struct kgsl_threadstats_history_node {
+	struct list_head node;
+	struct kgsl_threadstats_entry entry;
+
+	uint64_t sync_ktime;
+	uint64_t sync_ticks;
+};
+
+#define KGSL_THREADSTATS_HISTORY_LENGTH 16
+#define KGSL_THREADSTATS_HISTORY_SIZE \
+	(sizeof(struct kgsl_threadstats_entry) * KGSL_THREADSTATS_HISTORY_LENGTH)
 
 struct kgsl_device;
 struct kgsl_thread_private;
@@ -50,7 +65,6 @@ void kgsl_thread_private_put(struct kgsl_thread_private *thread);
 struct kgsl_thread_private *kgsl_thread_private_find(pid_t tid);
 
 void kgsl_thread_private_close(struct kgsl_thread_private *private);
-struct kgsl_thread_private *
-kgsl_thread_private_open(struct kgsl_device *device);
+struct kgsl_thread_private *kgsl_thread_private_open(struct kgsl_device *device);
 
 #endif /* __KGSL_THREADSTATS_H */

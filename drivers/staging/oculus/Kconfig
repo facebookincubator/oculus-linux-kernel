@@ -185,6 +185,13 @@ config ORCHESTRATOR_AGENT
 	  implement Meta-specific kernel policies for the orchestrator
 	  service.
 
+config ORCHESTRATOR_AGENT_STATS
+	bool "Orchestrator Agent stats collection"
+	depends on ORCHESTRATOR_AGENT
+	default n
+	help
+	  Whether we should collect stats in the Orchestrator Agent subsystem.
+
 config POWERSTATE_MANAGER
 	tristate "Powerstate manager driver"
 	default n
@@ -233,6 +240,13 @@ config SEACLIFF_BLU
 	depends on SPI
 	help
 	  Oculus Seacliff SPI BLU Driver for the BOE panels
+
+config SEC_GPIO_CTRL
+	tristate "Secure GPIO control driver"
+	default n
+	help
+	  This driver enables controlling of secure gpios from the SoC.
+	  Useful when secure gpio control is not brought up on a new platfrom.
 
 config SENSORLOCK
 	tristate "Sensorlock GPIO Interrupt Handler"

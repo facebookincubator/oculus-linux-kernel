@@ -1219,7 +1219,7 @@ static void sde_kms_wait_for_commit_done(struct msm_kms *kms,
 		sde_crtc_complete_flip(crtc, NULL);
 	}
 
-	SDE_ATRACE_END("sde_ksm_wait_for_commit_done");
+	SDE_ATRACE_END("sde_kms_wait_for_commit_done");
 }
 
 static void sde_kms_prepare_fence(struct msm_kms *kms,

@@ -3569,14 +3569,23 @@ void dhd_sysfs_exit(dhd_info_t *dhd)
 	}
 
 #ifdef DHD_LB
-	kobject_put(&dhd->dhd_lb_kobj);
+	if (dhd->dhd_lb_kobj.state_initialized)
+		kobject_put(&dhd->dhd_lb_kobj);
+	else
+		DHD_ERROR(("%s(): kobject for 'lb' is not initialized\r\n", __func__));
 #endif /* DHD_LB */
 
 	/* DPC bounds */
-	kobject_put(&dhd->dhd_dpc_bounds_kobj);
+	if (dhd->dhd_dpc_bounds_kobj.state_initialized)
+		kobject_put(&dhd->dhd_dpc_bounds_kobj);
+	else
+		DHD_ERROR(("%s(): kobject for 'dpc_bounds' is not initialized\r\n", __func__));
 
 	/* Release the kobject */
-	kobject_put(&dhd->dhd_kobj);
+	if (dhd->dhd_kobj.state_initialized)
+		kobject_put(&dhd->dhd_kobj);
+	else
+		DHD_ERROR(("%s(): kobject is not initialized\r\n", __func__));
 }
 
 #ifdef DHD_SUPPORT_HDM

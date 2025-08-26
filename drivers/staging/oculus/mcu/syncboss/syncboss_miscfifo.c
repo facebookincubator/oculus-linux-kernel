@@ -17,11 +17,8 @@
 /* One-byte elements */
 #define MISCFIFO_SIZE 2048
 
-/* Default names to use if none are specified in the devicetree */
-#define STREAM_DEVICE_NAME_PROPERTY "meta,stream-dev-name"
-#define DEFAULT_STREAM_DEVICE_NAME "syncboss_stream0"
-#define CONTROL_DEVICE_NAME_PROPERTY "meta,control-dev-name"
-#define DEFAULT_CONTROL_DEVICE_NAME "syncboss_control0"
+#define STREAM_DEVICE_NAME "syncboss_stream0"
+#define CONTROL_DEVICE_NAME "syncboss_control0"
 
 static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void *pi)
 {
@@ -38,10 +35,10 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 
 	if (packet->sequence_id == 0) {
 		fifo_to_use = &devdata->stream_fifo;
-		fifo_name = devdata->misc_stream.name;
+		fifo_name = "stream";
 	} else {
 		fifo_to_use = &devdata->control_fifo;
-		fifo_name = devdata->misc_control.name;
+		fifo_name = "control";
 	}
 
 	if (payload_size > ARRAY_SIZE(uapi_pkt.payload)) {
@@ -281,23 +278,6 @@ static const struct file_operations control_fops = {
 	.poll = miscfifo_fop_poll
 };
 
-static int read_dev_of_property_string_or_default(struct device *dev,
-		const char *propname, const char **out_string,
-		const char *default_out_string)
-{
-	int ret;
-
-	ret = of_property_read_string(dev->of_node, propname, out_string);
-	if (ret < 0) {
-		if (ret != -EINVAL)
-			return ret;
-
-		*out_string = default_out_string;
-	}
-
-	return 0;
-}
-
 static int syncboss_miscfifo_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -305,12 +285,10 @@ static int syncboss_miscfifo_probe(struct platform_device *pdev)
 	struct miscfifo_dev_data *devdata = dev_get_drvdata(dev);
 	struct device_node *parent_node = of_get_parent(node);
 	int ret;
-	const char *stream_dev_name;
-	const char *control_dev_name;
 
 	if (!parent_node ||
-		(!of_device_is_compatible(parent_node, "meta,syncboss-spi")
-		&& !of_device_is_compatible(parent_node, "meta,syncboss-glink"))) {
+	    (!of_device_is_compatible(parent_node, "meta,syncboss") &&
+	     !of_device_is_compatible(parent_node, "meta,syncboss-spi"))) {
 		dev_err(dev, "failed to find compatible parent device");
 		return -ENODEV;
 	}
@@ -334,14 +312,7 @@ static int syncboss_miscfifo_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	ret = read_dev_of_property_string_or_default(&pdev->dev,
-			STREAM_DEVICE_NAME_PROPERTY, &stream_dev_name,
-			DEFAULT_STREAM_DEVICE_NAME);
-	if (ret < 0) {
-		dev_err(dev, "failed to determine stream device name: %d", ret);
-		goto out;
-	}
-	devdata->misc_stream.name = stream_dev_name;
+	devdata->misc_stream.name = STREAM_DEVICE_NAME;
 	devdata->misc_stream.minor = MISC_DYNAMIC_MINOR;
 	devdata->misc_stream.fops = &stream_fops;
 
@@ -358,14 +329,7 @@ static int syncboss_miscfifo_probe(struct platform_device *pdev)
 		goto err_after_stream_reg;
 	}
 
-	ret = read_dev_of_property_string_or_default(&pdev->dev,
-			CONTROL_DEVICE_NAME_PROPERTY, &control_dev_name,
-			DEFAULT_CONTROL_DEVICE_NAME);
-	if (ret < 0) {
-		dev_err(dev, "failed to determine control device name: %d", ret);
-		goto err_after_stream_reg;
-	}
-	devdata->misc_control.name = control_dev_name;
+	devdata->misc_control.name = CONTROL_DEVICE_NAME;
 	devdata->misc_control.minor = MISC_DYNAMIC_MINOR;
 	devdata->misc_control.fops = &control_fops;
 

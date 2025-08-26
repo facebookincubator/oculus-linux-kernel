@@ -386,7 +386,9 @@ static int syncboss_nsync_probe(struct platform_device *pdev)
 	bool is_vsync;
 	int ret = 0;
 
-	if (!parent_node || !of_device_is_compatible(parent_node, "meta,syncboss-spi")) {
+	if (!parent_node ||
+	    (!of_device_is_compatible(parent_node, "meta,syncboss") &&
+	     !of_device_is_compatible(parent_node, "meta,syncboss-spi"))) {
 		dev_err(dev, "failed to find compatible parent device");
 		if (parent_node)
 			of_node_put(parent_node);

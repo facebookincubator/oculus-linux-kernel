@@ -74,7 +74,6 @@ struct f_ncm {
 	u16				ndp_dgram_count;
 	bool				timer_force_tx;
 	struct hrtimer			task_timer;
-	bool				timer_stopping;
 };
 
 static inline struct f_ncm *func_to_ncm(struct usb_function *f)
@@ -380,7 +379,7 @@ static struct usb_ss_ep_comp_descriptor ss_ncm_bulk_comp_desc = {
 	.bDescriptorType =	USB_DT_SS_ENDPOINT_COMP,
 
 	/* the following 2 values can be tweaked if necessary */
-	.bMaxBurst =		0,
+	.bMaxBurst =		15,
 	/* .bmAttributes =	0, */
 };
 
@@ -892,7 +891,6 @@ static int ncm_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 
 		if (ncm->netdev) {
 			DBG(cdev, "reset ncm\n");
-			ncm->timer_stopping = true;
 			ncm->netdev = NULL;
 			gether_disconnect(&ncm->port);
 			ncm_reset_values(ncm);
@@ -930,7 +928,6 @@ static int ncm_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			if (IS_ERR(net))
 				return PTR_ERR(net);
 			ncm->netdev = net;
-			ncm->timer_stopping = false;
 		}
 
 		spin_lock(&ncm->lock);
@@ -1157,18 +1154,18 @@ err:
 static enum hrtimer_restart ncm_tx_timeout(struct hrtimer *data)
 {
 	struct f_ncm *ncm = container_of(data, struct f_ncm, task_timer);
+	struct net_device *netdev = READ_ONCE(ncm->netdev);
 
 	/* Only send if data is available. */
-	if (!ncm->timer_stopping && ncm->skb_tx_data) {
+	if (netdev && ncm->skb_tx_data) {
 		ncm->timer_force_tx = true;
-
 		/* XXX This allowance of a NULL skb argument to ndo_start_xmit
 		 * XXX is not sane.  The gadget layer should be redesigned so
 		 * XXX that the dev->wrap() invocations to build SKBs is transparent
 		 * XXX and performed in some way outside of the ndo_start_xmit
 		 * XXX interface.
 		 */
-		ncm->netdev->netdev_ops->ndo_start_xmit(NULL, ncm->netdev);
+		netdev->netdev_ops->ndo_start_xmit(NULL, netdev);
 
 		ncm->timer_force_tx = false;
 	}
@@ -1379,7 +1376,6 @@ static void ncm_disable(struct usb_function *f)
 	DBG(cdev, "ncm deactivated\n");
 
 	if (ncm->netdev) {
-		ncm->timer_stopping = true;
 		ncm->netdev = NULL;
 		gether_disconnect(&ncm->port);
 	}

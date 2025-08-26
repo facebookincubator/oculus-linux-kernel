@@ -12120,8 +12120,9 @@ static s32 wl_setup_wiphy(struct wireless_dev *wdev, struct device *sdiofunc_dev
 
 static void wl_free_wdev(struct bcm_cfg80211 *cfg)
 {
-	struct wireless_dev *wdev = cfg->wdev;
 	struct wiphy *wiphy = NULL;
+	struct wireless_dev *wdev = cfg->wdev;
+	cfg->wdev = NULL;
 	if (!wdev) {
 		WL_ERR(("wdev is invalid\n"));
 		return;
@@ -12148,7 +12149,6 @@ static void wl_free_wdev(struct bcm_cfg80211 *cfg)
 
 	wl_delete_all_netinfo(cfg);
 	if (wiphy) {
-		cfg->wdev = NULL;
 		MFREE(cfg->osh, wdev, sizeof(*wdev));
 		wiphy_free(wiphy);
 	}

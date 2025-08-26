@@ -59,6 +59,7 @@ kgsl_thread_private_new(struct kgsl_device *device)
 {
 	struct kgsl_thread_private *private;
 	pid_t tid = task_pid_nr(current);
+	int i;
 
 	list_for_each_entry(private, &kgsl_driver.thread_list, list) {
 		if (private->tid == tid) {
@@ -76,6 +77,11 @@ kgsl_thread_private_new(struct kgsl_device *device)
 
 	private->tid = tid;
 	get_task_comm(private->comm, current);
+
+	spin_lock_init(&private->history_lock);
+	INIT_LIST_HEAD(&private->history_list);
+	for (i = 0; i < KGSL_THREADSTATS_HISTORY_LENGTH; i++)
+		INIT_LIST_HEAD(&private->history_entries[i].node);
 
 	return private;
 }
@@ -118,11 +124,9 @@ threadstat_multiattr_show(
 
 struct kgsl_threadstat_attribute threadstat_attrs[] = {
 	THREADSTAT_MULTIATTR(KGSL_THREADSTATS_SUBMITTED, submitted),
-	THREADSTAT_MULTIATTR(KGSL_THREADSTATS_CONSUMED, consumed),
 	THREADSTAT_MULTIATTR(KGSL_THREADSTATS_RETIRED, retired),
 	THREADSTAT_MULTIATTR(KGSL_THREADSTATS_QUEUED, queued),
 	THREADSTAT_ATTR(KGSL_THREADSTATS_ACTIVE_TIME, active_time),
-	THREADSTAT_ATTR(KGSL_THREADSTATS_SYNC_DELTA, sync_delta),
 };
 
 #define to_threadstat_attr(a) \
@@ -154,14 +158,71 @@ static struct kobj_type ktype_threadstat = {
 	.sysfs_ops = &threadstat_sysfs_ops,
 };
 
+static ssize_t history_bin_show(struct file *filep, struct kobject *kobj,
+	struct bin_attribute *attr, char *buf, loff_t off,
+	size_t count)
+{
+	struct kgsl_thread_private *private;
+	struct kgsl_threadstats_history_node *node;
+	unsigned long flags;
+
+	private = kobj ? container_of(kobj, struct kgsl_thread_private, kobj) :
+		      NULL;
+	if (!private)
+		return -EIO;
+
+	/*
+	 * Don't allow seeking, since there's no guarantee that the history is
+	 * consistent between calls and this would also complicate the list
+	 * handling.
+	 */
+	if (off != 0)
+		return -ESPIPE;
+
+	/*
+	 * Callers should generally read the full history buffer, but in case
+	 * they don't, at least make sure that they're reading some multiple of
+	 * the threadstats entry structure size. If they're not they're probably
+	 * misusing this attribute.
+	 */
+	if (count == 0 || count > KGSL_THREADSTATS_HISTORY_SIZE ||
+			count % sizeof(struct kgsl_threadstats_entry) != 0)
+		return -EINVAL;
+
+	/* Dump the history entries in list order in binary format. */
+	spin_lock_irqsave(&private->history_lock, flags);
+	list_for_each_entry(node, &private->history_list, node) {
+		memcpy(buf + off, &node->entry,
+				sizeof(struct kgsl_threadstats_entry));
+
+		off += sizeof(struct kgsl_threadstats_entry);
+		if (off >= count)
+			break;
+	}
+	spin_unlock_irqrestore(&private->history_lock, flags);
+
+	/* Zero out any remaining entries in the output buffer. */
+	if (off < count)
+		memset(buf + off, 0, count - off);
+
+	return count;
+}
+
+static struct bin_attribute threadstat_history_attr = {
+	.attr.name = "history_bin",
+	.attr.mode = 0444,
+	.size = KGSL_THREADSTATS_HISTORY_SIZE,
+	.read = history_bin_show
+};
+
 void kgsl_thread_uninit_sysfs(struct kgsl_thread_private *private)
 {
 	int i;
 
-	for (i = 0; i < KGSL_THREADSTATS_EVENT_MAX; i++) {
-		sysfs_put(private->event_sd[i]);
+	sysfs_remove_bin_file(&private->kobj, &threadstat_history_attr);
+
+	for (i = 0; i < KGSL_THREADSTATS_EVENT_MAX; i++)
 		sysfs_remove_file(&private->kobj, &threadstat_attrs[i].attr);
-	}
 
 	kobject_put(&private->kobj);
 
@@ -186,14 +247,14 @@ void kgsl_thread_init_sysfs(struct kgsl_device *device,
 		return;
 	}
 
-	for (i = 0; i < KGSL_THREADSTATS_EVENT_MAX; i++) {
+	for (i = 0; i < KGSL_THREADSTATS_EVENT_MAX; i++)
 		if (sysfs_create_file(&private->kobj,
 				      &threadstat_attrs[i].attr))
 			WARN(1, "Couldn't create sysfs file '%s'\n",
 			     threadstat_attrs[i].attr.name);
-		private->event_sd[i] = sysfs_get_dirent(
-			private->kobj.sd, threadstat_attrs[i].attr.name);
-	}
+
+	if (sysfs_create_bin_file(&private->kobj, &threadstat_history_attr))
+		WARN(1, "Couldn't create threadstat history file\n");
 }
 
 void kgsl_thread_private_close(struct kgsl_thread_private *private)
