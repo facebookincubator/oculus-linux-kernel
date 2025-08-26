@@ -69,51 +69,57 @@ config META_SWD_STM32L4
 	help
 	  Meta STM32L4 SWD Support
 
+config SYNCBOSS
+	def_bool n
+	help
+	    Meta SyncBoss Driver
+
 config SYNCBOSS_SPI
 	tristate "Syncboss SPI Driver"
 	depends on SPI && META_FW_HELPERS
+	select SYNCBOSS
 	default n
 	help
-	  Meta Syncboss Driver
+	  Meta Syncboss SPI Driver
 
 config SYNCBOSS_DEBUG
 	bool "Syncboss SPI Driver Debug Facilities"
-	depends on SYNCBOSS_SPI && DEBUG_FS
+	depends on SYNCBOSS && DEBUG_FS
 	default y
 	help
 	  Meta Syncboss SPI Driver Debug Facilities
 
 config SYNCBOSS_DIRECTCHANNEL
 	tristate "Syncboss SPI Driver Direct Channel Support"
-	depends on SYNCBOSS_SPI
+	depends on SYNCBOSS
 	default n
 	help
 	  Meta Syncboss SPI Driver Direct Channel Support
 
 config SYNCBOSS_POWERSTATE
 	tristate "Syncboss PowerState Interface Support"
-	depends on SYNCBOSS_SPI
+	depends on SYNCBOSS
 	default n
 	help
 	  Syncboss powerstate and prox sensor notification driver
 
 config SYNCBOSS_NSYNC
 	tristate "Syncboss Nsync Interface Support"
-	depends on SYNCBOSS_SPI
+	depends on SYNCBOSS
 	default n
 	help
 	  Syncboss Nsync event notification driver
 
 config SYNCBOSS_TIMESYNC
 	tristate "Syncboss Timesync Interface Support"
-	depends on SYNCBOSS_SPI
+	depends on SYNCBOSS
 	default n
 	help
 	  Syncboss Timesync event notification driver.
 
 config SYNCBOSS_MISCFIFO
 	tristate "Syncboss MiscFIFO Interface Support"
-	depends on SYNCBOSS_SPI && MISCFIFO
+	depends on SYNCBOSS && MISCFIFO
 	default n
 	help
 	  Syncboss MiscFIFO event notification driver

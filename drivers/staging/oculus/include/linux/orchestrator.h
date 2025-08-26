@@ -52,7 +52,7 @@ ssize_t orchestrator_flags_write_procfs(struct task_struct *task,
  * @attr: The sched attribute being applied to the task.
  */
 int orchestrator_task_setscheduler(struct task_struct *task,
-			           const struct sched_attr *attr);
+				   const struct sched_attr *attr);
 
 /**
  * orchestrator_post_clone - Notify the Orchestrator Agent that a new task has
