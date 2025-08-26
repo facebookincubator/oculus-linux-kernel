@@ -11,18 +11,6 @@
 #include <linux/types.h>
 #include <linux/ioctl.h>
 
-#define UL_MAX_DEVICES                     8
-#define MAX_IO_PACKETS                     16
-#define MAX_SETTING_PACKETS                16
-#define MAX_IO_RESOURCES                   16
-
-#define BATCH_PACKET_TYPE_SETUP_IOBUF               0
-#define BATCH_PACKET_TYPE_SETTING_UPDATE            1
-#define BATCH_PACKET_TYPE_SETTING_UPDATE_RETREIVE   2
-#define BATCH_PACKET_TYPE_RETREIVE                  3
-
-#define BUFFER_STATE_FREE         0
-#define BUFFER_STATE_INUSE        1
 
 /* camera op codes */
 #define CAM_COMMON_OPCODE_BASE                  0x100
@@ -84,6 +72,24 @@
 /* stream mode command bits */
 #define CAM_STREAM_MODE_RETURN_IMAGE (1 << 0)
 #define CAM_STREAM_MODE_GET_IMAGE (1 << 1)
+
+#define UL_MAX_DEVICES                     8
+#define MAX_IO_PACKETS                     16
+#define MAX_SETTING_PACKETS                16
+#define MAX_IO_RESOURCES                   16
+
+#define BATCH_PACKET_TYPE_SETUP_IOBUF               0
+#define BATCH_PACKET_TYPE_SETTING_UPDATE            1
+#define BATCH_PACKET_TYPE_SETTING_UPDATE_RETREIVE   2
+#define BATCH_PACKET_TYPE_RETREIVE                  3
+
+#define BUFFER_STATE_FREE         0
+#define BUFFER_STATE_INUSE        1
+
+#define BATCH_PACKET_RESULT_SUCCESS       0
+#define BATCH_PACKET_RESULT_BUFFER_ERROR  1
+#define BATCH_PACKET_RESULT_DEVICE_ERROR  2
+#define BATCH_PACKET_RESULT_NO_BUFFER     3
 
 /**
  * enum flush_type_t - Identifies the various flush types

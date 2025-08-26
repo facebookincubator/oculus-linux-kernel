@@ -918,7 +918,9 @@ static int syncboss_direct_channel_probe(struct platform_device *pdev)
 	struct device_node *parent_node = of_get_parent(node);
 	int ret;
 
-	if (!parent_node || !of_device_is_compatible(parent_node, "meta,syncboss-spi")) {
+	if (!parent_node ||
+	    (!of_device_is_compatible(parent_node, "meta,syncboss") &&
+	     !of_device_is_compatible(parent_node, "meta,syncboss-spi"))) {
 		dev_err(dev, "failed to find compatible parent device");
 		return -ENODEV;
 	}

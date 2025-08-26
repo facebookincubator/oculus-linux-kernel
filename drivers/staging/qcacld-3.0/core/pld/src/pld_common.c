@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1350,12 +1350,9 @@ int pld_get_irq(struct device *dev, int ce_id)
 		ret = pld_snoc_fw_sim_get_irq(dev, ce_id);
 		break;
 	case PLD_BUS_TYPE_IPCI:
-		ret = pld_ipci_get_irq(dev, ce_id);
 		break;
 	case PLD_BUS_TYPE_PCIE_FW_SIM:
 	case PLD_BUS_TYPE_IPCI_FW_SIM:
-		ret = pld_pcie_fw_sim_get_irq(dev, ce_id);
-		break;
 	case PLD_BUS_TYPE_PCIE:
 	default:
 		ret = -EINVAL;
@@ -2323,26 +2320,6 @@ int pld_qmi_send(struct device *dev, int type, void *cmd,
 	}
 }
 
-int pld_qmi_indication(struct device *dev, void *cb_ctx,
-		       int (*cb)(void *ctx, uint16_t type,
-				 void *event, int event_len))
-{
-	enum pld_bus_type bus_type = pld_get_bus_type(dev);
-
-	switch (bus_type) {
-	case PLD_BUS_TYPE_PCIE:
-		return pld_pcie_register_qmi_ind(dev, cb_ctx, cb);
-	case PLD_BUS_TYPE_SNOC:
-	case PLD_BUS_TYPE_SDIO:
-	case PLD_BUS_TYPE_USB:
-	case PLD_BUS_TYPE_IPCI:
-		return -EINVAL;
-	default:
-		pr_err("Invalid device type %d\n", bus_type);
-		return -EINVAL;
-	}
-}
-
 bool pld_is_fw_dump_skipped(struct device *dev)
 {
 	bool ret = false;
@@ -2807,19 +2784,6 @@ bool pld_is_one_msi(struct device *dev)
 
 	return ret;
 }
-
-#ifdef CONFIG_AFC_SUPPORT
-int pld_send_buffer_to_afcmem(struct device *dev, const uint8_t *afcdb,
-			      uint32_t len, uint8_t slotid)
-{
-	return cnss_send_buffer_to_afcmem(dev, afcdb, len, slotid);
-}
-
-int pld_reset_afcmem(struct device *dev, uint8_t slotid)
-{
-	return cnss_reset_afcmem(dev, slotid);
-}
-#endif
 
 #ifdef FEATURE_DIRECT_LINK
 int pld_audio_smmu_map(struct device *dev, phys_addr_t paddr, dma_addr_t iova,

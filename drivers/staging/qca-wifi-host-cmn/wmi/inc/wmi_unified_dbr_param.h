@@ -79,9 +79,7 @@
  * @pdev_id: Index of the pdev for which response is received
  * @mod_id: Index of the module for which respone is received
  * @num_buf_release_entry: Number of buffers released through event
- * @num_meta_data_entry: Number of meta data released
- * @num_cv_meta_data_entry: Number of cv meta data released
- * @num_cqi_meta_data_entry: Number of cqi meta data released
+ * @num_meta_data_entry:
  * @dbr_entries: Pointer to direct buffer rx entry struct
  */
 struct direct_buf_rx_rsp {
@@ -89,8 +87,6 @@ struct direct_buf_rx_rsp {
 	uint32_t mod_id;
 	uint32_t num_buf_release_entry;
 	uint32_t num_meta_data_entry;
-	uint32_t num_cv_meta_data_entry;
-	uint32_t num_cqi_meta_data_entry;
 	struct direct_buf_rx_entry *dbr_entries;
 };
 
@@ -140,77 +136,6 @@ struct direct_buf_rx_metadata {
 	uint32_t cfreq1;
 	uint32_t cfreq2;
 	uint32_t ch_width;
-};
-
-/**
- * struct direct_buf_rx_cv_metadata: direct buffer metadata for TxBF CV upload
- *
- * @is_valid: Set cv metadata is valid,
- *            false if sw_peer_id is invalid or FCS error
- * @fb_type: Feedback type, 0 for SU 1 for MU
- * @asnr_len: Average SNR length
- * @asnr_offset: Average SNR offset
- * @dsnr_len: Delta SNR length
- * @dsnr_offset: Delta SNR offset
- * @peer_mac: Peer macaddr
- * @fb_params: Feedback params, [1:0] Nc [3:2] nss_num
- */
-struct direct_buf_rx_cv_metadata {
-	uint32_t is_valid;
-	uint32_t fb_type;
-	uint16_t asnr_len;
-	uint16_t asnr_offset;
-	uint16_t dsnr_len;
-	uint16_t dsnr_offset;
-	struct qdf_mac_addr peer_mac;
-	uint32_t fb_params;
-};
-
-/*
- * In CQI data buffer, each user CQI data will be stored
- * in a fixed offset of 64 locations from each other,
- * and each location corresponds to 64-bit length.
- */
-#define CQI_USER_DATA_LENGTH      (64 * 8)
-#define CQI_USER_DATA_OFFSET(idx) ((idx) * CQI_USER_DATA_LENGTH)
-#define MAX_NUM_CQI_USERS         3
-/*
- * struct direct_buf_rx_cqi_per_user_info: Per user CQI data
- *
- * @asnr_len: Average SNR length
- * @asnr_offset: Average SNR offset
- * @fb_params: Feedback params, [1:0] Nc
- * @peer_mac: Peer macaddr
- */
-struct direct_buf_rx_cqi_per_user_info {
-	uint16_t asnr_len;
-	uint16_t asnr_offset;
-	uint32_t fb_params;
-	struct qdf_mac_addr peer_mac;
-};
-
-/**
- * struct direct_buf_rx_cqi_metadata: direct buffer metadata for CQI upload
- *
- * @num_users: Number of user info in a metadta buffer
- * @is_valid: Set cqi metadata is valid,
- *            false if sw_peer_id is invalid or FCS error
- * @fb_type: Feedback type, 0 for SU 1 for MU 2 for CQI
- * @fb_params: Feedback params
- *	[0] is_valid0
- *	[1] is_valid1
- *	[2] is_valid2
- *	[4:3] Nc0
- *	[5:4] Nc1
- *	[6:5] Nc2
- * @user_info: Per user CQI info
- */
-struct direct_buf_rx_cqi_metadata {
-	uint8_t num_users;
-	uint32_t is_valid;
-	uint32_t fb_type;
-	uint32_t fb_params;
-	struct direct_buf_rx_cqi_per_user_info user_info[MAX_NUM_CQI_USERS];
 };
 
 /**

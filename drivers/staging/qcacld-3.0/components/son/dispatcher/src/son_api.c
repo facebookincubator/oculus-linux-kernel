@@ -157,7 +157,6 @@ uint32_t wlan_son_get_chan_flag(struct wlan_objmgr_pdev *pdev,
 	enum phy_ch_width bandwidth = mlme_get_vht_ch_width();
 	struct wlan_objmgr_psoc *psoc;
 	bool is_he_enabled;
-	struct ch_params ch_params;
 
 	if (!pdev) {
 		son_err("invalid pdev");
@@ -174,7 +173,6 @@ uint32_t wlan_son_get_chan_flag(struct wlan_objmgr_pdev *pdev,
 					&sub_20_channel_width);
 
 	qdf_mem_zero(chan_params, sizeof(*chan_params));
-	qdf_mem_zero(&ch_params, sizeof(ch_params));
 	qdf_mem_zero(&ch_width40_ch_params, sizeof(ch_width40_ch_params));
 	if (wlan_reg_is_24ghz_ch_freq(freq)) {
 		if (bandwidth == CH_WIDTH_80P80MHZ ||
@@ -183,13 +181,10 @@ uint32_t wlan_son_get_chan_flag(struct wlan_objmgr_pdev *pdev,
 			bandwidth = CH_WIDTH_40MHZ;
 	}
 
-	ch_params.ch_width = bandwidth;
 	switch (bandwidth) {
 	case CH_WIDTH_80P80MHZ:
-		ch_params.ch_width = CH_WIDTH_80P80MHZ;
-		if (wlan_reg_get_5g_bonded_channel_state_for_pwrmode(
-					pdev, freq,
-					&ch_params, REG_CURRENT_PWR_MODE) !=
+		if (wlan_reg_get_5g_bonded_channel_state_for_freq(pdev, freq,
+								  bandwidth) !=
 		    CHANNEL_STATE_INVALID) {
 			if (!flag_160) {
 				chan_params->ch_width = CH_WIDTH_80P80MHZ;
@@ -205,10 +200,8 @@ uint32_t wlan_son_get_chan_flag(struct wlan_objmgr_pdev *pdev,
 		bandwidth = CH_WIDTH_160MHZ;
 		fallthrough;
 	case CH_WIDTH_160MHZ:
-		ch_params.ch_width = CH_WIDTH_160MHZ;
-		if (wlan_reg_get_5g_bonded_channel_state_for_pwrmode(
-					pdev, freq,
-					&ch_params, REG_CURRENT_PWR_MODE) !=
+		if (wlan_reg_get_5g_bonded_channel_state_for_freq(pdev, freq,
+								  bandwidth) !=
 		    CHANNEL_STATE_INVALID) {
 			if (flag_160) {
 				chan_params->ch_width = CH_WIDTH_160MHZ;
@@ -224,10 +217,8 @@ uint32_t wlan_son_get_chan_flag(struct wlan_objmgr_pdev *pdev,
 		bandwidth = CH_WIDTH_80MHZ;
 		fallthrough;
 	case CH_WIDTH_80MHZ:
-		ch_params.ch_width = CH_WIDTH_80MHZ;
-		if (wlan_reg_get_5g_bonded_channel_state_for_pwrmode(
-					pdev, freq,
-					&ch_params, REG_CURRENT_PWR_MODE) !=
+		if (wlan_reg_get_5g_bonded_channel_state_for_freq(pdev, freq,
+								  bandwidth) !=
 		    CHANNEL_STATE_INVALID) {
 			if (!flag_160 &&
 			    chan_params->ch_width != CH_WIDTH_80P80MHZ) {
@@ -256,10 +247,9 @@ uint32_t wlan_son_get_chan_flag(struct wlan_objmgr_pdev *pdev,
 		else
 			sec_freq = 0;
 
-		if (wlan_reg_get_bonded_channel_state_for_pwrmode(
-							pdev, freq,
-							bandwidth, sec_freq,
-							REG_CURRENT_PWR_MODE) !=
+		if (wlan_reg_get_bonded_channel_state_for_freq(pdev, freq,
+							       bandwidth,
+							       sec_freq) !=
 		    CHANNEL_STATE_INVALID) {
 			if (ch_width40_ch_params.sec_ch_offset ==
 			    LOW_PRIMARY_CH) {
@@ -291,20 +281,18 @@ uint32_t wlan_son_get_chan_flag(struct wlan_objmgr_pdev *pdev,
 		bandwidth = CH_WIDTH_10MHZ;
 		fallthrough;
 	case CH_WIDTH_10MHZ:
-		if (wlan_reg_get_bonded_channel_state_for_pwrmode(
-							pdev, freq,
-							bandwidth, 0,
-							REG_CURRENT_PWR_MODE) !=
+		if (wlan_reg_get_bonded_channel_state_for_freq(pdev, freq,
+							       bandwidth,
+							       0) !=
 		     CHANNEL_STATE_INVALID &&
 		     sub_20_channel_width == WLAN_SUB_20_CH_WIDTH_10)
 			flags |= QCA_WLAN_VENDOR_CHANNEL_PROP_FLAG_HALF;
 		bandwidth = CH_WIDTH_5MHZ;
 		fallthrough;
 	case CH_WIDTH_5MHZ:
-		if (wlan_reg_get_bonded_channel_state_for_pwrmode(
-							pdev, freq,
-							bandwidth, 0,
-							REG_CURRENT_PWR_MODE) !=
+		if (wlan_reg_get_bonded_channel_state_for_freq(pdev, freq,
+							       bandwidth,
+							       0) !=
 		    CHANNEL_STATE_INVALID &&
 		    sub_20_channel_width == WLAN_SUB_20_CH_WIDTH_5)
 			flags |= QCA_WLAN_VENDOR_CHANNEL_PROP_FLAG_QUARTER;
@@ -528,8 +516,8 @@ int wlan_son_deliver_opmode(struct wlan_objmgr_vdev *vdev,
 	opmode.num_streams = nss;
 	qdf_mem_copy(opmode.macaddr, addr, QDF_MAC_ADDR_SIZE);
 
-	son_debug("bw %d, nss %d, addr " QDF_MAC_ADDR_FMT,
-		  bw, nss, QDF_MAC_ADDR_REF(addr));
+	son_debug("bw %d, nss %d, addr " QDF_FULL_MAC_FMT,
+		  bw, nss, QDF_FULL_MAC_REF(addr));
 
 	if (!g_son_mlme_deliver_cbs.deliver_opmode) {
 		son_err("invalid deliver opmode cb");
@@ -560,8 +548,8 @@ int wlan_son_deliver_smps(struct wlan_objmgr_vdev *vdev,
 	smps.is_static = is_static;
 	qdf_mem_copy(smps.macaddr, addr, QDF_MAC_ADDR_SIZE);
 
-	son_debug("is_static %d, addr" QDF_MAC_ADDR_FMT,
-		  is_static, QDF_MAC_ADDR_REF(addr));
+	son_debug("is_static %d, addr" QDF_FULL_MAC_FMT,
+		  is_static, QDF_FULL_MAC_REF(addr));
 
 	if (!g_son_mlme_deliver_cbs.deliver_smps) {
 		son_err("invalid deliver smps cb");
@@ -643,9 +631,9 @@ int wlan_son_deliver_rrm_rpt(struct wlan_objmgr_vdev *vdev,
 
 	rrm_info.data.rrm_data.num_meas_rpts = total_bcnrpt_count;
 
-	son_debug("Sta: " QDF_MAC_ADDR_FMT
+	son_debug("Sta: " QDF_FULL_MAC_FMT
 		  "Category %d Action %d Num_Report %d Rptlen %d",
-		  QDF_MAC_ADDR_REF(mac_addr),
+		  QDF_FULL_MAC_REF(mac_addr),
 		  ACTION_CATEGORY_RRM,
 		  RRM_RADIO_MEASURE_RPT,
 		  total_bcnrpt_count,

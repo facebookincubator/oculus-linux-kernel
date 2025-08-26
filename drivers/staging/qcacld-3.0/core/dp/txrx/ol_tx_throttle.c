@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -109,24 +108,23 @@ static void ol_tx_pdev_throttle_phase_timer(void *context)
 	if (pdev->tx_throttle.current_throttle_phase == THROTTLE_PHASE_OFF) {
 		/* Traffic is stopped */
 		ol_txrx_dbg(
-				   "throttle phase --> OFF");
+				   "throttle phase --> OFF\n");
 		ol_txrx_throttle_pause(pdev);
 		ol_txrx_thermal_pause(pdev);
-		pdev->tx_throttle.prev_outstanding_num = 0;
 		cur_level = pdev->tx_throttle.current_throttle_level;
 		cur_phase = pdev->tx_throttle.current_throttle_phase;
 		ms = pdev->tx_throttle.throttle_time_ms[cur_level][cur_phase];
 		if (pdev->tx_throttle.current_throttle_level !=
 				THROTTLE_LEVEL_0) {
 			ol_txrx_dbg(
-					   "start timer %d ms", ms);
+					   "start timer %d ms\n", ms);
 			qdf_timer_start(&pdev->tx_throttle.
 							phase_timer, ms);
 		}
 	} else {
 		/* Traffic can go */
 		ol_txrx_dbg(
-					"throttle phase --> ON");
+					"throttle phase --> ON\n");
 		ol_txrx_throttle_unpause(pdev);
 		ol_txrx_thermal_unpause(pdev);
 		cur_level = pdev->tx_throttle.current_throttle_level;
@@ -134,7 +132,7 @@ static void ol_tx_pdev_throttle_phase_timer(void *context)
 		ms = pdev->tx_throttle.throttle_time_ms[cur_level][cur_phase];
 		if (pdev->tx_throttle.current_throttle_level !=
 		    THROTTLE_LEVEL_0) {
-			ol_txrx_dbg("start timer %d ms", ms);
+			ol_txrx_dbg("start timer %d ms\n", ms);
 			qdf_timer_start(&pdev->tx_throttle.phase_timer,	ms);
 		}
 	}
@@ -187,31 +185,14 @@ ol_tx_set_throttle_phase_time(struct ol_txrx_pdev_t *pdev, int level, int *ms)
 static void
 ol_tx_set_throttle_phase_time(struct ol_txrx_pdev_t *pdev, int level, int *ms)
 {
-	int phase_on_time, phase_off_time;
+	/* Reset the phase */
+	pdev->tx_throttle.current_throttle_phase = THROTTLE_PHASE_OFF;
+
+	/* Start with the new time */
+	*ms = pdev->tx_throttle.
+		throttle_time_ms[level][THROTTLE_PHASE_OFF];
 
 	qdf_timer_stop(&pdev->tx_throttle.phase_timer);
-
-	phase_on_time =
-		pdev->tx_throttle.throttle_time_ms[level][THROTTLE_PHASE_ON];
-	phase_off_time =
-		pdev->tx_throttle.throttle_time_ms[level][THROTTLE_PHASE_OFF];
-	if (phase_on_time && phase_off_time) {
-		pdev->tx_throttle.current_throttle_phase = THROTTLE_PHASE_OFF;
-		*ms =
-		pdev->tx_throttle.throttle_time_ms[level][THROTTLE_PHASE_OFF];
-		ol_txrx_throttle_pause(pdev);
-		ol_txrx_thermal_pause(pdev);
-	} else if (!phase_off_time) {
-		pdev->tx_throttle.current_throttle_phase = THROTTLE_PHASE_OFF;
-		*ms = 0;
-		ol_txrx_throttle_unpause(pdev);
-		ol_txrx_thermal_unpause(pdev);
-	} else {
-		pdev->tx_throttle.current_throttle_phase = THROTTLE_PHASE_OFF;
-		*ms = 0;
-		ol_txrx_throttle_pause(pdev);
-		ol_txrx_thermal_pause(pdev);
-	}
 }
 #endif
 
@@ -232,15 +213,14 @@ void ol_tx_throttle_set_level(struct cdp_soc_t *soc_hdl,
 		return;
 	}
 
-	ol_txrx_info("Setting throttle level %d", level);
+	ol_txrx_info("Setting throttle level %d\n", level);
 
 	/* Set the current throttle level */
 	pdev->tx_throttle.current_throttle_level = (enum throttle_level)level;
-	pdev->tx_throttle.prev_outstanding_num = 0;
 
 	ol_tx_set_throttle_phase_time(pdev, level, &ms);
 
-	if (ms)
+	if (level != THROTTLE_LEVEL_0)
 		qdf_timer_start(&pdev->tx_throttle.phase_timer, ms);
 }
 
@@ -266,7 +246,7 @@ void ol_tx_throttle_init_period(struct cdp_soc_t *soc_hdl,
 	/* Set the current throttle level */
 	pdev->tx_throttle.throttle_period_ms = period;
 
-	ol_txrx_dbg("level  OFF  ON");
+	ol_txrx_dbg("level  OFF  ON\n");
 	for (i = 0; i < THROTTLE_LEVEL_MAX; i++) {
 		pdev->tx_throttle.throttle_time_ms[i][THROTTLE_PHASE_ON] =
 			pdev->tx_throttle.throttle_period_ms -
@@ -276,7 +256,7 @@ void ol_tx_throttle_init_period(struct cdp_soc_t *soc_hdl,
 			pdev->tx_throttle.throttle_period_ms -
 			pdev->tx_throttle.throttle_time_ms[
 				i][THROTTLE_PHASE_ON];
-		ol_txrx_dbg("%d      %d    %d", i,
+		ol_txrx_dbg("%d      %d    %d\n", i,
 			    pdev->tx_throttle.
 			    throttle_time_ms[i][THROTTLE_PHASE_OFF],
 			    pdev->tx_throttle.

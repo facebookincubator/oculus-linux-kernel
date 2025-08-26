@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -32,102 +32,6 @@
 #include "wlan_cp_stats_utils_api.h"
 #include <target_if_cp_stats.h>
 #include <wlan_twt_public_structs.h>
-#include <wlan_cp_stats_chipset_stats.h>
-
-#ifdef WLAN_CHIPSET_STATS
-int wlan_cp_stats_cstats_qmi_event_handler(void *cb_ctx, uint16_t type,
-					   void *event, int event_len)
-{
-	if (type == CSTATS_QMI_EVENT_TYPE)
-		wlan_cstats_fw_stats(event_len, event);
-
-	return 0;
-}
-
-static void
-wlan_cp_stats_cstats_register_qmi_event_handler(struct cp_stats_context *csc)
-{
-	QDF_STATUS status;
-
-	status =
-	    qdf_reg_qmi_indication(csc, wlan_cp_stats_cstats_qmi_event_handler);
-
-	if (QDF_IS_STATUS_ERROR(status))
-		cp_stats_err("cstats QMI evt handler registration failed");
-}
-
-bool wlan_cp_stats_get_chipset_stats_enable(struct wlan_objmgr_psoc *psoc)
-{
-	struct cp_stats_context *csc;
-
-	csc = wlan_objmgr_psoc_get_comp_private_obj(psoc,
-						    WLAN_UMAC_COMP_CP_STATS);
-	if (!csc) {
-		cp_stats_err("CP Stats Context is NULL");
-		return false;
-	}
-
-	return csc->host_params.chipset_stats_enable;
-}
-
-static void wlan_cp_stats_enable_init_cstats(struct wlan_objmgr_pdev *pdev)
-{
-	bool fw_support = false;
-	struct wlan_objmgr_psoc *psoc;
-	struct wlan_lmac_if_cp_stats_tx_ops *tx_ops;
-	struct cp_stats_context *csc;
-
-	psoc = wlan_pdev_get_psoc(pdev);
-	if (!psoc) {
-		cp_stats_err("PSOC is NULL");
-		return;
-	}
-
-	csc = wlan_objmgr_psoc_get_comp_private_obj(psoc,
-						    WLAN_UMAC_COMP_CP_STATS);
-	if (!csc) {
-		cp_stats_err("CP Stats Context is NULL");
-		return;
-	}
-
-	target_if_cp_stats_is_service_cstats_enabled(psoc, &fw_support);
-
-	/* If feature is enabled in INI and FW also supports this feature
-	 * Then send WMI_PDEV_PARAM_ENABLE_CHIPSET_LOGGING to enable
-	 * the functionality in FW
-	 */
-	if (!fw_support || !wlan_cp_stats_get_chipset_stats_enable(psoc)) {
-		cp_stats_debug("Chipset Stats is disabled");
-		return;
-	}
-
-	tx_ops = target_if_cp_stats_get_tx_ops(psoc);
-	if (!tx_ops) {
-		cp_stats_err("could not get tx_ops");
-		return;
-	}
-
-	if (!tx_ops->send_cstats_enable) {
-		cp_stats_err("could not get send_cstats_enable");
-		return;
-	}
-
-	wlan_cp_stats_cstats_register_qmi_event_handler(csc);
-
-	/* Send WMI PDEV command to enable chipset stats with SOC ID
-	 * a valid pdev id for this command will not work. This command
-	 * always expects SOC ID to be sent. Chipset Stats logging enabled
-	 * for all the PDEVs.
-	 */
-	tx_ops->send_cstats_enable(psoc, CSTATS_QMI_EVENT_TYPE,
-				   WMI_PDEV_ID_SOC);
-}
-#else
-static inline
-void wlan_cp_stats_enable_init_cstats(struct wlan_objmgr_pdev *pdev)
-{
-}
-#endif /* WLAN_CHIPSET_STATS */
 
 QDF_STATUS
 wlan_cp_stats_psoc_obj_create_handler(struct wlan_objmgr_psoc *psoc, void *arg)
@@ -277,7 +181,6 @@ wlan_cp_stats_pdev_obj_create_handler(struct wlan_objmgr_pdev *pdev, void *arg)
 						       pdev_cs,
 						       QDF_STATUS_SUCCESS);
 
-	wlan_cp_stats_enable_init_cstats(pdev);
 	cp_stats_debug("pdev cp stats object attached");
 wlan_cp_stats_pdev_obj_create_handler_return:
 	if (QDF_IS_STATUS_ERROR(status)) {
@@ -523,25 +426,6 @@ wlan_cp_stats_infra_cp_register_resp_cb(struct wlan_objmgr_psoc *psoc,
 }
 
 QDF_STATUS
-wlan_cp_stats_infra_cp_deregister_resp_cb(struct wlan_objmgr_psoc *psoc)
-{
-	struct psoc_cp_stats *psoc_cp_stats_priv;
-
-	psoc_cp_stats_priv = wlan_cp_stats_get_psoc_stats_obj(psoc);
-	if (!psoc_cp_stats_priv) {
-		cp_stats_err("psoc cp stats object is null");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	wlan_cp_stats_psoc_obj_lock(psoc_cp_stats_priv);
-	if (psoc_cp_stats_priv->get_infra_cp_stats)
-		psoc_cp_stats_priv->get_infra_cp_stats = NULL;
-	wlan_cp_stats_psoc_obj_unlock(psoc_cp_stats_priv);
-
-	return QDF_STATUS_SUCCESS;
-}
-
-QDF_STATUS
 wlan_cp_stats_infra_cp_get_context(struct wlan_objmgr_psoc *psoc,
 				   get_infra_cp_stats_cb *resp_cb,
 				   void **context)
@@ -555,10 +439,8 @@ wlan_cp_stats_infra_cp_get_context(struct wlan_objmgr_psoc *psoc,
 	}
 
 	wlan_cp_stats_psoc_obj_lock(psoc_cp_stats_priv);
-	if (psoc_cp_stats_priv->get_infra_cp_stats)
-		*resp_cb = psoc_cp_stats_priv->get_infra_cp_stats;
-	if (psoc_cp_stats_priv->infra_cp_stats_req_context)
-		*context = psoc_cp_stats_priv->infra_cp_stats_req_context;
+	*resp_cb = psoc_cp_stats_priv->get_infra_cp_stats;
+	*context = psoc_cp_stats_priv->infra_cp_stats_req_context;
 	wlan_cp_stats_psoc_obj_unlock(psoc_cp_stats_priv);
 
 	return QDF_STATUS_SUCCESS;
@@ -584,7 +466,7 @@ wlan_cp_stats_send_infra_cp_req(struct wlan_objmgr_psoc *psoc,
 }
 #endif /* WLAN_SUPPORT_INFRA_CTRL_PATH_STATS */
 
-#ifdef WLAN_CONFIG_TELEMETRY_AGENT
+#ifdef WLAN_TELEMETRY_STATS_SUPPORT
 QDF_STATUS
 wlan_cp_stats_send_telemetry_cp_req(struct wlan_objmgr_pdev *pdev,
 				    struct infra_cp_stats_cmd_info *req)
@@ -874,3 +756,4 @@ wlan_cp_stats_twt_get_peer_session_params(struct wlan_objmgr_psoc *psoc,
 	return num_twt_session;
 }
 #endif /* WLAN_SUPPORT_TWT */
+

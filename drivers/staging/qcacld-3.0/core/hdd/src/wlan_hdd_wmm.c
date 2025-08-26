@@ -64,8 +64,6 @@
 
 #define HDD_WMM_UP_TO_AC_MAP_SIZE 8
 #define DSCP(x)	x
-#define MIN_HANDLE_VALUE 5000
-#define MAX_HANDLE_VALUE 6000
 
 const uint8_t hdd_wmm_up_to_ac_map[] = {
 	SME_AC_BE,
@@ -235,8 +233,7 @@ static void hdd_wmm_enable_tl_uapsd(struct hdd_wmm_qos_context *qos_context)
 		sme_enable_uapsd_for_ac(ac_type, ac->tspec.ts_info.tid,
 					ac->tspec.ts_info.up,
 					service_interval, suspension_interval,
-					direction, psb,
-					adapter->deflink->vdev_id,
+					direction, psb, adapter->vdev_id,
 					delayed_trgr_frm_int);
 
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
@@ -272,8 +269,7 @@ static void hdd_wmm_disable_tl_uapsd(struct hdd_wmm_qos_context *qos_context)
 
 	/* have we previously enabled UAPSD? */
 	if (ac->is_uapsd_info_valid == true) {
-		status = sme_disable_uapsd_for_ac(ac_type,
-						  adapter->deflink->vdev_id);
+		status = sme_disable_uapsd_for_ac(ac_type, adapter->vdev_id);
 
 		if (!QDF_IS_STATUS_SUCCESS(status)) {
 			hdd_err("Failed to disable U-APSD for AC=%d", ac_type);
@@ -393,7 +389,6 @@ static void hdd_wmm_inactivity_timer_cb(void *user_data)
 	uint32_t traffic_count = 0;
 	sme_ac_enum_type ac_type;
 	unsigned int cpu;
-	struct hdd_tx_rx_stats *tx_rx_stats;
 
 	if (!qos_context) {
 		hdd_err("invalid user data");
@@ -409,11 +404,11 @@ static void hdd_wmm_inactivity_timer_cb(void *user_data)
 	}
 
 	ac = &adapter->hdd_wmm_status.ac_status[ac_type];
-	tx_rx_stats = &adapter->deflink->hdd_stats.tx_rx_stats;
+
 	/* Get the Tx stats for this AC. */
 	for (cpu = 0; cpu < NUM_CPUS; cpu++)
-		traffic_count +=
-		tx_rx_stats->per_cpu[cpu].tx_classified_ac[qos_context->ac_type];
+		traffic_count += adapter->hdd_stats.tx_rx_stats.per_cpu[cpu].
+					 tx_classified_ac[qos_context->ac_type];
 
 	hdd_warn("WMM inactivity check for AC=%d, count=%u, last=%u",
 		 ac_type, traffic_count, ac->last_traffic_count);
@@ -463,7 +458,6 @@ hdd_wmm_enable_inactivity_timer(struct hdd_wmm_qos_context *qos_context,
 	sme_ac_enum_type ac_type = qos_context->ac_type;
 	struct hdd_wmm_ac_status *ac;
 	unsigned int cpu;
-	struct hdd_tx_rx_stats *tx_rx_stats;
 
 	adapter = qos_context->adapter;
 	ac = &adapter->hdd_wmm_status.ac_status[ac_type];
@@ -493,11 +487,10 @@ hdd_wmm_enable_inactivity_timer(struct hdd_wmm_qos_context *qos_context,
 
 	ac->last_traffic_count = 0;
 	/* Initialize the current tx traffic count on this AC */
-	tx_rx_stats = &adapter->deflink->hdd_stats.tx_rx_stats;
-	for (cpu = 0; cpu < NUM_CPUS; cpu++) {
+	for (cpu = 0; cpu < NUM_CPUS; cpu++)
 		ac->last_traffic_count +=
-		tx_rx_stats->per_cpu[cpu].tx_classified_ac[qos_context->ac_type];
-	}
+			adapter->hdd_stats.tx_rx_stats.per_cpu[cpu].
+					 tx_classified_ac[qos_context->ac_type];
 	qos_context->is_inactivity_timer_running = true;
 	return qdf_status;
 }
@@ -1441,9 +1434,8 @@ static void __hdd_wmm_do_implicit_qos(struct hdd_wmm_qos_context *qos_context)
 
 	if (tspec.ts_info.ack_policy ==
 	    SME_QOS_WMM_TS_ACK_POLICY_HT_IMMEDIATE_BLOCK_ACK) {
-		if (!sme_qos_is_ts_info_ack_policy_valid(
-					mac_handle, &tspec,
-					adapter->deflink->vdev_id)) {
+		if (!sme_qos_is_ts_info_ack_policy_valid(mac_handle, &tspec,
+							 adapter->vdev_id)) {
 			tspec.ts_info.ack_policy =
 				SME_QOS_WMM_TS_ACK_POLICY_NORMAL_ACK;
 		}
@@ -1455,7 +1447,7 @@ static void __hdd_wmm_do_implicit_qos(struct hdd_wmm_qos_context *qos_context)
 
 #ifndef WLAN_MDM_CODE_REDUCTION_OPT
 	sme_status = sme_qos_setup_req(mac_handle,
-				       adapter->deflink->vdev_id,
+				       adapter->vdev_id,
 				       &tspec,
 				       hdd_wmm_sme_callback,
 				       qos_context,
@@ -1545,7 +1537,7 @@ QDF_STATUS hdd_send_dscp_up_map_to_fw(struct hdd_adapter *adapter)
 	struct wlan_objmgr_vdev *vdev;
 	int ret;
 
-	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink, WLAN_FWOL_NB_ID);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_FWOL_NB_ID);
 
 	if (vdev) {
 		/* Send DSCP to TID map table to FW */
@@ -2022,8 +2014,9 @@ void hdd_wmm_get_user_priority_from_ip_tos(struct hdd_adapter *adapter,
 	dscp = (tos >> 2) & 0x3f;
 	if (hdd_wmm_traffic_end_indication_is_enable(adapter)) {
 		psoc = adapter->hdd_ctx->psoc;
-		ucfg_dp_traffic_end_indication_update_dscp(
-				psoc, adapter->deflink->vdev_id, &dscp);
+		ucfg_dp_traffic_end_indication_update_dscp(psoc,
+							   adapter->vdev_id,
+							   &dscp);
 	}
 	*user_pri = adapter->dscp_to_up_map[dscp];
 
@@ -2057,7 +2050,7 @@ void hdd_wmm_classify_pkt(struct hdd_adapter *adapter,
 
 	if (false == *is_critical) {
 		status = ucfg_dp_fim_update_metadata((qdf_nbuf_t)skb,
-						     adapter->deflink->vdev);
+						     adapter->vdev);
 		if (status == QDF_STATUS_SUCCESS)
 			ucfg_dp_lapb_handle_app_ind((qdf_nbuf_t)skb);
 
@@ -2102,8 +2095,7 @@ uint16_t hdd_get_tx_queue_for_ac(struct hdd_adapter *adapter,
 	struct sock *sk = skb->sk;
 	int new_index;
 	int cpu = qdf_get_smp_processor_id();
-	struct hdd_tx_rx_stats *stats =
-				&adapter->deflink->hdd_stats.tx_rx_stats;
+	struct hdd_tx_rx_stats *stats = &adapter->hdd_stats.tx_rx_stats;
 
 	if (qdf_unlikely(ac == HDD_LINUX_AC_HI_PRIO))
 		return TX_GET_QUEUE_IDX(HDD_LINUX_AC_HI_PRIO, 0);
@@ -2247,8 +2239,9 @@ uint16_t hdd_wmm_select_queue(struct net_device *dev,
 {
 	uint16_t q_index;
 
+	hdd_dp_ssr_protect();
 	q_index = __hdd_wmm_select_queue(dev, skb);
-
+	hdd_dp_ssr_unprotect();
 	return q_index;
 }
 
@@ -2496,7 +2489,7 @@ QDF_STATUS hdd_wmm_assoc(struct hdd_adapter *adapter,
 		status = sme_enable_uapsd_for_ac(
 				SME_AC_VO, 7, 7, srv_value, sus_value,
 				SME_QOS_WMM_TS_DIR_BOTH, 1,
-				adapter->deflink->vdev_id,
+				adapter->vdev_id,
 				delayed_trgr_frm_int);
 
 		QDF_ASSERT(QDF_IS_STATUS_SUCCESS(status));
@@ -2519,7 +2512,7 @@ QDF_STATUS hdd_wmm_assoc(struct hdd_adapter *adapter,
 		status = sme_enable_uapsd_for_ac(
 				SME_AC_VI, 5, 5, srv_value, sus_value,
 				SME_QOS_WMM_TS_DIR_BOTH, 1,
-				adapter->deflink->vdev_id,
+				adapter->vdev_id,
 				delayed_trgr_frm_int);
 
 		QDF_ASSERT(QDF_IS_STATUS_SUCCESS(status));
@@ -2542,7 +2535,7 @@ QDF_STATUS hdd_wmm_assoc(struct hdd_adapter *adapter,
 		status = sme_enable_uapsd_for_ac(
 				SME_AC_BK, 2, 2, srv_value, sus_value,
 				SME_QOS_WMM_TS_DIR_BOTH, 1,
-				adapter->deflink->vdev_id,
+				adapter->vdev_id,
 				delayed_trgr_frm_int);
 
 		QDF_ASSERT(QDF_IS_STATUS_SUCCESS(status));
@@ -2565,7 +2558,7 @@ QDF_STATUS hdd_wmm_assoc(struct hdd_adapter *adapter,
 		status = sme_enable_uapsd_for_ac(
 				SME_AC_BE, 3, 3, srv_value, sus_value,
 				SME_QOS_WMM_TS_DIR_BOTH, 1,
-				adapter->deflink->vdev_id,
+				adapter->vdev_id,
 				delayed_trgr_frm_int);
 
 		QDF_ASSERT(QDF_IS_STATUS_SUCCESS(status));
@@ -2573,7 +2566,7 @@ QDF_STATUS hdd_wmm_assoc(struct hdd_adapter *adapter,
 
 	status = sme_update_dsc_pto_up_mapping(hdd_ctx->mac_handle,
 					       adapter->dscp_to_up_map,
-					       adapter->deflink->vdev_id);
+					       adapter->vdev_id);
 
 	if (!QDF_IS_STATUS_SUCCESS(status))
 		hdd_wmm_dscp_initial_state(adapter);
@@ -2609,6 +2602,7 @@ QDF_STATUS hdd_wmm_connect(struct hdd_adapter *adapter,
 	adapter->hdd_wmm_status.qos_connection = qos_connection;
 
 	for (ac = 0; ac < WLAN_MAX_AC; ac++) {
+		hdd_debug("ac %d off", ac);
 		/* admission is not required so access is allowed */
 		adapter->hdd_wmm_status.ac_status[ac].is_access_required = false;
 		adapter->hdd_wmm_status.ac_status[ac].is_access_allowed = true;
@@ -2640,17 +2634,15 @@ bool hdd_wmm_is_acm_allowed(uint8_t vdev_id)
 	struct hdd_adapter *adapter;
 	struct hdd_wmm_ac_status *wmm_ac_status;
 	struct hdd_context *hdd_ctx;
-	struct wlan_hdd_link_info *link_info;
 
 	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
 	if (!hdd_ctx)
 		return false;
 
-	link_info = hdd_get_link_info_by_vdev(hdd_ctx, vdev_id);
-	if (!link_info || hdd_validate_adapter(link_info->adapter))
+	adapter = hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
+	if (hdd_validate_adapter(adapter))
 		return false;
 
-	adapter = link_info->adapter;
 	wmm_ac_status = adapter->hdd_wmm_status.ac_status;
 
 	if (hdd_wmm_is_active(adapter) &&
@@ -2659,6 +2651,16 @@ bool hdd_wmm_is_acm_allowed(uint8_t vdev_id)
 	return true;
 }
 
+/**
+ * hdd_wmm_addts() - Function which will add a traffic spec at the
+ * request of an application
+ *
+ * @adapter  : [in]  pointer to adapter context
+ * @handle    : [in]  handle to uniquely identify a TS
+ * @tspec    : [in]  pointer to the traffic spec
+ *
+ * Return: HDD_WLAN_WMM_STATUS_*
+ */
 hdd_wlan_wmm_status_e hdd_wmm_addts(struct hdd_adapter *adapter,
 				    uint32_t handle,
 				    struct sme_qos_wmmtspecinfo *tspec)
@@ -2752,7 +2754,6 @@ hdd_wlan_wmm_status_e hdd_wmm_addts(struct hdd_adapter *adapter,
 	}
 	qos_context->adapter = adapter;
 	qos_context->flow_id = 0;
-	qos_context->ts_id = tspec->ts_info.tid;
 	qos_context->magic = HDD_WMM_CTX_MAGIC;
 	qos_context->is_inactivity_timer_running = false;
 
@@ -2764,7 +2765,7 @@ hdd_wlan_wmm_status_e hdd_wmm_addts(struct hdd_adapter *adapter,
 
 #ifndef WLAN_MDM_CODE_REDUCTION_OPT
 	sme_status = sme_qos_setup_req(mac_handle,
-				       adapter->deflink->vdev_id,
+				       adapter->vdev_id,
 				       tspec,
 				       hdd_wmm_sme_callback,
 				       qos_context,
@@ -2866,9 +2867,9 @@ hdd_wlan_wmm_status_e hdd_wmm_delts(struct hdd_adapter *adapter,
 	mutex_unlock(&adapter->hdd_wmm_status.mutex);
 
 	if (!qos_context) {
-		/* we didn't find the handle, tid is already freed */
-		hdd_info("tid already freed for handle 0x%x", handle);
-		return HDD_WLAN_WMM_STATUS_RELEASE_SUCCESS;
+		/* we didn't find the handle */
+		hdd_info("handle 0x%x not found", handle);
+		return HDD_WLAN_WMM_STATUS_RELEASE_FAILED_BAD_PARAM;
 	}
 
 	ac_type = qos_context->ac_type;
@@ -2878,7 +2879,7 @@ hdd_wlan_wmm_status_e hdd_wmm_delts(struct hdd_adapter *adapter,
 		 handle, flow_id, ac_type);
 
 #ifndef WLAN_MDM_CODE_REDUCTION_OPT
-	sme_status = sme_qos_release_req(mac_handle, adapter->deflink->vdev_id,
+	sme_status = sme_qos_release_req(mac_handle, adapter->vdev_id,
 					 flow_id);
 
 	hdd_debug("SME flow %d released, SME status %d", flow_id, sme_status);
@@ -2974,33 +2975,6 @@ hdd_wlan_wmm_status_e hdd_wmm_checkts(struct hdd_adapter *adapter, uint32_t hand
 }
 
 /**
- * hdd_get_handle_from_ts_id() - get handle from ts id
- * @adapter : hdd adapter
- * @ts_id: ts_id
- * @del_tspec_handle: handle to delete the request
- *
- * Return: None
- */
-static void
-hdd_get_handle_from_ts_id(struct hdd_adapter *adapter, uint8_t ts_id,
-			  uint32_t *del_tspec_handle)
-{
-	struct hdd_wmm_qos_context *cur_entry;
-
-	hdd_debug("Entered with ts_id 0x%x", ts_id);
-
-	mutex_lock(&adapter->hdd_wmm_status.mutex);
-	list_for_each_entry(cur_entry,
-			    &adapter->hdd_wmm_status.context_list, node) {
-		if (cur_entry->ts_id == ts_id) {
-			*del_tspec_handle = cur_entry->handle;
-			break;
-		}
-	}
-	mutex_unlock(&adapter->hdd_wmm_status.mutex);
-}
-
-/**
  * __wlan_hdd_cfg80211_config_tspec() - config tspec
  * @wiphy: pointer to wireless wiphy structure.
  * @wdev: pointer to wireless_dev structure.
@@ -3019,8 +2993,6 @@ static int __wlan_hdd_cfg80211_config_tspec(struct wiphy *wiphy,
 	struct sme_qos_wmmtspecinfo tspec;
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_TSPEC_MAX + 1];
 	uint8_t oper, ts_id;
-	static uint32_t add_tspec_handle = MIN_HANDLE_VALUE;
-	uint32_t del_tspec_handle = 0;
 	hdd_wlan_wmm_status_e status;
 	int ret;
 
@@ -3192,12 +3164,8 @@ static int __wlan_hdd_cfg80211_config_tspec(struct wiphy *wiphy,
 		if (tb[CONFIG_TSPEC_MINIMUM_PHY_RATE])
 			tspec.min_phy_rate = nla_get_u32(
 					     tb[CONFIG_TSPEC_MINIMUM_PHY_RATE]);
-		/*
-		 * ts_id send by upper layer is always same as handle and host
-		 * doesn't add new TS entry for same handle. To avoid this
-		 * issue host modifies handle internally.
-		 */
-		status = hdd_wmm_addts(adapter, add_tspec_handle, &tspec);
+
+		status = hdd_wmm_addts(adapter, ts_id, &tspec);
 		if (status == HDD_WLAN_WMM_STATUS_SETUP_FAILED ||
 		    status == HDD_WLAN_WMM_STATUS_SETUP_FAILED_BAD_PARAM ||
 		    status == HDD_WLAN_WMM_STATUS_SETUP_FAILED_NO_WMM ||
@@ -3209,23 +3177,11 @@ static int __wlan_hdd_cfg80211_config_tspec(struct wiphy *wiphy,
 			hdd_err_rl("hdd_wmm_addts failed %d", status);
 			return -EINVAL;
 		}
-
-		add_tspec_handle++;
-		if (add_tspec_handle >= MAX_HANDLE_VALUE)
-			add_tspec_handle = MIN_HANDLE_VALUE;
 		break;
 
 	case QCA_WLAN_TSPEC_DEL:
-		/*
-		 * Host modifies handle internally. So, always
-		 * delete the entry for provided ts_id.
-		 */
-		hdd_get_handle_from_ts_id(adapter, ts_id, &del_tspec_handle);
-		if (!del_tspec_handle) {
-			hdd_err_rl("ts_id is already freed %d", ts_id);
-			break;
-		}
-		status = hdd_wmm_delts(adapter, del_tspec_handle);
+
+		status = hdd_wmm_delts(adapter, ts_id);
 		if (status == HDD_WLAN_WMM_STATUS_RELEASE_FAILED ||
 		    status == HDD_WLAN_WMM_STATUS_RELEASE_FAILED_BAD_PARAM ||
 		    status == HDD_WLAN_WMM_STATUS_INTERNAL_FAILURE) {

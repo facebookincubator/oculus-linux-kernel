@@ -915,7 +915,6 @@ static QDF_STATUS dp_mon_filter_dest_update(struct dp_pdev *pdev,
 	struct dp_mon_pdev *mon_pdev = pdev->monitor_pdev;
 	enum dp_mon_filter_srng_type srng_type;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	uint32_t target_type = hal_get_target_type(soc->hal_soc);
 
 	srng_type = ((soc->wlan_cfg_ctx->rxdma1_enable) ?
 			DP_MON_FILTER_SRNG_TYPE_RXDMA_MON_BUF :
@@ -933,8 +932,7 @@ static QDF_STATUS dp_mon_filter_dest_update(struct dp_pdev *pdev,
 		 * For WIN case the monitor buffer ring is used and it does need
 		 * reset when monitor mode gets enabled/disabled.
 		 */
-		if (soc->wlan_cfg_ctx->rxdma1_enable ||
-		    target_type == TARGET_TYPE_QCN9160) {
+		if (soc->wlan_cfg_ctx->rxdma1_enable) {
 			if (mon_pdev->monitor_configured || *pmon_mode_set) {
 				status = dp_mon_ht2_rx_ring_cfg(soc, pdev,
 								srng_type,
@@ -1138,6 +1136,6 @@ static void dp_cfr_filter_1_0(struct cdp_soc_t *soc_hdl,
 
 void dp_cfr_filter_register_1_0(struct cdp_ops *ops)
 {
-	ops->mon_ops->txrx_cfr_filter = dp_cfr_filter_1_0;
+	ops->cfr_ops->txrx_cfr_filter = dp_cfr_filter_1_0;
 }
 #endif

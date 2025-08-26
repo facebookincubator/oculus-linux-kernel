@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -133,18 +133,6 @@ ucfg_mlme_set_twt_command_in_progress(struct wlan_objmgr_psoc *psoc,
 				      enum wlan_twt_commands cmd)
 {
 	return QDF_STATUS_E_FAILURE;
-}
-
-/**
- * ucfg_mlme_is_flexible_twt_enabled() - Get if flexible TWT is enabled
- * @psoc: Pointer to global psoc object
- *
- * Return: True if flexible TWT is supported
- */
-static inline
-bool ucfg_mlme_is_flexible_twt_enabled(struct wlan_objmgr_psoc *psoc)
-{
-	return mlme_is_flexible_twt_enabled(psoc);
 }
 
 #elif defined(WLAN_SUPPORT_TWT) && defined(WLAN_FEATURE_11AX)
@@ -792,6 +780,14 @@ ucfg_mlme_set_twt_requestor_flag(struct wlan_objmgr_psoc *psoc,
 static inline QDF_STATUS
 ucfg_mlme_set_twt_responder_flag(struct wlan_objmgr_psoc *psoc,
 				 bool val)
+{
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline QDF_STATUS
+ucfg_mlme_reset_twt_reset_cmd(struct wlan_objmgr_psoc *psoc,
+			      struct qdf_mac_addr *peer_mac,
+			      uint8_t dialog_id)
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }

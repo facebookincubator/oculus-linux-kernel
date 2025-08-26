@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -32,7 +32,7 @@
 #define MGMT_RX_REO_INVALID_SNAPSHOT_VERSION      (-1)
 
 /**
- * struct wlan_host_mlo_glb_h_shmem_params - MLO global shared memory parameters
+ * wlan_host_mlo_glb_h_shmem_params - MLO global shared memory parameters
  * @major_version: Major version
  * @minor_version: Minor version
  */
@@ -42,8 +42,8 @@ struct wlan_host_mlo_glb_h_shmem_params {
 };
 
 /**
- * struct wlan_host_mlo_glb_rx_reo_per_link_info - MGMT Rx REO
- * information of a link in MLO global shared memory
+ * wlan_host_mlo_glb_rx_reo_per_link_info - MGMT Rx REO information of a link in
+ * MLO global shared memory
  * @link_id: Hardware link ID
  * @fw_consumed: Address of FW consumed snapshot
  * @fw_forwarded: Address of FW forwarded snapshot
@@ -57,8 +57,8 @@ struct wlan_host_mlo_glb_rx_reo_per_link_info {
 };
 
 /**
- * struct wlan_host_mlo_glb_rx_reo_snapshot_info - MGMT Rx REO
- * information in MLO global shared memory
+ * wlan_host_mlo_glb_rx_reo_snapshot_info - MGMT Rx REO information in MLO
+ * global shared memory
  * @num_links: Number of valid links
  * @valid_link_bmap: Valid link bitmap
  * @link_info: pointer to an array of Rx REO per-link information
@@ -76,21 +76,19 @@ struct wlan_host_mlo_glb_rx_reo_snapshot_info {
 };
 
 /**
- * struct wlan_host_mlo_glb_per_chip_crash_info - per chip crash
- * information in MLO global shared memory
+ * wlan_host_mlo_glb_per_chip_crash_info - per chip crash information in MLO
+ * global shared memory
  * @chip_id: MLO Chip ID
  * @crash_reason: Address of the crash_reason corresponding to chip_id
- * @recovery_mode: Address of the recovery mode corresponding to chip_id
  */
 struct wlan_host_mlo_glb_per_chip_crash_info {
 	uint8_t chip_id;
 	void *crash_reason;
-	void *recovery_mode;
 };
 
 /**
- * struct wlan_host_mlo_glb_chip_crash_info - chip crash information in MLO
- *                                            global shared memory
+ * wlan_host_mlo_glb_chip_crash_info - chip crash information in MLO
+ * global shared memory
  * @no_of_chips: No of partner chip to which crash information is shared
  * @valid_chip_bmap: Bitmap to indicate the chip to which the crash information
  * is shared
@@ -104,11 +102,9 @@ struct wlan_host_mlo_glb_chip_crash_info {
 };
 
 /**
- * struct wlan_host_mlo_glb_h_shmem_arena_ctx - MLO Global shared
- *                                              memory arena context
+ * wlan_host_mlo_glb_h_shmem_arena_ctx - MLO Global shared memory arena context
  * @shmem_params: shared memory parameters
  * @rx_reo_snapshot_info: MGMT Rx REO snapshot information
- * @chip_crash_info: chip crash information
  * @init_count: Number of init calls
  */
 struct wlan_host_mlo_glb_h_shmem_arena_ctx {
@@ -154,18 +150,6 @@ QDF_STATUS mlo_glb_h_shmem_arena_ctx_deinit(uint8_t grp_id);
  */
 void *mlo_glb_h_shmem_arena_get_crash_reason_address(uint8_t grp_id,
 						     uint8_t chip_id);
-
-/**
- * mlo_glb_h_shmem_arena_get_recovery_mode_address() - get the address of
- * recovery mode associated with chip_id
- * @grp_id: Id of the required MLO Group
- * @chip_id: MLO Chip Id
- *
- * Return: Address of recovery mode field from global shmem arena in case of
- * success, else returns NULL
- */
-void *mlo_glb_h_shmem_arena_get_recovery_mode_address(uint8_t grp_id,
-						      uint8_t chip_id);
 
 /**
  * mlo_glb_h_shmem_arena_get_no_of_chips_from_crash_info() - Get number of chips

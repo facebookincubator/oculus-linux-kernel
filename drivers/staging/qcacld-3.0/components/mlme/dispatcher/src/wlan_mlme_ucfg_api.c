@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,7 +29,6 @@
 #include "wlan_mlme_vdev_mgr_interface.h"
 #include <include/wlan_pdev_mlme.h>
 #include "wlan_pdev_mlme_api.h"
-#include <wlan_psoc_mlme_api.h>
 #include "wlan_vdev_mgr_tgt_if_tx_api.h"
 #include "wlan_policy_mgr_public_struct.h"
 #include "spatial_reuse_api.h"
@@ -108,7 +107,6 @@ QDF_STATUS ucfg_mlme_psoc_open(struct wlan_objmgr_psoc *psoc)
 void ucfg_mlme_psoc_close(struct wlan_objmgr_psoc *psoc)
 {
 	/* Clear the MLME CFG Structure */
-	wlan_mlme_psoc_flush_peer_trans_history(psoc);
 }
 
 QDF_STATUS ucfg_mlme_pdev_open(struct wlan_objmgr_pdev *pdev)
@@ -129,25 +127,6 @@ QDF_STATUS ucfg_mlme_pdev_close(struct wlan_objmgr_pdev *pdev)
 {
 	return QDF_STATUS_SUCCESS;
 }
-
-void ucfg_mlme_set_ml_link_control_mode(struct wlan_objmgr_psoc *psoc,
-					uint8_t vdev_id, uint8_t value)
-{
-	wlan_mlme_set_ml_link_control_mode(psoc, vdev_id, value);
-}
-
-void ucfg_mlme_set_bt_profile_con(struct wlan_objmgr_psoc *psoc,
-				  bool bt_profile_con)
-{
-	wlan_mlme_set_bt_profile_con(psoc, bt_profile_con);
-}
-
-uint8_t ucfg_mlme_get_ml_link_control_mode(struct wlan_objmgr_psoc *psoc,
-					   uint8_t vdev_id)
-{
-	return wlan_mlme_get_ml_link_control_mode(psoc, vdev_id);
-}
-
 
 /**
  * ucfg_mlme_convert_power_cfg_chan_to_freq() - converts channel numbers to
@@ -401,67 +380,39 @@ ucfg_mlme_is_chwidth_with_notify_supported(struct wlan_objmgr_psoc *psoc)
 				WLAN_VDEV_PARAM_CHWIDTH_WITH_NOTIFY_SUPPORT);
 }
 
-QDF_STATUS ucfg_mlme_update_bss_rate_flags(struct wlan_objmgr_psoc *psoc,
-					   uint8_t vdev_id,
-					   enum phy_ch_width ch_width,
-					   uint8_t eht_present,
-					   uint8_t he_present,
-					   uint8_t vht_present,
-					   uint8_t ht_present)
-{
-	return wlan_mlme_update_bss_rate_flags(psoc, vdev_id, ch_width,
-					       eht_present, he_present,
-					       vht_present, ht_present);
-}
-
 QDF_STATUS
 ucfg_mlme_send_ch_width_update_with_notify(struct wlan_objmgr_psoc *psoc,
-					   struct wlan_objmgr_vdev *link_vdev,
-					   enum phy_ch_width ch_width,
-					   uint8_t link_vdev_id)
-{
-	QDF_STATUS status = QDF_STATUS_E_FAILURE;
-
-	status = wlan_mlme_send_ch_width_update_with_notify(psoc, link_vdev,
-							    link_vdev_id,
-							    ch_width);
-
-	return status;
-}
-
-QDF_STATUS
-ucfg_mlme_set_vdev_wifi_std(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
-			    WMI_HOST_WIFI_STANDARD wifi_std)
+					   uint8_t vdev_id,
+					   enum phy_ch_width ch_width)
 {
 	struct wlan_objmgr_vdev *vdev;
-	struct mlme_legacy_priv *mlme_priv;
+	QDF_STATUS status;
+	enum QDF_OPMODE op_mode;
+	bool is_mlo_vdev;
 
 	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
 						    WLAN_MLME_OBJMGR_ID);
 	if (!vdev) {
-		mlme_legacy_err("vdev %d: vdev not found",
-				vdev_id);
+		mlme_legacy_err("vdev %d: vdev not found", vdev_id);
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
-	if (!mlme_priv) {
-		mlme_legacy_err("vdev %d: vmlme_priv is null", vdev_id);
-		wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_OBJMGR_ID);
-		return QDF_STATUS_E_FAILURE;
+	op_mode = wlan_vdev_mlme_get_opmode(vdev);
+	is_mlo_vdev = wlan_vdev_mlme_is_mlo_vdev(vdev);
+	if (op_mode != QDF_STA_MODE || is_mlo_vdev) {
+		mlme_legacy_debug("vdev %d: op mode %d, is_mlo_vdev:%d, CW update not supported",
+				  vdev_id, op_mode, is_mlo_vdev);
+		status = QDF_STATUS_E_NOSUPPORT;
+		goto release;
 	}
 
-	mlme_priv->wifi_std = wifi_std;
-	mlme_priv->is_user_std_set = true;
+	status = wlan_mlme_send_ch_width_update_with_notify(psoc, vdev,
+							    vdev_id, ch_width);
 
-	if (wifi_std < WMI_HOST_WIFI_STANDARD_7)
-		wlan_vdev_mlme_set_user_dis_eht_flag(vdev, true);
-	else
-		wlan_vdev_mlme_set_user_dis_eht_flag(vdev, false);
-
+release:
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_OBJMGR_ID);
 
-	return QDF_STATUS_SUCCESS;
+	return status;
 }
 
 QDF_STATUS
@@ -1734,24 +1685,6 @@ ucfg_mlme_get_current_tx_power_level(struct wlan_objmgr_psoc *psoc,
 	return QDF_STATUS_SUCCESS;
 }
 
-QDF_STATUS ucfg_wlan_mlme_get_reg_tpc_info(struct wlan_objmgr_vdev *vdev,
-					   struct reg_tpc_power_info *tpc_info)
-{
-	struct vdev_mlme_obj *mlme_obj;
-
-	mlme_obj = wlan_vdev_mlme_get_cmpt_obj(vdev);
-
-	if (!mlme_obj) {
-		mlme_legacy_err("vdev component object is NULL");
-		return QDF_STATUS_E_INVAL;
-	}
-
-	qdf_mem_copy(tpc_info, &mlme_obj->reg_tpc_obj,
-		     sizeof(struct reg_tpc_power_info));
-
-	return QDF_STATUS_SUCCESS;
-}
-
 QDF_STATUS
 ucfg_mlme_set_obss_detection_offload_enabled(struct wlan_objmgr_psoc *psoc,
 					     uint8_t value)
@@ -1886,13 +1819,6 @@ ucfg_mlme_set_channel_bonding_24ghz(struct wlan_objmgr_psoc *psoc,
 }
 
 QDF_STATUS
-ucfg_mlme_get_update_chan_width_allowed(struct wlan_objmgr_psoc *psoc,
-					   bool *value)
-{
-	return wlan_mlme_get_update_chan_width_allowed(psoc, value);
-}
-
-QDF_STATUS
 ucfg_mlme_get_channel_bonding_5ghz(struct wlan_objmgr_psoc *psoc,
 				   uint32_t *value)
 {
@@ -1959,13 +1885,7 @@ bool ucfg_mlme_validate_scan_period(struct wlan_objmgr_psoc *psoc,
 bool ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer(
 		struct wlan_objmgr_psoc *psoc)
 {
-	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(psoc);
-}
-
-bool ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
-		struct wlan_objmgr_psoc *psoc)
-{
-	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(psoc);
+	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(psoc);
 }
 
 bool ucfg_mlme_get_coex_unsafe_chan_reg_disable(

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -42,24 +42,6 @@ static struct wlan_host_mlo_glb_h_shmem_arena_ctx
 	(qdf_offsetof(typeof(*(ptlv)), field_name) < (tlv_len) ? \
 		true : false)
 
-#ifdef BIG_ENDIAN_HOST
-static inline void
-convert_dwords_to_host_order(uint32_t *pwords, size_t num_words)
-{
-	size_t word = 0;
-
-	for (; word < num_words; word++) {
-		*pwords = qdf_le32_to_cpu(*pwords);
-		++pwords;
-	}
-}
-#else
-static inline void
-convert_dwords_to_host_order(uint32_t *pwords, size_t num_words)
-{
-}
-#endif
-
 /**
  * get_field_value_in_tlv() - Get the value of a given field in a given TLV
  * @ptlv: Pointer to start of the TLV
@@ -70,15 +52,8 @@ convert_dwords_to_host_order(uint32_t *pwords, size_t num_words)
  * structure is less than the TLV length, else 0.
  */
 #define get_field_value_in_tlv(ptlv, field_name, tlv_len) \
-	(qdf_offsetof(typeof(*(ptlv)), field_name) >= (tlv_len) ? 0 : \
-	 ({ \
-	   typeof((ptlv)->field_name) _field_ = (ptlv)->field_name; \
-	   qdf_assert(!(sizeof(_field_) & 0x3)); \
-	   convert_dwords_to_host_order((uint32_t *)&_field_, \
-					sizeof(_field_) >> 2); \
-	   _field_; \
-	  }) \
-	)
+	(qdf_offsetof(typeof(*(ptlv)), field_name) < (tlv_len) ? \
+		(ptlv)->field_name : 0)
 
 /**
  * get_field_pointer_in_tlv() - Get the address of a given field in a given TLV
@@ -109,18 +84,13 @@ process_tlv_header(const uint8_t *data, size_t remaining_len,
 		   uint32_t expected_tag, uint32_t *tlv_len,
 		   uint32_t *tlv_tag)
 {
-	uint32_t tlv_header;
-
 	if (remaining_len < MLO_SHMEM_TLV_HDR_SIZE) {
 		target_if_err("Not enough space(%zu) to read TLV header(%u)",
 			      remaining_len, (uint32_t)MLO_SHMEM_TLV_HDR_SIZE);
 		return qdf_status_to_os_return(QDF_STATUS_E_FAILURE);
 	}
 
-	tlv_header = MLO_SHMEMTLV_GET_HDR(data);
-	tlv_header = qdf_le32_to_cpu(tlv_header);
-
-	*tlv_len = MLO_SHMEMTLV_GET_TLVLEN(tlv_header);
+	*tlv_len = MLO_SHMEMTLV_GET_TLVLEN(MLO_SHMEMTLV_GET_HDR(data));
 	*tlv_len += MLO_SHMEM_TLV_HDR_SIZE;
 	if (remaining_len < *tlv_len) {
 		target_if_err("Not enough space(%zu) to read TLV payload(%u)",
@@ -128,7 +98,7 @@ process_tlv_header(const uint8_t *data, size_t remaining_len,
 		return qdf_status_to_os_return(QDF_STATUS_E_FAILURE);
 	}
 
-	*tlv_tag = MLO_SHMEMTLV_GET_TLVTAG(tlv_header);
+	*tlv_tag = MLO_SHMEMTLV_GET_TLVTAG(MLO_SHMEMTLV_GET_HDR(data));
 	if (*tlv_tag != expected_tag) {
 		target_if_err("Unexpected TLV tag: %u is seen. Expected: %u",
 			      *tlv_tag,
@@ -188,7 +158,6 @@ extract_mgmt_rx_reo_snapshot_tlv(uint8_t *data, size_t remaining_len,
  * RX_REO_PER_LINK_SNAPSHOT_INFO TLV
  * @data: Pointer to start of the TLV
  * @remaining_len: Length (in bytes) remaining in the arena from @data pointer
- * @link_id: link ID of interest
  * @link_info: Pointer to MGMT Rx REO per link info. Extracted information
  * will be populated in this data structure.
  *
@@ -219,7 +188,7 @@ extract_mlo_glb_rx_reo_per_link_info_tlv(
 
 	link_info->link_id = link_id;
 
-	/*
+	/**
 	 * Get the pointer to the fw_consumed snapshot with in the TLV.
 	 * Note that snapshots are nested TLVs within link_sanpshot_info TLV.
 	 */
@@ -250,7 +219,7 @@ extract_mlo_glb_rx_reo_per_link_info_tlv(
 	validate_parsed_bytes_advance_data_pointer(len, data, remaining_len);
 	parsed_bytes += len;
 
-	/*
+	/**
 	 * Return the length of link_sanpshot_info TLV itself as the snapshots
 	 * are nested inside link_sanpshot_info TLV and hence no need to add
 	 * their lengths separately.
@@ -535,7 +504,7 @@ uint8_t mlo_glb_h_shmem_arena_get_no_of_chips_from_crash_info(uint8_t grp_id)
 {
 	struct wlan_host_mlo_glb_h_shmem_arena_ctx *shmem_arena_ctx;
 
-	if (grp_id >= WLAN_MAX_MLO_GROUPS)
+	if (grp_id > WLAN_MAX_MLO_GROUPS)
 		return 0;
 
 	shmem_arena_ctx = get_shmem_arena_ctx(grp_id);
@@ -593,50 +562,6 @@ void *mlo_glb_h_shmem_arena_get_crash_reason_address(uint8_t grp_id,
 }
 
 /**
- * mlo_glb_h_shmem_arena_get_recovery_mode_address() - get the address of
- * recovery mode associated with chip_id
- * @grp_id: Id of the required MLO Group
- * @chip_id: MLO Chip Id
- *
- * Return: Address of recovery mode field from global shmem arena in case of
- * success, else returns NULL
- */
-void *mlo_glb_h_shmem_arena_get_recovery_mode_address(uint8_t grp_id,
-						      uint8_t chip_id)
-{
-	struct wlan_host_mlo_glb_h_shmem_arena_ctx *shmem_arena_ctx;
-	struct wlan_host_mlo_glb_chip_crash_info *crash_info;
-	struct wlan_host_mlo_glb_per_chip_crash_info *per_chip_crash_info;
-	uint8_t chip;
-
-	if (grp_id > WLAN_MAX_MLO_GROUPS)
-		return NULL;
-
-	shmem_arena_ctx = get_shmem_arena_ctx(grp_id);
-	if (!shmem_arena_ctx) {
-		target_if_err("mlo_glb_h_shmem_arena context is NULL");
-		return NULL;
-	}
-
-	crash_info = &shmem_arena_ctx->chip_crash_info;
-
-	for (chip = 0; chip < crash_info->no_of_chips; chip++) {
-		per_chip_crash_info = &crash_info->per_chip_crash_info[chip];
-
-		if (chip_id == per_chip_crash_info->chip_id)
-			break;
-	}
-
-	if (chip == crash_info->no_of_chips) {
-		target_if_err("No crash info corresponding to chip %u",
-			      chip_id);
-		return NULL;
-	}
-
-	return per_chip_crash_info->recovery_mode;
-}
-
-/**
  * free_mlo_glb_per_chip_crash_info() - free per chip crash info
  * @crash_info: Pointer to crash info
  *
@@ -666,7 +591,6 @@ static int extract_mlo_glb_per_chip_crash_info_tlv(
 	mlo_glb_per_chip_crash_info *ptlv;
 	uint32_t tlv_len, tlv_tag;
 	uint8_t *crash_reason;
-	uint8_t *recovery_mode;
 
 	qdf_assert_always(data);
 	qdf_assert_always(chip_crash_info);
@@ -683,10 +607,7 @@ static int extract_mlo_glb_per_chip_crash_info_tlv(
 	chip_crash_info->chip_id = chip_id;
 	crash_reason = (uint8_t *)get_field_pointer_in_tlv(
 			ptlv, crash_reason, tlv_len);
-	recovery_mode = (uint8_t *)get_field_pointer_in_tlv(
-			ptlv, recovery_mode, tlv_len);
 	chip_crash_info->crash_reason = (void *)crash_reason;
-	chip_crash_info->recovery_mode = (void *)recovery_mode;
 	return tlv_len;
 }
 
@@ -922,8 +843,8 @@ QDF_STATUS mlo_glb_h_shmem_arena_ctx_deinit(uint8_t grp_id)
 		return QDF_STATUS_E_FAILURE;
 	}
 
-       /* We need to de-initialize only for the last invocation */
-	if (!qdf_atomic_dec_and_test(&shmem_arena_ctx->init_count))
+	/* We need to de-initialize only for the last invocation */
+	if (qdf_atomic_dec_and_test(&shmem_arena_ctx->init_count))
 		goto success;
 
 	free_mlo_glb_rx_reo_per_link_info(
@@ -942,7 +863,7 @@ uint16_t mgmt_rx_reo_get_valid_link_bitmap(uint8_t grp_id)
 {
 	struct wlan_host_mlo_glb_h_shmem_arena_ctx *shmem_arena_ctx;
 
-	if (grp_id >= WLAN_MAX_MLO_GROUPS)
+	if (grp_id > WLAN_MAX_MLO_GROUPS)
 		return 0;
 
 	shmem_arena_ctx = get_shmem_arena_ctx(grp_id);
@@ -958,7 +879,7 @@ int mgmt_rx_reo_get_num_links(uint8_t grp_id)
 {
 	struct wlan_host_mlo_glb_h_shmem_arena_ctx *shmem_arena_ctx;
 
-	if (grp_id >= WLAN_MAX_MLO_GROUPS)
+	if (grp_id > WLAN_MAX_MLO_GROUPS)
 		return -EINVAL;
 
 	shmem_arena_ctx = get_shmem_arena_ctx(grp_id);

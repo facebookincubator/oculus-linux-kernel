@@ -1200,11 +1200,7 @@ static void get_htc_send_packets_credit_based(HTC_TARGET *target,
 			ret = hif_rtpm_get(HIF_RTPM_GET_ASYNC, rtpm_code);
 			if (ret) {
 				/* bus suspended, runtime resume issued */
-				if (HTC_PACKET_QUEUE_DEPTH(pQueue) > 0)
-					AR_DEBUG_PRINTF(ATH_DEBUG_WARN,
-							(" pQueue depth: %d\n",
-							 HTC_PACKET_QUEUE_DEPTH(pQueue)));
-
+				QDF_ASSERT(HTC_PACKET_QUEUE_DEPTH(pQueue) == 0);
 				pPacket = htc_get_pkt_at_head(tx_queue);
 				if (!pPacket)
 					break;
@@ -1999,174 +1995,6 @@ static inline QDF_STATUS __htc_send_pkt(HTC_HANDLE HTCHandle,
 	return QDF_STATUS_SUCCESS;
 }
 
-#ifdef CUSTOM_CB_SCHEDULER_SUPPORT
-/**
- * htc_get_endpoint_ul_pipeid() - Helper API to get uplink pipe ID
- * @htc_handle: HTC handle
- * @endpoint_id: Endpoint ID
- * @ul_pipeid: Pointer to uplink pipe ID
- *
- * return: QDF_STATUS
- */
-static QDF_STATUS
-htc_get_endpoint_ul_pipeid(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id,
-			   uint8_t *ul_pipeid)
-{
-	HTC_TARGET *target;
-	HTC_ENDPOINT *end_point;
-
-	if (!htc_handle) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
-				("%s: HTCHandle is NULL\n", __func__));
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-	target = GET_HTC_TARGET_FROM_HANDLE(htc_handle);
-
-	if (endpoint_id >= ENDPOINT_MAX || endpoint_id <= ENDPOINT_UNUSED) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_SEND,
-				("%s endpoint is invalid\n", __func__));
-		AR_DEBUG_ASSERT(0);
-		return QDF_STATUS_E_INVAL;
-	}
-	end_point = &target->endpoint[endpoint_id];
-
-	if (!end_point->service_id) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("%s service_id is invalid\n",
-						 __func__));
-		return QDF_STATUS_E_INVAL;
-	}
-
-	*ul_pipeid = end_point->UL_PipeID;
-
-	return QDF_STATUS_SUCCESS;
-}
-
-QDF_STATUS
-htc_register_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id,
-		       void (*custom_cb)(void *), void *custom_cb_context)
-{
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	uint8_t ul_pipeid;
-
-	AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("+%s\n", __func__));
-
-	status = htc_get_endpoint_ul_pipeid(htc_handle, endpoint_id,
-					    &ul_pipeid);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("%s Failed to get ul pipeid\n",
-						 __func__));
-		goto exit;
-	}
-
-	status = hif_register_ce_custom_cb(htc_get_hif_device(htc_handle),
-					   ul_pipeid, custom_cb,
-					   custom_cb_context);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("%s Failed to register cb\n",
-						 __func__));
-		goto exit;
-	}
-
-exit:
-	AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("-%s\n", __func__));
-
-	return status;
-}
-
-QDF_STATUS
-htc_unregister_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id)
-{
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	uint8_t ul_pipeid;
-
-	AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("+%s\n", __func__));
-
-	status = htc_get_endpoint_ul_pipeid(htc_handle, endpoint_id,
-					    &ul_pipeid);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("%s Failed to get ul pipeid\n",
-						 __func__));
-		goto exit;
-	}
-
-	status = hif_unregister_ce_custom_cb(htc_get_hif_device(htc_handle),
-					     ul_pipeid);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("%s Failed to unregister cb\n",
-						 __func__));
-		status = QDF_STATUS_E_INVAL;
-		goto exit;
-	}
-
-exit:
-	AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("-%s\n", __func__));
-
-	return status;
-}
-
-QDF_STATUS
-htc_enable_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id)
-{
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	uint8_t ul_pipeid;
-
-	AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("+%s\n", __func__));
-
-	status = htc_get_endpoint_ul_pipeid(htc_handle, endpoint_id,
-					    &ul_pipeid);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("%s Failed to get ul pipeid\n",
-						 __func__));
-		goto exit;
-	}
-
-	status = hif_enable_ce_custom_cb(htc_get_hif_device(htc_handle),
-					 ul_pipeid);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("%s Failed to enable cb\n",
-						 __func__));
-		status = QDF_STATUS_E_INVAL;
-		goto exit;
-	}
-
-exit:
-	AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("-%s\n", __func__));
-
-	return status;
-}
-
-QDF_STATUS
-htc_disable_custom_cb(HTC_HANDLE htc_handle, HTC_ENDPOINT_ID endpoint_id)
-{
-	QDF_STATUS status = QDF_STATUS_SUCCESS;
-	uint8_t ul_pipeid;
-
-	AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("+%s\n", __func__));
-
-	status = htc_get_endpoint_ul_pipeid(htc_handle, endpoint_id,
-					    &ul_pipeid);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("%s Failed to get ul pipeid\n",
-						 __func__));
-		goto exit;
-	}
-
-	status = hif_disable_ce_custom_cb(htc_get_hif_device(htc_handle),
-					  ul_pipeid);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("%s Failed to disable cb\n",
-						 __func__));
-		status = QDF_STATUS_E_INVAL;
-		goto exit;
-	}
-
-exit:
-	AR_DEBUG_PRINTF(ATH_DEBUG_SEND, ("-%s\n", __func__));
-
-	return status;
-}
-#endif /* CUSTOM_CB_SCHEDULER_SUPPORT */
-
 /* HTC API - htc_send_pkt */
 QDF_STATUS htc_send_pkt(HTC_HANDLE htc_handle, HTC_PACKET *htc_packet)
 {
@@ -2667,7 +2495,8 @@ QDF_STATUS htc_tx_completion_handler(void *Context,
 	do {
 		pPacket = htc_lookup_tx_packet(target, pEndpoint, netbuf);
 		if (!pPacket) {
-			qdf_rl_err("HTC TX lookup failed!");
+			AR_DEBUG_PRINTF(ATH_DEBUG_ERR,
+					("HTC TX lookup failed!\n"));
 			/* may have already been flushed and freed */
 			netbuf = NULL;
 			break;

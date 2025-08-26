@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/iopoll.h>
@@ -1718,6 +1718,11 @@ int cam_ife_csid_ver1_reserve(void *hw_priv,
 	hw_info = (struct cam_hw_info *)hw_priv;
 	csid_hw = (struct cam_ife_csid_ver1_hw *)hw_info->core_info;
 
+	if (reserve->res_id >= CAM_IFE_PIX_PATH_RES_MAX) {
+		CAM_DBG(CAM_ISP, "CSID %d invalid Res_id %d",
+				csid_hw->hw_intf->hw_idx, reserve->res_id);
+		return -EINVAL;
+	}
 	res = &csid_hw->path_res[reserve->res_id];
 
 	if (res->res_state != CAM_ISP_RESOURCE_STATE_AVAILABLE) {

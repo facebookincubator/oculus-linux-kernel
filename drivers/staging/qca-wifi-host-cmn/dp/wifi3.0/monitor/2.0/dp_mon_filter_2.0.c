@@ -119,6 +119,16 @@ fail:
 	return QDF_STATUS_E_FAILURE;
 }
 
+void dp_rx_mon_hdr_length_set(uint32_t *msg_word,
+			      struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	if (!msg_word || !tlv_filter)
+		return;
+
+	HTT_RX_RING_SELECTION_CFG_RX_HDR_LEN_SET(*msg_word,
+						 tlv_filter->rx_hdr_length);
+}
+
 void dp_rx_mon_packet_length_set(uint32_t *msg_word,
 				 struct htt_rx_ring_tlv_filter *tlv_filter)
 {
@@ -166,94 +176,32 @@ void dp_rx_mon_enable_mpdu_logging(uint32_t *msg_word,
 }
 
 void
-dp_rx_mon_word_mask_subscribe(struct dp_soc *soc,
-			      uint32_t *msg_word, int pdev_id,
-			      struct htt_rx_ring_tlv_filter *tlv_filter)
+dp_rx_mon_word_mask_subscribe(uint32_t *msg_word,
+				  struct htt_rx_ring_tlv_filter *tlv_filter)
 {
-	struct dp_pdev *pdev;
-	struct dp_mon_pdev *mon_pdev;
 
-	if (!msg_word || !tlv_filter)
-		return;
-
-	if (!tlv_filter->enable)
-		return;
-
-	pdev = soc->pdev_list[pdev_id];
-	mon_pdev = pdev->monitor_pdev;
-
-	if (mon_pdev->rx_pktlog_mode != DP_RX_PKTLOG_DISABLED)
-		return;
-
-	HTT_RX_RING_SELECTION_CFG_WORD_MASK_COMPACTION_ENABLE_SET(*msg_word, 1);
-
-	/* word 14 */
-	msg_word += 3;
-	*msg_word = 0;
-
-	HTT_RX_RING_SELECTION_CFG_RX_MPDU_START_WORD_MASK_SET(
-				*msg_word,
-				RX_MON_MPDU_START_WMASK);
-
-	HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_WORD_MASK_SET(
-				*msg_word,
-				RX_MON_MPDU_END_WMASK);
-
+#ifdef QCA_MONITOR_2_0_SUPPORT_WAR /* Yet to get FW support */
+	HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_WORD_MASK_SET(*msg_word,
+			tlv_filter->rx_mpdu_end_wmask);
+#endif
 	/* word 15 */
 	msg_word++;
-	*msg_word = 0;
-	HTT_RX_RING_SELECTION_CFG_RX_MSDU_END_WORD_MASK_SET(
-				*msg_word,
-				RX_MON_MSDU_END_WMASK);
 
 	/* word 16 */
 	msg_word++;
-	/* word 17 */
-	msg_word++;
-	*msg_word = 0;
-	HTT_RX_RING_SELECTION_CFG_RX_MPDU_START_WORD_MASK_V2_SET(
-				*msg_word,
-				RX_MON_MPDU_START_WMASK_V2);
-
-	HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_WORD_MASK_V2_SET(
-				*msg_word,
-				RX_MON_MPDU_END_WMASK_V2);
-
-	/* word 18 */
-	msg_word++;
-	*msg_word = 0;
-	HTT_RX_RING_SELECTION_CFG_RX_MSDU_END_WORD_MASK_V2_SET(
-				*msg_word,
-				RX_MON_MSDU_END_WMASK);
-	/* word 19 */
-	msg_word++;
-	*msg_word = 0;
-	HTT_RX_RING_SELECTION_CFG_RX_PPDU_END_USR_STATS_WORD_MASK_V2_SET(
-				*msg_word,
-				RX_MON_PPDU_END_USR_STATS_WMASK);
-}
-
-void
-dp_rx_mon_pkt_tlv_offset_subscribe(uint32_t *msg_word,
-				   struct htt_rx_ring_tlv_filter *tlv_filter)
-{
-	if (!msg_word || !tlv_filter)
-		return;
-
-	/* word 16 */
 	*msg_word = 0;
 	if (tlv_filter->rx_pkt_tlv_offset) {
 		HTT_RX_RING_SELECTION_CFG_ENABLE_RX_PKT_TLV_OFFSET_SET(*msg_word, 1);
 		HTT_RX_RING_SELECTION_CFG_RX_PKT_TLV_OFFSET_SET(*msg_word,
 								tlv_filter->rx_pkt_tlv_offset);
 	}
-
 }
 
 void
 dp_rx_mon_enable_fpmo(uint32_t *msg_word,
 		      struct htt_rx_ring_tlv_filter *tlv_filter)
 {
+#ifdef FW_SUPPORT_NOT_YET
 	if (!msg_word || !tlv_filter)
 		return;
 
@@ -395,7 +343,7 @@ dp_rx_mon_enable_fpmo(uint32_t *msg_word,
 			(tlv_filter->fpmo_ctrl_filter &
 			FILTER_CTRL_CFEND_CFACK) ? 1 : 0);
 
-		/* word 21 */
+		/* word 18 */
 		msg_word++;
 		*msg_word = 0;
 
@@ -414,17 +362,17 @@ dp_rx_mon_enable_fpmo(uint32_t *msg_word,
 			FILTER_DATA_NULL) ? 1 : 0);
 
 	} else {
-		/* clear word 21 if fpmo is disabled
-		 * word 20 is already cleared by caller
+		/* clear word 18 if fpmo is disabled
+		 * word 17 is already cleared by caller
 		 */
 
-		/* word 21 */
+		/* word 18 */
 		msg_word++;
 		*msg_word = 0;
 	}
+#endif
 }
 
-#ifdef WLAN_PKT_CAPTURE_TX_2_0
 static void
 htt_tx_tlv_filter_mask_set_in0(uint32_t *msg_word,
 			       struct htt_tx_ring_tlv_filter *htt_tlv_filter)
@@ -997,9 +945,7 @@ htt_tx_tlv_filter_mask_set_in3(uint32_t *msg_word,
 							 MACTX_PRE_PHY_DESC,
 							 tlv->mactx_pre_phy_desc);
 }
-#endif
 
-#ifdef WLAN_PKT_CAPTURE_TX_2_0
 /*
  * dp_htt_h2t_send_complete_free_netbuf() - Free completed buffer
  * @soc:	SOC handl
@@ -1024,7 +970,6 @@ dp_htt_h2t_send_complete_free_netbuf(
  * @htt_tlv_filter:	Rx SRNG TLV and filter setting
  * Return: 0 on success; error code on failure
  */
-static
 int htt_h2t_tx_ring_cfg(struct htt_soc *htt_soc, int pdev_id,
 			hal_ring_handle_t hal_ring_hdl,
 			int hal_ring_type, int ring_buf_size,
@@ -1116,11 +1061,11 @@ int htt_h2t_tx_ring_cfg(struct htt_soc *htt_soc, int pdev_id,
 
 	if (htt_tlv_filter->ctrl_filter)
 		htt_tx_ring_pkt_type_set(*msg_word, ENABLE_FLAGS,
-					 CTRL, 1);
+					 CTRL, 2);
 
 	if (htt_tlv_filter->data_filter)
 		htt_tx_ring_pkt_type_set(*msg_word, ENABLE_FLAGS,
-					 DATA, 1);
+					 DATA, 4);
 
 	if (htt_tlv_filter->mgmt_dma_length)
 		HTT_TX_MONITOR_CFG_CONFIG_LENGTH_MGMT_SET(*msg_word,
@@ -1181,10 +1126,6 @@ int htt_h2t_tx_ring_cfg(struct htt_soc *htt_soc, int pdev_id,
 
 	if (htt_tlv_filter->data_msdu_end)
 		HTT_TX_MONITOR_CFG_FILTER_IN_TX_MSDU_END_DATA_SET(*msg_word, 1);
-
-	if (htt_tlv_filter->compaction_enable)
-		HTT_TX_MONITOR_CFG_WORD_MASK_COMPACTION_ENABLE_SET(*msg_word,
-								   1);
 
 	/* word 3 */
 	msg_word++;
@@ -1267,38 +1208,6 @@ int htt_h2t_tx_ring_cfg(struct htt_soc *htt_soc, int pdev_id,
 	HTT_TX_MONITOR_CFG_DMA_MPDU_DATA_SET(*msg_word,
 					     htt_tlv_filter->data_mpdu_log);
 
-	/* word 10 */
-	msg_word++;
-	*msg_word = 0;
-
-	if (htt_tlv_filter->wmask.tx_queue_ext)
-		HTT_TX_MONITOR_CFG_TX_QUEUE_EXT_V2_WORD_MASK_SET(*msg_word,
-				htt_tlv_filter->wmask.tx_queue_ext);
-
-	if (htt_tlv_filter->wmask.tx_peer_entry)
-		HTT_TX_MONITOR_CFG_TX_PEER_ENTRY_V2_WORD_MASK_SET(*msg_word,
-				htt_tlv_filter->wmask.tx_peer_entry);
-
-	/* word 11 */
-	msg_word++;
-	*msg_word = 0;
-
-	if (htt_tlv_filter->wmask.tx_fes_status_end)
-		HTT_TX_MONITOR_CFG_FES_STATUS_END_WORD_MASK_SET(*msg_word,
-				htt_tlv_filter->wmask.tx_fes_status_end);
-
-	if (htt_tlv_filter->wmask.response_end_status)
-		HTT_TX_MONITOR_CFG_RESPONSE_END_STATUS_WORD_MASK_SET(*msg_word,
-				htt_tlv_filter->wmask.response_end_status);
-
-	/* word 12 */
-	msg_word++;
-	*msg_word = 0;
-
-	if (htt_tlv_filter->wmask.tx_fes_status_prot)
-		HTT_TX_MONITOR_CFG_FES_STATUS_PROT_WORD_MASK_SET(*msg_word,
-				htt_tlv_filter->wmask.tx_fes_status_prot);
-
 	pkt = htt_htc_pkt_alloc(soc);
 	if (!pkt)
 		goto fail1;
@@ -1330,7 +1239,6 @@ fail1:
 fail0:
 	return QDF_STATUS_E_FAILURE;
 }
-#endif
 
 #ifdef QCA_ENHANCED_STATS_SUPPORT
 void dp_mon_filter_setup_enhanced_stats_2_0(struct dp_pdev *pdev)
@@ -1403,8 +1311,7 @@ dp_mon_filter_reset_undecoded_metadata_capture_2_0(struct dp_pdev *pdev)
 }
 #endif
 
-#ifdef WLAN_PKT_CAPTURE_TX_2_0
-static void dp_tx_mon_filter_set_downstream_tlvs(struct htt_tx_ring_tlv_filter *filter)
+void dp_tx_mon_filter_set_downstream_tlvs(struct htt_tx_ring_tlv_filter *filter)
 {
 	filter->dtlvs.tx_fes_setup = 1;
 	filter->dtlvs.pcu_ppdu_setup_init = 1;
@@ -1413,8 +1320,7 @@ static void dp_tx_mon_filter_set_downstream_tlvs(struct htt_tx_ring_tlv_filter *
 	filter->dtlvs.fw2s_mon = 1;
 }
 
-static void
-dp_tx_mon_filter_set_upstream_tlvs(struct htt_tx_ring_tlv_filter *filter)
+void dp_tx_mon_filter_set_upstream_tlvs(struct htt_tx_ring_tlv_filter *filter)
 {
 	filter->utlvs.tx_fes_status_end = 1;
 	filter->utlvs.rx_response_required_info = 1;
@@ -1439,19 +1345,21 @@ dp_tx_mon_filter_set_upstream_tlvs(struct htt_tx_ring_tlv_filter *filter)
 	filter->utlvs.mactx_phy_desc = 1;
 	filter->utlvs.mactx_user_desc_cmn = 1;
 	filter->utlvs.mactx_user_desc_per_usr = 1;
-
-	/* enable u_sig and eht flag */
-	filter->utlvs.u_sig_eht_su_mu = 1;
-	filter->utlvs.u_sig_eht_su = 1;
-	filter->utlvs.u_sig_eht_tb = 1;
-	filter->utlvs.eht_sig_usr_su = 1;
-	filter->utlvs.eht_sig_usr_mu_mimo = 1;
-	filter->utlvs.eht_sig_usr_ofdma = 1;
 }
 
-static void
-dp_tx_mon_filter_set_all(struct dp_mon_pdev_be *mon_pdev_be,
-			 struct htt_tx_ring_tlv_filter *filter)
+void dp_tx_mon_filter_set_word_mask(struct htt_tx_ring_tlv_filter *filter)
+{
+	filter->wmask.tx_fes_setup = 1;
+	filter->wmask.tx_peer_entry = 1;
+	filter->wmask.tx_queue_ext = 1;
+	filter->wmask.tx_msdu_start = 1;
+	filter->wmask.tx_mpdu_start = 1;
+	filter->wmask.pcu_ppdu_setup_init = 1;
+	filter->wmask.rxpcu_user_setup = 1;
+}
+
+void dp_tx_mon_filter_set_all(struct dp_mon_pdev_be *mon_pdev_be,
+			      struct htt_tx_ring_tlv_filter *filter)
 {
 	qdf_mem_zero(&filter->dtlvs,
 		     sizeof(filter->dtlvs));
@@ -1462,6 +1370,7 @@ dp_tx_mon_filter_set_all(struct dp_mon_pdev_be *mon_pdev_be,
 
 	dp_tx_mon_filter_set_downstream_tlvs(filter);
 	dp_tx_mon_filter_set_upstream_tlvs(filter);
+	dp_tx_mon_filter_set_word_mask(filter);
 
 	filter->mgmt_filter = 0x1;
 	filter->data_filter = 0x1;
@@ -1486,47 +1395,6 @@ dp_tx_mon_filter_set_all(struct dp_mon_pdev_be *mon_pdev_be,
 	filter->mgmt_dma_length = mon_pdev_be->tx_mon_filter_length;
 	filter->ctrl_dma_length = mon_pdev_be->tx_mon_filter_length;
 	filter->data_dma_length = mon_pdev_be->tx_mon_filter_length;
-}
-
-static
-void dp_tx_mon_filter_set_word_mask(struct dp_pdev *pdev,
-				    struct htt_tx_ring_tlv_filter *filter)
-{
-	hal_txmon_word_mask_config_t word_mask = {0};
-	bool status = false;
-
-	status = hal_txmon_get_word_mask(pdev->soc->hal_soc, &word_mask);
-
-	if (status) {
-		filter->wmask.pcu_ppdu_setup_init =
-			word_mask.pcu_ppdu_setup_init;
-		filter->wmask.tx_peer_entry = word_mask.tx_peer_entry;
-		filter->wmask.tx_queue_ext = word_mask.tx_queue_ext;
-		filter->wmask.tx_fes_status_end = word_mask.tx_fes_status_end;
-		filter->wmask.response_end_status =
-			word_mask.response_end_status;
-		filter->wmask.tx_fes_status_prot = word_mask.tx_fes_status_prot;
-		filter->wmask.tx_fes_setup = word_mask.tx_fes_setup;
-		filter->wmask.tx_msdu_start = word_mask.tx_msdu_start;
-		filter->wmask.tx_mpdu_start = word_mask.tx_mpdu_start;
-		filter->wmask.rxpcu_user_setup = word_mask.rxpcu_user_setup;
-
-		filter->compaction_enable = word_mask.compaction_enable;
-	} else {
-		filter->wmask.pcu_ppdu_setup_init = 0xFFFFFFFF;
-		filter->wmask.tx_peer_entry = 0xFFFF;
-		filter->wmask.tx_queue_ext = 0xFFFF;
-		filter->wmask.tx_fes_status_end = 0xFFFF;
-		filter->wmask.response_end_status = 0xFFFF;
-		filter->wmask.tx_fes_status_prot = 0xFFFF;
-		filter->wmask.tx_fes_setup = 0xFF;
-		filter->wmask.tx_msdu_start = 0xFF;
-		filter->wmask.tx_mpdu_start = 0xFF;
-		filter->wmask.rxpcu_user_setup = 0xFF;
-
-		/* compaction is disable */
-		filter->compaction_enable = 0;
-	}
 }
 
 void dp_mon_filter_setup_tx_mon_mode_2_0(struct dp_pdev *pdev)
@@ -1560,7 +1428,6 @@ void dp_mon_filter_setup_tx_mon_mode_2_0(struct dp_pdev *pdev)
 
 	filter.tx_valid = !!mon_pdev_be->tx_mon_mode;
 	dp_tx_mon_filter_set_all(mon_pdev_be, &filter.tx_tlv_filter);
-	dp_tx_mon_filter_set_word_mask(pdev, &filter.tx_tlv_filter);
 	dp_mon_filter_show_tx_filter_be(mode, &filter);
 	mon_pdev_be->filter_be[mode][srng_type] = filter;
 }
@@ -1597,7 +1464,6 @@ void dp_mon_filter_reset_tx_mon_mode_2_0(struct dp_pdev *pdev)
 
 	mon_pdev_be->filter_be[mode][srng_type] = filter;
 }
-#endif
 
 static void dp_mon_filter_set_mon_2_0(struct dp_mon_pdev *mon_pdev,
 				      struct dp_mon_filter *filter)
@@ -1638,6 +1504,7 @@ static void dp_mon_filter_set_mon_2_0(struct dp_mon_pdev *mon_pdev,
 	filter->tlv_filter.mgmt_mpdu_log = DP_MON_MSDU_LOGGING;
 	filter->tlv_filter.ctrl_mpdu_log = DP_MON_MSDU_LOGGING;
 	filter->tlv_filter.data_mpdu_log = DP_MON_MSDU_LOGGING;
+
 
 	if (mon_pdev->mon_filter_mode & MON_FILTER_OTHER) {
 		filter->tlv_filter.enable_mo = 1;
@@ -1807,7 +1674,6 @@ static void dp_rx_mon_filter_show_filter(struct dp_mon_filter_be *filter)
 			    rx_tlv_filter->ctrl_dma_length);
 }
 
-#ifdef WLAN_PKT_CAPTURE_TX_2_0
 static void dp_tx_mon_filter_show_filter(struct dp_mon_filter_be *filter)
 {
 	struct htt_tx_ring_tlv_filter *tlv_filter = &filter->tx_tlv_filter;
@@ -2061,18 +1927,6 @@ static void dp_tx_mon_filter_show_filter(struct dp_mon_filter_be *filter)
 			    tlv_filter->wmask.rxpcu_user_setup);
 }
 
-void dp_mon_filter_show_tx_filter_be(enum dp_mon_filter_mode mode,
-				     struct dp_mon_filter_be *filter)
-{
-	DP_MON_FILTER_PRINT("TX MON RING TLV FILTER CONFIG:");
-	DP_MON_FILTER_PRINT("[Mode %d]: Valid: %d", mode, filter->tx_valid);
-
-	if (filter->tx_valid)
-		dp_tx_mon_filter_show_filter(filter);
-}
-
-#endif
-
 void dp_mon_filter_show_rx_filter_be(enum dp_mon_filter_mode mode,
 				     struct dp_mon_filter_be *filter)
 {
@@ -2082,6 +1936,16 @@ void dp_mon_filter_show_rx_filter_be(enum dp_mon_filter_mode mode,
 
 	if (filter->rx_tlv_filter.valid)
 		dp_rx_mon_filter_show_filter(filter);
+}
+
+void dp_mon_filter_show_tx_filter_be(enum dp_mon_filter_mode mode,
+				     struct dp_mon_filter_be *filter)
+{
+	dp_mon_filter_err("TX MON RING TLV FILTER CONFIG:");
+	dp_mon_filter_err("[Mode %d]: Valid: %d", mode, filter->tx_valid);
+
+	if (filter->tx_valid)
+		dp_tx_mon_filter_show_filter(filter);
 }
 
 #ifdef WDI_EVENT_ENABLE
@@ -2318,8 +2182,6 @@ void dp_mon_filter_reset_rx_pktlog_cbf_2_0(struct dp_pdev *pdev)
 	mon_pdev_be->filter_be[mode][srng_type] = filter;
 }
 
-#if defined(BE_PKTLOG_SUPPORT) && \
-defined(WLAN_PKT_CAPTURE_TX_2_0)
 void dp_mon_filter_setup_pktlog_hybrid_2_0(struct dp_pdev *pdev)
 {
 	struct dp_mon_filter_be filter = {0};
@@ -2412,7 +2274,6 @@ void dp_mon_filter_reset_pktlog_hybrid_2_0(struct dp_pdev *pdev)
 
 	mon_pdev_be->filter_be[mode][srng_type] = filter;
 }
-#endif
 #endif /* WDI_EVENT_ENABLE */
 
 /**
@@ -2605,6 +2466,22 @@ dp_rx_mon_filter_h2t_setup(struct dp_soc *soc, struct dp_pdev *pdev,
 				src_tlv_filter->data_mpdu_log;
 
 		/*
+		 * set mpdu start wmask
+		 */
+		if (src_tlv_filter->rx_mpdu_start_wmask &&
+		    !tlv_filter->rx_mpdu_start_wmask)
+			tlv_filter->rx_mpdu_start_wmask =
+				src_tlv_filter->rx_mpdu_start_wmask;
+
+		/*
+		 * set msdu end wmask
+		 */
+		if (src_tlv_filter->rx_msdu_end_wmask &&
+		    !tlv_filter->rx_msdu_end_wmask)
+			tlv_filter->rx_msdu_end_wmask =
+				src_tlv_filter->rx_msdu_end_wmask;
+
+		/*
 		 * set hdr tlv length
 		 */
 		if (src_tlv_filter->rx_hdr_length &&
@@ -2636,7 +2513,6 @@ dp_rx_mon_filter_h2t_setup(struct dp_soc *soc, struct dp_pdev *pdev,
 	}
 }
 
-#ifdef WLAN_PKT_CAPTURE_TX_2_0
 static
 void dp_tx_mon_downstream_tlv_set(struct htt_tx_ring_tlv_filter *dst_filter,
 				  struct htt_tx_ring_tlv_filter *src_filter)
@@ -2871,28 +2747,20 @@ static
 void dp_tx_mon_wordmask_config_set(struct htt_tx_ring_tlv_filter *dst_filter,
 				   struct htt_tx_ring_tlv_filter *src_filter)
 {
-	dst_filter->wmask.pcu_ppdu_setup_init |=
-		src_filter->wmask.pcu_ppdu_setup_init;
+	dst_filter->wmask.tx_fes_setup |=
+		src_filter->wmask.tx_fes_setup;
 	dst_filter->wmask.tx_peer_entry |=
 		src_filter->wmask.tx_peer_entry;
 	dst_filter->wmask.tx_queue_ext |=
 		src_filter->wmask.tx_queue_ext;
-	dst_filter->wmask.tx_fes_status_end |=
-		src_filter->wmask.tx_fes_status_end;
-	dst_filter->wmask.response_end_status |=
-		src_filter->wmask.response_end_status;
-	dst_filter->wmask.tx_fes_status_prot |=
-		src_filter->wmask.tx_fes_status_prot;
-	dst_filter->wmask.tx_fes_setup |=
-		src_filter->wmask.tx_fes_setup;
 	dst_filter->wmask.tx_msdu_start |=
 		src_filter->wmask.tx_msdu_start;
 	dst_filter->wmask.tx_mpdu_start |=
 		src_filter->wmask.tx_mpdu_start;
+	dst_filter->wmask.pcu_ppdu_setup_init |=
+		src_filter->wmask.pcu_ppdu_setup_init;
 	dst_filter->wmask.rxpcu_user_setup |=
 		src_filter->wmask.rxpcu_user_setup;
-	dst_filter->compaction_enable |=
-		src_filter->compaction_enable;
 }
 
 /**
@@ -3023,7 +2891,6 @@ QDF_STATUS dp_tx_mon_filter_update_2_0(struct dp_pdev *pdev)
 
 	return QDF_STATUS_SUCCESS;
 }
-#endif
 
 QDF_STATUS dp_rx_mon_filter_update_2_0(struct dp_pdev *pdev)
 {
@@ -3217,7 +3084,6 @@ dp_mon_filter_setup_rx_lite_mon(struct dp_mon_pdev_be *be_mon_pdev)
 	be_mon_pdev->filter_be[filter_mode][srng_type] = filter;
 }
 
-#ifdef WLAN_PKT_CAPTURE_TX_2_0
 uint8_t tx_lite_mon_set_len(uint16_t len)
 {
 	switch (len) {
@@ -3256,29 +3122,14 @@ dp_mon_filter_reset_tx_lite_mon(struct dp_mon_pdev_be *be_mon_pdev)
 }
 
 void
-dp_mon_filter_setup_tx_lite_mon(struct dp_pdev *pdev)
+dp_mon_filter_setup_tx_lite_mon(struct dp_mon_pdev_be *be_mon_pdev)
 {
-	struct dp_mon_pdev *mon_pdev = NULL;
-	struct dp_mon_pdev_be *be_mon_pdev = NULL;
 	struct dp_mon_filter_be filter = {0};
 	enum dp_mon_filter_mode mode = DP_MON_FILTER_LITE_MON_MODE;
 	enum dp_mon_filter_srng_type srng_type =
 				DP_MON_FILTER_SRNG_TYPE_TXMON_DEST;
 	struct htt_tx_ring_tlv_filter *tx_tlv_filter = &filter.tx_tlv_filter;
 	struct dp_lite_mon_tx_config *config = NULL;
-
-	if (!pdev) {
-		dp_mon_filter_err("Pdev context is null");
-		return;
-	}
-
-	mon_pdev = pdev->monitor_pdev;
-	if (!mon_pdev) {
-		dp_mon_filter_err("Monitor pdev context is null");
-		return;
-	}
-
-	be_mon_pdev = dp_get_be_mon_pdev_from_dp_mon_pdev(mon_pdev);
 
 	config = be_mon_pdev->lite_mon_tx_config;
 	if (!config)
@@ -3297,7 +3148,7 @@ dp_mon_filter_setup_tx_lite_mon(struct dp_pdev *pdev)
 
 	dp_tx_mon_filter_set_downstream_tlvs(tx_tlv_filter);
 	dp_tx_mon_filter_set_upstream_tlvs(tx_tlv_filter);
-	dp_tx_mon_filter_set_word_mask(pdev, tx_tlv_filter);
+	dp_tx_mon_filter_set_word_mask(tx_tlv_filter);
 
 	/* configure mgmt filters */
 	if (config->tx_config.mgmt_filter[DP_MON_FRM_FILTER_MODE_FP]) {
@@ -3343,7 +3194,6 @@ dp_mon_filter_setup_tx_lite_mon(struct dp_pdev *pdev)
 	dp_mon_filter_show_tx_filter_be(mode, &filter);
 	be_mon_pdev->filter_be[mode][srng_type] = filter;
 }
-#endif /* WLAN_PKT_CAPTURE_TX_2_0 */
 #endif /* QCA_SUPPORT_LITE_MONITOR */
 
 #if defined(WLAN_CFR_ENABLE) && defined(WLAN_ENH_CFR_ENABLE)
@@ -3432,85 +3282,6 @@ static void dp_cfr_filter_2_0(struct cdp_soc_t *soc_hdl,
 
 void dp_cfr_filter_register_2_0(struct cdp_ops *ops)
 {
-	ops->mon_ops->txrx_cfr_filter = dp_cfr_filter_2_0;
+	ops->cfr_ops->txrx_cfr_filter = dp_cfr_filter_2_0;
 }
-
-#if defined(WLAN_FEATURE_LOCAL_PKT_CAPTURE) && \
-defined(WLAN_PKT_CAPTURE_TX_2_0)
-void dp_mon_filter_setup_local_pkt_capture_tx(struct dp_pdev *pdev)
-{
-	struct dp_mon_pdev *mon_pdev = pdev->monitor_pdev;
-	enum dp_mon_filter_mode mode = DP_MON_FILTER_MONITOR_MODE;
-	enum dp_mon_filter_srng_type srng_type =
-				DP_MON_FILTER_SRNG_TYPE_TXMON_DEST;
-	struct dp_mon_pdev_be *mon_pdev_be = NULL;
-	struct dp_mon_filter_be filter = {0};
-	struct htt_tx_ring_tlv_filter *tx_tlv_filter = &filter.tx_tlv_filter;
-	struct dp_pdev_tx_monitor_be *tx_mon_be;
-
-	mon_pdev_be = dp_get_be_mon_pdev_from_dp_mon_pdev(mon_pdev);
-	tx_mon_be = &mon_pdev_be->tx_monitor_be;
-	tx_mon_be->mode = TX_MON_BE_FULL_CAPTURE;
-	mon_pdev_be->tx_mon_mode = 1;
-	mon_pdev_be->tx_mon_filter_length = DMA_LENGTH_256B;
-
-	filter.tx_valid = true;
-	tx_tlv_filter->enable = 1;
-	dp_tx_mon_filter_set_downstream_tlvs(tx_tlv_filter);
-	dp_tx_mon_filter_set_upstream_tlvs(tx_tlv_filter);
-	dp_tx_mon_filter_set_word_mask(pdev, tx_tlv_filter);
-
-	if (mon_pdev->fp_mgmt_filter) {
-		tx_tlv_filter->mgmt_filter = FILTER_MGMT_ALL;
-		tx_tlv_filter->mgmt_mpdu_end = 1;
-		tx_tlv_filter->mgmt_msdu_end = 1;
-		tx_tlv_filter->mgmt_msdu_start = 1;
-		tx_tlv_filter->mgmt_mpdu_start = 1;
-		tx_tlv_filter->mgmt_mpdu_log = 1;
-		tx_tlv_filter->mgmt_dma_length = DMA_LENGTH_256B;
-	}
-
-	if (mon_pdev->fp_ctrl_filter) {
-		tx_tlv_filter->ctrl_filter = FILTER_CTRL_ALL;
-		tx_tlv_filter->ctrl_mpdu_end = 1;
-		tx_tlv_filter->ctrl_msdu_end = 1;
-		tx_tlv_filter->ctrl_msdu_start = 1;
-		tx_tlv_filter->ctrl_mpdu_start = 1;
-		tx_tlv_filter->ctrl_mpdu_log = 1;
-		tx_tlv_filter->ctrl_dma_length = DMA_LENGTH_256B;
-	}
-
-	if (mon_pdev->fp_data_filter) {
-		tx_tlv_filter->data_filter = FILTER_DATA_ALL;
-		tx_tlv_filter->data_mpdu_end = 1;
-		tx_tlv_filter->data_msdu_end = 1;
-		tx_tlv_filter->data_msdu_start = 1;
-		tx_tlv_filter->data_mpdu_start = 1;
-		tx_tlv_filter->data_mpdu_log = 1;
-		tx_tlv_filter->data_dma_length = DMA_LENGTH_256B;
-	}
-
-	dp_mon_filter_show_tx_filter_be(mode, &filter);
-	mon_pdev_be->filter_be[mode][srng_type] = filter;
-}
-
-void dp_mon_filter_reset_local_pkt_capture_tx(struct dp_pdev *pdev)
-{
-	struct dp_mon_pdev *mon_pdev = pdev->monitor_pdev;
-	enum dp_mon_filter_mode mode = DP_MON_FILTER_MONITOR_MODE;
-	struct dp_mon_filter_be filter = {0};
-	enum dp_mon_filter_srng_type srng_type =
-				DP_MON_FILTER_SRNG_TYPE_TXMON_DEST;
-	struct dp_mon_pdev_be *mon_pdev_be = NULL;
-	struct dp_pdev_tx_monitor_be *tx_mon_be;
-
-	mon_pdev_be = dp_get_be_mon_pdev_from_dp_mon_pdev(mon_pdev);
-
-	tx_mon_be = &mon_pdev_be->tx_monitor_be;
-	tx_mon_be->mode = TX_MON_BE_DISABLE;
-	mon_pdev_be->tx_mon_mode = 0;
-	filter.tx_valid = true;
-	mon_pdev_be->filter_be[mode][srng_type] = filter;
-}
-#endif /* WLAN_FEATURE_LOCAL_PKT_CAPTURE && WLAN_PKT_CAPTURE_TX_2_0 */
 #endif

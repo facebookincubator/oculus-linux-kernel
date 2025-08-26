@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -166,6 +166,16 @@ typedef enum {
 
 #ifdef WLAN_WEXT_SUPPORT_ENABLE
 /**
+ * hdd_unregister_wext() - unregister wext context
+ * @dev: net device handle
+ *
+ * Unregisters wext interface context for a given net device
+ *
+ * Returns: None
+ */
+void hdd_unregister_wext(struct net_device *dev);
+
+/**
  * hdd_register_wext() - register wext context
  * @dev: net device handle
  *
@@ -196,21 +206,8 @@ void hdd_wext_send_event(struct net_device *dev, unsigned int cmd,
 	wireless_send_event(dev, cmd, wrqu, extra);
 }
 
-/**
- * hdd_wlan_get_stats() - Get txrx stats in SAP mode
- * @link_info: Link info pointer in HDD adapter
- * @length:   Size of the data copied
- * @buffer:   Pointer to char buffer.
- * @buf_len:  Length of the char buffer.
- *
- * This function called when the "iwpriv wlan0 get_stats" command is given.
- * It used to collect the txrx stats when the device is configured in SAP mode.
- *
- * Return - none
- */
-void hdd_wlan_get_stats(struct wlan_hdd_link_info *link_info, uint16_t *length,
-			char *buffer, uint16_t buf_len);
-
+void hdd_wlan_get_stats(struct hdd_adapter *adapter, uint16_t *length,
+		       char *buffer, uint16_t buf_len);
 void hdd_wlan_list_fw_profile(uint16_t *length,
 			      char *buffer, uint16_t buf_len);
 
@@ -229,12 +226,12 @@ void *mem_alloc_copy_from_user_helper(const void *wrqu_data, size_t len);
 
 /**
  * hdd_we_set_short_gi() - Set adapter Short GI
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: adapter being modified
  * @sgi: new sgi value
  *
  * Return: 0 on success, negative errno on failure
  */
-int hdd_we_set_short_gi(struct wlan_hdd_link_info *link_info, int sgi);
+int hdd_we_set_short_gi(struct hdd_adapter *adapter, int sgi);
 
 /**
  * hdd_assemble_rate_code() - assemble rate code to be sent to FW
@@ -263,7 +260,7 @@ int hdd_set_11ax_rate(struct hdd_adapter *adapter, int value,
 
 /**
  * hdd_we_update_phymode() - handle change in PHY mode
- * @link_info: Link info pointer in HDD adapter.
+ * @adapter: adapter being modified
  * @new_phymode: new PHY mode for the device
  *
  * This function is called when the device is set to a new PHY mode.
@@ -274,23 +271,22 @@ int hdd_set_11ax_rate(struct hdd_adapter *adapter, int value,
  *
  * Return: 0 on success, negative errno value on error
  */
-int hdd_we_update_phymode(struct wlan_hdd_link_info *link_info,
-			  int new_phymode);
+int hdd_we_update_phymode(struct hdd_adapter *adapter, int new_phymode);
 
 /**
  * wlan_hdd_set_btcoex_mode() - set BTCoex Mode
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: adapter being modified
  * @value: new BTCoex mode for the adapter
  *
  * This function is called to set a BTCoex Operation Mode
  *
  * Return: 0 on success, negative errno value on error
  */
-int wlan_hdd_set_btcoex_mode(struct wlan_hdd_link_info *link_info, int value);
+int wlan_hdd_set_btcoex_mode(struct hdd_adapter *adapter, int value);
 
 /**
  * wlan_hdd_set_btcoex_rssi_threshold() - set RSSI threshold
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: adapter being modified
  * @value: new RSSI Threshold for the adapter
  *
  * This function is called to set a new RSSI threshold for
@@ -298,8 +294,7 @@ int wlan_hdd_set_btcoex_mode(struct wlan_hdd_link_info *link_info, int value);
  *
  * Return: 0 on success, negative errno value on error
  */
-int wlan_hdd_set_btcoex_rssi_threshold(struct wlan_hdd_link_info *link_info,
-				       int value);
+int wlan_hdd_set_btcoex_rssi_threshold(struct hdd_adapter *adapter, int value);
 
 struct iw_request_info;
 
@@ -328,6 +323,11 @@ static inline
 void hdd_set_dump_dp_trace(uint16_t cmd_type, uint16_t count) {}
 #endif
 #else /* WLAN_WEXT_SUPPORT_ENABLE */
+
+static inline void hdd_unregister_wext(struct net_device *dev)
+{
+}
+
 static inline void hdd_register_wext(struct net_device *dev)
 {
 }
@@ -343,6 +343,20 @@ void hdd_wext_send_event(struct net_device *dev, unsigned int cmd,
 {
 }
 #endif /* WLAN_WEXT_SUPPORT_ENABLE */
+
+#ifdef WLAN_DUMP_LOG_BUF_CNT
+/**
+ * hdd_dump_log_buffer() - dump log buffer history
+ *
+ * Return: None
+ */
+void hdd_dump_log_buffer(void);
+#else
+static inline
+void hdd_dump_log_buffer(void)
+{
+}
+#endif
 
 #if defined(WLAN_WEXT_SUPPORT_ENABLE) && defined(HASTINGS_BT_WAR)
 int hdd_hastings_bt_war_enable_fw(struct hdd_context *hdd_ctx);

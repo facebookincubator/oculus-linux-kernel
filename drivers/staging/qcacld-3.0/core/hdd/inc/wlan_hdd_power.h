@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012, 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -200,25 +200,21 @@ void hdd_handle_cached_commands(void);
 /**
  * hdd_enable_arp_offload() - API to enable ARP offload
  * @adapter: Adapter context for which ARP offload is to be configured
- * @vdev: VDEV objmgr pointer
  * @trigger: trigger reason for request
  *
  * Return: None
  */
 void hdd_enable_arp_offload(struct hdd_adapter *adapter,
-			    struct wlan_objmgr_vdev *vdev,
 			    enum pmo_offload_trigger trigger);
 
 /**
  * hdd_disable_arp_offload() - API to disable ARP offload
  * @adapter: Adapter context for which ARP offload is to be configured
- * @vdev: VDEV objmgr pointer
  * @trigger: trigger reason for request
  *
  * Return: None
  */
 void hdd_disable_arp_offload(struct hdd_adapter *adapter,
-			     struct wlan_objmgr_vdev *vdev,
 			     enum pmo_offload_trigger trigger);
 
 /**
@@ -246,10 +242,10 @@ void hdd_disable_host_offloads(struct hdd_adapter *adapter,
 			       enum pmo_offload_trigger trigger);
 
 /**
- * hdd_set_grat_arp_keepalive() - Enable gratuitous ARP keepalive
+ * hdd_set_grat_arp_keepalive() - Enable grat APR keepalive
  * @adapter: the HDD adapter to configure
  *
- * This configures gratuitous ARP keepalive based on the adapter's current
+ * This configures gratuitous APR keepalive based on the adapter's current
  * connection information, specifically IPv4 address and BSSID
  *
  * return: zero for success, non-zero for failure
@@ -342,54 +338,32 @@ void hdd_ipv4_notifier_work_queue(struct work_struct *work);
 /**
  * hdd_enable_ns_offload() - enable NS offload
  * @adapter: pointer to the adapter
- * @vdev: VDEV objmgr pointer
  * @trigger: trigger reason to enable ns offload
  *
  * Return: nothing
  */
 void hdd_enable_ns_offload(struct hdd_adapter *adapter,
-			   struct wlan_objmgr_vdev *vdev,
 			   enum pmo_offload_trigger trigger);
 
 /**
  * hdd_disable_ns_offload() - disable NS offload
  * @adapter: pointer to the adapter
- * @vdev: VDEV objmgr pointer
  * @trigger: trigger reason to enable ns offload
  *
  * Return: nothing
  */
 void hdd_disable_ns_offload(struct hdd_adapter *adapter,
-			    struct wlan_objmgr_vdev *vdev,
-			    enum pmo_offload_trigger trigger);
-
-/**
- * hdd_send_ps_config_to_fw() - Check user pwr save config set/reset PS
- * @adapter: pointer to hdd adapter
- *
- * This function checks the power save configuration saved in MAC context
- * and sends power save config to FW.
- *
- * Return: None
- */
-void hdd_send_ps_config_to_fw(struct hdd_adapter *adapter);
+	enum pmo_offload_trigger trigger);
 #else /* WLAN_NS_OFFLOAD */
 static inline
 void hdd_enable_ns_offload(struct hdd_adapter *adapter,
-			   struct wlan_objmgr_vdev *vdev,
 			   enum pmo_offload_trigger trigger)
 {
 }
 
 static inline
 void hdd_disable_ns_offload(struct hdd_adapter *adapter,
-			    struct wlan_objmgr_vdev *vdev,
 			    enum pmo_offload_trigger trigger)
-{
-}
-
-static inline
-void hdd_send_ps_config_to_fw(struct hdd_adapter *adapter)
 {
 }
 #endif /* WLAN_NS_OFFLOAD */
@@ -554,13 +528,13 @@ void hdd_wlan_suspend_resume_event(uint8_t state) {}
 
 /**
  * wlan_hdd_set_powersave() - Set powersave mode
- * @link_info: Link inof pointer in HDD adapter
+ * @adapter: adapter upon which the request was received
  * @allow_power_save: is wlan allowed to go into power save mode
  * @timeout: timeout period in ms
  *
  * Return: 0 on success, non-zero on any error
  */
-int wlan_hdd_set_powersave(struct wlan_hdd_link_info *link_info,
+int wlan_hdd_set_powersave(struct hdd_adapter *adapter,
 			   bool allow_power_save, uint32_t timeout);
 
 /**
@@ -684,33 +658,17 @@ QDF_STATUS wlan_hdd_get_ani_level(struct hdd_adapter *adapter,
 /**
  * hdd_enable_icmp_offload() - API to enable ICMP offload
  * @adapter: Adapter context for which ICMP offload is to be configured
- * @vdev: VDEV ojgmgr pointer
  * @trigger: trigger reason for request
  *
  * Return: None
  */
 void hdd_enable_icmp_offload(struct hdd_adapter *adapter,
-			     struct wlan_objmgr_vdev *vdev,
 			     enum pmo_offload_trigger trigger);
 #else
 static inline
 void hdd_enable_icmp_offload(struct hdd_adapter *adapter,
-			     struct wlan_objmgr_vdev *vdev,
 			     enum pmo_offload_trigger trigger)
 {}
 #endif /* FEATURE_ICMP_OFFLOAD */
 
-#if defined(WLAN_FEATURE_11BE_MLO) && defined(CFG80211_11BE_BASIC)
-int wlan_hdd_set_mlo_ps(struct hdd_adapter *adapter,
-			bool allow_power_save, int timeout,
-			int link_id);
-#else
-static inline
-int wlan_hdd_set_mlo_ps(struct hdd_adapter *adapter,
-			bool allow_power_save, int timeout,
-			int link_id)
-{
-        return 0;
-}
-#endif
 #endif /* __WLAN_HDD_POWER_H */

@@ -491,6 +491,7 @@ static int alloc_descs(unsigned int start, unsigned int cnt, int node,
 				flags = IRQD_AFFINITY_MANAGED |
 					IRQD_MANAGED_SHUTDOWN;
 			}
+			flags |= IRQD_AFFINITY_SET;
 			mask = &affinity->mask;
 			node = cpu_to_node(cpumask_first(mask));
 			affinity++;
@@ -676,8 +677,11 @@ int __handle_domain_irq(struct irq_domain *domain, unsigned int hwirq,
 	int ret = 0;
 
 #ifdef CONFIG_IRQ_DOMAIN
-	if (lookup)
+	if (lookup) {
+		__irq_enter_raw();
 		irq = irq_find_mapping(domain, hwirq);
+		__irq_exit_raw();
+	}
 #endif
 
 	/*

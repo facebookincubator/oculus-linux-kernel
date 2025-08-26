@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -42,32 +42,6 @@ target_if_scan_get_rx_ops(struct wlan_objmgr_psoc *psoc)
 	}
 
 	return &rx_ops->scan;
-}
-
-QDF_STATUS target_if_update_aux_support(struct wlan_objmgr_psoc *psoc)
-{
-	struct wmi_unified *wmi_handle;
-	struct wlan_scan_obj *scan_obj;
-
-	wmi_handle = get_wmi_unified_hdl_from_psoc(psoc);
-
-	if (!wmi_handle) {
-		target_if_err("null wmi handle");
-		return QDF_STATUS_E_FAILURE;
-	}
-	scan_obj = wlan_psoc_get_scan_obj(psoc);
-
-	if (!scan_obj) {
-		target_if_err("Failed to get scan object");
-		return QDF_STATUS_E_FAILURE;
-	}
-	if (wmi_service_enabled(wmi_handle, wmi_service_aux_mac_support))
-		scan_obj->aux_mac_support = true;
-	else
-		scan_obj->aux_mac_support = false;
-
-	target_if_debug("aux_mac_support:%d", scan_obj->aux_mac_support);
-	return QDF_STATUS_SUCCESS;
 }
 
 static int

@@ -1460,7 +1460,6 @@ static int cam_hw_cdm_work(void *priv, void *data)
 	}
 	kmem_cache_free(core->payload_mem, payload);
 	payload = NULL;
-
 	return 0;
 }
 
@@ -1697,7 +1696,6 @@ irqreturn_t cam_hw_cdm_irq(int irq_num, void *data)
 
 	list_for_each_entry_safe(node, tnode,
 		&notify_clients_list, entry) {
-
 		cam_cdm_notify_clients(cdm_hw,
 			CAM_CDM_CB_STATUS_BL_SUCCESS, (void *)node);
 		list_del_init(&node->entry);

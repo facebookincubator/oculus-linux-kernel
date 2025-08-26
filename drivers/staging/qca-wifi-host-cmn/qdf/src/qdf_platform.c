@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -21,7 +20,7 @@
 #include "qdf_trace.h"
 #include "qdf_platform.h"
 
-/*
+/**
  * The following callbacks should be defined static to make sure they are
  * initialized to NULL
  */
@@ -32,7 +31,6 @@ static qdf_is_driver_state_module_stop_callback is_driver_state_module_stop_cb;
 static qdf_is_recovering_callback	is_recovering_cb;
 static qdf_is_drv_connected_callback    is_drv_connected_cb;
 static qdf_wmi_send_over_qmi_callback _wmi_send_recv_qmi_cb;
-static qdf_send_ind_over_qmi_callback _qmi_indication_cb;
 static qdf_is_drv_supported_callback    is_drv_supported_cb;
 static qdf_recovery_reason_update_callback   update_recovery_reason_cb;
 static qdf_bus_reg_dump   get_bus_reg_dump;
@@ -66,14 +64,6 @@ void qdf_register_wmi_send_recv_qmi_callback(qdf_wmi_send_over_qmi_callback
 
 qdf_export_symbol(qdf_register_wmi_send_recv_qmi_callback);
 
-void qdf_register_qmi_indication_callback(qdf_send_ind_over_qmi_callback
-					  cds_qmi_indication)
-{
-	_qmi_indication_cb = cds_qmi_indication;
-}
-
-qdf_export_symbol(qdf_register_qmi_indication_callback);
-
 QDF_STATUS qdf_wmi_send_recv_qmi(void *buf, uint32_t len, void *cb_ctx,
 				 qdf_wmi_recv_qmi_cb wmi_recv_qmi_cb)
 {
@@ -87,19 +77,6 @@ QDF_STATUS qdf_wmi_send_recv_qmi(void *buf, uint32_t len, void *cb_ctx,
 }
 
 qdf_export_symbol(qdf_wmi_send_recv_qmi);
-
-QDF_STATUS qdf_reg_qmi_indication(void *cb_ctx, qdf_qmi_ind_cb qmi_ind_cb)
-{
-	if (!_qmi_indication_cb) {
-		QDF_TRACE(QDF_MODULE_ID_QDF, QDF_TRACE_LEVEL_ERROR,
-			  "Platform callback for QMI indication not registered");
-			return QDF_STATUS_E_INVAL;
-	}
-
-	return _qmi_indication_cb(cb_ctx, qmi_ind_cb);
-}
-
-qdf_export_symbol(qdf_reg_qmi_indication);
 
 void qdf_register_is_driver_unloading_callback(
 				qdf_is_driver_unloading_callback callback)
@@ -275,19 +252,3 @@ void qdf_get_bus_reg_dump(struct device *dev, uint8_t *buf, uint32_t len)
 }
 
 qdf_export_symbol(qdf_get_bus_reg_dump);
-
-#ifdef WLAN_SUPPORT_DPDK
-int qdf_uio_register_device(struct device *parent, qdf_uio_info_t *info)
-{
-	return uio_register_device(parent, (struct uio_info *)info);
-}
-
-qdf_export_symbol(qdf_uio_register_device);
-
-void qdf_uio_unregister_device(qdf_uio_info_t *info)
-{
-	uio_unregister_device(info);
-}
-
-qdf_export_symbol(qdf_uio_unregister_device);
-#endif

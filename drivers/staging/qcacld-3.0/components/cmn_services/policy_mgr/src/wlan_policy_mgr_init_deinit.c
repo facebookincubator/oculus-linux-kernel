@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -140,49 +140,6 @@ static void policy_mgr_vdev_obj_status_cb(struct wlan_objmgr_vdev *vdev,
 	return;
 }
 
-#ifdef WLAN_FEATURE_11BE_MLO
-static QDF_STATUS policy_mgr_register_link_switch_notifier(void)
-{
-	QDF_STATUS status;
-
-	status = mlo_mgr_register_link_switch_notifier(
-			WLAN_UMAC_COMP_POLICY_MGR,
-			policy_mgr_link_switch_notifier_cb);
-	if (status == QDF_STATUS_E_NOSUPPORT) {
-		status = QDF_STATUS_SUCCESS;
-		policy_mgr_debug("Link switch not supported");
-	} else if (status != QDF_STATUS_SUCCESS) {
-		policy_mgr_err("Failed to register link switch notifier for policy mgr!");
-	}
-
-	return status;
-}
-
-static QDF_STATUS policy_mgr_unregister_link_switch_notifier(void)
-{
-	QDF_STATUS status;
-
-	status = mlo_mgr_unregister_link_switch_notifier(
-			WLAN_UMAC_COMP_POLICY_MGR);
-	if (status == QDF_STATUS_E_NOSUPPORT)
-		status = QDF_STATUS_SUCCESS;
-	else if (status != QDF_STATUS_SUCCESS)
-		policy_mgr_err("Failed to unregister link switch notifier for policy mgr!");
-
-	return status;
-}
-#else
-static QDF_STATUS policy_mgr_register_link_switch_notifier(void)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static QDF_STATUS policy_mgr_unregister_link_switch_notifier(void)
-{
-	return QDF_STATUS_SUCCESS;
-}
-#endif
-
 QDF_STATUS policy_mgr_init(void)
 {
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
@@ -258,20 +215,10 @@ QDF_STATUS policy_mgr_init(void)
 		goto err_vdev_status;
 	}
 
-	status = policy_mgr_register_link_switch_notifier();
-	if (status != QDF_STATUS_SUCCESS) {
-		policy_mgr_err("Failed to register link switch cback");
-		goto err_link_switch;
-	}
-
 	policy_mgr_notice("Callbacks registered with obj mgr");
 
 	return QDF_STATUS_SUCCESS;
-err_link_switch:
-	wlan_objmgr_unregister_vdev_status_handler(
-				WLAN_UMAC_COMP_POLICY_MGR,
-				policy_mgr_vdev_obj_status_cb,
-				NULL);
+
 err_vdev_status:
 	wlan_objmgr_unregister_vdev_destroy_handler(WLAN_UMAC_COMP_POLICY_MGR,
 						policy_mgr_vdev_obj_destroy_cb,
@@ -307,10 +254,6 @@ err_psoc_create:
 QDF_STATUS policy_mgr_deinit(void)
 {
 	QDF_STATUS status;
-
-	status = policy_mgr_unregister_link_switch_notifier();
-	if (status != QDF_STATUS_SUCCESS)
-		policy_mgr_err("Failed to deregister link switch cback");
 
 	status = wlan_objmgr_unregister_psoc_status_handler(
 				WLAN_UMAC_COMP_POLICY_MGR,
@@ -492,7 +435,7 @@ policy_mgr_init_ml_link_update(struct policy_mgr_psoc_priv_obj *pm_ctx)
 {
 	QDF_STATUS qdf_status;
 
-	qdf_atomic_init(&pm_ctx->link_in_progress);
+	pm_ctx->set_link_in_progress = false;
 	qdf_status = qdf_event_create(&pm_ctx->set_link_update_done_evt);
 	if (QDF_IS_STATUS_ERROR(qdf_status)) {
 		policy_mgr_err("init event failed for for set_link_update_done_evt");
@@ -507,7 +450,7 @@ policy_mgr_deinit_ml_link_update(struct policy_mgr_psoc_priv_obj *pm_ctx)
 {
 	QDF_STATUS qdf_status;
 
-	qdf_atomic_set(&pm_ctx->link_in_progress, 0);
+	pm_ctx->set_link_in_progress = false;
 	qdf_status = qdf_event_destroy(&pm_ctx->set_link_update_done_evt);
 	if (QDF_IS_STATUS_ERROR(qdf_status)) {
 		policy_mgr_err("deinit event failed for set_link_update_done_evt");
@@ -551,6 +494,10 @@ QDF_STATUS policy_mgr_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	qdf_mem_zero(pm_conc_connection_list, sizeof(pm_conc_connection_list));
 	policy_mgr_memzero_disabled_ml_list();
 	policy_mgr_clear_concurrent_session_count(psoc);
+
+	/* reset dynamic dfs master flag */
+	pm_ctx->dynamic_dfs_master_disabled = false;
+
 	/* init dbs_opportunistic_timer */
 	status = qdf_mc_timer_init(&pm_ctx->dbs_opportunistic_timer,
 				QDF_TIMER_TYPE_SW,
@@ -587,7 +534,7 @@ QDF_STATUS policy_mgr_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	policy_mgr_set_dynamic_mcc_adaptive_sch(psoc, enable_mcc_adaptive_sch);
 	pm_ctx->hw_mode_change_in_progress = POLICY_MGR_HW_MODE_NOT_IN_PROGRESS;
 	/* reset sap mandatory channels */
-	status = policy_mgr_reset_sap_mandatory_channels(psoc);
+	status = policy_mgr_reset_sap_mandatory_channels(pm_ctx);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		policy_mgr_err("failed to reset mandatory channels");
 		return status;
@@ -740,7 +687,7 @@ QDF_STATUS policy_mgr_psoc_disable(struct wlan_objmgr_psoc *psoc)
 
 	/* reset sap mandatory channels */
 	if (QDF_IS_STATUS_ERROR(
-		policy_mgr_reset_sap_mandatory_channels(psoc))) {
+		policy_mgr_reset_sap_mandatory_channels(pm_ctx))) {
 		policy_mgr_err("failed to reset sap mandatory channels");
 		status = QDF_STATUS_E_FAILURE;
 		QDF_ASSERT(0);
@@ -797,8 +744,6 @@ QDF_STATUS policy_mgr_register_sme_cb(struct wlan_objmgr_psoc *psoc,
 		sme_cbacks->sme_rso_stop_cb;
 	pm_ctx->sme_cbacks.sme_change_sap_csa_count =
 		sme_cbacks->sme_change_sap_csa_count;
-	pm_ctx->sme_cbacks.sme_sap_update_ch_width =
-		sme_cbacks->sme_sap_update_ch_width;
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -929,8 +874,6 @@ QDF_STATUS policy_mgr_register_dp_cb(struct wlan_objmgr_psoc *psoc,
 		dp_cbacks->hdd_v2_flow_pool_map;
 	pm_ctx->dp_cbacks.hdd_v2_flow_pool_unmap =
 		dp_cbacks->hdd_v2_flow_pool_unmap;
-	pm_ctx->dp_cbacks.hdd_ipa_set_perf_level_bw =
-		dp_cbacks->hdd_ipa_set_perf_level_bw;
 
 	return QDF_STATUS_SUCCESS;
 }

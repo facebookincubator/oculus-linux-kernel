@@ -200,6 +200,12 @@ ifneq ($(CONFIG_MOBILE_ROUTER), y)
 	CONFIG_NDP_SAP_CONCURRENCY_ENABLE := y
 endif
 
+ifneq ($(CONFIG_MOBILE_ROUTER), y)
+	#Flag to enable NAN Data path
+	CONFIG_WLAN_FEATURE_NAN_DATAPATH := y
+	CONFIG_NAN_CONVERGENCE := y
+endif
+
 #Flag to enable Linux QCMBR feature as default feature
 ifeq ($(CONFIG_ROME_IF),usb)
 	CONFIG_LINUX_QCMBR :=y
@@ -328,17 +334,6 @@ ifeq ($(CONFIG_CNSS_QCA6390), y)
 	CONFIG_QCA_WIFI_QCA6390 := y
 endif
 
-ifeq ($(CONFIG_PCI_MSM), $(filter $(CONFIG_PCI_MSM), m y))
-	CONFIG_FEATURE_HAL_DELAYED_REG_WRITE := y
-ifeq ($(CONFIG_CNSS_QCA6390), y)
-	CONFIG_SHADOW_WRITE_DELAY := y
-endif
-endif
-
-CONFIG_DEVICE_FORCE_WAKE_ENABLE :=y
-CONFIG_HIF_REG_WINDOW_SUPPORT :=y
-CONFIG_FEATURE_FORCE_WAKE := y
-
 CONFIG_QCA_WIFI_QCA8074 := y
 CONFIG_QCA_WIFI_QCA8074_VP := y
 CONFIG_DP_INTR_POLL_BASED := y
@@ -390,11 +385,13 @@ ifeq ($(CONFIG_RELAY), y)
 endif
 endif
 
+# Feature flags which are not (currently) configurable via Kconfig
+
 #Whether to build debug version
-CONFIG_WLAN_DEBUG_VERSION := y
+BUILD_DEBUG_VERSION := y
 
 #Enable this flag to build driver in diag version
-CONFIG_WLAN_DIAG_VERSION := y
+BUILD_DIAG_VERSION := y
 
 ifeq ($(CONFIG_WLAN_EXTRA_DEBUG), y)
 	PANIC_ON_BUG := y
@@ -625,15 +622,12 @@ CONFIG_DISABLE_CHANNEL_LIST :=y
 #Flag to enable Dynamic Voltage WDCVS (Config Voltage Mode)
 CONFIG_WLAN_DYNAMIC_CVM := y
 
-CONFIG_FEATURE_SET := y
-
 CONFIG_WIFI_POS_CONVERGED := y
 ifneq ($(CONFIG_WIFI_POS_CONVERGED), y)
 CONFIG_WIFI_POS_LEGACY := y
 endif
 
 CONFIG_CP_STATS := y
-CONFIG_QCA_TARGET_IF_MLME := y
 
 #Flag to enable compilation of DCS module
 CONFIG_DCS := y
@@ -728,8 +722,6 @@ endif
 	CONFIG_TALLOC_DEBUG := y
 	CONFIG_UNIT_TEST := y
 	CONFIG_HAL_DEBUG := y
-	CONFIG_FEATURE_HAL_RECORD_SUSPEND_WRITE := y
-	CONFIG_HIF_DEBUG := y
 endif
 
 ifeq ($(CONFIG_UNIT_TEST), y)
@@ -851,8 +843,6 @@ endif
 CONFIG_WLAN_SYSFS_MEM_STATS := y
 
 CONFIG_WLAN_DP_PENDING_MEM_FLUSH := y
-
-CONFIG_WLAN_TRACEPOINTS := y
 
 ifeq ($(CONFIG_CNSS2), m)
 CONFIG_CNSS2_MODULE := y

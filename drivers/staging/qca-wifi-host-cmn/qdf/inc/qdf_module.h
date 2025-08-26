@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,7 +17,7 @@
  */
 
 /**
- * DOC: qdf_module.h
+ * @file qdf_module.h
  * This file abstracts "kernel module" semantics.
  */
 
@@ -31,43 +30,34 @@ typedef uint32_t (*module_init_func_t)(void);
 
 /**
  * qdf_virt_module_init - Specify the module's entry point.
- * @_mod_init_func: module entry function
  */
 #define qdf_virt_module_init(_mod_init_func) \
 	__qdf_virt_module_init(_mod_init_func)
 
 /**
- * qdf_virt_module_exit() - Specify the module's exit point.
- * @_mod_exit_func: module exit function
+ * qdf_virt_module_exit - Specify the module's exit point.
  */
 #define qdf_virt_module_exit(_mod_exit_func) \
 	__qdf_virt_module_exit(_mod_exit_func)
 
 /**
- * qdf_virt_module_name() - Specify the module's name.
- * @_name: module name
+ * qdf_virt_module_name - Specify the module's name.
  */
 #define qdf_virt_module_name(_name)      __qdf_virt_module_name(_name)
 
 
 /**
- * qdf_export_symbol() - Export a symbol from a module.
- * @_sym: symbol to export
+ * qdf_export_symbol - Export a symbol from a module.
  */
 #define qdf_export_symbol(_sym)         __qdf_export_symbol(_sym)
 
 /**
- * qdf_declare_param() - Declare a module parameter.
- * @name: name of the parameter
- * @_type: type of the parameter
+ * qdf_declare_param - Declare a module parameter.
  */
 #define qdf_declare_param(name, _type) __qdf_declare_param(name, _type)
 
 /**
- * qdf_declare_param_array() - Declare a module parameter that is an array
- * @name: name of the array
- * @_type: type of the array element
- * @_num: number of entries written
+ * qdf_declare_param_array - Declare a module parameter.
  */
 #define qdf_declare_param_array(name, _type, _num) \
 	__qdf_declare_param_array(name, _type, _num)

@@ -250,19 +250,12 @@
 /* Delete all vdev peer support */
 #define WLAN_VDEV_DELETE_ALL_PEER_SUPPORT         0x00000040
 
-/* Restricted TWT */
-#define WLAN_SOC_F_RESTRICTED_TWT           0x00000080
-
-/* Support for TDLS Concurrencies for Legacy STA & ML STA*/
-#define WLAN_TDLS_CONCURRENCIES_SUPPORT           0x0000100
-
-/* 11AZ Trigger based ranging Responder support */
-#define WLAN_RTT_11AZ_TB_RSTA_SUPPORT 0x00000200
-
 /* CCA busy info for each 20Mhz subband of wideband scan channel support */
 #define WLAN_CCA_BUSY_INFO_FOREACH_20MHZ               0x00000400
 /* ch width notify support */
 #define WLAN_VDEV_PARAM_CHWIDTH_WITH_NOTIFY_SUPPORT    0x00000800
+/* Restricted TWT */
+#define WLAN_SOC_F_RESTRICTED_TWT           0x00000080
 
 /* PSOC op flags */
 
@@ -341,7 +334,7 @@ struct wlan_objmgr_psoc_nif {
 	struct wlan_objmgr_psoc_user_config user_config;
 };
 
-/**
+/*
  * struct wlan_objmgr_psoc_objmgr - psoc object manager sub structure
  * @psoc_id:              The PSOC's numeric Id
  * @wlan_pdev_count:      PDEV count
@@ -359,13 +352,16 @@ struct wlan_objmgr_psoc_nif {
  * @ref_cnt:              Ref count
  * @ref_id_dbg:           Array to track Ref count
  * @qdf_dev:              QDF Device
+ *
+ * NB: not using kernel-doc format since the kernel-doc script doesn't
+ *     handle the qdf_bitmap() macro
  */
 struct wlan_objmgr_psoc_objmgr {
 	uint8_t psoc_id;
 	uint8_t wlan_pdev_count;
 	uint8_t wlan_pdev_id_map;
-	uint16_t wlan_vdev_count;
-	uint16_t max_vdev_count;
+	uint8_t wlan_vdev_count;
+	uint8_t max_vdev_count;
 	uint8_t print_cnt;
 	uint16_t wlan_peer_count;
 	uint16_t max_peer_count;
@@ -417,7 +413,6 @@ struct wlan_soc_timer {
  * @tgt_if_handle:         target interface handle
  * @dp_handle:             DP module handle
  * @psoc_lock:             psoc lock
- * @skip_mlo_pumac:        skip this psoc as MLO primary umac
  */
 struct wlan_objmgr_psoc {
 	struct wlan_objmgr_psoc_regulatory soc_reg;
@@ -432,7 +427,6 @@ struct wlan_objmgr_psoc {
 	struct target_psoc_info *tgt_if_handle;
 	void *dp_handle;
 	qdf_spinlock_t psoc_lock;
-	bool skip_mlo_pumac;
 };
 
 /**
@@ -467,18 +461,10 @@ struct wlan_psoc_host_hal_reg_capabilities_ext {
  * from service ready ext2 event.
  * @phy_id: phy id starts with 0
  * @wireless_modes_ext: REGDMN MODE, see REGDMN_MODE_ enum
- * @low_2ghz_chan_ext: 2 GHz channel low
- * @high_2ghz_chan_ext: 2 GHz channel High
- * @low_5ghz_chan_ext: 5 GHz channel low
- * @high_5ghz_chan_ext: 5 GHz channel High
  */
 struct wlan_psoc_host_hal_reg_capabilities_ext2 {
 	uint32_t phy_id;
 	uint64_t wireless_modes_ext;
-	uint32_t low_2ghz_chan_ext;
-	uint32_t high_2ghz_chan_ext;
-	uint32_t low_5ghz_chan_ext;
-	uint32_t high_5ghz_chan_ext;
 };
 
 /*
@@ -1736,7 +1722,7 @@ static inline void wlan_psoc_set_qdf_dev(
  * Return: void
  */
 static inline void wlan_psoc_set_max_vdev_count(struct wlan_objmgr_psoc *psoc,
-						uint16_t max_vdev_count)
+						uint8_t max_vdev_count)
 {
 	if (max_vdev_count > WLAN_UMAC_PSOC_MAX_VDEVS)
 		QDF_BUG(0);
@@ -1752,7 +1738,7 @@ static inline void wlan_psoc_set_max_vdev_count(struct wlan_objmgr_psoc *psoc,
  *
  * Return: @vdev count: Max vdev count
  */
-static inline uint16_t wlan_psoc_get_max_vdev_count(
+static inline uint8_t wlan_psoc_get_max_vdev_count(
 					struct wlan_objmgr_psoc *psoc)
 {
 	return psoc->soc_objmgr.max_vdev_count;
@@ -1969,41 +1955,6 @@ static inline void *wlan_psoc_get_dp_handle(struct wlan_objmgr_psoc *psoc)
 	}
 
 	return psoc->dp_handle;
-}
-
-/**
- * wlan_psoc_set_pumac_skip - set mlo primary umac skip setting
- * @psoc: psoc object pointer
- * @val: indicate support for MLO PUMAC feature on psoc
- *
- * Return: void
- */
-static inline void wlan_psoc_set_pumac_skip(
-			struct wlan_objmgr_psoc *psoc,
-			bool val)
-{
-	if (qdf_unlikely(!psoc)) {
-		QDF_BUG(0);
-		return;
-	}
-
-	psoc->skip_mlo_pumac = val;
-}
-
-/**
- * wlan_psoc_get_pumac_skip - get mlo primary umac skip setting
- * @psoc: psoc object pointer
- *
- * Return: bool (primary umac support)
- */
-static inline bool wlan_psoc_get_pumac_skip(struct wlan_objmgr_psoc *psoc)
-{
-	if (qdf_unlikely(!psoc)) {
-		QDF_BUG(0);
-		return false;
-	}
-
-	return psoc->skip_mlo_pumac;
 }
 
 struct wlan_logically_del_peer {

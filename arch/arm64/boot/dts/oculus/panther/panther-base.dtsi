@@ -3,7 +3,6 @@
 #include "../anorak-oculus-base.dtsi"
 #include "../anorak-oculus-display.dtsi"
 #include "../anorak-oculus-flood-led.dtsi"
-#include "../anorak-oculus-syncboss-glink.dtsi"
 
 #include "panther-camera.dtsi"
 #include "panther-adc.dtsi"

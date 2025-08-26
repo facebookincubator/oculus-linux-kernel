@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -89,125 +89,8 @@ static inline int hif_rtpm_read_usage_count(void)
 	return qdf_atomic_read(&gp_hif_rtpm_ctx->dev->power.usage_count);
 }
 
-/**
- * hif_rtpm_print(): print stats for runtimepm
- * @type: type of caller
- * @index: pointer to index to keep track of print position
- * @buf: pointer of buffer to print to
- * @fmt: format string
- *
- * debugging tool added to allow for unified API for debug/sys fs rtpm printing
- */
-static void
-hif_rtpm_print(enum hif_rtpm_fill_type type, int *index, void *buf,
-	       char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-	if (type == HIF_RTPM_FILL_TYPE_SYSFS) {
-		if (index)
-			*index += vscnprintf((char *)buf + *index, PAGE_SIZE,
-					     fmt, args);
-	} else if (type == HIF_RTPM_FILL_TYPE_DEBUGFS) {
-		seq_vprintf((struct seq_file *)buf, fmt, args);
-	}
-
-	va_end(args);
-}
-
-#define HIF_RTPM_STATS(_type, _index,  _s, _rtpm_ctx, _name) \
-	hif_rtpm_print(_type, _index,  _s, "%30s: %u\n", #_name, \
-		       (_rtpm_ctx)->stats._name)
-
-int hif_rtpm_log_debug_stats(void *s, enum hif_rtpm_fill_type type)
-{
-	int index = 0;
-	struct hif_rtpm_client *client = NULL;
-	struct hif_pm_runtime_lock *ctx;
-	static const char * const autopm_state[] = {"NONE", "ON", "RESUMING",
-			"RESUMING_LINKUP", "SUSPENDING", "SUSPENDED"};
-	int pm_state = qdf_atomic_read(&gp_hif_rtpm_ctx->pm_state);
-	int i;
-
-	hif_rtpm_print(type, &index, s, "%30s: %llu\n", "Current timestamp",
-		       qdf_get_log_timestamp());
-
-	hif_rtpm_print(type, &index, s, "%30s: %s\n", "Runtime PM state",
-		       autopm_state[pm_state]);
-
-	hif_rtpm_print(type, &index, s, "%30s: %llu\n", "Last Busy timestamp",
-		       gp_hif_rtpm_ctx->stats.last_busy_ts);
-
-	hif_rtpm_print(type, &index, s, "%30s: %llu\n", "Last resume request timestamp",
-		       gp_hif_rtpm_ctx->stats.request_resume_ts);
-
-	hif_rtpm_print(type, &index, s, "%30s: %llu\n",
-		       "Last resume request by",
-		       gp_hif_rtpm_ctx->stats.request_resume_id);
-
-	hif_rtpm_print(type, &index, s, "%30s: %ps\n", "Last Busy Marker",
-		       gp_hif_rtpm_ctx->stats.last_busy_marker);
-
-	hif_rtpm_print(type, &index, s, "Rx busy marker counts:\n");
-	hif_rtpm_print(type, &index, s, "%30s: %u %llu\n",
-		       hif_rtpm_id_to_string(HIF_RTPM_ID_DP),
-		       gp_hif_rtpm_ctx->clients[HIF_RTPM_ID_DP]->last_busy_cnt,
-		       gp_hif_rtpm_ctx->clients[HIF_RTPM_ID_DP]->last_busy_ts);
-
-	hif_rtpm_print(type, &index, s, "%30s: %u %llu\n",
-		       hif_rtpm_id_to_string(HIF_RTPM_ID_CE),
-		       gp_hif_rtpm_ctx->clients[HIF_RTPM_ID_CE]->last_busy_cnt,
-		       gp_hif_rtpm_ctx->clients[HIF_RTPM_ID_CE]->last_busy_ts);
-
-	HIF_RTPM_STATS(type, &index, s, gp_hif_rtpm_ctx, last_busy_id);
-
-	if (pm_state == HIF_RTPM_STATE_SUSPENDED) {
-		hif_rtpm_print(type, &index, s, "%30s: %llx us\n",
-			       "Suspended Since",
-			       gp_hif_rtpm_ctx->stats.suspend_ts);
-	}
-
-	HIF_RTPM_STATS(type, &index, s, gp_hif_rtpm_ctx, resume_count);
-	HIF_RTPM_STATS(type, &index, s, gp_hif_rtpm_ctx, suspend_count);
-	HIF_RTPM_STATS(type, &index, s, gp_hif_rtpm_ctx, suspend_err_count);
-
-	hif_rtpm_print(type, &index, s, "%30s: %d\n", "PM Usage count",
-		       hif_rtpm_read_usage_count());
-
-	hif_rtpm_print(type, &index, s,
-		       "get  put  get-timestamp put-timestamp :DBGID_NAME\n");
-	for (i = 0; i < HIF_RTPM_ID_MAX; i++) {
-		client = gp_hif_rtpm_ctx->clients[i];
-		if (!client)
-			continue;
-		hif_rtpm_print(type, &index, s, "%-10d ",
-			       qdf_atomic_read(&client->get_count));
-		hif_rtpm_print(type, &index, s, "%-10d ",
-			       qdf_atomic_read(&client->put_count));
-		hif_rtpm_print(type, &index, s, "0x%-10llx ", client->get_ts);
-		hif_rtpm_print(type, &index, s, "0x%-10llx ", client->put_ts);
-		hif_rtpm_print(type, &index, s, ":%-2d %-30s\n", i,
-			       hif_rtpm_id_to_string(i));
-	}
-	hif_rtpm_print(type, &index, s, "\n");
-
-	qdf_spin_lock_bh(&gp_hif_rtpm_ctx->prevent_list_lock);
-	if (list_empty(&gp_hif_rtpm_ctx->prevent_list)) {
-		qdf_spin_unlock_bh(&gp_hif_rtpm_ctx->prevent_list_lock);
-		return index;
-	}
-
-	hif_rtpm_print(type, &index, s, "%30s: ", "Active Wakeup_Sources");
-	list_for_each_entry(ctx, &gp_hif_rtpm_ctx->prevent_list, list) {
-		hif_rtpm_print(type, &index, s, "%s", ctx->name);
-		hif_rtpm_print(type, &index, s, " ");
-	}
-	qdf_spin_unlock_bh(&gp_hif_rtpm_ctx->prevent_list_lock);
-	hif_rtpm_print(type, &index, s, "\n");
-
-	return index;
-}
+#define HIF_RTPM_STATS(_s, _rtpm_ctx, _name) \
+	seq_printf(_s, "%30s: %u\n", #_name, (_rtpm_ctx)->stats._name)
 
 /**
  * hif_rtpm_debugfs_show(): show debug stats for runtimepm
@@ -218,10 +101,83 @@ int hif_rtpm_log_debug_stats(void *s, enum hif_rtpm_fill_type type)
  *
  * Return: 0
  */
-
 static int hif_rtpm_debugfs_show(struct seq_file *s, void *data)
 {
-	return hif_rtpm_log_debug_stats((void *)s, HIF_RTPM_FILL_TYPE_DEBUGFS);
+	struct hif_rtpm_client *client = NULL;
+	struct hif_pm_runtime_lock *ctx;
+	static const char * const autopm_state[] = {"NONE", "ON", "RESUMING",
+			"RESUMING_LINKUP", "SUSPENDING", "SUSPENDED"};
+	int pm_state = qdf_atomic_read(&gp_hif_rtpm_ctx->pm_state);
+	int i;
+
+	seq_printf(s, "%30s: %llu\n", "Current timestamp",
+		   qdf_get_log_timestamp());
+
+	seq_printf(s, "%30s: %s\n", "Runtime PM state", autopm_state[pm_state]);
+
+	seq_printf(s, "%30s: %llu\n", "Last Busy timestamp",
+		   gp_hif_rtpm_ctx->stats.last_busy_ts);
+
+	seq_printf(s, "%30s: %ps\n", "Last Busy Marker",
+		   gp_hif_rtpm_ctx->stats.last_busy_marker);
+
+	seq_printf(s, "%30s: %llu\n", "Last resume request timestamp",
+		   gp_hif_rtpm_ctx->stats.request_resume_ts);
+
+	seq_printf(s, "%30s: %llu\n", "Last resume request by",
+		   gp_hif_rtpm_ctx->stats.request_resume_id);
+
+	seq_puts(s, "Rx busy marker counts:\n");
+	seq_printf(s, "%30s: %u %llu\n", hif_rtpm_id_to_string(HIF_RTPM_ID_DP),
+		   gp_hif_rtpm_ctx->clients[HIF_RTPM_ID_DP]->last_busy_cnt,
+		   gp_hif_rtpm_ctx->clients[HIF_RTPM_ID_DP]->last_busy_ts);
+
+	seq_printf(s, "%30s: %u %llu\n", hif_rtpm_id_to_string(HIF_RTPM_ID_CE),
+		   gp_hif_rtpm_ctx->clients[HIF_RTPM_ID_CE]->last_busy_cnt,
+		   gp_hif_rtpm_ctx->clients[HIF_RTPM_ID_CE]->last_busy_ts);
+
+	HIF_RTPM_STATS(s, gp_hif_rtpm_ctx, last_busy_id);
+
+	if (pm_state == HIF_RTPM_STATE_SUSPENDED) {
+		seq_printf(s, "%30s: %llx us\n", "Suspended Since",
+			   gp_hif_rtpm_ctx->stats.suspend_ts);
+	}
+
+	HIF_RTPM_STATS(s, gp_hif_rtpm_ctx, resume_count);
+	HIF_RTPM_STATS(s, gp_hif_rtpm_ctx, suspend_count);
+	HIF_RTPM_STATS(s, gp_hif_rtpm_ctx, suspend_err_count);
+
+	seq_printf(s, "%30s: %d\n", "PM Usage count",
+		   hif_rtpm_read_usage_count());
+
+	seq_puts(s, "get  put  get-timestamp put-timestamp :DBGID_NAME\n");
+	for (i = 0; i < HIF_RTPM_ID_MAX; i++) {
+		client = gp_hif_rtpm_ctx->clients[i];
+		if (!client)
+			continue;
+		seq_printf(s, "%-10d ", qdf_atomic_read(&client->get_count));
+		seq_printf(s, "%-10d ", qdf_atomic_read(&client->put_count));
+		seq_printf(s, "0x%-10llx ", client->get_ts);
+		seq_printf(s, "0x%-10llx ", client->put_ts);
+		seq_printf(s, ":%-2d %-30s\n", i, hif_rtpm_id_to_string(i));
+	}
+	seq_puts(s, "\n");
+
+	qdf_spin_lock_bh(&gp_hif_rtpm_ctx->prevent_list_lock);
+	if (list_empty(&gp_hif_rtpm_ctx->prevent_list)) {
+		qdf_spin_unlock_bh(&gp_hif_rtpm_ctx->prevent_list_lock);
+		return 0;
+	}
+
+	seq_printf(s, "%30s: ", "Active Wakeup_Sources");
+	list_for_each_entry(ctx, &gp_hif_rtpm_ctx->prevent_list, list) {
+		seq_printf(s, "%s", ctx->name);
+		seq_puts(s, " ");
+	}
+	qdf_spin_unlock_bh(&gp_hif_rtpm_ctx->prevent_list_lock);
+	seq_puts(s, "\n");
+
+	return 0;
 }
 
 #undef HIF_RTPM_STATS
@@ -431,16 +387,11 @@ void hif_rtpm_close(struct hif_softc *scn)
 	hif_info_high("Runtime PM context detached");
 }
 
-void hif_set_enable_rpm(struct hif_opaque_softc *hif_hdl)
-{
-	struct hif_softc *scn = HIF_GET_SOFTC(hif_hdl);
-
-	gp_hif_rtpm_ctx->enable_rpm = scn->hif_config.enable_runtime_pm;
-}
-
 void hif_rtpm_start(struct hif_softc *scn)
 {
 	uint32_t mode = hif_get_conparam(scn);
+
+	gp_hif_rtpm_ctx->enable_rpm = scn->hif_config.enable_runtime_pm;
 
 	if (!gp_hif_rtpm_ctx->enable_rpm) {
 		hif_info_high("RUNTIME PM is disabled in ini");
@@ -992,20 +943,18 @@ void hif_rtpm_request_resume(void)
 	hif_info_high("request RTPM resume %s", (char *)_RET_IP_);
 }
 
-void hif_rtpm_check_and_request_resume(bool suspend_in_progress)
+void hif_rtpm_check_and_request_resume(void)
 {
-	enum hif_rtpm_state state;
-
 	hif_rtpm_suspend_lock();
-	state = qdf_atomic_read(&gp_hif_rtpm_ctx->pm_state);
-	hif_rtpm_suspend_unlock();
-
-	if ((state == HIF_RTPM_STATE_SUSPENDED) ||
-	    (suspend_in_progress && (state == HIF_RTPM_STATE_SUSPENDING))) {
+	if (qdf_atomic_read(&gp_hif_rtpm_ctx->pm_state) ==
+			HIF_RTPM_STATE_SUSPENDED) {
+		hif_rtpm_suspend_unlock();
 		__hif_rtpm_request_resume(gp_hif_rtpm_ctx->dev);
 		gp_hif_rtpm_ctx->stats.request_resume_ts =
 						qdf_get_log_timestamp();
 		gp_hif_rtpm_ctx->stats.request_resume_id = HIF_RTPM_ID_RESERVED;
+	} else {
+		hif_rtpm_suspend_unlock();
 	}
 }
 

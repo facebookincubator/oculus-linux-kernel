@@ -18,8 +18,8 @@
  */
 
 /**
- * DOC: cdp_txrx_mon.h
- * Define the monitor mode API functions
+ * @file cdp_txrx_mon.h
+ * @brief Define the monitor mode API functions
  * called by the host control SW and the OS interface module
  */
 
@@ -70,12 +70,12 @@ cdp_deliver_tx_mgmt(ol_txrx_soc_handle soc, uint8_t pdev_id,
 }
 
 #ifdef QCA_SUPPORT_LITE_MONITOR
-/**
+/*
  * cdp_set_lite_mon_config() - Set lite monitor config/filter
  *
- * @soc: dp soc handle
- * @config: lite monitor config
- * @pdev_id: pdev id
+ *@soc: dp soc handle
+ *@config: lite monitor config
+ *@pdev_id: pdev id
  *
  * This API is used to enable/disable lite monitor feature
  *
@@ -100,12 +100,12 @@ cdp_set_lite_mon_config(ol_txrx_soc_handle soc,
 							   pdev_id);
 }
 
-/**
+/*
  * cdp_get_lite_mon_config() - Get lite monitor config
  *
- * @soc: dp soc handle
- * @config: lite monitor config
- * @pdev_id: pdev id
+ *@soc: dp soc handle
+ *@config: lite monitor config
+ *@pdev_id: pdev id
  *
  * This API is used to get lite monitor feature config
  *
@@ -130,12 +130,12 @@ cdp_get_lite_mon_config(ol_txrx_soc_handle soc,
 							   pdev_id);
 }
 
-/**
+/*
  * cdp_set_lite_mon_peer_config() - Set lite monitor peer config
  *
- * @soc: dp soc handle
- * @config: lite monitor peer config
- * @pdev_id: pdev id
+ *@soc: dp soc handle
+ *@config: lite monitor peer config
+ *@pdev_id: pdev id
  *
  * This API is used to add/del lite monitor peers
  *
@@ -160,12 +160,12 @@ cdp_set_lite_mon_peer_config(ol_txrx_soc_handle soc,
 								pdev_id);
 }
 
-/**
+/*
  * cdp_get_lite_mon_peer_config() - Get lite monitor peer list
  *
- * @soc: dp soc handle
- * @info: lite monitor peer info
- * @pdev_id: pdev id
+ *@soc: dp soc handle
+ *@info: lite monitor peer info
+ *@pdev_id: pdev id
  *
  * This API is used to get lite monitor peers
  *
@@ -190,12 +190,12 @@ cdp_get_lite_mon_peer_config(ol_txrx_soc_handle soc,
 								pdev_id);
 }
 
-/**
+/*
  * cdp_is_lite_mon_enabled() - Get lite monitor enable status
  *
- * @soc: dp soc handle
- * @pdev_id: pdev id
- * @dir: direction tx/rx
+ *@soc: dp soc handle
+ *@pdev_id: pdev id
+ *@dir: direction tx/rx
  *
  * This API is used to get lite monitor enable status
  *
@@ -249,7 +249,7 @@ cdp_get_lite_mon_legacy_feature_enabled(ol_txrx_soc_handle soc,
 #endif
 
 #ifdef QCA_RSSI_DB2DBM
-/**
+/*
  * cdp_set_params_rssi_dbm_conversion - Set the rssi dbm conversion params
  *					into dp_pdev structure
  * @soc: soc txrx handler
@@ -274,131 +274,4 @@ cdp_set_params_rssi_dbm_conversion(ol_txrx_soc_handle soc,
 							    (soc, params);
 }
 #endif
-
-#ifdef WLAN_CONFIG_TELEMETRY_AGENT
-/*
- * cdp_update_pdev_mon_telemetry_airtime_stats() - update telemetry airtime
- * stats in monitor pdev
- *
- *@soc: dp soc handle
- *@pdev_id: pdev id
- *
- * This API is used to update telemetry airtime stats in monitor pdev
- *
- * Return: Success if stats are updated, else failure
- */
-static inline QDF_STATUS
-cdp_update_pdev_mon_telemetry_airtime_stats(ol_txrx_soc_handle soc,
-					    uint8_t pdev_id)
-{
-	if (!soc || !soc->ops) {
-		dp_cdp_debug("Invalid Instance");
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->txrx_update_pdev_mon_telemetry_airtime_stats)
-		return QDF_STATUS_E_FAILURE;
-
-	return soc->ops->mon_ops->txrx_update_pdev_mon_telemetry_airtime_stats(
-						soc, pdev_id);
-}
-#endif
-
-#ifdef WLAN_FEATURE_LOCAL_PKT_CAPTURE
-/**
- * cdp_start_local_pkt_capture() - start local pkt capture
- * @soc: opaque soc handle
- * @pdev_id: pdev id
- * @filter: monitor filter config
- *
- * Return: QDF_STATUS_SUCCESS if success
- *         QDF_STATUS_E_FAILURE if error
- */
-static inline
-QDF_STATUS cdp_start_local_pkt_capture(ol_txrx_soc_handle soc,
-				       uint8_t pdev_id,
-				       struct cdp_monitor_filter *filter)
-{
-	if (!soc || !soc->ops) {
-		dp_cdp_debug("Invalid Instance");
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->start_local_pkt_capture)
-		return QDF_STATUS_E_FAILURE;
-
-	return soc->ops->mon_ops->start_local_pkt_capture(soc, pdev_id, filter);
-}
-
-/**
- * cdp_stop_local_pkt_capture() - stop local pkt capture
- * @soc: opaque soc handle
- * @pdev_id: pdev_id
- *
- * Return: QDF_STATUS_SUCCESS if success
- *         QDF_STATUS_E_FAILURE if error
- */
-static inline
-QDF_STATUS cdp_stop_local_pkt_capture(ol_txrx_soc_handle soc, uint8_t pdev_id)
-{
-	if (!soc || !soc->ops) {
-		dp_cdp_debug("Invalid Instance");
-		QDF_BUG(0);
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->stop_local_pkt_capture)
-		return QDF_STATUS_E_FAILURE;
-
-	return soc->ops->mon_ops->stop_local_pkt_capture(soc, pdev_id);
-}
-
-/**
- * cdp_is_local_pkt_capture_running() - get is local packet capture running
- * @soc: opaque soc handle
- * @pdev_id: pdev id
- *
- * Return: true if running
- *         false if not running
- */
-static inline
-bool cdp_is_local_pkt_capture_running(ol_txrx_soc_handle soc, uint8_t pdev_id)
-{
-	if (!soc || !soc->ops) {
-		dp_cdp_debug("Invalid Instance");
-		QDF_BUG(0);
-		return false;
-	}
-
-	if (!soc->ops->mon_ops ||
-	    !soc->ops->mon_ops->is_local_pkt_capture_running)
-		return false;
-
-	return soc->ops->mon_ops->is_local_pkt_capture_running(soc, pdev_id);
-}
-#else
-static inline
-QDF_STATUS cdp_start_local_pkt_capture(ol_txrx_soc_handle soc,
-				       uint8_t pdev_id,
-				       struct cdp_monitor_filter *filter)
-{
-	return QDF_STATUS_E_NOSUPPORT;
-}
-
-static inline
-QDF_STATUS cdp_stop_local_pkt_capture(ol_txrx_soc_handle soc, uint8_t pdev_id)
-{
-	return QDF_STATUS_E_NOSUPPORT;
-}
-
-static inline
-bool cdp_is_local_pkt_capture_running(ol_txrx_soc_handle soc, uint8_t pdev_id)
-{
-	return false;
-}
-#endif /* WLAN_FEATURE_LOCAL_PKT_CAPTURE */
-
 #endif

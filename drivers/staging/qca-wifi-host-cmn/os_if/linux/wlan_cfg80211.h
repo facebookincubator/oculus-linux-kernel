@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -104,11 +104,6 @@
  * @QCA_NL80211_VENDOR_SUBCMD_TDLS_STATE_CHANGE_INDEX: Ext tdls state change
  * @QCA_NL80211_VENDOR_SUBCMD_DO_ACS_INDEX: ACS command
  * @QCA_NL80211_VENDOR_SUBCMD_KEY_MGMT_ROAM_AUTH_INDEX: Pass Roam and Auth info
- * @QCA_NL80211_VENDOR_SUBCMD_DFS_OFFLOAD_CAC_STARTED_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_DFS_OFFLOAD_CAC_FINISHED_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_DFS_OFFLOAD_CAC_ABORTED_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_DFS_OFFLOAD_CAC_NOP_FINISHED_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_DFS_OFFLOAD_RADAR_DETECTED_INDEX:
  * @QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_HOTLIST_AP_LOST_INDEX: hotlist ap lost
  * @QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_PNO_NETWORK_FOUND_INDEX:
  *	pno network found index
@@ -122,10 +117,7 @@
  *	hotlist ssid found index
  * @QCA_NL80211_VENDOR_SUBCMD_EXTSCAN_HOTLIST_SSID_LOST_INDEX:
  *	hotlist ssid lost index
- * @QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_MONITOR_RSSI_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_WIFI_LOGGER_MEMORY_DUMP_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_DCC_STATS_EVENT_INDEX:
+ * @QCA_NL80211_VENDOR_SUBCMD_DCC_STATS_EVENT_INDEX
  *	dcc stats event index
  * @QCA_NL80211_VENDOR_SUBCMD_SCAN_INDEX: vendor scan index
  * @QCA_NL80211_VENDOR_SUBCMD_SCAN_DONE_INDEX:
@@ -135,26 +127,17 @@
  * @QCA_NL80211_VENDOR_SUBCMD_INTEROP_ISSUES_AP_INDEX:
  *	update aps info which has interop issues events index
  * @QCA_NL80211_VENDOR_SUBCMD_TSF_INDEX: TSF response events index
- * @QCA_NL80211_VENDOR_SUBCMD_NDP_INDEX:
  * @QCA_NL80211_VENDOR_SUBCMD_P2P_LO_EVENT_INDEX:
  *      P2P listen offload index
  * @QCA_NL80211_VENDOR_SUBCMD_SAP_CONDITIONAL_CHAN_SWITCH_INDEX: SAP
  *      conditional channel switch index
- * @QCA_NL80211_VENDOR_SUBCMD_UPDATE_EXTERNAL_ACS_CONFIG:
- * @QCA_NL80211_VENDOR_SUBCMD_PWR_SAVE_FAIL_DETECTED_INDEX:
  * @QCA_NL80211_VENDOR_SUBCMD_NUD_STATS_GET_INDEX: NUD DEBUG Stats index
  * @QCA_NL80211_VENDOR_SUBCMD_HANG_REASON_INDEX: hang event reason index
  * @QCA_NL80211_VENDOR_SUBCMD_WLAN_MAC_INFO_INDEX: MAC mode info index
  * @QCA_NL80211_VENDOR_SUBCMD_NAN_EXT_INDEX: NAN Extended index
- * @QCA_NL80211_VENDOR_SUBCMD_THROUGHPUT_CHANGE_EVENT_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_LINK_PROPERTIES_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_PEER_STATS_CACHE_FLUSH_INDEX:
  * @QCA_NL80211_VENDOR_SUBCMD_BEACON_REPORTING_INDEX: Beacon reporting index
- * @QCA_NL80211_VENDOR_SUBCMD_ROAM_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_OEM_DATA_INDEX:
  * @QCA_NL80211_VENDOR_SUBCMD_REQUEST_SAR_LIMITS_INDEX: Request SAR limit index
  * @QCA_NL80211_VENDOR_SUBCMD_UPDATE_STA_INFO_INDEX: Update STA info index
- * @QCA_NL80211_VENDOR_SUBCMD_MEDIUM_ASSESS_INDEX:
  * @QCA_NL80211_VENDOR_SUBCMD_UPDATE_SSID_INDEX: Update SSID index
  * @QCA_NL80211_VENDOR_SUBCMD_WIFI_FW_STATS_INDEX: Wifi FW stats index
  * @QCA_NL80211_VENDOR_SUBCMD_MBSSID_TX_VDEV_STATUS_INDEX:
@@ -162,33 +145,15 @@
  * @QCA_NL80211_VENDOR_SUBCMD_THERMAL_INDEX: Report thermal event index
  * @QCA_NL80211_VENDOR_SUBCMD_CONFIG_TWT_INDEX: TWT config index
  * @QCA_NL80211_VENDOR_SUBCMD_PEER_CFR_CAPTURE_CFG_INDEX: CFR data event index
- * @QCA_NL80211_VENDOR_SUBCMD_DIAG_EVENT_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_ROAM_EVENTS_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_MCC_QUOTA_INDEX:
- * @QCA_NL80211_VENDOR_SUBCMD_PEER_FLUSH_PENDING_INDEX:
  * @QCA_NL80211_VENDOR_SUBCMD_DRIVER_READY_INDEX: Driver Ready after SSR index
- * @QCA_NL80211_VENDOR_SUBCMD_PASN_AUTH_STATUS_INDEX: PASN auth status index
  * @QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG_INDEX: SCS rule config index
  * @QCA_NL80211_VENDOR_SUBCMD_SR_INDEX: SR Event index
  * @QCA_NL80211_VENDOR_SUBCMD_MLO_PEER_PRIM_NETDEV_EVENT_INDEX: primary netdev
  *     event index
  * @QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX: AFC Event index
- * @QCA_NL80211_VENDOR_SUBCMD_DOZED_AP_INDEX: Dozed AP event index
- * @QCA_NL80211_VENDOR_SUBCMD_ROAM_STATS_INDEX: Roam stats index index
  * @QCA_NL80211_VENDOR_SUBCMD_CONNECTED_CHANNEL_STATS_INDEX: Connected channel
  * stats index
- * @QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON_INDEX:
- *	Driver disconnect reason index
- * @QCA_NL80211_VENDOR_SUBCMD_TID_TO_LINK_MAP_INDEX: TID-to-link map index
  * @QCA_NL80211_VENDOR_SUBCMD_LINK_RECONFIG_INDEX: link reconfig event index
- * @QCA_NL80211_VENDOR_SUBCMD_AUDIO_TRANSPORT_SWITCH_INDEX: Audio transport
- * switch event index
- * @QCA_NL80211_VENDOR_SUBCMD_TX_LATENCY_INDEX: event index for transmit
- *	latency stats
- * @QCA_NL80211_VENDOR_SUBCMD_RECONFIG_REMOVE_COMPLETE_EVENT_INDEX: ML Reconfig
- * remove complete event index
- * @QCA_NL80211_VENDOR_SUBCMD_FW_PAGE_FAULT_REPORT_INDEX: Pagefault report
- * event index
  */
 
 enum qca_nl80211_vendor_subcmds_index {
@@ -282,7 +247,6 @@ enum qca_nl80211_vendor_subcmds_index {
 	QCA_NL80211_VENDOR_SUBCMD_WIFI_FW_STATS_INDEX,
 	QCA_NL80211_VENDOR_SUBCMD_MBSSID_TX_VDEV_STATUS_INDEX,
 	QCA_NL80211_VENDOR_SUBCMD_THERMAL_INDEX,
-	QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON_INDEX,
 #ifdef WLAN_SUPPORT_TWT
 	QCA_NL80211_VENDOR_SUBCMD_CONFIG_TWT_INDEX,
 #endif
@@ -299,7 +263,9 @@ enum qca_nl80211_vendor_subcmds_index {
 	QCA_NL80211_VENDOR_SUBCMD_PEER_FLUSH_PENDING_INDEX,
 	QCA_NL80211_VENDOR_SUBCMD_DRIVER_READY_INDEX,
 	QCA_NL80211_VENDOR_SUBCMD_PASN_AUTH_STATUS_INDEX,
+#ifdef WLAN_SUPPORT_SCS
 	QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG_INDEX,
+#endif
 #ifdef WLAN_FEATURE_SR
 	QCA_NL80211_VENDOR_SUBCMD_SR_INDEX,
 #endif
@@ -310,22 +276,10 @@ enum qca_nl80211_vendor_subcmds_index {
 #ifdef WLAN_SUPPORT_GAP_LL_PS_MODE
 	QCA_NL80211_VENDOR_SUBCMD_DOZED_AP_INDEX,
 #endif
-#ifdef WLAN_FEATURE_ROAM_INFO_STATS
-	QCA_NL80211_VENDOR_SUBCMD_ROAM_STATS_INDEX,
-#endif
 	QCA_NL80211_VENDOR_SUBCMD_CONNECTED_CHANNEL_STATS_INDEX,
-#ifdef WLAN_FEATURE_11BE_MLO
-	QCA_NL80211_VENDOR_SUBCMD_TID_TO_LINK_MAP_INDEX,
-#ifdef CONN_MGR_ADV_FEATURE
+#if defined(CONN_MGR_ADV_FEATURE) && defined(WLAN_FEATURE_11BE_MLO)
 	QCA_NL80211_VENDOR_SUBCMD_LINK_RECONFIG_INDEX,
 #endif
-#endif
-	QCA_NL80211_VENDOR_SUBCMD_AUDIO_TRANSPORT_SWITCH_INDEX,
-#ifdef WLAN_FEATURE_TX_LATENCY_STATS
-	QCA_NL80211_VENDOR_SUBCMD_TX_LATENCY_INDEX,
-#endif
-	QCA_NL80211_VENDOR_SUBCMD_RECONFIG_REMOVE_COMPLETE_EVENT_INDEX,
-	QCA_NL80211_VENDOR_SUBCMD_FW_PAGE_FAULT_REPORT_INDEX,
 };
 
 #if !defined(SUPPORT_WDEV_CFG80211_VENDOR_EVENT_ALLOC) && \
@@ -372,13 +326,9 @@ nla_fail:
 	.maxattr = __maxattr
 #define VENDOR_NLA_POLICY_NESTED(__policy) \
 	NLA_POLICY_NESTED(__policy)
-#define VENDOR_NLA_POLICY_NESTED_ARRAY(__policy) \
-	NLA_POLICY_NESTED_ARRAY(__policy)
 #else
 #define vendor_command_policy(__policy, __maxattr)
 #define VENDOR_NLA_POLICY_NESTED(__policy) {.type = NLA_NESTED}
-#define VENDOR_NLA_POLICY_NESTED_ARRAY(__policy) \
-	VENDOR_NLA_POLICY_NESTED(__policy)
 #endif /*End of (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0) */
 
 /* For kernel version <= 4.20, driver needs to provide policy */
@@ -526,22 +476,6 @@ wlan_cfg80211_nla_parse_nested(struct nlattr *tb[],
 #define nla_parse(...) (obsolete, use wlan_cfg80211_nla_parse)
 #define nla_parse_nested(...) (obsolete, use wlan_cfg80211_nla_parse_nested)
 
-/**
- * wlan_cfg80211_nla_put_u64() - Add u64 attribute to an skb and align it
- * @skb: SKB to add attribute(s) to
- * @attrtype: u64 attribute id
- * @value: u64 attribute value
- *
- * This function adds a u64 attribute, and optionally a pad attribute, to the
- * skb. If this function adds a pad attribute, that pad attribute is defined
- * in enum qca_wlan_vendor_attr, so only 64-bit attributes that are defined
- * in enum qca_wlan_vendor_attr should use this interface. For other u64
- * attributes, use function wlan_cfg80211_nla_put_u64_64bit() since that
- * allows the pad attribute to be specified.
- *
- * Return: 0 if u64 attribute and optional pad attribute added to skb,
- *         negative errno if operation fails
- */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0))
 static inline int
 wlan_cfg80211_nla_put_u64(struct sk_buff *skb, int attrtype, u64 value)
@@ -553,38 +487,6 @@ static inline int
 wlan_cfg80211_nla_put_u64(struct sk_buff *skb, int attrtype, u64 value)
 {
 	return nla_put_u64_64bit(skb, attrtype, value, NL80211_ATTR_PAD);
-}
-#endif
-
-/**
- * wlan_cfg80211_nla_put_u64_64bit() - Add u64 attribute to an skb and align it
- * @skb: SKB to add attribute(s) to
- * @attrtype: u64 attribute id
- * @value: u64 attribute value
- * @padattr: padding attribute id
- *
- * This function adds a u64 attribute, and optionally a pad attribute,
- * to the skb. Unlike wlan_cfg80211_nla_put_u64() which can only be
- * used with attributes defined in enum qca_wlan_vendor_attr, this
- * function can be used with attributes defined in any enum, provided
- * that the enum also defines a pad attribute.
- *
- * Return: 0 if u64 attribute and optional pad attribute added to skb,
- *         negative errno if operation fails
- */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0))
-static inline int
-wlan_cfg80211_nla_put_u64_64bit(struct sk_buff *skb, int attrtype,
-				u64 value, int padattr)
-{
-	return nla_put_u64(skb, attrtype, value);
-}
-#else
-static inline int
-wlan_cfg80211_nla_put_u64_64bit(struct sk_buff *skb, int attrtype,
-				u64 value, int padattr)
-{
-	return nla_put_u64_64bit(skb, attrtype, value, padattr);
 }
 #endif
 
@@ -629,8 +531,7 @@ static inline void wlan_cfg80211_unregister_netdevice(struct net_device *dev)
 #endif
 
 #ifdef CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT
-#if defined(CFG80211_RU_PUNCT_NOTIFY) || \
-	defined(CFG80211_PUNCTURING_SINGLE_NETDEV_API)
+#ifdef CFG80211_RU_PUNCT_NOTIFY
 static inline
 void wlan_cfg80211_ch_switch_notify(struct net_device *dev,
 				    struct cfg80211_chan_def *chandef,

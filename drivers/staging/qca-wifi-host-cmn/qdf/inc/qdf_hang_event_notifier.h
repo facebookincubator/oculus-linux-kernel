@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -34,14 +33,14 @@
 #define QDF_WLAN_HANG_FW_OFFSET 195
 
 /**
- * enum hang_event_tag - Hang event tag for various modules
+ * hang_event_tag: Hang event tag for various modules
  * @HANG_EVT_TAG_CDS: CDS module hang event tag
  * @HANG_EVT_TAG_OS_IF: OS interface module hang event tag
  * @HANG_EVT_TAG_OS_IF_SCAN: scan module hang event tag
  * @HANG_EVT_TAG_LEGACY_MAC: Legacy mac module hang event tag
  * @HANG_EVT_TAG_WMI_EVT_HIST: WMI event history hang event tag
  * @HANG_EVT_TAG_WMI_CMD_HIST: WMI command history hang event tag
- * @HANG_EVT_TAG_HTC_CREDIT_HIST: HTC credit history hang event tag
+ * @HANG_EVT_TAG_WMI_CMD_HIST: HTC event tag wmi command history hang event tag
  * @HANG_EVT_TAG_DP_PEER_INFO: DP peer info hang event tag
  * @HANG_EVT_TAG_CE_INFO: Copy Engine hang event tag
  * @HANG_EVT_TAG_BUS_INFO: Bus hang event tag
@@ -68,7 +67,7 @@ enum hang_event_tag {
 	((uint16_t)(sizeof(tlv_struct) - QDF_HANG_EVENT_TLV_HDR_SIZE))
 
 /**
- * struct qdf_notifer_data - Private data for notifier data
+ * qdf_notifier_data - Private data for notifier data
  * @hang_data: Data filled by notifier
  * @offset: Current offset of the hang data buffer
  */

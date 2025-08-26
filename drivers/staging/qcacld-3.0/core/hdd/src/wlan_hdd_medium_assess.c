@@ -71,8 +71,7 @@
 
 #define MEDIUM_ASSESS_TIMER_INTERVAL 1000 /* 1000ms */
 static qdf_mc_timer_t hdd_medium_assess_timer;
-static bool ssr_flag;
-static bool timer_enable;
+static uint8_t timer_enable, ssr_flag;
 struct hdd_medium_assess_info medium_assess_info[WLAN_UMAC_MAX_RP_PID];
 unsigned long stime;
 
@@ -132,20 +131,20 @@ static void hdd_cca_notification_cb(uint8_t vdev_id,
 				    int status)
 {
 	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
-	struct wlan_hdd_link_info *link_info;
+	struct hdd_adapter *adapter;
 	struct sk_buff *event;
 
 	if (wlan_hdd_validate_context(hdd_ctx))
 		return;
 
-	link_info = hdd_get_link_info_by_vdev(hdd_ctx, vdev_id);
-	if (!link_info) {
+	adapter = hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
+	if (!adapter) {
 		hdd_err("Failed to find adapter of vdev %d", vdev_id);
 		return;
 	}
 
 	event = wlan_cfg80211_vendor_event_alloc(
-				hdd_ctx->wiphy, &link_info->adapter->wdev,
+				hdd_ctx->wiphy, &adapter->wdev,
 				get_cca_report_len(),
 				QCA_NL80211_VENDOR_SUBCMD_MEDIUM_ASSESS_INDEX,
 				GFP_KERNEL);
@@ -190,12 +189,12 @@ static int hdd_medium_assess_cca(struct hdd_context *hdd_ctx,
 	QDF_STATUS status;
 	int errno = 0;
 
-	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink, WLAN_DCS_ID);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_DCS_ID);
 	if (!vdev)
 		return -EINVAL;
 
 	status = policy_mgr_get_mac_id_by_session_id(hdd_ctx->psoc,
-						     adapter->deflink->vdev_id,
+						     adapter->vdev_id,
 						     &mac_id);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		hdd_err_rl("Failed to get mac_id");
@@ -210,7 +209,7 @@ static int hdd_medium_assess_cca(struct hdd_context *hdd_ctx,
 		goto out;
 	}
 
-	if (qdf_atomic_read(&adapter->deflink->session.ap.acs_in_progress)) {
+	if (qdf_atomic_read(&adapter->session.ap.acs_in_progress)) {
 		hdd_err_rl("ACS is in progress");
 		errno = -EBUSY;
 		goto out;
@@ -222,8 +221,7 @@ static int hdd_medium_assess_cca(struct hdd_context *hdd_ctx,
 		cca_period = DEFAULT_CCA_PERIOD;
 
 	ucfg_dcs_reset_user_stats(hdd_ctx->psoc, mac_id);
-	ucfg_dcs_register_user_cb(hdd_ctx->psoc, mac_id,
-				  adapter->deflink->vdev_id,
+	ucfg_dcs_register_user_cb(hdd_ctx->psoc, mac_id, adapter->vdev_id,
 				  hdd_cca_notification_cb);
 	/* dcs is already enabled and dcs event is reported every second
 	 * set the user request counter to collect user stats
@@ -340,7 +338,7 @@ static void hdd_congestion_notification_report(uint8_t vdev_id,
 					       uint8_t congestion)
 {
 	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
-	struct wlan_hdd_link_info *link_info;
+	struct hdd_adapter *adapter;
 	struct sk_buff *event;
 	enum qca_nl80211_vendor_subcmds_index index =
 		QCA_NL80211_VENDOR_SUBCMD_MEDIUM_ASSESS_INDEX;
@@ -348,14 +346,14 @@ static void hdd_congestion_notification_report(uint8_t vdev_id,
 	if (wlan_hdd_validate_context(hdd_ctx))
 		return;
 
-	link_info = hdd_get_link_info_by_vdev(hdd_ctx, vdev_id);
-	if (!link_info) {
+	adapter = hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
+	if (!adapter) {
 		hdd_err("Failed to find adapter of vdev %d", vdev_id);
 		return;
 	}
 
 	event = wlan_cfg80211_vendor_event_alloc(hdd_ctx->wiphy,
-						 &link_info->adapter->wdev,
+						 &adapter->wdev,
 						 get_congestion_report_len(),
 						 index, GFP_KERNEL);
 	if (!event) {
@@ -378,12 +376,9 @@ void hdd_medium_assess_ssr_enable_flag(void)
 {
 	uint8_t i;
 
-	ssr_flag = true;
+	ssr_flag = 1;
 	for (i = 0; i < WLAN_UMAC_MAX_RP_PID; i++)
 		hdd_congestion_reset_data(i);
-
-	if (timer_enable)
-		qdf_mc_timer_destroy(&hdd_medium_assess_timer);
 }
 
 void hdd_medium_assess_stop_timer(uint8_t pdev_id, struct hdd_context *hdd_ctx)
@@ -404,15 +399,188 @@ void hdd_medium_assess_stop_timer(uint8_t pdev_id, struct hdd_context *hdd_ctx)
 	for (i = 0; i < WLAN_UMAC_MAX_RP_PID; i++)
 		interval += medium_assess_info[i].config.interval;
 
-	if (!interval && timer_enable) {
+	if (!interval) {
 		ucfg_mc_cp_stats_reset_pending_req(hdd_ctx->psoc,
 						   TYPE_CONGESTION_STATS,
 						   &info, &pending);
 		qdf_mc_timer_stop(&hdd_medium_assess_timer);
 		hdd_debug("medium assess atimer stop");
-	} else {
-		hdd_debug("medium assess timer already disabled");
 	}
+}
+
+/**
+ * hdd_medium_assess_congestion_report() - congestion report
+ * @hdd_ctx: pointer to HDD context
+ * @adapter: pointer to adapter
+ * @tb: list of attributes
+ *
+ * Return: success(0) or reason code for failure
+ */
+static int hdd_medium_assess_congestion_report(struct hdd_context *hdd_ctx,
+					       struct hdd_adapter *adapter,
+					       struct nlattr **tb)
+{
+	QDF_STATUS status;
+	struct wlan_objmgr_vdev *vdev;
+	uint8_t enable, threshold, interval = 0;
+	uint8_t pdev_id, vdev_id;
+	int errno = 0;
+
+	if (!tb[CONGESTION_REPORT_ENABLE]) {
+		hdd_err_rl("Congestion report enable is not present");
+		return -EINVAL;
+	}
+
+	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_CP_STATS_ID);
+	if (!vdev)
+		return -EINVAL;
+
+	vdev_id = adapter->vdev_id;
+	status = policy_mgr_get_mac_id_by_session_id(hdd_ctx->psoc, vdev_id,
+						     &pdev_id);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		hdd_err("get mac id failed");
+		goto out;
+	}
+
+	medium_assess_info[pdev_id].vdev_id = vdev_id;
+	medium_assess_info[pdev_id].pdev_id = pdev_id;
+
+	enable = nla_get_u8(tb[CONGESTION_REPORT_ENABLE]);
+	switch (enable) {
+	case REPORT_DISABLE:
+		hdd_debug("medium assess disable: pdev_id %d, vdev_id: %d",
+			  pdev_id, vdev_id);
+		hdd_medium_assess_stop_timer(pdev_id, hdd_ctx);
+		break;
+	case REPORT_ENABLE:
+		if (!tb[CONGESTION_REPORT_THRESHOLD]) {
+			hdd_err_rl("Congestion threshold is not present");
+			errno = -EINVAL;
+			goto out;
+		}
+		threshold = nla_get_u8(tb[CONGESTION_REPORT_THRESHOLD]);
+		if (threshold > MAX_CONGESTION_THRESHOLD) {
+			hdd_err_rl("Invalid threshold %d", threshold);
+			errno = -EINVAL;
+			goto out;
+		}
+		if (tb[CONGESTION_REPORT_INTERVAL]) {
+			interval = nla_get_u8(tb[CONGESTION_REPORT_INTERVAL]);
+			if (interval >= MEDIUM_ASSESS_NUM)
+				interval = MEDIUM_ASSESS_NUM - 1;
+		} else {
+			interval = 1;
+		}
+
+		medium_assess_info[pdev_id].config.threshold = threshold;
+		medium_assess_info[pdev_id].config.interval = interval;
+		medium_assess_info[pdev_id].index = 0;
+		medium_assess_info[pdev_id].count = 0;
+		hdd_congestion_reset_data(pdev_id);
+		hdd_debug("medium assess enable: pdev_id %d, vdev_id: %d",
+			  pdev_id, vdev_id);
+
+		if (qdf_mc_timer_get_current_state(&hdd_medium_assess_timer) ==
+						     QDF_TIMER_STATE_STOPPED) {
+			hdd_debug("medium assess atimer start");
+			qdf_mc_timer_start(&hdd_medium_assess_timer,
+					   MEDIUM_ASSESS_TIMER_INTERVAL);
+		}
+		break;
+	default:
+		hdd_err_rl("Invalid enable: %d", enable);
+		errno = -EINVAL;
+		break;
+	}
+
+out:
+	hdd_objmgr_put_vdev_by_user(vdev, WLAN_CP_STATS_ID);
+	return errno;
+}
+
+/**
+ * __hdd_cfg80211_medium_assess() - medium assess
+ * @wiphy: pointer to wireless phy
+ * @wdev: wireless device
+ * @data: data
+ * @data_len: data length
+ *
+ * Return: success(0) or reason code for failure
+ */
+static int __hdd_cfg80211_medium_assess(struct wiphy *wiphy,
+					struct wireless_dev *wdev,
+					const void *data,
+					int data_len)
+{
+	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
+	struct net_device *dev = wdev->netdev;
+	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+	enum QDF_GLOBAL_MODE driver_mode = hdd_get_conparam();
+	struct nlattr *tb[MEDIUM_ASSESS_MAX + 1];
+	uint8_t type;
+	int errno;
+
+	hdd_enter_dev(dev);
+
+	if (driver_mode == QDF_GLOBAL_FTM_MODE ||
+	    driver_mode == QDF_GLOBAL_MONITOR_MODE) {
+		hdd_err_rl("Command not allowed in FTM / Monitor mode");
+		return -EPERM;
+	}
+
+	errno = wlan_hdd_validate_context(hdd_ctx);
+	if (errno)
+		return errno;
+
+	errno = wlan_cfg80211_nla_parse(tb, MEDIUM_ASSESS_MAX, data, data_len,
+					hdd_medium_assess_policy);
+	if (errno) {
+		hdd_err_rl("Invalid ATTR");
+		return errno;
+	}
+
+	if (!tb[MEDIUM_ASSESS_TYPE]) {
+		hdd_err_rl("Medium assess type is not present");
+		return -EINVAL;
+	}
+	type = nla_get_u8(tb[MEDIUM_ASSESS_TYPE]);
+
+	switch (type) {
+	case QCA_WLAN_MEDIUM_ASSESS_CCA:
+		errno = hdd_medium_assess_cca(hdd_ctx, adapter, tb);
+		break;
+	case QCA_WLAN_MEDIUM_ASSESS_CONGESTION_REPORT:
+		errno = hdd_medium_assess_congestion_report(hdd_ctx, adapter,
+							     tb);
+		break;
+	default:
+		hdd_err_rl("Invalid medium assess type: %d", type);
+		return -EINVAL;
+	}
+
+	hdd_exit();
+
+	return errno;
+}
+
+int hdd_cfg80211_medium_assess(struct wiphy *wiphy,
+			       struct wireless_dev *wdev,
+			       const void *data,
+			       int data_len)
+{
+	struct osif_vdev_sync *vdev_sync;
+	int errno;
+
+	errno = osif_vdev_sync_op_start(wdev->netdev, &vdev_sync);
+	if (errno)
+		return errno;
+
+	errno = __hdd_cfg80211_medium_assess(wiphy, wdev, data, data_len);
+
+	osif_vdev_sync_op_stop(vdev_sync);
+
+	return errno;
 }
 
 /**
@@ -532,7 +700,7 @@ static void hdd_medium_assess_expire_handler(void *arg)
 	struct wlan_objmgr_vdev *vdev;
 	struct request_info info = {0};
 	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
-	struct wlan_hdd_link_info *link_info;
+	struct hdd_adapter *adapter;
 	uint8_t vdev_id = INVALID_VDEV_ID, pdev_id;
 	uint8_t index, i;
 
@@ -554,13 +722,13 @@ static void hdd_medium_assess_expire_handler(void *arg)
 	if (vdev_id == INVALID_VDEV_ID)
 		return;
 
-	link_info = hdd_get_link_info_by_vdev(hdd_ctx, vdev_id);
-	if (!link_info) {
+	adapter = hdd_get_adapter_by_vdev(hdd_ctx, vdev_id);
+	if (!adapter) {
 		hdd_err("Failed to find adapter of vdev %d", vdev_id);
 		return;
 	}
 
-	vdev = hdd_objmgr_get_vdev_by_user(link_info, WLAN_CP_STATS_ID);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_CP_STATS_ID);
 	if (!vdev)
 		return;
 
@@ -576,218 +744,39 @@ static void hdd_medium_assess_expire_handler(void *arg)
 			   MEDIUM_ASSESS_TIMER_INTERVAL);
 }
 
-/**
- * hdd_medium_assess_congestion_report() - congestion report
- * @hdd_ctx: pointer to HDD context
- * @adapter: pointer to adapter
- * @tb: list of attributes
- *
- * Return: success(0) or reason code for failure
- */
-static int hdd_medium_assess_congestion_report(struct hdd_context *hdd_ctx,
-					       struct hdd_adapter *adapter,
-					       struct nlattr **tb)
-{
-	QDF_STATUS status;
-	struct wlan_objmgr_vdev *vdev;
-	uint8_t enable, threshold, interval = 0;
-	uint8_t pdev_id, vdev_id;
-	int errno = 0;
-
-	if (!tb[CONGESTION_REPORT_ENABLE]) {
-		hdd_err_rl("Congestion report enable is not present");
-		return -EINVAL;
-	}
-
-	vdev = hdd_objmgr_get_vdev_by_user(adapter->deflink, WLAN_CP_STATS_ID);
-	if (!vdev)
-		return -EINVAL;
-
-	vdev_id = adapter->deflink->vdev_id;
-	status = policy_mgr_get_mac_id_by_session_id(hdd_ctx->psoc, vdev_id,
-						     &pdev_id);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		hdd_err("get mac id failed");
-		goto out;
-	}
-
-	medium_assess_info[pdev_id].vdev_id = vdev_id;
-	medium_assess_info[pdev_id].pdev_id = pdev_id;
-
-	enable = nla_get_u8(tb[CONGESTION_REPORT_ENABLE]);
-	switch (enable) {
-	case REPORT_DISABLE:
-		hdd_debug("medium assess disable: pdev_id %d, vdev_id: %d",
-			  pdev_id, vdev_id);
-		hdd_medium_assess_stop_timer(pdev_id, hdd_ctx);
-		if (timer_enable &&
-		    (qdf_mc_timer_get_current_state(&hdd_medium_assess_timer) ==
-		     QDF_TIMER_STATE_STOPPED)) {
-			qdf_mc_timer_destroy(&hdd_medium_assess_timer);
-			timer_enable = false;
-		}
-		break;
-	case REPORT_ENABLE:
-		if (!tb[CONGESTION_REPORT_THRESHOLD]) {
-			hdd_err_rl("Congestion threshold is not present");
-			errno = -EINVAL;
-			goto out;
-		}
-		threshold = nla_get_u8(tb[CONGESTION_REPORT_THRESHOLD]);
-		if (threshold > MAX_CONGESTION_THRESHOLD) {
-			hdd_err_rl("Invalid threshold %d", threshold);
-			errno = -EINVAL;
-			goto out;
-		}
-		if (tb[CONGESTION_REPORT_INTERVAL]) {
-			interval = nla_get_u8(tb[CONGESTION_REPORT_INTERVAL]);
-			if (interval >= MEDIUM_ASSESS_NUM)
-				interval = MEDIUM_ASSESS_NUM - 1;
-		} else {
-			interval = 1;
-		}
-
-		medium_assess_info[pdev_id].config.threshold = threshold;
-		medium_assess_info[pdev_id].config.interval = interval;
-		medium_assess_info[pdev_id].index = 0;
-		medium_assess_info[pdev_id].count = 0;
-		hdd_congestion_reset_data(pdev_id);
-		hdd_debug("medium assess enable: pdev_id %d, vdev_id: %d",
-			  pdev_id, vdev_id);
-
-		if (!timer_enable) {
-			status =
-			    qdf_mc_timer_init(&hdd_medium_assess_timer,
-					      QDF_TIMER_TYPE_SW,
-					      hdd_medium_assess_expire_handler,
-					      NULL);
-			if (QDF_IS_STATUS_ERROR(status)) {
-				hdd_debug("medium assess init timer failed");
-				errno = -EINVAL;
-				goto out;
-			}
-			timer_enable = true;
-		}
-
-		if (qdf_mc_timer_get_current_state(&hdd_medium_assess_timer) !=
-		    QDF_TIMER_STATE_RUNNING) {
-			hdd_debug("medium assess atimer start");
-			qdf_mc_timer_start(&hdd_medium_assess_timer,
-					   MEDIUM_ASSESS_TIMER_INTERVAL);
-		}
-		break;
-	default:
-		hdd_err_rl("Invalid enable: %d", enable);
-		errno = -EINVAL;
-		break;
-	}
-
-out:
-	hdd_objmgr_put_vdev_by_user(vdev, WLAN_CP_STATS_ID);
-	return errno;
-}
-
-/**
- * __hdd_cfg80211_medium_assess() - medium assess
- * @wiphy: pointer to wireless phy
- * @wdev: wireless device
- * @data: data
- * @data_len: data length
- *
- * Return: success(0) or reason code for failure
- */
-static int __hdd_cfg80211_medium_assess(struct wiphy *wiphy,
-					struct wireless_dev *wdev,
-					const void *data,
-					int data_len)
-{
-	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
-	struct net_device *dev = wdev->netdev;
-	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
-	enum QDF_GLOBAL_MODE driver_mode = hdd_get_conparam();
-	struct nlattr *tb[MEDIUM_ASSESS_MAX + 1];
-	uint8_t type;
-	int errno;
-
-	hdd_enter_dev(dev);
-
-	if (driver_mode == QDF_GLOBAL_FTM_MODE ||
-	    driver_mode == QDF_GLOBAL_MONITOR_MODE) {
-		hdd_err_rl("Command not allowed in FTM / Monitor mode");
-		return -EPERM;
-	}
-
-	errno = wlan_hdd_validate_context(hdd_ctx);
-	if (errno)
-		return errno;
-
-	errno = wlan_cfg80211_nla_parse(tb, MEDIUM_ASSESS_MAX, data, data_len,
-					hdd_medium_assess_policy);
-	if (errno) {
-		hdd_err_rl("Invalid ATTR");
-		return errno;
-	}
-
-	if (!tb[MEDIUM_ASSESS_TYPE]) {
-		hdd_err_rl("Medium assess type is not present");
-		return -EINVAL;
-	}
-	type = nla_get_u8(tb[MEDIUM_ASSESS_TYPE]);
-
-	switch (type) {
-	case QCA_WLAN_MEDIUM_ASSESS_CCA:
-		errno = hdd_medium_assess_cca(hdd_ctx, adapter, tb);
-		break;
-	case QCA_WLAN_MEDIUM_ASSESS_CONGESTION_REPORT:
-		errno = hdd_medium_assess_congestion_report(hdd_ctx, adapter,
-							     tb);
-		break;
-	default:
-		hdd_err_rl("Invalid medium assess type: %d", type);
-		return -EINVAL;
-	}
-
-	hdd_exit();
-
-	return errno;
-}
-
-int hdd_cfg80211_medium_assess(struct wiphy *wiphy,
-			       struct wireless_dev *wdev,
-			       const void *data,
-			       int data_len)
-{
-	struct osif_vdev_sync *vdev_sync;
-	int errno;
-
-	errno = osif_vdev_sync_op_start(wdev->netdev, &vdev_sync);
-	if (errno)
-		return errno;
-
-	errno = __hdd_cfg80211_medium_assess(wiphy, wdev, data, data_len);
-
-	osif_vdev_sync_op_stop(vdev_sync);
-
-	return errno;
-}
-
-void hdd_medium_assess_ssr_reinit(void)
+void hdd_medium_assess_init(void)
 {
 	QDF_STATUS status;
 
-	if (timer_enable && ssr_flag) {
-		hdd_debug("medium assess init timer in ssr");
+	if (!timer_enable) {
+		hdd_debug("medium assess init timer");
 		status = qdf_mc_timer_init(&hdd_medium_assess_timer,
 					   QDF_TIMER_TYPE_SW,
 					   hdd_medium_assess_expire_handler,
 					   NULL);
 		if (QDF_IS_STATUS_ERROR(status)) {
-			hdd_debug("medium assess init timer failed in ssr");
+			hdd_debug("medium assess init timer failed");
 			return;
 		}
 
-		ssr_flag = false;
-		qdf_mc_timer_start(&hdd_medium_assess_timer,
-				   MEDIUM_ASSESS_TIMER_INTERVAL);
+		if (ssr_flag) {
+			ssr_flag = 0;
+			qdf_mc_timer_start(&hdd_medium_assess_timer,
+					   MEDIUM_ASSESS_TIMER_INTERVAL);
+		}
+	}
+	timer_enable += 1;
+}
+
+void hdd_medium_assess_deinit(void)
+{
+	timer_enable -= 1;
+	if (!timer_enable) {
+		hdd_debug("medium assess deinit timer");
+		if (qdf_mc_timer_get_current_state(&hdd_medium_assess_timer) ==
+						     QDF_TIMER_STATE_RUNNING)
+			qdf_mc_timer_stop(&hdd_medium_assess_timer);
+
+		qdf_mc_timer_destroy(&hdd_medium_assess_timer);
 	}
 }

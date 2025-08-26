@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -35,8 +36,8 @@ QDF_STATUS tgt_if_regulatory_modify_freq_range(struct wlan_objmgr_psoc *psoc);
 
 /**
  * target_if_register_regulatory_tx_ops() - register regulatory tx ops
- * @tx_ops: tx_ops pointer
  *
+ * @tx_ops: tx_ops pointer
  * Return: Success or Failure
  */
 QDF_STATUS target_if_register_regulatory_tx_ops(
@@ -44,8 +45,8 @@ QDF_STATUS target_if_register_regulatory_tx_ops(
 
 /**
  * target_if_reg_set_offloaded_info() - populate regulatory offloaded info
- * @psoc: psoc pointer
  *
+ * @psoc: psoc pointer
  * Return: Success or Failure
  */
 QDF_STATUS target_if_reg_set_offloaded_info(struct wlan_objmgr_psoc *psoc);
@@ -53,7 +54,6 @@ QDF_STATUS target_if_reg_set_offloaded_info(struct wlan_objmgr_psoc *psoc);
 /**
  * target_if_reg_set_6ghz_info() - populate 6ghz enablement info
  * @psoc: psoc pointer
- *
  * Return: Success or Failure
  */
 QDF_STATUS target_if_reg_set_6ghz_info(struct wlan_objmgr_psoc *psoc);
@@ -61,7 +61,6 @@ QDF_STATUS target_if_reg_set_6ghz_info(struct wlan_objmgr_psoc *psoc);
 /**
  * target_if_reg_set_5dot9_ghz_info() - populate 5.9ghz enablement info
  * @psoc: psoc pointer
- *
  * Return: Success or Failure
  */
 QDF_STATUS target_if_reg_set_5dot9_ghz_info(struct wlan_objmgr_psoc *psoc);
@@ -123,20 +122,18 @@ void tgt_if_set_reg_afc_configure(struct target_psoc_info *tgt_hdl,
 
 #if defined(CONFIG_BAND_6GHZ)
 /**
- * target_if_reg_set_lower_6g_edge_ch_info() - populate lower 6 GHz edge channel
+ * target_if_reg_set_lower_6g_edge_ch_info() - populate lower 6ghz edge channel
  * enablement info
  * @psoc: psoc pointer
- *
  * Return: Success or Failure
  */
 QDF_STATUS
 target_if_reg_set_lower_6g_edge_ch_info(struct wlan_objmgr_psoc *psoc);
 
 /**
- * target_if_reg_set_disable_upper_6g_edge_ch_info() - populate upper 6 GHz
+ * target_if_reg_set_disable_upper_6g_edge_ch_info() - populate upper 6ghz
  * edge channel disablement info
  * @psoc: psoc pointer
- *
  * Return: Success or Failure
  */
 QDF_STATUS
@@ -168,10 +165,9 @@ target_if_reg_set_afc_dev_type(struct wlan_objmgr_psoc *psoc,
 			       struct target_psoc_info *tgt_hdl);
 
 /**
- * target_if_reg_get_afc_dev_type() - get afc device deployment type
+ * target_if_reg_get_afc_device_type() - get afc device deployment type
  * @psoc: psoc pointer
- * @reg_afc_dev_type: device deployment type
- *
+ * @reg_afc_dev_type:
  * Return: Success or Failure
  */
 QDF_STATUS
@@ -182,7 +178,6 @@ target_if_reg_get_afc_dev_type(struct wlan_objmgr_psoc *psoc,
  * target_if_set_regulatory_eirp_preferred_support() - Set EIRP as the preferred
  * support
  * @psoc: psoc pointer
- *
  * Return: Success or Failure
  */
 QDF_STATUS

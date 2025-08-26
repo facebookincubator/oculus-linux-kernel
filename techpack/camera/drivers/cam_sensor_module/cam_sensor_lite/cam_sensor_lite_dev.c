@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -471,7 +471,7 @@ int32_t cam_sensor_lite_init_module(void)
 	struct cam_rpmsg_slave_cbs sensor_lite_rpmsg_cb;
 
 	cam_req_mgr_worker_create("cam_rpmsg_sensor_wq",
- 			CAM_SENSOR_LITE_RPMSG_WORKQ_NUM_TASK,
+			CAM_SENSOR_LITE_RPMSG_WORKQ_NUM_TASK,
 			&(sensor_lite_rpmsg_workq), CRM_WORKER_USAGE_IRQ,
 			CAM_WORKER_FLAG_HIGH_PRIORITY);
 

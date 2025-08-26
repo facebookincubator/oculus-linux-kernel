@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -31,9 +31,10 @@
 #ifdef WLAN_FEATURE_11BE_MLO
 #include "wlan_mlo_mgr_cmn.h"
 #endif
-#include <wlan_cp_stats_chipset_stats.h>
 
 #define INVALID_MCS_IDX 255
+#define MAX_HT_MCS_IDX 8
+#define MAX_VHT_MCS_IDX 10
 
 #define DATA_RATE_11AC_MCS_MASK    0x03
 #define DATA_RATE_11AX_MCS_MASK    0x03
@@ -45,7 +46,7 @@
 #define WLAN_WAIT_TIME_LL_STATS 800
 #endif
 
-#define WLAN_HDD_TGT_NOISE_FLOOR_DBM     (-128)
+#define WLAN_HDD_TGT_NOISE_FLOOR_DBM     (-96)
 
 #ifdef WLAN_FEATURE_LINK_LAYER_STATS
 extern const struct nla_policy qca_wlan_vendor_ll_ext_policy[
@@ -359,24 +360,24 @@ int wlan_hdd_cfg80211_ll_stats_ext_set_param(struct wiphy *wiphy,
 					     int data_len);
 /**
  * hdd_get_interface_info() - get interface info
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: Pointer to device adapter
  * @info: Pointer to interface info
  *
  * Return: bool
  */
-bool hdd_get_interface_info(struct wlan_hdd_link_info *link_info,
+bool hdd_get_interface_info(struct hdd_adapter *adapter,
 			    struct wifi_interface_info *info);
 
 /**
  * wlan_hdd_ll_stats_get() - Get Link Layer statistics from FW
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: Pointer to device adapter
  * @req_id: request id
  * @req_mask: bitmask used by FW for the request
  *
  * Return: 0 on success and error code otherwise
  */
-int wlan_hdd_ll_stats_get(struct wlan_hdd_link_info *link_info,
-			  uint32_t req_id, uint32_t req_mask);
+int wlan_hdd_ll_stats_get(struct hdd_adapter *adapter, uint32_t req_id,
+			  uint32_t req_mask);
 
 /**
  * wlan_hdd_cfg80211_link_layer_stats_callback() - This function is called
@@ -437,8 +438,8 @@ wlan_hdd_cfg80211_ll_stats_ext_set_param(struct wiphy *wiphy,
 }
 
 static inline int
-wlan_hdd_ll_stats_get(struct wlan_hdd_link_info *link_info,
-		      uint32_t req_id, uint32_t req_mask)
+wlan_hdd_ll_stats_get(struct hdd_adapter *adapter, uint32_t req_id,
+		      uint32_t req_mask)
 {
 	return -EINVAL;
 }
@@ -569,14 +570,21 @@ wlan_hdd_cfg80211_stats_ext2_callback(hdd_handle_t hdd_handle,
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 /**
  * wlan_hdd_cfg80211_roam_events_callback() - roam_events_callback
- * @roam_stats: roam events stats
+ * @hdd_handle: opaque handle to the hdd context
  * @idx: TLV index in roam stats event
+ * @roam_stats: roam events stats
  *
  * Return: void
  */
 void
-wlan_hdd_cfg80211_roam_events_callback(struct roam_stats_event *roam_stats,
-				       uint8_t idx);
+wlan_hdd_cfg80211_roam_events_callback(hdd_handle_t hdd_handle, uint8_t idx,
+				       struct roam_stats_event *roam_stats);
+#else
+static inline void
+wlan_hdd_cfg80211_roam_events_callback(hdd_handle_t hdd_handle, uint8_t idx,
+				       struct roam_stats_event *roam_stats)
+{
+}
 #endif /* End of WLAN_FEATURE_ROAM_OFFLOAD */
 
 /**
@@ -607,26 +615,25 @@ QDF_STATUS wlan_hdd_get_mib_stats(struct hdd_adapter *adapter);
 
 /**
  * wlan_hdd_get_rssi() - Get the current RSSI
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: adapter upon which the measurement is requested
  * @rssi_value: pointer to where the RSSI should be returned
  *
  * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
  */
-QDF_STATUS wlan_hdd_get_rssi(struct wlan_hdd_link_info *link_info,
-			     int8_t *rssi_value);
+QDF_STATUS wlan_hdd_get_rssi(struct hdd_adapter *adapter, int8_t *rssi_value);
 
 /**
  * wlan_hdd_get_snr() - Get the current SNR
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: adapter upon which the measurement is requested
  * @snr: pointer to where the SNR should be returned
  *
  * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_** on error
  */
-QDF_STATUS wlan_hdd_get_snr(struct wlan_hdd_link_info *link_info, int8_t *snr);
+QDF_STATUS wlan_hdd_get_snr(struct hdd_adapter *adapter, int8_t *snr);
 
 /**
  * wlan_hdd_get_linkspeed_for_peermac() - Get link speed for a peer
- * @link_info: Link info pointer in adapter
+ * @adapter: adapter upon which the peer is active
  * @mac_address: MAC address of the peer
  * @linkspeed: pointer to memory where returned link speed is to be placed
  *
@@ -635,13 +642,13 @@ QDF_STATUS wlan_hdd_get_snr(struct wlan_hdd_link_info *link_info, int8_t *snr);
  *
  * Return: 0 if linkspeed data is available, negative errno otherwise
  */
-int wlan_hdd_get_linkspeed_for_peermac(struct wlan_hdd_link_info *link_info,
+int wlan_hdd_get_linkspeed_for_peermac(struct hdd_adapter *adapter,
 				       struct qdf_mac_addr *mac_address,
 				       uint32_t *linkspeed);
 
 /**
  * wlan_hdd_get_link_speed() - get link speed
- * @link_info: Link info pointer in HDD adapter
+ * @adapter:     pointer to the adapter
  * @link_speed:   pointer to link speed
  *
  * This function fetches per bssid link speed.
@@ -650,26 +657,12 @@ int wlan_hdd_get_linkspeed_for_peermac(struct wlan_hdd_link_info *link_info,
  *         if not associated, link speed of 0 is returned.
  *         On error, error number will be returned.
  */
-int wlan_hdd_get_link_speed(struct wlan_hdd_link_info *link_info,
-			    uint32_t *link_speed);
+int wlan_hdd_get_link_speed(struct hdd_adapter *adapter, uint32_t *link_speed);
 
-/**
- * wlan_hdd_get_sap_go_peer_linkspeed() - Get SAP/GO peer link speed
- * @link_info:   Link info pointer in HDD adapter
- * @link_speed:  Pointer to link speed
- * @command:     Driver command string
- * @command_len: Driver command string length
- *
- * Return: 0 if linkspeed data is available, negative errno otherwise
- */
-int wlan_hdd_get_sap_go_peer_linkspeed(struct wlan_hdd_link_info *link_info,
-				       uint32_t *link_speed,
-				       uint8_t *command,
-				       uint8_t command_len);
 #ifdef FEATURE_RX_LINKSPEED_ROAM_TRIGGER
 /**
  * wlan_hdd_get_peer_rx_rate_stats() - STA gets rx rate stats
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: adapter upon which the measurement is requested
  *
  * STA gets rx rate stats through using the existed API
  * cdp_host_get_peer_stats. The reason that we make this
@@ -678,21 +671,22 @@ int wlan_hdd_get_sap_go_peer_linkspeed(struct wlan_hdd_link_info *link_info,
  *
  * Return: void
  */
-void wlan_hdd_get_peer_rx_rate_stats(struct wlan_hdd_link_info *link_info);
+void
+wlan_hdd_get_peer_rx_rate_stats(struct hdd_adapter *adapter);
 #else
 static inline void
-wlan_hdd_get_peer_rx_rate_stats(struct wlan_hdd_link_info *link_info)
+wlan_hdd_get_peer_rx_rate_stats(struct hdd_adapter *adapter)
 {
 }
 #endif
 
 /**
  * wlan_hdd_get_station_stats() - Get station statistics
- * @link_info: Link info pointer in HDD adapter.
+ * @adapter: adapter for which statistics are desired
  *
  * Return: status of operation
  */
-int wlan_hdd_get_station_stats(struct wlan_hdd_link_info *link_info);
+int wlan_hdd_get_station_stats(struct hdd_adapter *adapter);
 
 int wlan_hdd_qmi_get_sync_resume(void);
 int wlan_hdd_qmi_put_suspend(void);
@@ -700,11 +694,11 @@ int wlan_hdd_qmi_put_suspend(void);
 #ifdef WLAN_FEATURE_BIG_DATA_STATS
 /**
  * wlan_hdd_get_big_data_station_stats() - Get big data station statistics
- * @link_info: Link info pointer in HDD adapter
+ * @adapter: adapter for which statistics are desired
  *
  * Return: status of operation
  */
-int wlan_hdd_get_big_data_station_stats(struct wlan_hdd_link_info *link_info);
+int wlan_hdd_get_big_data_station_stats(struct hdd_adapter *adapter);
 
 /**
  * wlan_cfg80211_mc_cp_get_big_data_stats() - API to get big data
@@ -728,8 +722,8 @@ wlan_cfg80211_mc_cp_get_big_data_stats(struct wlan_objmgr_vdev *vdev,
 void wlan_cfg80211_mc_cp_stats_free_big_data_stats_event(
 					struct big_data_stats_event *info);
 #else
-static inline int
-wlan_hdd_get_big_data_station_stats(struct wlan_hdd_link_info *link_info)
+static inline int wlan_hdd_get_big_data_station_stats(
+						struct hdd_adapter *adapter)
 {
 	return 0;
 }
@@ -760,30 +754,40 @@ void wlan_cfg80211_mc_cp_stats_free_big_data_stats_event(
 int wlan_hdd_get_temperature(struct hdd_adapter *adapter, int *temperature);
 
 /**
- * hdd_get_max_tx_bitrate() - Get the max tx bitrate of the AP
- * @link_info: pointer to link_info struct in adapter
+ * wlan_hdd_display_txrx_stats() - display HDD txrx stats summary
+ * @hdd_ctx: hdd context
  *
- * This function gets the MAX supported rate by AP and cache
+ * Display TXRX Stats for all adapters
+ *
+ * Return: none
+ */
+void wlan_hdd_display_txrx_stats(struct hdd_context *hdd_ctx);
+
+/**
+ * hdd_get_max_tx_bitrate() - Get the max tx bitrate of the AP
+ * @hdd_ctx: hdd context
+ * @adapter: hostapd interface
+ *
+ * THis function gets the MAX supported rate by AP and cache
  * it into connection info structure
  *
  * Return: None
  */
-void hdd_get_max_tx_bitrate(struct wlan_hdd_link_info *link_info);
+void hdd_get_max_tx_bitrate(struct hdd_context *hdd_ctx,
+			    struct hdd_adapter *adapter);
 
 #ifdef TX_MULTIQ_PER_AC
 /**
  * wlan_hdd_display_tx_multiq_stats() - display Tx multi queue stats
  * @context: hdd context
- * @netdev: netdev
+ * @vdev_id: vdev id
  *
  * Return: none
  */
-void wlan_hdd_display_tx_multiq_stats(hdd_cb_handle context,
-				      qdf_netdev_t netdev);
+void wlan_hdd_display_tx_multiq_stats(hdd_cb_handle context, uint8_t vdev_id);
 #else
 static inline
-void wlan_hdd_display_tx_multiq_stats(hdd_cb_handle context,
-				      qdf_netdev_t netdev)
+void wlan_hdd_display_tx_multiq_stats(hdd_cb_handle context, uint8_t vdev_id)
 {
 }
 #endif
@@ -791,7 +795,7 @@ void wlan_hdd_display_tx_multiq_stats(hdd_cb_handle context,
 /**
  * hdd_report_max_rate() - Fill the max rate stats in the station info structure
  * to be sent to the userspace.
- * @link_info: pointer to link_info struct in adapter
+ * @adapter: pointer to adapter
  * @mac_handle: The mac handle
  * @rate: The station_info tx/rx rate to be filled
  * @signal: signal from station_info
@@ -802,7 +806,7 @@ void wlan_hdd_display_tx_multiq_stats(hdd_cb_handle context,
  *
  * Return: True if fill is successful
  */
-bool hdd_report_max_rate(struct wlan_hdd_link_info *link_info,
+bool hdd_report_max_rate(struct hdd_adapter *adapter,
 			 mac_handle_t mac_handle,
 			 struct rate_info *rate,
 			 int8_t signal,
@@ -837,216 +841,4 @@ void wlan_hdd_register_cp_stats_cb(struct hdd_context *hdd_ctx);
 #else
 static inline void wlan_hdd_register_cp_stats_cb(struct hdd_context *hdd_ctx) {}
 #endif
-
-#if defined(WLAN_FEATURE_ROAM_OFFLOAD) && defined(WLAN_FEATURE_ROAM_INFO_STATS)
-#define FEATURE_ROAM_STATS_COMMANDS	\
-	{	\
-	.info.vendor_id = QCA_NL80211_VENDOR_ID,	\
-	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_ROAM_STATS,	\
-	.flags = WIPHY_VENDOR_CMD_NEED_WDEV |	\
-		 WIPHY_VENDOR_CMD_NEED_NETDEV |	\
-		 WIPHY_VENDOR_CMD_NEED_RUNNING,	\
-	.doit = wlan_hdd_cfg80211_get_roam_stats,	\
-	vendor_command_policy(VENDOR_CMD_RAW_DATA, 0)	\
-	},	\
-
-#define FEATURE_ROAM_STATS_EVENTS	\
-	[QCA_NL80211_VENDOR_SUBCMD_ROAM_STATS_INDEX] = {	\
-		.vendor_id = QCA_NL80211_VENDOR_ID,	\
-		.subcmd = QCA_NL80211_VENDOR_SUBCMD_ROAM_STATS,	\
-	},	\
-
-/**
- * wlan_hdd_cfg80211_get_roam_stats() - get roam statstics information
- * @wiphy: wiphy pointer
- * @wdev: pointer to struct wireless_dev
- * @data: pointer to incoming NL vendor data
- * @data_len: length of @data
- *
- * Return: 0 on success; error number otherwise.
- */
-int wlan_hdd_cfg80211_get_roam_stats(struct wiphy *wiphy,
-				     struct wireless_dev *wdev,
-				     const void *data,
-				     int data_len);
-#else
-#define FEATURE_ROAM_STATS_COMMANDS
-#define FEATURE_ROAM_STATS_EVENTS
-#endif
-
-#ifdef WLAN_FEATURE_TX_LATENCY_STATS
-/**
- * hdd_tx_latency_register_cb() - register callback function for transmit
- * latency stats
- * @soc: pointer to soc context
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS hdd_tx_latency_register_cb(void *soc);
-
-/**
- * hdd_tx_latency_restore_config() - restore tx latency stats config for a link
- * @link_info: link specific information
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS
-hdd_tx_latency_restore_config(struct wlan_hdd_link_info *link_info);
-
-/**
- * wlan_hdd_cfg80211_tx_latency - configure/retrieve per-link transmit latency
- * statistics
- * @wiphy: wiphy handle
- * @wdev: wdev handle
- * @data: user layer input
- * @data_len: length of user layer input
- *
- * return: 0 success, einval failure
- */
-int wlan_hdd_cfg80211_tx_latency(struct wiphy *wiphy,
-				 struct wireless_dev *wdev,
-				 const void *data, int data_len);
-
-/**
- * hdd_tx_latency_record_ingress_ts() - Record driver ingress timestamp in CB
- * @adapter: pointer to hdd vdev/net_device context
- * @skb: sk buff
- *
- * Return: None
- */
-static inline void
-hdd_tx_latency_record_ingress_ts(struct hdd_adapter *adapter,
-				 struct sk_buff *skb)
-{
-	if (adapter->tx_latency_cfg.enable)
-		qdf_nbuf_set_tx_ts(skb);
-}
-
-extern const struct nla_policy
-	tx_latency_policy[QCA_WLAN_VENDOR_ATTR_TX_LATENCY_MAX + 1];
-
-#define FEATURE_TX_LATENCY_STATS_COMMANDS	\
-	{	\
-	.info.vendor_id = QCA_NL80211_VENDOR_ID,	\
-	.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_TX_LATENCY,	\
-	.flags = WIPHY_VENDOR_CMD_NEED_WDEV |	\
-		 WIPHY_VENDOR_CMD_NEED_NETDEV |	\
-		 WIPHY_VENDOR_CMD_NEED_RUNNING,	\
-	.doit = wlan_hdd_cfg80211_tx_latency,	\
-	vendor_command_policy(tx_latency_policy,	\
-			      QCA_WLAN_VENDOR_ATTR_TX_LATENCY_MAX)	\
-	},	\
-
-#define FEATURE_TX_LATENCY_STATS_EVENTS	\
-	[QCA_NL80211_VENDOR_SUBCMD_TX_LATENCY_INDEX] = {	\
-		.vendor_id = QCA_NL80211_VENDOR_ID,	\
-		.subcmd = QCA_NL80211_VENDOR_SUBCMD_TX_LATENCY,	\
-	},	\
-
-#else
-static inline QDF_STATUS hdd_tx_latency_register_cb(void *soc)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline QDF_STATUS
-hdd_tx_latency_restore_config(struct wlan_hdd_link_info *link_info)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline void
-hdd_tx_latency_record_ingress_ts(struct hdd_adapter *adapter,
-				 struct sk_buff *skb)
-{
-}
-
-#define FEATURE_TX_LATENCY_STATS_COMMANDS
-#define FEATURE_TX_LATENCY_STATS_EVENTS
-#endif
-
-#ifdef WLAN_CHIPSET_STATS
-/**
- * hdd_cstats_send_data_to_userspace() - Send chipsset stats to userspace
- *
- * @buff: Buffer to be sent
- * @len: length of the buffer
- * @type: Chipset stats type
- *
- * Return: 0 on success -ve value on error
- */
-int hdd_cstats_send_data_to_userspace(char *buff, unsigned int len,
-				      enum cstats_types type);
-
-/**
- * hdd_register_cstats_ops() - Register chipset stats ops
- *
- * Return: void
- */
-void hdd_register_cstats_ops(void);
-
-/**
- * hdd_cstats_log_ndi_delete_req_evt() - Chipset stats for ndi delete
- *
- * @vdev: pointer to vdev object
- * @transaction_id: transaction ID
- *
- * Return : void
- */
-void hdd_cstats_log_ndi_delete_req_evt(struct wlan_objmgr_vdev *vdev,
-				       uint16_t transaction_id);
-
-/**
- * hdd_cstats_log_ndi_create_resp_evt() - Chipset stats for ndi create
- * response
- * @li: pointer link_info object
- * @ndi_rsp: pointer to nan_datapath_inf_create_rsp object
- *
- * Return : void
- */
-void
-hdd_cstats_log_ndi_create_resp_evt(struct wlan_hdd_link_info *li,
-				   struct nan_datapath_inf_create_rsp *ndi_rsp);
-
-/**
- * hdd_cstats_log_ndi_create_req_evt() - Chipset stats for ndi create
- * request
- *
- * @vdev: pointer vdve object
- * @transaction_id : Transaction ID
- *
- * Return : void
- */
-void hdd_cstats_log_ndi_create_req_evt(struct wlan_objmgr_vdev *vdev,
-				       uint16_t transaction_id);
-#else
-static inline void hdd_register_cstats_ops(void)
-{
-}
-
-static inline int
-hdd_cstats_send_data_to_userspace(char *buff, unsigned int len,
-				  enum cstats_types type)
-{
-	return 0;
-}
-
-static inline void
-hdd_cstats_log_ndi_delete_req_evt(struct wlan_objmgr_vdev *vdev,
-				  uint16_t transaction_id)
-{
-}
-
-static inline void
-hdd_cstats_log_ndi_create_resp_evt(struct wlan_hdd_link_info *li,
-				   struct nan_datapath_inf_create_rsp *ndi_rsp)
-{
-}
-
-static inline void
-hdd_cstats_log_ndi_create_req_evt(struct wlan_objmgr_vdev *vdev,
-				  uint16_t transaction_id)
-{
-}
-#endif /* WLAN_CHIPSET_STATS */
 #endif /* end #if !defined(WLAN_HDD_STATS_H) */

@@ -1333,13 +1333,6 @@ IE RequestedInfo (EID_REQUEST)            // 7.3.2.12
     requested_eids[0..255];
 }
 
-const EID_BCN_REQ_EXTENDED_INFO = 11;
-IE ExtRequestedInfo (EID_BCN_REQ_EXTENDED_INFO)
-{
-    req_element_id,     1;
-    req_element_id_ext[0..255];
-}
-
 IE Country (EID_COUNTRY)                  // 7.3.2.9
 {
     country[3];
@@ -1673,46 +1666,6 @@ IE last_beacon_report_indication (EID_BCN_REPORT_LAST_BEACON_REPORT_INDICATION)
     last_fragment, 1;
 }
 
-const EID_REPORTING_REASON = 1;
-IE reporting_reason (EID_REPORTING_REASON)
-{
-   {
-      failed_count: 1;
-      fcs_error: 1;
-      multiple_retry: 1;
-      frame_duplicate: 1;
-      rts_failure: 1;
-      ack_failure: 1;
-      retry: 1;
-      reserved: 1;
-   }
-}
-
-const SUB_EID_BANDWIDTH_INDICATION     = 164;
-IE bw_indication (SUB_EID_BANDWIDTH_INDICATION)
-{
-   {
-       reserved: 1;
-       disabled_sub_chan_bitmap_present: 1;
-       reserved_1: 6;
-   }
-   {
-       channel_width: 3;
-       reserved_2: 5;
-   }
-   ccfs0, 1;
-   ccfs1, 1;
-   disabled_sub_chan_bitmap[2][0..1] COUNTIS disabled_sub_chan_bitmap_present;
-}
-
-const SUB_EID_WIDE_BW_CHANNEL_SWITCH     = 163;
-IE wide_bw_chan_switch (SUB_EID_WIDE_BW_CHANNEL_SWITCH)
-{
-   new_chan_width,           1;
-   new_center_chan_freq0,    1;
-   new_center_chan_freq1,    1;
-}
-
 IE MeasurementReport (EID_MEAS_REPORT)    // 7.3.2.22
 {
     token, 1;
@@ -1762,16 +1715,6 @@ IE MeasurementReport (EID_MEAS_REPORT)    // 7.3.2.22
             rpi6_density,    1;
             rpi7_density,    1;
         }
-        channel_load_report (type IS 3)
-        {
-            op_class,          1;
-            channel,           1;
-            meas_start_time,   8;
-            meas_duration,     2;
-            chan_load,         1;
-            OPTIE wide_bw_chan_switch;
-            OPTIE bw_indication;
-        }
        Beacon (type IS 5)
        {
            regClass,               1;
@@ -1793,62 +1736,7 @@ IE MeasurementReport (EID_MEAS_REPORT)    // 7.3.2.22
            OPTIE last_beacon_report_indication;
            //IE vendor_specific
      }
-     sta_stats (type IS 7)
-     {
-           meas_duration,          2;
-           group_id, 1;
-           UNION statsgroupdata (DISCRIMINATOR group_id)
-           {
-                dot11_counter_stats (group_id IS 0)
-                {
-                        transmitted_fragment_count, 4;
-                        group_transmitted_frame_count, 4;
-                        failed_count, 4;
-                        received_fragment_count, 4;
-                        group_received_frame_count, 4;
-                        fcs_error_count, 4;
-                        transmitted_frame_count, 4;
-                }
-                dot11_mac_stats (group_id IS 1)
-                {
-                        retry_count, 4;
-                        multiple_retry_count, 4;
-                        frame_duplicate_count, 4;
-                        rts_success_count, 4;
-                        rts_failure_count, 4;
-                        ack_failure_count, 4;
-                }
-                dot11_qos_counter (group_id IS 2)
-                {
-                        qos_transmitted_fragment_count, 4;
-                        qos_failed_count, 4;
-                        qos_retry_count, 4;
-                        qos_multiple_retry_count, 4;
-                        qos_frame_duplicate_count, 4;
-                        qos_rts_success_count, 4;
-                        qos_rts_failure_count, 4;
-                        qos_ack_failure_count, 4;
-                        qos_received_fragment_count, 4;
-                        qos_transmitted_frame_count, 4;
-                        qos_discarded_frame_count, 4;
-                        qos_mpdus_received_count, 4;
-                        qos_retries_received_count, 4;
-                }
-                dot11_bss_average_access_delay (group_id IS 10)
-                {
-                        ap_average_access_delay, 1;
-                        average_access_delay_besteffort, 1;
-                        average_access_delay_background, 1;
-                        average_access_delay_video, 1;
-                        average_access_delay_voice, 1;
-                        station_count, 2;
-                        channel_utilization, 1;
-                }
-            };
-            OPTIE reporting_reason;
-      }
-
-   };
+    };
 }
 
 IE TSDelay (EID_TS_DELAY)                 // 7.3.2.32
@@ -2586,55 +2474,12 @@ IE transmit_power_env (EID_TRANSMIT_POWER_ENVELOPE)
         max_tx_pwr_category:          2;
     }
     tx_power[1..8];
-    OPTIONAL UNION ext_max_tx_power (DISCRIMINATOR max_tx_pwr_interpret)
-    {
-       ext_max_tx_power_local_eirp (max_tx_pwr_interpret IS 0) {
-               max_tx_power_for_320, 1;
-       }
-       ext_max_tx_power_local_psd (max_tx_pwr_interpret IS 1) {
-               //ext_transmit_psd_info, 1;
-               {
-                       ext_count: 4;
-                       reserved: 4;
-               }
-               max_tx_psd_power[8];
-       }
-       ext_max_tx_power_reg_eirp (max_tx_pwr_interpret IS 2) {
-               max_tx_power_for_320, 1;
-       }
-       ext_max_tx_power_reg_psd (max_tx_pwr_interpret IS 3) {
-               //ext_transmit_psd_info, 1;
-               {
-                       ext_count: 4;
-                       reserved: 4;
-               }
-               max_tx_psd_power[8];
-       }
-
-    };
-}
-
-IE bw_ind_element (EID_EXTN_ID_ELEMENT) OUI (0x87)
-{
-   {
-       reserved: 1;
-       disabled_sub_chan_bitmap_present: 1;
-       reserved_1: 6;
-   }
-   {
-       channel_width: 3;
-       reserved_2: 5;
-   }
-   ccfs0, 1;
-   ccfs1, 1;
-   disabled_sub_chan_bitmap[2][0..1] COUNTIS disabled_sub_chan_bitmap_present;
 }
 
 IE ChannelSwitchWrapper (EID_CHANNEL_SWITCH_WRAPPER)
 {
     OPTIE IE  WiderBWChanSwitchAnn;
     OPTIE IE  transmit_power_env;
-    OPTIE IE  bw_ind_element;
 }
 
 IE reduced_neighbor_report (EID_RNR_IE)
@@ -2906,7 +2751,6 @@ const TLV_TRANSITION_REJECTIONP_ATTR_ID   = 7;
 const TLV_HE_DL_MUMIMO_SUPPP_ATTR_ID      = 8;
 const TLV_HE_MCS_11_12_ATTR_ID            = 9;
 const TLV_EDCA_PIFS_PARAM_ATTR_ID         = 13;
-const TLV_ECSA_TARGET_TSF_INFO_ATTR_ID    = 14;
 
 TLV qcn_version(TLV_VERSION_ATTR_ID) ( 1 : 1 ) LSB
 {
@@ -2962,12 +2806,6 @@ TLV edca_pifs_param_attr (TLV_EDCA_PIFS_PARAM_ATTR_ID) ( 1 : 1 ) LSB
    data[3..4];
 }
 
-TLV ecsa_target_tsf_info_attr (TLV_ECSA_TARGET_TSF_INFO_ATTR_ID) ( 1 : 1 ) LSB
-{
-    twt_ch_sw_mode, 1;
-    target_tsf, 8;
-}
-
 MULTIIE qcn_ie (EID_VENDOR_SPECIFIC) OUI ( 0x8C, 0xFD, 0xF0, 0x01 )
 {
    OPTIONALTLV qcn_version;
@@ -2980,7 +2818,6 @@ MULTIIE qcn_ie (EID_VENDOR_SPECIFIC) OUI ( 0x8C, 0xFD, 0xF0, 0x01 )
    OPTIONALTLV he_dl_mumimo_attr;
    OPTIONALTLV he_mcs13_attr;
    OPTIONALTLV edca_pifs_param_attr;
-   OPTIONALTLV ecsa_target_tsf_info_attr;
 }
 
 IE esp_information (EID_EXTN_ID_ELEMENT) OUI ( 0x0B )
@@ -3060,7 +2897,7 @@ IE dh_parameter_element (EID_EXTN_ID_ELEMENT) OUI ( 0x20 )
     public_key[0..255];
 }
 
-const EID_RRM_REPORTING     = 1;
+const EID_RRM_BEACON_REPORTING     = 1;
 const EID_RRM_BCN_REPORTING_DETAIL = 2;
 
 const SUB_EID_AZIMUTH_REQ = 1;
@@ -3068,12 +2905,11 @@ const SUB_EID_REQ_MAC_ADDR = 2;
 const SUB_EID_TGT_MAC_ADDR = 3;
 const SUB_EID_MAX_AGE = 4;
 const SUB_EID_NEIGHBOR_RPT = 52;
-//const SUB_EID_TRIGGERED_REPORTING = 1;
 
-IE rrm_reporting (EID_RRM_REPORTING)
+IE BeaconReporting (EID_RRM_BEACON_REPORTING)
 {
-     reporting_condition, 1;
-     threshold,           1;
+     reportingCondition, 1;
+     threshold,          1;
 }
 
 IE BcnReportingDetail (EID_RRM_BCN_REPORTING_DETAIL)
@@ -3175,16 +3011,6 @@ IE MeasurementRequest (EID_MEAS_REQUEST)  // 7.3.2.21
            meas_start_time[8];
            meas_duration,    2;
        }
-       channel_load (measurement_type IS 3)
-       {
-           op_class,                1;
-           channel,                 1;
-           randomization_intv,      2;
-           meas_duration,           2;
-           OPTIE rrm_reporting;
-           OPTIE wide_bw_chan_switch;
-           OPTIE bw_indication;
-       }
        Beacon (measurement_type IS 5)
        {
           regClass,          1;
@@ -3194,10 +3020,9 @@ IE MeasurementRequest (EID_MEAS_REQUEST)  // 7.3.2.21
           meas_mode,         1;
           BSSID[6];
           OPTIE SSID;
-          OPTIE rrm_reporting;
+          OPTIE BeaconReporting;
           OPTIE BcnReportingDetail;
           OPTIE RequestedInfo;
-          OPTIE ExtRequestedInfo;
           OPTIE APChannelReport[0..2];
           OPTIE last_beacon_report_indication;
           //OPTIONAL vendor_specific[1..239];
@@ -3217,15 +3042,6 @@ IE MeasurementRequest (EID_MEAS_REQUEST)  // 7.3.2.21
 
           OPTIE neighbor_rpt;
           OPTIE max_age;
-       }
-       sta_stats (measurement_type IS 7)
-       {
-          peer_mac_addr[6];
-          randomization,     2;
-          meas_duration,     2;
-          group_identity,    1;
-          //OPTIE triggered_reporting;
-         //OPTIONAL vendor_specific;
        }
 
     };
@@ -5021,8 +4837,6 @@ FRAME ext_channel_switch_action_frame
     FF     Action;
     FF     ext_chan_switch_ann_action;
     OPTIE  WiderBWChanSwitchAnn;
-    OPTIE  qcn_ie;
-    OPTIE  bw_ind_element;
 }
 
 FRAME p2p_oper_chan_change_confirm
@@ -5101,27 +4915,6 @@ FRAME mscs_request_action_frame
     FF     Action;
     FF     DialogToken;
     MANDIE descriptor_element;
-}
-
-FRAME epcs_neg_req
-{
-    FF    Category;
-    FF    Action;
-    FF    DialogToken;
-}
-
-FRAME epcs_neg_rsp
-{
-    FF    Category;
-    FF    Action;
-    FF    DialogToken;
-    FF    Status;
-}
-
-FRAME epcs_teardown
-{
-    FF    Category;
-    FF    Action;
 }
 
 // Local Variables:

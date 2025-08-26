@@ -8177,6 +8177,10 @@ struct drm_crtc *sde_crtc_init(struct drm_device *dev, struct drm_plane *plane)
 
 	sde_crtc->enabled = false;
 	sde_crtc->kickoff_in_progress = false;
+	sde_crtc->histogram_interval_msec = 0;
+	sde_crtc->histogram_enable = false;
+	sde_crtc->regdma_enable = false;
+	sde_crtc->regdma_histogram_last_exec_time = 0;
 
 	/* Below parameters are for fps calculation for sysfs node */
 	sde_crtc->fps_info.fps_periodic_duration = DEFAULT_FPS_PERIOD_1_SEC;

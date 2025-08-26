@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1185,14 +1185,13 @@ static QDF_STATUS p2p_mgmt_tx(struct tx_action_context *tx_ctx,
 	mgmt_tx_download_comp_cb tx_comp_cb;
 	mgmt_ota_comp_cb tx_ota_comp_cb;
 	struct wlan_frame_hdr *wh;
-	struct wlan_objmgr_peer *peer = NULL;
+	struct wlan_objmgr_peer *peer;
 	struct wmi_mgmt_params mgmt_param = { 0 };
 	struct wlan_objmgr_psoc *psoc;
 	void *mac_addr;
 	uint8_t pdev_id;
 	struct wlan_objmgr_vdev *vdev;
 	enum QDF_OPMODE opmode;
-	bool mlo_link_agnostic;
 
 	psoc = tx_ctx->p2p_soc_obj->soc;
 	mgmt_param.tx_frame = packet;
@@ -1217,8 +1216,6 @@ static QDF_STATUS p2p_mgmt_tx(struct tx_action_context *tx_ctx,
 		p2p_err("VDEV null");
 		return QDF_STATUS_E_INVAL;
 	}
-
-	mlo_link_agnostic = wlan_get_mlo_link_agnostic_flag(vdev, mac_addr);
 
 	peer = wlan_objmgr_get_peer(psoc, pdev_id,  mac_addr, WLAN_P2P_ID);
 	if (!peer) {
@@ -1268,10 +1265,10 @@ static QDF_STATUS p2p_mgmt_tx(struct tx_action_context *tx_ctx,
 	tx_ctx->nbuf = packet;
 
 	if (mlo_is_mld_sta(vdev) && tx_ctx->frame_info.type == P2P_FRAME_MGMT &&
-	    tx_ctx->frame_info.sub_type == P2P_MGMT_ACTION &&
-	    mlo_link_agnostic) {
+	    tx_ctx->frame_info.sub_type == P2P_MGMT_ACTION) {
 		mgmt_param.mlo_link_agnostic = true;
 	}
+
 	status = wlan_mgmt_txrx_mgmt_frame_tx(peer, tx_ctx->p2p_soc_obj,
 			packet, tx_comp_cb, tx_ota_comp_cb,
 			WLAN_UMAC_COMP_P2P, &mgmt_param);
@@ -3168,6 +3165,7 @@ QDF_STATUS p2p_process_mgmt_tx(struct tx_action_context *tx_ctx)
 	struct wlan_objmgr_vdev *vdev;
 	QDF_STATUS status;
 	bool is_vdev_connected = false;
+	qdf_freq_t curr_op_freq;
 
 	status = p2p_tx_context_check_valid(tx_ctx);
 	if (status != QDF_STATUS_SUCCESS) {
@@ -3230,9 +3228,13 @@ QDF_STATUS p2p_process_mgmt_tx(struct tx_action_context *tx_ctx)
 	if (mode == QDF_STA_MODE)
 		is_vdev_connected = wlan_cm_is_vdev_connected(vdev);
 
+	curr_op_freq = wlan_get_operation_chan_freq(vdev);
+
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_P2P_ID);
 
-	if (!tx_ctx->off_chan || !tx_ctx->chan_freq) {
+	if (!tx_ctx->off_chan || !tx_ctx->chan_freq ||
+	    (curr_op_freq && curr_op_freq == tx_ctx->chan_freq &&
+	     !tx_ctx->duration)) {
 		if (!tx_ctx->chan_freq)
 			p2p_check_and_update_channel(tx_ctx);
 		if (!tx_ctx->chan_freq && mode == QDF_STA_MODE &&

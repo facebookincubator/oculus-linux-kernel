@@ -949,12 +949,18 @@ error:
 
 QDF_STATUS csr_scan_get_result_for_bssid(struct mac_context *mac_ctx,
 					 struct qdf_mac_addr *bssid,
-					 qdf_list_t **ret_list)
+					 tCsrScanResultInfo *res)
 {
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	struct scan_filter *scan_filter;
-	qdf_list_t *list = NULL;
+	tScanResultHandle filtered_scan_result = NULL;
+	tCsrScanResultInfo *scan_result;
 
-	*ret_list = NULL;
+	if (!mac_ctx) {
+		sme_err("mac_ctx is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
 	scan_filter = qdf_mem_malloc(sizeof(*scan_filter));
 	if (!scan_filter)
 		return QDF_STATUS_E_NOMEM;
@@ -962,21 +968,37 @@ QDF_STATUS csr_scan_get_result_for_bssid(struct mac_context *mac_ctx,
 	scan_filter->num_of_bssid = 1;
 	qdf_mem_copy(scan_filter->bssid_list[0].bytes, bssid->bytes,
 		     QDF_MAC_ADDR_SIZE);
-	scan_filter->ignore_auth_enc_type = true;
 
-	list = wlan_scan_get_result(mac_ctx->pdev, scan_filter);
-	qdf_mem_free(scan_filter);
-	if (!list || (list && !qdf_list_size(list)))
-		goto purge_list;
+	status = csr_scan_get_result(mac_ctx, scan_filter,
+				&filtered_scan_result);
 
-	*ret_list = list;
-	return QDF_STATUS_SUCCESS;
+	if (!QDF_IS_STATUS_SUCCESS(status)) {
+		sme_err("Failed to get scan result");
+		goto free_filter;
+	}
 
-purge_list:
-	if (list)
-		wlan_scan_purge_results(list);
+	scan_result = csr_scan_result_get_first(mac_ctx, filtered_scan_result);
 
-	return QDF_STATUS_E_FAILURE;
+	if (scan_result) {
+		res->pvIes = NULL;
+		res->ssId.length = scan_result->ssId.length;
+		qdf_mem_copy(&res->ssId.ssId, &scan_result->ssId.ssId,
+			res->ssId.length);
+		res->timer = scan_result->timer;
+		qdf_mem_copy(&res->BssDescriptor, &scan_result->BssDescriptor,
+			sizeof(struct bss_description));
+		status = QDF_STATUS_SUCCESS;
+	} else {
+		status = QDF_STATUS_E_FAILURE;
+	}
+
+	csr_scan_result_purge(mac_ctx, filtered_scan_result);
+
+free_filter:
+	if (scan_filter)
+		qdf_mem_free(scan_filter);
+
+	return status;
 }
 
 QDF_STATUS csr_scan_filter_results(struct mac_context *mac_ctx)

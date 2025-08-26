@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/mutex.h>
 #include <linux/spinlock.h>
@@ -2780,13 +2780,13 @@ compat_hw_name_failed:
 	return rc;
 }
 
-static int cam_cre_mgr_create_wq(void)
+static int cam_cre_mgr_create_workers(void)
 {
 
 	int rc;
 	int i;
 
-	rc = rc = cam_req_mgr_worker_create("cre_command_queue", CRE_WORKQ_NUM_TASK,
+	rc = cam_req_mgr_worker_create("cre_command_queue", CRE_WORKQ_NUM_TASK,
 		&cre_hw_mgr->cmd_work, CRM_WORKER_USAGE_NON_IRQ,
 		0);
 	if (rc) {
@@ -2801,7 +2801,7 @@ static int cam_cre_mgr_create_wq(void)
 		goto msg_work_failed;
 	}
 
-	rc =  cam_req_mgr_worker_create("cre_timer_queue", CRE_WORKQ_NUM_TASK,
+	rc = cam_req_mgr_worker_create("cre_timer_queue", CRE_WORKQ_NUM_TASK,
 		&cre_hw_mgr->timer_work, CRM_WORKER_USAGE_IRQ, 0);
 	if (rc) {
 		CAM_ERR(CAM_CRE, "unable to create a timer worker");

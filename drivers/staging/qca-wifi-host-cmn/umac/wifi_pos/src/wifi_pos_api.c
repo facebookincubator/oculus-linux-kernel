@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -560,8 +560,7 @@ QDF_STATUS wifi_pos_register_get_pdev_id_by_dev_name(
 		QDF_STATUS (*handler)(char *dev_name, uint8_t *pdev_id,
 				      struct wlan_objmgr_psoc **psoc))
 {
-	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc = NULL;
-	struct wlan_objmgr_psoc *tmp_psoc = wifi_pos_get_psoc();
+	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc;
 
 	if (!psoc) {
 		wifi_pos_err("psoc is null");
@@ -573,9 +572,7 @@ QDF_STATUS wifi_pos_register_get_pdev_id_by_dev_name(
 		return QDF_STATUS_E_NULL_VALUE;
 	}
 
-	if (tmp_psoc)
-		wifi_pos_psoc = wifi_pos_get_psoc_priv_obj(tmp_psoc);
-
+	wifi_pos_psoc = wifi_pos_get_psoc_priv_obj(psoc);
 	if (!wifi_pos_psoc) {
 		wifi_pos_err("wifi_pos priv obj is null");
 		return QDF_STATUS_E_NULL_VALUE;
@@ -592,8 +589,7 @@ QDF_STATUS wifi_pos_register_measurement_request_notification(
 		QDF_STATUS (*handler)(struct wlan_objmgr_pdev *pdev,
 				      struct rtt_channel_info *chinfo))
 {
-	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc = NULL;
-	struct wlan_objmgr_psoc *tmp_psoc = wifi_pos_get_psoc();
+	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc;
 
 	if (!psoc) {
 		wifi_pos_err("psoc is null");
@@ -605,9 +601,7 @@ QDF_STATUS wifi_pos_register_measurement_request_notification(
 		return QDF_STATUS_E_NULL_VALUE;
 	}
 
-	if (tmp_psoc)
-		wifi_pos_psoc = wifi_pos_get_psoc_priv_obj(tmp_psoc);
-
+	wifi_pos_psoc = wifi_pos_get_psoc_priv_obj(psoc);
 	if (!wifi_pos_psoc) {
 		wifi_pos_err("wifi_pos priv obj is null");
 		return QDF_STATUS_E_NULL_VALUE;
@@ -625,8 +619,7 @@ QDF_STATUS wifi_pos_register_get_max_fw_phymode_for_channels(
 				      struct wifi_pos_channel_power *chan_list,
 				      uint16_t wifi_pos_num_chans))
 {
-	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc = NULL;
-	struct wlan_objmgr_psoc *tmp_psoc = wifi_pos_get_psoc();
+	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc;
 
 	if (!psoc) {
 		wifi_pos_err("psoc is null");
@@ -638,9 +631,7 @@ QDF_STATUS wifi_pos_register_get_max_fw_phymode_for_channels(
 		return QDF_STATUS_E_NULL_VALUE;
 	}
 
-	if (tmp_psoc)
-		wifi_pos_psoc = wifi_pos_get_psoc_priv_obj(tmp_psoc);
-
+	wifi_pos_psoc = wifi_pos_get_psoc_priv_obj(psoc);
 	if (!wifi_pos_psoc) {
 		wifi_pos_err("wifi_pos priv obj is null");
 		return QDF_STATUS_E_NULL_VALUE;
@@ -659,8 +650,7 @@ QDF_STATUS wifi_pos_register_send_action(
 						uint8_t *buf,
 						uint32_t buf_len))
 {
-	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc = NULL;
-	struct wlan_objmgr_psoc *tmp_psoc = wifi_pos_get_psoc();
+	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc;
 
 	if (!psoc) {
 		wifi_pos_err("psoc is null");
@@ -671,10 +661,7 @@ QDF_STATUS wifi_pos_register_send_action(
 		wifi_pos_err("Null callback");
 		return QDF_STATUS_E_NULL_VALUE;
 	}
-
-	if (tmp_psoc)
-		wifi_pos_psoc = wifi_pos_get_psoc_priv_obj(tmp_psoc);
-
+	wifi_pos_psoc = wifi_pos_get_psoc_priv_obj(psoc);
 	if (!wifi_pos_psoc) {
 		wifi_pos_err("wifi_pos priv obj is null");
 		return QDF_STATUS_E_NULL_VALUE;
@@ -747,7 +734,7 @@ bool wifi_pos_get_rsta_sec_ltf_cap(void)
 	return value;
 }
 
-void wifi_pos_set_rsta_11az_ranging_cap(uint32_t val)
+void wifi_pos_set_rsta_11az_ranging_cap(bool val)
 {
 	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc =
 			wifi_pos_get_psoc_priv_obj(wifi_pos_get_psoc());
@@ -762,9 +749,9 @@ void wifi_pos_set_rsta_11az_ranging_cap(uint32_t val)
 	qdf_spin_unlock_bh(&wifi_pos_psoc->wifi_pos_lock);
 }
 
-uint32_t wifi_pos_get_rsta_11az_ranging_cap(void)
+bool wifi_pos_get_rsta_11az_ranging_cap(void)
 {
-	uint32_t value;
+	bool value;
 	struct wifi_pos_psoc_priv_obj *wifi_pos_psoc =
 			wifi_pos_get_psoc_priv_obj(wifi_pos_get_psoc());
 

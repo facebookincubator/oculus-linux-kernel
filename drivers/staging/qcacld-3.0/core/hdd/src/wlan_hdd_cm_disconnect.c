@@ -52,16 +52,14 @@
 #include "wlan_dp_ucfg_api.h"
 #include "wma.h"
 
-void hdd_handle_disassociation_event(struct wlan_hdd_link_info *link_info,
+void hdd_handle_disassociation_event(struct hdd_adapter *adapter,
 				     struct qdf_mac_addr *peer_macaddr)
 {
-	struct hdd_adapter *adapter = link_info->adapter;
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-	struct hdd_station_ctx *sta_ctx;
+	struct hdd_station_ctx *sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
 	ol_txrx_soc_handle soc = cds_get_context(QDF_MODULE_ID_SOC);
 	struct wlan_objmgr_vdev *vdev;
 
-	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(link_info);
 	hdd_green_ap_start_state_mc(hdd_ctx, adapter->device_mode, false);
 
 	wlan_hdd_auto_shutdown_enable(hdd_ctx, true);
@@ -71,12 +69,12 @@ void hdd_handle_disassociation_event(struct wlan_hdd_link_info *link_info,
 		/* send peer status indication to oem app */
 		hdd_send_peer_status_ind_to_app(peer_macaddr,
 						ePeerDisconnected, 0,
-						link_info->vdev_id, NULL,
+						adapter->vdev_id, NULL,
 						adapter->device_mode);
 
-	hdd_lpass_notify_disconnect(link_info);
+	hdd_lpass_notify_disconnect(adapter);
 
-	vdev = hdd_objmgr_get_vdev_by_user(link_info, WLAN_DP_ID);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_DP_ID);
 	if (vdev) {
 		ucfg_dp_del_latency_critical_client(vdev,
 			hdd_convert_cfgdot11mode_to_80211mode(
@@ -123,16 +121,13 @@ static void hdd_cm_print_bss_info(struct hdd_station_ctx *hdd_sta_ctx)
 		       conn_info->hs20vendor_ie.release_num : 0);
 }
 
-void
-__hdd_cm_disconnect_handler_pre_user_update(struct wlan_hdd_link_info *link_info)
+void __hdd_cm_disconnect_handler_pre_user_update(struct hdd_adapter *adapter)
 {
-	struct hdd_adapter *adapter = link_info->adapter;
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-	struct hdd_station_ctx *sta_ctx;
+	struct hdd_station_ctx *sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
 	uint32_t time_buffer_size;
 	struct wlan_objmgr_vdev *vdev;
 
-	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(link_info);
 	hdd_stop_tsf_sync(adapter);
 	time_buffer_size = sizeof(sta_ctx->conn_info.connect_time);
 	qdf_mem_zero(sta_ctx->conn_info.connect_time, time_buffer_size);
@@ -141,12 +136,12 @@ __hdd_cm_disconnect_handler_pre_user_update(struct wlan_hdd_link_info *link_info
 				  &sta_ctx->conn_info.bssid)))
 		ucfg_ipa_wlan_evt(hdd_ctx->pdev, adapter->dev,
 				  adapter->device_mode,
-				  link_info->vdev_id,
+				  adapter->vdev_id,
 				  WLAN_IPA_STA_DISCONNECT,
 				  sta_ctx->conn_info.bssid.bytes,
 				  false);
 
-	vdev = hdd_objmgr_get_vdev_by_user(link_info, WLAN_DP_ID);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_DP_ID);
 	if (vdev) {
 		ucfg_dp_periodic_sta_stats_stop(vdev);
 		hdd_objmgr_put_vdev_by_user(vdev, WLAN_DP_ID);
@@ -155,7 +150,7 @@ __hdd_cm_disconnect_handler_pre_user_update(struct wlan_hdd_link_info *link_info
 	wlan_hdd_auto_shutdown_enable(hdd_ctx, true);
 
 	DPTRACE(qdf_dp_trace_mgmt_pkt(QDF_DP_TRACE_MGMT_PACKET_RECORD,
-		link_info->vdev_id,
+		adapter->vdev_id,
 		QDF_TRACE_DEFAULT_PDEV_ID,
 		QDF_PROTO_TYPE_MGMT, QDF_PROTO_MGMT_DISASSOC));
 
@@ -165,40 +160,34 @@ __hdd_cm_disconnect_handler_pre_user_update(struct wlan_hdd_link_info *link_info
 	hdd_place_marker(adapter, "DISCONNECTED", NULL);
 }
 
-void
-__hdd_cm_disconnect_handler_post_user_update(struct wlan_hdd_link_info *link_info,
-					     struct wlan_objmgr_vdev *vdev,
-					     enum wlan_cm_source source)
+void __hdd_cm_disconnect_handler_post_user_update(struct hdd_adapter *adapter,
+						  struct wlan_objmgr_vdev *vdev)
 {
-	struct hdd_adapter *adapter = link_info->adapter;
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-	struct hdd_station_ctx *sta_ctx;
+	struct hdd_station_ctx *sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
 	mac_handle_t mac_handle;
 	struct hdd_adapter *link_adapter;
 	struct hdd_station_ctx *link_sta_ctx;
-	bool is_link_switch =
-			wlan_vdev_mlme_is_mlo_link_switch_in_progress(vdev);
 
 	mac_handle = hdd_ctx->mac_handle;
-	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(link_info);
 
 	/* update P2P connection status */
 	ucfg_p2p_status_disconnect(vdev);
-	hdd_cfr_disconnect(vdev);
+	hdd_cfr_disconnect(adapter->vdev);
 
 	hdd_wmm_adapter_clear(adapter);
 	ucfg_cm_ft_reset(vdev);
-	ucfg_cm_reset_key(hdd_ctx->pdev, link_info->vdev_id);
+	ucfg_cm_reset_key(hdd_ctx->pdev, adapter->vdev_id);
 	hdd_clear_roam_profile_ie(adapter);
 
 	if (adapter->device_mode == QDF_STA_MODE)
 		wlan_crypto_reset_vdev_params(vdev);
 
 	hdd_remove_beacon_filter(adapter);
-	if (sme_is_beacon_report_started(mac_handle, link_info->vdev_id)) {
+	if (sme_is_beacon_report_started(mac_handle, adapter->vdev_id)) {
 		hdd_debug("Sending beacon pause indication to userspace");
 		hdd_beacon_recv_pause_indication((hdd_handle_t)hdd_ctx,
-						 link_info->vdev_id,
+						 adapter->vdev_id,
 						 SCAN_EVENT_TYPE_MAX, true);
 	}
 
@@ -208,29 +197,17 @@ __hdd_cm_disconnect_handler_post_user_update(struct wlan_hdd_link_info *link_inf
 		link_adapter = hdd_get_assoc_link_adapter(adapter);
 		if (link_adapter) {
 			link_sta_ctx =
-				WLAN_HDD_GET_STATION_CTX_PTR(link_adapter->deflink);
+				WLAN_HDD_GET_STATION_CTX_PTR(link_adapter);
 			hdd_conn_remove_connect_info(link_sta_ctx);
 		}
 	}
-
-	if (!is_link_switch && source != CM_MLO_ROAM_INTERNAL_DISCONNECT) {
-		/* Clear saved connection information in HDD */
-		hdd_conn_remove_connect_info(sta_ctx);
-
-		/*
-		 * Reset the IEEE link ID to invalid when disconnect is not
-		 * due to link switch. This API resets link id for all the
-		 * valid link_info for the given adapter. So avoid this reset
-		 * for Link Switch disconnect/internal disconnect
-		 */
-		hdd_adapter_reset_station_ctx(adapter);
-	}
+	/* Clear saved connection information in HDD */
+	hdd_conn_remove_connect_info(sta_ctx);
 
 	ucfg_dp_remove_conn_info(vdev);
 
 	/* Setting the RTS profile to original value */
-	if (sme_cli_set_command(link_info->vdev_id,
-				wmi_vdev_param_enable_rtscts,
+	if (sme_cli_set_command(adapter->vdev_id, wmi_vdev_param_enable_rtscts,
 				cfg_get(hdd_ctx->psoc,
 					CFG_ENABLE_FW_RTS_PROFILE),
 				VDEV_CMD))
@@ -241,7 +218,8 @@ __hdd_cm_disconnect_handler_post_user_update(struct wlan_hdd_link_info *link_inf
 
 	if ((QDF_STA_MODE == adapter->device_mode) ||
 	    (QDF_P2P_CLIENT_MODE == adapter->device_mode)) {
-		sme_ps_disable_auto_ps_timer(mac_handle, link_info->vdev_id);
+		sme_ps_disable_auto_ps_timer(mac_handle,
+					     adapter->vdev_id);
 		adapter->send_mode_change = true;
 	}
 	wlan_hdd_clear_link_layer_stats(adapter);
@@ -255,37 +233,34 @@ __hdd_cm_disconnect_handler_post_user_update(struct wlan_hdd_link_info *link_inf
 }
 
 #ifdef WLAN_FEATURE_MSCS
-void reset_mscs_params(struct wlan_hdd_link_info *link_info)
+void reset_mscs_params(struct hdd_adapter *adapter)
 {
-	mlme_set_is_mscs_req_sent(link_info->vdev, false);
-	link_info->mscs_counter = 0;
+	mlme_set_is_mscs_req_sent(adapter->vdev, false);
+	adapter->mscs_counter = 0;
 }
 #endif
 
-QDF_STATUS
-wlan_hdd_cm_issue_disconnect(struct wlan_hdd_link_info *link_info,
-			     enum wlan_reason_code reason, bool sync)
+QDF_STATUS wlan_hdd_cm_issue_disconnect(struct hdd_adapter *adapter,
+					enum wlan_reason_code reason,
+					bool sync)
 {
 	QDF_STATUS status;
 	struct wlan_objmgr_vdev *vdev;
-	struct hdd_station_ctx *sta_ctx;
-	struct hdd_adapter *adapter = link_info->adapter;
+	struct hdd_station_ctx *sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
 
-	vdev = hdd_objmgr_get_vdev_by_user(link_info, WLAN_OSIF_CM_ID);
+	vdev = hdd_objmgr_get_vdev_by_user(adapter, WLAN_OSIF_CM_ID);
 	if (!vdev)
 		return QDF_STATUS_E_INVAL;
-
-	sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(link_info);
 	hdd_place_marker(adapter, "TRY TO DISCONNECT", NULL);
-	reset_mscs_params(link_info);
-	hdd_conn_set_authenticated(link_info, false);
+	reset_mscs_params(adapter);
+	hdd_conn_set_authenticated(adapter, false);
 	wlan_hdd_netif_queue_control(adapter,
 				     WLAN_STOP_ALL_NETIF_QUEUE_N_CARRIER,
 				     WLAN_CONTROL_PATH);
 
 	qdf_rtpm_sync_resume();
 
-	wlan_rec_conn_info(link_info->vdev_id, DEBUG_CONN_DISCONNECT,
+	wlan_rec_conn_info(adapter->vdev_id, DEBUG_CONN_DISCONNECT,
 			   sta_ctx->conn_info.bssid.bytes, 0, reason);
 
 	if (sync)
@@ -305,7 +280,6 @@ int wlan_hdd_cm_disconnect(struct wiphy *wiphy,
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	QDF_STATUS status;
 	int ret;
-	struct wlan_hdd_link_info *link_info = adapter->deflink;
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");
@@ -316,7 +290,7 @@ int wlan_hdd_cm_disconnect(struct wiphy *wiphy,
 	if (ret)
 		return ret;
 
-	if (wlan_hdd_validate_vdev_id(link_info->vdev_id))
+	if (wlan_hdd_validate_vdev_id(adapter->vdev_id))
 		return -EINVAL;
 
 	if (hdd_ctx->is_wiphy_suspended) {
@@ -326,7 +300,7 @@ int wlan_hdd_cm_disconnect(struct wiphy *wiphy,
 
 	qdf_mtrace(QDF_MODULE_ID_HDD, QDF_MODULE_ID_HDD,
 		   TRACE_CODE_HDD_CFG80211_DISCONNECT,
-		   link_info->vdev_id, reason);
+		   adapter->vdev_id, reason);
 
 	hdd_print_netdev_txq_status(dev);
 
@@ -346,7 +320,7 @@ int wlan_hdd_cm_disconnect(struct wiphy *wiphy,
 	 * Thus we need to wait for disconnect to complete in this case,
 	 * and thus use sync API here.
 	 */
-	status = wlan_hdd_cm_issue_disconnect(link_info, reason, true);
+	status = wlan_hdd_cm_issue_disconnect(adapter, reason, true);
 
 	return qdf_status_to_os_return(status);
 }
@@ -357,29 +331,26 @@ hdd_cm_disconnect_complete_pre_user_update(struct wlan_objmgr_vdev *vdev,
 {
 	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
 	struct hdd_adapter *adapter;
-	struct wlan_hdd_link_info *link_info;
 
 	if (!hdd_ctx) {
 		hdd_err("hdd_ctx is NULL");
 		return QDF_STATUS_E_INVAL;
 	}
 
-	link_info = hdd_get_link_info_by_vdev(hdd_ctx, wlan_vdev_get_id(vdev));
-	if (!link_info) {
+	adapter = hdd_get_adapter_by_vdev(hdd_ctx, wlan_vdev_get_id(vdev));
+	if (!adapter) {
 		hdd_err("adapter is NULL for vdev %d", wlan_vdev_get_id(vdev));
 		return QDF_STATUS_E_INVAL;
 	}
 
-	adapter = link_info->adapter;
-	hdd_conn_set_authenticated(link_info, false);
+	hdd_conn_set_authenticated(adapter, false);
 	hdd_napi_serialize(0);
 	hdd_disable_and_flush_mc_addr_list(adapter, pmo_peer_disconnect);
-	__hdd_cm_disconnect_handler_pre_user_update(link_info);
+	__hdd_cm_disconnect_handler_pre_user_update(adapter);
 
-	hdd_handle_disassociation_event(link_info, &rsp->req.req.bssid);
+	hdd_handle_disassociation_event(adapter, &rsp->req.req.bssid);
 
-	wlan_rec_conn_info(link_info->vdev_id,
-			   DEBUG_CONN_DISCONNECT_HANDLER,
+	wlan_rec_conn_info(adapter->vdev_id, DEBUG_CONN_DISCONNECT_HANDLER,
 			   rsp->req.req.bssid.bytes,
 			   rsp->req.cm_id,
 			   rsp->req.req.reason_code << 16 |
@@ -436,8 +407,8 @@ static void hdd_cm_set_default_wlm_mode(struct hdd_adapter *adapter)
 	} else {
 		status =
 			sme_set_wlm_latency_level(hdd_ctx->mac_handle,
-						  adapter->deflink->vdev_id,
-						  def_level, 0, false);
+						  adapter->vdev_id, def_level,
+						  0, false);
 		if (QDF_IS_STATUS_SUCCESS(status)) {
 			hdd_debug("reset wlm mode %x on disconnection",
 				  def_level);
@@ -482,7 +453,7 @@ static void hdd_cm_reset_udp_qos_upgrade_config(struct hdd_adapter *adapter)
 #ifdef WLAN_FEATURE_11BE
 static inline enum eSirMacHTChannelWidth get_max_bw(void)
 {
-	uint32_t max_bw = wma_get_orig_eht_ch_width();
+	uint32_t max_bw = wma_get_eht_ch_width();
 
 	if (max_bw == WNI_CFG_EHT_CHANNEL_WIDTH_320MHZ)
 		return eHT_CHANNEL_WIDTH_320MHZ;
@@ -494,27 +465,6 @@ static inline enum eSirMacHTChannelWidth get_max_bw(void)
 		return eHT_CHANNEL_WIDTH_80MHZ;
 	else
 		return eHT_CHANNEL_WIDTH_40MHZ;
-}
-
-static
-void wlan_hdd_re_enable_320mhz_6g_conection(struct hdd_context *hdd_ctx,
-					    enum phy_ch_width assoc_ch_width)
-{
-	struct wlan_mlme_psoc_ext_obj *mlme_obj;
-
-	mlme_obj = mlme_get_psoc_ext_obj(hdd_ctx->psoc);
-	if (!mlme_obj)
-		return;
-	/*
-	 * Initial connection was in 320 MHz and if via SET_MAX_BANDWIDTH
-	 * command, current channel BW (des_chan->ch_width) gets modified
-	 * to less than 320MHz, driver disables 6 GHz connection by disabling
-	 * support_320mhz_6ghz EHT capability. So, in order to allow
-	 * re-connection (after disconnection) in 320 MHz, also re-enable
-	 * support_320mhz_6ghz EHT capability before disconnect complete.
-	 */
-	if (assoc_ch_width == CH_WIDTH_320MHZ)
-		mlme_obj->cfg.eht_caps.dot11_eht_cap.support_320mhz_6ghz = 1;
 }
 #else
 static inline enum eSirMacHTChannelWidth get_max_bw(void)
@@ -530,25 +480,18 @@ static inline enum eSirMacHTChannelWidth get_max_bw(void)
 	else
 		return eHT_CHANNEL_WIDTH_40MHZ;
 }
-
-static
-void wlan_hdd_re_enable_320mhz_6g_conection(struct hdd_context *hdd_ctx,
-					    enum phy_ch_width assoc_ch_width)
-{
-}
 #endif
 
 static void hdd_cm_restore_ch_width(struct wlan_objmgr_vdev *vdev,
-				    struct wlan_hdd_link_info *link_info)
+				    struct hdd_adapter *adapter)
 {
-	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(link_info->adapter);
+	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	struct mlme_legacy_priv *mlme_priv;
 	enum eSirMacHTChannelWidth max_bw;
 	struct wlan_channel *des_chan;
-	uint8_t link_id = 0xFF;
 	int ret;
 	uint8_t vdev_id = wlan_vdev_get_id(vdev);
-	enum phy_ch_width assoc_ch_width;
+	enum phy_ch_width ch_width_orig;
 	uint32_t cb_mode;
 
 	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
@@ -559,15 +502,12 @@ static void hdd_cm_restore_ch_width(struct wlan_objmgr_vdev *vdev,
 	if (!des_chan)
 		return;
 
-	assoc_ch_width = mlme_priv->connect_info.assoc_chan_info.assoc_ch_width;
+	ch_width_orig = mlme_priv->connect_info.chan_info_orig.ch_width_orig;
 	if (!ucfg_mlme_is_chwidth_with_notify_supported(hdd_ctx->psoc) ||
-	    assoc_ch_width == CH_WIDTH_INVALID)
+	    ch_width_orig == CH_WIDTH_INVALID)
 		return;
 
 	cm_update_associated_ch_info(vdev, false);
-
-	if (des_chan->ch_width != assoc_ch_width)
-		wlan_hdd_re_enable_320mhz_6g_conection(hdd_ctx, assoc_ch_width);
 
 	if (wlan_reg_is_24ghz_ch_freq(des_chan->ch_freq))
 		ucfg_mlme_get_channel_bonding_24ghz(hdd_ctx->psoc, &cb_mode);
@@ -579,7 +519,7 @@ static void hdd_cm_restore_ch_width(struct wlan_objmgr_vdev *vdev,
 	else
 		max_bw = get_max_bw();
 
-	ret = hdd_set_mac_chan_width(link_info, max_bw, link_id, true);
+	ret = hdd_set_mac_chan_width(adapter, max_bw);
 	if (ret) {
 		hdd_err("vdev %d : fail to set max ch width", vdev_id);
 		return;
@@ -595,20 +535,18 @@ hdd_cm_disconnect_complete_post_user_update(struct wlan_objmgr_vdev *vdev,
 {
 	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
 	struct hdd_adapter *adapter;
-	struct wlan_hdd_link_info *link_info;
 
 	if (!hdd_ctx) {
 		hdd_err("hdd_ctx is NULL");
 		return QDF_STATUS_E_INVAL;
 	}
 
-	link_info = hdd_get_link_info_by_vdev(hdd_ctx, wlan_vdev_get_id(vdev));
-	if (!link_info) {
+	adapter = hdd_get_adapter_by_vdev(hdd_ctx, wlan_vdev_get_id(vdev));
+	if (!adapter) {
 		hdd_err("adapter is NULL for vdev %d", wlan_vdev_get_id(vdev));
 		return QDF_STATUS_E_INVAL;
 	}
 
-	adapter = link_info->adapter;
 	if (adapter->device_mode == QDF_STA_MODE) {
 	/* Inform FTM TIME SYNC about the disconnection with the AP */
 		hdd_ftm_time_sync_sta_state_notify(
@@ -621,21 +559,11 @@ hdd_cm_disconnect_complete_post_user_update(struct wlan_objmgr_vdev *vdev,
 	 * bandwidth on disconnection so that post disconnection DUT can
 	 * connect in max BW.
 	 */
-	hdd_cm_restore_ch_width(vdev, link_info);
-
-	/*
-	 * same WLM configuration is applicable for all links, So no need to
-	 * restore it while processing disconnection due to link switch.
-	 */
-	if (rsp->req.req.source != CM_MLO_LINK_SWITCH_DISCONNECT)
-		hdd_cm_set_default_wlm_mode(adapter);
-
-	__hdd_cm_disconnect_handler_post_user_update(link_info, vdev,
-						     rsp->req.req.source);
+	hdd_cm_restore_ch_width(vdev, adapter);
+	hdd_cm_set_default_wlm_mode(adapter);
+	__hdd_cm_disconnect_handler_post_user_update(adapter, vdev);
 	wlan_twt_concurrency_update(hdd_ctx);
 	hdd_cm_reset_udp_qos_upgrade_config(adapter);
-	ucfg_mlme_set_ml_link_control_mode(hdd_ctx->psoc,
-					   vdev->vdev_objmgr.vdev_id, 0);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -705,20 +633,20 @@ QDF_STATUS hdd_cm_netif_queue_control(struct wlan_objmgr_vdev *vdev,
 				      enum netif_reason_type reason)
 {
 	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
-	struct wlan_hdd_link_info *link_info;
+	struct hdd_adapter *adapter;
 
 	if (!hdd_ctx) {
 		hdd_err("hdd_ctx is NULL");
 		return QDF_STATUS_E_INVAL;
 	}
 
-	link_info = hdd_get_link_info_by_vdev(hdd_ctx, wlan_vdev_get_id(vdev));
-	if (!link_info) {
+	adapter = hdd_get_adapter_by_vdev(hdd_ctx, wlan_vdev_get_id(vdev));
+	if (!adapter) {
 		hdd_err("adapter is NULL for vdev %d", wlan_vdev_get_id(vdev));
 		return QDF_STATUS_E_INVAL;
 	}
 
-	wlan_hdd_netif_queue_control(link_info->adapter, action, reason);
+	wlan_hdd_netif_queue_control(adapter, action, reason);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -740,36 +668,3 @@ QDF_STATUS hdd_cm_napi_serialize_control(bool action)
 
 	return QDF_STATUS_SUCCESS;
 }
-
-#ifdef WLAN_BOOST_CPU_FREQ_IN_ROAM
-QDF_STATUS hdd_cm_perfd_set_cpufreq(bool action)
-{
-	struct wlan_core_minfreq req;
-	struct hdd_context *hdd_ctx;
-
-	hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
-	if (unlikely(!hdd_ctx)) {
-		hdd_err("cannot get hdd_context");
-		return QDF_STATUS_E_INVAL;
-	}
-
-	if (action) {
-		req.magic    = WLAN_CORE_MINFREQ_MAGIC;
-		req.reserved = 0; /* unused */
-		req.coremask = 0x00ff;/* big and little cluster */
-		req.freq     = 0xfff;/* set to max freq */
-	} else {
-		req.magic    = WLAN_CORE_MINFREQ_MAGIC;
-		req.reserved = 0; /* unused */
-		req.coremask = 0; /* not valid */
-		req.freq     = 0; /* reset */
-	}
-
-	hdd_debug("CPU min freq to 0x%x coremask 0x%x", req.freq, req.coremask);
-	/* the following service function returns void */
-	wlan_hdd_send_svc_nlink_msg(hdd_ctx->radio_index,
-				    WLAN_SVC_CORE_MINFREQ,
-				    &req, sizeof(struct wlan_core_minfreq));
-	return QDF_STATUS_SUCCESS;
-}
-#endif

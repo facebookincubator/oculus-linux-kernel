@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -26,7 +26,6 @@
 #include <wlan_cp_stats_utils_api.h>
 #include <wlan_cp_stats_ucfg_api.h>
 #include "../../core/src/wlan_cp_stats_obj_mgr_handler.h"
-#include <wlan_cp_stats_chipset_stats.h>
 
 #ifdef WLAN_SUPPORT_INFRA_CTRL_PATH_STATS
 QDF_STATUS
@@ -37,12 +36,6 @@ ucfg_infra_cp_stats_register_resp_cb(struct wlan_objmgr_psoc *psoc,
 }
 
 QDF_STATUS
-ucfg_infra_cp_stats_deregister_resp_cb(struct wlan_objmgr_psoc *psoc)
-{
-	return wlan_cp_stats_infra_cp_deregister_resp_cb(psoc);
-}
-
-QDF_STATUS
 ucfg_send_infra_cp_stats_request(struct wlan_objmgr_vdev *vdev,
 				 struct infra_cp_stats_cmd_info *req)
 {
@@ -50,7 +43,7 @@ ucfg_send_infra_cp_stats_request(struct wlan_objmgr_vdev *vdev,
 }
 #endif /* WLAN_SUPPORT_INFRA_CTRL_PATH_STATS */
 
-#ifdef WLAN_CONFIG_TELEMETRY_AGENT
+#ifdef WLAN_TELEMETRY_STATS_SUPPORT
 QDF_STATUS
 ucfg_send_telemetry_cp_stats_request(struct wlan_objmgr_pdev *pdev,
 				     struct infra_cp_stats_cmd_info *req)
@@ -68,21 +61,4 @@ int ucfg_cp_stats_twt_get_peer_session_params(
 {
 	return wlan_cp_stats_twt_get_peer_session_params(psoc_obj, params);
 }
-
-#ifdef WLAN_CHIPSET_STATS
-bool ucfg_cp_stats_get_chipset_stats_enable(struct wlan_objmgr_psoc *psoc)
-{
-	return wlan_cp_stats_get_chipset_stats_enable(psoc);
-}
 #endif
-#endif
-
-void ucfg_cp_stats_cstats_register_tx_rx_ops(struct cstats_tx_rx_ops *ops)
-{
-	wlan_cp_stats_cstats_register_tx_rx_ops(ops);
-}
-
-int ucfg_cp_stats_cstats_send_buffer_to_user(enum cstats_types type)
-{
-	return wlan_cp_stats_cstats_send_buffer_to_user(type);
-}

@@ -47,12 +47,11 @@ dp_tx_hw_enqueue_li(struct dp_soc *soc, struct dp_vdev *vdev,
  * @tx_comp_hal_desc: HAL TX Comp Descriptor
  * @r_tx_desc: SW Tx Descriptor retrieved from HAL desc.
  *
- * Return: QDF_STATUS
+ * Return: None
  */
-QDF_STATUS
-dp_tx_comp_get_params_from_hal_desc_li(struct dp_soc *soc,
-				       void *tx_comp_hal_desc,
-				       struct dp_tx_desc_s **r_tx_desc);
+void dp_tx_comp_get_params_from_hal_desc_li(struct dp_soc *soc,
+					    void *tx_comp_hal_desc,
+					    struct dp_tx_desc_s **r_tx_desc);
 
 /**
  * dp_tx_process_htt_completion_li() - Tx HTT Completion Indication Handler
@@ -75,27 +74,24 @@ void dp_tx_process_htt_completion_li(struct dp_soc *soc,
  * @soc: Handle to DP Soc structure
  * @num_elem: pool descriptor number
  * @pool_id: pool to allocate
- * @spcl_tx_desc: if special desc
  *
  * Return: QDF_STATUS_SUCCESS - success, others - failure
  */
 QDF_STATUS dp_tx_desc_pool_init_li(struct dp_soc *soc,
 				   uint32_t num_elem,
-				   uint8_t pool_id,
-				   bool spcl_tx_desc);
+				   uint8_t pool_id);
 
 /**
  * dp_tx_desc_pool_deinit_li() - De-initialize Tx Descriptor pool(s)
  * @soc: Handle to DP Soc structure
  * @tx_desc_pool: Tx descriptor pool handler
  * @pool_id: pool to deinit
- * @spcl_tx_desc: if special desc
  *
  * Return: None.
  */
 void dp_tx_desc_pool_deinit_li(struct dp_soc *soc,
 			       struct dp_tx_desc_pool_s *tx_desc_pool,
-			       uint8_t pool_id, bool spcl_tx_desc);
+			       uint8_t pool_id);
 
 /**
  * dp_tx_compute_tx_delay_li() - Compute HW Tx completion delay
@@ -110,24 +106,4 @@ QDF_STATUS dp_tx_compute_tx_delay_li(struct dp_soc *soc,
 				     struct dp_vdev *vdev,
 				     struct hal_tx_completion_status *ts,
 				     uint32_t *delay_us);
-
-/**
- * dp_tx_desc_pool_alloc_li() - Allocate TX descriptor pool
- * @soc: Handle to DP Soc structure
- * @num_elem: Number of elements to allocate
- * @pool_id: TCL descriptor pool ID
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS dp_tx_desc_pool_alloc_li(struct dp_soc *soc, uint32_t num_elem,
-				    uint8_t pool_id);
-
-/**
- * dp_tx_desc_pool_free_li() - Free TX descriptor pool
- * @soc: Handle to DP Soc structure
- * @pool_id: TCL descriptor pool ID
- *
- * Return: none
- */
-void dp_tx_desc_pool_free_li(struct dp_soc *soc, uint8_t pool_id);
 #endif

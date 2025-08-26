@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -181,14 +181,12 @@ static void pkt_capture_tx_get_phy_info(
 			mcs = 8 + pktcapture_hdr->mcs;
 		else
 			mcs = pktcapture_hdr->mcs;
-
-		tx_status->ht_mcs = mcs;
 		break;
 	case 0x3:
 		tx_status->vht_flags = 1;
 		mcs = pktcapture_hdr->mcs;
 		tx_status->vht_flag_values3[0] =
-			mcs << 0x4 | (pktcapture_hdr->nss);
+			mcs << 0x4 | (pktcapture_hdr->nss + 1);
 		tx_status->vht_flag_values2 = pktcapture_hdr->bw;
 		break;
 	case 0x4:
@@ -209,9 +207,9 @@ static void pkt_capture_tx_get_phy_info(
 		break;
 	}
 
-	if (preamble_type != HAL_TX_PKT_TYPE_11B)
+	if (preamble == 0)
 		tx_status->ofdm_flag = 1;
-	else
+	else if (preamble == 1)
 		tx_status->cck_flag = 1;
 
 	tx_status->mcs = mcs;
@@ -690,7 +688,6 @@ static void pkt_capture_rx_get_phy_info(void *context, void *psoc,
 	struct dp_soc *soc = psoc;
 	hal_soc_handle_t hal_soc;
 	struct wlan_objmgr_vdev *vdev = context;
-	struct pkt_capture_vdev_priv *vdev_priv;
 
 	hal_soc = soc->hal_soc;
 	preamble_type = hal_rx_tlv_get_pkt_type(hal_soc, rx_tlv_hdr);
@@ -698,7 +695,6 @@ static void pkt_capture_rx_get_phy_info(void *context, void *psoc,
 	bw = hal_rx_tlv_bw_get(hal_soc, rx_tlv_hdr);
 	mcs = hal_rx_tlv_rate_mcs_get(hal_soc, rx_tlv_hdr);
 	sgi = hal_rx_tlv_sgi_get(hal_soc, rx_tlv_hdr);
-	vdev_priv = pkt_capture_vdev_get_priv(vdev);
 
 	switch (preamble_type) {
 	case HAL_RX_PKT_TYPE_11A:
@@ -717,7 +713,6 @@ static void pkt_capture_rx_get_phy_info(void *context, void *psoc,
 		rx_status->ht_mcs = mcs;
 		break;
 	case HAL_RX_PKT_TYPE_11AC:
-		sgi = vdev_priv->rx_vht_sgi;
 		rx_status->vht_flags = 1;
 		rx_status->vht_flag_values3[0] = mcs << 0x4 | nss;
 		bw = vdev->vdev_mlme.des_chan->ch_width;
@@ -730,35 +725,15 @@ static void pkt_capture_rx_get_phy_info(void *context, void *psoc,
 			IEEE80211_RADIOTAP_HE_DATA1_BW_RU_ALLOC_KNOWN;
 		rx_status->he_data2 |= IEEE80211_RADIOTAP_HE_DATA2_GI_KNOWN;
 		rx_status->he_data3 |= mcs << 0x8;
-
-		/* Map uCode SGI values to Radiotap header
-		 * as per Radiotap header expectation.
-		 *
-		 * uCode has:
-		 *	enum 0     0_8_us_sgi
-		 *	enum 1     0_4_us_sgi
-		 *	enum 2     1_6_us_sgi
-		 *	enum 3     3_2_us_sgi
-		 *
-		 * Radiotap header expectation:
-		 *	enum 0     0_8_us_sgi
-		 *	enum 1     1_6_us_sgi
-		 *	enum 2     3_2_us_sgi
-		 */
-		if (sgi == HE_GI_1_6)
-			sgi = HE_GI_RADIOTAP_1_6;
-		else if (sgi == HE_GI_3_2)
-			sgi = HE_GI_RADIOTAP_3_2;
-
 		rx_status->he_data5 |= (bw | (sgi << 0x4));
 		rx_status->he_data6 |= nss;
 	default:
 		break;
 	}
 
-	if (preamble_type != HAL_RX_PKT_TYPE_11B)
+	if (preamble == 0)
 		rx_status->ofdm_flag = 1;
-	else
+	else if (preamble == 1)
 		rx_status->cck_flag = 1;
 
 	rx_status->bw = bw;
@@ -957,6 +932,9 @@ pkt_capture_rx_data_cb(
 		/* need to update this to fill rx_status*/
 		htt_rx_mon_get_rx_status(pdev, rx_desc, &rx_status);
 		rx_status.chan_noise_floor = NORMALIZED_TO_NOISE_FLOOR;
+		rx_status.tx_status = status;
+		rx_status.tx_retry_cnt = tx_retry_cnt;
+		rx_status.add_rtap_ext = true;
 
 		/* clear IEEE80211_RADIOTAP_F_FCS flag*/
 		rx_status.rtap_flags &= ~(BIT(4));
@@ -1063,6 +1041,9 @@ pkt_capture_rx_data_cb(
 		/* need to update this to fill rx_status*/
 		pkt_capture_rx_mon_get_rx_status(vdev, psoc,
 						 rx_tlv_hdr, &rx_status);
+		rx_status.tx_status = status;
+		rx_status.tx_retry_cnt = tx_retry_cnt;
+		rx_status.add_rtap_ext = true;
 
 		/* clear IEEE80211_RADIOTAP_F_FCS flag*/
 		rx_status.rtap_flags &= ~(BIT(4));
@@ -1653,50 +1634,8 @@ void pkt_capture_offload_deliver_indication_handler(
 	struct pkt_capture_tx_hdr_elem_t *ptr_pktcapture_hdr;
 	struct pkt_capture_tx_hdr_elem_t pktcapture_hdr = {0};
 	uint32_t txcap_hdr_size = sizeof(struct pkt_capture_tx_hdr_elem_t);
-	struct wlan_objmgr_vdev *vdev;
-	struct pkt_capture_vdev_priv *vdev_priv;
-	struct pkt_capture_frame_filter *frame_filter;
-	QDF_STATUS ret = QDF_STATUS_SUCCESS;
 
 	offload_deliver_msg = (struct htt_tx_offload_deliver_ind_hdr_t *)msg;
-
-	vdev = pkt_capture_get_vdev();
-	ret = pkt_capture_vdev_get_ref(vdev);
-	if (QDF_IS_STATUS_ERROR(ret))
-		return;
-
-	vdev_priv = pkt_capture_vdev_get_priv(vdev);
-	if (!vdev_priv) {
-		pkt_capture_err("vdev priv is NULL");
-		pkt_capture_vdev_put_ref(vdev);
-		return;
-	}
-
-	frame_filter = &vdev_priv->frame_filter;
-
-	nbuf_len = offload_deliver_msg->tx_mpdu_bytes;
-	netbuf = qdf_nbuf_alloc(NULL,
-				roundup(nbuf_len + RESERVE_BYTES, 4),
-				RESERVE_BYTES, 4, false);
-	if (!netbuf) {
-		pkt_capture_vdev_put_ref(vdev);
-		return;
-	}
-
-	qdf_nbuf_put_tail(netbuf, nbuf_len);
-
-	qdf_mem_copy(qdf_nbuf_data(netbuf),
-		     buf + sizeof(struct htt_tx_offload_deliver_ind_hdr_t),
-		     nbuf_len);
-
-	if (!(frame_filter->data_tx_frame_filter &
-	    PKT_CAPTURE_DATA_FRAME_TYPE_ALL) &&
-	    !pkt_capture_is_frame_filter_set(
-	    netbuf, frame_filter, IEEE80211_FC1_DIR_TODS)) {
-		qdf_nbuf_free(netbuf);
-		pkt_capture_vdev_put_ref(vdev);
-		return;
-	}
 
 	pktcapture_hdr.timestamp = offload_deliver_msg->phy_timestamp_l32;
 	pktcapture_hdr.preamble = offload_deliver_msg->preamble;
@@ -1717,11 +1656,25 @@ void pkt_capture_offload_deliver_indication_handler(
 	status = offload_deliver_msg->status;
 	pkt_format = offload_deliver_msg->format;
 
+	nbuf_len = offload_deliver_msg->tx_mpdu_bytes;
+
+	netbuf = qdf_nbuf_alloc(NULL,
+				roundup(nbuf_len + RESERVE_BYTES, 4),
+				RESERVE_BYTES, 4, false);
+
+	if (!netbuf)
+		return;
+
+	qdf_nbuf_put_tail(netbuf, nbuf_len);
+
+	qdf_mem_copy(qdf_nbuf_data(netbuf),
+		     buf + sizeof(struct htt_tx_offload_deliver_ind_hdr_t),
+		     nbuf_len);
+
 	qdf_nbuf_push_head(netbuf, txcap_hdr_size);
 
 	ptr_pktcapture_hdr =
 	(struct pkt_capture_tx_hdr_elem_t *)qdf_nbuf_data(netbuf);
-
 	qdf_mem_copy(ptr_pktcapture_hdr, &pktcapture_hdr, txcap_hdr_size);
 
 	pkt_capture_datapkt_process(
@@ -1729,7 +1682,5 @@ void pkt_capture_offload_deliver_indication_handler(
 			netbuf, TXRX_PROCESS_TYPE_DATA_TX,
 			tid, status, pkt_format, bssid, soc,
 			offload_deliver_msg->tx_retry_cnt);
-
-	pkt_capture_vdev_put_ref(vdev);
 }
 #endif

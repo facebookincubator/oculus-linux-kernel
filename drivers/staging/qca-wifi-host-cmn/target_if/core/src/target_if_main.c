@@ -479,9 +479,6 @@ static void target_if_target_tx_ops_register(
 	target_tx_ops->tgt_is_tgt_type_qcn9160 =
 		target_is_tgt_type_qcn9160;
 
-	target_tx_ops->tgt_is_tgt_type_qcn6432 =
-		target_is_tgt_type_qcn6432;
-
 	target_tx_ops->tgt_is_tgt_type_qcn7605 =
 		target_is_tgt_type_qcn7605;
 
@@ -774,34 +771,10 @@ QDF_STATUS target_if_alloc_psoc_tgt_info(struct wlan_objmgr_psoc *psoc)
 	return QDF_STATUS_SUCCESS;
 }
 
-QDF_STATUS target_if_psoc_tgt_info_mem_free(
-		struct target_psoc_info *tgt_psoc_info)
-{
-	struct wlan_psoc_host_service_ext_param *ext_param;
-
-	if (!tgt_psoc_info) {
-		target_if_err("tgt_psoc_info is NULL");
-		return QDF_STATUS_E_INVAL;
-	}
-
-	/* reminder to move this into init_deinit_chainmask_table_free */
-	ext_param = target_psoc_get_service_ext_param(tgt_psoc_info);
-	if (ext_param)
-		init_deinit_chainmask_table_free(ext_param);
-
-	init_deinit_dbr_ring_cap_free(tgt_psoc_info);
-	init_deinit_spectral_scaling_params_free(tgt_psoc_info);
-	init_deinit_scan_radio_cap_free(tgt_psoc_info);
-	init_deinit_msdu_idx_qtype_map_free(tgt_psoc_info);
-	init_deinit_aux_dev_cap_free(tgt_psoc_info);
-	init_deinit_rcc_aoa_cap_ext2_free(tgt_psoc_info);
-
-	return QDF_STATUS_SUCCESS;
-}
-
 QDF_STATUS target_if_free_psoc_tgt_info(struct wlan_objmgr_psoc *psoc)
 {
 	struct target_psoc_info *tgt_psoc_info;
+	struct wlan_psoc_host_service_ext_param *ext_param;
 
 	if (!psoc) {
 		target_if_err("psoc is null");
@@ -810,7 +783,17 @@ QDF_STATUS target_if_free_psoc_tgt_info(struct wlan_objmgr_psoc *psoc)
 
 	tgt_psoc_info = wlan_psoc_get_tgt_if_handle(psoc);
 
-	target_if_psoc_tgt_info_mem_free(tgt_psoc_info);
+	ext_param = target_psoc_get_service_ext_param(tgt_psoc_info);
+	if (!ext_param) {
+		target_if_err("tgt_psoc_info is NULL");
+		return QDF_STATUS_E_INVAL;
+	}
+	init_deinit_chainmask_table_free(ext_param);
+	init_deinit_dbr_ring_cap_free(tgt_psoc_info);
+	init_deinit_spectral_scaling_params_free(tgt_psoc_info);
+	init_deinit_scan_radio_cap_free(tgt_psoc_info);
+	init_deinit_msdu_idx_qtype_map_free(tgt_psoc_info);
+
 	qdf_event_destroy(&tgt_psoc_info->info.event);
 
 	wlan_psoc_set_tgt_if_handle(psoc, NULL);
@@ -856,11 +839,6 @@ bool target_is_tgt_type_qcn6122(uint32_t target_type)
 bool target_is_tgt_type_qcn9160(uint32_t target_type)
 {
 	return target_type == TARGET_TYPE_QCN9160;
-}
-
-bool target_is_tgt_type_qcn6432(uint32_t target_type)
-{
-	return target_type == TARGET_TYPE_QCN6432;
 }
 
 bool target_is_tgt_type_qcn7605(uint32_t target_type)
@@ -1041,97 +1019,6 @@ target_pdev_scan_radio_is_dfs_enabled(struct wlan_objmgr_pdev *pdev,
 	return QDF_STATUS_E_INVAL;
 }
 
-QDF_STATUS
-target_is_scan_blanking_enabled(struct wlan_objmgr_pdev *pdev,
-				bool *blanking_en)
-{
-	struct wlan_objmgr_psoc *psoc;
-	struct wlan_psoc_host_scan_radio_caps *scan_radio_caps;
-	uint8_t cap_idx;
-	uint32_t num_scan_radio_caps, pdev_id;
-	int32_t phy_id;
-	struct target_psoc_info *tgt_psoc_info;
-	struct target_pdev_info *tgt_pdev;
-	uint32_t target_type = TARGET_TYPE_UNKNOWN;
-	struct wlan_lmac_if_target_tx_ops *target_type_tx_ops;
-	struct wlan_lmac_if_tx_ops *tx_ops;
-
-
-	if (!blanking_en) {
-		target_if_err("input argument is null");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-	*blanking_en = false;
-
-	if (!pdev) {
-		target_if_err("pdev is null");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	psoc = wlan_pdev_get_psoc(pdev);
-	if (!psoc) {
-		target_if_err("psoc is null");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	tgt_psoc_info = wlan_psoc_get_tgt_if_handle(psoc);
-	if (!tgt_psoc_info) {
-		target_if_err("target_psoc_info is null");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	tx_ops = wlan_psoc_get_lmac_if_txops(psoc);
-	if (!tx_ops) {
-		target_if_err("tx_ops is null");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	target_type_tx_ops = &tx_ops->target_tx_ops;
-	if (target_type_tx_ops->tgt_get_tgt_type)
-		target_type = target_type_tx_ops->tgt_get_tgt_type(psoc);
-
-	if (target_type == TARGET_TYPE_AR9888) {
-		*blanking_en = false;
-		return QDF_STATUS_SUCCESS;
-	}
-
-	num_scan_radio_caps =
-		target_psoc_get_num_scan_radio_caps(tgt_psoc_info);
-	if (!num_scan_radio_caps) {
-		target_if_err("scan radio not supported for psoc");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	scan_radio_caps = target_psoc_get_scan_radio_caps(tgt_psoc_info);
-	if (!scan_radio_caps) {
-		target_if_err("scan radio capabilities is null");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	tgt_pdev = (struct target_pdev_info *)wlan_pdev_get_tgt_if_handle(pdev);
-	if (!tgt_pdev) {
-		target_if_err("target_pdev_info is null");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	pdev_id = wlan_objmgr_pdev_get_pdev_id(pdev);
-	phy_id = target_pdev_get_phy_idx(tgt_pdev);
-	if (phy_id < 0) {
-		target_if_err("phy_id is invalid");
-		return QDF_STATUS_E_INVAL;
-	}
-
-	for (cap_idx = 0; cap_idx < num_scan_radio_caps; cap_idx++)
-		if (scan_radio_caps[cap_idx].phy_id == phy_id) {
-			*blanking_en = scan_radio_caps[cap_idx].blanking_en;
-			return QDF_STATUS_SUCCESS;
-		}
-
-	target_if_err("No scan radio cap found in pdev %d", pdev_id);
-
-	return QDF_STATUS_E_INVAL;
-}
-
 void target_if_set_reg_cc_ext_supp(struct target_psoc_info *tgt_hdl,
 				   struct wlan_objmgr_psoc *psoc)
 {
@@ -1240,10 +1127,9 @@ QDF_STATUS target_if_mlo_ready(struct wlan_objmgr_pdev **pdev,
 	return QDF_STATUS_SUCCESS;
 }
 
-QDF_STATUS
-target_if_mlo_teardown_req(struct wlan_objmgr_pdev *pdev,
-			   enum wmi_mlo_teardown_reason reason,
-			   bool reset, bool standby_active)
+static QDF_STATUS
+target_if_mlo_teardown_send(struct wlan_objmgr_pdev *pdev,
+			    enum wmi_mlo_teardown_reason reason)
 {
 	wmi_unified_t wmi_handle;
 	struct wmi_mlo_teardown_params params = {0};
@@ -1254,9 +1140,19 @@ target_if_mlo_teardown_req(struct wlan_objmgr_pdev *pdev,
 
 	params.pdev_id = wlan_objmgr_pdev_get_pdev_id(pdev);
 	params.reason = reason;
-	params.umac_reset = reset;
-	params.standby_active = standby_active;
 
 	return wmi_mlo_teardown_cmd_send(wmi_handle, &params);
+}
+
+QDF_STATUS target_if_mlo_teardown_req(struct wlan_objmgr_pdev **pdev,
+				      uint8_t num_pdevs,
+				      enum wmi_mlo_teardown_reason reason)
+{
+	uint8_t idx;
+
+	for (idx = 0; idx < num_pdevs; idx++)
+		target_if_mlo_teardown_send(pdev[idx], reason);
+
+	return QDF_STATUS_SUCCESS;
 }
 #endif /*WLAN_FEATURE_11BE_MLO && WLAN_MLO_MULTI_CHIP*/

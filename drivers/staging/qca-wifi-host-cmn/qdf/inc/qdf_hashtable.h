@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -26,13 +26,13 @@
 
 #include "i_qdf_hashtable.h"
 
-/*
- * qdf_ht - opaque hashtable data type
+/**
+ * struct qdf_ht - opaque hashtable data type
  */
 #define qdf_ht __qdf_ht
 
-/*
- * qdf_ht_entry - opaque hashtable entry for membership in a qdf_ht
+/**
+ * struct qdf_ht_entry - opaque hashtable entry for membership in a qdf_ht
  */
 #define qdf_ht_entry __qdf_ht_entry
 
@@ -80,7 +80,7 @@
 /**
  * qdf_ht_add() - add an entry to a qdf_ht instance
  * @table: a non-pointer qdf_ht instance to add an entry to
- * @entry: pointer to a qdf_ht_entry instance to add to @table
+ * @entry: pinter to a qdf_ht_entry instance to add to @table
  * @key: the key to use for entry insertion and lookup
  *
  * Return: none

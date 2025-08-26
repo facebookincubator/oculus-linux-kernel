@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "cam_irq_controller.h"
@@ -28,7 +28,7 @@ struct cam_irq_bh_api worker_bh_api = {
 		mutex_unlock(&(worker)->mutex_lock); \
 }
 
-#ifdef CONFIG_KTHREAD_BASED_WORKER
+#ifdef CONFIG_KTHREAD_WORKER
 #define WORK struct kthread_work
 static struct cam_kthread_info g_cam_kthread_info;
 #else
@@ -130,8 +130,9 @@ void cam_req_mgr_process_worker(WORK *w)
 }
 
 
-#ifdef CONFIG_KTHREAD_BASED_WORKER
-int cam_req_mgr_kthread_set_thread_prop(struct cam_kthread_data *kthread_data) {
+#ifdef CONFIG_KTHREAD_WORKER
+int cam_req_mgr_kthread_set_thread_prop(struct cam_kthread_data *kthread_data)
+{
 	struct sched_param thread_priority = {0};
 	struct cpumask cpu_affinity;
 	int i = 0, temp, rc = 0;
@@ -166,23 +167,24 @@ end:
 	return rc;
 }
 
-inline int cam_req_mgr_kthread_create(struct cam_req_mgr_core_worker *crm_worker, char *name) {
+inline int cam_req_mgr_kthread_create(struct cam_req_mgr_core_worker *crm_worker, char *name)
+{
 	char buf[128] = "crm_kthread-";
 
 	strlcat(buf, name, sizeof(buf));
 	CAM_DBG(CAM_CRM, "create kthread crm_kthread-%s", name);
 	crm_worker->job = kthread_create_worker(0, buf);
-	if (IS_ERR(crm_worker->job)) {
+	if (IS_ERR(crm_worker->job))
 		return PTR_ERR(crm_worker->job);
-	}
 
 	/* kthread attributes initialization */
-	strlcpy(crm_worker->worker_name, buf, sizeof(crm_worker->worker_name));
+	strscpy(crm_worker->worker_name, buf, sizeof(crm_worker->worker_name));
 	kthread_init_work(&crm_worker->work, cam_req_mgr_process_worker);
 	return 0;
 }
 
-inline void cam_req_mgr_kthread_destroy(struct cam_req_mgr_core_worker *worker) {
+inline void cam_req_mgr_kthread_destroy(struct cam_req_mgr_core_worker *worker)
+{
 	struct kthread_worker   *kthread_worker;
 	unsigned long flags = 0;
 	struct cam_kthread_data *kthread_data;
@@ -210,7 +212,8 @@ inline void cam_req_mgr_kthread_destroy(struct cam_req_mgr_core_worker *worker) 
 	}
 }
 
-#define CREATE_WORKER(crm_worker, name, num_tasks, flags) cam_req_mgr_kthread_create(crm_worker, name)
+#define CREATE_WORKER(crm_worker, name, num_tasks, flags) \
+	cam_req_mgr_kthread_create(crm_worker, name)
 #define DESTROY_WORKER cam_req_mgr_kthread_destroy
 #define QUEUE_WORK kthread_queue_work
 #define FLUSH_WORKER(worker) kthread_flush_worker(worker->job)
@@ -231,17 +234,17 @@ inline int cam_req_mgr_workq_create(struct cam_req_mgr_core_worker *crm_worker,
 	CAM_DBG(CAM_CRM, "create workque crm_workq-%s", name);
 	crm_worker->job = alloc_workqueue(buf,
 		wq_flags, max_active_tasks, NULL);
-	if (!crm_worker->job) {
+	if (!crm_worker->job)
 		return -ENOMEM;
-	}
 
 	/* Workq attributes initialization */
-	strlcpy(crm_worker->worker_name, buf, sizeof(crm_worker->worker_name));
+	strscpy(crm_worker->worker_name, buf, sizeof(crm_worker->worker_name));
 	INIT_WORK(&crm_worker->work, cam_req_mgr_process_worker);
 	return 0;
 }
 
-inline void cam_req_mgr_workq_destroy(struct cam_req_mgr_core_worker *worker) {
+inline void cam_req_mgr_workq_destroy(struct cam_req_mgr_core_worker *worker)
+{
 	struct workqueue_struct   *job;
 	unsigned long flags = 0;
 
@@ -253,7 +256,8 @@ inline void cam_req_mgr_workq_destroy(struct cam_req_mgr_core_worker *worker) {
 		WORKER_ACQUIRE_LOCK(worker, flags);
 	}
 }
-#define CREATE_WORKER(crm_worker, name, num_tasks, flags) cam_req_mgr_workq_create(crm_worker, name, num_tasks, flags)
+#define CREATE_WORKER(crm_worker, name, num_tasks, flags) \
+	cam_req_mgr_workq_create(crm_worker, name, num_tasks, flags)
 #define DESTROY_WORKER cam_req_mgr_workq_destroy
 #define QUEUE_WORK queue_work
 #define FLUSH_WORKER(worker) cancel_work_sync(&worker->work)
@@ -300,7 +304,7 @@ inline int cam_req_mgr_worker_create(char *name, int32_t num_tasks,
 	int32_t i, rc;
 	struct crm_worker_task  *task;
 	struct cam_req_mgr_core_worker *crm_worker = NULL;
-#ifdef CONFIG_KTHREAD_BASED_WORKER
+#ifdef CONFIG_KTHREAD_WORKER
 	struct cam_kthread_data *kthread_data;
 #endif
 
@@ -346,7 +350,7 @@ inline int cam_req_mgr_worker_create(char *name, int32_t num_tasks,
 			cam_req_mgr_worker_put_task(task);
 		}
 		*worker = crm_worker;
-#ifdef CONFIG_KTHREAD_BASED_WORKER
+#ifdef CONFIG_KTHREAD_WORKER
 		kthread_data = vzalloc(sizeof(struct cam_kthread_data));
 		kthread_data->kthread_worker = crm_worker->job;
 		if (!g_cam_kthread_info.is_list_initalized) {
@@ -366,7 +370,8 @@ inline int cam_req_mgr_worker_create(char *name, int32_t num_tasks,
 
 }
 
-inline void cam_req_mgr_worker_destroy(struct cam_req_mgr_core_worker **crm_worker) {
+inline void cam_req_mgr_worker_destroy(struct cam_req_mgr_core_worker **crm_worker)
+{
 	unsigned long flags = 0;
 	struct cam_req_mgr_core_worker *worker;
 	int i;
@@ -448,7 +453,8 @@ abort:
 	return rc;
 }
 
-inline void cam_req_mgr_worker_flush(struct cam_req_mgr_core_worker *worker) {
+inline void cam_req_mgr_worker_flush(struct cam_req_mgr_core_worker *worker)
+{
 	int i;
 	unsigned long flags = 0;
 	struct crm_worker_task  *task;
@@ -478,7 +484,8 @@ inline void cam_req_mgr_worker_flush(struct cam_req_mgr_core_worker *worker) {
 	atomic_set(&worker->flush, 0);
 }
 
-inline void cam_req_mgr_worker_pause(struct cam_req_mgr_core_worker *worker) {
+inline void cam_req_mgr_worker_pause(struct cam_req_mgr_core_worker *worker)
+{
 	unsigned long flags = 0;
 
 	WORKER_ACQUIRE_LOCK(worker, flags);
@@ -489,7 +496,8 @@ inline void cam_req_mgr_worker_pause(struct cam_req_mgr_core_worker *worker) {
 
 }
 
-inline void cam_req_mgr_worker_resume(struct cam_req_mgr_core_worker *worker) {
+inline void cam_req_mgr_worker_resume(struct cam_req_mgr_core_worker *worker)
+{
 	unsigned long flags = 0;
 
 	WORKER_ACQUIRE_LOCK(worker, flags);
@@ -500,8 +508,9 @@ inline void cam_req_mgr_worker_resume(struct cam_req_mgr_core_worker *worker) {
 
 }
 
-inline int cam_req_mgr_set_thread_prop(struct cam_req_mgr_thread_prop_control *thread_prop) {
-#ifdef CONFIG_KTHREAD_BASED_WORKER
+inline int cam_req_mgr_set_thread_prop(struct cam_req_mgr_thread_prop_control *thread_prop)
+{
+#ifdef CONFIG_KTHREAD_WORKER
 	struct cam_kthread_data *kthread_data;
 	int rc = 0;
 
@@ -514,7 +523,7 @@ inline int cam_req_mgr_set_thread_prop(struct cam_req_mgr_thread_prop_control *t
 			g_cam_kthread_info.priority, g_cam_kthread_info.nice);
 
 	list_for_each_entry(kthread_data, &g_cam_kthread_info.kthread_list, list) {
-		cam_req_mgr_kthread_set_thread_prop(kthread_data);
+		rc = cam_req_mgr_kthread_set_thread_prop(kthread_data);
 		if(rc)
 			return rc;
 	}

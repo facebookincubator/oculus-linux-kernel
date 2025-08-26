@@ -134,8 +134,6 @@ enum wlan_vdev_state {
  * @WLAN_VDEV_SM_EV_MLO_SYNC_COMPLETE:   MLO mgr triggers this event for the mlo
  *                                       sap in vdev wait up state, if all the
  *                                       links finish vdev start rsp.
- * @WLAN_VDEV_SM_EV_SUSPEND_CSA_RESTART: Invoke peer deletion for only legacy
- *					 peers
  */
 enum wlan_vdev_sm_evt {
 	WLAN_VDEV_SM_EV_START = 0,
@@ -170,7 +168,6 @@ enum wlan_vdev_sm_evt {
 	WLAN_VDEV_SM_EV_STOP_REQ = 29,
 	WLAN_VDEV_SM_EV_CHAN_SWITCH_DISABLED = 30,
 	WLAN_VDEV_SM_EV_MLO_SYNC_COMPLETE = 31,
-	WLAN_VDEV_SM_EV_SUSPEND_CSA_RESTART = 32,
 };
 
 /**
@@ -227,22 +224,5 @@ QDF_STATUS wlan_mlme_psoc_disable(struct wlan_objmgr_psoc *psoc);
 QDF_STATUS wlan_vdev_mlme_send_set_mac_addr(struct qdf_mac_addr mac_addr,
 					    struct qdf_mac_addr mld_addr,
 					    struct wlan_objmgr_vdev *vdev);
-
-/**
- * wlan_vdev_mlme_notify_set_mac_addr_response() - Notify FW set mac address
- * response.
- * @vdev: VDEV object manager.
- * @resp_status: FW response status.
- *
- * Return: void
- */
-void wlan_vdev_mlme_notify_set_mac_addr_response(struct wlan_objmgr_vdev *vdev,
-						 uint8_t resp_status);
-#else
-static inline
-void wlan_vdev_mlme_notify_set_mac_addr_response(struct wlan_objmgr_vdev *vdev,
-						 uint8_t resp_status)
-{
-}
 #endif
 #endif

@@ -523,14 +523,13 @@ QDF_STATUS mlme_cm_osif_disconnect_complete(struct wlan_objmgr_vdev *vdev,
 	return ret;
 }
 
-QDF_STATUS mlme_cm_osif_disconnect_start_ind(struct wlan_objmgr_vdev *vdev,
-					     enum wlan_cm_source source)
+QDF_STATUS mlme_cm_osif_disconnect_start_ind(struct wlan_objmgr_vdev *vdev)
 {
 	QDF_STATUS ret = QDF_STATUS_SUCCESS;
 
 	if (glbl_cm_ops &&
 	    glbl_cm_ops->mlme_cm_disconnect_start_cb)
-		ret = glbl_cm_ops->mlme_cm_disconnect_start_cb(vdev, source);
+		ret = glbl_cm_ops->mlme_cm_disconnect_start_cb(vdev);
 
 	return ret;
 }
@@ -632,16 +631,6 @@ mlme_cm_osif_roam_complete(struct wlan_objmgr_vdev *vdev)
 		ret = glbl_cm_ops->mlme_cm_roam_cmpl_cb(vdev);
 
 	return ret;
-}
-
-void
-mlme_cm_osif_roam_rt_stats(struct roam_stats_event *roam_stats,
-			   uint8_t idx)
-{
-	if (glbl_cm_ops &&
-	    glbl_cm_ops->mlme_cm_roam_rt_stats_cb)
-		glbl_cm_ops->mlme_cm_roam_rt_stats_cb(roam_stats,
-						      idx);
 }
 
 QDF_STATUS
@@ -931,11 +920,3 @@ bool mlme_mlo_is_reconfig_reassoc_enable(struct wlan_objmgr_psoc *psoc)
 
 	return mlo_config->reconfig_reassoc_en;
 }
-
-#ifdef WLAN_BOOST_CPU_FREQ_IN_ROAM
-void mlme_cm_osif_perfd_reset_cpufreq(void)
-{
-	if (glbl_cm_ops && glbl_cm_ops->mlme_cm_perfd_reset_cpufreq_ctrl_cb)
-		glbl_cm_ops->mlme_cm_perfd_reset_cpufreq_ctrl_cb();
-}
-#endif

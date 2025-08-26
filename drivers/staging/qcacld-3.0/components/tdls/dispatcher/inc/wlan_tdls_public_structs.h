@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -45,28 +45,13 @@
 #define WLAN_MAX_SUPP_OPER_CLASSES                   32
 #define WLAN_MAC_MAX_SUPP_RATES                      32
 #define WLAN_CHANNEL_14                              14
-
-/* Enable TDLS off-channel switch */
 #define ENABLE_CHANSWITCH                            1
-
-/*
- * Passive(peer requested) responder mode off-channel switch.
- * If peer initiates off channel request, that will be honored in
- * this mode
- */
 #define DISABLE_CHANSWITCH                           2
-
-/*
- * Disable TDLS off-channel operation completely.
- * Peer initiated requests will also be discarded.
- */
-#define DISABLE_ACTIVE_CHANSWITCH                    3
-
 #define WLAN_TDLS_PREFERRED_OFF_CHANNEL_NUM_MIN      1
 #define WLAN_TDLS_PREFERRED_OFF_CHANNEL_NUM_MAX      165
 #define WLAN_TDLS_PREFERRED_OFF_CHANNEL_NUM_DEF      36
 #define WLAN_TDLS_PREFERRED_OFF_CHANNEL_FRQ_DEF     5180
-#define WLAN_TDLS_MAX_CONCURRENT_VDEV_SUPPORTED      3
+
 
 #define AC_PRIORITY_NUM                 4
 
@@ -240,8 +225,6 @@ enum tdls_feature_mode {
  * @TDLS_CMD_SET_OFFCHANMODE: tdls offchannel mode
  * @TDLS_CMD_SET_SECOFFCHANOFFSET: tdls secondary offchannel offset
  * @TDLS_DELETE_ALL_PEERS_INDICATION: tdls delete all peers indication
- * @TDLS_CMD_START_BSS: SAP start indication to tdls module
- * @TDLS_CMD_SET_LINK_UNFORCE: tdls to unforce link for MLO case
  */
 enum tdls_command_type {
 	TDLS_CMD_TX_ACTION = 1,
@@ -267,9 +250,7 @@ enum tdls_command_type {
 	TDLS_CMD_SET_OFFCHANNEL,
 	TDLS_CMD_SET_OFFCHANMODE,
 	TDLS_CMD_SET_SECOFFCHANOFFSET,
-	TDLS_DELETE_ALL_PEERS_INDICATION,
-	TDLS_CMD_START_BSS,
-	TDLS_CMD_SET_LINK_UNFORCE
+	TDLS_DELETE_ALL_PEERS_INDICATION
 };
 
 /**
@@ -507,7 +488,6 @@ enum tdls_feature_bit {
  * @tdls_scan_enable: tdls scan enable
  * @tdls_sleep_sta_enable: tdls sleep sta enable
  * @tdls_support_enable: tdls support enable
- * @tdls_link_id: mlo link id
  */
 struct tdls_user_config {
 	uint32_t tdls_tx_states_period;
@@ -541,7 +521,6 @@ struct tdls_user_config {
 	bool tdls_scan_enable;
 	bool tdls_sleep_sta_enable;
 	bool tdls_support_enable;
-	int tdls_link_id;
 };
 
 /**
@@ -599,7 +578,7 @@ struct tdls_rx_mgmt_frame {
 	uint32_t vdev_id;
 	uint32_t frm_type;
 	uint32_t rx_rssi;
-	QDF_FLEX_ARRAY(uint8_t, buf);
+	uint8_t buf[1];
 };
 
 /**
@@ -847,28 +826,6 @@ struct hecap_6ghz {
 };
 #endif
 
-#ifdef WLAN_FEATURE_11BE
-/**
- * struct ehtcapfixed - EHT capabilities fixed data
- * @mac_cap_info: MAC capabilities
- * @phy_cap_info: PHY capabilities
- */
-struct ehtcapfixed {
-	uint8_t mac_cap_info[2];
-	uint8_t phy_cap_info[9];
-};
-
-/**
- * struct ehtcap - EHT capabilities
- * @eht_cap_fixed: fixed parts, see &ehtcapfixed
- * @optional: optional parts
- */
-struct ehtcap {
-	struct ehtcapfixed eht_cap_fixed;
-	uint8_t optional[];
-} qdf_packed;
-#endif
-
 struct tdls_update_peer_params {
 	uint8_t peer_addr[QDF_MAC_ADDR_SIZE];
 	uint32_t peer_type;
@@ -885,11 +842,6 @@ struct tdls_update_peer_params {
 	uint8_t he_cap_len;
 	struct hecap he_cap;
 	struct hecap_6ghz he_6ghz_cap;
-#endif
-#ifdef WLAN_FEATURE_11BE
-	uint8_t ehtcap_present;
-	uint8_t eht_cap_len;
-	struct ehtcap eht_cap;
 #endif
 	uint8_t uapsd_queues;
 	uint8_t max_sp;
@@ -1056,8 +1008,6 @@ struct tdls_peer_update_state {
  * @oper_class: Operating class for target channel
  * @is_responder: Responder or initiator
  * @tdls_off_chan_freq: Target Off Channel frequency
- * @num_off_channels: Number of channels allowed for off channel operation
- * @allowed_off_channels: Channel list allowed for off channels
  */
 struct tdls_channel_switch_params {
 	uint32_t    vdev_id;
@@ -1068,8 +1018,6 @@ struct tdls_channel_switch_params {
 	uint8_t     oper_class;
 	uint8_t     is_responder;
 	uint32_t    tdls_off_chan_freq;
-	uint16_t    num_off_channels;
-	struct tdls_ch_params allowed_off_channels[WLAN_MAC_WMI_MAX_SUPP_CHANNELS];
 };
 
 /**
@@ -1180,24 +1128,20 @@ struct tdls_get_all_peers {
  * @vdev: vdev object
  * @chk_frame: This struct used to validate mgmt frame
  * @session_id: session id
- * @link_id: link id
  * @vdev_id: vdev id
  * @cmd_buf: cmd buffer
  * @len: length of the frame
  * @use_default_ac: access category
- * @link_active: whether link active command send successfully
  * @tdls_mgmt: tdls management
  */
 struct tdls_action_frame_request {
 	struct wlan_objmgr_vdev *vdev;
 	struct tdls_validate_action_req chk_frame;
 	uint8_t session_id;
-	uint8_t link_id;
 	uint8_t vdev_id;
 	const uint8_t *cmd_buf;
 	uint8_t len;
 	bool use_default_ac;
-	bool link_active;
 	/* Variable length, do not add anything after this */
 	struct tdls_send_mgmt tdls_mgmt;
 };
@@ -1407,7 +1351,7 @@ struct tdls_send_mgmt_request {
 	struct qdf_mac_addr peer_mac;
 	enum wifi_traffic_ac ac;
 	/* Variable length. Dont add any field after this. */
-	QDF_FLEX_ARRAY(uint8_t, add_ie);
+	uint8_t add_ie[1];
 };
 
 /**
@@ -1430,9 +1374,6 @@ struct tdls_send_mgmt_request {
  * @he_cap_len: he capability length
  * @he_cap: he capability
  * @he_6ghz_cap: HE 6 GHz capability
- * @ehtcap_present: eht capability present
- * @eht_cap_len: eht capability length
- * @eht_cap: eht capability
  * @uapsd_queues: uapsd queue as sSirMacQosInfoStation
  * @max_sp: maximum service period
  * @is_pmf: is PMF active
@@ -1457,11 +1398,6 @@ struct tdls_add_sta_req {
 	uint8_t he_cap_len;
 	struct hecap he_cap;
 	struct hecap_6ghz he_6ghz_cap;
-#endif
-#ifdef WLAN_FEATURE_11BE
-	uint8_t ehtcap_present;
-	uint8_t eht_cap_len;
-	struct ehtcap eht_cap;
 #endif
 	uint8_t uapsd_queues;
 	uint8_t max_sp;

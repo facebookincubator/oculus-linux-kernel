@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -57,8 +57,8 @@
 /* Special station id for transmitting broadcast frames. */
 #define STA_ENTRY_BCAST             3
 #define STA_ENTRY_PEER              STA_ENTRY_OTHER
-#define STA_ENTRY_TDLS_PEER         4
 #ifdef FEATURE_WLAN_TDLS
+#define STA_ENTRY_TDLS_PEER         4
 #define IS_TDLS_PEER(type) ((type) == STA_ENTRY_TDLS_PEER)
 #else /* !FEATURE_WLAN_TDLS */
 #define IS_TDLS_PEER(type) false
@@ -134,34 +134,6 @@ struct med_sync_delay {
 	uint16_t med_sync_ofdm_ed_thresh:4;
 	uint16_t med_sync_max_txop_num:4;
 };
-
-#ifdef WLAN_FEATURE_11BE_MLO
-/**
- * struct ml_partner_link_info: partner link info
- * @link_id: partner link ID
- * @link_addr: partner link address
- * @ch_freq:Channel in Mhz
- * @ch_phymode: Channel phymode
- */
-struct ml_partner_link_info {
-	uint8_t vdev_id;
-	uint8_t link_id;
-	struct qdf_mac_addr link_addr;
-	struct qdf_mac_addr self_mac_addr;
-	struct wlan_channel channel_info;
-};
-
-struct peer_ml_info {
-	uint32_t vdev_id;
-	uint32_t link_id;
-	struct qdf_mac_addr link_addr;
-	struct wlan_channel channel_info;
-	struct qdf_mac_addr self_mac_addr;
-	uint8_t num_links;
-	struct ml_partner_link_info partner_info[MLD_MAX_LINKS - 1];
-	uint8_t rec_max_simultaneous_links;
-};
-#endif
 
 /**
  * struct tAddStaParams - add sta related parameters
@@ -314,8 +286,6 @@ typedef struct {
 	bool msd_caps_present;
 	uint8_t link_id;
 	uint16_t emlsr_trans_timeout;
-	struct ml_partner_link_info ml_partner_info[MLD_MAX_LINKS - 1];
-	struct peer_ml_info ml_info;
 #endif
 } tAddStaParams, *tpAddStaParams;
 
@@ -341,14 +311,16 @@ typedef struct {
 
 /**
  * struct tSetStaKeyParams - set key params
+ * @staIdx: station id
  * @encType: encryption type
  * @defWEPIdx: Default WEP key, valid only for static WEP, must between 0 and 3
+ * @key: valid only for non-static WEP encyrptions
  * @singleTidRc: 1=Single TID based Replay Count, 0=Per TID based RC
- * @vdev_id: vdev_id
+ * @smesessionId: sme session id
  * @peerMacAddr: peer mac address
  * @status: status
+ * @sendRsp: send response
  * @macaddr: MAC address of the peer
- * @key_len: key len
  *
  * This is used by PE to configure the key information on a given station.
  * When the secType is WEP40 or WEP104, the defWEPIdx is used to locate
@@ -358,14 +330,34 @@ typedef struct {
 typedef struct {
 	tAniEdType encType;
 	uint8_t defWEPIdx;
+	tSirKeys key[SIR_MAC_MAX_NUM_OF_DEFAULT_KEYS];
 	uint8_t singleTidRc;
 	uint8_t vdev_id;
 	struct qdf_mac_addr peer_macaddr;
 	QDF_STATUS status;
 	uint8_t sendRsp;
 	struct qdf_mac_addr macaddr;
-	uint16_t key_len;
 } tSetStaKeyParams, *tpSetStaKeyParams;
+
+/**
+ * struct sLimMlmSetKeysReq - set key request parameters
+ * @peerMacAddr: peer mac address
+ * @sessionId: PE session id
+ * @vdev_id: vdev id
+ * @aid: association id
+ * @edType: Encryption/Decryption type
+ * @numKeys: number of keys
+ * @key: key data
+ */
+typedef struct sLimMlmSetKeysReq {
+	struct qdf_mac_addr peer_macaddr;
+	uint8_t sessionId;      /* Added For BT-AMP Support */
+	uint8_t vdev_id;   /* Added for drivers based on wmi interface */
+	uint16_t aid;
+	tAniEdType edType;      /* Encryption/Decryption type */
+	uint8_t numKeys;
+	tSirKeys key[SIR_MAC_MAX_NUM_OF_DEFAULT_KEYS];
+} tLimMlmSetKeysReq, *tpLimMlmSetKeysReq;
 
 /**
  * struct bss_params - parameters required for add bss params
@@ -538,16 +530,22 @@ typedef struct sSendProbeRespParams {
 
 /**
  * struct tSetBssKeyParams - BSS key parameters
+ * @encType: encryption Type
+ * @numKeys: number of keys
+ * @key: key data
+ * @singleTidRc: 1=Single TID based Replay Count, 0=Per TID based RC
  * @vdev_id: vdev id id
  * @status: return status of command
  * @macaddr: MAC address of the peer
- * @key_len: key len
  */
 typedef struct {
+	tAniEdType encType;
+	uint8_t numKeys;
+	tSirKeys key[SIR_MAC_MAX_NUM_OF_DEFAULT_KEYS];
+	uint8_t singleTidRc;
 	uint8_t vdev_id;
 	QDF_STATUS status;
 	struct qdf_mac_addr macaddr;
-	uint16_t key_len;
 } tSetBssKeyParams, *tpSetBssKeyParams;
 
 /**
@@ -700,6 +698,16 @@ typedef struct sMaxTxPowerPerBandParams {
 } tMaxTxPowerPerBandParams, *tpMaxTxPowerPerBandParams;
 
 /**
+ * struct vdev_create_req_param - vdev create request params
+ * @vdev_id: vdev_id
+ * @status: response status code
+ */
+struct vdev_create_req_param {
+	uint32_t vdev_id;
+	QDF_STATUS status;
+};
+
+/**
  * struct set_ie_param - set IE params structure
  * @pdev_id: pdev id
  * @ie_type: IE type
@@ -735,12 +743,14 @@ struct set_dtim_params {
  * @session_id: SME Session ID
  * @status: response status code
  * @vdev: Object to vdev
+ * @sme_ctx: pointer to context provided by SME
  */
 struct del_vdev_params {
 	tSirMacAddr self_mac_addr;
 	uint8_t vdev_id;
 	uint32_t status;
 	struct wlan_objmgr_vdev *vdev;
+	void *sme_ctx;
 };
 
 /**

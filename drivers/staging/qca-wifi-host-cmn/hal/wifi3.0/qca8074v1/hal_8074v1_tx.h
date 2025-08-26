@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2016-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -27,7 +26,7 @@
 
 /**
  * hal_tx_desc_set_dscp_tid_table_id_8074() - Sets DSCP to TID conversion
- *                                            table ID
+ *						table ID
  * @desc: Handle to Tx Descriptor
  * @id: DSCP to tid conversion table to be used for this frame
  *
@@ -92,11 +91,11 @@ static void hal_tx_set_dscp_tid_map_8074(struct hal_soc *soc, uint8_t *map,
 
 /**
  * hal_tx_update_dscp_tid_8074() - Update the dscp tid map table as
- *                                 updated by user
+					updated by user
  * @soc: HAL SoC context
- * @tid: TID
- * @id: MAP ID
- * @dscp: DSCP
+ * @map: DSCP-TID mapping table
+ * @id : MAP ID
+ * @dscp: DSCP_TID map index
  *
  * Return: void
  */
@@ -132,7 +131,7 @@ void hal_tx_update_dscp_tid_8074(struct hal_soc *soc, uint8_t tid,
 }
 
 /**
- * hal_tx_desc_set_lmac_id_8074() - Set the lmac_id value
+ * hal_tx_desc_set_lmac_id - Set the lmac_id value
  * @desc: Handle to Tx Descriptor
  * @lmac_id: mac Id to ast matching
  *		     b00 – mac 0
@@ -149,7 +148,7 @@ static void hal_tx_desc_set_lmac_id_8074(void *desc, uint8_t lmac_id)
 /**
  * hal_tx_init_cmd_credit_ring_8074v1() - Initialize command/credit SRNG
  * @hal_soc_hdl: Handle to HAL SoC structure
- * @hal_ring_hdl: Handle to HAL SRNG structure
+ * @hal_srng: Handle to HAL SRNG structure
  *
  * Return: none
  */

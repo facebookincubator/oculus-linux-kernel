@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021,2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -51,7 +51,6 @@
 #else
 #define CFG_WLAN_CM_UTF_PARAM
 #endif
-#include <cfg_cp_stats.h>
 #include <cfg_mgmt_txrx.h>
 #include <cfg_ipa.h>
 
@@ -68,8 +67,7 @@
 		CFG_WLAN_CM_UTF_PARAM \
 		CFG_CMN_MLME_ALL \
 		CFG_MGMT_TXRX_ALL \
-		CFG_IPA \
-		CFG_CP_STATS_ALL
+		CFG_IPA
 
 #endif /* __CFG_CONVERGED_H */
 

@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -72,7 +71,7 @@ static void pmo_core_fill_mc_list(struct pmo_vdev_priv_obj **vdev_ctx,
 			     ip->mc_addr[i].bytes, QDF_MAC_ADDR_SIZE);
 		qdf_spin_unlock_bh(&temp_ctx->pmo_vdev_lock);
 		pmo_debug("Index = %d, mac["QDF_MAC_ADDR_FMT"]", j,
-			  QDF_MAC_ADDR_REF(op_list->mc_addr[j].bytes));
+			  QDF_MAC_ADDR_REF(op_list->mc_addr[i].bytes));
 		j++;
 	}
 }
@@ -557,6 +556,11 @@ QDF_STATUS pmo_core_disable_mc_addr_filtering_in_fwr(
 	status = pmo_core_mc_addr_flitering_sanity(vdev);
 	if (status != QDF_STATUS_SUCCESS)
 		goto put_ref;
+
+	if (wlan_vdev_is_up(vdev) != QDF_STATUS_SUCCESS) {
+		status = QDF_STATUS_E_INVAL;
+		goto put_ref;
+	}
 
 	pmo_debug("disable mclist trigger: %d", trigger);
 

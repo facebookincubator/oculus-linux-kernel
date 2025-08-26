@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -41,7 +41,6 @@
 #ifndef ENABLE_HOST_TO_TARGET_CONVERSION
 #include <wmi_unified.h>
 #endif
-#include <wlan_objmgr_vdev_obj.h>
 
 #define MAC_MAX_KEY_LENGTH 32
 #define MAC_PN_LENGTH 8
@@ -124,7 +123,6 @@
 #define CTL_5G_SIZE 1536
 #define CTL_2G_SIZE 684
 #define MAX_CTL_SIZE (CTL_5G_SIZE > CTL_2G_SIZE ? CTL_5G_SIZE : CTL_2G_SIZE)
-#define MAX_PWTAB_SIZE 3392
 #define IEEE80211_MICBUF_SIZE   (8+8)
 #define IEEE80211_TID_SIZE	17
 #define WME_NUM_AC	4
@@ -517,7 +515,6 @@
 
 #define WMI_MAX_AOA_PHASE_DELTA 31
 #define WMI_MAX_CHAINS_PHASE 2
-#define EGID_INFO_SIZE 4
 
 #include "qdf_atomic.h"
 
@@ -558,13 +555,6 @@
 #define TARGET_GET_INIT_STATUS_MODULE_ID(status) (((status) >> 16) & 0xffff)
 
 #define MAX_ASSOC_IE_LENGTH 1024
-
-/*
- * The WLAN_MAX_AC macro cannot be changed without breaking
- * WMI compatibility.
- * The maximum value of access category
- */
-#define WMI_HOST_WLAN_MAX_AC  4
 typedef uint32_t TARGET_INIT_STATUS;
 
 /*
@@ -854,7 +844,6 @@ struct peer_set_params {
  * @peer_type: peer type
  * @vdev_id: vdev id
  * @mlo_enabled: Indicates MLO is enabled
- * @mlo_bridge_peer: Indicates bridge peer
  */
 struct peer_create_params {
 	const uint8_t *peer_addr;
@@ -862,7 +851,6 @@ struct peer_create_params {
 	uint32_t vdev_id;
 #ifdef WLAN_FEATURE_11BE_MLO
 	bool mlo_enabled;
-	bool mlo_bridge_peer;
 #endif
 };
 
@@ -1108,31 +1096,6 @@ typedef struct {
 } wmi_host_mac_addr;
 
 #ifdef WLAN_FEATURE_11BE
-#ifdef WMI_AP_SUPPORT
-/**
- * struct wlan_host_preferred_links - Preferred link info.
- * @num_pref_links: non-zero values indicate that preferred link order
- * is present.
- * @preffered_link_order: Preferred links in order.
- * @timeout: timeout values for all the access categories.
- * @tlt_characterization_params: Bitmask to select Tx-Link Tuple from ordered
- *  list.
- *  Bit 0-15 : Each bit maps to the corresponding Link ID
- *  Bit 16-31: Reserved
- * @link_control_flags: Link control flags.
- *  Bit 0: TLT enable/disable
- *  Bit 1: Preferred Link enable/disable
- *  Bit 2-31: Reserved
- */
-struct wlan_host_preferred_links {
-	uint8_t num_pref_links;
-	uint8_t  preffered_link_order[MAX_PREFERRED_LINKS];
-	uint32_t timeout[WMI_HOST_WLAN_MAX_AC];
-	uint32_t tlt_characterization_params;
-	uint32_t link_control_flags;
-};
-#endif
-
 /**
  * struct wlan_host_t2lm_of_tids - TID-to-link mapping info
  * @direction:  0 - Downlink, 1 - uplink 2 - Both uplink and downlink
@@ -1153,20 +1116,12 @@ struct wlan_host_t2lm_of_tids {
  * @peer_macaddr: link peer macaddr
  * @num_dir: number of directions for which T2LM info is available
  * @t2lm_info: TID-to-link mapping info for the given directions
- * @mapping_switch_time: Mapping switch time of this T2LM IE
- * @expected_duration: Expected duration of this T2LM IE
- * @preferred_links: Preferred link info.
  */
 struct wmi_host_tid_to_link_map_params {
 	uint8_t pdev_id;
 	uint8_t peer_macaddr[QDF_MAC_ADDR_SIZE];
 	uint8_t num_dir;
 	struct wlan_host_t2lm_of_tids t2lm_info[WLAN_T2LM_MAX_DIRECTION];
-	uint16_t mapping_switch_time;
-	uint32_t expected_duration;
-#ifdef WMI_AP_SUPPORT
-	struct wlan_host_preferred_links preferred_links;
-#endif
 };
 
 /**
@@ -1209,18 +1164,6 @@ struct wmi_host_link_state_params {
 	uint8_t mld_mac[QDF_MAC_ADDR_SIZE];
 };
 
-/**
- * struct wmi_host_link_bss_params - link bss params
- * @link_id: link id
- * @ap_mld_mac: ap mld mac address
- * @chan: channel
- */
-struct wmi_host_link_bss_params {
-	uint8_t link_id;
-	uint8_t ap_mld_mac[QDF_MAC_ADDR_SIZE];
-	struct wlan_channel chan;
-};
-
 #endif /* WLAN_FEATURE_11BE */
 
 #ifdef WLAN_FEATURE_11BE_MLO
@@ -1236,12 +1179,6 @@ struct wmi_host_link_bss_params {
  * @emlsr_support: indicate if eMLSR supported
  * @emlmr_support: indicate if eMLMR supported
  * @msd_cap_support: indicate if MSD supported
- * @nstr_bitmap_present: indicate if NSTR bitmap is present
- * @nstr_bitmap_size: Indicates size of NSTR bitmap,
- *                    as per the 802.11be specification
- * @mlo_bridge_peer: indicate if it is bridge peer
- * @link_switch_in_progress: Flag to indicate FW MLO peer assoc params are sent
- *                           for the peer due to link switch
  * @unused: spare bits
  * @mld_mac: MLD mac address
  * @logical_link_index: Unique index for links of the mlo. Starts with Zero
@@ -1254,14 +1191,6 @@ struct wmi_host_link_bss_params {
  * @medium_sync_duration: medium sync duration in us
  * @medium_sync_ofdm_ed_thresh: medium sync ofdm threshold in us
  * @medium_sync_max_txop_num: Max number of TXOPs
- * @max_num_simultaneous_links: Max number of simultaneous links as per
- *                              MLD Capability for ML peer
- * @nstr_indication_bitmap: NSTR indication bitmap
- * @vdev_id: ID of the vdev object
- * @bssid: AP link address
- * @chan: Wlan channel information
- * @mac_addr: Self mac addresses
- * @rec_max_simultaneous_links: Max recommended simultaneous links
  */
 struct peer_assoc_mlo_params {
 	uint32_t mlo_enabled:1,
@@ -1273,11 +1202,7 @@ struct peer_assoc_mlo_params {
 		 emlsr_support:1,
 		 emlmr_support:1,
 		 msd_cap_support:1,
-		 nstr_bitmap_present:1,
-		 nstr_bitmap_size:1,
-		 mlo_bridge_peer:1,
-		 link_switch_in_progress:1,
-		 unused:19;
+		 unused:23;
 	uint8_t mld_mac[QDF_MAC_ADDR_SIZE];
 	uint32_t logical_link_index;
 	uint32_t ml_peer_id;
@@ -1289,56 +1214,16 @@ struct peer_assoc_mlo_params {
 	uint16_t medium_sync_duration;
 	uint16_t medium_sync_ofdm_ed_thresh;
 	uint16_t medium_sync_max_txop_num;
-	uint16_t max_num_simultaneous_links;
-	uint32_t nstr_indication_bitmap;
-	uint32_t vdev_id;
-	struct qdf_mac_addr bssid;
-	struct wlan_channel chan;
-	struct qdf_mac_addr mac_addr;
-	uint8_t rec_max_simultaneous_links;
 };
 
 /**
  * struct ml_partner_info - partner link info
  * @vdev_id: vdev id
  * @hw_mld_link_id: unique hw link id across SoCs
- * @mlo_enabled: indicate is MLO enabled
- * @mlo_assoc_link: indicate is the link used to initialize the association
- *                  of mlo connection
- * @mlo_primary_umac: indicate is the link on primary UMAC, WIN only flag
- * @mlo_logical_link_index_valid: indicate if the logial link index in is valid
- * @mlo_peer_id_valid: indicate if the mlo peer id is valid
- * @mlo_force_link_inactive: force the peer inactive
- * @emlsr_support: indicate if eMLSR supported
- * @emlmr_support: indicate if eMLMR supported
- * @msd_cap_support: indicate if MSD supported
- * @mlo_bridge_peer: indicate if peer is bridge peer
- * @unused: spare bits
- * @logical_link_index: Unique index for links of the mlo. Starts with Zero
- * @link_id: AP Link Id
- * @bssid: AP link address
- * @chan: Wlan channel information
- * @mac_addr: Self mac addresses
  */
 struct ml_partner_info {
 	uint32_t vdev_id;
 	uint32_t hw_mld_link_id;
-	uint32_t mlo_enabled:1,
-		 mlo_assoc_link:1,
-		 mlo_primary_umac:1,
-		 mlo_logical_link_index_valid:1,
-		 mlo_peer_id_valid:1,
-		 mlo_force_link_inactive:1,
-		 emlsr_support:1,
-		 emlmr_support:1,
-		 msd_cap_support:1,
-		 mlo_bridge_peer:1,
-		 unused:22;
-	uint32_t logical_link_index;
-	uint32_t link_id;
-	struct qdf_mac_addr bssid;
-	struct wlan_channel chan;
-	struct qdf_mac_addr mac_addr;
 };
 
 /**
@@ -1424,9 +1309,6 @@ struct peer_assoc_ml_partner_links {
  * @akm: AKM info
  * @mlo_params: MLO assoc params
  * @ml_links: MLO partner links
- * @qcn_node_flag: if node is QCN node
- * @mesh_node_flag: if node is 4 addr node
- * @is_assoc_vdev: true if assoc vdev
  * @peer_dms_capable: is peer DMS capable
  * @reserved: spare bits
  * @t2lm_params: TID-to-link mapping params
@@ -1513,9 +1395,6 @@ struct peer_assoc_params {
 #ifdef WLAN_FEATURE_11BE_MLO
 	struct peer_assoc_mlo_params mlo_params;
 	struct peer_assoc_ml_partner_links ml_links;
-	bool qcn_node_flag;
-	bool mesh_node_flag;
-	bool is_assoc_vdev;
 #endif
 	uint8_t peer_dms_capable:1,
 		reserved:7;
@@ -3279,7 +3158,7 @@ struct smart_ant_enable_tx_feedback_params {
  * @rssi_rpt_mode: RSSI report mode
  * @rssi_thr: RSSI threshold
  * @pwr_format: Power format
- * @rpt_mode: Report mode
+ * @rpt_mode: Report mdoe
  * @bin_scale: BIN scale
  * @dbm_adj: DBM adjust
  * @chn_mask: chain mask
@@ -3697,7 +3576,7 @@ struct macaddr_params {
  * struct acparams_params - acparams config structure
  * @ac: AC to configure
  * @use_rts: Use rts for this AC
- * @aggrsize_scaling: Aggregate size scaling for the AC
+ * @aggrsize_scaling: Aggregrate size scaling for the AC
  * @min_kbps: min kbps req
  */
 struct acparams_params {
@@ -4135,14 +4014,6 @@ struct btcoex_cfg_params {
 	uint32_t wlan_duration;
 };
 
-/**
- * struct esl_egid_params - Contains the EGID information
- * @egid_info: egid_info contains the 128-bit ESL EGID information
- */
-struct esl_egid_params {
-	uint32_t egid_info[EGID_INFO_SIZE];
-};
-
 #define WMI_HOST_COEX_CONFIG_BUF_MAX_LEN 32 /* 128 bytes */
 /**
  * struct coex_ver_cfg_t
@@ -4336,39 +4207,7 @@ struct rx_reorder_queue_setup_params {
 	uint16_t queue_no;
 	uint8_t ba_window_size_valid;
 	uint16_t ba_window_size;
-};
 
-#define WMI_MAX_TIDS 17 /* This should be kept the same as (C)DP_MAX_TIDS */
-
-/**
- * struct rx_reorder_queue_params_list  - Specific params for each tid
- * @hw_qdesc_paddr: 64 bits of queue desc address
- * @queue_no: 16-bit number assigned by host for queue
- * @ba_window_size: BA window size
- * @ba_window_size_valid: BA window size validity flag
- */
-struct rx_reorder_queue_params_list {
-	qdf_dma_addr_t hw_qdesc_paddr;
-	uint16_t queue_no;
-	uint16_t ba_window_size;
-	uint8_t ba_window_size_valid;
-};
-
-/**
- * struct multi_rx_reorder_queue_setup_params  - Multi reorder
- *	queue setup params
- * @queue_params_list: An array for recording the specific params for each tid.
- * @peer_macaddr: Peer mac address
- * @tid_bitmap: A group of TIDs to be set at a time
- * @tid_num: The number of TIDs to be set
- * @vdev_id: vdev id
- */
-struct multi_rx_reorder_queue_setup_params {
-	struct rx_reorder_queue_params_list queue_params_list[WMI_MAX_TIDS];
-	uint8_t *peer_macaddr;
-	uint32_t tid_bitmap;
-	uint8_t tid_num;
-	uint16_t vdev_id;
 };
 
 /**
@@ -4744,6 +4583,12 @@ typedef struct {
 
 #define WMI_HOST_MAX_TX_RATE_VALUES	10	/*Max Tx Rates */
 #define WMI_HOST_MAX_RSSI_VALUES	10	/*Max Rssi values */
+
+/* The WLAN_MAX_AC macro cannot be changed without breaking
+ *  * WMI compatibility.
+ *   * The maximum value of access category
+ *	*/
+#define WMI_HOST_WLAN_MAX_AC  4
 
 /* The WMI_HOST_MAX_CHAINS macro cannot be changed without breaking WMI
  * compatibility.
@@ -5335,10 +5180,6 @@ typedef enum {
 	wmi_mlo_link_set_active_resp_eventid,
 	wmi_mlo_link_removal_eventid,
 	wmi_mlo_link_disable_request_eventid,
-#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
-	wmi_mlo_link_switch_request_eventid,
-	wmi_mlo_link_state_switch_eventid,
-#endif
 #endif
 	wmi_pdev_fips_extend_event_id,
 	wmi_roam_frame_event_id,
@@ -5382,34 +5223,10 @@ typedef enum {
 #ifdef WLAN_SUPPORT_GAP_LL_PS_MODE
 	wmi_xgap_enable_complete_eventid,
 #endif
-	wmi_pdev_set_tgtr2p_table_eventid,
-#ifdef QCA_MANUAL_TRIGGERED_ULOFDMA
-	wmi_manual_ul_ofdma_trig_feedback_eventid,
-	wmi_manual_ul_ofdma_trig_rx_peer_userinfo_eventid,
-#endif
-#ifdef QCA_STANDALONE_SOUNDING_TRIGGER
-	wmi_vdev_standalone_sound_complete_eventid,
-#endif
-	wmi_csa_ie_received_event_id,
+        wmi_csa_ie_received_event_id,
 #ifdef WLAN_FEATURE_11BE_MLO
 	wmi_mlo_link_state_info_eventid,
 #endif
-#if defined(WLAN_FEATURE_ROAM_OFFLOAD) && defined(WLAN_FEATURE_11BE_MLO)
-	wmi_roam_synch_key_event_id,
-#endif
-#ifdef QCA_SUPPORT_PRIMARY_LINK_MIGRATE
-	wmi_peer_ptqm_migration_response_eventid,
-#endif
-	wmi_pdev_set_rf_path_resp_eventid,
-#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
-	wmi_pdev_enhanced_aoa_phasedelta_eventid,
-#endif
-	wmi_peer_oper_mode_change_event_id,
-
-#ifdef WLAN_FEATURE_LL_LT_SAP
-	wmi_audio_transport_switch_type_event_id,
-#endif
-
 	wmi_events_max,
 } wmi_conv_event_id;
 
@@ -5773,26 +5590,7 @@ typedef enum {
 	PDEV_PARAM(pdev_param_btcoex_cfg, UNAVAILABLE_PARAM),
 	PDEV_PARAM(pdev_param_soft_tx_chain_mask, PDEV_PARAM_TX_CHAIN_MASK),
 	PDEV_PARAM(pdev_param_enable_peer_retry_stats, UNAVAILABLE_PARAM),
-	PDEV_PARAM(pdev_param_scan_blanking_mode,
-		   PDEV_PARAM_SET_SCAN_BLANKING_MODE),
-	PDEV_PARAM(pdev_param_set_disabled_sched_modes,
-		   PDEV_PARAM_SET_DISABLED_SCHED_MODES),
-	PDEV_PARAM(pdev_param_set_conc_low_latency_mode,
-		   PDEV_PARAM_SET_CONC_LOW_LATENCY_MODE),
-	PDEV_PARAM(pdev_param_rtt_11az_rsid_range,
-		   PDEV_PARAM_RTT_11AZ_RSID_RANGE),
 	PDEV_PARAM(pdev_param_pcie_config, PDEV_PARAM_PCIE_CONFIG),
-	PDEV_PARAM(pdev_param_probe_resp_retry_limit,
-		   PDEV_PARAM_PROBE_RESP_RETRY_LIMIT),
-	PDEV_PARAM(pdev_param_cts_timeout, PDEV_PARAM_CTS_TIMEOUT),
-	PDEV_PARAM(pdev_param_slot_time, PDEV_PARAM_SLOT_TIME),
-	PDEV_PARAM(pdev_param_atf_vo_dedicated_time,
-		   PDEV_PARAM_ATF_VO_DEDICATED_TIME),
-	PDEV_PARAM(pdev_param_atf_vi_dedicated_time,
-		   PDEV_PARAM_ATF_VI_DEDICATED_TIME),
-	PDEV_PARAM(pdev_param_ul_ofdma_rtd, PDEV_PARAM_UL_OFDMA_RTD),
-	PDEV_PARAM(pdev_param_tid_mapping_3link_mlo,
-		   PDEV_PARAM_TID_MAPPING_3LINK_MLO),
 	pdev_param_max,
 } wmi_conv_pdev_params_id;
 
@@ -6107,26 +5905,8 @@ typedef enum {
 	VDEV_PARAM(vdev_param_ap_keepalive_max_idle_inactive_secs,
 		   VDEV_PARAM_AP_KEEPALIVE_MAX_IDLE_INACTIVE_TIME_SECS),
 	VDEV_PARAM(vdev_param_set_extra_eht_ltf, VDEV_PARAM_EXTRA_EHT_LTF),
-	VDEV_PARAM(vdev_param_set_disabled_modes,
-		   VDEV_PARAM_SET_DISABLED_SCHED_MODES),
-	VDEV_PARAM(vdev_param_set_sap_ps_with_twt,
-		   VDEV_PARAM_SET_SAP_PS_WITH_TWT),
 	VDEV_PARAM(vdev_param_chwidth_with_notify,
 		   VDEV_PARAM_CHWIDTH_WITH_NOTIFY),
-	VDEV_PARAM(vdev_param_rtt_11az_tb_max_session_expiry,
-		   VDEV_PARAM_RTT_11AZ_TB_MAX_SESSION_EXPIRY),
-	VDEV_PARAM(vdev_param_wifi_standard_version,
-		   VDEV_PARAM_WIFI_STANDARD_VERSION),
-	VDEV_PARAM(vdev_param_rtt_11az_ntb_max_time_bw_meas,
-		   VDEV_PARAM_RTT_11AZ_NTB_MAX_TIME_BW_MEAS),
-	VDEV_PARAM(vdev_param_rtt_11az_ntb_min_time_bw_meas,
-		   VDEV_PARAM_RTT_11AZ_NTB_MIN_TIME_BW_MEAS),
-	VDEV_PARAM(vdev_param_disable_2g_twt,
-		   VDEV_PARAM_DISABLE_2G_TWT),
-	VDEV_PARAM(vdev_param_disable_twt_info_frame,
-		   VDEV_PARAM_DISABLE_TWT_INFO_FRAME),
-	VDEV_PARAM(vdev_param_mlo_max_recom_active_links,
-		   VDEV_PARAM_MLO_MAX_RECOM_ACTIVE_LINKS),
 	vdev_param_max,
 } wmi_conv_vdev_param_id;
 
@@ -6321,7 +6101,6 @@ typedef enum {
 	wmi_service_tx_compl_tsf64,
 	wmi_service_vdev_delete_all_peer,
 	wmi_service_three_way_coex_config_legacy,
-	wmi_service_multiple_coex_config_support,
 	wmi_service_rx_fse_support,
 	wmi_service_dynamic_hw_mode,
 	wmi_service_sae_roam_support,
@@ -6397,11 +6176,6 @@ typedef enum {
 	wmi_service_tdls_ax_support,
 #endif
 #endif
-#ifdef WLAN_FEATURE_11BE_MLO
-#ifdef FEATURE_WLAN_TDLS
-	wmi_service_tdls_mlo_support,
-#endif
-#endif
 #ifdef WLAN_FEATURE_BIG_DATA_STATS
 	wmi_service_big_data_support,
 #endif
@@ -6451,7 +6225,6 @@ typedef enum {
 	wmi_service_rtt_11az_mac_sec_support,
 	wmi_service_rtt_11az_ntb_support,
 	wmi_service_rtt_11az_tb_support,
-	wmi_service_rtt_11az_tb_rsta_support,
 #endif
 	wmi_service_pktlog_decode_info_support,
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
@@ -6468,7 +6241,6 @@ typedef enum {
 	wmi_service_tdls_6g_support,
 #endif
 	wmi_service_tdls_wideband_support,
-	wmi_service_tdls_concurrency_support,
 #endif
 	wmi_service_is_my_mgmt_frame,
 	wmi_service_linkspeed_roam_trigger_support,
@@ -6483,44 +6255,11 @@ typedef enum {
 #endif
 	wmi_service_wpa3_sha384_roam_support,
 	wmi_service_multiple_vdev_restart_bmap,
-	wmi_service_v1a_v1b_supported,
 	wmi_service_self_mld_roam_between_dbs_and_hbs,
 	wmi_service_cfr_capture_pdev_id_soc,
-#ifdef QCA_MANUAL_TRIGGERED_ULOFDMA
-	wmi_service_manual_ulofdma_trigger_support,
-#endif
-	wmi_service_pre_rx_timeout,
-#ifdef QCA_STANDALONE_SOUNDING_TRIGGER
-	wmi_service_standalone_sound,
-#endif
 	wmi_service_cca_busy_info_for_each_20mhz,
 	wmi_service_vdev_param_chwidth_with_notify_support,
 
-#ifdef WLAN_FEATURE_11BE_MLO
-	wmi_service_mlo_tsf_sync,
-	wmi_service_n_link_mlo_support,
-	wmi_service_per_link_stats_support,
-	wmi_service_pdev_wsi_stats_info_support,
-	wmi_service_mlo_tid_to_link_mapping_support,
-#endif
-	wmi_service_aux_mac_support,
-#ifdef WLAN_ATF_INCREASED_STA
-	wmi_service_atf_max_client_512_support,
-#endif
-	wmi_service_fisa_dynamic_msdu_aggr_size_support,
-	wmi_service_radar_flags_support,
-#ifdef WLAN_FEATURE_ROAM_OFFLOAD
-	wmi_service_5ghz_hi_rssi_roam_support,
-#endif
-	wmi_service_pdev_param_in_utf_wmi,
-#ifdef WLAN_FEATURE_LL_LT_SAP
-	wmi_service_xpan_support,
-#endif
-	wmi_service_multiple_reorder_queue_setup_support,
-	wmi_service_p2p_device_update_mac_addr_support,
-#ifdef WLAN_CHIPSET_STATS
-	wmi_service_chipset_logging_support,
-#endif
 	wmi_services_max,
 } wmi_conv_service_ids;
 #define WMI_SERVICE_UNAVAILABLE 0xFFFF
@@ -6569,6 +6308,7 @@ struct wmi_host_fw_abi_ver {
 	uint32_t    abi_version;
 };
 
+#ifdef FEATURE_SET
 /**
  * enum WMI_HOST_WIFI_STANDARD - Supported wifi standard
  * @WMI_HOST_WIFI_STANDARD_4: Wifi standard 4
@@ -6585,7 +6325,6 @@ typedef enum {
 	WMI_HOST_WIFI_STANDARD_7 = 4,
 } WMI_HOST_WIFI_STANDARD;
 
-#ifdef FEATURE_SET
 /**
  * enum WMI_HOST_BAND_CONCURRENCY - Enum to represent supported concurrency
  * @WMI_HOST_BAND_CONCURRENCY_NONE: No concurrency is supported
@@ -6605,7 +6344,6 @@ typedef enum {
  * @WMI_HOST_VENDOR1_REQ1_VERSION_3_20: Major version 3, minor version 20
  * @WMI_HOST_VENDOR1_REQ1_VERSION_3_30: Major version 3, minor version 30
  * @WMI_HOST_VENDOR1_REQ1_VERSION_3_40: Major version 3, minor version 40
- * @WMI_HOST_VENDOR1_REQ1_VERSION_4_00: Major version 4, minor version 00
  */
 typedef enum {
 	WMI_HOST_VENDOR1_REQ1_VERSION_3_00 = 0,
@@ -6613,7 +6351,6 @@ typedef enum {
 	WMI_HOST_VENDOR1_REQ1_VERSION_3_20 = 2,
 	WMI_HOST_VENDOR1_REQ1_VERSION_3_30 = 3,
 	WMI_HOST_VENDOR1_REQ1_VERSION_3_40 = 4,
-	WMI_HOST_VENDOR1_REQ1_VERSION_4_00 = 5,
 } WMI_HOST_VENDOR1_REQ1_VERSION;
 
 /**
@@ -6621,13 +6358,11 @@ typedef enum {
  * @WMI_HOST_VENDOR1_REQ2_VERSION_3_00: Major version 3, minor version 00
  * @WMI_HOST_VENDOR1_REQ2_VERSION_3_01: Major version 3, minor version 01
  * @WMI_HOST_VENDOR1_REQ2_VERSION_3_20: Major version 3, minor version 20
- * @WMI_HOST_VENDOR1_REQ2_VERSION_3_50: Major version 3, minor version 50
  */
 typedef enum {
 	WMI_HOST_VENDOR1_REQ2_VERSION_3_00 = 0,
 	WMI_HOST_VENDOR1_REQ2_VERSION_3_01 = 1,
 	WMI_HOST_VENDOR1_REQ2_VERSION_3_20 = 2,
-	WMI_HOST_VENDOR1_REQ2_VERSION_3_50 = 3,
 } WMI_HOST_VENDOR1_REQ2_VERSION;
 
 /**
@@ -6696,14 +6431,13 @@ typedef enum {
  * @enable_tdls_offchannel: Enable tdls offchannel
  * @enable_tdls_capability_enhance: Enable tdls capability enhance
  * @max_tdls_peers: Max tdls peers
+ * @sta_dual_p2p_support: Indicates sta+p2p+p2p support
  * @peer_bigdata_getbssinfo_support: Indicates bigdata getbssinfo support
  * @peer_bigdata_assocreject_info_support: Indicates bigdata assoc reject
  *                                         info support
  * @peer_getstainfo_support: Indicates getstainfo support
  * @feature_set_version: Indicates feature set version info
  * @num_antennas: Indicates number of antennas supported
- * @sta_dump_support: Indicates sta dump info support
- * @iface_combinations: Iface combination bit map
  */
 struct target_feature_set {
 	WMI_HOST_WIFI_STANDARD wifi_standard;
@@ -6757,13 +6491,12 @@ struct target_feature_set {
 	bool enable_tdls_offchannel;
 	bool enable_tdls_capability_enhance;
 	uint8_t max_tdls_peers;
+	bool sta_dual_p2p_support;
 	bool peer_bigdata_getbssinfo_support;
 	bool peer_bigdata_assocreject_info_support;
 	bool peer_getstainfo_support;
 	uint16_t feature_set_version;
 	WMI_HOST_NUM_ANTENNAS num_antennas;
-	bool sta_dump_support;
-	uint32_t iface_combinations;
 };
 #endif
 
@@ -6895,13 +6628,8 @@ struct target_feature_set {
  * @reo_qdesc_shared_addr_table_enabled: Reo shared qref enhancement enabled
  * @num_max_active_vdevs: max number of active virtual devices (VAPs) to
  * support
- * @num_max_mlo_link_per_ml_bss: number of max partner links of a ML BSS
  * @notify_frame_support: capability to mark notify frames from host
- * @dp_peer_meta_data_ver: datapath peer meta data version flag
  * @tx_ilp_enable: capability to support TX ILP from host
- * @rf_path: Indicates RF path 0 primary, 1 secondary
- * @fw_ast_indication_disable: Disable AST indication
- * @is_full_bw_nol_supported: Is full bandwidth needed to put to NOL
  */
 typedef struct {
 	uint32_t num_vdevs;
@@ -7028,15 +6756,10 @@ typedef struct {
 	bool sawf;
 	bool reo_qdesc_shared_addr_table_enabled;
 	uint32_t num_max_active_vdevs;
-	uint32_t num_max_mlo_link_per_ml_bss;
 	uint8_t notify_frame_support;
-	uint8_t dp_peer_meta_data_ver;
 #ifdef DP_TX_PACKET_INSPECT_FOR_ILP
 	uint8_t tx_ilp_enable;
 #endif
-	bool rf_path;
-	bool fw_ast_indication_disable;
-	bool is_full_bw_nol_supported;
 } target_resource_config;
 
 /**
@@ -7282,8 +7005,7 @@ typedef struct {
 /* Maximum MCS rates supported; 4 rates in each dword */
 /* Maximum MCS ratecodes with 11ax */
 #define WMI_SA_MAX_MCS_RATES 96
-/* Maximum ratecode per BW supported legacy, 20, 40, 80, 160 and 320 MHz */
-#define WMI_SA_MAX_RATE_COUNTERS 6
+#define WMI_SA_MAX_RATE_COUNTERS 4
 /* Maximum rate series used for transmission */
 #define SA_MAX_RATE_SERIES 2
 
@@ -7300,21 +7022,14 @@ typedef struct {
 #define SA_MAX_LEGACY_RATE_WORDS 6
 #define SA_MAX_HT_RATE_WORDS 48
 
-#define SA_INVALID_PARAM_VALUE 0xffff
-/* Mask to check PER threshold */
-#define SA_MASK_PER_TH         0xff
-/* Mask to check Minimum packets for Smart Antenna Training */
-#define SA_MASK_MIN_PKTS       0xffff
-
+/* TODO: ratecode_160 needs to add for future chips */
 /**
  * struct wmi_sa_rate_cap - smart antenna rat capabilities
  * @pdev_id: pdev_id
  * @ratecode_legacy: Rate code array for CCK OFDM
- * @ratecode_20: Rate code array for 20 MHz BW
- * @ratecode_40: Rate code array for 40 MHz BW
- * @ratecode_80: Rate code array for 80 MHz BW
- * @ratecode_160: Rate code array for 160 MHz BW
- * @ratecode_320: Rate code array for 320 MHz BW
+ * @ratecode_20: Rate code array for 20MHz BW
+ * @ratecode_40: Rate code array for 40MHz BW
+ * @ratecode_80: Rate code array for 80MHz BW
  * @ratecount: Max Rate count for each mode
  */
 typedef struct {
@@ -7322,8 +7037,6 @@ typedef struct {
 	uint16_t ratecode_20[WMI_SA_MAX_MCS_RATES];
 	uint16_t ratecode_40[WMI_SA_MAX_MCS_RATES];
 	uint16_t ratecode_80[WMI_SA_MAX_MCS_RATES];
-	uint16_t ratecode_160[WMI_SA_MAX_MCS_RATES];
-	uint16_t ratecode_320[WMI_SA_MAX_MCS_RATES];
 	uint8_t ratecount[WMI_SA_MAX_RATE_COUNTERS];
 } wmi_sa_rate_cap;
 
@@ -7417,9 +7130,6 @@ typedef enum {
  * @WMI_HOST_PEER_PARAM_ENABLE_FT: Notify FT roam
  * @WMI_HOST_PEER_CHWIDTH_PUNCTURE_20MHZ_BITMAP: Peer channel bandwidth and
  *                                         puncture bitmap
- * @WMI_HOST_PEER_FT_ROAMING_PEER_UPDATE: Reset PN value on
- *                                        every roam event
- * @WMI_HOST_PEER_PARAM_DMS_SUPPORT: Set DMS capability
  */
 enum {
 	PEER_PARAM(PEER_MIMO_PS_STATE),
@@ -7453,10 +7163,6 @@ enum {
 	PEER_PARAM(PEER_PARAM_OFDMA_ENABLE),
 	PEER_PARAM(PEER_PARAM_ENABLE_FT),
 	PEER_PARAM(PEER_CHWIDTH_PUNCTURE_20MHZ_BITMAP),
-	PEER_PARAM(PEER_FT_ROAMING_PEER_UPDATE),
-	PEER_PARAM(PEER_PARAM_DMS_SUPPORT),
-	PEER_PARAM(PEER_PARAM_UL_OFDMA_RTD),
-
 };
 #define WMI_HOST_PEER_MIMO_PS_NONE	0x0
 #define WMI_HOST_PEER_MIMO_PS_STATIC	0x1
@@ -8260,7 +7966,7 @@ enum wmi_userspace_log_level {
 
 /**
  * enum wmi_host_hw_mode_config_type - HW mode config type replicated from
- *                                     wmi_hw_mode_config_type in FW header
+ *                                     FW header
  * @WMI_HOST_HW_MODE_SINGLE: Only one PHY is active.
  * @WMI_HOST_HW_MODE_DBS: Both PHYs are active in different bands,
  *                        one in 2G and another in 5G.
@@ -8276,20 +7982,8 @@ enum wmi_userspace_log_level {
  *                           as in WMI_HW_MODE_SBS, and 3rd on the other band
  * @WMI_HOST_HW_MODE_DBS_OR_SBS: Two PHY with one PHY capabale of both 2G and
  *                        5G. It can support SBS (5G + 5G) OR DBS (5G + 2G).
- * @WMI_HOST_HW_MODE_DBS_2G_5G: Both PHYs are active in different bands.
- *                              PhyA 2G and PhyB 5G
+ * @WMI_HOST_HW_MODE_FW_INTERNAL: FW specific internal mode
  * @WMI_HOST_HW_MODE_2G_PHYB: Only one phy is active. 2G mode on PhyB.
- * @WMI_HOST_HW_MODE_EMLSR: Both PHYs are active in listen mode in 1x1
- *                          and Tx/Rx trigger on any PHY will switch
- *                          from 1x1 to 2x2 on that Phy
- * @WMI_HOST_HW_MODE_AUX_EMLSR_SINGLE:  PHYA0 and AUX are active in listen mode
- *                                      in 1x1 and Tx/Rx trigger on any.
- *                                      PHY will switch from 1x1 to 2x2
- *                                      on that Phy.
- * @WMI_HOST_HW_MODE_AUX_EMLSR_SPLIT: PHYA1 and AUX are active in listen mode
- *                                    in 1x1 and Tx/Rx trigger on any.
- *                                    PHY will switch from 1x1 to 2x2
- *                                    on that Phy.
  * @WMI_HOST_HW_MODE_MAX: Max hw_mode_id. Used to indicate invalid mode.
  * @WMI_HOST_HW_MODE_DETECT: Mode id used by host to choose mode from target
  *                        supported modes.
@@ -8301,11 +7995,8 @@ enum wmi_host_hw_mode_config_type {
 	WMI_HOST_HW_MODE_SBS          = 3,
 	WMI_HOST_HW_MODE_DBS_SBS      = 4,
 	WMI_HOST_HW_MODE_DBS_OR_SBS   = 5,
-	WMI_HOST_HW_MODE_DBS_2G_5G    = 6,
+	WMI_HOST_HW_MODE_FW_INTERNAL  = 6,
 	WMI_HOST_HW_MODE_2G_PHYB      = 7,
-	WMI_HOST_HW_MODE_EMLSR        = 8,
-	WMI_HOST_HW_MODE_AUX_EMLSR_SINGLE = 9,
-	WMI_HOST_HW_MODE_AUX_EMLSR_SPLIT  = 10,
 	WMI_HOST_HW_MODE_MAX,
 	WMI_HOST_HW_MODE_DETECT,
 };
@@ -8550,7 +8241,7 @@ struct wmi_host_proxy_ast_reserve_param {
 
 /**
  * struct wmi_host_pdev_band_to_mac - freq range for mac
- * @pdev_id: PDEV ID to identify mac
+ * @pdev_id: PDEV ID to identifiy mac
  * @start_freq: start frequency value
  * @end_freq: end frequency value
  */
@@ -8804,40 +8495,6 @@ struct coex_config_params {
 	uint32_t config_arg6;
 };
 
-/**
- * struct coex_config_item - Multiple coex config item
- * @config_type: Configuration type - wmi_coex_config_type enum
- * @config_arg1: Configuration argument based on config type
- * @config_arg2: Configuration argument based on config type
- * @config_arg3: Configuration argument based on config type
- * @config_arg4: Configuration argument based on config type
- * @config_arg5: Configuration argument based on config type
- * @config_arg6: Configuration argument based on config type
- */
-struct coex_config_item {
-	uint32_t config_type;
-	uint32_t config_arg1;
-	uint32_t config_arg2;
-	uint32_t config_arg3;
-	uint32_t config_arg4;
-	uint32_t config_arg5;
-	uint32_t config_arg6;
-};
-
-#define COEX_MULTI_CONFIG_MAX_CNT  32
-
-/**
- * struct coex_multi_config - Multiple coex config command parameters
- * @vdev_id: Vdev id
- * @num_configs: Number of config items
- * @cfg_items: Array of coex config items
- */
-struct coex_multi_config {
-	uint32_t vdev_id;
-	uint32_t num_configs;
-	struct coex_config_item cfg_items[COEX_MULTI_CONFIG_MAX_CNT];
-};
-
 #define WMI_HOST_PDEV_ID_SOC 0xFF
 #define WMI_HOST_PDEV_ID_0   0
 #define WMI_HOST_PDEV_ID_1   1
@@ -8923,7 +8580,6 @@ struct wmi_host_obss_spatial_reuse_set_def_thresh {
  * @frame_type: Frame type to be enabled
  * @frame_inject_period: Periodicity of injector frame transmission in msecs
  * @frame_duration: Frame Duration field in usecs
- * @frame_bw: Bandwidth of the injected frame
  * @dstmac: Destination address to be used for the frame
  */
 struct wmi_host_injector_frame_params {
@@ -8932,7 +8588,6 @@ struct wmi_host_injector_frame_params {
 	uint32_t frame_type;
 	uint32_t frame_inject_period;
 	uint32_t frame_duration;
-	uint32_t frame_bw;
 	uint8_t dstmac[QDF_MAC_ADDR_SIZE];
 };
 
@@ -9168,85 +8823,6 @@ struct wmi_btm_req_candidate_info {
 };
 
 /**
- * struct wmi_roam_trigger_per_data - per roam trigger related information
- * @rx_rate_thresh_percent:  percentage of lower than rx rate threshold
- * @tx_rate_thresh_percent:  percentage of lower than tx rate threshold
- */
-struct wmi_roam_trigger_per_data {
-	uint8_t rx_rate_thresh_percent;
-	uint8_t tx_rate_thresh_percent;
-};
-
-/**
- * struct wmi_roam_trigger_bmiss_data - bmiss roam trigger related information
- * @final_bmiss_cnt:        final beacon miss count
- * @consecutive_bmiss_cnt:  consecutive beacon miss count
- * @qos_null_success:       is Qos-Null tx Success: 0: success, 1:fail
- */
-struct wmi_roam_trigger_bmiss_data {
-	uint32_t final_bmiss_cnt;
-	uint32_t consecutive_bmiss_cnt;
-	uint8_t qos_null_success;
-};
-
-/**
- * struct wmi_roam_trigger_low_rssi_data - low rssi roam trigger
- * related information
- * @current_rssi:         Connected AP rssi in dBm
- * @roam_rssi_threshold:  rssi threshold value in dBm
- * @rx_linkspeed_status:  rx linkspeed status, 0:good linkspeed, 1:bad
- */
-struct wmi_roam_trigger_low_rssi_data {
-	uint8_t current_rssi;
-	uint8_t roam_rssi_threshold;
-	uint8_t rx_linkspeed_status;
-};
-
-/**
- * struct wmi_roam_trigger_hi_rssi_data - high rssi roam trigger
- * related information
- * @current_rssi:      Connected AP rssi in dBm
- * @hirssi_threshold:  roam high RSSI threshold
- */
-struct wmi_roam_trigger_hi_rssi_data {
-	uint8_t current_rssi;
-	uint8_t hirssi_threshold;
-};
-
-/**
- * struct wmi_roam_trigger_congestion_data - congestion roam trigger
- * related information
- * @rx_tput:         RX Throughput in bytes per second in dense env
- * @tx_tput:         TX Throughput in bytes per second in dense env
- * @roamable_count:  roamable AP count info in dense env
- */
-struct wmi_roam_trigger_congestion_data {
-	uint32_t rx_tput;
-	uint32_t tx_tput;
-	uint8_t roamable_count;
-};
-
-/**
- * struct wmi_roam_trigger_user_data - user roam trigger related information
- * @invoke_reason: defined in wlan_roam_invoke_reason
- */
-struct wmi_roam_trigger_user_data {
-	uint32_t invoke_reason;
-};
-
-/**
- * struct wmi_roam_trigger_background_data -  roam trigger related information
- * @current_rssi:         Connected AP rssi in dBm
- * @data_rssi:            data frame rssi in dBm
- * @data_rssi_threshold:  data rssi threshold in dBm
- */
-struct wmi_roam_trigger_background_data {
-	uint8_t current_rssi;
-	uint8_t data_rssi;
-	uint8_t data_rssi_threshold;
-};
-
-/**
  * struct wmi_roam_btm_trigger_data - BTM roam trigger related information
  * @timestamp:             timestamp
  * @btm_request_mode:      BTM request mode - solicited/unsolicited
@@ -9260,8 +8836,6 @@ struct wmi_roam_trigger_background_data {
  * milli seconds
  * @token: BTM request dialog token
  * @btm_cand: BTM request candidate information
- * @is_mlo: Flag to check whether the existing connection a MLO connection
- * @band: indicates the link involved in MLO conenection.
  */
 struct wmi_roam_btm_trigger_data {
 	uint32_t timestamp;
@@ -9274,8 +8848,6 @@ struct wmi_roam_btm_trigger_data {
 	uint32_t btm_mbo_assoc_retry_timeout;
 	uint16_t token;
 	struct wmi_btm_req_candidate_info btm_cand[WLAN_MAX_BTM_CANDIDATE];
-	bool is_mlo;
-	uint8_t band;
 };
 
 /**
@@ -9305,26 +8877,6 @@ struct wmi_roam_rssi_trigger_data {
 struct wmi_roam_deauth_trigger_data {
 	uint32_t type;
 	uint32_t reason;
-};
-
-/**
- * struct wmi_roam_trigger_periodic_data - periodic roam trigger
- * related information
- * @periodic_timer_ms: roam scan periodic, milliseconds
- */
-struct wmi_roam_trigger_periodic_data {
-	uint32_t periodic_timer_ms;
-};
-
-/**
- * struct wmi_roam_trigger_tx_failures_data - tx failures roam trigger
- * related information
- * @kickout_threshold:  consecutive tx failure threshold
- * @kickout_reason:     defined in wmi_peer_sta_kickout_reason
- */
-struct wmi_roam_trigger_tx_failures_data {
-	uint32_t kickout_threshold;
-	uint32_t  kickout_reason;
 };
 
 /**
@@ -9358,20 +8910,6 @@ struct wmi_roam_wtc_btm_trigger_data {
 };
 
 /**
- * struct wmi_roam_trigger_abort_reason - abort roam related information
- * @abort_reason_code:    detail in qca_wlan_roam_abort_reason
- * @data_rssi:            data rssi in dBm
- * @data_rssi_threshold:  data rssi threshold in dBm
- * @rx_linkspeed_status:  rx linkspeed status, 0:good linkspeed, 1:bad
- */
-struct wmi_roam_trigger_abort_reason {
-	uint32_t abort_reason_code;
-	uint8_t data_rssi;
-	uint8_t data_rssi_threshold;
-	uint8_t rx_linkspeed_status;
-};
-
-/**
  *  struct wmi_roam_candidate_info - Roam scan candidate APs related info
  *  @timestamp:   Host timestamp in millisecs
  *  @type:        0 - Candidate AP; 1 - Current connected AP.
@@ -9389,7 +8927,6 @@ struct wmi_roam_trigger_abort_reason {
  *  to denylist.
  *  @dl_original_timeout: Original timeout value in milli seconds
  *  when AP added to DL
- *  @is_mlo: Flag to check whether the existing connection is MLO connection
  */
 struct wmi_roam_candidate_info {
 	uint32_t timestamp;
@@ -9406,7 +8943,6 @@ struct wmi_roam_candidate_info {
 	uint32_t dl_source;
 	uint32_t dl_timestamp;
 	uint32_t dl_original_timeout;
-	bool is_mlo;
 };
 
 /**
@@ -9420,10 +8956,6 @@ struct wmi_roam_candidate_info {
  * @next_rssi_threshold: Next roam can trigger rssi threshold
  * @chan_freq: List of frequencies scanned as part of roam scan
  * @ap: List of candidate AP info
- * @dwell_type: roam scan channel dwell type, enum in roam_scan_dwell_type
- * @scan_complete_timestamp: timestamp of all channels scan completed
- * @is_mlo: Flag to check whether the existing connection is MLO connection
- * @band: Band involved in the roaming during a MLO connection.
  */
 struct wmi_roam_scan_data {
 	bool present;
@@ -9435,10 +8967,6 @@ struct wmi_roam_scan_data {
 	uint32_t next_rssi_threshold;
 	uint16_t chan_freq[MAX_ROAM_SCAN_CHAN];
 	struct wmi_roam_candidate_info ap[MAX_ROAM_CANDIDATE_AP];
-	uint8_t dwell_type[MAX_ROAM_SCAN_CHAN];
-	uint32_t scan_complete_timestamp;
-	bool is_mlo;
-	uint8_t band;
 };
 
 /**
@@ -9448,7 +8976,6 @@ struct wmi_roam_scan_data {
  * @status:             0 - Roaming is success ; 1 - Roaming failed ;
  * 2 - No roam
  * @fail_reason:        One of WMI_ROAM_FAIL_REASON_ID
- * @roam_abort_reason:  Roam abort reason codes
  * @fail_bssid:         BSSID of the last attempted roam failed AP
  */
 struct wmi_roam_result {
@@ -9456,7 +8983,6 @@ struct wmi_roam_result {
 	uint32_t timestamp;
 	uint32_t status;
 	uint32_t fail_reason;
-	uint32_t roam_abort_reason;
 	struct qdf_mac_addr fail_bssid;
 };
 
@@ -9479,8 +9005,6 @@ struct wmi_roam_result {
  *  @req_token: Request token
  *  @resp_token: Response Token
  *  @num_rpt: Number of report element
- *  @is_mlo: Flag to check if the current connection is MLO connection
- *  @band: indicates the link involved in MLO conenection.
  */
 struct wmi_neighbor_report_data {
 	bool present;
@@ -9495,64 +9019,34 @@ struct wmi_neighbor_report_data {
 	uint8_t req_token;
 	uint8_t resp_token;
 	uint8_t num_rpt;
-	bool is_mlo;
-	uint8_t band;
 };
 
 /**
  * struct wmi_roam_trigger_info() - Roam trigger related details
  * @present:            Flag to check if the roam_trigger_info tlv is present
- * @common_roam:        Flag to indicate common roam or special roam
  * @trigger_reason:     Roam trigger reason(enum WMI_ROAM_TRIGGER_REASON_ID)
  * @trigger_sub_reason: Sub reason for roam trigger if multiple roam scans
  * @current_rssi:       Connected AP RSSI
  * @timestamp:          Host timestamp in millisecs when roam scan was triggered
- * @per_trig_data:      per roam trigger parameters
- * @bmiss_trig_data:    beacon miss roam trigger parameters.
- * @low_rssi_trig_data: low rssi roam trigger parameters.
- * @hi_rssi_trig_data:  high rssi roam trigger parameters.
- * @congestion_trig_data: congestion roam trigger parameters.
- * @user_trig_data:     user trigger roam parameters.
- * @background_trig_data: background roam trigger parameters.
  * @btm_trig_data:      BTM roam trigger parameters.
  * @cu_trig_data:       BSS Load roam trigger parameters.
  * @rssi_trig_data:     RSSI trigger related info.
  * @deauth_trig_data:   Deauth roam trigger related info
- * @periodic_trig_data: periodic roam trigger parameters.
- * @tx_failures_trig_data: tx failures roam trigger parameters.
  * @wtc_btm_trig_data:  WTC BTM roam trigger related info
- * @abort_reason:       roam abort reason
- * @scan_type:          roam scan type
- * @roam_status:        roam result status
- * @fail_reason:        roam fail reason
  */
 struct wmi_roam_trigger_info {
 	bool present;
-	bool common_roam;
 	uint32_t trigger_reason;
 	uint32_t trigger_sub_reason;
 	uint32_t current_rssi;
 	uint32_t timestamp;
 	union {
-		struct wmi_roam_trigger_per_data per_trig_data;
-		struct wmi_roam_trigger_bmiss_data bmiss_trig_data;
-		struct wmi_roam_trigger_low_rssi_data low_rssi_trig_data;
-		struct wmi_roam_trigger_hi_rssi_data hi_rssi_trig_data;
-		struct wmi_roam_trigger_congestion_data congestion_trig_data;
-		struct wmi_roam_trigger_user_data user_trig_data;
-		struct wmi_roam_trigger_background_data background_trig_data;
 		struct wmi_roam_btm_trigger_data btm_trig_data;
 		struct wmi_roam_cu_trigger_data cu_trig_data;
 		struct wmi_roam_rssi_trigger_data rssi_trig_data;
 		struct wmi_roam_deauth_trigger_data deauth_trig_data;
-		struct wmi_roam_trigger_periodic_data periodic_trig_data;
-		struct wmi_roam_trigger_tx_failures_data tx_failures_trig_data;
 		struct wmi_roam_wtc_btm_trigger_data wtc_btm_trig_data;
 	};
-	struct wmi_roam_trigger_abort_reason abort_reason;
-	uint32_t scan_type;
-	uint32_t roam_status;
-	uint32_t fail_reason;
 };
 
 /* End of roam scan stats definitions */
@@ -9756,20 +9250,6 @@ struct wmi_cfr_phase_delta_param {
 	uint32_t phase_delta[WMI_MAX_CHAINS_PHASE][WMI_MAX_AOA_PHASE_DELTA];
 	uint32_t ibf_cal_val[WMI_MAX_CHAINS_PHASE];
 };
-
-#ifdef WLAN_RCC_ENHANCED_AOA_SUPPORT
-struct wmi_cfr_enh_phase_delta_param {
-	uint32_t pdev_id;
-	uint32_t freq;
-	uint32_t max_chains;
-	uint32_t data_for_chainmask;
-	uint32_t xbar_config;
-	uint32_t ibf_cal_val[WMI_HOST_MAX_NUM_CHAINS];
-	uint32_t array_size;
-	uint32_t *gain_stop_index_array;
-	uint32_t *enh_phase_delta_array;
-};
-#endif /* WLAN_RCC_ENHANCED_AOA_SUPPORT */
 
 /**
  * struct wmi_host_oem_indirect_data - Indirect OEM data

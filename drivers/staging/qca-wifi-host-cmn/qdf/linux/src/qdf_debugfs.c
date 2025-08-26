@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -85,7 +84,7 @@ umode_t qdf_debugfs_get_filemode(uint16_t mode)
 	return ret;
 }
 
-/*
+/**
  * ---------------------- Implementation note ---------------------------------
  *
  * A read in debugfs file triggers seq_read() which calls seq_read api. A

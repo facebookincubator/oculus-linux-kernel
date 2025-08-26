@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -364,7 +364,6 @@ pkt_capture_process_mgmt_tx_data(struct wlan_objmgr_pdev *pdev,
 	struct wlan_objmgr_psoc *psoc;
 	tpSirMacFrameCtl pfc = (tpSirMacFrameCtl)(qdf_nbuf_data(nbuf));
 	struct ieee80211_frame *wh;
-	uint16_t rate;
 
 	psoc = wlan_pdev_get_psoc(pdev);
 	if (!psoc) {
@@ -391,6 +390,8 @@ pkt_capture_process_mgmt_tx_data(struct wlan_objmgr_pdev *pdev,
 	txrx_status.tsft = (u_int64_t)params->tsf_l32;
 	txrx_status.chan_num = wlan_reg_freq_to_chan(pdev, params->chan_freq);
 	txrx_status.chan_freq = params->chan_freq;
+	/* params->rate is in Kbps, convert into Mbps */
+	txrx_status.rate = (params->rate_kbps / 1000);
 	if (params->rssi == INVALID_RSSI_FOR_TX)
 		/* RSSI -128 is invalid rssi for TX, make it 0 here,
 		 * will be normalized during radiotap updation
@@ -401,18 +402,15 @@ pkt_capture_process_mgmt_tx_data(struct wlan_objmgr_pdev *pdev,
 
 	txrx_status.rssi_comb = txrx_status.ant_signal_db;
 	txrx_status.nr_ant = 1;
-	rate = params->rate_kbps * 2;
-	/* params->rate is in Kbps, convert into Mbps */
-	txrx_status.rate = (uint8_t)(rate / 1000);
-
 	txrx_status.rtap_flags |=
-		((txrx_status.rate == 12 /* Mbps */) ? BIT(1) : 0);
+		((txrx_status.rate == 6 /* Mbps */) ? BIT(1) : 0);
 
-	if (txrx_status.rate == 12)
+	if (txrx_status.rate == 6)
 		txrx_status.ofdm_flag = 1;
 	else
 		txrx_status.cck_flag = 1;
 
+	txrx_status.rate = ((txrx_status.rate == 6 /* Mbps */) ? 0x0c : 0x02);
 	txrx_status.tx_status = status;
 	txrx_status.tx_retry_cnt = params->tx_retry_cnt;
 	txrx_status.add_rtap_ext = true;
@@ -594,6 +592,10 @@ pkt_capture_is_beacon_forward_enable(struct wlan_objmgr_vdev *vdev,
 		return false;
 	}
 
+	if (vdev_priv->frame_filter.mgmt_rx_frame_filter &
+	    PKT_CAPTURE_MGMT_CONNECT_NO_BEACON)
+		return false;
+
 	mac_hdr = (tpSirMacMgmtHdr)(qdf_nbuf_data(wbuf));
 	wlan_vdev_get_bss_peer_mac(vdev, &connected_bssid);
 
@@ -741,6 +743,7 @@ pkt_capture_mgmt_rx_data_cb(struct wlan_objmgr_psoc *psoc,
 
 	/* Convert rate from Mbps to 500 Kbps */
 	txrx_status.rate = txrx_status.rate * 2;
+	txrx_status.add_rtap_ext = true;
 
 	wh = (struct ieee80211_frame *)qdf_nbuf_data(nbuf);
 	wh->i_fc[1] &= ~IEEE80211_FC1_WEP;

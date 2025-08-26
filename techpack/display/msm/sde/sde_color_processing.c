@@ -3740,6 +3740,11 @@ static void _sde_cp_notify_hist_event(struct drm_crtc *crtc_drm, void *arg)
 		return;
 	}
 
+	if (!crtc->histogram_enable) {
+		DRM_DEBUG("Histogram is disabled. No further reads\n");
+		return;
+	}
+
 	/* disable histogram irq */
 	spin_lock_irqsave(&crtc->spin_lock, flags);
 	node = _sde_cp_get_intr_node(DRM_EVENT_HISTOGRAM, crtc);
@@ -3826,12 +3831,25 @@ freerun:
 		hw_ctl = crtc->mixers[i].hw_ctl;
 		hw_dspp->ops.trigger_histogram_read(hw_dspp, hw_ctl);
 
-		has_regdma = true;
+		has_regdma = crtc->regdma_enable;
 	}
 
 	/* Flush regdma operations on the final trigger call (if applicable) */
-	if (has_regdma && hw_ctl && hw_ctl->ops.reg_dma_flush)
-		hw_ctl->ops.reg_dma_flush(hw_ctl, true);
+	if (has_regdma && hw_ctl && hw_ctl->ops.reg_dma_flush) {
+
+		s64 elapsed_time_since_last_call;
+		ktime_t start_time;
+
+		// Read current time and calculate time since last call
+		start_time = ktime_get();
+		elapsed_time_since_last_call = ktime_to_us(ktime_sub(start_time, crtc->regdma_histogram_last_exec_time));
+
+		// Converting the msec into micro-second. The ktime_to_ms seems to be returning a fix value.!
+		if (elapsed_time_since_last_call > (crtc->histogram_interval_msec * 1000)) {
+			hw_ctl->ops.reg_dma_flush(hw_ctl, true);
+			crtc->regdma_histogram_last_exec_time = start_time;
+		}
+	}
 
 	for (i = 0; i < crtc->num_mixers; i++) {
 		hw_dspp = crtc->mixers[i].hw_dspp;

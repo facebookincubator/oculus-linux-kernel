@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015,2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -30,7 +30,6 @@
 #include <wlan_cfg80211.h>
 #include <wlan_cfg80211_scan.h>
 #include "wlan_mlo_mgr_sta.h"
-#include "wlan_mlo_mgr_link_switch.h"
 #ifdef CONN_MGR_ADV_FEATURE
 #include "wlan_mlme_ucfg_api.h"
 #endif
@@ -54,6 +53,17 @@ static inline void osif_update_fils_hlp_data(struct net_device *dev,
 }
 #endif
 
+/**
+ * osif_roamed_ind() - send roamed indication to cfg80211
+ * @dev: network device
+ * @bss: cfg80211 roamed bss pointer
+ * @req_ie: IEs used in reassociation request
+ * @req_ie_len: Length of the @req_ie
+ * @resp_ie: IEs received in successful reassociation response
+ * @resp_ie_len: Length of @resp_ie
+ *
+ * Return: none
+ */
 #if defined CFG80211_ROAMED_API_UNIFIED || \
 	(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0))
 #ifdef CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT
@@ -73,29 +83,26 @@ void osif_copy_roamed_info(struct cfg80211_roam_info *info,
 #endif
 
 #if defined(CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT) && defined(WLAN_FEATURE_11BE_MLO)
-static void
-osif_roam_populate_mlo_info_for_link(struct wlan_objmgr_vdev *roamed_vdev,
-				     struct cfg80211_roam_info *roam_info,
-				     uint8_t link_id, struct cfg80211_bss *bss,
-				     uint8_t *self_link_addr)
+static
+void osif_populate_mlo_info_for_link(struct wlan_objmgr_vdev *vdev,
+				     struct cfg80211_roam_info *roam_info_params,
+				     uint8_t link_id,
+				     struct cfg80211_bss *bss)
 {
-	if (bss) {
-		osif_debug("Link_id :%d", link_id);
-		roam_info->valid_links |=  BIT(link_id);
-		roam_info->links[link_id].bssid = bss->bssid;
-		roam_info->links[link_id].bss = bss;
-		roam_info->links[link_id].addr = self_link_addr;
-	}
-
-	mlo_mgr_osif_update_connect_info(roamed_vdev, link_id);
+	osif_debug("Link_id :%d", link_id);
+	roam_info_params->valid_links |=  BIT(link_id);
+	roam_info_params->links[link_id].bssid = bss->bssid;
+	roam_info_params->links[link_id].bss = bss;
+	roam_info_params->links[link_id].addr =
+					 wlan_vdev_mlme_get_macaddr(vdev);
 }
 
 static void
-osif_populate_partner_links_roam_mlo_params(struct wlan_objmgr_vdev *roamed_vdev,
+osif_populate_partner_links_roam_mlo_params(struct wlan_objmgr_pdev *pdev,
 					    struct wlan_cm_connect_resp *rsp,
 					    struct cfg80211_roam_info *roam_info_params)
 {
-	struct wlan_objmgr_pdev *pdev;
+	struct wlan_objmgr_vdev *partner_vdev;
 	struct mlo_link_info *rsp_partner_info;
 	struct mlo_partner_info assoc_partner_info = {0};
 	struct cfg80211_bss *bss = NULL;
@@ -103,17 +110,12 @@ osif_populate_partner_links_roam_mlo_params(struct wlan_objmgr_vdev *roamed_vdev
 	uint8_t link_id = 0, num_links;
 	int i;
 
-	pdev = wlan_vdev_get_pdev(roamed_vdev);
-	if (!pdev)
-		return;
-
 	qdf_status = osif_get_partner_info_from_mlie(rsp, &assoc_partner_info);
 	if (QDF_IS_STATUS_ERROR(qdf_status))
 		return;
 
 	num_links = rsp->ml_parnter_info.num_partner_links;
 	for (i = 0 ; i < num_links; i++) {
-		struct mlo_link_info *link_info;
 		rsp_partner_info = &rsp->ml_parnter_info.partner_link_info[i];
 
 		qdf_status = osif_get_link_id_from_assoc_ml_ie(rsp_partner_info,
@@ -122,22 +124,24 @@ osif_populate_partner_links_roam_mlo_params(struct wlan_objmgr_vdev *roamed_vdev
 		if (QDF_IS_STATUS_ERROR(qdf_status))
 			continue;
 
-		link_info = mlo_mgr_get_ap_link_by_link_id(
-					roamed_vdev->mlo_dev_ctx,
-					link_id);
-		if (!link_info) {
-			osif_debug("link info not found for link_id:%d",
-				   link_id);
+		partner_vdev = wlan_objmgr_get_vdev_by_id_from_pdev(pdev,
+						      rsp_partner_info->vdev_id,
+						      WLAN_MLO_MGR_ID);
+		if (!partner_vdev)
+			continue;
+
+		bss = osif_get_chan_bss_from_kernel(partner_vdev,
+						    rsp_partner_info, rsp);
+		if (!bss) {
+			wlan_objmgr_vdev_release_ref(partner_vdev,
+						     WLAN_MLO_MGR_ID);
 			continue;
 		}
 
-		bss = osif_get_chan_bss_from_kernel(roamed_vdev,
-						    rsp_partner_info, rsp);
-
-		osif_roam_populate_mlo_info_for_link(roamed_vdev,
-						     roam_info_params,
-						     link_id, bss,
-						     link_info->link_addr.bytes);
+		osif_populate_mlo_info_for_link(partner_vdev,
+						roam_info_params,
+						link_id, bss);
+		wlan_objmgr_vdev_release_ref(partner_vdev, WLAN_MLO_MGR_ID);
 	}
 }
 
@@ -179,11 +183,12 @@ static void osif_fill_mlo_roam_params(struct wlan_objmgr_vdev *vdev,
 	}
 
 	assoc_link_id = wlan_vdev_get_link_id(vdev);
-	osif_roam_populate_mlo_info_for_link(vdev, info,
-					     assoc_link_id, bss,
-					     wlan_vdev_mlme_get_macaddr(vdev));
+	osif_populate_mlo_info_for_link(vdev, info,
+					assoc_link_id, bss);
 
-	osif_populate_partner_links_roam_mlo_params(vdev, rsp, info);
+	osif_populate_partner_links_roam_mlo_params(wlan_vdev_get_pdev(vdev),
+						    rsp,
+						    info);
 }
 #else
 static void osif_fill_mlo_roam_params(struct wlan_objmgr_vdev *vdev,
@@ -192,19 +197,6 @@ static void osif_fill_mlo_roam_params(struct wlan_objmgr_vdev *vdev,
 				      struct cfg80211_roam_info *info)
 {}
 #endif
-/**
- * osif_roamed_ind() - send roamed indication to cfg80211
- * @dev: network device
- * @vdev: vdev object
- * @rsp: CM connect response
- * @bss: cfg80211 roamed bss pointer
- * @req_ie: IEs used in reassociation request
- * @req_ie_len: Length of the @req_ie
- * @resp_ie: IEs received in successful reassociation response
- * @resp_ie_len: Length of @resp_ie
- *
- * Return: none
- */
 static void osif_roamed_ind(struct net_device *dev,
 			    struct wlan_objmgr_vdev *vdev,
 			    struct wlan_cm_connect_resp *rsp,
@@ -241,7 +233,7 @@ static inline void osif_roamed_ind(struct net_device *dev,
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 #ifdef WLAN_FEATURE_FILS_SK
 /**
- * osif_add_fils_params_roam_auth_event() - Adds FILS params in roam auth
+ * wlan_hdd_add_fils_params_roam_auth_event() - Adds FILS params in roam auth
  * @skb: SK buffer
  * @roam_info: Roam info
  *
@@ -343,7 +335,6 @@ static uint8_t *osif_get_bss_mac_addr(struct wlan_objmgr_vdev *vdev)
  * links event response to kernel
  * @skb : sk buffer pointer
  * @vdev: vdev pointer
- * @osif_priv: osif vdev private data
  * @rsp: Connection manager response
  *
  * This is called when wlan driver needs to send the mlo links roaming
@@ -364,8 +355,7 @@ osif_send_roam_auth_mlo_links_event(struct sk_buff *skb,
 	struct nlattr *mlo_links;
 	struct nlattr *mlo_links_info;
 	struct wlan_objmgr_vdev *link_vdev;
-	uint8_t link_vdev_id, link_id;
-	struct qdf_mac_addr link_addr;
+	uint8_t link_vdev_id;
 
 	if (!vdev)
 		return -EINVAL;
@@ -389,8 +379,6 @@ osif_send_roam_auth_mlo_links_event(struct sk_buff *skb,
 			return -EINVAL;
 		}
 
-		osif_debug("send roam auth for partner link:%d",
-			   rsp->ml_parnter_info.partner_link_info[i].link_id);
 		if (nla_put_u8(skb,
 			       QCA_WLAN_VENDOR_ATTR_MLO_LINK_ID,
 			       rsp->ml_parnter_info.partner_link_info[i].link_id)) {
@@ -405,43 +393,23 @@ osif_send_roam_auth_mlo_links_event(struct sk_buff *skb,
 			return -EINVAL;
 		}
 
-		link_vdev_id =
-			rsp->ml_parnter_info.partner_link_info[i].vdev_id;
-		link_id = rsp->ml_parnter_info.partner_link_info[i].link_id;
-
-		/* Standby link */
-		if (link_vdev_id == WLAN_INVALID_VDEV_ID) {
-			struct mlo_link_info *standby_info =
-					mlo_mgr_get_ap_link_by_link_id(
-							vdev->mlo_dev_ctx,
-							link_id);
-			if (standby_info) {
-				link_addr = standby_info->link_addr;
-			} else {
-				osif_err("link addr is null for id:%d",
-					 link_id);
-				return -EINVAL;
-			}
-		} else {
-			link_vdev = wlan_objmgr_get_vdev_by_id_from_psoc(
-							psoc, link_vdev_id,
-							WLAN_OSIF_CM_ID);
-			if (!link_vdev) {
-				osif_err("link vdev is null");
-				return -EINVAL;
-			}
-
-			qdf_copy_macaddr(&link_addr,
-					 (struct qdf_mac_addr *)wlan_vdev_mlme_get_macaddr(link_vdev));
-			wlan_objmgr_vdev_release_ref(link_vdev,
-						     WLAN_OSIF_CM_ID);
+		link_vdev_id = rsp->ml_parnter_info.partner_link_info[i].vdev_id;
+		link_vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc,
+								 link_vdev_id,
+								 WLAN_OSIF_CM_ID);
+		if (!link_vdev) {
+			osif_err("link vdev is null");
+			return -EINVAL;
 		}
 
 		if (nla_put(skb, QCA_WLAN_VENDOR_ATTR_MLO_LINK_MAC_ADDR,
-			    ETH_ALEN, link_addr.bytes)) {
+			    ETH_ALEN, wlan_vdev_mlme_get_macaddr(link_vdev))) {
 			osif_err("nla put fail");
+			wlan_objmgr_vdev_release_ref(link_vdev,
+						     WLAN_OSIF_CM_ID);
 			return -EINVAL;
 		}
+		wlan_objmgr_vdev_release_ref(link_vdev, WLAN_OSIF_CM_ID);
 		nla_nest_end(skb, mlo_links_info);
 	}
 
@@ -476,10 +444,6 @@ osif_send_roam_auth_mlo_links_event(struct sk_buff *skb,
  * @vdev: vdev pointer
  * @osif_priv: OS private structure of vdev
  * @rsp: Connection manager response
- * @req_ie: request IE
- * @req_ie_len: request IE length
- * @resp_ie: response IE
- * @resp_ie_len: response IE length
  *
  * This is called when wlan driver needs to send the roaming and
  * authorization information after roaming.
@@ -595,14 +559,11 @@ static int osif_send_roam_auth_event(struct wlan_objmgr_vdev *vdev,
 					    WLAN_CRYPTO_PARAM_KEY_MGMT);
 		/* if FT or CCKM connection: dont send replay counter */
 		if (!QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_FT_IEEE8021X) &&
-		    !QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_FT_PSK) &&
+		    !QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_PSK) &&
 		    !QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_FT_SAE) &&
 		    !QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_FT_IEEE8021X_SHA384) &&
 		    !QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_CCKM) &&
 		    !QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_FT_SAE_EXT_KEY) &&
-		    !QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_FT_FILS_SHA256) &&
-		    !QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_FT_FILS_SHA384) &&
-		    !QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_FT_PSK_SHA384) &&
 		    nla_put(skb,
 			    QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_KEY_REPLAY_CTR,
 			    REPLAY_CTR_LEN,

@@ -1122,7 +1122,6 @@ ol_tx_completion_handler(ol_txrx_pdev_handle pdev,
 			sizeof(qdf_nbuf_data(netbuf)), tx_desc->id, status,
 			dp_status,
 			tx_desc->vdev->qdf_opmode));
-
 		/*
 		 * If credits are reported through credit_update_ind then do not
 		 * update group credits on tx_complete_ind.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -52,7 +52,6 @@
 #include "wlan_p2p_ucfg_api.h"
 #include "wlan_osif_priv.h"
 #include "wlan_p2p_mcc_quota_public_struct.h"
-#include "wma.h"
 
 const struct nla_policy
 set_mcc_quota_policy[QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_MAX + 1] = {
@@ -64,8 +63,6 @@ set_mcc_quota_policy[QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_CHAN_TIME_PERCENTAGE] =	{
 							.type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_IFINDEX] = { .type = NLA_U32 },
-	[QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_LOW_LATENCY_MODE_ENABLE] = {
-					.type = NLA_U8 },
 };
 
 int wlan_hdd_set_mcc_adaptive_sched(struct wlan_objmgr_psoc *psoc, bool enable)
@@ -85,24 +82,18 @@ int wlan_hdd_set_mcc_adaptive_sched(struct wlan_objmgr_psoc *psoc, bool enable)
 	return 0;
 }
 
-/**
- * wlan_hdd_set_mcc_fixed_quota() - Set/Clear MCC fix quota
- * @hdd_ctx: hdd context
- * @quota_type: quota type
- * @tb: attribute information
- *
- * Return: 0 on success, negative errno on failure
- */
-static int
-wlan_hdd_set_mcc_fixed_quota(struct hdd_context *hdd_ctx,
-			     enum qca_wlan_vendor_mcc_quota_type quota_type,
-			     struct nlattr *tb[])
+int wlan_hdd_cfg80211_set_mcc_quota(struct wiphy *wiphy,
+				    struct wireless_dev *wdev,
+				    const void *attr,
+				    int attr_len)
 {
 	struct hdd_adapter *if_adapter;
+	struct hdd_context *hdd_ctx  = wiphy_priv(wiphy);
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_MAX + 1];
 	struct nlattr *quota_entries[QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_MAX + 1];
 	struct nlattr *curr_attr;
 	struct wlan_objmgr_psoc *psoc;
-	uint32_t duty_cycle, cmd_id, rem_bytes, entries, if_idx;
+	uint32_t duty_cycle, cmd_id, quota_type, rem_bytes, entries, if_idx;
 	struct wlan_user_mcc_quota mcc_quota;
 	int att_id, rc;
 
@@ -115,6 +106,18 @@ wlan_hdd_set_mcc_fixed_quota(struct hdd_context *hdd_ctx,
 	if (!psoc)
 		return -EINVAL;
 
+	if (wlan_cfg80211_nla_parse(tb, QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_MAX,
+				    attr, attr_len, set_mcc_quota_policy)) {
+		hdd_err("Error parsing attributes");
+		return -EINVAL;
+	}
+
+	cmd_id = QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_TYPE;
+	if (!tb[cmd_id]) {
+		hdd_err("Quota type not specified");
+		return -EINVAL;
+	}
+	quota_type = nla_get_u32(tb[cmd_id]);
 	if (quota_type != QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_FIXED &&
 	    quota_type != QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_CLEAR) {
 		hdd_err("Quota type is not valid %u", quota_type);
@@ -173,7 +176,7 @@ wlan_hdd_set_mcc_fixed_quota(struct hdd_context *hdd_ctx,
 			return -EINVAL;
 		}
 
-		if (wlan_hdd_validate_vdev_id(if_adapter->deflink->vdev_id))
+		if (wlan_hdd_validate_vdev_id(if_adapter->vdev_id))
 			return -EINVAL;
 
 		att_id = QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_CHAN_TIME_PERCENTAGE;
@@ -182,7 +185,7 @@ wlan_hdd_set_mcc_fixed_quota(struct hdd_context *hdd_ctx,
 			return -EINVAL;
 		}
 		mcc_quota.quota = nla_get_u32(quota_entries[att_id]);
-		mcc_quota.vdev_id = if_adapter->deflink->vdev_id;
+		mcc_quota.vdev_id = if_adapter->vdev_id;
 		mcc_quota.op_mode = if_adapter->device_mode;
 
 		entries++;
@@ -217,101 +220,6 @@ wlan_hdd_set_mcc_fixed_quota(struct hdd_context *hdd_ctx,
 	return 0;
 }
 
-/**
- * wlan_hdd_set_mcc_low_latency_quota() - Enable/disable MCC low latency
- * mode
- * @hdd_ctx: hdd context
- * @wdev: wdev object
- * @quota_type: quota type
- * @tb: attribute information
- *
- * Return: 0 on success, negative errno on failure
- */
-static int wlan_hdd_set_mcc_low_latency_quota(
-			struct hdd_context *hdd_ctx,
-			struct wireless_dev *wdev,
-			enum qca_wlan_vendor_mcc_quota_type quota_type,
-			struct nlattr *tb[])
-{
-	struct net_device *dev = wdev->netdev;
-	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
-	uint32_t cmd_id;
-	uint8_t ll_enable;
-	int rc;
-	uint32_t ll_mode = 0;
-
-	if (wlan_hdd_validate_context(hdd_ctx))
-		return -EINVAL;
-
-	if (quota_type != QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_LOW_LATENCY) {
-		hdd_err("Quota type %u is not expected %d", quota_type,
-			QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_LOW_LATENCY);
-		return -EINVAL;
-	}
-	cmd_id = QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_LOW_LATENCY_MODE_ENABLE;
-	if (!tb[cmd_id]) {
-		hdd_err("No MCC LL mode attr id %d", cmd_id);
-		return -EINVAL;
-	}
-	ll_enable = nla_get_u8(tb[cmd_id]);
-	if (ll_enable)
-		ll_mode = 1;
-	hdd_debug("set conc ll mode 0x%08x", ll_mode);
-	rc = wma_cli_set_command(adapter->deflink->vdev_id,
-				 wmi_pdev_param_set_conc_low_latency_mode,
-				 ll_mode, PDEV_CMD);
-	if (rc)
-		hdd_err("Failed to set conc low latency mode, %d", rc);
-
-	return 0;
-}
-
-int wlan_hdd_cfg80211_set_mcc_quota(struct wiphy *wiphy,
-				    struct wireless_dev *wdev,
-				    const void *attr,
-				    int attr_len)
-{
-	struct hdd_context *hdd_ctx  = wiphy_priv(wiphy);
-	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_MAX + 1];
-	struct wlan_objmgr_psoc *psoc;
-	uint32_t cmd_id, quota_type;
-	int rc;
-
-	hdd_enter();
-
-	if (wlan_hdd_validate_context(hdd_ctx))
-		return -EINVAL;
-
-	psoc = hdd_ctx->psoc;
-	if (!psoc)
-		return -EINVAL;
-
-	if (wlan_cfg80211_nla_parse(tb, QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_MAX,
-				    attr, attr_len, set_mcc_quota_policy)) {
-		hdd_err("Error parsing attributes");
-		return -EINVAL;
-	}
-
-	cmd_id = QCA_WLAN_VENDOR_ATTR_MCC_QUOTA_TYPE;
-	if (!tb[cmd_id]) {
-		hdd_err("Quota type not specified");
-		return -EINVAL;
-	}
-	quota_type = nla_get_u32(tb[cmd_id]);
-	if (quota_type == QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_FIXED ||
-	    quota_type == QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_CLEAR) {
-		rc = wlan_hdd_set_mcc_fixed_quota(hdd_ctx, quota_type, tb);
-	} else if (quota_type == QCA_WLAN_VENDOR_MCC_QUOTA_TYPE_LOW_LATENCY) {
-		rc = wlan_hdd_set_mcc_low_latency_quota(hdd_ctx, wdev,
-							quota_type, tb);
-	} else {
-		hdd_err("Quota type is not valid %u", quota_type);
-		return -EINVAL;
-	}
-
-	return rc;
-}
-
 int wlan_hdd_apply_user_mcc_quota(struct hdd_adapter *adapter)
 {
 	struct hdd_context *hdd_ctx;
@@ -326,7 +234,7 @@ int wlan_hdd_apply_user_mcc_quota(struct hdd_adapter *adapter)
 
 	if (quota_val == 0) {
 		hdd_debug("no mcc/quota for mode %d, vdev_id : %u",
-			  adapter->device_mode, adapter->deflink->vdev_id);
+			  adapter->device_mode, adapter->vdev_id);
 		return 0;
 	}
 

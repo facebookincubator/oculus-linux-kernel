@@ -273,7 +273,7 @@ struct nan_datapath_pmk {
 };
 
 /**
- * struct nan_datapath_scid - structure to hold security context identifier
+ * struct nan_datapath_scid - structure to hold sceurity context identifier
  * @scid_len: length of scid
  * @scid: scid
  */
@@ -368,16 +368,6 @@ struct nan_datapath_inf_delete_rsp {
 };
 
 /**
- * struct ndp_additional_params - NDP parameters
- * @csid_cap: NAN Cipher Suite Capability field
- * @gtk: GTK protection is required for the NDP
- */
-struct ndp_additional_params {
-	uint32_t csid_cap;
-	uint32_t gtk;
-};
-
-/**
  * struct nan_datapath_initiator_req - ndp initiator request params
  * @vdev: pointer to vdev object
  * @transaction_id: unique identifier
@@ -394,7 +384,6 @@ struct ndp_additional_params {
  * @service_name: service name
  * @is_ipv6_addr_present: indicates if following ipv6 address is valid
  * @ipv6_addr: ipv6 address address used by ndp
- * @ndp_add_params: NDP additional parameters
  */
 struct nan_datapath_initiator_req {
 	struct wlan_objmgr_vdev *vdev;
@@ -412,7 +401,6 @@ struct nan_datapath_initiator_req {
 	struct ndp_service_name service_name;
 	bool is_ipv6_addr_present;
 	uint8_t ipv6_addr[QDF_IPV6_ADDR_SIZE];
-	struct ndp_additional_params ndp_add_params;
 };
 
 /**
@@ -450,7 +438,6 @@ struct nan_datapath_initiator_rsp {
  * @port: port specified by for this NDP
  * @is_protocol_present: indicates if following protocol is valid
  * @protocol: protocol used by this NDP
- * @ndp_add_params: NDP additional parameters
  */
 struct nan_datapath_responder_req {
 	struct wlan_objmgr_vdev *vdev;
@@ -469,7 +456,6 @@ struct nan_datapath_responder_req {
 	uint16_t port;
 	bool is_protocol_present;
 	uint8_t protocol;
-	struct ndp_additional_params ndp_add_params;
 };
 
 /**
@@ -731,7 +717,6 @@ struct nan_datapath_confirm_event {
  * @ipv6_addr: ipv6 address address used by ndp
  * @is_service_id_present: indicates if service id is present
  * @service_id: NDP service id
- * @ndp_add_params: NDP additional parameters
  */
 struct nan_datapath_indication_event {
 	struct wlan_objmgr_vdev *vdev;
@@ -749,7 +734,6 @@ struct nan_datapath_indication_event {
 	uint8_t ipv6_addr[QDF_IPV6_ADDR_SIZE];
 	bool is_service_id_present;
 	uint8_t service_id[NDP_SERVICE_ID_LEN];
-	struct ndp_additional_params ndp_add_params;
 };
 
 /**
@@ -814,7 +798,7 @@ struct nan_datapath_host_event {
  * @delete_peers_by_addr: LIM callback for deleting peer by MAC address
  * @update_ndi_conn: WMA callback to update NDI's connection info
  * @nan_concurrency_update: Callback to handle nan concurrency
- * @set_mc_list: HDD callback to set multicast peer list
+ * @set_mc_list: HDD calback to set multicast peer list
  * @nan_sr_concurrency_update: Callback to handle nan SR(Spatial Reuse)
  * concurrency
  */

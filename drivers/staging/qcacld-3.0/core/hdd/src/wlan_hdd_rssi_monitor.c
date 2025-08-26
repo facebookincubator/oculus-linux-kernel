@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -83,14 +83,14 @@ __wlan_hdd_cfg80211_monitor_rssi(struct wiphy *wiphy,
 		return -EPERM;
 	}
 
-	if (wlan_hdd_validate_vdev_id(adapter->deflink->vdev_id))
+	if (wlan_hdd_validate_vdev_id(adapter->vdev_id))
 		return -EINVAL;
 
 	ret = wlan_hdd_validate_context(hdd_ctx);
 	if (ret)
 		return ret;
 
-	if (!hdd_cm_is_vdev_associated(adapter->deflink)) {
+	if (!hdd_cm_is_vdev_associated(adapter)) {
 		hdd_err("Not in Connected state!");
 		return -ENOTSUPP;
 	}
@@ -112,7 +112,7 @@ __wlan_hdd_cfg80211_monitor_rssi(struct wiphy *wiphy,
 	}
 
 	req.request_id = nla_get_u32(tb[PARAM_REQUEST_ID]);
-	req.vdev_id = adapter->deflink->vdev_id;
+	req.vdev_id = adapter->vdev_id;
 	control = nla_get_u32(tb[PARAM_CONTROL]);
 
 	if (control == QCA_WLAN_RSSI_MONITORING_START) {

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -272,13 +272,11 @@ lim_process_beacon_tx_success_ind(struct mac_context *mac, uint16_t msgType,
  * lim_handle_sta_csa_param() - Handle CSA offload param
  * @mac_ctx: pointer to global adapter context
  * @csa_params: csa parameters.
- * @send_status: Flag to send CSA status to fw in case of failure
  *
  * Return: None
  */
 void lim_handle_sta_csa_param(struct mac_context *mac_ctx,
-			      struct csa_offload_params *csa_params,
-			      bool send_status);
+			      struct csa_offload_params *csa_params);
 
 #ifdef WLAN_FEATURE_11BE_MLO
 /**
@@ -302,16 +300,4 @@ void lim_handle_mlo_sta_csa_param(struct wlan_objmgr_vdev *vdev,
  */
 void lim_send_stop_bss_response(struct mac_context *mac_ctx, uint8_t vdev_id,
 				tSirResultCodes result_code);
-
-/**
- * lim_nss_or_ch_width_update_rsp() - send NSS/ch_width update response to SME
- * @mac_ctx Pointer to Global MAC structure
- * @status: nss/ch_width update status
- * @reason: Indicates whether it's from NSS update or ch_width update
- *
- * Return: None
- */
-void lim_nss_or_ch_width_update_rsp(struct mac_context *mac_ctx,
-				    uint8_t vdev_id, QDF_STATUS status,
-				    enum sir_bcn_update_reason reason);
 #endif /* __LIM_SEND_SME_RSP_H */

@@ -111,50 +111,18 @@ static bool cm_state_init_event(void *ctx, uint16_t event,
 		break;
 	case WLAN_CM_SM_EV_CONNECT_FAILURE:
 		cm_connect_complete(cm_ctx, data);
-
-		if (cm_is_link_switch_connect_resp(data)) {
-			/*
-			 * If non-link switch connect fails, kernel will be
-			 * notified so the driver and kernel are in sync,
-			 * but link switch is internal to driver and any failure
-			 * is not notified to kernel.
-			 * This can lead to kernel and driver going out of sync
-			 * and any new disconnect requests might get dropped as
-			 * CM is in INIT state and kernel will assume that
-			 * interface is still in connected state.
-			 * To handle this situation, change the substate of CM
-			 * to signify VDEV is in INIT state due to link switch,
-			 * so that any later disconnect requests will not be
-			 * dropped.
-			 */
-			cm_sm_transition_to(cm_ctx,
-					    WLAN_CM_SS_IDLE_DUE_TO_LINK_SWITCH);
-		}
 		break;
 	case WLAN_CM_SM_EV_DISCONNECT_DONE:
 		cm_disconnect_complete(cm_ctx, data);
-
-		if (cm_is_link_switch_disconnect_resp(data)) {
-			/*
-			 * Change the substate of CM incase the disconnect
-			 * is due to link switch so that any disconnect requests
-			 * from NB/SB will not get dropped when handling those
-			 * in INIT state.
-			 */
-			cm_sm_transition_to(cm_ctx,
-					    WLAN_CM_SS_IDLE_DUE_TO_LINK_SWITCH);
-		}
 		break;
 	case WLAN_CM_SM_EV_DISCONNECT_REQ:
-		status = cm_handle_discon_req_in_non_connected_state(cm_ctx, data,
-								     WLAN_CM_S_INIT);
-		if (QDF_IS_STATUS_ERROR(status)) {
-			/*
-			 * Return not handled as this req need to be
-			 * dropped and return failure to the requester
-			 */
-			event_handled = false;
-		}
+		cm_handle_discon_req_in_non_connected_state(cm_ctx, data,
+							    WLAN_CM_S_INIT);
+		/*
+		 * Return not handled as this req need to be dropped and return
+		 * failure to the requester
+		 */
+		event_handled = false;
 		break;
 	case WLAN_CM_SM_EV_ROAM_SYNC:
 		/**
@@ -618,13 +586,12 @@ static bool cm_subst_join_pending_event(void *ctx, uint16_t event,
 		break;
 	case WLAN_CM_SM_EV_HW_MODE_SUCCESS:
 	case WLAN_CM_SM_EV_HW_MODE_FAILURE:
-	case WLAN_CM_SM_EV_BEARER_SWITCH_COMPLETE:
 		/* check if cm id is valid for the current req */
 		if (!cm_check_cmid_match_list_head(cm_ctx, data)) {
 			event_handled = false;
 			break;
 		}
-		cm_ser_connect_after_mode_change_resp(cm_ctx, data, event);
+		cm_handle_hw_mode_change(cm_ctx, data, event);
 		break;
 	case WLAN_CM_SM_EV_SCAN:
 		cm_sm_transition_to(cm_ctx, WLAN_CM_SS_SCAN);
@@ -934,150 +901,6 @@ static bool cm_subst_join_active_event(void *ctx, uint16_t event,
 	return event_handled;
 }
 
-#ifdef CONN_MGR_ADV_FEATURE
-/**
- * cm_subst_idle_due_to_link_switch_entry() - Entry API for idle due to
- * link switch substate for connection manager.
- * @ctx: Connection manager context
- *
- * API to perform entry operations to this substate.
- */
-static void cm_subst_idle_due_to_link_switch_entry(void *ctx)
-{
-	struct cnx_mgr *cm_ctx = ctx;
-
-	if (cm_get_state(cm_ctx) != WLAN_CM_S_INIT)
-		QDF_BUG(0);
-
-	cm_set_substate(cm_ctx, WLAN_CM_SS_IDLE_DUE_TO_LINK_SWITCH);
-}
-
-/**
- * cm_subst_idle_due_to_link_switch_exit() - Exit API from idle due to
- * link switch substate for connection manager.
- * @ctx: Connection manager context
- *
- * API to perform exit operations before leaving from this substate.
- */
-static inline void cm_subst_idle_due_to_link_switch_exit(void *ctx)
-{
-}
-
-/**
- * cm_subst_idle_due_to_link_switch_event() - Event handler API for idle
- * due to link switch substate for connection manager.
- * @ctx: connection manager ctx
- * @event: event
- * @data_len: length of @data
- * @data: event data
- *
- * API to handle events in IDLE_DUE_TO_LINK_SWITCH substate.
- * Return true if the event is handled or else return false.
- *
- * Return: bool
- */
-static bool cm_subst_idle_due_to_link_switch_event(void *ctx, uint16_t event,
-						   uint16_t data_len,
-						   void *data)
-{
-	struct cnx_mgr *cm_ctx = ctx;
-	bool event_handled = true;
-	QDF_STATUS status;
-	enum wlan_cm_sm_state cm_state = WLAN_CM_SS_IDLE_DUE_TO_LINK_SWITCH;
-
-	switch (event) {
-	case WLAN_CM_SM_EV_CONNECT_REQ:
-		/*
-		 * If the connect request is due to link switch then
-		 * move the state to INIT to handle usual connect request.
-		 * Connect request due to link switch are only allowed in
-		 * INIT-IDLE and INIT-IDLE_DUE_TO_LINK_SWITCH states in all
-		 * other states the connect request will be rejected.
-		 *
-		 * As VDEV is in INIT state due to link switch and if connect
-		 * request is received from other than link switch, then
-		 * forcefully move VDEV to CONNECTED state, so the event follows
-		 * pre-link switch handling path.
-		 */
-		if (cm_is_link_switch_connect_req(data))
-			cm_sm_transition_to(cm_ctx, WLAN_CM_S_INIT);
-		else
-			cm_sm_transition_to(cm_ctx, WLAN_CM_S_CONNECTED);
-
-		status = cm_sm_deliver_event_sync(cm_ctx, event, data_len,
-						  data);
-		if (QDF_IS_STATUS_ERROR(status))
-			event_handled = false;
-		break;
-	case WLAN_CM_SM_EV_DISCONNECT_REQ:
-		status = cm_handle_discon_req_in_non_connected_state(cm_ctx,
-								     data,
-								     cm_state);
-		/*
-		 * To handle the case where disconnect request is due to
-		 * link switch, return error so that link switch will abort.
-		 */
-		if (QDF_IS_STATUS_ERROR(status)) {
-			event_handled = false;
-			break;
-		}
-		/*
-		 * If disconnect request for non-connected state is success,
-		 * then forcefully move VDEV to disconnecting state and start
-		 * the disconnect sequence.
-		 */
-		cm_sm_transition_to(cm_ctx, WLAN_CM_S_DISCONNECTING);
-		status = cm_sm_deliver_event_sync(cm_ctx,
-						  WLAN_CM_SM_EV_DISCONNECT_START,
-						  data_len, data);
-		if (QDF_IS_STATUS_ERROR(status))
-			event_handled = false;
-
-		break;
-	case WLAN_CM_SM_EV_ROAM_SYNC:
-		/*
-		 * If link switch fails on assoc VDEV and FW roams to new AP
-		 * then the ROAM_SYNC event will be dropped as ROAM_SYNC in
-		 * INIT state is only allowed for link VDEV. Hence move the VDEV
-		 * state to CONNECTED state to handle this event.
-		 */
-		cm_sm_transition_to(cm_ctx, WLAN_CM_S_CONNECTED);
-		status = cm_sm_deliver_event_sync(cm_ctx, event, data_len,
-						  data);
-		if (QDF_IS_STATUS_ERROR(status)) {
-			cm_sm_transition_to(cm_ctx, WLAN_CM_S_INIT);
-			event_handled = false;
-		}
-		break;
-	default:
-		/* Handle all other events in INIT state. */
-		cm_sm_transition_to(cm_ctx, WLAN_CM_S_INIT);
-		status = cm_sm_deliver_event_sync(cm_ctx, event, data_len,
-						  data);
-		if (QDF_IS_STATUS_ERROR(status))
-			event_handled = false;
-		break;
-	}
-
-	return event_handled;
-}
-#else
-static inline void cm_subst_idle_due_to_link_switch_entry(void *ctx)
-{
-}
-
-static inline void cm_subst_idle_due_to_link_switch_exit(void *ctx)
-{
-}
-
-static inline bool
-cm_subst_idle_due_to_link_switch_event(void *ctx, uint16_t event,
-				       uint16_t data_len, void *data)
-{
-	return false;
-}
-#endif
-
 struct wlan_sm_state_info cm_sm_info[] = {
 	{
 		(uint8_t)WLAN_CM_S_INIT,
@@ -1220,16 +1043,6 @@ struct wlan_sm_state_info cm_sm_info[] = {
 		cm_subst_roam_sync_event
 	},
 	{
-		(uint8_t)WLAN_CM_SS_IDLE_DUE_TO_LINK_SWITCH,
-		(uint8_t)WLAN_SM_ENGINE_STATE_NONE,
-		(uint8_t)WLAN_SM_ENGINE_STATE_NONE,
-		false,
-		"IDLE_DUE_TO_LINK_SWITCH",
-		cm_subst_idle_due_to_link_switch_entry,
-		cm_subst_idle_due_to_link_switch_exit,
-		cm_subst_idle_due_to_link_switch_event
-	},
-	{
 		(uint8_t)WLAN_CM_SS_MAX,
 		(uint8_t)WLAN_SM_ENGINE_STATE_NONE,
 		(uint8_t)WLAN_SM_ENGINE_STATE_NONE,
@@ -1280,7 +1093,6 @@ static const char *cm_sm_event_names[] = {
 	"EV_REASSOC_TIMER",
 	"EV_HO_ROAM_DISCONNECT_DONE",
 	"EV_RSO_STOP_RSP",
-	"EV_BEARER_SWITCH_COMPLETE",
 };
 
 enum wlan_cm_sm_state cm_get_state(struct cnx_mgr *cm_ctx)

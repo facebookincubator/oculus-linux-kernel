@@ -45,6 +45,7 @@
  * The maximum headroom reserved for monitor destination buffer to
  * accommodate radiotap header and protocol flow tag
  */
+#ifdef DP_RX_MON_MEM_FRAG
 /*
  *  -------------------------------------------------
  * |       Protocol & Flow TAG      | Radiotap header|
@@ -58,6 +59,7 @@
 	((DP_RX_MON_PF_TAG_LEN_PER_FRAG) * (QDF_NBUF_MAX_FRAGS))
 #define DP_RX_MON_MAX_MONITOR_HEADER \
 	((DP_RX_MON_TOT_PF_TAG_LEN * 2) + (DP_RX_MON_MAX_RADIO_TAP_HDR))
+#endif
 
 #define DP_RX_MON_LLC_SIZE 4
 #define DP_RX_MON_SNAP_SIZE 4
@@ -72,15 +74,13 @@
  * @DP_MON_STATUS_LAG: status ppdu id is lagging
  * @DP_MON_STATUS_LEAD: status ppdu id is leading
  * @DP_MON_STATUS_REPLENISH: status ring entry is NULL
- * @DP_MON_STATUS_MAX: max num of different status
  */
 enum dp_mon_reap_status {
 	DP_MON_STATUS_NO_DMA,
 	DP_MON_STATUS_MATCH,
 	DP_MON_STATUS_LAG,
 	DP_MON_STATUS_LEAD,
-	DP_MON_STATUS_REPLENISH,
-	DP_MON_STATUS_MAX
+	DP_MON_STATUS_REPLENISH
 };
 
 /**
@@ -148,17 +148,6 @@ void dp_full_mon_attach(struct dp_pdev *pdev);
  *
  */
 void dp_full_mon_detach(struct dp_pdev *pdev);
-
-/**
- * dp_full_mon_partial_detach() - Full monitor mode detach with no locks
- * This API deinitilises full monitor mode resources but mon_desc not free
- *
- * @pdev: dp pdev object
- *
- * Return: void
- *
- */
-void dp_full_mon_partial_detach(struct dp_pdev *pdev);
 
 /**
  * dp_rx_mon_process()- API to process monitor destination ring for
@@ -426,7 +415,7 @@ dp_rx_handle_ppdu_undecoded_metadata(struct dp_soc *soc, struct dp_pdev *pdev,
  * @pdev: pdev structure
  * @ppdu_info: structure for rx ppdu ring
  * @nbuf: QDF nbuf
- * @fcs_ok_mpdu_cnt: fcs passed mpdu index
+ * @fcs_ok_mpdu_cnt: fcs passsed mpdu index
  * @deliver_frame: flag to deliver wdi event
  *
  * Return: QDF_STATUS_SUCCESS - If nbuf to be freed by caller
@@ -817,27 +806,4 @@ uint32_t dp_mon_rx_add_tlv(uint8_t id, uint16_t len, void *value,
 void
 dp_mon_rx_stats_update_rssi_dbm_params(struct dp_mon_pdev *mon_pdev,
 				       struct hal_rx_ppdu_info *ppdu_info);
-
-#ifdef WLAN_FEATURE_LOCAL_PKT_CAPTURE
-/**
- * dp_rx_handle_local_pkt_capture() - Rx handle for local packet capture
- * @pdev: Datapath PDEV handle
- * @ppdu_info: Structure for rx ppdu info
- * @nbuf: Qdf nbuf abstraction for linux skb
- *
- * Return: 0 on success, 1 on failure
- */
-int
-dp_rx_handle_local_pkt_capture(struct dp_pdev *pdev,
-			      struct hal_rx_ppdu_info *ppdu_info,
-			      qdf_nbuf_t nbuf);
-#else
-static inline int
-dp_rx_handle_local_pkt_capture(struct dp_pdev *pdev,
-			      struct hal_rx_ppdu_info *ppdu_info,
-			      qdf_nbuf_t nbuf)
-{
-	return 0;
-}
-#endif
 #endif /* _DP_RX_MON_H_ */

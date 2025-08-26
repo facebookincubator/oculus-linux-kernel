@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -155,7 +155,7 @@ enum pmo_wow_interface_pause {
  *  byte match.
  * @PMO_WOW_ENABLE_MAGIC_PATTERN: Enable magic pattern match on all interfaces.
  * @PMO_WOW_ENABLE_PATTERN_BYTE: Enable pattern byte match on all interfaces.
- * @PMO_WOW_ENABLE_BOTH: Enable both magic pattern and pattern byte match on
+ * @PMO_WOW_ENABLE_BOTH: Enable both magic patter and pattern byte match on
  *  all interfaces.
  */
 enum pmo_wow_enable_type {
@@ -331,23 +331,6 @@ struct pmo_icmp_offload {
 };
 #endif
 
-/*
- * enum pmo_page_fault_action - Host action on FW page fault
- * @PMO_PF_HOST_ACTION_NO_OP: Host will ignore PF wakeup event.
- * @PMO_PF_HOST_ACTION_TRIGGER_SSR: Host will trigger SSR on PF threshold.
- * @PMO_PF_HOST_ACTION_NOTIFY_APPS: Host will notify APPS on PF threshold.
- *
- * @PMO_PF_HOST_ACTION_MAX: Reserved and invalid value
- */
-enum pmo_page_fault_action {
-	PMO_PF_HOST_ACTION_NO_OP = 0,
-	PMO_PF_HOST_ACTION_TRIGGER_SSR = 1,
-	PMO_PF_HOST_ACTION_NOTIFY_APPS = 2,
-
-	/* Keep it last */
-	PMO_PF_HOST_ACTION_MAX,
-};
-
 /**
  * struct pmo_psoc_cfg - user configuration required for pmo
  * @ptrn_match_enable_all_vdev: true when pattern match is enable for all vdev
@@ -419,9 +402,9 @@ enum pmo_page_fault_action {
  * @disconnect_sap_tdls_in_wow: sap/p2p_go disconnect or teardown tdls link
  * @is_icmp_offload_enable: true if icmp offload is supported
  *	for psoc else false
- * @host_pf_action: Action to take on page fault
- * @min_pagefault_wakeups_for_action: Min number of pagefaults after which
- * host needs to start act upon.
+ * @enable_ssr_on_page_fault: Enable ssr on pagefault
+ * @max_pagefault_wakeups_for_ssr: Maximum number of pagefaults after which host
+ * needs to trigger SSR
  * @interval_for_pagefault_wakeup_counts: Time in ms in which max pagefault
  * wakeups needs to be monitored.
  * @ssr_frequency_on_pagefault: Time in ms in which SSR needs to be triggered
@@ -441,7 +424,7 @@ struct pmo_psoc_cfg {
 	bool ap_arpns_support;
 	bool d0_wow_supported;
 	bool ra_ratelimit_enable;
-#ifdef FEATURE_WLAN_RA_FILTERING
+#if FEATURE_WLAN_RA_FILTERING
 	uint16_t ra_ratelimit_interval;
 #endif
 	bool magic_ptrn_enable;
@@ -507,8 +490,8 @@ struct pmo_psoc_cfg {
 #ifdef WLAN_FEATURE_ICMP_OFFLOAD
 	bool is_icmp_offload_enable;
 #endif
-	enum pmo_page_fault_action host_pf_action;
-	uint8_t min_pagefault_wakeups_for_action;
+	bool enable_ssr_on_page_fault;
+	uint8_t max_pagefault_wakeups_for_ssr;
 	uint32_t interval_for_pagefault_wakeup_counts;
 	uint32_t ssr_frequency_on_pagefault;
 };

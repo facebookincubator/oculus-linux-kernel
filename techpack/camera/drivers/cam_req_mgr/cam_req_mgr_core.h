@@ -411,6 +411,9 @@ struct cam_req_mgr_connected_device {
  * @wq_congestion        : Indicates if WQ congestion is detected or not
  * @feature_flag         : indicates whether its streaming or fsync trigger based
  *                         or independent CRM mode
+ * @curr_setting         : Current setting ID applied on the link
+ * @new_setting_period_packet : New setting period and pattern received from UMD for UL path
+ * @is_new_setting_available  : Flag to indicate if new setting is available from UMD
  */
 struct cam_req_mgr_core_link {
 	int32_t                              link_hdl;
@@ -452,7 +455,10 @@ struct cam_req_mgr_core_link {
 	bool                                 wq_congestion;
 	uint32_t                             feature_flag;
 	struct setting_pattern_period        setting_period_packet;
+	struct setting_pattern_period        new_setting_period_packet;
 	int                                  curr_seting_idx;
+	int                                  curr_setting;
+	bool                                 is_new_setting_available;
 	bool                                 is_setting_period_valid;
 	bool                                 is_setting_sticky;
 };

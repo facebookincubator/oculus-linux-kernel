@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef _CAM_REQ_MGR_WORKER_WRAPPER_H_
 #define _CAM_REQ_MGR_WORKER_WRAPPER_H_
@@ -112,7 +112,7 @@ struct crm_worker_task {
  * @num_task    : size of tasks pool
  */
 struct cam_req_mgr_core_worker {
-#ifndef CONFIG_KTHREAD_BASED_WORKER
+#ifndef CONFIG_KTHREAD_WORKER
 	struct work_struct         work;
 	struct workqueue_struct   *job;
 #else

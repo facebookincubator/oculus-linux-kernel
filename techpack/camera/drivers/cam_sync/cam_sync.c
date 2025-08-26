@@ -1440,6 +1440,7 @@ static int cam_sync_component_bind(struct device *dev,
 	CAM_DBG(CAM_SYNC, "Component bound successfully");
 	return rc;
 
+
 v4l2_fail:
 	v4l2_device_unregister(sync_dev->vdev->v4l2_dev);
 register_fail:
@@ -1471,6 +1472,8 @@ static void cam_sync_component_unbind(struct device *dev,
 	for (i = 0; i < CAM_SYNC_MAX_OBJS; i++)
 		spin_lock_init(&sync_dev->row_spinlocks[i]);
 
+
+	cam_req_mgr_worker_destroy(&sync_dev->worker);
 	kfree(sync_dev);
 	sync_dev = NULL;
 }

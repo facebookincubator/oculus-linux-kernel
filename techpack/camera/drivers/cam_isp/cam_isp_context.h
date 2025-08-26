@@ -37,6 +37,11 @@
 #define CAM_ISP_CTX_STATE_MONITOR_MAX_ENTRIES   40
 
 /*
+ * Maximum entries in event monitoring array for error logging
+ */
+#define CAM_ISP_CTX_EVENT_MONITOR_MAX_ENTRIES   80
+
+/*
  * Threshold response time in us beyond which a request is not expected
  * to be with IFE hw
  */
@@ -296,8 +301,16 @@ struct cam_isp_context_state_monitor {
 	enum cam_isp_state_change_trigger    trigger;
 	uint64_t                             req_id;
 	int64_t                              frame_id;
-	unsigned int                         evt_time_stamp;
+	ktime_t                              evt_time_stamp;
 };
+
+struct cam_isp_context_event_monitor {
+	ktime_t                              evt_time_stamp;
+	enum cam_isp_ctx_activated_substate  begin_state;
+	uint32_t                             event;
+	enum cam_isp_ctx_activated_substate  end_state;
+};
+
 
 /**
  * struct cam_isp_stream_image - Frame buffer and command to configure
@@ -370,11 +383,13 @@ struct cam_isp_context_ul_setting_data {
  * @last_consumed_addr:       last consumed address
  * @timestamp:                SOF qtimer timestamp
  * @boot_timestamp:           SOF boot timestamp
+ * @staus:                    result status
  */
 struct cam_isp_context_ul_fp_results {
 	uint32_t last_consumed_addr;
 	uint64_t timestamp;
 	uint64_t boot_timestamp;
+	uint32_t status;
 };
 
 /**
@@ -383,8 +398,8 @@ struct cam_isp_context_ul_fp_results {
  * @fast_path_lock:           Spin lock to protect faspath parameters
  *                            between ISR and user thread context
  * @fast_path_buf_done:       Fastpath buf done completion variable
- * @read_idx:				  Read index of the result queue
- * @write_idx:				  Write index of the result queue
+ * @read_idx:                 Read index of the result queue
+ * @write_idx:                Write index of the result queue
  */
 struct cam_isp_context_ul_fp_handling_params {
 	spinlock_t        fast_path_lock;
@@ -517,9 +532,15 @@ struct cam_isp_context {
 	uint64_t                         last_sof_timestamp;
 	uint32_t                         bubble_frame_cnt;
 	uint32_t                         aeb_error_cnt;
+
 	atomic64_t                       state_monitor_head;
 	struct cam_isp_context_state_monitor cam_isp_ctx_state_monitor[
 		CAM_ISP_CTX_STATE_MONITOR_MAX_ENTRIES];
+
+	atomic64_t                       event_monitor_head;
+	struct cam_isp_context_event_monitor cam_isp_ctx_event_monitor[
+		CAM_ISP_CTX_EVENT_MONITOR_MAX_ENTRIES];
+
 	struct cam_isp_context_req_id_info    req_info;
 	atomic64_t                            event_record_head[
 		CAM_ISP_CTX_EVENT_MAX];
@@ -578,8 +599,8 @@ struct cam_isp_context {
 	struct cam_isp_context_ul_setting_data setting_data[MAX_SETTING_PACKETS];
 	struct cam_isp_ctx_ul_data             ul_data;
 	uint32_t                               num_primary_ports;
-  struct cam_isp_primary_port_info      *primary_port_info;
-  uint64_t                               primary_port_exp_mask;
+	struct cam_isp_primary_port_info      *primary_port_info;
+	uint64_t                               primary_port_exp_mask;
 	struct cam_isp_context_ul_fp_handling_params ul_fp_params;
 	struct cam_isp_context_ul_fp_results *ul_fp_results;
 	int32_t                               ul_fp_err_cnt;

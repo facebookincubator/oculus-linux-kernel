@@ -786,10 +786,12 @@ wlan_twt_sap_init_context(struct wlan_objmgr_psoc *psoc,
 			  struct qdf_mac_addr *peer_mac,
 			  uint8_t dialog_id)
 {
-	if (!qdf_is_macaddr_broadcast(peer_mac))
+	if (qdf_is_macaddr_broadcast(peer_mac)) {
+		return wlan_twt_init_all_peers_context(psoc, vdev_id,
+						       dialog_id);
+	} else {
 		return wlan_twt_init_context(psoc, peer_mac, dialog_id);
-
-	return wlan_twt_init_all_peers_context(psoc, vdev_id, dialog_id);
+	}
 }
 
 /**
@@ -1759,131 +1761,6 @@ wlan_twt_process_add_initial_nego(struct wlan_objmgr_psoc *psoc,
 				   WLAN_TWT_SETUP_STATE_ACTIVE);
 }
 
-/*
- * wlan_twt_clear_wake_dur_and_interval() - Clear cached TWT wake duration and
- * wake interval of peer.
- * @psoc: Pointer to psoc object
- * @vdev_id: Vdev Id
- * @peer_mac: Peer mac address
- * @dialog_id: Dialog Id
- *
- * Return: QDF_STATUS
- */
-static void
-wlan_twt_clear_wake_dur_and_interval(struct wlan_objmgr_psoc *psoc,
-				     uint8_t vdev_id,
-				     struct qdf_mac_addr *peer_mac,
-				     uint8_t dialog_id)
-{
-	struct twt_peer_priv_obj *peer_priv;
-	struct wlan_objmgr_peer *peer;
-	uint8_t i;
-
-	peer = wlan_objmgr_get_peer_by_mac(psoc, peer_mac->bytes,
-					   WLAN_TWT_ID);
-	if (!peer) {
-		twt_err("Peer object not found "QDF_MAC_ADDR_FMT,
-			QDF_MAC_ADDR_REF(peer_mac->bytes));
-		return;
-	}
-	peer_priv = wlan_objmgr_peer_get_comp_private_obj(peer,
-							  WLAN_UMAC_COMP_TWT);
-	if (!peer_priv) {
-		wlan_objmgr_peer_release_ref(peer, WLAN_TWT_ID);
-		twt_err(" peer twt component object is NULL");
-		return;
-	}
-
-	qdf_mutex_acquire(&peer_priv->twt_peer_lock);
-
-	for (i = 0; i < peer_priv->num_twt_sessions; i++) {
-		if (peer_priv->session_info[i].dialog_id == dialog_id) {
-			peer_priv->session_info[i].dialog_id = TWT_ALL_SESSIONS_DIALOG_ID;
-			peer_priv->session_info[i].wake_dur = 0;
-			peer_priv->session_info[i].wake_interval = 0;
-			break;
-		}
-	}
-
-	twt_debug("vdev:%d peer:" QDF_MAC_ADDR_FMT " dialog_id:%d wake_dur:%d wake_interval:%d",
-		  vdev_id,
-		  QDF_MAC_ADDR_REF(peer_mac->bytes),
-		  peer_priv->session_info[i].dialog_id,
-		  peer_priv->session_info[i].wake_dur,
-		  peer_priv->session_info[i].wake_interval);
-
-	qdf_mutex_release(&peer_priv->twt_peer_lock);
-	wlan_objmgr_peer_release_ref(peer, WLAN_TWT_ID);
-}
-
-/*
- * wlan_twt_set_wake_dur_and_interval() - Set TWT wake duration and wake
- * interval of peer.
- * @psoc: Pointer to psoc object
- * @vdev_id: Vdev Id
- * @peer_mac: Peer mac address
- * @dialog_id: Dialog Id
- * @wake_dur: TWT wake duration
- * @wake_interval: TWT wake interval
- *
- * Return: QDF_STATUS
- */
-static void
-wlan_twt_set_wake_dur_and_interval(struct wlan_objmgr_psoc *psoc,
-				   uint8_t vdev_id,
-				   struct qdf_mac_addr *peer_mac,
-				   uint8_t dialog_id,
-				   uint32_t wake_dur,
-				   uint32_t wake_interval)
-{
-	struct twt_peer_priv_obj *peer_priv;
-	struct wlan_objmgr_peer *peer;
-	uint8_t i;
-
-	peer = wlan_objmgr_get_peer_by_mac(psoc, peer_mac->bytes,
-					   WLAN_TWT_ID);
-	if (!peer) {
-		twt_err("Peer object not found "QDF_MAC_ADDR_FMT,
-			QDF_MAC_ADDR_REF(peer_mac->bytes));
-		return;
-	}
-
-	peer_priv = wlan_objmgr_peer_get_comp_private_obj(peer,
-							  WLAN_UMAC_COMP_TWT);
-	if (!peer_priv) {
-		wlan_objmgr_peer_release_ref(peer, WLAN_TWT_ID);
-		twt_err(" peer twt component object is NULL");
-		return;
-	}
-
-	qdf_mutex_acquire(&peer_priv->twt_peer_lock);
-
-	for (i = 0; i < peer_priv->num_twt_sessions; i++) {
-		if (peer_priv->session_info[i].dialog_id == dialog_id) {
-			peer_priv->session_info[i].wake_dur = wake_dur;
-			peer_priv->session_info[i].wake_interval = wake_interval;
-				break;
-		} else {
-			if (peer_priv->session_info[i].dialog_id == TWT_ALL_SESSIONS_DIALOG_ID) {
-				peer_priv->session_info[i].dialog_id = dialog_id;
-				peer_priv->session_info[i].wake_dur = wake_dur;
-				peer_priv->session_info[i].wake_interval = wake_interval;
-				break;
-			}
-		}
-	}
-
-	twt_debug("vdev:%d peer:" QDF_MAC_ADDR_FMT " dialog_id:%d wake_dur:%d wake_interval:%d",
-		  vdev_id,
-		  QDF_MAC_ADDR_REF(peer_mac->bytes),
-		  peer_priv->session_info[i].dialog_id,
-		  peer_priv->session_info[i].wake_dur,
-		  peer_priv->session_info[i].wake_interval);
-
-	qdf_mutex_release(&peer_priv->twt_peer_lock);
-	wlan_objmgr_peer_release_ref(peer, WLAN_TWT_ID);
-}
-
 QDF_STATUS
 wlan_twt_setup_complete_event_handler(struct wlan_objmgr_psoc *psoc,
 				    struct twt_add_dialog_complete_event *event)
@@ -1914,12 +1791,6 @@ wlan_twt_setup_complete_event_handler(struct wlan_objmgr_psoc *psoc,
 
 	switch (opmode) {
 	case QDF_SAP_MODE:
-		wlan_twt_set_wake_dur_and_interval(
-					psoc, vdev_id,
-					&event->params.peer_macaddr,
-					event->params.dialog_id,
-					event->additional_params.wake_dur_us,
-					event->additional_params.wake_intvl_us);
 		qdf_status = mlme_twt_osif_setup_complete_ind(psoc, event,
 							      false);
 		break;
@@ -2053,10 +1924,6 @@ wlan_twt_teardown_complete_event_handler(struct wlan_objmgr_psoc *psoc,
 	switch (opmode) {
 	case QDF_SAP_MODE:
 		mlme_twt_osif_teardown_complete_ind(psoc, event);
-
-		wlan_twt_clear_wake_dur_and_interval(psoc, vdev_id,
-						     &event->peer_macaddr,
-						     event->dialog_id);
 
 		/*
 		 * If this is an unsolicited TWT del event initiated from the
@@ -2286,7 +2153,6 @@ void wlan_twt_set_work_params(
 			struct wlan_objmgr_vdev *vdev,
 			struct qdf_mac_addr *peer_mac,
 			uint8_t dialog_id,
-			bool is_ps_disabled,
 			uint32_t twt_next_action)
 {
 	struct twt_vdev_priv_obj *twt_vdev_priv;
@@ -2301,12 +2167,10 @@ void wlan_twt_set_work_params(
 
 	qdf_copy_macaddr(&twt_vdev_priv->peer_macaddr, peer_mac);
 	twt_vdev_priv->dialog_id = dialog_id;
-	twt_vdev_priv->is_ps_disabled = is_ps_disabled;
 	twt_vdev_priv->next_action = twt_next_action;
 
-	twt_debug("TWT terminate: dialog_id:%d is_ps_disabled:%d next_action:%d peer mac_addr  "
+	twt_debug("renego: twt_terminate: dialog_id:%d next_action:%d peer mac_addr  "
 		   QDF_MAC_ADDR_FMT, twt_vdev_priv->dialog_id,
-		   twt_vdev_priv->is_ps_disabled,
 		   twt_vdev_priv->next_action,
 		   QDF_MAC_ADDR_REF(twt_vdev_priv->peer_macaddr.bytes));
 }
@@ -2326,6 +2190,5 @@ void wlan_twt_get_work_params(struct wlan_objmgr_vdev *vdev,
 
 	qdf_copy_macaddr(&params->peer_macaddr, &twt_vdev_priv->peer_macaddr);
 	params->dialog_id = twt_vdev_priv->dialog_id;
-	params->is_ps_disabled = twt_vdev_priv->is_ps_disabled;
 	*next_action = twt_vdev_priv->next_action;
 }

@@ -20,7 +20,6 @@
 
 #include <qdf_nbuf_frag.h>
 #include <hal_be_api_mon.h>
-#include <dp_mon_2.0.h>
 
 #define DP_RX_MON_PACKET_OFFSET 8
 #define DP_RX_MON_RX_HDR_OFFSET 8
@@ -51,66 +50,6 @@
 			    + (DP_RX_MON_TLV_TOTAL_LEN))
 
 #define DP_RX_MON_WQ_THRESHOLD 128
-
-#define DP_RX_MON_MAX_RX_HEADER_LEN 128
-
-#ifdef WLAN_PKT_CAPTURE_RX_2_0
-QDF_STATUS dp_mon_pdev_ext_init_2_0(struct dp_pdev *pdev);
-QDF_STATUS dp_mon_pdev_ext_deinit_2_0(struct dp_pdev *pdev);
-
-#ifdef QCA_KMEM_CACHE_SUPPORT
-QDF_STATUS dp_rx_mon_ppdu_info_cache_create(struct dp_pdev *pdev);
-void dp_rx_mon_ppdu_info_cache_destroy(struct dp_pdev *pdev);
-struct hal_rx_ppdu_info*
-dp_rx_mon_get_ppdu_info(struct dp_mon_pdev *mon_pdev);
-void
-dp_rx_mon_free_ppdu_info(struct dp_pdev *pdev,
-			 struct hal_rx_ppdu_info *ppdu_info);
-void
-__dp_rx_mon_free_ppdu_info(struct dp_mon_pdev *mon_pdev,
-			   struct hal_rx_ppdu_info *ppdu_info);
-#else
-static inline QDF_STATUS dp_rx_mon_ppdu_info_cache_create(struct dp_pdev *pdev)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline void dp_rx_mon_ppdu_info_cache_destroy(struct dp_pdev *pdev)
-{
-}
-
-static inline struct hal_rx_ppdu_info*
-dp_rx_mon_get_ppdu_info(struct dp_mon_pdev *mon_pdev)
-{
-	qdf_mem_zero(&mon_pdev->ppdu_info, sizeof(struct hal_rx_ppdu_info));
-	return &mon_pdev->ppdu_info;
-}
-
-static inline void
-dp_rx_mon_free_ppdu_info(struct dp_pdev *pdev,
-			 struct hal_rx_ppdu_info *ppdu_info)
-{
-}
-
-static inline void
-__dp_rx_mon_free_ppdu_info(struct dp_mon_pdev *mon_pdev,
-			   struct hal_rx_ppdu_info *ppdu_info)
-{
-}
-#endif
-
-QDF_STATUS dp_rx_mon_pdev_htt_srng_setup_2_0(struct dp_soc *soc,
-					    struct dp_pdev *pdev,
-					    int mac_id,
-					    int mac_for_pdev);
-QDF_STATUS dp_rx_mon_soc_htt_srng_setup_2_0(struct dp_soc *soc,
-					    int mac_id);
-QDF_STATUS dp_rx_mon_pdev_rings_alloc_2_0(struct dp_pdev *pdev, int lmac_id);
-void dp_rx_mon_pdev_rings_free_2_0(struct dp_pdev *pdev, int lmac_id);
-QDF_STATUS dp_rx_mon_pdev_rings_init_2_0(struct dp_pdev *pdev, int lmac_id);
-void dp_rx_mon_pdev_rings_deinit_2_0(struct dp_pdev *pdev, int lmac_id);
-QDF_STATUS dp_rx_mon_soc_init_2_0(struct dp_soc *soc);
-
 /*
  * dp_rx_mon_buffers_alloc() - allocate rx monitor buffers
  * @soc: DP soc handle
@@ -201,234 +140,21 @@ void
 dp_rx_mon_populate_ppdu_info_2_0(struct hal_rx_ppdu_info *hal_ppdu_info,
 				 struct cdp_rx_indication_ppdu *ppdu);
 
-QDF_STATUS dp_rx_mon_soc_attach_2_0(struct dp_soc *soc, int lmac_id);
-void  dp_rx_mon_soc_detach_2_0(struct dp_soc *soc, int lmac_id);
-void dp_rx_mon_soc_deinit_2_0(struct dp_soc *soc, uint32_t lmac_id);
+/**
+ * dp_rx_process_pktlog_be() - process pktlog
+ * @soc: dp soc handle
+ * @pdev: dp pdev handle
+ * @ppdu_info: HAL PPDU info
+ * @status_frag: frag pointer which needs to be added to nbuf
+ * @end_offset: Offset in frag to be added to nbuf_frags
+ *
+ * Return: QDF_STATUS_SUCCESS or Failure
+ */
+QDF_STATUS dp_rx_process_pktlog_be(struct dp_soc *soc, struct dp_pdev *pdev,
+				   struct hal_rx_ppdu_info *ppdu_info,
+				   void *status_frag, uint32_t end_offset);
 
-#ifndef QCA_MONITOR_2_0_PKT_SUPPORT
-static inline QDF_STATUS dp_rx_mon_init_wq_sm(struct dp_pdev *pdev)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline QDF_STATUS dp_rx_mon_deinit_wq_sm(struct dp_pdev *pdev)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline QDF_STATUS
-dp_rx_mon_add_ppdu_info_to_wq(struct dp_pdev *pdev,
-			      struct hal_rx_ppdu_info *ppdu_info)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline int
-dp_rx_mon_flush_packet_tlv(struct dp_pdev *pdev, void *buf, uint16_t end_offset,
-			   union dp_mon_desc_list_elem_t **desc_list,
-			   union dp_mon_desc_list_elem_t **tail)
-{
-	return 0;
-}
-
-static inline void
-dp_rx_mon_handle_rx_hdr(struct dp_pdev *pdev,
-			struct hal_rx_ppdu_info *ppdu_info,
-			void *status_frag)
-{
-}
-
-static inline uint16_t
-dp_rx_mon_handle_mon_buf_addr(struct dp_pdev *pdev,
-			      struct hal_rx_ppdu_info *ppdu_info,
-			      union dp_mon_desc_list_elem_t **desc_list,
-			      union dp_mon_desc_list_elem_t **tail)
-{
-	return 0;
-}
-
-static inline void
-dp_rx_mon_handle_msdu_end(struct dp_pdev *pdev,
-			  struct hal_rx_ppdu_info *ppdu_info)
-{
-}
-
-static inline void
-dp_rx_mon_reset_mpdu_q(struct hal_rx_ppdu_info *ppdu_info)
-{
-}
-
-static inline void
-dp_rx_mon_handle_mpdu_start(struct hal_rx_ppdu_info *ppdu_info)
-{
-}
-
-static inline void
-dp_rx_mon_handle_mpdu_end(struct hal_rx_ppdu_info *ppdu_info)
-{
-}
-
-static inline QDF_STATUS
-dp_rx_mon_nbuf_add_rx_frag(qdf_nbuf_t nbuf, qdf_frag_t *frag,
-			   uint16_t frag_len, uint16_t offset,
-			   uint16_t buf_size, bool frag_ref)
-{
-	return 0;
-}
-
-static inline void
-dp_rx_mon_pf_tag_to_buf_headroom_2_0(void *nbuf,
-				     struct hal_rx_ppdu_info *ppdu_info,
-				     struct dp_pdev *pdev, struct dp_soc *soc)
-{
-}
-#endif
-#else
-static inline QDF_STATUS dp_mon_pdev_ext_init_2_0(struct dp_pdev *pdev)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline QDF_STATUS dp_mon_pdev_ext_deinit_2_0(struct dp_pdev *pdev)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline QDF_STATUS dp_rx_mon_ppdu_info_cache_create(struct dp_pdev *pdev)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline void dp_rx_mon_ppdu_info_cache_destroy(struct dp_pdev *pdev)
-{
-}
-
-static inline struct hal_rx_ppdu_info*
-dp_rx_mon_get_ppdu_info(struct dp_mon_pdev *mon_pdev)
-{
-	return NULL;
-}
-
-static inline void
-dp_rx_mon_free_ppdu_info(struct dp_pdev *pdev,
-			 struct hal_rx_ppdu_info *ppdu_info)
-{
-}
-
-static inline QDF_STATUS
-dp_rx_mon_buffers_alloc(struct dp_soc *soc, uint32_t size)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline
-QDF_STATUS dp_rx_mon_soc_init_2_0(struct dp_soc *soc)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline void
-dp_rx_mon_buffers_free(struct dp_soc *soc)
-
-{
-}
-
-static inline void
-dp_rx_mon_buf_desc_pool_deinit(struct dp_soc *soc)
-{
-}
-
-static inline QDF_STATUS
-dp_rx_mon_buf_desc_pool_init(struct dp_soc *soc)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline void dp_rx_mon_buf_desc_pool_free(struct dp_soc *soc)
-{
-}
-
-static inline QDF_STATUS
-dp_rx_mon_buf_desc_pool_alloc(struct dp_soc *soc)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline
-void dp_rx_mon_stats_update_2_0(struct dp_mon_peer *mon_peer,
-				struct cdp_rx_indication_ppdu *ppdu,
-				struct cdp_rx_stats_ppdu_user *ppdu_user)
-{
-}
-
-static inline void
-dp_rx_mon_populate_ppdu_usr_info_2_0(struct mon_rx_user_status *rx_user_status,
-				     struct cdp_rx_stats_ppdu_user *ppdu_user)
-{
-}
-
-static inline void
-dp_rx_mon_populate_ppdu_info_2_0(struct hal_rx_ppdu_info *hal_ppdu_info,
-				 struct cdp_rx_indication_ppdu *ppdu)
-{
-}
-
-static inline
-QDF_STATUS dp_rx_mon_pdev_htt_srng_setup_2_0(struct dp_soc *soc,
-					    struct dp_pdev *pdev,
-					    int mac_id,
-					    int mac_for_pdev)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline
-QDF_STATUS dp_rx_mon_soc_htt_srng_setup_2_0(struct dp_soc *soc,
-					    int mac_id)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline
-QDF_STATUS dp_rx_mon_pdev_rings_alloc_2_0(struct dp_pdev *pdev, int lmac_id)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline
-void dp_rx_mon_pdev_rings_free_2_0(struct dp_pdev *pdev, int lmac_id)
-{
-}
-
-static inline
-QDF_STATUS dp_rx_mon_pdev_rings_init_2_0(struct dp_pdev *pdev, int lmac_id)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline
-void dp_rx_mon_pdev_rings_deinit_2_0(struct dp_pdev *pdev, int lmac_id)
-{
-}
-
-static inline
-QDF_STATUS dp_rx_mon_soc_attach_2_0(struct dp_soc *soc, int lmac_id)
-{
-	return QDF_STATUS_SUCCESS;
-}
-
-static inline
-void dp_rx_mon_soc_detach_2_0(struct dp_soc *soc, int lmac_id)
-{
-}
-
-static inline
-void dp_rx_mon_soc_deinit_2_0(struct dp_soc *soc, uint32_t lmac_id)
-{
-}
-#endif
-
-#if !defined(DISABLE_MON_CONFIG) && defined(WLAN_PKT_CAPTURE_RX_2_0)
+#if !defined(DISABLE_MON_CONFIG)
 /*
  * dp_rx_mon_process_2_0() - Process Rx monitor interrupt
  *
@@ -448,7 +174,7 @@ dp_rx_mon_process_2_0(struct dp_soc *soc, struct dp_intr *int_ctx,
  */
 void dp_rx_mon_process_ppdu(void *context);
 #else
-static inline uint32_t
+static uint32_t
 dp_rx_mon_process_2_0(struct dp_soc *soc, struct dp_intr *int_ctx,
 		      uint32_t mac_id, uint32_t quota)
 {
@@ -491,10 +217,22 @@ void dp_rx_mon_drain_wq(struct dp_pdev *pdev);
  *
  * Return: void
  */
-void dp_mon_free_parent_nbuf(struct dp_mon_pdev *mon_pdev,
+void
+dp_mon_free_parent_nbuf(struct dp_mon_pdev *mon_pdev,
 			qdf_nbuf_t nbuf);
+#if !defined(WLAN_SUPPORT_RX_PROTOCOL_TYPE_TAG) &&\
+	!defined(WLAN_SUPPORT_RX_FLOW_TAG)
+void
+dp_rx_mon_pf_tag_to_buf_headroom_2_0(void *nbuf,
+				     struct hal_rx_ppdu_info *ppdu_info,
+				     struct dp_pdev *pdev, struct dp_soc *soc)
+{
+}
 
-#ifdef QCA_ENHANCED_STATS_SUPPORT
+void dp_rx_mon_shift_pf_tag_in_headroom(qdf_nbuf_t nbuf, struct dp_soc *soc)
+{
+}
+#endif /* WLAN_SUPPORT_RX_PROTOCOL_TYPE_TAG */
 /**
  * dp_mon_rx_print_advanced_stats_2_0() - print advanced monitor statistics
  *
@@ -505,45 +243,4 @@ void dp_mon_free_parent_nbuf(struct dp_mon_pdev *mon_pdev,
  */
 void dp_mon_rx_print_advanced_stats_2_0(struct dp_soc *soc,
 					struct dp_pdev *pdev);
-#else
-static inline
-void dp_mon_rx_print_advanced_stats_2_0(struct dp_soc *soc,
-					struct dp_pdev *pdev)
-{
-}
-#endif
-
-#ifdef BE_PKTLOG_SUPPORT
-/**
- * dp_rx_process_pktlog_be() - process pktlog
- * @soc: dp soc handle
- * @pdev: dp pdev handle
- * @ppdu_info: HAL PPDU info
- * @status_frag: frag pointer which needs to be added to nbuf
- * @end_offset: Offset in frag to be added to nbuf_frags
- *
- * Return: QDF_STATUS_SUCCESS or Failure
- */
-QDF_STATUS
-dp_rx_process_pktlog_be(struct dp_soc *soc, struct dp_pdev *pdev,
-			struct hal_rx_ppdu_info *ppdu_info,
-			void *status_frag, uint32_t end_offset);
-#else
-static inline QDF_STATUS
-dp_rx_process_pktlog_be(struct dp_soc *soc, struct dp_pdev *pdev,
-			struct hal_rx_ppdu_info *ppdu_info,
-			void *status_frag, uint32_t end_offset)
-{
-	return QDF_STATUS_SUCCESS;
-}
-#endif
-
-/**
- * dp_rx_mon_append_nbuf() - Append nbuf to parent nbuf
- * @nbuf: Parent nbuf
- * @tmp_nbuf: nbuf to be attached to parent
- *
- * Return: void
- */
-void dp_rx_mon_append_nbuf(qdf_nbuf_t nbuf, qdf_nbuf_t tmp_nbuf);
 #endif /* _DP_RX_MON_2_0_H_ */

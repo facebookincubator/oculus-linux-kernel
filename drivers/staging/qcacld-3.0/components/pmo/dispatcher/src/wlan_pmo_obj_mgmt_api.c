@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -503,9 +503,12 @@ QDF_STATUS pmo_suspend_all_components(struct wlan_objmgr_psoc *psoc,
 	pmo_psoc_suspend_handler handler;
 	void *arg;
 
+	pmo_enter();
+
 	pmo_ctx = pmo_get_context();
 	if (!pmo_ctx) {
 		pmo_err("unable to get pmo ctx");
+		QDF_ASSERT(0);
 		status = QDF_STATUS_E_FAILURE;
 		goto exit_with_status;
 	}
@@ -524,6 +527,7 @@ QDF_STATUS pmo_suspend_all_components(struct wlan_objmgr_psoc *psoc,
 		if (QDF_IS_STATUS_ERROR(status)) {
 			pmo_err("component %d failed to suspend; status: %d",
 				i, status);
+			QDF_ASSERT(0);
 			goto suspend_recovery;
 		}
 	}
@@ -548,6 +552,8 @@ suspend_recovery:
 	}
 
 exit_with_status:
+	pmo_exit();
+
 	return status;
 }
 
@@ -559,6 +565,8 @@ QDF_STATUS pmo_resume_all_components(struct wlan_objmgr_psoc *psoc,
 	uint8_t i;
 	pmo_psoc_suspend_handler handler;
 	void *arg;
+
+	pmo_enter();
 
 	pmo_ctx = pmo_get_context();
 	if (!pmo_ctx) {
@@ -588,6 +596,8 @@ QDF_STATUS pmo_resume_all_components(struct wlan_objmgr_psoc *psoc,
 	}
 
 exit_with_status:
+	pmo_exit();
+
 	return status;
 }
 
@@ -893,20 +903,15 @@ wlan_pmo_get_go_mode_bus_suspend(struct wlan_objmgr_psoc *psoc)
 	return pmo_psoc_ctx->psoc_cfg.is_bus_suspend_enabled_in_go_mode;
 }
 
-bool wlan_pmo_no_op_on_page_fault(struct wlan_objmgr_psoc *psoc)
-{
-	return pmo_no_op_on_page_fault(psoc);
-}
-
 bool wlan_pmo_enable_ssr_on_page_fault(struct wlan_objmgr_psoc *psoc)
 {
 	return pmo_enable_ssr_on_page_fault(psoc);
 }
 
 uint8_t
-wlan_pmo_get_min_pagefault_wakeups_for_action(struct wlan_objmgr_psoc *psoc)
+wlan_pmo_get_max_pagefault_wakeups_for_ssr(struct wlan_objmgr_psoc *psoc)
 {
-	return pmo_get_min_pagefault_wakeups_for_action(psoc);
+	return pmo_get_max_pagefault_wakeups_for_ssr(psoc);
 }
 
 uint32_t

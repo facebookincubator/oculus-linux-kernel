@@ -25,9 +25,8 @@
 #include <dp_mon_filter.h>
 #include <dp_htt.h>
 #include <dp_mon.h>
-#ifdef WLAN_PKT_CAPTURE_TX_2_0
 #include <dp_tx_mon_2.0.h>
-#endif
+
 #define DP_MON_RING_FILL_LEVEL_DEFAULT 2048
 #define DP_MON_DATA_BUFFER_SIZE     2048
 #define DP_MON_DESC_MAGIC 0xdeadabcd
@@ -35,114 +34,9 @@
 #define DP_MON_QUEUE_DEPTH_MAX 16
 #define DP_MON_MSDU_LOGGING 0
 #define DP_MON_MPDU_LOGGING 1
-#define DP_MON_DESC_ADDR_MASK 0x000000FFFFFFFFFF
-#define DP_MON_DESC_ADDR_SHIFT 40
-#define DP_MON_DESC_FIXED_ADDR_MASK 0xFFFFFF
-#define DP_MON_DESC_FIXED_ADDR ((uint64_t)DP_MON_DESC_FIXED_ADDR_MASK << \
-	DP_MON_DESC_COOKIE_LSB)
-#define DP_MON_DESC_COOKIE_MASK 0xFFFFFF0000000000
-#define DP_MON_DESC_COOKIE_SHIFT 24
-#define DP_MON_DESC_COOKIE_LSB 40
-#define DP_MON_GET_COOKIE(mon_desc) \
-	((uint32_t)(((unsigned long long)(mon_desc) & DP_MON_DESC_COOKIE_MASK) \
-	>> DP_MON_DESC_COOKIE_LSB))
-
-#ifdef DP_RX_MON_DESC_64_BIT
-#define  DP_MON_GET_DESC(mon_desc) \
-	((struct dp_mon_desc *)(uintptr_t)(((unsigned long long)(mon_desc) & \
-	DP_MON_DESC_ADDR_MASK) | ((unsigned long long)DP_MON_DESC_FIXED_ADDR)))
-
-#else
-#define  DP_MON_GET_DESC(mon_desc) \
-	((struct dp_mon_desc *)(uintptr_t)(((unsigned long)(mon_desc) & \
-	DP_MON_DESC_ADDR_MASK)))
-#endif
 
 #define DP_MON_DECAP_FORMAT_INVALID 0xff
 #define DP_MON_MIN_FRAGS_FOR_RESTITCH 2
-
-#ifdef MONITOR_TLV_RECORDING_ENABLE
-#define MONITOR_TLV_RECORDING_RX 1
-#define MONITOR_TLV_RECORDING_TX 2
-#define MONITOR_TLV_RECORDING_RXTX 3
-
-#define MAX_TLV_LOGGING_SIZE 1024
-
-#define MAX_PPDU_START_TLV_NUM 38
-#define MAX_MPDU_TLV_NUM 160
-#define MAX_PPDU_END_TLV_NUM 57
-
-#define MAX_NUM_PPDU_RECORD 4
-#define MAX_TLVS_PER_PPDU 255
-
-/*
- * struct dp_mon_tlv_info - recorded information of each TLV
- * @tlv_tag: tlv tag
- * @data: union of struct of fields to be recorded for each TLV
- *
- * Tag and its corresponding important fields are stored in this struct
- */
-struct dp_mon_tlv_info {
-	uint32_t tlv_tag:10;
-	union {
-		struct hal_ppdu_start_tlv_record ppdu_start;
-		struct hal_ppdu_start_user_info_tlv_record  ppdu_start_user_info;
-		struct hal_mpdu_start_tlv_record mpdu_start;
-		struct hal_mpdu_end_tlv_record mpdu_end;
-		struct hal_header_tlv_record header;
-		struct hal_msdu_end_tlv_record msdu_end;
-		struct hal_mon_buffer_addr_tlv_record mon_buffer_addr;
-		struct hal_phy_location_tlv_record phy_location;
-		struct hal_ppdu_end_user_stats_tlv_record ppdu_end_user_stats;
-		struct hal_pcu_ppdu_end_info_tlv_record pcu_ppdu_end_info;
-		struct hal_phy_rx_ht_sig_tlv_record phy_rx_ht_sig;
-		uint32_t data:22;
-	} data;
-};
-
-/*
- * struct dp_tx_mon_tlv_info - recorded information of each Tx TLV
- * @tlv_tag: tlv tag
- * @data: union of struct of fields to be recorded for each TLV
- *
- * Tag and its corresponding important fields are stored in this struct
- */
-
-struct dp_tx_mon_tlv_info {
-	uint32_t tlv_tag:10;
-	union {
-		/*struct of Tx TLVs to be added here*/
-		uint32_t data:22;
-	} data;
-};
-
-/**
- * struct dp_mon_tlv_logger - contains indexes and other data of the buffer
- * @buff: buffer in which TLVs are stored
- * @curr_ppdu_pos: position of the next ppdu to be written
- * @ppdu_start_idx: starting index form which PPDU start level TLVs are stored for a ppdu
- * @mpdu_idx: starting index form which MPDU TLVs are stored for a ppdu
- * @ppdu_end_idx: starting index form which PPDU end level TLVs are stored for a ppdu
- * @max_ppdu_start_idx: ending index for PPDU start level TLVs for a ppdu
- * @max_mpdu_idx: ending index for MPDU level TLVs for a ppdu
- * @max_ppdu_end_idx: ending index for PPDU end level TLVs for a ppdu
- * @wrap_flag: flag toggle between consecutive PPDU
- * @tlv_logging_enable: check is tlv logging is enabled
- *
- */
-struct dp_mon_tlv_logger {
-	void *buff;
-	uint16_t curr_ppdu_pos;
-	uint16_t ppdu_start_idx;
-	uint16_t mpdu_idx;
-	uint16_t ppdu_end_idx;
-	uint16_t max_ppdu_start_idx;
-	uint16_t max_ppdu_end_idx;
-	uint16_t max_mpdu_idx;
-	uint8_t wrap_flag;
-	bool tlv_logging_enable;
-};
-#endif
 
 /* monitor frame filter modes */
 enum dp_mon_frm_filter_mode {
@@ -176,7 +70,7 @@ enum dp_mpdu_filter_category {
  */
 struct dp_mon_filter_be {
 	struct dp_mon_filter rx_tlv_filter;
-#ifdef WLAN_PKT_CAPTURE_TX_2_0
+#ifdef QCA_MONITOR_2_0_SUPPORT
 	struct htt_tx_ring_tlv_filter tx_tlv_filter;
 #endif
 	bool tx_valid;
@@ -190,7 +84,6 @@ struct dp_mon_filter_be {
  * @in_use: desc is in use
  * @unmapped: used to mark desc an unmapped if the corresponding
  * nbuf is already unmapped
- * @cookie_2: unique cookie provided as part of 64 bit cookie to HW
  * @end_offset: offset in status buffer where DMA ended
  * @cookie: unique desc identifier
  * @magic: magic number to validate desc data
@@ -198,9 +91,8 @@ struct dp_mon_filter_be {
 struct dp_mon_desc {
 	uint8_t *buf_addr;
 	qdf_dma_addr_t paddr;
-	uint32_t in_use:1,
-		unmapped:1,
-		cookie_2:24;
+	uint8_t in_use:1,
+		unmapped:1;
 	uint16_t end_offset;
 	uint32_t cookie;
 	uint32_t magic;
@@ -255,28 +147,22 @@ struct dp_mon_desc_pool {
  * @rx_mon_free_queue: RxMON ppdu info free element queue
  * @ppdu_info_lock: RxPPDU ppdu info queue lock
  * @rx_mon_queue_depth: RxMON queue depth
- * @ppdu_info_cache: PPDU info cache
  * @desc_count: reaped status desc count
  * @status: reaped status buffer per ppdu
  * @lite_mon_rx_config: rx litemon config
  * @lite_mon_tx_config: tx litemon config
  * @prev_rxmon_desc: prev destination desc
  * @prev_rxmon_cookie: prev rxmon cookie
- * @prev_rxmon_pkt_desc: prev packet buff desc
- * @prev_rxmon_pkt_cookie: prev packet buff desc cookie
+ * @ppdu_info_cache: PPDU info cache
  * @total_free_elem: total free element in queue
- * @rx_tlv_logger: Rx TLV logger struct
  */
 struct dp_mon_pdev_be {
 	struct dp_mon_pdev mon_pdev;
 	struct dp_mon_filter_be **filter_be;
-#ifdef WLAN_PKT_CAPTURE_TX_2_0
 	uint8_t tx_mon_mode;
 	uint8_t tx_mon_filter_length;
 	struct dp_pdev_tx_monitor_be tx_monitor_be;
 	struct dp_tx_monitor_drop_stats tx_stats;
-#endif
-#if defined(WLAN_PKT_CAPTURE_RX_2_0) && defined(QCA_MONITOR_2_0_PKT_SUPPORT)
 	qdf_spinlock_t rx_mon_wq_lock;
 	qdf_workqueue_t *rx_mon_workqueue;
 	qdf_work_t rx_mon_work;
@@ -284,8 +170,6 @@ struct dp_mon_pdev_be {
 	TAILQ_HEAD(, hal_rx_ppdu_info) rx_mon_queue;
 	TAILQ_HEAD(, hal_rx_ppdu_info) rx_mon_free_queue;
 	qdf_spinlock_t ppdu_info_lock;
-	qdf_kmem_cache_t ppdu_info_cache;
-#endif
 	uint16_t rx_mon_queue_depth;
 	uint16_t desc_count;
 	struct dp_mon_desc *status[DP_MON_MAX_STATUS_BUF];
@@ -295,13 +179,8 @@ struct dp_mon_pdev_be {
 #endif
 	void *prev_rxmon_desc;
 	uint32_t prev_rxmon_cookie;
-	void *prev_rxmon_pkt_desc;
-	uint32_t prev_rxmon_pkt_cookie;
+	qdf_kmem_cache_t ppdu_info_cache;
 	uint32_t total_free_elem;
-#ifdef MONITOR_TLV_RECORDING_ENABLE
-	struct dp_mon_tlv_logger *rx_tlv_log;
-	struct dp_mon_tlv_logger *tx_tlv_log;
-#endif
 };
 
 /**
@@ -359,29 +238,21 @@ void dp_mon_desc_pool_deinit(struct dp_mon_desc_pool *mon_desc_pool);
 
 /**
  * dp_mon_desc_pool_free()- monitor descriptor pool free
- * @soc: DP soc handle
  * @mon_desc_pool: mon desc pool
- * @ctx_type: DP context type
  *
  * Return: None
  *
  */
-void dp_mon_desc_pool_free(struct dp_soc *soc,
-			   struct dp_mon_desc_pool *mon_desc_pool,
-			   enum dp_ctxt_type ctx_type);
+void dp_mon_desc_pool_free(struct dp_mon_desc_pool *mon_desc_pool);
 
 /**
  * dp_mon_desc_pool_alloc() - Monitor descriptor pool alloc
- * @soc: DP soc handle
- * @ctx_type: DP context type
  * @pool_size: Pool size
  * @mon_desc_pool: mon desc pool
  *
  * Return: non-zero for failure, zero for success
  */
-QDF_STATUS dp_mon_desc_pool_alloc(struct dp_soc *soc,
-				  enum dp_ctxt_type ctx_type,
-				  uint32_t pool_size,
+QDF_STATUS dp_mon_desc_pool_alloc(uint32_t pool_size,
 				  struct dp_mon_desc_pool *mon_desc_pool);
 
 /**
@@ -492,8 +363,7 @@ void __dp_mon_add_to_free_desc_list(union dp_mon_desc_list_elem_t **head,
 				    struct dp_mon_desc *new,
 				    const char *func_name)
 {
-	if (!(head && new))
-		return;
+	qdf_assert(head && new);
 
 	new->buf_addr = NULL;
 	new->in_use = 0;
@@ -553,8 +423,22 @@ dp_rx_mon_add_frag_to_skb(struct hal_rx_ppdu_info *ppdu_info,
 	}
 }
 
-#if !defined(DISABLE_MON_CONFIG) && (defined(WLAN_PKT_CAPTURE_TX_2_0) || \
-	defined(WLAN_PKT_CAPTURE_RX_2_0))
+#if defined(WLAN_SUPPORT_RX_PROTOCOL_TYPE_TAG) ||\
+	defined(WLAN_SUPPORT_RX_FLOW_TAG)
+/**
+ * dp_mon_rx_update_rx_protocol_tag_stats() - Update mon protocols's
+ *					      statistics from given protocol
+ *					      type
+ * @pdev: pdev handle
+ * @protocol_index: Protocol index for which the stats should be incremented
+ *
+ * Return: void
+ */
+void dp_mon_rx_update_rx_protocol_tag_stats(struct dp_pdev *pdev,
+					    uint16_t protocol_index);
+#endif /* WLAN_SUPPORT_RX_PROTOCOL_TYPE_TAG */
+
+#if !defined(DISABLE_MON_CONFIG) && defined(QCA_MONITOR_2_0_SUPPORT)
 /**
  * dp_mon_get_context_size_be() - get BE specific size for mon pdev/soc
  * @context_type: context type for which the size is needed
@@ -575,6 +459,7 @@ qdf_size_t dp_mon_get_context_size_be(enum dp_context_type context_type)
 }
 #endif
 
+#ifdef QCA_MONITOR_2_0_SUPPORT
 /**
  * dp_get_be_mon_soc_from_dp_mon_soc() - get dp_mon_soc_be from dp_mon_soc
  * @soc: dp_mon_soc pointer
@@ -597,47 +482,6 @@ static inline
 struct dp_mon_pdev_be *dp_get_be_mon_pdev_from_dp_mon_pdev(struct dp_mon_pdev *mon_pdev)
 {
 	return (struct dp_mon_pdev_be *)mon_pdev;
-}
-
-#ifdef QCA_ENHANCED_STATS_SUPPORT
-/*
- * dp_enable_enhanced_stats_2_0() - BE Wrapper to enable stats
- * @soc: Datapath soc handle
- * @pdev_id: Pdev Id on which stats will get enable
- *
- * Return: status success/failure
- */
-QDF_STATUS
-dp_enable_enhanced_stats_2_0(struct cdp_soc_t *soc, uint8_t pdev_id);
-
-/*
- * dp_disable_enhanced_stats_2_0() - BE Wrapper to disable stats
- * @soc: Datapath soc handle
- * @pdev_id: Pdev Id on which stats will get disable
- *
- * Return: status success/failure
- */
-QDF_STATUS
-dp_disable_enhanced_stats_2_0(struct cdp_soc_t *soc, uint8_t pdev_id);
-#endif /* QCA_ENHANCED_STATS_SUPPORT */
-
-#ifdef WLAN_PKT_CAPTURE_RX_2_0
-static inline unsigned long long
-dp_mon_get_debug_desc_addr(union dp_mon_desc_list_elem_t **desc_list)
-{
-	unsigned long long desc;
-
-	desc = (unsigned long)&((*desc_list)->mon_desc);
-	desc = (unsigned long long)((unsigned long long)desc & DP_MON_DESC_ADDR_MASK);
-	desc = (desc | ((unsigned long long)(*desc_list)->mon_desc.cookie_2 << DP_MON_DESC_ADDR_SHIFT));
-	return desc;
-}
-#else
-static inline unsigned long long
-dp_mon_get_debug_desc_addr(union dp_mon_desc_list_elem_t **desc_list)
-{
-	unsigned long long desc = (unsigned long long)&((*desc_list)->mon_desc);
-	return desc;
 }
 #endif
 #endif /* _DP_MON_2_0_H_ */

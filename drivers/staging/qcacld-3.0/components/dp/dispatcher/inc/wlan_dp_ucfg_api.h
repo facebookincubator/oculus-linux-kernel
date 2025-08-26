@@ -62,42 +62,15 @@ ucfg_dp_is_disconect_after_roam_fail(struct wlan_objmgr_psoc *psoc)
 #endif
 
 /**
- * ucfg_dp_update_link_mac_addr() - Update the dp_link mac address, during MLO
- *				    link switch.
- * @vdev: Objmgr vdev corresponding to the dp_link
- * @new_mac_addr: New mac address of the dp_link
- * @is_link_switch: Flag to indicate if the link mac addr update is as a part
- *		    of MLO link switch.
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ucfg_dp_update_link_mac_addr(struct wlan_objmgr_vdev *vdev,
-					struct qdf_mac_addr *new_mac_addr,
-					bool is_link_switch);
-
-/**
- * ucfg_dp_update_def_link() - update DP interface default link
- * @psoc: psoc handle
- * @intf_mac: interface MAC address
- * @vdev: objmgr vdev handle to set the def_link in dp_intf
- *
- */
-void ucfg_dp_update_def_link(struct wlan_objmgr_psoc *psoc,
-			     struct qdf_mac_addr *intf_mac,
-			     struct wlan_objmgr_vdev *vdev);
-
-/**
- * ucfg_dp_update_intf_mac() - update DP interface MAC address
+ * ucfg_dp_update_inf_mac() - update DP interface MAC address
  * @psoc: psoc handle
  * @cur_mac: Current MAC address
  * @new_mac: new MAC address
- * @vdev: objmgr vdev handle to set the def_link in dp_intf
  *
  */
-void ucfg_dp_update_intf_mac(struct wlan_objmgr_psoc *psoc,
-			     struct qdf_mac_addr *cur_mac,
-			     struct qdf_mac_addr *new_mac,
-			     struct wlan_objmgr_vdev *vdev);
+void ucfg_dp_update_inf_mac(struct wlan_objmgr_psoc *psoc,
+			    struct qdf_mac_addr *cur_mac,
+			    struct qdf_mac_addr *new_mac);
 
 /**
  * ucfg_dp_destroy_intf() - DP module interface deletion
@@ -119,10 +92,6 @@ QDF_STATUS ucfg_dp_create_intf(struct wlan_objmgr_psoc *psoc,
 			       struct qdf_mac_addr *intf_addr,
 			       qdf_netdev_t ndev);
 
-void ucfg_dp_set_hif_handle(struct wlan_objmgr_psoc *psoc,
-			    struct hif_opaque_softc *hif_handle);
-void ucfg_dp_set_cmn_dp_handle(struct wlan_objmgr_psoc *psoc,
-			       ol_txrx_soc_handle soc);
 /**
  * ucfg_dp_init() - DP module initialization API
  *
@@ -334,6 +303,38 @@ bool ucfg_dp_is_rx_threads_enabled(struct wlan_objmgr_psoc *psoc);
  */
 QDF_STATUS ucfg_dp_rx_ol_init(struct wlan_objmgr_psoc *psoc,
 			      bool is_wifi3_0_target);
+
+/**
+ * ucfg_dp_init_txrx() - Initialize STA DP init TX/RX
+ * @vdev: vdev mapped to STA DP interface
+ *
+ * Return: 0 on success and non zero on failure.
+ */
+QDF_STATUS ucfg_dp_init_txrx(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * ucfg_dp_deinit_txrx() - Deinitialize STA DP init TX/RX
+ * @vdev: vdev mapped to STA DP interface
+ *
+ * Return: 0 on success and non zero on failure.
+ */
+QDF_STATUS ucfg_dp_deinit_txrx(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * ucfg_dp_softap_init_txrx() - Initialize SAP DP init TX/RX
+ * @vdev: vdev mapped to SAP DP interface
+ *
+ * Return: 0 on success and non zero on failure.
+ */
+QDF_STATUS ucfg_dp_softap_init_txrx(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * ucfg_dp_softap_deinit_txrx() - Deinitialize SAP DP init TX/RX
+ * @vdev: vdev mapped to SAP DP interface
+ *
+ * Return: 0 on success and non zero on failure.
+ */
+QDF_STATUS ucfg_dp_softap_deinit_txrx(struct wlan_objmgr_vdev *vdev);
 
 /**
  * ucfg_dp_start_xmit() - Transmit packet on STA interface
@@ -951,12 +952,12 @@ bool ucfg_dp_get_dad_value(struct wlan_objmgr_vdev *vdev);
 bool ucfg_dp_get_con_status_value(struct wlan_objmgr_vdev *vdev);
 
 /**
- * ucfg_dp_get_link_id() - Get link_id
+ * ucfg_dp_get_intf_id() - Get intf_id
  * @vdev: vdev context
  *
- * Return: link_id
+ * Return: intf_id
  */
-uint8_t ucfg_dp_get_link_id(struct wlan_objmgr_vdev *vdev);
+uint8_t ucfg_dp_get_intf_id(struct wlan_objmgr_vdev *vdev);
 
 /**
  * ucfg_dp_get_arp_stats() - Get ARP stats
@@ -1441,13 +1442,13 @@ void ucfg_dp_wfds_del_server(void);
 
 /**
  * ucfg_dp_config_direct_link() - Set direct link config for vdev
- * @dev: netdev
+ * @vdev: objmgr Vdev handle
  * @config_direct_link: Flag to enable direct link path
  * @enable_low_latency: Flag to enable low link latency
  *
  * Return: QDF Status
  */
-QDF_STATUS ucfg_dp_config_direct_link(qdf_netdev_t dev,
+QDF_STATUS ucfg_dp_config_direct_link(struct wlan_objmgr_vdev *vdev,
 				      bool config_direct_link,
 				      bool enable_low_latency);
 #else
@@ -1484,77 +1485,13 @@ static inline void ucfg_dp_wfds_del_server(void)
 #endif
 
 static inline
-QDF_STATUS ucfg_dp_config_direct_link(qdf_netdev_t dev,
-				      bool config_direct_link,
+QDF_STATUS ucfg_dp_config_direct_link(struct wlan_objmgr_vdev *vdev,
+				      bool enable_direct_link,
 				      bool enable_low_latency)
 {
 	return QDF_STATUS_SUCCESS;
 }
 #endif
-
-/**
- * ucfg_dp_bus_suspend() - BUS suspend DP handler
- * @soc: CDP SoC handle
- * @pdev_id: DP PDEV ID
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ucfg_dp_bus_suspend(ol_txrx_soc_handle soc, uint8_t pdev_id);
-
-/**
- * ucfg_dp_bus_resume() - BUS resume DP handler
- * @soc: CDP SoC handle
- * @pdev_id: DP PDEV ID
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ucfg_dp_bus_resume(ol_txrx_soc_handle soc, uint8_t pdev_id);
-
-/**
- * ucfg_dp_txrx_soc_attach() - Datapath soc attach
- * @params: SoC attach params
- * @is_wifi3_0_target: [OUT] Pointer to update if the target is wifi3.0
- *
- * Return: SoC handle
- */
-void *ucfg_dp_txrx_soc_attach(struct dp_txrx_soc_attach_params *params,
-			      bool *is_wifi3_0_target);
-
-/**
- * ucfg_dp_txrx_soc_detach() - Datapath SoC detach
- * @soc: DP SoC handle
- *
- * Return: None
- */
-void ucfg_dp_txrx_soc_detach(ol_txrx_soc_handle soc);
-
-/**
- * ucfg_dp_txrx_attach_target() - DP target attach
- * @soc: DP SoC handle
- * @pdev_id: DP pdev id
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ucfg_dp_txrx_attach_target(ol_txrx_soc_handle soc, uint8_t pdev_id);
-
-/**
- * ucfg_dp_txrx_pdev_attach() - DP pdev attach
- * @soc: DP SoC handle
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ucfg_dp_txrx_pdev_attach(ol_txrx_soc_handle soc);
-
-/**
- * ucfg_dp_txrx_pdev_detach() - DP pdev detach
- * @soc: DP SoC handle
- * @pdev_id: DP pdev id
- * @force: indicates if force detach is to be done or not
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS ucfg_dp_txrx_pdev_detach(ol_txrx_soc_handle soc, uint8_t pdev_id,
-				    int force);
 
 /**
  * ucfg_dp_txrx_init() - initialize DP TXRX module
@@ -1594,57 +1531,23 @@ QDF_STATUS ucfg_dp_txrx_ext_dump_stats(ol_txrx_soc_handle soc,
 QDF_STATUS ucfg_dp_txrx_set_cpu_mask(ol_txrx_soc_handle soc,
 				     qdf_cpu_mask *new_mask);
 
-/**
- * ucfg_dp_get_per_link_peer_stats() - Call to get per link peer stats
- * @soc: soc handle
- * @vdev_id: vdev_id of vdev object
- * @peer_mac: mac address of the peer
- * @peer_stats: destination buffer
- * @peer_type: Peer type
- * @num_link: Number of ML links
- *
- * NOTE: For peer_type = CDP_MLD_PEER_TYPE peer_stats should point to
- *			 buffer of size = (sizeof(*peer_stats) * num_link)
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS
-ucfg_dp_get_per_link_peer_stats(ol_txrx_soc_handle soc, uint8_t vdev_id,
-				uint8_t *peer_mac,
-				struct cdp_peer_stats *peer_stats,
-				enum cdp_peer_type peer_type,
-				uint8_t num_link);
-
-#ifdef WLAN_FEATURE_LOCAL_PKT_CAPTURE
-/**
- * ucfg_dp_is_local_pkt_capture_enabled() - Get local packet capture config
- * @psoc: pointer to psoc object
- *
- * Return: true if local packet capture is enabled from ini
- *         false otherwise
- */
-bool
-ucfg_dp_is_local_pkt_capture_enabled(struct wlan_objmgr_psoc *psoc);
-#else
-static inline bool
-ucfg_dp_is_local_pkt_capture_enabled(struct wlan_objmgr_psoc *psoc)
-{
-	return false;
-}
-#endif /* WLAN_FEATURE_LOCAL_PKT_CAPTURE */
-
-/**
- * ucfg_dp_get_vdev_stats () - API to get vdev stats
- * @soc: dp soc object
- * @vdev_id: Vdev ID of vdev for which stats is requested
- * @buf: Pointer to buffer in which stats need to be updated
- *
- * Return: QDF_STATUS_SUCCESS on success else error code
- */
-QDF_STATUS ucfg_dp_get_vdev_stats(ol_txrx_soc_handle soc, uint8_t vdev_id,
-				  struct cdp_vdev_stats *buf);
-
 #ifdef WLAN_SUPPORT_SERVICE_CLASS
+/*
+ * ucfg_dp_svc_init() - Initialize svc
+ * @psoc: psoc handle
+ *
+ * Return: None
+ */
+void ucfg_dp_svc_init(struct wlan_objmgr_psoc *psoc);
+
+/*
+ * ucfg_dp_svc_deinit() - Deinitialize svc
+ * @psoc: psoc handle
+ *
+ * Return: None
+ */
+void ucfg_dp_svc_deinit(struct wlan_objmgr_psoc *psoc);
+
 /*
  * ucfg_dp_svc_add() - Add service class
  * @data: pointer to svc data
@@ -1671,7 +1574,18 @@ QDF_STATUS ucfg_dp_svc_remove(uint8_t svc_id);
  */
 uint8_t ucfg_dp_svc_get(uint8_t svc_id,	struct dp_svc_data *svc_table,
 			uint16_t table_size);
+
 #else
+static inline
+void ucfg_dp_svc_init(struct wlan_objmgr_psoc *psoc)
+{
+}
+
+static inline
+void ucfg_dp_svc_deinit(struct wlan_objmgr_psoc *psoc)
+{
+}
+
 static inline QDF_STATUS
 ucfg_dp_svc_add(struct dp_svc_data *data)
 {
@@ -1886,12 +1800,4 @@ QDF_STATUS ucfg_dp_lapb_handle_app_ind(qdf_nbuf_t nbuf)
 }
 #endif
 
-/*
- * ucfg_dp_set_mon_conf_flags(): Set monitor configuration flags
- * @psoc: psoc handle
- * @flags: monitor configuration flags
- *
- * Return: None
- */
-void ucfg_dp_set_mon_conf_flags(struct wlan_objmgr_psoc *psoc, uint32_t flags);
-#endif /* _WLAN_DP_UCFG_API_H_ */
+#endif /* _WLAN_DP_UCFGi_API_H_ */

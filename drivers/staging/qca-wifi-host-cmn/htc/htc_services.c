@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2013-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -427,7 +426,7 @@ void htc_set_async_ep(HTC_HANDLE HTCHandle,
 	HTC_ENDPOINT *pEndpoint = &target->endpoint[htc_ep_id];
 
 	pEndpoint->async_update = value;
-	HTC_INFO("%s: htc_handle %pK, ep %d, value %d", __func__,
-		HTCHandle, htc_ep_id, value);
+	qdf_print("%s: htc_handle %pK, ep %d, value %d", __func__,
+		  HTCHandle, htc_ep_id, value);
 }
 

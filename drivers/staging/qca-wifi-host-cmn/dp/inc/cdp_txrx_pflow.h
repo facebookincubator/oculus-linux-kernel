@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2016-2017,2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -18,8 +17,8 @@
  */
 
 /**
- * DOC: cdp_txrx_pflow.h
- * Define the host data path peer flow API functions
+ * @file cdp_txrx_pflow.h
+ * @brief Define the host data path peer flow API functions
  * called by the host control SW and the OS interface module
  */
 #ifndef _CDP_TXRX_PFLOW_H_

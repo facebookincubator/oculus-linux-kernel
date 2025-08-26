@@ -40,7 +40,7 @@ enum orchestrator_flags orchestrator_str_to_flag(const char *str, size_t len);
  */
 static inline bool orchestrator_task_has_flag(const struct task_struct *p, enum orchestrator_flags flag)
 {
-	return READ_ONCE(p->orchestrator_flags) & flag;
+	return READ_ONCE(p->orchestrator.flags) & flag;
 }
 
 #endif /* _ORCHESTRATOR_FLAGS_H */

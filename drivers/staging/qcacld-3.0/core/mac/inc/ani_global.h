@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -91,6 +91,9 @@ static inline mac_handle_t MAC_HANDLE(struct mac_context *mac)
 #define LIM_BSS_CAPS_GET(cap, val) (((val) & (LIM_BSS_CAPS_ ## cap)) >> LIM_BSS_CAPS_OFFSET_ ## cap)
 #define LIM_BSS_CAPS_SET(cap, val) ((val) |= (LIM_BSS_CAPS_ ## cap))
 #define LIM_BSS_CAPS_CLR(cap, val) ((val) &= (~(LIM_BSS_CAPS_ ## cap)))
+
+/* 40 beacons per heart beat interval is the default + 1 to count the rest */
+#define MAX_NO_BEACONS_PER_HEART_BEAT_INTERVAL 41
 
 #define SPACE_ASCII_VALUE  32
 
@@ -285,8 +288,6 @@ typedef struct sLimTimers {
 	/* SAE authentication related timer */
 	TX_TIMER sae_auth_timer;
 
-	/* RRM sta stats response related timer */
-	TX_TIMER rrm_sta_stats_resp_timer;
 /* ********************TIMER SECTION ENDS************************************************** */
 /* ALL THE FIELDS BELOW THIS CAN BE ZEROED OUT in lim_initialize */
 /* **************************************************************************************** */
@@ -298,7 +299,7 @@ typedef struct {
 	void *pMlmDeauthReq;
 } tLimDisassocDeauthCnfReq;
 
-struct lim_context {
+typedef struct sAniSirLim {
 	/* ////////////////////////////////////     TIMER RELATED START /////////////////////////////////////////// */
 
 	tLimTimers lim_timers;
@@ -308,6 +309,28 @@ struct lim_context {
 	/* ////////////////////////////////////     TIMER RELATED END /////////////////////////////////////////// */
 
 	uint8_t gLimCurrentBssUapsd;
+
+	/* */
+	/* Store the BSS Index returned by HAL during */
+	/* WMA_ADD_BSS_RSP here. */
+	/* */
+
+	/* For now: */
+	/* This will be used during WMA_SET_BSSKEY_REQ in */
+	/* order to set the GTK */
+	/* Later: */
+	/* There could be other interfaces needing this info */
+	/* */
+
+	/* */
+	/* Due to the asynchronous nature of the interface */
+	/* between PE <-> HAL, some transient information */
+	/* like this needs to be cached. */
+	/* This is cached upon receipt of eWNI_SME_SETCONTEXT_REQ. */
+	/* This is released while posting LIM_MLM_SETKEYS_CNF */
+	/* */
+	void *gpLimMlmSetKeysReq;
+
 	/* ////////////////////////////////////////     BSS RELATED END /////////////////////////////////////////// */
 
 	/* ////////////////////////////////////////     STATS/COUNTER RELATED START /////////////////////////////////////////// */
@@ -315,11 +338,57 @@ struct lim_context {
 	uint16_t maxStation;
 	uint16_t maxBssId;
 
+	uint32_t gLimNumBeaconsRcvd;
+	uint32_t gLimNumBeaconsIgnored;
+
+	uint32_t gLimNumDeferredMsgs;
+
 	/* / Variable to keep track of number of currently associated STAs */
 	uint16_t gLimNumOfAniSTAs;      /* count of ANI peers */
 
 	tSirMacAddr gLimHeartBeatApMac[2];
 	uint8_t gLimHeartBeatApMacIndex;
+
+	/* Statistics to keep track of no. beacons rcvd in heart beat interval */
+	uint16_t
+		gLimHeartBeatBeaconStats[MAX_NO_BEACONS_PER_HEART_BEAT_INTERVAL];
+
+#ifdef WLAN_DEBUG
+	/* Debug counters */
+	uint32_t numTot, numBbt, numProtErr, numLearn, numLearnIgnore;
+	uint32_t numSme, numMAC[4][16];
+
+	/* Debug counter to track number of Assoc Req frame drops */
+	/* when received in sta->mlmState other than LINK_ESTABLISED */
+	uint32_t gLimNumAssocReqDropInvldState;
+	/* counters to track rejection of Assoc Req due to Admission Control */
+	uint32_t gLimNumAssocReqDropACRejectTS;
+	uint32_t gLimNumAssocReqDropACRejectSta;
+	/* Debug counter to track number of Reassoc Req frame drops */
+	/* when received in sta->mlmState other than LINK_ESTABLISED */
+	uint32_t gLimNumReassocReqDropInvldState;
+	/* Debug counter to track number of Hash Miss event that */
+	/* will not cause a sending of de-auth/de-associate frame */
+	uint32_t gLimNumHashMissIgnored;
+
+	/* Debug counter to track number of Beacon frames */
+	/* received in unexpected state */
+	uint32_t gLimUnexpBcnCnt;
+
+	/* Debug counter to track number of Beacon frames */
+	/* received in wt-join-state that do have SSID mismatch */
+	uint32_t gLimBcnSSIDMismatchCnt;
+
+	/* Debug counter to track number of Link establishments on STA/BP */
+	uint32_t gLimNumLinkEsts;
+
+	/* Debug counter to track number of Rx cleanup */
+	uint32_t gLimNumRxCleanup;
+
+	/* Debug counter to track different parse problem */
+	uint32_t gLim11bStaAssocRejectCount;
+
+#endif
 
 	/* ////////////////////////////////////////     STATS/COUNTER RELATED END /////////////////////////////////////////// */
 
@@ -398,7 +467,7 @@ struct lim_context {
 
 	/* Used on STA for AC downgrade. This is a dynamic mask
 	 * setting which keep tracks of ACs being admitted.
-	 * If bit is set to 0: That particular AC is not admitted
+	 * If bit is set to 0: That partiular AC is not admitted
 	 * If bit is set to 1: That particular AC is admitted
 	 */
 	uint8_t gAcAdmitMask[SIR_MAC_DIRECTION_DIRECT];
@@ -581,14 +650,14 @@ struct lim_context {
 	wlan_scan_requester req_id;
 	QDF_STATUS (*sme_bcn_rcv_callback)(hdd_handle_t hdd_handle,
 				struct wlan_beacon_report *beacon_report);
-};
+} tAniSirLim, *tpAniSirLim;
 
 struct mgmt_frm_reg_info {
 	qdf_list_node_t node;   /* MUST be first element */
 	uint16_t frameType;
 	uint16_t matchLen;
 	uint16_t sessionId;
-	QDF_FLEX_ARRAY(uint8_t, matchData);
+	uint8_t matchData[1];
 };
 
 typedef struct sRrmContext {
@@ -673,7 +742,7 @@ struct mac_context {
 	enum qdf_driver_type gDriverType;
 	struct wlan_mlme_chain_cfg fw_chain_cfg;
 	struct wlan_mlme_cfg *mlme_cfg;
-	struct lim_context lim;
+	tAniSirLim lim;
 	struct sch_context sch;
 	tAniSirSys sys;
 

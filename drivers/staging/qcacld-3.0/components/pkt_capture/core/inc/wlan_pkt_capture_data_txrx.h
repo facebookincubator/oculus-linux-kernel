@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -30,7 +30,6 @@
 
 #include "cdp_txrx_cmn_struct.h"
 #include <qdf_nbuf.h>
-#include <qdf_list.h>
 #ifndef WLAN_FEATURE_PKT_CAPTURE_V2
 #include <htt_internal.h>
 #endif
@@ -42,8 +41,6 @@
 #define IEEE80211_RADIOTAP_HE_DATA1_CODING_KNOWN 0x0080
 #define IEEE80211_RADIOTAP_HE_DATA1_STBC_KNOWN 0x0200
 #endif
-
-#define HAL_TX_PKT_TYPE_11B 1
 
 /**
  * enum pkt_capture_data_process_type - data pkt types to process

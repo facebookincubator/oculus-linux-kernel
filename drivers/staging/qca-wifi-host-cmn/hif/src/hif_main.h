@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -43,7 +43,6 @@
 #ifdef HIF_CE_LOG_INFO
 #include "qdf_notifier.h"
 #endif
-#include "pld_common.h"
 
 #define HIF_MIN_SLEEP_INACTIVITY_TIME_MS     50
 #define HIF_SLEEP_INACTIVITY_TIMER_PERIOD_MS 60
@@ -94,14 +93,12 @@
 #define QCN9224_DEVICE_ID (0x1109)
 #define QCN6122_DEVICE_ID (0xFFFB)
 #define QCN9160_DEVICE_ID (0xFFF8)
-#define QCN6432_DEVICE_ID (0xFFF7)
 #define QCA6390_EMULATION_DEVICE_ID (0x0108)
 #define QCA6390_DEVICE_ID (0x1101)
 /* TODO: change IDs for HastingsPrime */
 #define QCA6490_EMULATION_DEVICE_ID (0x010a)
 #define QCA6490_DEVICE_ID (0x1103)
 #define MANGO_DEVICE_ID (0x110a)
-#define PEACH_DEVICE_ID (0x110e)
 
 /* TODO: change IDs for Moselle */
 #define QCA6750_EMULATION_DEVICE_ID (0x010c)
@@ -109,9 +106,6 @@
 
 /* TODO: change IDs for Hamilton */
 #define KIWI_DEVICE_ID (0x1107)
-
-/*TODO: change IDs for Evros */
-#define WCN6450_DEVICE_ID (0x1108)
 
 #define ADRASTEA_DEVICE_ID_P2_E12 (0x7021)
 #define AR9887_DEVICE_ID    (0x0050)
@@ -159,12 +153,6 @@
 #define NUM_CE_CONTEXT (NUM_CE_AVAILABLE + 1)
 
 #define CE_INTERRUPT_IDX(x) x
-
-#ifdef WLAN_64BIT_DATA_SUPPORT
-#define RRI_ON_DDR_MEM_SIZE CE_COUNT * sizeof(uint64_t)
-#else
-#define RRI_ON_DDR_MEM_SIZE CE_COUNT * sizeof(uint32_t)
-#endif
 
 struct ce_int_assignment {
 	uint8_t msi_idx[NUM_CE_AVAILABLE];
@@ -226,7 +214,6 @@ struct hif_latency_detect {
 #if defined(CONFIG_WLAN_EXTRA_DEBUG) || defined(HIF_CE_DEBUG_DATA_BUF)
 
 #define HIF_CE_MAX_LATEST_HIST 2
-#define HIF_CE_MAX_LATEST_EVTS 2
 
 struct latest_evt_history {
 	uint64_t irq_entry_ts;
@@ -248,7 +235,7 @@ struct ce_desc_hist {
 	uint32_t hist_index;
 	uint32_t hist_id;
 	void *hist_ev[CE_COUNT_MAX];
-	struct latest_evt_history latest_evts[HIF_CE_MAX_LATEST_HIST][HIF_CE_MAX_LATEST_EVTS];
+	struct latest_evt_history latest_evt[HIF_CE_MAX_LATEST_HIST];
 };
 
 void hif_record_latest_evt(struct ce_desc_hist *ce_hist,
@@ -273,7 +260,6 @@ struct hif_cfg {
 /**
  * struct hif_umac_reset_ctx - UMAC HW reset context at HIF layer
  * @intr_tq: Tasklet structure
- * @irq_handler: IRQ handler
  * @cb_handler: Callback handler
  * @cb_ctx: Argument to be passed to @cb_handler
  * @os_irq: Interrupt number for this IRQ
@@ -281,79 +267,10 @@ struct hif_cfg {
  */
 struct hif_umac_reset_ctx {
 	struct tasklet_struct intr_tq;
-	bool (*irq_handler)(void *cb_ctx);
 	int (*cb_handler)(void *cb_ctx);
 	void *cb_ctx;
 	uint32_t os_irq;
 	bool irq_configured;
-};
-#endif
-
-#define MAX_SHADOW_REGS 40
-
-#ifdef FEATURE_HIF_DELAYED_REG_WRITE
-/**
- * enum hif_reg_sched_delay - ENUM for write sched delay histogram
- * @HIF_REG_WRITE_SCHED_DELAY_SUB_100us: index for delay < 100us
- * @HIF_REG_WRITE_SCHED_DELAY_SUB_1000us: index for delay < 1000us
- * @HIF_REG_WRITE_SCHED_DELAY_SUB_5000us: index for delay < 5000us
- * @HIF_REG_WRITE_SCHED_DELAY_GT_5000us: index for delay >= 5000us
- * @HIF_REG_WRITE_SCHED_DELAY_HIST_MAX: Max value (nnsize of histogram array)
- */
-enum hif_reg_sched_delay {
-	HIF_REG_WRITE_SCHED_DELAY_SUB_100us,
-	HIF_REG_WRITE_SCHED_DELAY_SUB_1000us,
-	HIF_REG_WRITE_SCHED_DELAY_SUB_5000us,
-	HIF_REG_WRITE_SCHED_DELAY_GT_5000us,
-	HIF_REG_WRITE_SCHED_DELAY_HIST_MAX,
-};
-
-/**
- * struct hif_reg_write_soc_stats - soc stats to keep track of register writes
- * @enqueues: writes enqueued to delayed work
- * @dequeues: writes dequeued from delayed work (not written yet)
- * @coalesces: writes not enqueued since srng is already queued up
- * @direct: writes not enqueud and writted to register directly
- * @prevent_l1_fails: prevent l1 API failed
- * @q_depth: current queue depth in delayed register write queue
- * @max_q_depth: maximum queue for delayed register write queue
- * @sched_delay: = kernel work sched delay + bus wakeup delay, histogram
- * @dequeue_delay: dequeue operation be delayed
- */
-struct hif_reg_write_soc_stats {
-	qdf_atomic_t enqueues;
-	uint32_t dequeues;
-	qdf_atomic_t coalesces;
-	qdf_atomic_t direct;
-	uint32_t prevent_l1_fails;
-	qdf_atomic_t q_depth;
-	uint32_t max_q_depth;
-	uint32_t sched_delay[HIF_REG_WRITE_SCHED_DELAY_HIST_MAX];
-	uint32_t dequeue_delay;
-};
-
-/**
- * struct hif_reg_write_q_elem - delayed register write queue element
- * @ce_state: CE state queued for a delayed write
- * @offset: offset of the CE register
- * @enqueue_val: register value at the time of delayed write enqueue
- * @dequeue_val: register value at the time of delayed write dequeue
- * @valid: whether this entry is valid or not
- * @enqueue_time: enqueue time (qdf_log_timestamp)
- * @work_scheduled_time: work scheduled time (qdf_log_timestamp)
- * @dequeue_time: dequeue time (qdf_log_timestamp)
- * @cpu_id: record cpuid when schedule work
- */
-struct hif_reg_write_q_elem {
-	struct CE_state *ce_state;
-	uint32_t offset;
-	uint32_t enqueue_val;
-	uint32_t dequeue_val;
-	uint8_t valid;
-	qdf_time_t enqueue_time;
-	qdf_time_t work_scheduled_time;
-	qdf_time_t dequeue_time;
-	int cpu_id;
 };
 #endif
 
@@ -393,9 +310,8 @@ struct hif_softc {
 	struct ce_int_assignment *int_assignment;
 	atomic_t active_tasklet_cnt;
 	atomic_t active_grp_tasklet_cnt;
-	atomic_t active_oom_work_cnt;
 	atomic_t link_suspended;
-	void *vaddr_rri_on_ddr;
+	uint32_t *vaddr_rri_on_ddr;
 	atomic_t active_wake_req_cnt;
 	qdf_dma_addr_t paddr_rri_on_ddr;
 #ifdef CONFIG_BYPASS_QMI
@@ -452,9 +368,7 @@ struct hif_softc {
 #ifdef HIF_CE_LOG_INFO
 	qdf_notif_block hif_recovery_notifier;
 #endif
-#if defined(HIF_CPU_PERF_AFFINE_MASK) || \
-	defined(FEATURE_ENABLE_CE_DP_IRQ_AFFINE)
-
+#ifdef HIF_CPU_PERF_AFFINE_MASK
 	/* The CPU hotplug event registration handle */
 	struct qdf_cpuhp_handler *cpuhp_event_handle;
 #endif
@@ -487,18 +401,6 @@ struct hif_softc {
 #ifdef DP_UMAC_HW_RESET_SUPPORT
 	struct hif_umac_reset_ctx umac_reset_ctx;
 #endif
-#ifdef CONFIG_SHADOW_V3
-	struct pld_shadow_reg_v3_cfg shadow_regs[MAX_SHADOW_REGS];
-	int num_shadow_registers_configured;
-#endif
-#ifdef WLAN_FEATURE_AFFINITY_MGR
-	/* CPU Affinity info of IRQs */
-	bool affinity_mgr_supported;
-	uint64_t time_threshold;
-	struct hif_cpu_affinity ce_irq_cpu_mask[CE_COUNT_MAX];
-	struct hif_cpu_affinity irq_cpu_mask[HIF_MAX_GROUP][HIF_MAX_GRP_IRQ];
-	qdf_cpu_mask allowed_mask;
-#endif
 #ifdef FEATURE_DIRECT_LINK
 	struct qdf_mem_multi_page_t dl_recv_pages;
 	int dl_recv_pipe_num;
@@ -506,33 +408,7 @@ struct hif_softc {
 #ifdef WLAN_FEATURE_CE_RX_BUFFER_REUSE
 	struct wbuff_mod_handle *wbuff_handle;
 #endif
-#ifdef FEATURE_HIF_DELAYED_REG_WRITE
-	/* queue(array) to hold register writes */
-	struct hif_reg_write_q_elem *reg_write_queue;
-	/* delayed work to be queued into workqueue */
-	qdf_work_t reg_write_work;
-	/* workqueue for delayed register writes */
-	qdf_workqueue_t *reg_write_wq;
-	/* write index used by caller to enqueue delayed work */
-	qdf_atomic_t write_idx;
-	/* read index used by worker thread to dequeue/write registers */
-	uint32_t read_idx;
-	struct hif_reg_write_soc_stats wstats;
-	qdf_atomic_t active_work_cnt;
-#endif /* FEATURE_HIF_DELAYED_REG_WRITE */
 };
-
-#if defined(NUM_SOC_PERF_CLUSTER) && (NUM_SOC_PERF_CLUSTER > 1)
-static inline uint16_t hif_get_perf_cluster_bitmap(void)
-{
-	return (BIT(CPU_CLUSTER_TYPE_PERF) | BIT(CPU_CLUSTER_TYPE_PERF2));
-}
-#else /* NUM_SOC_PERF_CLUSTER > 1 */
-static inline uint16_t hif_get_perf_cluster_bitmap(void)
-{
-	return BIT(CPU_CLUSTER_TYPE_PERF);
-}
-#endif /* NUM_SOC_PERF_CLUSTER > 1 */
 
 static inline
 void *hif_get_hal_handle(struct hif_opaque_softc *hif_hdl)
@@ -576,27 +452,11 @@ static inline int hif_get_num_active_tasklets(struct hif_softc *scn)
 	return qdf_atomic_read(&scn->active_tasklet_cnt);
 }
 
-/**
- * hif_get_num_active_oom_work() - get the number of active
- *		oom work pending to be completed.
- * @scn: HIF context
- *
- * Returns: the number of oom works which are active
- */
-static inline int hif_get_num_active_oom_work(struct hif_softc *scn)
-{
-	return qdf_atomic_read(&scn->active_oom_work_cnt);
-}
-
 /*
  * Max waiting time during Runtime PM suspend to finish all
  * the tasks. This is in the multiple of 10ms.
  */
-#ifdef PANIC_ON_BUG
-#define HIF_TASK_DRAIN_WAIT_CNT 200
-#else
 #define HIF_TASK_DRAIN_WAIT_CNT 25
-#endif
 
 /**
  * hif_try_complete_tasks() - Try to complete all the pending tasks
@@ -814,14 +674,8 @@ static inline void hif_usb_ramdump_handler(struct hif_opaque_softc *scn) {}
  */
 irqreturn_t hif_wake_interrupt_handler(int irq, void *context);
 
-#if defined(HIF_SNOC)
+#ifdef HIF_SNOC
 bool hif_is_target_register_access_allowed(struct hif_softc *hif_sc);
-#elif defined(HIF_IPCI)
-static inline bool
-hif_is_target_register_access_allowed(struct hif_softc *hif_sc)
-{
-	return !(hif_sc->recovery);
-}
 #else
 static inline
 bool hif_is_target_register_access_allowed(struct hif_softc *hif_sc)
@@ -854,32 +708,4 @@ void hif_runtime_prevent_linkdown(struct hif_softc *scn, bool is_get)
 }
 #endif
 
-#ifdef HIF_HAL_REG_ACCESS_SUPPORT
-void hif_reg_window_write(struct hif_softc *scn,
-			  uint32_t offset, uint32_t value);
-uint32_t hif_reg_window_read(struct hif_softc *scn, uint32_t offset);
-#endif
-
-#ifdef FEATURE_HIF_DELAYED_REG_WRITE
-void hif_delayed_reg_write(struct hif_softc *scn, uint32_t ctrl_addr,
-			   uint32_t val);
-#endif
-
-#if defined(HIF_IPCI) && defined(FEATURE_HAL_DELAYED_REG_WRITE)
-static inline bool hif_is_ep_vote_access_disabled(struct hif_softc *scn)
-{
-	if ((qdf_atomic_read(&scn->dp_ep_vote_access) ==
-	     HIF_EP_VOTE_ACCESS_DISABLE) &&
-	    (qdf_atomic_read(&scn->ep_vote_access) ==
-	     HIF_EP_VOTE_ACCESS_DISABLE))
-		return true;
-
-	return false;
-}
-#else
-static inline bool hif_is_ep_vote_access_disabled(struct hif_softc *scn)
-{
-	return false;
-}
-#endif
 #endif /* __HIF_MAIN_H__ */

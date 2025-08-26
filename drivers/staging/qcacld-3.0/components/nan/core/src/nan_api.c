@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -415,15 +415,8 @@ static bool
 wlan_is_nan_allowed_on_6ghz_freq(struct wlan_objmgr_pdev *pdev, uint32_t freq)
 {
 	QDF_STATUS status;
-	struct regulatory_channel *chan_list;
-	uint32_t len_6g =
-			NUM_6GHZ_CHANNELS * sizeof(struct regulatory_channel);
+	struct regulatory_channel chan_list[NUM_6GHZ_CHANNELS];
 	uint16_t i;
-	bool ret = false;
-
-	chan_list = qdf_mem_malloc(len_6g);
-	if (!chan_list)
-		return ret;
 
 	status = wlan_reg_get_6g_ap_master_chan_list(pdev,
 						     REG_VERY_LOW_POWER_AP,
@@ -431,15 +424,11 @@ wlan_is_nan_allowed_on_6ghz_freq(struct wlan_objmgr_pdev *pdev, uint32_t freq)
 
 	for (i = 0; i < NUM_6GHZ_CHANNELS; i++) {
 		if ((freq == chan_list[i].center_freq) &&
-		    (chan_list[i].state == CHANNEL_STATE_ENABLE)) {
-			ret = true;
-			goto end;
-		}
+		    (chan_list[i].state == CHANNEL_STATE_ENABLE))
+			return true;
 	}
 
-end:
-	qdf_mem_free(chan_list);
-	return ret;
+	return false;
 }
 
 bool wlan_is_nan_allowed_on_freq(struct wlan_objmgr_pdev *pdev, uint32_t freq)
@@ -453,7 +442,7 @@ bool wlan_is_nan_allowed_on_freq(struct wlan_objmgr_pdev *pdev, uint32_t freq)
 	}
 
 	/* Check for SRD channels */
-	if (wlan_reg_is_etsi_srd_chan_for_freq(pdev, freq))
+	if (wlan_reg_is_etsi13_srd_chan_for_freq(pdev, freq))
 		wlan_mlme_get_srd_master_mode_for_vdev(wlan_pdev_get_psoc(pdev),
 						       QDF_NAN_DISC_MODE,
 						       &nan_allowed);
@@ -487,57 +476,3 @@ bool wlan_is_mlo_sta_nan_ndi_allowed(struct wlan_objmgr_psoc *psoc)
 	return psoc_nan_obj->nan_caps.mlo_sta_nan_ndi_allowed;
 }
 #endif
-
-#if defined(WLAN_FEATURE_NAN) && defined(WLAN_CHIPSET_STATS)
-void nan_cstats_log_nan_enable_resp_evt(struct nan_event_params *nan_event)
-{
-	struct cstats_nan_disc_enable_resp stat = {0};
-	struct wlan_objmgr_vdev *vdev;
-
-	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(nan_event->psoc,
-						    nan_event->vdev_id,
-						    WLAN_NAN_ID);
-	if (!vdev) {
-		nan_err("Invalid vdev!");
-		return;
-	}
-
-	stat.cmn.hdr.evt_id =
-		WLAN_CHIPSET_STATS_NAN_DISCOVERY_ENABLE_RESP_EVENT_ID;
-	stat.cmn.hdr.length = sizeof(struct cstats_nan_disc_enable_resp) -
-			      sizeof(struct cstats_hdr);
-	stat.cmn.opmode = wlan_vdev_mlme_get_opmode(vdev);
-	stat.cmn.vdev_id = wlan_vdev_get_id(vdev);
-	stat.cmn.timestamp_us = qdf_get_time_of_the_day_us();
-	stat.cmn.time_tick = qdf_get_log_timestamp();
-
-	stat.is_enable_success = nan_event->is_nan_enable_success;
-	stat.mac_id = nan_event->mac_id;
-	stat.disc_state = nan_get_discovery_state(nan_event->psoc);
-
-	wlan_objmgr_vdev_release_ref(vdev, WLAN_NAN_ID);
-
-	wlan_cstats_host_stats(sizeof(struct cstats_nan_disc_enable_resp),
-			       &stat);
-}
-
-void nan_cstats_log_nan_disable_resp_evt(uint8_t vdev_id,
-					 struct wlan_objmgr_psoc *psoc)
-{
-	struct cstats_nan_disc_disable_resp stat = {0};
-
-	stat.cmn.hdr.evt_id =
-	   WLAN_CHIPSET_STATS_NAN_DISCOVERY_DISABLE_RESP_EVENT_ID;
-	stat.cmn.hdr.length =
-		sizeof(struct cstats_nan_disc_disable_resp) -
-		sizeof(struct cstats_hdr);
-	stat.cmn.opmode = QDF_NAN_DISC_MODE;
-	stat.cmn.vdev_id = vdev_id;
-	stat.cmn.timestamp_us = qdf_get_time_of_the_day_us();
-	stat.cmn.time_tick = qdf_get_log_timestamp();
-	stat.disc_state = nan_get_discovery_state(psoc);
-
-	wlan_cstats_host_stats(sizeof(struct cstats_nan_disc_disable_resp),
-			       &stat);
-}
-#endif /* WLAN_CHIPSET_STATS */

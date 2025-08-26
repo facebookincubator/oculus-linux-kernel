@@ -206,16 +206,15 @@ void dp_softap_check_wait_for_tx_eap_pkt(struct wlan_dp_intf *dp_intf,
 #ifdef SAP_DHCP_FW_IND
 /**
  * dp_post_dhcp_ind() - Send DHCP START/STOP indication to FW
- * @dp_link: DP link handle
+ * @dp_intf: pointer to DP interface
  * @mac_addr: mac address
  * @dhcp_start: dhcp start
  *
  * Return: error number
  */
-int dp_post_dhcp_ind(struct wlan_dp_link *dp_link, uint8_t *mac_addr,
+int dp_post_dhcp_ind(struct wlan_dp_intf *dp_intf, uint8_t *mac_addr,
 		     bool dhcp_start)
 {
-	struct wlan_dp_intf *dp_intf;
 	struct dp_dhcp_ind msg;
 	struct wlan_dp_psoc_sb_ops *sb_ops;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
@@ -223,22 +222,8 @@ int dp_post_dhcp_ind(struct wlan_dp_link *dp_link, uint8_t *mac_addr,
 	dp_info("Post DHCP indication,sta_mac=" QDF_MAC_ADDR_FMT
 		 " ,  start=%u", QDF_MAC_ADDR_REF(mac_addr), dhcp_start);
 
-	if (!is_dp_link_valid(dp_link)) {
-		dp_err("NULL DP link");
-		return QDF_STATUS_E_INVAL;
-	}
-
-	dp_intf = dp_link->dp_intf;
-	/*
-	 * If DP RX thread is enabled, RX DHCP packets are enqueue into
-	 * DP RX thread queue, defer DHCP inspection until host has
-	 * resumed entirely, no issue to send DHCP indication MSG.
-	 * If DP RX thread is disabled, DHCP inspection happens earlier,
-	 * skip sending DHCP indication MSG if host has not resumed.
-	 */
-	if (qdf_unlikely(!dp_intf->dp_ctx->enable_dp_rx_threads &&
-			 dp_intf->dp_ctx->is_suspend)) {
-		dp_err_rl("Device is system suspended, skip DHCP Ind");
+	if (!dp_intf) {
+		dp_err("NULL DP interface");
 		return QDF_STATUS_E_INVAL;
 	}
 
@@ -252,7 +237,7 @@ int dp_post_dhcp_ind(struct wlan_dp_link *dp_link, uint8_t *mac_addr,
 		     mac_addr,
 		     QDF_MAC_ADDR_SIZE);
 
-	status = sb_ops->dp_send_dhcp_ind(dp_link->link_id, &msg);
+	status = sb_ops->dp_send_dhcp_ind(dp_intf->intf_id, &msg);
 	if (!QDF_IS_STATUS_SUCCESS(status)) {
 		dp_err("Post DHCP Ind MSG fail");
 		return QDF_STATUS_E_FAULT;
@@ -265,30 +250,29 @@ int dp_post_dhcp_ind(struct wlan_dp_link *dp_link, uint8_t *mac_addr,
 
 /**
  * dp_softap_notify_dhcp_ind() - Notify SAP for DHCP indication for tx desc
- * @link_context: DP link context
+ * @intf_context: pointer to DP interface context
  * @nbuf: pointer to OS packet (sk_buff)
  *
  * Return: None
  */
-static void dp_softap_notify_dhcp_ind(void *link_context, qdf_nbuf_t nbuf)
+static void dp_softap_notify_dhcp_ind(void *intf_context, qdf_nbuf_t nbuf)
 {
 	uint8_t *dest_mac_addr;
-	struct wlan_dp_link *dp_link = link_context;
+	struct wlan_dp_intf *dp_intf = intf_context;
 
-	if (!is_dp_link_valid(dp_link))
+	if (is_dp_intf_valid(dp_intf))
 		return;
 
 	dest_mac_addr = qdf_nbuf_data(nbuf) + DHCP_CLIENT_MAC_ADDR_OFFSET;
 
 	/*stop dhcp indication*/
-	dp_post_dhcp_ind(dp_link, dest_mac_addr, false);
+	dp_post_dhcp_ind(dp_intf, dest_mac_addr, false);
 }
 
-int dp_softap_inspect_dhcp_packet(struct wlan_dp_link *dp_link,
+int dp_softap_inspect_dhcp_packet(struct wlan_dp_intf *dp_intf,
 				  qdf_nbuf_t nbuf,
 				  enum qdf_proto_dir dir)
 {
-	struct wlan_dp_intf *dp_intf = dp_link->dp_intf;
 	enum qdf_proto_subtype subtype = QDF_PROTO_INVALID;
 	struct wlan_objmgr_peer *peer;
 	struct wlan_dp_sta_info *sta_info;
@@ -330,14 +314,11 @@ int dp_softap_inspect_dhcp_packet(struct wlan_dp_link *dp_link,
 			if (dir != QDF_RX)
 				break;
 			if (sta_info->dhcp_nego_status == DHCP_NEGO_STOP)
-				errno =	dp_post_dhcp_ind(
-						dp_link,
+				errno =	dp_post_dhcp_ind(dp_intf,
 						sta_info->sta_mac.bytes,
 						true);
 			sta_info->dhcp_phase = DHCP_PHASE_DISCOVER;
-			if (QDF_IS_STATUS_SUCCESS(errno))
-				sta_info->dhcp_nego_status =
-						DHCP_NEGO_IN_PROGRESS;
+			sta_info->dhcp_nego_status = DHCP_NEGO_IN_PROGRESS;
 			break;
 		case QDF_PROTO_DHCP_OFFER:
 			sta_info->dhcp_phase = DHCP_PHASE_OFFER;
@@ -347,12 +328,10 @@ int dp_softap_inspect_dhcp_packet(struct wlan_dp_link *dp_link,
 				break;
 			if (sta_info->dhcp_nego_status == DHCP_NEGO_STOP)
 				errno = dp_post_dhcp_ind(
-						dp_link,
+						dp_intf,
 						sta_info->sta_mac.bytes,
 						true);
-			if (QDF_IS_STATUS_SUCCESS(errno))
-				sta_info->dhcp_nego_status =
-						DHCP_NEGO_IN_PROGRESS;
+			sta_info->dhcp_nego_status = DHCP_NEGO_IN_PROGRESS;
 			fallthrough;
 		case QDF_PROTO_DHCP_DECLINE:
 			if (dir == QDF_RX)
@@ -413,15 +392,13 @@ qdf_nbuf_t dp_sap_nbuf_orphan(struct wlan_dp_intf *dp_intf,
 
 #ifdef QCA_LL_LEGACY_TX_FLOW_CONTROL
 static
-void dp_softap_get_tx_resource(struct wlan_dp_link *dp_link,
+void dp_softap_get_tx_resource(struct wlan_dp_intf *dp_intf,
 			       qdf_nbuf_t nbuf)
 {
-	struct wlan_dp_intf *dp_intf = dp_link->dp_intf;
-
 	if (QDF_NBUF_CB_GET_IS_BCAST(nbuf) || QDF_NBUF_CB_GET_IS_MCAST(nbuf))
-		dp_get_tx_resource(dp_link, &dp_intf->mac_addr);
+		dp_get_tx_resource(dp_intf, &dp_intf->mac_addr);
 	else
-		dp_get_tx_resource(dp_link,
+		dp_get_tx_resource(dp_intf,
 				   (struct qdf_mac_addr *)(qdf_nbuf_data(nbuf) +
 							   QDF_NBUF_DEST_MAC_OFFSET));
 }
@@ -430,8 +407,8 @@ void dp_softap_get_tx_resource(struct wlan_dp_link *dp_link,
 #endif
 
 #ifdef FEATURE_WDS
-static void
-dp_wds_replace_peer_mac(void *soc, struct wlan_dp_link *dp_link,
+void
+dp_wds_replace_peer_mac(void *soc, struct wlan_dp_intf *dp_intf,
 			uint8_t *mac_addr)
 {
 	struct cdp_ast_entry_info ast_entry_info = {0};
@@ -439,7 +416,7 @@ dp_wds_replace_peer_mac(void *soc, struct wlan_dp_link *dp_link,
 	QDF_STATUS status;
 
 	if (!cdp_find_peer_exist(soc, OL_TXRX_PDEV_ID, mac_addr)) {
-		status = cdp_txrx_get_vdev_param(soc, dp_link->link_id,
+		status = cdp_txrx_get_vdev_param(soc, dp_intf->intf_id,
 						 CDP_ENABLE_WDS, &val);
 		if (!QDF_IS_STATUS_SUCCESS(status))
 			return;
@@ -457,13 +434,13 @@ dp_wds_replace_peer_mac(void *soc, struct wlan_dp_link *dp_link,
 }
 #else
 static inline
-void dp_wds_replace_peer_mac(void *soc, struct wlan_dp_link *dp_link,
+void dp_wds_replace_peer_mac(void *soc, struct wlan_dp_intf *dp_intf,
 			     uint8_t *mac_addr)
 {
 }
 #endif /* FEATURE_WDS*/
 
-static QDF_STATUS dp_softap_validate_peer_state(struct wlan_dp_link *dp_link,
+static QDF_STATUS dp_softap_validate_peer_state(struct wlan_dp_intf *dp_intf,
 						qdf_nbuf_t nbuf)
 {
 	struct qdf_mac_addr *dest_mac_addr;
@@ -481,8 +458,8 @@ static QDF_STATUS dp_softap_validate_peer_state(struct wlan_dp_link *dp_link,
 	qdf_copy_macaddr(&mac_addr, dest_mac_addr);
 	soc = cds_get_context(QDF_MODULE_ID_SOC);
 	QDF_BUG(soc);
-	dp_wds_replace_peer_mac(soc, dp_link, mac_addr.bytes);
-	peer_state = cdp_peer_state_get(soc, dp_link->link_id,
+	dp_wds_replace_peer_mac(soc, dp_intf, mac_addr.bytes);
+	peer_state = cdp_peer_state_get(soc, dp_intf->intf_id,
 					mac_addr.bytes, false);
 
 	if (peer_state == OL_TXRX_PEER_STATE_INVALID) {
@@ -636,13 +613,12 @@ dp_softap_inspect_traffic_end_indication_pkt(struct wlan_dp_intf *dp_intf,
 /**
  * dp_softap_start_xmit() - Transmit a frame
  * @nbuf: pointer to Network buffer
- * @dp_link: DP link handle
+ * @dp_intf: DP interface
  *
  * Return: QDF_STATUS_SUCCESS on successful transmission
  */
-QDF_STATUS dp_softap_start_xmit(qdf_nbuf_t nbuf, struct wlan_dp_link *dp_link)
+QDF_STATUS dp_softap_start_xmit(qdf_nbuf_t nbuf, struct wlan_dp_intf *dp_intf)
 {
-	struct wlan_dp_intf *dp_intf = dp_link->dp_intf;
 	struct wlan_dp_psoc_context *dp_ctx = dp_intf->dp_ctx;
 	struct qdf_mac_addr *dest_mac_addr;
 	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
@@ -660,10 +636,10 @@ QDF_STATUS dp_softap_start_xmit(qdf_nbuf_t nbuf, struct wlan_dp_link *dp_link)
 
 	wlan_dp_pkt_add_timestamp(dp_intf, QDF_PKT_TX_DRIVER_ENTRY, nbuf);
 
-	if (QDF_IS_STATUS_ERROR(dp_softap_validate_peer_state(dp_link, nbuf)))
+	if (QDF_IS_STATUS_ERROR(dp_softap_validate_peer_state(dp_intf, nbuf)))
 		goto drop_pkt;
 
-	dp_softap_get_tx_resource(dp_link, nbuf);
+	dp_softap_get_tx_resource(dp_intf, nbuf);
 
 	nbuf = dp_sap_nbuf_orphan(dp_intf, nbuf);
 	if (!nbuf)
@@ -685,7 +661,7 @@ QDF_STATUS dp_softap_start_xmit(qdf_nbuf_t nbuf, struct wlan_dp_link *dp_link)
 
 	if (qdf_unlikely(QDF_NBUF_CB_GET_PACKET_TYPE(nbuf) ==
 			 QDF_NBUF_CB_PACKET_TYPE_DHCP))
-		dp_softap_inspect_dhcp_packet(dp_link, nbuf, QDF_TX);
+		dp_softap_inspect_dhcp_packet(dp_intf, nbuf, QDF_TX);
 
 	if (qdf_unlikely(QDF_NBUF_CB_GET_PACKET_TYPE(nbuf) ==
 			 QDF_NBUF_CB_PACKET_TYPE_EAPOL)) {
@@ -704,7 +680,7 @@ QDF_STATUS dp_softap_start_xmit(qdf_nbuf_t nbuf, struct wlan_dp_link *dp_link)
 		goto drop_pkt_and_release_skb;
 	}
 
-	if (dp_intf->txrx_ops.tx.tx(soc, dp_link->link_id, nbuf)) {
+	if (dp_intf->tx_fn(soc, dp_intf->intf_id, nbuf)) {
 		dp_debug("Failed to send packet to txrx for sta: "
 			 QDF_MAC_ADDR_FMT,
 			 QDF_MAC_ADDR_REF(dest_mac_addr->bytes));
@@ -760,13 +736,13 @@ void dp_softap_tx_timeout(struct wlan_dp_intf *dp_intf)
 void dp_softap_notify_tx_compl_cbk(qdf_nbuf_t nbuf,
 				   void *context, uint16_t flag)
 {
-	struct wlan_dp_link *dp_link = context;
-	struct wlan_dp_intf *dp_intf;
+	int errno;
+	struct wlan_dp_intf *dp_intf = context;
 
-	if (!is_dp_link_valid(dp_link))
+	errno = is_dp_intf_valid(dp_intf);
+	if (errno)
 		return;
 
-	dp_intf = dp_link->dp_intf;
 	if (QDF_NBUF_CB_PACKET_TYPE_DHCP == QDF_NBUF_CB_GET_PACKET_TYPE(nbuf)) {
 		dp_debug("sending DHCP indication");
 		dp_softap_notify_dhcp_ind(context, nbuf);
@@ -798,7 +774,8 @@ static inline bool dp_nbuf_dst_addr_is_mld_addr(struct wlan_dp_intf *dp_intf,
 {
 	struct qdf_mac_addr *mld_addr;
 
-	mld_addr = (struct qdf_mac_addr *)&dp_intf->mac_addr;
+	mld_addr = (struct qdf_mac_addr *)
+		wlan_vdev_mlme_get_mldaddr(dp_intf->vdev);
 
 	if (!qdf_is_macaddr_zero(mld_addr) &&
 	    !qdf_mem_cmp(mld_addr->bytes,
@@ -817,10 +794,9 @@ static inline bool dp_nbuf_dst_addr_is_mld_addr(struct wlan_dp_intf *dp_intf,
 }
 #endif
 
-QDF_STATUS dp_softap_rx_packet_cbk(void *link_ctx, qdf_nbuf_t rx_buf)
+QDF_STATUS dp_softap_rx_packet_cbk(void *intf_ctx, qdf_nbuf_t rx_buf)
 {
 	struct wlan_dp_intf *dp_intf = NULL;
-	struct wlan_dp_link *dp_link = NULL;
 	QDF_STATUS qdf_status;
 	unsigned int cpu_index;
 	qdf_nbuf_t nbuf = NULL;
@@ -830,13 +806,12 @@ QDF_STATUS dp_softap_rx_packet_cbk(void *link_ctx, qdf_nbuf_t rx_buf)
 	struct dp_tx_rx_stats *stats;
 
 	/* Sanity check on inputs */
-	if (unlikely(!link_ctx || !rx_buf)) {
+	if (unlikely((!intf_ctx) || (!rx_buf))) {
 		dp_err("Null params being passed");
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	dp_link = (struct wlan_dp_link *)link_ctx;
-	dp_intf = dp_link->dp_intf;
+	dp_intf = (struct wlan_dp_intf *)intf_ctx;
 	dp_ctx = dp_intf->dp_ctx;
 
 	stats = &dp_intf->dp_stats.tx_rx_stats;
@@ -861,13 +836,13 @@ QDF_STATUS dp_softap_rx_packet_cbk(void *link_ctx, qdf_nbuf_t rx_buf)
 		qdf_net_stats_add_rx_bytes(&dp_intf->stats,
 					   qdf_nbuf_len(nbuf));
 
-		dp_softap_inspect_dhcp_packet(dp_link, nbuf, QDF_RX);
+		dp_softap_inspect_dhcp_packet(dp_intf, nbuf, QDF_RX);
 
 		if (qdf_nbuf_is_ipv4_eapol_pkt(nbuf))
 			is_eapol = true;
 
 		if (qdf_unlikely(is_eapol &&
-		    !(!qdf_mem_cmp(dp_link->mac_addr.bytes,
+		    !(!qdf_mem_cmp(dp_intf->mac_addr.bytes,
 				   qdf_nbuf_data(nbuf) +
 				   QDF_NBUF_DEST_MAC_OFFSET,
 				   QDF_MAC_ADDR_SIZE) ||
@@ -880,7 +855,7 @@ QDF_STATUS dp_softap_rx_packet_cbk(void *link_ctx, qdf_nbuf_t rx_buf)
 					  QDF_PKT_RX_DRIVER_EXIT, nbuf);
 
 		dp_event_eapol_log(nbuf, QDF_RX);
-		qdf_dp_trace_log_pkt(dp_link->link_id,
+		qdf_dp_trace_log_pkt(dp_intf->intf_id,
 				     nbuf, QDF_RX, QDF_TRACE_DEFAULT_PDEV_ID,
 				     dp_intf->device_mode);
 		DPTRACE(qdf_dp_trace(nbuf,
@@ -918,7 +893,7 @@ QDF_STATUS dp_softap_rx_packet_cbk(void *link_ctx, qdf_nbuf_t rx_buf)
 
 		if (is_eapol && dp_ctx->dp_ops.dp_send_rx_pkt_over_nl) {
 			if (dp_ctx->dp_ops.dp_send_rx_pkt_over_nl(dp_intf->dev,
-					(u8 *)&dp_link->conn_info.peer_macaddr,
+					(u8 *)&dp_intf->conn_info.peer_macaddr,
 								  nbuf, false))
 				qdf_status = QDF_STATUS_SUCCESS;
 			else

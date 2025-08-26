@@ -135,6 +135,12 @@ tgt_mgmt_rx_reo_enter_algo_without_buffer(
 		return QDF_STATUS_E_INVAL;
 	}
 
+	if (!reo_params->valid) {
+		mgmt_rx_reo_err_rl("Invalid MGMT rx REO param for link %u",
+				   link_id);
+		return QDF_STATUS_E_INVAL;
+	}
+
 	ml_grp_id = wlan_get_mlo_grp_id_from_pdev(pdev);
 	if (ml_grp_id > WLAN_MAX_MLO_GROUPS) {
 		mgmt_rx_reo_err("Invalid MLO Group  %d for the pdev",
@@ -148,31 +154,20 @@ tgt_mgmt_rx_reo_enter_algo_without_buffer(
 
 	desc.nbuf = NULL; /* No frame buffer */
 	desc.rx_params = &mgmt_rx_params;
-	desc.reo_params_copy = *mgmt_rx_params.reo_params;
 	desc.type = type;
 	desc.ingress_timestamp = qdf_get_log_timestamp();
-	desc.ingress_list_size_rx = -1;
-	desc.ingress_list_insertion_pos = -1;
-	desc.egress_list_size_rx = -1;
-	desc.egress_list_insertion_pos = -1;
+	desc.list_size_rx = -1;
+	desc.list_insertion_pos = -1;
 	desc.frame_type = IEEE80211_FC0_TYPE_MGT;
 	desc.frame_subtype = 0xFF;
 	desc.reo_required = is_mgmt_rx_reo_required(pdev, &desc);
-	desc.queued_list = MGMT_RX_REO_LIST_TYPE_INVALID;
-	desc.drop = false;
-	desc.drop_reason = MGMT_RX_REO_INGRESS_DROP_REASON_INVALID;
 
 	/* Enter the REO algorithm */
 	status = wlan_mgmt_rx_reo_algo_entry(pdev, &desc, &is_frm_queued);
-	if (QDF_IS_STATUS_ERROR(status))
-		return status;
 
-	if (is_frm_queued) {
-		mgmt_rx_reo_err("Frame is queued to reo list");
-		return QDF_STATUS_E_FAILURE;
-	}
+	qdf_assert_always(!is_frm_queued);
 
-	return QDF_STATUS_SUCCESS;
+	return status;
 }
 
 QDF_STATUS
@@ -189,46 +184,6 @@ tgt_mgmt_rx_reo_host_drop_handler(struct wlan_objmgr_pdev *pdev,
 {
 	return tgt_mgmt_rx_reo_enter_algo_without_buffer(
 			pdev, params, MGMT_RX_REO_FRAME_DESC_ERROR_FRAME);
-}
-
-/**
- * psoc_get_hw_link_id_bmap() - Helper API to get HW link ID bitmap of the
- * pdevs in a psoc
- * @psoc: Pointer to psoc object
- * @obj: Pointer to pdev object
- * @arg: pointer to void * argument
- *
- * Return: void
- */
-static void
-psoc_get_hw_link_id_bmap(struct wlan_objmgr_psoc *psoc, void *obj, void *arg)
-{
-	struct wlan_objmgr_pdev *pdev = (struct wlan_objmgr_pdev *)obj;
-	uint32_t *link_bitmap = (uint32_t *)arg;
-	int8_t cur_link;
-
-	cur_link = wlan_get_mlo_link_id_from_pdev(pdev);
-	if (cur_link < 0 || cur_link >= MAX_MLO_LINKS) {
-		mgmt_rx_reo_err("Invalid link = %d", cur_link);
-		return;
-	}
-
-	*link_bitmap |= (1 << cur_link);
-}
-
-QDF_STATUS
-tgt_mgmt_rx_reo_release_frames(struct wlan_objmgr_psoc *psoc)
-{
-	uint8_t mlo_grp_id;
-	uint32_t link_bitmap = 0;
-
-	mlo_grp_id = wlan_mlo_get_psoc_group_id(psoc);
-
-	wlan_objmgr_iterate_obj_list(psoc, WLAN_PDEV_OP,
-				     psoc_get_hw_link_id_bmap,
-				     &link_bitmap, false, WLAN_MGMT_RX_REO_ID);
-
-	return wlan_mgmt_rx_reo_release_frames(mlo_grp_id, link_bitmap);
 }
 
 QDF_STATUS tgt_mgmt_rx_reo_filter_config(struct wlan_objmgr_pdev *pdev,
@@ -347,6 +302,13 @@ QDF_STATUS tgt_mgmt_rx_reo_frame_handler(
 		goto cleanup;
 	}
 
+	if (!mgmt_rx_params->reo_params->valid) {
+		mgmt_rx_reo_err_rl("Invalid MGMT rx REO param for link %u",
+				   link_id);
+		status = QDF_STATUS_E_INVAL;
+		goto cleanup;
+	}
+
 	ml_grp_id = wlan_get_mlo_grp_id_from_pdev(pdev);
 	if (ml_grp_id > WLAN_MAX_MLO_GROUPS) {
 		mgmt_rx_reo_err("Invalid MGMT rx reo Group id");
@@ -361,15 +323,9 @@ QDF_STATUS tgt_mgmt_rx_reo_frame_handler(
 	desc.type = MGMT_RX_REO_FRAME_DESC_HOST_CONSUMED_FRAME;
 	desc.nbuf = buf;
 	desc.rx_params = mgmt_rx_params;
-	desc.reo_params_copy = *mgmt_rx_params->reo_params;
 	desc.ingress_timestamp = qdf_get_log_timestamp();
-	desc.ingress_list_size_rx = -1;
-	desc.ingress_list_insertion_pos = -1;
-	desc.egress_list_size_rx = -1;
-	desc.egress_list_insertion_pos = -1;
-	desc.queued_list = MGMT_RX_REO_LIST_TYPE_INVALID;
-	desc.drop = false;
-	desc.drop_reason = MGMT_RX_REO_INGRESS_DROP_REASON_INVALID;
+	desc.list_size_rx = -1;
+	desc.list_insertion_pos = -1;
 
 	wh = (struct ieee80211_frame *)qdf_nbuf_data(buf);
 	frame_type = wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK;
@@ -384,14 +340,11 @@ QDF_STATUS tgt_mgmt_rx_reo_frame_handler(
 		status = wlan_mgmt_rx_reo_algo_entry(pdev, &desc, &is_queued);
 
 		if (QDF_IS_STATUS_ERROR(status)) {
-			mgmt_rx_reo_warn_rl("Failed to execute REO algorithm");
+			mgmt_rx_reo_err_rl("Failed to execute REO algorithm");
 			goto cleanup;
 		}
 
-		if (is_queued) {
-			mgmt_rx_reo_err("Frame is queued to reo list");
-			return QDF_STATUS_E_FAILURE;
-		}
+		qdf_assert_always(!is_queued);
 
 		return tgt_mgmt_txrx_process_rx_frame(pdev, buf,
 						      mgmt_rx_params);
@@ -400,7 +353,7 @@ QDF_STATUS tgt_mgmt_rx_reo_frame_handler(
 		status = wlan_mgmt_rx_reo_algo_entry(pdev, &desc, &is_queued);
 
 		if (QDF_IS_STATUS_ERROR(status))
-			mgmt_rx_reo_warn_rl("Failed to execute REO algorithm");
+			mgmt_rx_reo_err_rl("Failed to execute REO algorithm");
 
 		/**
 		 *  If frame is queued, we shouldn't free up params and
@@ -414,23 +367,4 @@ cleanup:
 	free_mgmt_rx_event_params(mgmt_rx_params);
 
 	return status;
-}
-
-QDF_STATUS
-tgt_mgmt_rx_reo_schedule_delivery(struct wlan_objmgr_psoc *psoc)
-{
-	struct wlan_lmac_if_mgmt_rx_reo_tx_ops *mgmt_rx_reo_txops;
-
-	mgmt_rx_reo_txops = wlan_psoc_get_mgmt_rx_reo_txops(psoc);
-	if (!mgmt_rx_reo_txops) {
-		mgmt_rx_reo_err("MGMT Rx REO txops is NULL");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	if (!mgmt_rx_reo_txops->schedule_delivery) {
-		mgmt_rx_reo_err("mgmt_rx_reo_schedule delivery is NULL");
-		return QDF_STATUS_E_NULL_VALUE;
-	}
-
-	return mgmt_rx_reo_txops->schedule_delivery(psoc);
 }

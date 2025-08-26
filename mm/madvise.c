@@ -11,6 +11,7 @@
 #include <linux/syscalls.h>
 #include <linux/mempolicy.h>
 #include <linux/page-isolation.h>
+#include <linux/pgsize_migration.h>
 #include <linux/page_idle.h>
 #include <linux/userfaultfd_k.h>
 #include <linux/hugetlb.h>
@@ -171,7 +172,7 @@ success:
 	 * vm_flags is protected by the mmap_lock held in write mode.
 	 */
 	vm_write_begin(vma);
-	WRITE_ONCE(vma->vm_flags, new_flags);
+	WRITE_ONCE(vma->vm_flags, vma_pad_fixup_flags(vma, new_flags));
 	vm_write_end(vma);
 
 out_convert_errno:
@@ -792,6 +793,8 @@ static int madvise_free_single_vma(struct vm_area_struct *vma,
 static long madvise_dontneed_single_vma(struct vm_area_struct *vma,
 					unsigned long start, unsigned long end)
 {
+	madvise_vma_pad_pages(vma, start, end);
+
 	zap_page_range(vma, start, end - start);
 	return 0;
 }
