@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -352,58 +352,6 @@ end:
 		lim_send_start_bss_confirm(mac_ctx, &mlm_start_cnf);
 }
 
-#ifdef WLAN_FEATURE_11BE_MLO
-static void
-lim_send_peer_create_resp_mlo(struct wlan_objmgr_vdev *vdev,
-			      struct mac_context *mac,
-			      uint8_t *peer_mac,
-			      QDF_STATUS status)
-{
-	uint8_t link_id;
-	struct mlo_partner_info partner_info;
-	struct wlan_objmgr_peer *link_peer = NULL;
-
-	if (!wlan_vdev_mlme_is_mlo_vdev(vdev))
-		return;
-
-	link_id = vdev->vdev_mlme.mlo_link_id;
-	/* currently only 2 link MLO supported */
-	partner_info.num_partner_links = 1;
-	qdf_mem_copy(partner_info.partner_link_info[0].link_addr.bytes,
-		     vdev->vdev_mlme.macaddr, QDF_MAC_ADDR_SIZE);
-	partner_info.partner_link_info[0].link_id = link_id;
-	pe_debug("link_addr " QDF_MAC_ADDR_FMT,
-		 QDF_MAC_ADDR_REF(
-			partner_info.partner_link_info[0].link_addr.bytes));
-
-	if (QDF_IS_STATUS_SUCCESS(status)) {
-		/* Get the bss peer obj */
-		link_peer = wlan_objmgr_get_peer_by_mac(mac->psoc, peer_mac,
-							WLAN_LEGACY_MAC_ID);
-		if (!link_peer) {
-			pe_err("Link peer is NULL");
-			return;
-		}
-
-		status = wlan_mlo_peer_create(vdev, link_peer,
-					      &partner_info, NULL, 0);
-
-		if (QDF_IS_STATUS_ERROR(status))
-			pe_err("Peer creation failed");
-
-		wlan_objmgr_peer_release_ref(link_peer, WLAN_LEGACY_MAC_ID);
-	}
-}
-#else /* WLAN_FEATURE_11BE_MLO */
-static inline void
-lim_send_peer_create_resp_mlo(struct wlan_objmgr_vdev *vdev,
-			      struct mac_context *mac,
-			      uint8_t *peer_mac,
-			      QDF_STATUS status)
-{
-}
-#endif /* WLAN_FEATURE_11BE_MLO */
-
 #if defined(WIFI_POS_CONVERGED) && defined(WLAN_FEATURE_RTT_11AZ_SUPPORT)
 void
 lim_pasn_peer_del_all_resp_vdev_delete_resume(struct mac_context *mac,
@@ -444,7 +392,6 @@ void lim_send_peer_create_resp(struct mac_context *mac, uint8_t vdev_id,
 		return;
 	status = wlan_cm_bss_peer_create_rsp(vdev, qdf_status,
 					     (struct qdf_mac_addr *)peer_mac);
-	lim_send_peer_create_resp_mlo(vdev, mac, peer_mac, status);
 
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_MAC_ID);
 }

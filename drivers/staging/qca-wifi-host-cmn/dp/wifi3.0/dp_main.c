@@ -12344,6 +12344,10 @@ static QDF_STATUS dp_txrx_dump_stats(struct cdp_soc_t *psoc, uint16_t value,
 		dp_pdev_print_tx_delay_stats(soc);
 		break;
 
+	case CDP_DP_LAPB_STATS:
+		wlan_dp_lapb_display_stats(soc);
+		break;
+
 	default:
 		status = QDF_STATUS_E_INVAL;
 		break;
@@ -12584,6 +12588,10 @@ QDF_STATUS dp_txrx_clear_dump_stats(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
 
 	case CDP_DP_TX_HW_LATENCY_STATS:
 		dp_pdev_clear_tx_delay_stats(soc);
+		break;
+
+	case CDP_DP_LAPB_STATS:
+		wlan_dp_lapb_clear_stats(soc);
 		break;
 
 	default:

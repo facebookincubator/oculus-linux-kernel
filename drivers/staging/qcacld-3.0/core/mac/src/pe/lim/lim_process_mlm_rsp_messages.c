@@ -48,6 +48,7 @@
 #include "wlan_mlo_mgr_sta.h"
 #include "../../../../qca-wifi-host-cmn/umac/mlo_mgr/inc/utils_mlo.h"
 #include "wlan_mlo_mgr_roam.h"
+#include "wlan_mlme_api.h"
 
 #define MAX_SUPPORTED_PEERS_WEP 16
 
@@ -1273,6 +1274,8 @@ void lim_process_mlm_set_keys_cnf(struct mac_context *mac, uint32_t *msg_buf)
 				     1,
 				     (tSirResultCodes) pMlmSetKeysCnf->resultCode,
 				     pe_session, pe_session->smeSessionId);
+
+	wlan_mlme_update_bw_no_punct(mac->psoc, pe_session->vdev_id);
 } /*** end lim_process_mlm_set_keys_cnf() ***/
 
 void lim_update_lost_link_rssi(struct mac_context *mac, uint32_t rssi)

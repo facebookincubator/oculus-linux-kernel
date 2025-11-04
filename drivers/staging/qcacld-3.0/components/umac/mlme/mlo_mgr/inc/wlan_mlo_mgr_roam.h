@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -336,6 +336,22 @@ void mlo_roam_connect_complete(struct wlan_objmgr_vdev *vdev);
 void mlo_roam_free_copied_reassoc_rsp(struct wlan_objmgr_vdev *vdev);
 
 #ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+#ifdef WLAN_FEATURE_ROAM_OFFLOAD
+/**
+ * mlo_mgr_num_roam_links() - Get number of roaming links
+ * @vdev: VDEV object manager pointer
+ *
+ * Returns the num of links device roamed via FW roam sync event,
+ * for non-MLO VDEV the number of links is one.
+ */
+uint8_t mlo_mgr_num_roam_links(struct wlan_objmgr_vdev *vdev);
+#else
+static inline uint8_t mlo_mgr_num_roam_links(struct wlan_objmgr_vdev *vdev)
+{
+	return 0;
+}
+#endif
+
 /**
  * mlo_cm_roam_sync_cb - Callback function from CM to MLO mgr
  *
@@ -605,6 +621,11 @@ mlo_get_link_mac_addr_from_reassoc_rsp(struct wlan_objmgr_vdev *vdev,
 				       struct qdf_mac_addr *link_mac_addr)
 {
 	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline uint8_t mlo_mgr_num_roam_links(struct wlan_objmgr_vdev *vdev)
+{
+	return 1;
 }
 
 static inline uint32_t

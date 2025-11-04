@@ -1122,7 +1122,7 @@ uint16_t wma_match_eht_rate(uint16_t raw_rate,
 	      TX_RATE_EHT40 | TX_RATE_EHT20)))
 		return 0;
 
-	for (index = 0; index < MAX_EHT_MCS_IDX; index++) {
+	for (index = 0; index < QDF_ARRAY_SIZE(eht_mcs_nss1); index++) {
 		dcm_index_max = IS_MCS_HAS_DCM_RATE(index) ? 2 : 1;
 		for (dcm_index = 0; dcm_index < dcm_index_max; dcm_index++) {
 			if (rate_flags & TX_RATE_EHT320) {

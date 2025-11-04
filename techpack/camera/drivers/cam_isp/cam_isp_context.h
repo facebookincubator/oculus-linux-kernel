@@ -533,10 +533,12 @@ struct cam_isp_context {
 	uint32_t                         bubble_frame_cnt;
 	uint32_t                         aeb_error_cnt;
 
+	uint32_t                         num_state_monitor_transitions;
 	atomic64_t                       state_monitor_head;
 	struct cam_isp_context_state_monitor cam_isp_ctx_state_monitor[
 		CAM_ISP_CTX_STATE_MONITOR_MAX_ENTRIES];
 
+	uint32_t                         num_event_monitor_events;
 	atomic64_t                       event_monitor_head;
 	struct cam_isp_context_event_monitor cam_isp_ctx_event_monitor[
 		CAM_ISP_CTX_EVENT_MONITOR_MAX_ENTRIES];

@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -222,14 +221,13 @@ cdp_peer_state_update(ol_txrx_soc_handle soc, uint8_t *peer_addr,
  * @soc - data path soc handle
  * @vdev_id - virtual interface id
  * @peer_mac - peer mac addr
- * @slowpath - call from slow path or not
  *
  * Get local peer state
  *
  * Return: peer status
  */
 static inline int
-cdp_peer_state_get(ol_txrx_soc_handle soc, uint8_t vdev_id, uint8_t *peer_mac, bool slowpath)
+cdp_peer_state_get(ol_txrx_soc_handle soc, uint8_t vdev_id, uint8_t *peer_mac)
 {
 	if (!soc || !soc->ops || !soc->ops->peer_ops) {
 		QDF_TRACE(QDF_MODULE_ID_DP, QDF_TRACE_LEVEL_FATAL,
@@ -239,8 +237,7 @@ cdp_peer_state_get(ol_txrx_soc_handle soc, uint8_t vdev_id, uint8_t *peer_mac, b
 
 	if (soc->ops->peer_ops->get_peer_state)
 		return soc->ops->peer_ops->get_peer_state(soc, vdev_id,
-							  peer_mac,
-							  slowpath);
+							  peer_mac);
 
 	return 0;
 }

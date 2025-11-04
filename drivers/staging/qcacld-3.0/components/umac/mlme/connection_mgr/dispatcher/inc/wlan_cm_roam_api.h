@@ -1783,10 +1783,10 @@ cm_roam_vendor_handoff_event_handler(struct wlan_objmgr_psoc *psoc,
  * respect to the self sta and the peer after roaming and completes
  * the roam synch propagation with respect to WMA layer.
  *
- * Return: None
+ * Return: QDF_STATUS
  */
-void cm_roam_update_vdev(struct roam_offload_synch_ind *sync_ind,
-			 uint8_t vdev_id);
+QDF_STATUS
+cm_roam_update_vdev(struct roam_offload_synch_ind *sync_ind, uint8_t vdev_id);
 
 /**
  * cm_roam_pe_sync_callback() - Callback registered at pe, gets invoked when

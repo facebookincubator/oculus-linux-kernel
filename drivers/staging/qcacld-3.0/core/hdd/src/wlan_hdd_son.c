@@ -157,7 +157,7 @@ static int hdd_son_set_chwidth(struct wlan_objmgr_vdev *vdev,
 
 	chwidth = hdd_son_chan_width_to_chan_width(son_chwidth);
 
-	return hdd_set_mac_chan_width(adapter, chwidth);
+	return hdd_set_mac_chan_width(adapter, chwidth, false);
 }
 
 /**

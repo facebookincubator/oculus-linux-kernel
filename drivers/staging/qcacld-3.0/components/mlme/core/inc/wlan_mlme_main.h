@@ -117,10 +117,22 @@ struct peer_disconnect_stats_param {
 };
 
 /**
+ * struct wlan_mlme_tx_ops - structure of mlme tx function pointers
+ * @send_csa_event_status_ind: Tx ops function to send csa event indication
+ *
+ */
+struct wlan_mlme_tx_ops {
+	QDF_STATUS
+		(*send_csa_event_status_ind)(struct wlan_objmgr_vdev *vdev,
+					     uint8_t csa_status);
+};
+
+/**
  * struct wlan_mlme_psoc_ext_obj -MLME ext psoc priv object
  * @cfg:     cfg items
  * @rso_tx_ops: Roam Tx ops to send roam offload commands to firmware
  * @rso_rx_ops: Roam Rx ops to receive roam offload events from firmware
+ * @mlme_tx_ops: mlme tx ops
  * @wfa_testcmd: WFA config tx ops to send to FW
  * @disconnect_stats_param: Peer disconnect stats related params for SAP case
  * @scan_requester_id: mlme scan requester id
@@ -129,6 +141,7 @@ struct wlan_mlme_psoc_ext_obj {
 	struct wlan_mlme_cfg cfg;
 	struct wlan_cm_roam_tx_ops rso_tx_ops;
 	struct wlan_cm_roam_rx_ops rso_rx_ops;
+	struct wlan_mlme_tx_ops mlme_tx_ops;
 	struct wlan_mlme_wfa_cmd wfa_testcmd;
 	struct peer_disconnect_stats_param disconnect_stats_param;
 	wlan_scan_requester scan_requester_id;
@@ -498,6 +511,7 @@ struct mlme_ap_config {
  * @country_ie_for_all_band: take all band channel info in country ie
  * @mlme_ap: SAP related vdev private configurations
  * @is_single_link_mlo_roam: Single link mlo roam flag
+ * @best_6g_power_type: best 6g power type
  */
 struct mlme_legacy_priv {
 	bool chan_switch_in_progress;
@@ -559,6 +573,7 @@ struct mlme_legacy_priv {
 #if defined(WLAN_FEATURE_11BE_MLO) && defined(WLAN_FEATURE_ROAM_OFFLOAD)
 	bool is_single_link_mlo_roam;
 #endif
+	enum reg_6g_ap_type best_6g_power_type;
 };
 
 /**
@@ -778,6 +793,24 @@ void mlme_set_follow_ap_edca_flag(struct wlan_objmgr_vdev *vdev, bool flag);
  * Return: value of follow_ap_edca
  */
 bool mlme_get_follow_ap_edca_flag(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * mlme_set_best_6g_power_type() - Set best 6g power type
+ * @vdev: vdev pointer
+ * @best_6g_power_type: best 6g power type
+ *
+ * Return: None
+ */
+void mlme_set_best_6g_power_type(struct wlan_objmgr_vdev *vdev,
+				 enum reg_6g_ap_type best_6g_power_type);
+
+/**
+ * mlme_get_best_6g_power_type() - Get best 6g power type
+ * @vdev: vdev pointer
+ *
+ * Return: value of best 6g power type
+ */
+enum reg_6g_ap_type mlme_get_best_6g_power_type(struct wlan_objmgr_vdev *vdev);
 
 /**
  * mlme_set_reconn_after_assoc_timeout_flag() - Set reconn after assoc timeout
@@ -1506,4 +1539,16 @@ static inline int mlme_sr_is_enable(struct wlan_objmgr_vdev *vdev)
 	return 0;
 }
 #endif /* WLAN_FEATURE_SR */
+
+/**
+ * wlan_mlme_send_csa_event_status_ind_cmd() - send csa event status indication
+ * @vdev: vdev obj
+ * @csa_status: csa status
+ *
+ *  Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_mlme_send_csa_event_status_ind_cmd(struct wlan_objmgr_vdev *vdev,
+					uint8_t csa_status);
+
 #endif

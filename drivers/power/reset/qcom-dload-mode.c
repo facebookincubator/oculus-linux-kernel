@@ -263,10 +263,16 @@ static int qcom_dload_reboot(struct notifier_block *this, unsigned long event,
 	char *cmd = ptr;
 	struct qcom_dload *poweroff = container_of(this, struct qcom_dload,
 						     reboot_nb);
+	const char * const thermal_shutdown_string = "shutdown,thermal";
+	bool in_thermal_shutdown = false;
 
 	/* Clean shutdown, disable dump mode to allow normal restart */
-	if (!poweroff->in_panic)
+	in_thermal_shutdown = (cmd && !strncmp(cmd, thermal_shutdown_string, strlen(thermal_shutdown_string)));
+	if (!poweroff->in_panic && !in_thermal_shutdown)
 		set_download_mode(QCOM_DOWNLOAD_NODUMP);
+
+	if (in_thermal_shutdown)
+		qcom_scm_force_dload_mode_reboot();
 
 	if (cmd) {
 		if (!strcmp(cmd, "edl"))

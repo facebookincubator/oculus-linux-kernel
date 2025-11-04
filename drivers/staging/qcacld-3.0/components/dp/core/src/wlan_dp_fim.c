@@ -56,53 +56,42 @@ static void dp_fim_hash_table_init(struct fim_hash_table *ht, uint32_t len)
  * dp_fim_parse_skb_flow_info() - Parse flow info from skb
  * @skb: network buffer
  * @flow: pointer to flow tuple info
- * @keys: keys to dissect flow
  *
  * Return: none
  */
 static void dp_fim_parse_skb_flow_info(struct sk_buff *skb,
-				       struct flow_info *flow,
-				       qdf_flow_keys_t *keys)
+				       struct flow_info *flow)
 {
-	qdf_nbuf_flow_dissect_flow_keys(skb, keys);
+	struct qdf_flow_info flow_info;
 
-	if (qdf_unlikely(qdf_flow_is_first_frag(keys))) {
-		if (skb->protocol == htons(ETH_P_IP)) {
-			qdf_nbuf_flow_get_ports(skb, keys);
-		} else {
+	if (qdf_nbuf_sock_is_ipv4_pkt(skb)) {
+		if (!qdf_nbuf_is_ipv4_first_fragment(skb)) {
 			flow->flags |= FLOW_INFO_PRESENT_IP_FRAGMENT;
 			return;
 		}
-	} else if (qdf_flow_is_frag(keys)) {
-		flow->flags |= FLOW_INFO_PRESENT_IP_FRAGMENT;
-		return;
-	}
 
-	flow->src_port = qdf_ntohs(qdf_flow_parse_src_port(keys));
-	flow->flags |= FLOW_INFO_PRESENT_SRC_PORT;
+		if (qdf_nbuf_get_ipv4_flow_info(skb, &flow_info))
+			return;
 
-	flow->dst_port = qdf_ntohs(qdf_flow_parse_dst_port(keys));
-	flow->flags |= FLOW_INFO_PRESENT_DST_PORT;
+		flow->src_port = flow_info.src_port;
+		flow->dst_port = flow_info.dst_port;
+		flow->src_ip.ipv4_addr = flow_info.src_ip.ipv4_addr;
+		flow->dst_ip.ipv4_addr = flow_info.dst_ip.ipv4_addr;
+		flow->proto = flow_info.proto;
+		flow->flags |= FLOW_INFO_IPV4_PARSE_SUCCESS;
 
-	flow->proto = qdf_flow_get_proto(keys);
-	flow->flags |= FLOW_INFO_PRESENT_PROTO;
+	} else if (qdf_nbuf_sock_is_ipv6_pkt(skb)) {
+		if (qdf_nbuf_get_ipv6_flow_info(skb, &flow_info))
+			return;
 
-	if (skb->protocol == qdf_ntohs(QDF_NBUF_TRAC_IPV4_ETH_TYPE)) {
-		flow->src_ip.ipv4_addr =
-				qdf_ntohl(qdf_flow_get_ipv4_src_addr(keys));
-		flow->flags |= FLOW_INFO_PRESENT_IPV4_SRC_IP;
-
-		flow->dst_ip.ipv4_addr =
-				qdf_ntohl(qdf_flow_get_ipv4_dst_addr(keys));
-		flow->flags |= FLOW_INFO_PRESENT_IPV4_DST_IP;
-	} else if (skb->protocol == qdf_ntohs(QDF_NBUF_TRAC_IPV6_ETH_TYPE)) {
-		qdf_flow_get_ipv6_src_addr(keys, &flow->src_ip.ipv6_addr);
-		flow->flags |= FLOW_INFO_PRESENT_IPV6_SRC_IP;
-
-		qdf_flow_get_ipv6_dst_addr(keys, &flow->dst_ip.ipv6_addr);
-		flow->flags |= FLOW_INFO_PRESENT_IPV4_DST_IP;
-
-		flow->flow_label = qdf_flow_get_flow_label(keys);
+		flow->src_port = flow_info.src_port;
+		flow->dst_port = flow_info.dst_port;
+		qdf_mem_copy(&flow->src_ip.ipv6_addr, &flow_info.src_ip.ipv6_addr,
+			     sizeof(flow_info.src_ip.ipv6_addr));
+		qdf_mem_copy(&flow->dst_ip.ipv6_addr, &flow_info.dst_ip.ipv6_addr,
+			     sizeof(flow_info.dst_ip.ipv6_addr));
+		flow->proto = flow_info.proto;
+		flow->flags |= FLOW_INFO_IPV6_PARSE_SUCCESS;
 	}
 }
 
@@ -291,7 +280,7 @@ static inline bool dp_fim_is_proto_supported(struct sk_buff *skb)
 {
 	if (skb->sk &&
 	    (qdf_nbuf_sock_is_ipv4_pkt(skb) ||
-	     qdf_nbuf_sock_is_ipv6_pkt(skb)) &&
+	    qdf_nbuf_sock_is_ipv6_pkt(skb)) &&
 	    (qdf_nbuf_sock_is_udp_pkt(skb) ||
 	     qdf_nbuf_sock_is_tcp_pkt(skb)))
 		return true;
@@ -324,9 +313,8 @@ QDF_STATUS dp_fim_update_metadata(struct wlan_dp_intf *dp_intf, qdf_nbuf_t skb)
 	struct flow_info flow = {0};
 	struct sock *sk = NULL;
 	enum dp_fpm_status status;
-	qdf_flow_keys_t keys;
 
-	if (!skb || !fim_ctx)
+	if (qdf_unlikely(!skb || !fim_ctx))
 		return QDF_STATUS_E_INVAL;
 
 	if (!fim_ctx->fim_enable) {
@@ -338,7 +326,7 @@ QDF_STATUS dp_fim_update_metadata(struct wlan_dp_intf *dp_intf, qdf_nbuf_t skb)
 	if (qdf_unlikely(!sk || !sk->sk_txhash)) {
 		DP_STATS_INC(fim_ctx, sk_invalid, 1);
 
-		dp_fim_parse_skb_flow_info(skb, &flow, &keys);
+		dp_fim_parse_skb_flow_info(skb, &flow);
 		if (!flow.flags || flow.flags & FLOW_INFO_PRESENT_IP_FRAGMENT) {
 			DP_STATS_INC(fim_ctx, pkt_not_support, 1);
 			skb->mark = FIM_INVALID_METADATA;
@@ -367,7 +355,7 @@ QDF_STATUS dp_fim_update_metadata(struct wlan_dp_intf *dp_intf, qdf_nbuf_t skb)
 	} else {
 		qdf_rcu_read_unlock_bh();
 		if (match_flags & FIM_SOCK_FLAG_BIT)
-			dp_fim_parse_skb_flow_info(skb, &flow, &keys);
+			dp_fim_parse_skb_flow_info(skb, &flow);
 
 		if (!flow.flags || flow.flags & FLOW_INFO_PRESENT_IP_FRAGMENT) {
 			DP_STATS_INC(fim_ctx, pkt_not_support, 1);

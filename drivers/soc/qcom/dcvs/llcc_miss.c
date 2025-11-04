@@ -434,13 +434,6 @@ error_cleanup:
 static int __init qcom_llcc_miss_init(void)
 {
 	int ret, i, j;
-	u64 secure_state = 0;
-
-	ret = qcom_scm_get_secure_status(&secure_state);
-	if (ret < 0)
-		return ret;
-	if (!(secure_state & BIT(0)) || (secure_state & BIT(6)))
-		return -EPERM;
 
 	llcc_miss =  kzalloc(sizeof(*llcc_miss), GFP_KERNEL);
 	if (!llcc_miss)

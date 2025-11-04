@@ -2164,7 +2164,8 @@ hdd_convert_chwidth_to_phy_chwidth(enum eSirMacHTChannelWidth chwidth)
 
 int hdd_update_channel_width(struct hdd_adapter *adapter,
 			     enum eSirMacHTChannelWidth chwidth,
-			     uint32_t bonding_mode)
+			     uint32_t bonding_mode,
+			     bool is_restore)
 {
 	struct hdd_context *hdd_ctx;
 	struct sme_config_params *sme_config;
@@ -2200,8 +2201,17 @@ int hdd_update_channel_width(struct hdd_adapter *adapter,
 		goto free_config;
 
 	sme_get_config_param(hdd_ctx->mac_handle, sme_config);
-	sme_config->csr_config.channelBondingMode5GHz = bonding_mode;
-	sme_config->csr_config.channelBondingMode24GHz = bonding_mode;
+	if (is_restore) {
+		sme_config->csr_config.channelBondingMode5GHz =
+			cfg_get(adapter->hdd_ctx->psoc,
+				CFG_CHANNEL_BONDING_MODE_5GHZ);
+		sme_config->csr_config.channelBondingMode24GHz =
+			cfg_get(adapter->hdd_ctx->psoc,
+				CFG_CHANNEL_BONDING_MODE_24GHZ);
+	} else {
+		sme_config->csr_config.channelBondingMode5GHz = bonding_mode;
+		sme_config->csr_config.channelBondingMode24GHz = bonding_mode;
+	}
 	sme_update_config(hdd_ctx->mac_handle, sme_config);
 	sme_set_he_bw_cap(hdd_ctx->mac_handle, adapter->vdev_id, chwidth);
 	sme_set_eht_bw_cap(hdd_ctx->mac_handle, adapter->vdev_id, chwidth);

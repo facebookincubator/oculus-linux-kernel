@@ -3893,8 +3893,8 @@ void lim_update_sta_run_time_ht_switch_chnl_params(struct mac_context *mac,
 		return;
 	}
 
-	if (wlan_cm_is_vdev_roaming(pe_session->vdev)) {
-		pe_err("Roaming is in progress");
+	if (!wlan_cm_is_vdev_connected(pe_session->vdev)) {
+		pe_err("vdev not connected, ignore HT IE BW update");
 		return;
 	}
 
@@ -10825,28 +10825,14 @@ static void lim_update_ap_puncture(struct pe_session *session,
 	}
 }
 
-/**
- * lim_update_des_chan_puncture() - set puncture_bitmap of des_chan
- * @des_chan: pointer to wlan_channel
- * @ch_params: pointer to ch_params
- *
- * Return: void
- */
-static void lim_update_des_chan_puncture(struct wlan_channel *des_chan,
-					 struct ch_params *ch_params)
+void lim_update_des_chan_puncture(struct wlan_channel *des_chan,
+				  struct ch_params *ch_params)
 {
 	des_chan->puncture_bitmap = ch_params->reg_punc_bitmap;
 }
 
-/**
- * lim_overwrite_sta_puncture() - overwrite STA puncture with AP puncture
- * @session: session
- * @@ch_param: pointer to ch_params
- *
- * Return: void
- */
-static void lim_overwrite_sta_puncture(struct pe_session *session,
-				       struct ch_params *ch_param)
+void lim_overwrite_sta_puncture(struct pe_session *session,
+				struct ch_params *ch_param)
 {
 	uint16_t new_punc = 0;
 
@@ -10864,16 +10850,6 @@ static void lim_overwrite_sta_puncture(struct pe_session *session,
 #else
 static void lim_update_ap_puncture(struct pe_session *session,
 				   struct ch_params *ch_params)
-{
-}
-
-static void lim_update_des_chan_puncture(struct wlan_channel *des_chan,
-					 struct ch_params *ch_params)
-{
-}
-
-static void lim_overwrite_sta_puncture(struct pe_session *session,
-				       struct ch_params *ch_params)
 {
 }
 #endif
@@ -11356,10 +11332,8 @@ lim_is_power_change_required_for_sta(struct mac_context *mac_ctx,
 		return false;
 	}
 
-	if (sta_session->curr_op_freq != sap_session->curr_op_freq) {
-		pe_err("STA and SAP are not in same frequency, do not change TPC power");
+	if (sta_session->curr_op_freq != sap_session->curr_op_freq)
 		return false;
-	}
 
 	wlan_reg_get_cur_6g_ap_pwr_type(mac_ctx->pdev, &ap_power_type_6g);
 

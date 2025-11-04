@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -556,11 +557,6 @@ QDF_STATUS pmo_core_disable_mc_addr_filtering_in_fwr(
 	status = pmo_core_mc_addr_flitering_sanity(vdev);
 	if (status != QDF_STATUS_SUCCESS)
 		goto put_ref;
-
-	if (wlan_vdev_is_up(vdev) != QDF_STATUS_SUCCESS) {
-		status = QDF_STATUS_E_INVAL;
-		goto put_ref;
-	}
 
 	pmo_debug("disable mclist trigger: %d", trigger);
 

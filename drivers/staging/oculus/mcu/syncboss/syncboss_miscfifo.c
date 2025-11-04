@@ -15,7 +15,8 @@
 #include "syncboss_miscfifo.h"
 
 /* One-byte elements */
-#define MISCFIFO_SIZE 2048
+#define MISCFIFO_SIZE_PROPNAME "size"
+#define MISCFIFO_DEFAULT_SIZE 2048
 
 #define STREAM_DEVICE_NAME "syncboss_stream0"
 #define CONTROL_DEVICE_NAME "syncboss_control0"
@@ -284,6 +285,7 @@ static int syncboss_miscfifo_probe(struct platform_device *pdev)
 	struct device_node *node = dev->of_node;
 	struct miscfifo_dev_data *devdata = dev_get_drvdata(dev);
 	struct device_node *parent_node = of_get_parent(node);
+	uint32_t miscfifo_size;
 	int ret;
 
 	if (!parent_node ||
@@ -292,6 +294,10 @@ static int syncboss_miscfifo_probe(struct platform_device *pdev)
 		dev_err(dev, "failed to find compatible parent device");
 		return -ENODEV;
 	}
+
+	if (of_property_read_u32(dev->of_node, MISCFIFO_SIZE_PROPNAME,
+				 &miscfifo_size))
+		miscfifo_size = MISCFIFO_DEFAULT_SIZE;
 
 	devdata = devm_kzalloc(dev, sizeof(struct miscfifo_dev_data), GFP_KERNEL);
 	if (!devdata)
@@ -304,7 +310,7 @@ static int syncboss_miscfifo_probe(struct platform_device *pdev)
 
 	mutex_init(&devdata->stream_mutex);
 
-	devdata->stream_fifo.config.kfifo_size = MISCFIFO_SIZE;
+	devdata->stream_fifo.config.kfifo_size = miscfifo_size;
 	devdata->stream_fifo.config.filter_fn = should_send_stream_packet;
 	ret = devm_miscfifo_register(dev, &devdata->stream_fifo);
 	if (ret < 0) {
@@ -322,7 +328,7 @@ static int syncboss_miscfifo_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	devdata->control_fifo.config.kfifo_size = MISCFIFO_SIZE;
+	devdata->control_fifo.config.kfifo_size = miscfifo_size;
 	ret = devm_miscfifo_register(dev, &devdata->control_fifo);
 	if (ret < 0) {
 		dev_err(dev, "failed to register control miscfifo, error %d", ret);

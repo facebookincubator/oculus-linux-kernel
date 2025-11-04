@@ -1965,6 +1965,13 @@ static int zram_rw_page(struct block_device *bdev, sector_t sector,
 
 	start_time = disk_start_io_acct(bdev->bd_disk, SECTORS_PER_PAGE, op);
 	ret = zram_bvec_rw(zram, &bv, index, offset, op, NULL);
+	if (ret <  0)
+		goto out;
+	/* Disk may have been gone during lengthy R/W operation */
+	if (!bdev->bd_disk) {
+		ret = -ENODEV;
+		goto out;
+	}
 	disk_end_io_acct(bdev->bd_disk, op, start_time);
 out:
 	/*

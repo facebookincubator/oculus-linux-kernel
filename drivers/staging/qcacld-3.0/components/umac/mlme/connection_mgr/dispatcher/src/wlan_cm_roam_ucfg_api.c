@@ -564,8 +564,7 @@ ucfg_cm_get_neighbor_lookup_rssi_threshold(struct wlan_objmgr_psoc *psoc,
 {
 	struct cm_roam_values_copy temp;
 
-	wlan_cm_roam_cfg_get_value(psoc, vdev_id,
-				   NEIGHBOUR_LOOKUP_THRESHOLD, &temp);
+	wlan_cm_roam_cfg_get_value(psoc, vdev_id, NEXT_RSSI_THRESHOLD, &temp);
 	*lookup_threshold = temp.uint_value;
 
 	return QDF_STATUS_SUCCESS;

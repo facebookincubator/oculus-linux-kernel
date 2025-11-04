@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022,2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -280,6 +280,27 @@ qdf_freq_t reg_country_chan_opclass_to_freq(struct wlan_objmgr_pdev *pdev,
 					    const uint8_t country[3],
 					    uint8_t chan, uint8_t op_class,
 					    bool strict);
+
+/**
+ * reg_chan_opclass_to_freq_prefer_global() - API to find the operating
+ * channel freq from chan num and opclass.
+ * @pdev: PDEV object manager pointer
+ * @country: Two byte CC pointer
+ * @chan_num: Channel index number.
+ * @opclass: Operating class
+ *
+ * The API will check the global operating class table to convert the opclass
+ * chan_num tuple to channel frequency and if there is not entry in global
+ * opclass table for this tuple and if @country is not %NULL, then attempts to
+ * convert the opclass and chan_num to channel frequency using the country
+ * specific opclass table.
+ *
+ * Return: Valid channel frequency if success else zero
+ */
+qdf_freq_t
+reg_chan_opclass_to_freq_prefer_global(struct wlan_objmgr_pdev *pdev,
+				       const uint8_t *country, uint8_t chan_num,
+				       uint8_t opclass);
 #endif
 
 /**
@@ -446,6 +467,14 @@ qdf_freq_t reg_country_chan_opclass_to_freq(struct wlan_objmgr_pdev *pdev,
 					    const uint8_t country[3],
 					    uint8_t chan, uint8_t op_class,
 					    bool strict)
+{
+	return 0;
+}
+
+static inline qdf_freq_t
+reg_chan_opclass_to_freq_prefer_global(struct wlan_objmgr_pdev *pdev,
+				       const uint8_t *country, uint8_t chan_num,
+				       uint8_t opclass)
 {
 	return 0;
 }

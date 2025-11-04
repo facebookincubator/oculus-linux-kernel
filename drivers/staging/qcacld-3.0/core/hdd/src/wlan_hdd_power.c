@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1260,9 +1260,7 @@ int wlan_hdd_pm_qos_notify(struct notifier_block *nb, unsigned long curr_val,
 	return NOTIFY_DONE;
 }
 
-/** cpuidle_governor_latency_req() is not exported by upstream kernel **/
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) && \
-	defined(__ANDROID_COMMON_KERNEL__))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
 bool wlan_hdd_is_cpu_pm_qos_in_progress(struct hdd_context *hdd_ctx)
 {
 	long long curr_val_ns;
@@ -1610,9 +1608,6 @@ void hdd_disable_mc_addr_filtering(struct hdd_adapter *adapter,
 	if (wlan_hdd_validate_context(hdd_ctx))
 		return;
 
-	if (!hdd_cm_is_vdev_associated(adapter))
-		return;
-
 	status = ucfg_pmo_disable_mc_addr_filtering_in_fwr(hdd_ctx->psoc,
 							   adapter->vdev_id,
 							   trigger);
@@ -1635,9 +1630,6 @@ void hdd_disable_and_flush_mc_addr_list(struct hdd_adapter *adapter,
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	QDF_STATUS status;
 
-	if (!hdd_cm_is_vdev_associated(adapter))
-		goto flush_mc_list;
-
 	/* disable mc list first because the mc list is cached in PMO */
 	status = ucfg_pmo_disable_mc_addr_filtering_in_fwr(hdd_ctx->psoc,
 							   adapter->vdev_id,
@@ -1645,12 +1637,10 @@ void hdd_disable_and_flush_mc_addr_list(struct hdd_adapter *adapter,
 	if (QDF_IS_STATUS_ERROR(status))
 		hdd_debug("failed to disable mc list; status:%d", status);
 
-flush_mc_list:
 	status = ucfg_pmo_flush_mc_addr_list(hdd_ctx->psoc,
 					     adapter->vdev_id);
 	if (QDF_IS_STATUS_ERROR(status))
 		hdd_debug("failed to flush mc list; status:%d", status);
-
 }
 
 /**
@@ -2956,8 +2946,8 @@ static int __wlan_hdd_cfg80211_set_power_mgmt(struct wiphy *wiphy,
 	hdd_enter();
 
 	if (timeout < 0) {
-		hdd_debug("User space timeout: %d; Enter full power or power save: %d",
-			  timeout, allow_power_save);
+		hdd_debug("User space timeout: %d; Enter full power or power save",
+			  timeout);
 		timeout = 0;
 	}
 
@@ -3011,10 +3001,6 @@ static int __wlan_hdd_cfg80211_set_power_mgmt(struct wiphy *wiphy,
 				 allow_power_save, timeout);
 
 exit:
-	/* Cache the powersave state for success case */
-	if (!status)
-		adapter->allow_power_save = allow_power_save;
-
 	hdd_exit();
 	return status;
 }

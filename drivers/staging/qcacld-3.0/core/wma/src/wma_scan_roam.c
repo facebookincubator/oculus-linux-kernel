@@ -1,6 +1,6 @@
  /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -680,14 +680,15 @@ wma_delete_all_peers(tp_wma_handle wma,
  * wma_roam_update_vdev() - Update the STA and BSS
  * @wma: Global WMA Handle
  * @roam_synch_ind_ptr: Information needed for roam sync propagation
+ * @roamed_vdev_id: VDEV ID of FW roamed VDEV
  *
  * This function will perform all the vdev related operations with
  * respect to the self sta and the peer after roaming and completes
  * the roam synch propagation with respect to WMA layer.
  *
- * Return: None
+ * Return: QDF_STATUS
  */
-static void
+static QDF_STATUS
 wma_roam_update_vdev(tp_wma_handle wma,
 		     struct roam_offload_synch_ind *roam_synch_ind_ptr,
 		     uint8_t roamed_vdev_id)
@@ -703,8 +704,7 @@ wma_roam_update_vdev(tp_wma_handle wma,
 	wma->interfaces[vdev_id].nss = roam_synch_ind_ptr->nss;
 
 	/* update channel width */
-	wma->interfaces[vdev_id].chan_width =
-		roam_synch_ind_ptr->chan_width;
+	wma->interfaces[vdev_id].chan_width = roam_synch_ind_ptr->chan_width;
 	/* Fill link freq from roam_synch_ind */
 	if (is_multi_link_roam(roam_synch_ind_ptr))
 		wma->interfaces[vdev_id].ch_freq =
@@ -714,9 +714,8 @@ wma_roam_update_vdev(tp_wma_handle wma,
 			roam_synch_ind_ptr->chan_freq;
 
 	add_sta_params = qdf_mem_malloc(sizeof(*add_sta_params));
-	if (!add_sta_params) {
-		return;
-	}
+	if (!add_sta_params)
+		return QDF_STATUS_E_INVAL;
 
 	if (is_multi_link_roam(roam_synch_ind_ptr))
 		mlo_get_sta_link_mac_addr(vdev_id, roam_synch_ind_ptr,
@@ -741,35 +740,45 @@ wma_roam_update_vdev(tp_wma_handle wma,
 
 	add_sta_params->staType = STA_ENTRY_SELF;
 	add_sta_params->smesessionId = vdev_id;
-	qdf_mem_copy(&add_sta_params->bssId, &mac_addr,
-			 QDF_MAC_ADDR_SIZE);
+	qdf_mem_copy(&add_sta_params->bssId, &mac_addr, QDF_MAC_ADDR_SIZE);
 	add_sta_params->assocId = roam_synch_ind_ptr->aid;
 
 	bssid = wma_get_vdev_bssid(wma->interfaces[vdev_id].vdev);
 	if (!bssid) {
 		wma_err("Failed to get bssid for vdev_%d", vdev_id);
-		return;
+		return QDF_STATUS_E_INVAL;
 	}
 
 	is_assoc_peer = wlan_vdev_mlme_get_is_mlo_vdev(wma->psoc, vdev_id);
 	if (is_multi_link_roam(roam_synch_ind_ptr)) {
-		wma_create_peer(wma, mac_addr.bytes,
-				WMI_PEER_TYPE_DEFAULT, vdev_id,
-				roam_synch_ind_ptr->bssid.bytes,
-				is_assoc_peer);
+		status = wma_create_peer(wma, mac_addr.bytes,
+					 WMI_PEER_TYPE_DEFAULT, vdev_id,
+					 roam_synch_ind_ptr->bssid.bytes,
+					 is_assoc_peer);
 	} else {
-		wma_create_peer(wma, mac_addr.bytes,
-				WMI_PEER_TYPE_DEFAULT,
-				vdev_id,
-				NULL,
-				is_assoc_peer);
+		status = wma_create_peer(wma, mac_addr.bytes,
+					 WMI_PEER_TYPE_DEFAULT, vdev_id, NULL,
+					 is_assoc_peer);
 	}
 
-	if (is_multi_link_roam(roam_synch_ind_ptr))
-		lim_roam_mlo_create_peer(wma->mac_context,
-					 roam_synch_ind_ptr,
-					 vdev_id,
-					 mac_addr.bytes);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		wma_err("Failed to create peer " QDF_MAC_ADDR_FMT,
+			QDF_MAC_ADDR_REF(mac_addr.bytes));
+		goto end;
+	}
+
+	if (is_multi_link_roam(roam_synch_ind_ptr)) {
+		status = lim_roam_mlo_create_peer(wma->mac_context,
+						  roam_synch_ind_ptr, vdev_id,
+						  mac_addr.bytes);
+
+		/* The created peer will be destroyed on HO failure cleanup */
+		if (QDF_IS_STATUS_ERROR(status)) {
+			wma_err("Failed to attach MLO peer " QDF_MAC_ADDR_FMT,
+				QDF_MAC_ADDR_REF(mac_addr.bytes));
+			goto end;
+		}
+	}
 
 	/* Update new peer's uc cipher */
 	uc_cipher = wlan_crypto_get_param(wma->interfaces[vdev_id].vdev,
@@ -786,6 +795,7 @@ wma_roam_update_vdev(tp_wma_handle wma,
 				      roam_synch_ind_ptr);
 end:
 	qdf_mem_free(add_sta_params);
+	return status;
 }
 
 static void wma_update_phymode_on_roam(tp_wma_handle wma,
@@ -3137,15 +3147,15 @@ QDF_STATUS wma_send_ht40_obss_scanind(tp_wma_handle wma,
 }
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
-void cm_roam_update_vdev(struct roam_offload_synch_ind *sync_ind,
-			 uint8_t vdev_id)
+QDF_STATUS
+cm_roam_update_vdev(struct roam_offload_synch_ind *sync_ind, uint8_t vdev_id)
 {
 	tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
 
 	if (!wma)
-		return;
+		return QDF_STATUS_E_INVAL;
 
-	wma_roam_update_vdev(wma, sync_ind, vdev_id);
+	return wma_roam_update_vdev(wma, sync_ind, vdev_id);
 }
 
 QDF_STATUS

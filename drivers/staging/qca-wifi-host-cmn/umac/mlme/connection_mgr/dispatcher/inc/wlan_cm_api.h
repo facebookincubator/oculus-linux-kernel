@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -326,6 +326,28 @@ wlan_cm_connect_resp_fill_mld_addr_from_vdev_id(struct wlan_objmgr_psoc *psoc,
 bool wlan_cm_get_active_connect_req(struct wlan_objmgr_vdev *vdev,
 				    struct wlan_cm_vdev_connect_req *req);
 
+/**
+ * wlan_cm_is_first_candidate_connect_attempt() - Check whether it is
+ * the first attempt for the current AP after receiving connect request
+ * @vdev: vdev pointer
+ *
+ * Return: True if it is the first connecting attempt on a candidate.
+ * Otherwise return false
+ */
+bool wlan_cm_is_first_candidate_connect_attempt(struct wlan_objmgr_vdev *vdev);
+
+/**
+ * wlan_cm_get_active_connect_req_param() - API to fetch connect request
+ * parameter.
+ * @vdev: vdev pointer
+ * @req: Connection request parameter buffer to be filled
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_cm_get_active_connect_req_param(struct wlan_objmgr_vdev *vdev,
+				     struct wlan_cm_connect_req *req);
+
 #ifdef WLAN_FEATURE_HOST_ROAM
 /**
  * wlan_cm_get_active_reassoc_req() - Get copy of active reassoc request
@@ -505,6 +527,19 @@ void wlan_cm_set_candidate_custom_sort_cb(
  */
 struct reduced_neighbor_report *wlan_cm_get_rnr(struct wlan_objmgr_vdev *vdev,
 						wlan_cm_id cm_id);
+
+/**
+ * wlan_cm_get_curr_candidate_entry() - Get current candidate from cnx mgr
+ * @vdev: VDEV object manager
+ * @cm_id: cnx mgr ID
+ *
+ * Get the current candidate for connection from cnx mgr.
+ *
+ * Return: Scan entry
+ */
+struct scan_cache_entry *
+wlan_cm_get_curr_candidate_entry(struct wlan_objmgr_vdev *vdev,
+				 wlan_cm_id cm_id);
 
 /**
  * wlan_cm_disc_cont_after_rso_stop() - Continue disconnect after RSO stop

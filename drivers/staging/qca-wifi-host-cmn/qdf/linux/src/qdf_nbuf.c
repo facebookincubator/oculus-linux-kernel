@@ -1232,6 +1232,7 @@ void qdf_nbuf_unmap_nbytes_single_paddr_debug(qdf_device_t osdev,
 					      const char *func, uint32_t line)
 {
 	qdf_nbuf_untrack_map(buf, func, line);
+	__qdf_record_nbuf_nbytes(__qdf_nbuf_get_end_offset(buf), dir, false);
 	__qdf_mem_unmap_nbytes_single(osdev, phy_addr, dir, nbytes);
 	qdf_net_buf_debug_update_unmap_node(buf, func, line);
 }

@@ -939,11 +939,13 @@ int hdd_set_phy_mode(struct hdd_adapter *adapter,
  * hdd_set_mac_chan_width() - set channel width
  * @adapter: Handle to hdd_adapter
  * @chwidth: given channel width
+ * @is_restore: is restore
  *
  * Return: 0 on success, negative errno on failure
  */
 int hdd_set_mac_chan_width(struct hdd_adapter *adapter,
-			   enum eSirMacHTChannelWidth chwidth);
+			   enum eSirMacHTChannelWidth chwidth,
+			   bool is_restore);
 
 /**
  * hdd_is_legacy_connection() - Is adapter connection is legacy

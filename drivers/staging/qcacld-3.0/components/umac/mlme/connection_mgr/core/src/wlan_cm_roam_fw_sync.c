@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -524,6 +524,21 @@ cm_update_assoc_btm_cap(struct wlan_objmgr_vdev *vdev,
 	wlan_cm_set_assoc_btm_cap(vdev, extcap->bss_transition);
 }
 
+#ifdef WLAN_FEATURE_11BE_MLO
+static inline void
+cm_fill_num_roam_links_info(struct wlan_roam_sync_info *roam_info,
+			    struct roam_offload_synch_ind *roam_synch_ind)
+{
+	roam_info->num_setup_links = roam_synch_ind->num_setup_links;
+}
+#else
+static inline void
+cm_fill_num_roam_links_info(struct wlan_roam_sync_info *roam_info,
+			    struct roam_offload_synch_ind *roam_synch_ind)
+{
+}
+#endif
+
 static QDF_STATUS
 cm_fill_roam_info(struct wlan_objmgr_vdev *vdev,
 		  struct roam_offload_synch_ind *roam_synch_data,
@@ -582,6 +597,7 @@ cm_fill_roam_info(struct wlan_objmgr_vdev *vdev,
 
 	roaming_info = rsp->connect_rsp.roaming_info;
 	roaming_info->auth_status = roam_synch_data->auth_status;
+	cm_fill_num_roam_links_info(roaming_info, roam_synch_data);
 	roaming_info->kck_len = roam_synch_data->kck_len;
 	if (roaming_info->kck_len)
 		qdf_mem_copy(roaming_info->kck, roam_synch_data->kck,

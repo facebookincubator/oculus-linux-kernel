@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -2614,34 +2614,9 @@ extract_roam_sync_event_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 		reassoc_req_len = synch_event->reassoc_req_len;
 		reassoc_rsp_len = synch_event->reassoc_rsp_len;
 
-		if (synch_event->bcn_probe_rsp_len > WMI_SVC_MSG_MAX_SIZE) {
-			status = QDF_STATUS_E_FAILURE;
-			goto end;
-		}
-		if (synch_event->reassoc_rsp_len >
-			(WMI_SVC_MSG_MAX_SIZE - synch_event->bcn_probe_rsp_len)) {
-			status = QDF_STATUS_E_FAILURE;
-			goto end;
-		}
-		if (synch_event->reassoc_req_len >
-			WMI_SVC_MSG_MAX_SIZE - (synch_event->bcn_probe_rsp_len +
-			synch_event->reassoc_rsp_len)) {
-			status = QDF_STATUS_E_FAILURE;
-			goto end;
-		}
 		roam_synch_data_len = bcn_probe_rsp_len +
 			reassoc_rsp_len + reassoc_req_len;
 
-		/*
-		 * Below is the check for the entire size of the message
-		 * received from the firmware.
-		 */
-		if (roam_synch_data_len > WMI_SVC_MSG_MAX_SIZE -
-			(sizeof(*synch_event) + sizeof(wmi_channel) +
-			 sizeof(wmi_key_material) + sizeof(uint32_t))) {
-			status = QDF_STATUS_E_FAILURE;
-			goto end;
-		}
 		roam_synch_data_len += sizeof(struct roam_offload_synch_ind);
 	}
 
@@ -3064,7 +3039,7 @@ extract_roam_stats_event_tlv(wmi_unified_t wmi_handle, uint8_t *evt_buf,
 		num_tlv = MAX_ROAM_SCAN_STATS_TLV;
 	}
 
-	rem_len = len - sizeof(*fixed_param);
+	rem_len = WMI_SVC_MSG_MAX_SIZE - sizeof(*fixed_param);
 	if (rem_len < num_tlv * sizeof(wmi_roam_trigger_reason)) {
 		wmi_err_rl("Invalid roam trigger data");
 		return QDF_STATUS_E_INVAL;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -25,7 +25,7 @@
 static void qdf_trace_dp_tx_ip_packet(qdf_nbuf_t nbuf, uint8_t *trans_hdr,
 				      uint8_t ip_proto, uint16_t ip_id,
 				      struct qdf_tso_seg_elem_t *tso_desc,
-				      uint64_t latency)
+				      uint64_t latency, uint8_t status)
 {
 	if (ip_proto == QDF_NBUF_TRAC_TCP_TYPE &&
 	    __qdf_trace_dp_tx_comp_tcp_pkt_enabled()) {
@@ -41,7 +41,7 @@ static void qdf_trace_dp_tx_ip_packet(qdf_nbuf_t nbuf, uint8_t *trans_hdr,
 					       qdf_ntohl(tcph->ack_seq),
 					       qdf_ntohs(tcph->source),
 					       qdf_ntohs(tcph->dest),
-					       latency);
+					       latency, status);
 	} else if (ip_proto == QDF_NBUF_TRAC_UDP_TYPE &&
 		   __qdf_trace_dp_tx_comp_udp_pkt_enabled()) {
 		qdf_net_udphdr_t *udph = (qdf_net_udphdr_t *)trans_hdr;
@@ -49,7 +49,7 @@ static void qdf_trace_dp_tx_ip_packet(qdf_nbuf_t nbuf, uint8_t *trans_hdr,
 		__qdf_trace_dp_tx_comp_udp_pkt(nbuf, qdf_ntohs(ip_id),
 					       qdf_ntohs(udph->src_port),
 					       qdf_ntohs(udph->dst_port),
-					       latency);
+					       latency, status);
 	} else if (__qdf_trace_dp_tx_comp_generic_ip_pkt_enabled()) {
 		__qdf_trace_dp_tx_comp_generic_ip_pkt(nbuf, ip_proto, ip_id,
 						      QDF_SWAP_U32(*(uint32_t *)trans_hdr),
@@ -69,7 +69,7 @@ static void qdf_trace_dp_rx_ip_packet(qdf_nbuf_t nbuf, uint8_t *trans_hdr,
 					  qdf_ntohl(tcph->ack_seq),
 					  qdf_ntohs(tcph->source),
 					  qdf_ntohs(tcph->dest),
-					  latency);
+					  latency, 0);
 	} else if (ip_proto == QDF_NBUF_TRAC_UDP_TYPE &&
 		   __qdf_trace_dp_rx_udp_pkt_enabled()) {
 		qdf_net_udphdr_t *udph = (qdf_net_udphdr_t *)trans_hdr;
@@ -77,7 +77,7 @@ static void qdf_trace_dp_rx_ip_packet(qdf_nbuf_t nbuf, uint8_t *trans_hdr,
 		__qdf_trace_dp_rx_udp_pkt(nbuf, qdf_ntohs(ip_id),
 					  qdf_ntohs(udph->src_port),
 					  qdf_ntohs(udph->dst_port),
-					  latency);
+					  latency, 0);
 	} else if (__qdf_trace_dp_rx_generic_ip_pkt_enabled()) {
 		__qdf_trace_dp_rx_generic_ip_pkt(nbuf, ip_proto, ip_id,
 						 QDF_SWAP_U32(*(uint32_t *)trans_hdr),
@@ -86,7 +86,8 @@ static void qdf_trace_dp_rx_ip_packet(qdf_nbuf_t nbuf, uint8_t *trans_hdr,
 }
 
 void qdf_trace_dp_packet(qdf_nbuf_t nbuf, enum qdf_proto_dir dir,
-			 struct qdf_tso_seg_elem_t *tso_desc, uint64_t enq_time)
+			 struct qdf_tso_seg_elem_t *tso_desc, uint64_t enq_time,
+			 uint8_t status)
 {
 	uint8_t *data = qdf_nbuf_data(nbuf);
 	uint64_t latency;
@@ -133,7 +134,8 @@ void qdf_trace_dp_packet(qdf_nbuf_t nbuf, enum qdf_proto_dir dir,
 
 		if (dir == QDF_TX)
 			qdf_trace_dp_tx_ip_packet(nbuf, trans_hdr, ip_proto,
-						  ip_id, tso_desc, latency);
+						  ip_id, tso_desc, latency,
+						  status);
 		else
 			qdf_trace_dp_rx_ip_packet(nbuf, trans_hdr, ip_proto,
 						  ip_id, latency);

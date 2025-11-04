@@ -1037,6 +1037,9 @@ populate_dot11f_ht_caps(struct mac_context *mac,
 			pDot11f->supportedChannelWidthSet =
 				pe_session->htSupportedChannelWidthSet;
 		}
+		pe_debug("cb mode %d scws %d session cw %d",
+			 cb_mode, pDot11f->supportedChannelWidthSet,
+			 pe_session->ch_width);
 
 		pDot11f->advCodingCap = pe_session->ht_config.adv_coding_cap;
 		pDot11f->txSTBC = pe_session->ht_config.tx_stbc;

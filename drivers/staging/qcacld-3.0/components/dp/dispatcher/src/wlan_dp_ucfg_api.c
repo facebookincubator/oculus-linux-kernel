@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2011,6 +2011,8 @@ void ucfg_dp_register_hdd_callbacks(struct wlan_objmgr_psoc *psoc,
 	dp_ctx->dp_ops.osif_dp_process_mic_error =
 		cb_obj->osif_dp_process_mic_error;
 	dp_ctx->dp_ops.link_monitoring_cb = cb_obj->link_monitoring_cb;
+	dp_ctx->dp_ops.osif_dp_get_net_dev_from_vdev =
+		cb_obj->osif_dp_get_net_dev_from_vdev;
 	}
 
 void ucfg_dp_register_event_handler(struct wlan_objmgr_psoc *psoc,

@@ -628,6 +628,7 @@ CONFIG_WIFI_POS_LEGACY := y
 endif
 
 CONFIG_CP_STATS := y
+CONFIG_QCA_TARGET_IF_MLME := y
 
 #Flag to enable compilation of DCS module
 CONFIG_DCS := y

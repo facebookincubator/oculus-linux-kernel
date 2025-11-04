@@ -1387,7 +1387,6 @@ struct wlan_user_mcc_quota {
  * @tx_retry_multiplier: TX xretry extension parameter
  * @mgmt_hw_tx_retry_count: MGMT HW tx retry count for frames
  * @std_6ghz_conn_policy: 6GHz standard connection policy
- * @disable_vlp_sta_conn_to_sp_ap: Disable VLP STA connection to SP AP
  * @eht_mode: EHT mode of operation
  * @t2lm_negotiation_support: T2LM negotiation supported enum value
  * @enable_emlsr_mode: 11BE eMLSR mode support
@@ -1444,7 +1443,6 @@ struct wlan_mlme_generic {
 	uint8_t mgmt_hw_tx_retry_count[CFG_FRAME_TYPE_MAX];
 #ifdef CONFIG_BAND_6GHZ
 	bool std_6ghz_conn_policy;
-	bool disable_vlp_sta_conn_to_sp_ap;
 #endif
 #ifdef WLAN_FEATURE_11BE_MLO
 	enum wlan_eht_mode eht_mode;
@@ -2651,7 +2649,7 @@ struct wlan_mlme_reg {
 	bool is_afc_reg_noaction;
 #endif
 #ifdef FEATURE_WLAN_CH_AVOID_EXT
-	bool coex_unsafe_chan_nb_user_prefer;
+	uint32_t coex_unsafe_chan_nb_user_prefer;
 	bool coex_unsafe_chan_reg_disable;
 #endif
 };
@@ -2916,5 +2914,37 @@ enum host_concurrent_ap_policy {
 	HOST_CONCURRENT_AP_POLICY_GAMING_AUDIO = 1,
 	HOST_CONCURRENT_AP_POLICY_LOSSLESS_AUDIO_STREAMING = 2,
 	HOST_CONCURRENT_AP_POLICY_XR = 3
+};
+
+/**
+ * struct sap_ch_info - Structure holding all the information required to make
+ * a decision for the best operating channel based on dfs formula.
+ * @chan_freq: Channel frequency found in scanresult
+ * @bss_count: Bss found in scanresult for this channel
+ * @rssi_agr: Max value of rssi among all BSS(es) from scan result
+ * for this channel.
+ * @weight: Weightage of this channel
+ * @weight_copy: copy of the original weight
+ * @valid: Is this a valid center frequency for regulatory domain
+ * @weight_calc_done: Weight calculation done for this channel
+ */
+struct sap_ch_info {
+	uint32_t chan_freq;
+	uint16_t bss_count;
+	int32_t rssi_agr;
+	uint32_t weight;
+	uint32_t weight_copy;
+	bool valid;
+	bool weight_calc_done;
+};
+
+/**
+ * struct sap_sel_ch_info - Wrapper of sap_ch_info structure.
+ * @ch_info: Ptr to the channel information.
+ * @num_ch: Total num of channels.
+ */
+struct sap_sel_ch_info {
+	struct sap_ch_info *ch_info;
+	uint8_t num_ch;
 };
 #endif

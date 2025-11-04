@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -226,6 +226,7 @@ void __hdd_cm_disconnect_handler_post_user_update(struct hdd_adapter *adapter,
 
 	ucfg_dp_reset_cont_txtimeout_cnt(vdev);
 
+	ucfg_dp_clear_net_dev_stats(adapter->dev);
 	ucfg_dp_nud_reset_tracking(vdev);
 	hdd_reset_limit_off_chan(adapter);
 
@@ -519,7 +520,7 @@ static void hdd_cm_restore_ch_width(struct wlan_objmgr_vdev *vdev,
 	else
 		max_bw = get_max_bw();
 
-	ret = hdd_set_mac_chan_width(adapter, max_bw);
+	ret = hdd_set_mac_chan_width(adapter, max_bw, true);
 	if (ret) {
 		hdd_err("vdev %d : fail to set max ch width", vdev_id);
 		return;

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -143,7 +143,7 @@
  * </ini>
  */
 #define CFG_P2P_GO_ON_INDOOR_CHANNEL CFG_INI_BOOL("p2p_go_on_indoor_chan", \
-						  "0", \
+						  0, \
 				"Allow P2P GO on 5 GHz indoor channels")
 
 #define CFG_P2P_ALL \

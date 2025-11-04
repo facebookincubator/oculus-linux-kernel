@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -82,6 +82,25 @@ __qdf_net_if_release_dev(struct qdf_net_if  *nif)
 		return QDF_STATUS_E_INVAL;
 
 	dev_put((struct net_device *)nif);
+
+	return QDF_STATUS_SUCCESS;
+}
+
+/**
+ * __qdf_net_if_hold_dev() - hold reference to network device
+ * @nif: network device
+ *
+ * This function holds reference to the network device
+ *
+ * Return: QDF_STATUS_SUCCESS on success
+ */
+static inline QDF_STATUS
+__qdf_net_if_hold_dev(struct qdf_net_if  *nif)
+{
+	if (!nif)
+		return QDF_STATUS_E_INVAL;
+
+	dev_hold((struct net_device *)nif);
 
 	return QDF_STATUS_SUCCESS;
 }

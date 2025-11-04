@@ -51,6 +51,26 @@
 #define GETHER_MAX_MTU_SIZE 15412
 #define GETHER_MAX_ETH_FRAME_LEN (GETHER_MAX_MTU_SIZE + ETH_HLEN)
 
+#if IS_ENABLED(CONFIG_USB_ETHER_AQM_SUPPORT)
+
+static bool tx_batch_support;
+module_param(tx_batch_support, bool, 0644);
+MODULE_PARM_DESC(tx_batch_support, "Enable TX batch support");
+
+static bool tx_batch_supported(void)
+{
+	return tx_batch_support;
+}
+
+#else
+
+static bool tx_batch_supported(void)
+{
+	return false;
+}
+
+#endif /* CONFIG_USB_ETHER_AQM_SUPPORT */
+
 struct eth_dev {
 	/* lock is held while accessing port_usb
 	 */
@@ -463,7 +483,8 @@ static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 	spin_unlock(&dev->req_lock);
 
 	atomic_dec(&dev->tx_qlen);
-	if (netif_carrier_ok(dev->net))
+	/* AQM is responsible for waking up at the next interval. */
+	if (!tx_batch_supported() && netif_carrier_ok(dev->net))
 		netif_wake_queue(dev->net);
 }
 

@@ -207,7 +207,37 @@ done:
 
 static int sde_backlight_device_get_brightness(struct backlight_device *bd)
 {
-	return 0;
+	int brightness = 0;
+	struct dsi_display *display;
+	struct sde_connector *c_conn = bl_get_data(bd);
+	struct sde_kms *sde_kms;
+
+	if (!c_conn) {
+		SDE_ERROR("invalid connector\n");
+		return -EINVAL;
+	}
+
+	sde_kms = _sde_connector_get_kms(&c_conn->base);
+	if (!sde_kms) {
+		SDE_ERROR("invalid kms\n");
+		return -EINVAL;
+	}
+
+	display = (struct dsi_display *) c_conn->display;
+
+	if (display && c_conn->ops.get_backlight) {
+		int bl_lvl = c_conn->ops.get_backlight(&c_conn->base, c_conn->display);
+
+		brightness = mult_frac(bl_lvl - display->panel->bl_config.bl_min_level,
+			display->panel->bl_config.brightness_max_level,
+			display->panel->bl_config.bl_max_level -
+			display->panel->bl_config.bl_min_level);
+
+		if (brightness < 0)
+			brightness = 0;
+	}
+
+	return brightness;
 }
 
 static const struct backlight_ops sde_backlight_device_ops = {

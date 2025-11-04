@@ -344,11 +344,29 @@ wlan_mlme_get_wlm_multi_client_ll_caps(struct wlan_objmgr_psoc *psoc)
  *
  * Return: coex_unsafe_chan_nb_user_prefer
  */
-bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
+uint32_t wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
+		struct wlan_objmgr_psoc *psoc);
+bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_p2p_go(
+		struct wlan_objmgr_psoc *psoc);
+bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
 		struct wlan_objmgr_psoc *psoc);
 #else
 static inline
-bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
+uint32_t wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
+		struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+
+static inline
+bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
+		struct wlan_objmgr_psoc *psoc)
+{
+	return false;
+}
+
+static inline
+bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_p2p_go(
 		struct wlan_objmgr_psoc *psoc)
 {
 	return false;
@@ -1193,6 +1211,33 @@ bool wlan_mlme_get_usr_disable_sta_eht(struct wlan_objmgr_psoc *psoc);
  */
 void wlan_mlme_set_usr_disable_sta_eht(struct wlan_objmgr_psoc *psoc,
 				       bool disable);
+
+/**
+ * wlan_mlme_update_bw_no_punct() - update connected VDEV
+ * channel bandwidth without puncture bitmap for FCC requirement
+ * @psoc: pointer to SOC object
+ * @vdev_id: vdev id
+ *
+ * Return: none
+ */
+QDF_STATUS
+wlan_mlme_update_bw_no_punct(struct wlan_objmgr_psoc *psoc,
+			     uint8_t vdev_id);
+
+/**
+ * wlan_mlme_get_bw_no_punct() - Get connected VDEV
+ * channel bandwidth without puncture bitmap for FCC requirement
+ * @psoc: pointer to SOC object
+ * @vdev: pointer to vdev
+ * @bss_chan: bss chan with puncture
+ * @new_ch_width: pointer to new channel bandwidth without puncture
+ * Return: none
+ */
+QDF_STATUS
+wlan_mlme_get_bw_no_punct(struct wlan_objmgr_psoc *psoc,
+			  struct wlan_objmgr_vdev *vdev,
+			  struct wlan_channel *bss_chan,
+			  enum phy_ch_width *new_ch_width);
 #else
 static inline
 bool wlan_mlme_get_usr_disable_sta_eht(struct wlan_objmgr_psoc *psoc)
@@ -1204,6 +1249,22 @@ static inline
 void wlan_mlme_set_usr_disable_sta_eht(struct wlan_objmgr_psoc *psoc,
 				       bool disable)
 {
+}
+
+static inline QDF_STATUS
+wlan_mlme_update_bw_no_punct(struct wlan_objmgr_psoc *psoc,
+			     uint8_t vdev_id)
+{
+	return QDF_STATUS_E_INVAL;
+}
+
+static inline QDF_STATUS
+wlan_mlme_get_bw_no_punct(struct wlan_objmgr_psoc *psoc,
+			  struct wlan_objmgr_vdev *vdev,
+			  struct wlan_channel *bss_chan,
+			  enum phy_ch_width *new_ch_width)
+{
+	return QDF_STATUS_E_INVAL;
 }
 #endif
 
@@ -2575,19 +2636,6 @@ wlan_mlme_set_rf_test_mode_enabled(struct wlan_objmgr_psoc *psoc, bool value);
 
 #ifdef CONFIG_BAND_6GHZ
 /**
- * wlan_mlme_is_disable_vlp_sta_conn_to_sp_ap_enabled() - Get the disable vlp
- *                                                       STA conn to SP AP flag
- * @psoc: psoc context
- * @value: Enable/Disable value ptr.
- *
- * Return: QDF_STATUS
- */
-QDF_STATUS
-wlan_mlme_is_disable_vlp_sta_conn_to_sp_ap_enabled(
-						struct wlan_objmgr_psoc *psoc,
-						bool *value);
-
-/**
  * wlan_mlme_is_standard_6ghz_conn_policy_enabled() - Get the 6 GHz standard
  *                                                    connection policy flag
  * @psoc: psoc context
@@ -2600,15 +2648,6 @@ wlan_mlme_is_standard_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
 					       bool *value);
 
 #else
-static inline QDF_STATUS
-wlan_mlme_is_disable_vlp_sta_conn_to_sp_ap_enabled(
-						struct wlan_objmgr_psoc *psoc,
-						bool *value)
-{
-	*value = false;
-	return QDF_STATUS_SUCCESS;
-}
-
 static inline QDF_STATUS
 wlan_mlme_is_standard_6ghz_conn_policy_enabled(struct wlan_objmgr_psoc *psoc,
 					       bool *value)
@@ -4437,4 +4476,15 @@ enum phy_ch_width wlan_mlme_get_max_bw(void);
  */
 uint32_t
 wlan_mlme_assemble_rate_code(uint8_t preamble, uint8_t nss, uint8_t rate);
+
+/**
+ * wlan_mlme_send_csa_event_status_ind() - send csa event status ind
+ * @vdev: vdev obj
+ * @csa_status: csa status
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_mlme_send_csa_event_status_ind(struct wlan_objmgr_vdev *vdev,
+				    uint8_t csa_status);
 #endif /* _WLAN_MLME_API_H_ */

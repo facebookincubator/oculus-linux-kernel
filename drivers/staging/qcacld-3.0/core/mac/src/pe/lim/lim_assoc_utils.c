@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -319,9 +319,15 @@ QDF_STATUS lim_del_peer_info(struct mac_context *mac,
 	uint16_t i;
 	uint32_t  bitmap = 1 << CDP_PEER_DELETE_NO_SPECIAL;
 	bool peer_unmap_conf_support_enabled;
+	struct wlan_objmgr_peer *peer;
+	struct wlan_objmgr_psoc *psoc;
 
 	peer_unmap_conf_support_enabled =
 				cdp_cfg_get_peer_unmap_conf_support(soc);
+
+	psoc = wlan_vdev_get_psoc(pe_session->vdev);
+	if (!psoc)
+		return QDF_STATUS_E_FAILURE;
 
 	for (i = 0; i < pe_session->dph.dphHashTable.size; i++) {
 		tpDphHashNode sta_ds;
@@ -330,6 +336,13 @@ QDF_STATUS lim_del_peer_info(struct mac_context *mac,
 					    &pe_session->dph.dphHashTable);
 		if (!sta_ds)
 			continue;
+
+		peer = wlan_objmgr_get_peer_by_mac(psoc, sta_ds->staAddr,
+						   WLAN_LEGACY_MAC_ID);
+		if (peer) {
+			wma_peer_tbl_trans_add_entry(peer, false, NULL);
+			wlan_objmgr_peer_release_ref(peer, WLAN_LEGACY_MAC_ID);
+		}
 
 		cdp_peer_teardown(soc, pe_session->vdev_id, sta_ds->staAddr);
 		if (peer_unmap_conf_support_enabled)

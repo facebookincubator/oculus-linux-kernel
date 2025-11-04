@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018,2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -88,6 +88,14 @@ qdf_net_if_release_dev(struct qdf_net_if  *nif)
 }
 
 qdf_export_symbol(qdf_net_if_release_dev);
+
+QDF_STATUS
+qdf_net_if_hold_dev(struct qdf_net_if  *nif)
+{
+	return __qdf_net_if_hold_dev(nif);
+}
+
+qdf_export_symbol(qdf_net_if_hold_dev);
 
 /**
  * qdf_net_update_net_device_dev_addr() - update net_device dev_addr

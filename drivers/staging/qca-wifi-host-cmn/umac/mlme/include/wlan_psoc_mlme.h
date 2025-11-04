@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -94,6 +94,58 @@ struct psoc_config {
 	struct psoc_mlo_config mlo_config;
 };
 
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+/**
+ * enum wlan_peer_tbl_trans_entry_flags - Peer table transition flags
+ * @WLAN_PEER_TBL_TRANS_CREATE: Peer table modify due to create
+ * @WLAN_PEER_TBL_TRANS_DESTROY: Peer table modify due to destroy
+ * @WLAN_PEER_TBL_TRANS_CONNECT: Peer table modify during connect
+ * @WLAN_PEER_TBL_TRANS_DISCONNECT: Peer table modify during disconnect
+ * @WLAN_PEER_TBL_TRANS_ROAM: Peer table modify during roaming
+ * @WLAN_PEER_TBL_TRANS_LINK_SWITCH: Peer table modify during link switch
+ */
+enum wlan_peer_tbl_trans_entry_flags {
+	WLAN_PEER_TBL_TRANS_CREATE = BIT(0),
+	WLAN_PEER_TBL_TRANS_DESTROY = BIT(1),
+	WLAN_PEER_TBL_TRANS_CONNECT = BIT(2),
+	WLAN_PEER_TBL_TRANS_DISCONNECT = BIT(3),
+	WLAN_PEER_TBL_TRANS_ROAM = BIT(4),
+	WLAN_PEER_TBL_TRANS_LINK_SWITCH = BIT(5),
+};
+
+/**
+ * struct wlan_peer_tbl_trans_entry - Peer transition history node
+ * @node: Node of the entry
+ * @ts: Timestamp of peer table modify
+ * @vdev_id: Peer's vdev's ID
+ * @opmode: Peer's VDEV opmode
+ * @is_mlo: %true if peer's VDEV MLO else %false
+ * @is_mlo_link: %true if peer's VDEV mlo link, else %false
+ * @is_primary: %true if this peer is primary
+ * @is_first_link: %true if this peer is the first link, else %false
+ * @auth_status: Status of auth from FW roam sync
+ * @num_roam_links: Count of roamed link from FW roam sync
+ * @peer_addr: MAC address of peer
+ * @peer_mld_addr: MLD address of peer
+ * @peer_flags: Peer flags from enum wlan_peer_tbl_trans_entry_flags
+ */
+struct wlan_peer_tbl_trans_entry {
+	qdf_list_node_t node;
+	qdf_time_t ts;
+	uint8_t vdev_id;
+	enum QDF_OPMODE opmode;
+	uint8_t is_mlo:1,
+		is_mlo_link:1,
+		is_primary:1,
+		is_first_link:1,
+		auth_status:2,
+		num_roam_links:2;
+	struct qdf_mac_addr peer_addr;
+	struct qdf_mac_addr peer_mld_addr;
+	unsigned long peer_flags;
+};
+#endif
+
 /**
  * struct psoc_mlme_obj -  PSoC MLME component object
  * @psoc:                  PSoC object
@@ -102,6 +154,7 @@ struct psoc_config {
  * @psoc_mlme_wakelock:    Wakelock to prevent system going to suspend
  * @rnr_6ghz_cache:        Cache of 6Ghz vap in RNR ie format
  * @psoc_cfg:              Psoc level configs
+ * @peer_history_list:     Peer table transition history
  */
 struct psoc_mlme_obj {
 	struct wlan_objmgr_psoc *psoc;
@@ -112,6 +165,9 @@ struct psoc_mlme_obj {
 #endif
 	struct wlan_6ghz_rnr_global_cache rnr_6ghz_cache[WLAN_UMAC_MAX_PDEVS];
 	struct psoc_config psoc_cfg;
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+	qdf_list_t peer_history_list;
+#endif
 };
 
 #endif

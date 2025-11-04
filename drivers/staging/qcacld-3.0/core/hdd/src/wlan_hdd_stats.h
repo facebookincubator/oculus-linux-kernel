@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -33,8 +33,6 @@
 #endif
 
 #define INVALID_MCS_IDX 255
-#define MAX_HT_MCS_IDX 8
-#define MAX_VHT_MCS_IDX 10
 
 #define DATA_RATE_11AC_MCS_MASK    0x03
 #define DATA_RATE_11AX_MCS_MASK    0x03

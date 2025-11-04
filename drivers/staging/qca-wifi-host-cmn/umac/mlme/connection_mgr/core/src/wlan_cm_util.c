@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -1513,6 +1513,102 @@ bool cm_is_connect_req_reassoc(struct wlan_cm_connect_req *req)
 	return false;
 }
 
+bool cm_is_first_candidate_connect_attempt(struct wlan_objmgr_vdev *vdev)
+{
+	struct cnx_mgr *cm_ctx;
+	struct cm_req *cm_req;
+	bool status = false;
+
+	cm_ctx = cm_get_cm_ctx(vdev);
+	if (!cm_ctx)
+		return status;
+
+	cm_req_lock_acquire(cm_ctx);
+	cm_req = cm_get_req_by_cm_id(cm_ctx, cm_ctx->active_cm_id);
+	if (!cm_req)
+		goto out;
+
+	if (cm_req->connect_req.cur_candidate_retries ||
+	    cm_req->connect_req.connect_attempts > 1)
+		goto out;
+
+	status = true;
+
+out:
+	cm_req_lock_release(cm_ctx);
+	return status;
+}
+
+QDF_STATUS
+cm_get_active_connect_req_param(struct wlan_objmgr_vdev *vdev,
+				struct wlan_cm_connect_req *req)
+{
+	struct cnx_mgr *cm_ctx;
+	qdf_list_node_t *cur_node = NULL, *next_node = NULL;
+	struct cm_req *cm_req = NULL;
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+	uint32_t cm_id_prefix;
+
+	cm_ctx = cm_get_cm_ctx(vdev);
+	if (!cm_ctx)
+		return QDF_STATUS_E_FAILURE;
+
+	cm_req_lock_acquire(cm_ctx);
+	qdf_list_peek_front(&cm_ctx->req_list, &cur_node);
+	while (cur_node) {
+		qdf_list_peek_next(&cm_ctx->req_list, cur_node, &next_node);
+
+		cm_req = qdf_container_of(cur_node, struct cm_req, node);
+		cm_id_prefix = CM_ID_GET_PREFIX((cm_req->cm_id));
+
+		if (cm_req->cm_id != cm_ctx->active_cm_id ||
+		    cm_id_prefix != CONNECT_REQ_PREFIX) {
+			cur_node = next_node;
+			next_node = NULL;
+			continue;
+		}
+
+		*req = cm_req->connect_req.req;
+		qdf_mem_zero(&req->assoc_ie, sizeof(struct element_info));
+		qdf_mem_zero(&req->scan_ie, sizeof(struct element_info));
+		if (cm_req->connect_req.req.assoc_ie.len) {
+			req->assoc_ie.ptr =
+			   qdf_mem_malloc(cm_req->connect_req.req.assoc_ie.len);
+			if (!req->assoc_ie.ptr) {
+				status = QDF_STATUS_E_NOMEM;
+				break;
+			}
+			qdf_mem_copy(req->assoc_ie.ptr,
+				     cm_req->connect_req.req.assoc_ie.ptr,
+				     cm_req->connect_req.req.assoc_ie.len);
+			req->assoc_ie.len =
+				cm_req->connect_req.req.assoc_ie.len;
+		}
+
+		if (cm_req->connect_req.req.scan_ie.len) {
+			req->scan_ie.ptr =
+			   qdf_mem_malloc(cm_req->connect_req.req.scan_ie.len);
+			if (!req->scan_ie.ptr) {
+				qdf_mem_free(req->assoc_ie.ptr);
+				qdf_mem_zero(&req->assoc_ie,
+					     sizeof(struct element_info));
+				status = QDF_STATUS_E_NOMEM;
+				break;
+			}
+			qdf_mem_copy(req->scan_ie.ptr,
+				     cm_req->connect_req.req.scan_ie.ptr,
+				     cm_req->connect_req.req.scan_ie.len);
+			req->scan_ie.len = cm_req->connect_req.req.scan_ie.len;
+		}
+
+		status = QDF_STATUS_SUCCESS;
+		break;
+	}
+
+	cm_req_lock_release(cm_ctx);
+	return status;
+}
+
 bool cm_get_active_connect_req(struct wlan_objmgr_vdev *vdev,
 			       struct wlan_cm_vdev_connect_req *req)
 {
@@ -1650,6 +1746,46 @@ wlan_cm_id cm_get_cm_id_by_scan_id(struct cnx_mgr *cm_ctx,
 	cm_req_lock_release(cm_ctx);
 
 	return CM_ID_INVALID;
+}
+
+struct scan_cache_entry *
+cm_get_curr_candidate_entry(struct wlan_objmgr_vdev *vdev, wlan_cm_id cm_id)
+{
+	qdf_list_node_t *cur_node = NULL, *next_node = NULL;
+	struct cm_req *cm_req;
+	uint32_t prefix = CM_ID_GET_PREFIX(cm_id);
+	struct cnx_mgr *cm_ctx;
+	struct scan_cache_entry *cur_entry, *entry = NULL;
+
+	if (prefix != CONNECT_REQ_PREFIX)
+		return NULL;
+
+	cm_ctx = cm_get_cm_ctx(vdev);
+	if (!cm_ctx)
+		return NULL;
+
+	cm_req_lock_acquire(cm_ctx);
+	qdf_list_peek_front(&cm_ctx->req_list, &cur_node);
+	while (cur_node) {
+		qdf_list_peek_next(&cm_ctx->req_list, cur_node, &next_node);
+		cm_req = qdf_container_of(cur_node, struct cm_req, node);
+
+		if (cm_req->cm_id != cm_id) {
+			cur_node = next_node;
+			next_node = NULL;
+			continue;
+		}
+
+		if (!cm_req->connect_req.cur_candidate)
+			break;
+
+		cur_entry = cm_req->connect_req.cur_candidate->entry;
+		entry = util_scan_copy_cache_entry(cur_entry);
+		break;
+	}
+	cm_req_lock_release(cm_ctx);
+
+	return entry;
 }
 
 #ifdef WLAN_POLICY_MGR_ENABLE

@@ -845,12 +845,11 @@ lim_cm_fill_link_session(struct mac_context *mac_ctx,
  *
  * This api will create mlo peer called during mlo roaming scenario
  *
- * Return: none
+ * Return: QDF_STATUS
  */
-void lim_roam_mlo_create_peer(struct mac_context *mac,
-			      struct roam_offload_synch_ind *sync_ind,
-			      uint8_t vdev_id,
-			      uint8_t *peer_mac);
+QDF_STATUS lim_roam_mlo_create_peer(struct mac_context *mac,
+				    struct roam_offload_synch_ind *sync_ind,
+				    uint8_t vdev_id, uint8_t *peer_mac);
 
 /**
  * lim_mlo_roam_delete_link_peer() - Delete mlo link peer
@@ -892,12 +891,12 @@ lim_cm_fill_link_session(struct mac_context *mac_ctx,
 	return QDF_STATUS_E_NOSUPPORT;
 }
 
-static inline void
+static inline QDF_STATUS
 lim_roam_mlo_create_peer(struct mac_context *mac,
 			 struct roam_offload_synch_ind *sync_ind,
-			 uint8_t vdev_id,
-			 uint8_t *peer_mac)
+			 uint8_t vdev_id, uint8_t *peer_mac)
 {
+	return QDF_STATUS_SUCCESS;
 }
 
 static inline void

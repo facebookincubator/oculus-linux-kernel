@@ -1039,6 +1039,7 @@ QDF_STATUS dp_get_uplink_delay(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
 			       uint32_t *val);
 #endif /* WLAN_FEATURE_TSF_UPLINK_TSF */
 
+#ifdef WLAN_TRACEPOINTS
 /**
  * dp_tx_pkt_tracepoints_enabled() - Get the state of tx pkt tracepoint
  *
@@ -1049,8 +1050,16 @@ bool dp_tx_pkt_tracepoints_enabled(void)
 {
 	return (qdf_trace_dp_tx_comp_tcp_pkt_enabled() ||
 		qdf_trace_dp_tx_comp_udp_pkt_enabled() ||
-		qdf_trace_dp_tx_comp_pkt_enabled());
+		qdf_trace_dp_tx_comp_pkt_enabled())    ||
+		qdf_trace_dp_tx_enqueue_enabled();
 }
+#else
+static inline
+bool dp_tx_pkt_tracepoints_enabled(void)
+{
+	return false;
+}
+#endif
 
 #ifdef DP_TX_TRACKING
 /**

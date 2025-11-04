@@ -3079,6 +3079,8 @@ static void binder_transaction(struct binder_proc *proc,
 	const void __user *user_buffer = (const void __user *)
 				(uintptr_t)tr->data.ptr.buffer;
 	bool is_nested = false;
+	int target_tgid = -1;
+	int target_thread_pid = -1;
 	INIT_LIST_HEAD(&sgc_head);
 	INIT_LIST_HEAD(&pf_head);
 
@@ -3833,20 +3835,25 @@ err_bad_call_stack:
 err_empty_call_stack:
 err_dead_binder:
 err_invalid_target_handle:
-	if (target_thread)
+	if (target_thread) {
+		target_thread_pid = target_thread->pid;
 		binder_thread_dec_tmpref(target_thread);
-	if (target_proc)
+	}
+	if (target_proc) {
+		target_tgid = target_proc->pid;
 		binder_proc_dec_tmpref(target_proc);
+	}
 	if (target_node) {
 		binder_dec_node(target_node, 1, 0);
 		binder_dec_node_tmpref(target_node);
 	}
 
 	binder_debug(BINDER_DEBUG_FAILED_TRANSACTION,
-		     "%d:%d transaction failed %d/%d, size %lld-%lld line %d\n",
-		     proc->pid, thread->pid, return_error, return_error_param,
-		     (u64)tr->data_size, (u64)tr->offsets_size,
-		     return_error_line);
+		"%d:%d -> %d:%d transaction failed %d/%d, size %lld-%lld line %d\n",
+		proc->pid, thread->pid, target_tgid, target_thread_pid,
+		return_error, return_error_param,
+		(u64)tr->data_size, (u64)tr->offsets_size,
+		return_error_line);
 
 	{
 		struct binder_transaction_log_entry *fe;

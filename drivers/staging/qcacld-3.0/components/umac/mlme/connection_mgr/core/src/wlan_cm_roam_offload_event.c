@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -515,15 +515,14 @@ QDF_STATUS cm_roam_sync_event_handler_cb(struct wlan_objmgr_vdev *vdev,
 	if (MLME_IS_ROAM_SYNCH_IN_PROGRESS(psoc, sync_ind->roamed_vdev_id) &&
 	    !is_multi_link_roam(sync_ind)) {
 		mlme_err("Ignoring RSI since one is already in progress");
-		status = QDF_STATUS_E_FAILURE;
-		goto err;
+		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (!QDF_IS_STATUS_SUCCESS(cm_fw_roam_sync_start_ind(vdev,
-							     sync_ind))) {
+	status = cm_fw_roam_sync_start_ind(vdev, sync_ind);
+	if (QDF_IS_STATUS_ERROR(status)) {
 		mlme_err("LFR3: CSR Roam synch cb failed");
 		wlan_cm_free_roam_synch_frame_ind(rso_cfg);
-		goto err;
+		return status;
 	}
 
 	/* 24 byte MAC header and 12 byte to ssid IE */
@@ -536,7 +535,7 @@ QDF_STATUS cm_roam_sync_event_handler_cb(struct wlan_objmgr_vdev *vdev,
 					 MAC_B_PR_SSID_OFFSET);
 		} else {
 			mlme_err("LFR3: MLO: Invalid link Beacon Length");
-			goto err;
+			return QDF_STATUS_E_FAILURE;
 		}
 	} else if (sync_ind->beacon_probe_resp_length >
 			(QDF_IEEE80211_3ADDR_HDR_LEN + MAC_B_PR_SSID_OFFSET)) {
@@ -562,18 +561,20 @@ QDF_STATUS cm_roam_sync_event_handler_cb(struct wlan_objmgr_vdev *vdev,
 
 	} else {
 		mlme_err("LFR3: Invalid Beacon Length");
-		goto err;
+		return QDF_STATUS_E_FAILURE;
 	}
 
 	if (QDF_IS_STATUS_ERROR(cm_roam_pe_sync_callback(sync_ind,
 							 vdev_id,
 							 ie_len))) {
 		mlme_err("LFR3: PE roam synch cb failed");
-		status = QDF_STATUS_E_BUSY;
-		goto err;
+		return QDF_STATUS_E_BUSY;
 	}
 
-	cm_roam_update_vdev(sync_ind, vdev_id);
+	status = cm_roam_update_vdev(sync_ind, vdev_id);
+	if (QDF_IS_STATUS_ERROR(status))
+		return status;
+
 	/*
 	 * update phy_mode in wma to avoid mismatch in phymode between host and
 	 * firmware. The phymode stored in peer->peer_mlme.phymode is
@@ -582,12 +583,8 @@ QDF_STATUS cm_roam_sync_event_handler_cb(struct wlan_objmgr_vdev *vdev,
 	 * processing beacon. Any mismatch of this value with firmware phymode
 	 * results in firmware assert.
 	 */
-	cm_update_phymode_on_roam(vdev_id,
-				  sync_ind);
-	status = cm_fw_roam_sync_propagation(psoc,
-					     vdev_id,
-					     sync_ind);
+	cm_update_phymode_on_roam(vdev_id, sync_ind);
+	status = cm_fw_roam_sync_propagation(psoc, vdev_id, sync_ind);
 
-err:
 	return status;
 }

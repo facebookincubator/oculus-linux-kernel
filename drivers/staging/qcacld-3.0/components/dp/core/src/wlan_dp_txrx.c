@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -124,7 +124,7 @@ static int dp_intf_is_tx_allowed(qdf_nbuf_t nbuf,
 {
 	enum ol_txrx_peer_state peer_state;
 
-	peer_state = cdp_peer_state_get(soc, intf_id, peer_mac, false);
+	peer_state = cdp_peer_state_get(soc, intf_id, peer_mac);
 	if (qdf_likely(OL_TXRX_PEER_STATE_AUTH == peer_state))
 		return true;
 	if (OL_TXRX_PEER_STATE_CONN == peer_state &&
@@ -1749,7 +1749,7 @@ QDF_STATUS dp_rx_packet_cbk(void *dp_intf_context,
 		}
 
 		if (dp_rx_pkt_tracepoints_enabled())
-			qdf_trace_dp_packet(nbuf, QDF_RX, NULL, 0);
+			qdf_trace_dp_packet(nbuf, QDF_RX, NULL, 0, 0);
 
 		qdf_nbuf_set_dev(nbuf, dp_intf->dev);
 		qdf_nbuf_set_protocol_eth_tye_trans(nbuf);

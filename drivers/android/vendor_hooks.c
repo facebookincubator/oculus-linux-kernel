@@ -270,6 +270,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_mutex_unlock_slowpath_end);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_rwsem_wake_finish);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_do_undefinstr);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_do_ptrauth_fault);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_handle_bad_stack);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_bad_mode);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_arm64_serror_panic);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_selinux_avc_insert);
@@ -568,3 +569,8 @@ EXPORT_SYMBOL_GPL(GKI_struct_gic_chip_data);
 #include <linux/swap_slots.h>
 const struct swap_slots_cache *GKI_struct_swap_slots_cache;
 EXPORT_SYMBOL_GPL(GKI_struct_swap_slots_cache);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_io_statistics);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_should_fault_around);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_do_read_fault);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_filemap_read);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_filemap_map_pages);

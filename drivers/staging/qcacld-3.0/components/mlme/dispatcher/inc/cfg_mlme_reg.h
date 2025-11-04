@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -413,23 +413,50 @@
 		"Retain NOL even if the regdomain changes")
 
 #ifdef FEATURE_WLAN_CH_AVOID_EXT
+
+/**
+ * enum ignore_fw_coex_info_modes - Represents modes
+ * @IGNORE_FW_COEX_INFO_ON_SAP_MODE: Set this bit to ignore fw coex info on
+ *                                   SAP mode
+ * @IGNORE_FW_COEX_INFO_ON_P2P_GO_MODE: Set this bit to ignore fw coex info
+ *                                   on P2P-GO mode
+ */
+enum ignore_fw_coex_info_modes {
+	IGNORE_FW_COEX_INFO_ON_SAP_MODE = 1 << 0,
+	IGNORE_FW_COEX_INFO_ON_P2P_GO_MODE = 1 << 1
+};
+
 /*
  * <ini>
  * coex_unsafe_chan_nb_user_prefer- Used to handle coex unsafe freq
  * event
  *
- * @Min: 0 (Honor Firmware event)
- * @Max: 1 (Don't honor Firmware event)
- * Default: 0
+ * @Min: 0
+ * @Max: 0xFF
+ * @Default: 0
+ *
+ * Bit map of the modes to consider/ignore firmware provided coex/unsafe
+ * channels.
+ * Firmware provided coex/unsafe channel info is ignored if the corresponding
+ * bit is set to 1.
+ * Firmware provided coex/unsafe channel info is honored if the corresponding
+ * bit is set to 0.
+ *
+ * BIT 0: Don't honor firmware coex info for SAP mode
+ * BIT 1: Don't honor firmware coex info for P2P-GO mode
+ * Rest of the bits are currently reserved
  *
  * This ini is used to handle coex unsafe freq event
  * Usage: External
  *
  * </ini>
  */
-#define CFG_COEX_UNSAFE_CHAN_NB_USER_PREFER CFG_INI_BOOL( \
+#define CFG_COEX_UNSAFE_CHAN_NB_USER_PREFER CFG_INI_UINT( \
 		"coex_unsafe_chan_nb_user_prefer", \
 		0, \
+		0xff, \
+		0, \
+		CFG_VALUE_OR_DEFAULT, \
 		"Honor coex unsafe freq event from firmware")
 /*
  * <ini>

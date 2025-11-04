@@ -53,7 +53,7 @@
 #include "wlan_reg_ucfg_api.h"
 #include <wlan_objmgr_vdev_obj.h>
 #include <wlan_dfs_utils_api.h>
-#include "wlan_crypto_global_def.h"
+#include "wlan_crypto_def_i.h"
 #include "wlan_crypto_global_api.h"
 #include "wlan_cm_bss_score_param.h"
 
@@ -122,14 +122,21 @@ static bool scm_is_rnr_present(struct meta_rnr_channel *chan,
 	return false;
 }
 
-static void scm_add_rnr_channel_db(struct wlan_objmgr_psoc *psoc,
+static void scm_add_rnr_channel_db(struct wlan_objmgr_pdev *pdev,
 				   struct scan_cache_entry *entry)
 {
 	uint32_t chan_freq;
 	uint8_t is_6g_bss, i;
+	uint8_t *cc;
 	struct meta_rnr_channel *channel;
 	struct rnr_bss_info *rnr_bss;
 	struct scan_rnr_node *rnr_node;
+	struct wlan_country_ie *cc_ie;
+	struct wlan_objmgr_psoc *psoc;
+
+	psoc = wlan_pdev_get_psoc(pdev);
+	if (!psoc)
+		return;
 
 	chan_freq = entry->channel.chan_freq;
 	is_6g_bss = wlan_reg_is_6ghz_chan_freq(chan_freq);
@@ -157,14 +164,23 @@ static void scm_add_rnr_channel_db(struct wlan_objmgr_psoc *psoc,
 	if (!entry->ie_list.rnrie)
 		return;
 
+	cc_ie = util_scan_entry_country(entry);
+	if (cc_ie && cc_ie->len)
+		cc = cc_ie->cc;
+	else
+		cc = NULL;
+
 	for (i = 0; i < MAX_RNR_BSS; i++) {
 		rnr_bss = &entry->rnr.bss_info[i];
 		/* Skip if entry is not valid */
 		if (!rnr_bss->channel_number)
 			continue;
-		chan_freq = wlan_reg_chan_opclass_to_freq(rnr_bss->channel_number,
-							  rnr_bss->operating_class,
-							  true);
+
+		chan_freq =
+			wlan_reg_chan_opclass_to_freq_prefer_global(pdev, cc,
+								    rnr_bss->channel_number,
+								    rnr_bss->operating_class);
+
 		channel = scm_get_chan_meta(psoc, chan_freq);
 		if (!channel) {
 			scm_debug("Failed to get chan Meta freq %d", chan_freq);
@@ -2049,7 +2065,7 @@ void scm_update_rnr_from_scan_cache(struct wlan_objmgr_pdev *pdev)
 					     &scan_db->scan_hash_tbl[i], NULL);
 		while (cur_node) {
 			entry = cur_node->entry;
-			scm_add_rnr_channel_db(psoc, entry);
+			scm_add_rnr_channel_db(pdev, entry);
 			next_node =
 				scm_get_next_node(scan_db,
 						  &scan_db->scan_hash_tbl[i],
@@ -2348,4 +2364,75 @@ exit:
 		scm_purge_scan_results(list);
 
 	return scan_entry;
+}
+
+bool scm_scan_entries_contain_cmn_akm(struct scan_cache_entry *entry1,
+				      struct scan_cache_entry *entry2)
+{
+	wlan_crypto_key_mgmt akm_type;
+	uint32_t key_mgmt;
+	struct security_info *entry1_sec_info, *entry2_sec_info;
+
+	/* For Open security, allow connection */
+	if (!entry1->ie_list.rsn && !entry2->ie_list.rsn)
+		return true;
+
+	/* If only one is open connection, remove the partner link */
+	if (!entry1->ie_list.rsn || !entry2->ie_list.rsn)
+		return false;
+
+	entry1_sec_info = &entry1->neg_sec_info;
+	entry2_sec_info = &entry2->neg_sec_info;
+
+	/* Check if MFPC is equal */
+	if ((entry1_sec_info->rsn_caps & WLAN_CRYPTO_RSN_CAP_MFP_ENABLED) ^
+	    (entry2_sec_info->rsn_caps & WLAN_CRYPTO_RSN_CAP_MFP_ENABLED)) {
+		scm_debug("MFPC capability is not equal 0x%x, 0x%x",
+			  entry1_sec_info->rsn_caps, entry2_sec_info->rsn_caps);
+		return false;
+	}
+
+	/* Check UC cipher suite */
+	if (!UCAST_CIPHER_MATCH(entry1_sec_info, entry2_sec_info)) {
+		scm_debug("Intersected UC cipher bitmap NULL 0x%x, 0x%x",
+			  entry1_sec_info->ucastcipherset,
+			  entry2_sec_info->ucastcipherset);
+		return false;
+	}
+
+	/* Check MC cipher suite */
+	if (!MCAST_CIPHER_MATCH(entry1_sec_info, entry2_sec_info)) {
+		scm_debug("Intersected MC cipher bitmap NULL 0x%x, 0x%x",
+			  entry1_sec_info->mcastcipherset,
+			  entry2_sec_info->mcastcipherset);
+		return false;
+	}
+
+	/* Check AKM suite */
+	key_mgmt = entry1_sec_info->key_mgmt;
+	akm_type = wlan_crypto_get_secure_akm_available(key_mgmt);
+	if (akm_type == WLAN_CRYPTO_KEY_MGMT_MAX) {
+		scm_debug("No matching AKM 0x%x", key_mgmt);
+		return false;
+	} else if (!HAS_KEY_MGMT(entry2_sec_info, akm_type)) {
+		scm_debug("Intersected AKM bitmap NULL 0x%x, 0x%x",
+			  entry1_sec_info->key_mgmt, entry2_sec_info->key_mgmt);
+		return false;
+	} else {
+		key_mgmt = 0x0;
+		QDF_SET_PARAM(key_mgmt, akm_type);
+	}
+
+	/* If not SAE AKM no need to check H2E capability match */
+	if (!WLAN_CRYPTO_IS_AKM_SAE(key_mgmt))
+		return true;
+
+	/* If SAE_H2E capability is not equal then treat as mismatch */
+	if (util_scan_entry_sae_h2e_capable(entry1) ^
+	    util_scan_entry_sae_h2e_capable(entry2)) {
+		scm_debug("SAE-H2E capability mismatch");
+		return false;
+	}
+
+	return true;
 }

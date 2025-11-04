@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,17 +34,18 @@
  * @dir: tx or rx direction
  * @tso_desc: TSO descriptor
  * @enq_time: tx hw enqueue wall clock time in milliseconds
+ * @status: Tx/Rx status
  *
  * Return: None
  */
 void qdf_trace_dp_packet(qdf_nbuf_t nbuf, enum qdf_proto_dir dir,
 			 struct qdf_tso_seg_elem_t *tso_desc,
-			 uint64_t enq_time);
+			 uint64_t enq_time, uint8_t status);
 #else
 static inline
 void qdf_trace_dp_packet(qdf_nbuf_t nbuf, enum qdf_proto_dir dir,
 			 struct qdf_tso_seg_elem_t *tso_desc,
-			 uint64_t enq_time)
+			 uint64_t enq_time uint8_t status)
 {
 }
 #endif
@@ -69,16 +70,18 @@ bool qdf_trace_dp_rx_tcp_pkt_enabled(void)
  * @srcport: TCP source port
  * @dstport: TCP destination port
  * @latency: latency in milliseconds
+ * @status: Rx status
  *
  * Return: None
  */
 static inline
 void qdf_trace_dp_rx_tcp_pkt(qdf_nbuf_t nbuf, uint32_t tcp_seq_num,
 			     uint32_t tcp_ack_num, uint16_t srcport,
-			     uint16_t dstport, uint64_t latency)
+			     uint16_t dstport, uint64_t latency,
+			     uint8_t status)
 {
 	__qdf_trace_dp_rx_tcp_pkt(nbuf, tcp_seq_num, tcp_ack_num,
-				  srcport, dstport, latency);
+				  srcport, dstport, latency, status);
 }
 
 /**
@@ -101,16 +104,18 @@ bool qdf_trace_dp_tx_comp_tcp_pkt_enabled(void)
  * @srcport: TCP source port
  * @dstport: TCP destination port
  * @latency: latency in milliseconds
+ * @status: Tx status
  *
  * Return: None
  */
 static inline
 void qdf_trace_dp_tx_comp_tcp_pkt(qdf_nbuf_t nbuf, uint32_t tcp_seq_num,
 				  uint32_t tcp_ack_num, uint16_t srcport,
-				  uint16_t dstport, uint64_t latency)
+				  uint16_t dstport, uint64_t latency,
+				  uint8_t status)
 {
 	__qdf_trace_dp_tx_comp_tcp_pkt(nbuf, tcp_seq_num, tcp_ack_num, srcport,
-				       dstport, latency);
+				       dstport, latency, status);
 }
 
 /**
@@ -132,15 +137,17 @@ bool qdf_trace_dp_rx_udp_pkt_enabled(void)
  * @srcport: UDP source port
  * @dstport: UDP destination port
  * @latency: latency in milliseconds
+ * @status: Rx status
  *
  * Return: None
  */
 static inline
 void qdf_trace_dp_rx_udp_pkt(qdf_nbuf_t nbuf, uint16_t ip_id,
 			     uint16_t srcport, uint16_t dstport,
-			     uint64_t latency)
+			     uint64_t latency, uint8_t status)
 {
-	__qdf_trace_dp_rx_udp_pkt(nbuf, ip_id, srcport, dstport, latency);
+	__qdf_trace_dp_rx_udp_pkt(nbuf, ip_id, srcport, dstport, latency,
+				  status);
 }
 
 /**
@@ -162,15 +169,17 @@ bool qdf_trace_dp_tx_comp_udp_pkt_enabled(void)
  * @srcport: UDP source port
  * @dstport: UDP destination port
  * @latency: latency in milliseconds
+ * @status: Tx status
  *
  * Return: None
  */
 static inline
 void qdf_trace_dp_tx_comp_udp_pkt(qdf_nbuf_t nbuf, uint16_t ip_id,
 				  uint16_t srcport, uint16_t dstport,
-				  uint64_t latency)
+				  uint64_t latency, uint8_t status)
 {
-	__qdf_trace_dp_tx_comp_udp_pkt(nbuf, ip_id, srcport, dstport, latency);
+	__qdf_trace_dp_tx_comp_udp_pkt(nbuf, ip_id, srcport, dstport, latency,
+				       status);
 }
 
 /**
@@ -259,8 +268,36 @@ void qdf_trace_dp_del_reg_write(uint8_t srng_id, uint32_t enq_val,
 }
 
 /**
- * qdf_trace_dp_ce_tasklet_sched_lat_enabled() - Get the dp_ce_tasklet_sched_lat
- *  tracepoint enabled or disabled state
+ * qdf_trace_dp_tx_enqueue_enabled() - Get the dp_tx_enqueue tracepoint
+ *  enabled or disabled state
+ *
+ * Return: True if the tracepoint is enabled else false
+ */
+static inline
+bool qdf_trace_dp_tx_enqueue_enabled(void)
+{
+	return __qdf_trace_dp_tx_enqueue_enabled();
+}
+
+/**
+ * __qdf_trace_dp_tx_enqueue() - Trace dp_tx_enqueue
+ * @nbuf: pointer to network buffer
+ * @hp: head idx
+ * @ring_id: TCL ring id
+ * @coalesce: TCL register write coalescing
+ *
+ * Return: None
+ */
+static inline
+void qdf_trace_dp_tx_enqueue(qdf_nbuf_t nbuf, uint32_t hp, uint8_t ring_id,
+			       int coalesce)
+{
+	__qdf_trace_dp_tx_enqueue(nbuf, hp, ring_id, coalesce);
+}
+
+/**
+ * qdf_trace_dp_ce_tasklet_sched_latency_enabled() - Get the
+ *   dp_ce_tasklet_sched_latency tracepoint enabled or disabled state
  *
  * Return: True if the tracepoint is enabled else false
  */

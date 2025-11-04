@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -109,6 +109,10 @@
 
 #ifdef WLAN_FEATURE_COAP
 #include "wlan_coap_public_structs.h"
+#endif
+
+#ifdef QCA_TARGET_IF_MLME
+#include "wmi_unified_mlme_api.h"
 #endif
 
 #define WMI_UNIFIED_MAX_EVENT 0x100
@@ -3230,10 +3234,17 @@ QDF_STATUS (*send_update_edca_pifs_param_cmd)(
 QDF_STATUS (*extract_sap_coex_cap_service_ready_ext2)(
 			wmi_unified_t wmi_handle, uint8_t *event,
 			struct wmi_host_coex_fix_chan_cap *cap);
+
 QDF_STATUS
 (*extract_csa_ie_received_ev_params)(wmi_unified_t wmi_handle,
 				     void *evt_buf, uint8_t *vdev_id,
 				     struct csa_offload_params *csa_event);
+
+#ifdef QCA_TARGET_IF_MLME
+QDF_STATUS (*send_csa_event_status_ind)(
+		wmi_unified_t wmi_handle,
+		struct csa_event_status_ind params);
+#endif /* QCA_TARGET_IF_MLME */
 };
 
 /* Forward declaration for psoc*/
@@ -3815,6 +3826,14 @@ static inline void wmi_cp_stats_attach_tlv(struct wmi_unified *wmi_handle)
 {
 }
 #endif /* QCA_SUPPORT_CP_STATS */
+
+#ifdef QCA_TARGET_IF_MLME
+void wmi_mlme_attach_tlv(wmi_unified_t wmi_handle);
+#else
+static inline void wmi_mlme_attach_tlv(wmi_unified_t wmi_handle)
+{
+}
+#endif /* QCA_TARGET_IF_MLME */
 
 #ifdef QCA_SUPPORT_MC_CP_STATS
 void wmi_mc_cp_stats_attach_tlv(struct wmi_unified *wmi_handle);

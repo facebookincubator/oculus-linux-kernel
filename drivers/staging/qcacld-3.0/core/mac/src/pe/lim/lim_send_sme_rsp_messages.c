@@ -136,6 +136,41 @@ lim_send_stop_bss_response(struct mac_context *mac_ctx, uint8_t vdev_id,
 #endif /* FEATURE_WLAN_DIAG_SUPPORT */
 	lim_sys_process_mmh_msg_api(mac_ctx, &msg);
 }
+
+#ifdef WLAN_FEATURE_11AX
+/**
+ * lim_get_he_rate_info_flag() - Get he tx rate info flag
+ * @sta_ds: Pointer to station ds structure
+ *
+ * This function is called to get the he tx rate info.
+ *
+ * Return: Returns he tx rate flag
+ */
+static enum tx_rate_info
+lim_get_he_rate_info_flag(tpDphHashNode sta_ds)
+{
+	tDot11fIEhe_cap *peer_he = &sta_ds->he_config;
+
+	if (peer_he->chan_width_3 || peer_he->chan_width_2)
+		return TX_RATE_HE160;
+	else if (peer_he->chan_width_1)
+		if (sta_ds->ch_width == CH_WIDTH_80MHZ)
+			return TX_RATE_HE80;
+		else
+			return TX_RATE_HE40;
+	else if (peer_he->chan_width_0)
+		return TX_RATE_HE40;
+	else
+		return TX_RATE_HE20;
+}
+#else
+static enum tx_rate_info
+lim_get_he_rate_info_flag(tpDphHashNode sta_ds)
+{
+	return TX_RATE_LEGACY;
+}
+#endif
+
 /**
  * lim_get_max_rate_flags() - Get rate flags
  * @mac_ctx: Pointer to global MAC structure
@@ -157,12 +192,17 @@ uint32_t lim_get_max_rate_flags(struct mac_context *mac_ctx, tpDphHashNode sta_d
 	}
 
 	if (!sta_ds->mlmStaContext.htCapability &&
-	    !sta_ds->mlmStaContext.vhtCapability) {
+	    !sta_ds->mlmStaContext.vhtCapability &&
+	    !lim_is_sta_he_capable(sta_ds)) {
 		rate_flags |= TX_RATE_LEGACY;
 	} else {
-		if (sta_ds->mlmStaContext.vhtCapability) {
-			if (WNI_CFG_VHT_CHANNEL_WIDTH_80MHZ ==
-				sta_ds->vhtSupportedChannelWidthSet) {
+		if (lim_is_sta_he_capable(sta_ds)) {
+			rate_flags |= lim_get_he_rate_info_flag(sta_ds);
+		} else if (sta_ds->mlmStaContext.vhtCapability) {
+			if (CH_WIDTH_160MHZ == sta_ds->ch_width ||
+			    CH_WIDTH_80P80MHZ == sta_ds->ch_width) {
+				rate_flags |= TX_RATE_VHT160;
+			} else if (CH_WIDTH_80MHZ == sta_ds->ch_width) {
 				rate_flags |= TX_RATE_VHT80;
 			} else if (CH_WIDTH_40MHZ == sta_ds->ch_width ||
 				   CH_WIDTH_20MHZ == sta_ds->ch_width) {
@@ -2105,6 +2145,7 @@ void lim_handle_sta_csa_param(struct mac_context *mac_ctx,
 	    session_entry->ch_width == lim_ch_switch->ch_width &&
 	    lim_is_puncture_same(lim_ch_switch, session_entry)) {
 		pe_debug("Ignore CSA, no change in ch, bw and puncture");
+		wlan_mlme_send_csa_event_status_ind(session_entry->vdev, 0);
 		goto err;
 	}
 

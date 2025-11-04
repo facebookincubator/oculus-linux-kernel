@@ -254,6 +254,7 @@ void lim_process_beacon_eht_op(struct pe_session *session,
 {
 	uint16_t ori_punc = 0;
 	enum phy_ch_width ori_bw = CH_WIDTH_INVALID;
+	enum phy_ch_width ori_bw_no_punct = CH_WIDTH_INVALID;
 	uint8_t cb_mode;
 	enum phy_ch_width new_bw;
 	bool update_allow;
@@ -268,6 +269,10 @@ void lim_process_beacon_eht_op(struct pe_session *session,
 	tDot11fIEhe_op *he_op;
 	uint8_t  ch_width;
 	uint8_t chan_id;
+	struct wlan_channel bss_chan = {0};
+	struct wlan_channel *current_chan = NULL;
+	uint8_t band_mask;
+	uint32_t ch_cfreq2 = 0;
 
 	if (!bcn_ptr || !session || !session->mac_ctx || !session->vdev) {
 		pe_err("invalid input parameters");
@@ -294,17 +299,44 @@ void lim_process_beacon_eht_op(struct pe_session *session,
 		return;
 	}
 	/* handle beacon IE for 11be non-mlo case */
-	if (eht_op->disabled_sub_chan_bitmap_present) {
-		ori_punc = QDF_GET_BITS(
-		    eht_op->disabled_sub_chan_bitmap[0][0], 0, 8);
-		ori_punc |= QDF_GET_BITS(
-		    eht_op->disabled_sub_chan_bitmap[0][1], 0, 8) << 8;
-	}
 	if (eht_op->eht_op_information_present) {
 		ori_bw = wlan_mlme_convert_eht_op_bw_to_phy_ch_width(
 						eht_op->channel_width);
 		ccfs0 = eht_op->ccfs0;
 		ccfs1 = eht_op->ccfs1;
+		if (eht_op->disabled_sub_chan_bitmap_present) {
+			ori_punc = QDF_GET_BITS(eht_op->disabled_sub_chan_bitmap[0][0], 0, 8);
+			ori_punc |= QDF_GET_BITS(eht_op->disabled_sub_chan_bitmap[0][1], 0, 8) << 8;
+
+			bss_chan.ch_freq = bcn_ptr->chan_freq;
+			bss_chan.puncture_bitmap = ori_punc;
+			bss_chan.ch_width = ori_bw;
+			bss_chan.ch_phymode = WLAN_PHYMODE_11BEA_EHT160;
+
+			if (ori_bw == CH_WIDTH_320MHZ &&
+			    WLAN_REG_IS_6GHZ_CHAN_FREQ(bcn_ptr->chan_freq)) {
+				band_mask = BIT(REG_BAND_6G);
+				ch_cfreq2 = wlan_reg_chan_band_to_freq(mac_ctx->pdev,
+								       ccfs1,
+								       band_mask);
+				bss_chan.ch_cfreq2 = ch_cfreq2;
+			}
+
+			status = wlan_mlme_get_bw_no_punct(mac_ctx->psoc,
+							   vdev,
+							   &bss_chan,
+							   &ori_bw_no_punct);
+			current_chan = wlan_vdev_mlme_get_bss_chan(vdev);
+			if (QDF_IS_STATUS_SUCCESS(status)) {
+				if (ori_bw_no_punct != current_chan->ch_width) {
+					status = wlan_mlme_send_ch_width_update_with_notify(mac_ctx->psoc,
+											    vdev,
+											    session->vdev_id,
+											    ori_bw_no_punct);
+				}
+				return;
+			}
+		}
 	} else if (he_op->vht_oper_present) {
 		ch_width = he_op->vht_oper.info.chan_width;
 		ccfs0 = he_op->vht_oper.info.center_freq_seg0;

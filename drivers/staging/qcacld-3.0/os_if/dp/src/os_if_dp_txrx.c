@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -546,6 +546,17 @@ osif_dp_register_arp_unsolicited_cbk(struct wlan_dp_psoc_callbacks *cb_obj)
 #endif
 
 #if defined(CFG80211_CTRL_FRAME_SRC_ADDR_TA_ADDR)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 41))
+static
+bool osif_dp_cfg80211_rx_control_port(qdf_netdev_t dev, u8 *ta_addr,
+				      qdf_nbuf_t nbuf, bool unencrypted)
+{
+	return cfg80211_rx_control_port((struct net_device *)dev,
+					(struct sk_buff *)nbuf,
+					unencrypted, -1);
+}
+
+#else
 static
 bool osif_dp_cfg80211_rx_control_port(qdf_netdev_t dev, u8 *ta_addr,
 				      qdf_nbuf_t nbuf, bool unencrypted)
@@ -554,6 +565,7 @@ bool osif_dp_cfg80211_rx_control_port(qdf_netdev_t dev, u8 *ta_addr,
 					ta_addr, (struct sk_buff *)nbuf,
 					unencrypted);
 }
+#endif
 
 static void
 osif_dp_register_send_rx_pkt_over_nl(struct wlan_dp_psoc_callbacks *cb_obj)

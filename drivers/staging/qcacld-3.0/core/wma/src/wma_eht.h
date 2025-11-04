@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -29,7 +29,6 @@ enum EHT_TXRX_MCS_NSS_IDX {
 
 #if defined(WLAN_FEATURE_11BE)
 #define MAX_EHT_DCM_INDEX 2
-#define MAX_EHT_MCS_IDX 14
 /* valid only for mcs-15 */
 #define IS_EHT_ MCS_HAS_DCM_RATE(val)  ((val) == 15)
 /**
