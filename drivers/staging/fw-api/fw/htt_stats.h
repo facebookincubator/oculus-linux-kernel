@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -817,6 +817,17 @@ enum htt_dbg_ext_stats_type {
      *    - htt_stats_pdev_ftm_tpccal_tlv
      */
     HTT_DBG_EXT_STATS_PDEV_FTM_TPCCAL = 73,
+
+    /** HTT_DBG_EXT_STATS_PDEV_UL_MUMIMO_ELIGIBLE
+     * PARAMS:
+     *    - No Params
+     * RESP MSG:
+     *     - htt_stats_pdev_ul_mumimo_grp_stats_tlv
+     *     - htt_stats_pdev_ul_mumimo_denylist_stats_tlv
+     *     - htt_stats_pdev_ul_mumimo_seq_term_stats_tlv
+     *     - htt_stats_pdev_ul_mumimo_hist_ineligibility_tlv
+     */
+    HTT_DBG_EXT_STATS_PDEV_UL_MUMIMO_ELIGIBLE = 74,
 
 
     /* keep this last */
@@ -2858,6 +2869,11 @@ typedef enum {
     HTT_TX_MUMIMO_GRP_INVALID_GROUP_INELIGIBLE,
     HTT_TX_MUMIMO_GRP_INVALID,
     HTT_TX_MUMIMO_GRP_INVALID_GROUP_EFF_MU_TPUT_OMBPS,
+    HTT_TX_MUMIMO_GRP_INVALID_GRP,
+    HTT_TX_MUMIMO_GRP_INVALID_TOTAL_NSS_LESS_THAN_GROUP_SIZE,
+    HTT_TX_MUMIMO_GRP_INSUFFICIENT_CANDIDATES_UL_MU_1SS_RATE,
+    HTT_TX_MUMIMO_GRP_MU_GRP_NOT_NEEDED,
+
     HTT_TX_MUMIMO_GRP_INVALID_MAX_REASON_CODE,
 } htt_tx_mumimo_grp_invalid_reason_code_stats;
 
@@ -4765,6 +4781,19 @@ typedef struct {
     A_UINT32 g1_compl_fail;
     A_UINT32 g2_success;
     A_UINT32 g2_compl_fail;
+    /* enqueue */
+    A_UINT32 m1_enq_success;
+    A_UINT32 m1_enq_fail;
+    A_UINT32 m2_enq_success;
+    A_UINT32 m2_enq_fail;
+    A_UINT32 m3_enq_success;
+    A_UINT32 m3_enq_fail;
+    A_UINT32 m4_enq_success;
+    A_UINT32 m4_enq_fail;
+    A_UINT32 g1_enq_success;
+    A_UINT32 g1_enq_fail;
+    A_UINT32 g2_enq_success;
+    A_UINT32 g2_enq_fail;
 } htt_stats_tx_de_eapol_packets_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_tx_de_eapol_packets_tlv htt_tx_de_eapol_packets_stats_tlv;
@@ -7561,6 +7590,15 @@ typedef struct {
     A_UINT32 cv_corr_upload_total_num_users[HTT_TX_CV_CORR_MAX_NUM_COLUMNS];
     /** number of streams present in uploaded CV Correlation results buffer */
     A_UINT32 cv_corr_upload_total_num_streams[HTT_TX_CV_CORR_MAX_NUM_COLUMNS];
+
+    /** Total number of times lookahead sounding done for DL MU */
+    A_UINT32 lookahead_sounding_dl_cnt;
+    /** Total number of times lookahead sounding done for DL MU based on number of users */
+    A_UINT32 lookahead_snd_dl_num_users[HTT_TX_PDEV_STATS_NUM_BE_MUMIMO_USER_STATS];
+    /** Total number of times lookahead sounding done for UL MU */
+    A_UINT32 lookahead_sounding_ul_cnt;
+    /** Total number of times lookahead sounding done for UL MU based on number of users */
+    A_UINT32 lookahead_snd_ul_num_users[HTT_TX_PDEV_STATS_NUM_UL_MUMIMO_USER_STATS];
 } htt_stats_tx_sounding_stats_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_tx_sounding_stats_tlv htt_tx_sounding_stats_tlv;
@@ -9062,6 +9100,111 @@ typedef struct {
     A_UINT32 phase_calculated[HTT_STATS_PDEV_AOA_MAX_HISTOGRAM][HTT_STATS_PDEV_AOA_MAX_CHAINS];
     A_INT32 phase_in_degree[HTT_STATS_PDEV_AOA_MAX_HISTOGRAM][HTT_STATS_PDEV_AOA_MAX_CHAINS];
 } htt_stats_pdev_aoa_tlv;
+
+/* STATS_TYPE: HTT_DBG_EXT_STATS_PDEV_ULMUMIMO_ELIGIBLE
+ * TLV_TAGS:
+ *  HTT_STATS_PDEV_UL_MUMIMO_GRP_STATS_TAG
+ *  HTT_STATS_PDEV_UL_MUMIMO_DENYLIST_STATS_TAG
+ *  HTT_STATS_PDEV_UL_MUMIMO_SEQ_TERM_STATS_TAG
+ *  HTT_STATS_PDEV_UL_MUMIMO_HIST_INELIGIBILITY_TAG
+ */
+
+typedef enum {
+    HTT_STATS_CANDIDATE_MU_NOT_COMPATIBLE = 1,
+    HTT_STATS_CANDIDATE_SKIP_NR_INDEX,
+    HTT_STATS_CANDIDATE_SKIP_BASIC_CHECKS_INELIGIBLE,
+    HTT_STATS_CANDIDATE_SKIP_ZERO_NSS,
+    HTT_STATS_CANDIDATE_SKIP_MCS_THRESHOLD_LIMIT,
+    HTT_STATS_CANDIDATE_SKIP_POWER_IMBALANCED,
+    HTT_STATS_CANDIDATE_SKIP_NULL_MU_RC,
+    HTT_STATS_CANDIDATE_SKIP_CV_CORR_SKIP_PEER,
+    HTT_STATS_CANDIDATE_SKIP_SEND_BAR_SET_FOR_AC_MUMIMO,
+
+    HTT_STATS_CANDIDATE_SKIP_REASON_MAX
+} htt_stats_candidate_sched_compatible_code;
+
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+    /* Current Pdev id */
+    A_UINT32 pdev_id;
+    /* Group eligibility count */
+    A_UINT32 mu_grp_eligible[HTT_STATS_MAX_MUMIMO_GRP_SZ];
+    /* Group ineligibility */
+    A_UINT32 mu_grp_ineligible[HTT_STATS_MAX_MUMIMO_GRP_SZ];
+    /* Group Invalid reason */
+    A_UINT32 mu_grp_invalid[HTT_TX_NUM_MUMIMO_GRP_INVALID_WORDS];
+    /* mu_grp_candidate_skip:
+     * Sched_compatibility reason codes as listed by
+     * htt_stats_candidate_sched_compatible code
+     */
+    A_UINT32 mu_grp_candidate_skip
+        [HTT_TX_PDEV_STATS_NUM_UL_MUMIMO_USER_STATS]
+        [HTT_STATS_CANDIDATE_SKIP_REASON_MAX];
+    /* Group eligibility count for 1SS grouping */
+    A_UINT32 mu_grp_eligible_1ss[HTT_STATS_MAX_MUMIMO_GRP_SZ];
+    /* Group ineligibility fpr 1SS grouping */
+    A_UINT32 mu_grp_ineligible_1ss[HTT_STATS_MAX_MUMIMO_GRP_SZ];
+    /* Group Invalid reason for 1SS grouping */
+    A_UINT32 mu_grp_invalid_1ss[HTT_TX_NUM_MUMIMO_GRP_INVALID_WORDS];
+    /* Sched_compatibility reason code for 1SS grouping */
+    A_UINT32 mu_grp_candidate_skip_1ss
+        [HTT_TX_PDEV_STATS_NUM_UL_MUMIMO_USER_STATS]
+        [HTT_STATS_CANDIDATE_SKIP_REASON_MAX];
+} htt_stats_pdev_ulmumimo_grp_stats_tlv;
+
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+
+    /* Num of times peer denylisted for MU-MIMO transmission */
+    A_UINT32 num_peer_denylist_cnt;
+    /* Num of times peer denylisted due to trigger bitmap failure */
+    A_UINT32 trig_bitmap_fail_cnt;
+    /* Num of times peer denylisted due to trigger consecutive failure */
+    A_UINT32 trig_consecutive_fail_cnt;
+} htt_stats_pdev_ulmumimo_denylist_stats_tlv;
+
+#define HTT_STATS_SEQ_EFFICIENCY_HISTOGRAM 10
+typedef struct {
+    htt_tlv_hdr_t  tlv_hdr;
+
+    /* Num of times seq terminated for MU-MIMO transmission */
+    A_UINT32 num_terminate_seq;
+    /* Num of sequences terminated due to low qdepth */
+    A_UINT32 num_terminate_low_qdepth;
+    /* Number of sequences terminated due to sequence inefficient */
+    A_UINT32 num_terminate_seq_inefficient;
+    /* Histogram of sequence inefficiency */
+    A_UINT32 hist_seq_efficiency[HTT_STATS_SEQ_EFFICIENCY_HISTOGRAM];
+} htt_stats_pdev_ulmumimo_seq_term_stats_tlv;
+
+#define HTT_STATS_MAX_ULMUMIMO_TRIGGERS 6
+#define HTT_STATS_TXOP_HISTOGRAM_BINS 24
+#define HTT_STATS_ULMUMIMO_DUR_INTERVAL_US 500
+#define HTT_STATS_ULMUMIMO_MIN_PPDU_DUR_US 1000
+#define HTT_STATS_MAX_PPDU_DURATION_BINS 10
+typedef struct {
+    htt_tlv_hdr_t tlv_hdr;
+
+    /* Number of ULMUMIMO triggers */
+    A_UINT32 num_triggers[HTT_STATS_MAX_ULMUMIMO_TRIGGERS];
+    /* Txop duration history from 0 to 12 ms with interval of 500us */
+    A_UINT32 txop_history [HTT_STATS_TXOP_HISTOGRAM_BINS];
+    /* ppdu_duration_hist:
+     * PPDU Duration History (histogram)
+     * Num PPDUs from 1 to 6
+     * 0 to 6 ms with interval of 500us
+     */
+    A_UINT32 ppdu_duration_hist
+        [HTT_STATS_MAX_ULMUMIMO_TRIGGERS][HTT_STATS_MAX_PPDU_DURATION_BINS];
+    /* Ineligible Count for ULMUMIMO based on avg qdepth and txtime criteria */
+    A_UINT32 ineligible_count;
+    /* history_ineligibility:
+     * History based ineligibility counter for ULMUMIMO.
+     * Checks for 8 eligible instances of ULMUMIMO in the past 32 instances.
+     */
+    A_UINT32 history_ineligibility;
+} htt_stats_pdev_ulmumimo_hist_ineligibility_tlv;
+
 
 /* RTT VREG MASK */
 #define HTT_STATS_RTT_CHAN_CAPTURE_MASK                       0x00000001
@@ -11538,6 +11681,31 @@ typedef struct {
     A_UINT32 dl_ofdma_nbinwb_selected_over_mu_mimo[HTT_NUM_AC_WMM];
     /** Num of instances where OFDMA NBinWB is selected in standalone */
     A_UINT32 dl_ofdma_nbinwb_selected_standalone[HTT_NUM_AC_WMM];
+    /**
+     * Number of instances where we populated TX mode and candidate lists
+     * only for DL.
+     */
+    A_UINT32 running_only_dl_scheduler_cnt[HTT_NUM_AC_WMM];
+    /**
+     * Number of instances where we populated TX mode and candidate lists
+     * only for UL.
+     */
+    A_UINT32 running_only_ul_scheduler_cnt[HTT_NUM_AC_WMM];
+    /**
+     * Number of instances where we populated TX mode and candidate lists
+     * additionally for DL after UL.
+     */
+    A_UINT32 running_additional_dl_scheduler_cnt[HTT_NUM_AC_WMM];
+    /**
+     * Number of instances where we populated TX mode and candidate lists
+     * additionally for UL after DL.
+     */
+    A_UINT32 running_additional_ul_scheduler_cnt[HTT_NUM_AC_WMM];
+    /**
+     * Number of instances where we populated TX mode and candidate lists
+     * only for UL BSR TX mode.
+     */
+    A_UINT32 running_ul_scheduler_for_bsrp_cnt[HTT_NUM_AC_WMM];
 } htt_stats_pdev_sched_algo_ofdma_stats_tlv;
 /* preserve old name alias for new name consistent with the tag name */
 typedef htt_stats_pdev_sched_algo_ofdma_stats_tlv

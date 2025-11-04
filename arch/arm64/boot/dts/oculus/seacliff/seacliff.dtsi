@@ -264,6 +264,7 @@
 			/bits/ 16 <0x2ec6 0x2202>,		/* Buru */
 			/bits/ 16 <0x2833 0x0093>,		/* Skellig */
 			/bits/ 16 <0x2ec6 0x2200>,		/* UPA 18W */
+			/bits/ 16 <0x2833 0x501d>,		/* UPA 18W V2 */
 			/bits/ 16 <0x2ec6 0x2103>;		/* UPA 45W */
 	};
 

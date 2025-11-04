@@ -300,6 +300,11 @@ enum bpf_attach_type {
 /* flags for BPF_PROG_QUERY */
 #define BPF_F_QUERY_EFFECTIVE	(1U << 0)
 
+/* Flags for BPF_PROG_TEST_RUN */
+
+/* If set, run the test on the cpu specified by bpf_attr.test.cpu */
+#define BPF_F_TEST_RUN_ON_CPU	(1U << 0)
+
 #define BPF_OBJ_NAME_LEN 16U
 
 /* Flags for accessing BPF object from syscall side. */
@@ -427,6 +432,8 @@ union bpf_attr {
 		__aligned_u64	data_out;
 		__u32		repeat;
 		__u32		duration;
+		__u32		flags;
+		__u32		cpu;
 	} test;
 
 	struct { /* anonymous struct used by BPF_*_GET_*_ID */

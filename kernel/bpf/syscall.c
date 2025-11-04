@@ -262,7 +262,7 @@ static int bpf_map_copy_value(struct bpf_map *map, void *key, void *value,
 		   map->map_type == BPF_MAP_TYPE_STACK) {
 		err = map->ops->map_peek_elem(map, value);
 	} else if (map->map_type == BPF_MAP_TYPE_STRUCT_OPS) {
-		// struct_ops map requires directly updating "value" 
+		// struct_ops map requires directly updating "value"
 		err = bpf_struct_ops_map_sys_lookup_elem(map, key, value);
 */
 	} else {
@@ -276,7 +276,7 @@ static int bpf_map_copy_value(struct bpf_map *map, void *key, void *value,
 		} else if (!ptr) {
 			err = -ENOENT;
 		} else {
-		/* 
+		/*
 		 * Need to backport BPF_SPINLOCK
 		 */
 			err = 0;
@@ -2263,7 +2263,7 @@ static int bpf_prog_query(const union bpf_attr *attr,
 	return cgroup_bpf_prog_query(attr, uattr);
 }
 
-#define BPF_PROG_TEST_RUN_LAST_FIELD test.duration
+#define BPF_PROG_TEST_RUN_LAST_FIELD test.cpu
 
 static int bpf_prog_test_run(const union bpf_attr *attr,
 			     union bpf_attr __user *uattr)

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -191,9 +191,11 @@ typedef enum {
   WLAN_MODULE_PHYLIB_RRI,               /* 0x94 */
   WLAN_MODULE_PHYLIB_SSCAN,             /* 0x95 */
   WLAN_MODULE_PHYLIB_RSVD,              /* 0x96 */
+
   WLAN_MODULE_USD,                      /* 0x97 */
   WLAN_MODULE_C2C,                      /* 0x98 */
-
+  WLAN_MODULE_VBSS,                     /* 0x99 */
+  WLAN_MODULE_OPT_DATA,                 /* 0x9a */
 
   WLAN_MODULE_ID_MAX,
   WLAN_MODULE_ID_INVALID = WLAN_MODULE_ID_MAX,

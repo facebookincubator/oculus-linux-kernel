@@ -1050,6 +1050,7 @@ const struct bpf_verifier_ops raw_tracepoint_verifier_ops = {
 };
 
 const struct bpf_prog_ops raw_tracepoint_prog_ops = {
+	.test_run = bpf_prog_test_run_raw_tp,
 };
 
 static bool pe_prog_is_valid_access(int off, int size, enum bpf_access_type type,

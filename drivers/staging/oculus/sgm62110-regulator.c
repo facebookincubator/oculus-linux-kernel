@@ -9,6 +9,7 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
+#include <linux/regulator/debug-regulator.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/of_regulator.h>
 #include <linux/i2c.h>
@@ -174,6 +175,8 @@ static int sgm62110_i2c_probe(struct i2c_client *client)
 		dev_err(dev, "Failed to register regulator!\n");
 		return PTR_ERR(rdev);
 	}
+
+	devm_regulator_debug_register(dev, rdev);
 
 	return 0;
 }

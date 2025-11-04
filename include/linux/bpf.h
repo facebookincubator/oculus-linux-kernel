@@ -698,6 +698,10 @@ static inline int bpf_map_attr_numa_node(const union bpf_attr *attr)
 struct bpf_prog *bpf_prog_get_type_path(const char *name, enum bpf_prog_type type);
 int array_map_alloc_check(union bpf_attr *attr);
 
+int bpf_prog_test_run_raw_tp(struct bpf_prog *prog,
+	const union bpf_attr *kattr,
+	union bpf_attr __user *uattr);
+
 const struct bpf_func_proto *bpf_base_func_proto(enum bpf_func_id func_id);
 
 static inline bool unprivileged_ebpf_enabled(void)

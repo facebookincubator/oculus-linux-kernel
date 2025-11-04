@@ -64,6 +64,11 @@ struct blu_device {
 
 	/* irq to trigger spi command transfer */
 	int irq;
+
+	struct spi_transfer	irq_transfer;
+	struct spi_message irq_msg;
+	struct completion irq_completion;
+
 	/* frame counts since the blu powers on */
 	u64 frame_counts;
 	/* Backlight level, if 0 then disable irq */
@@ -284,6 +289,27 @@ static void apply_blu_bro(struct blu_device *blu)
 		dev_err(&spi->dev, "failed to set rolloff values, error %d\n", ret);
 }
 
+static void spi_complete(void *arg)
+{
+	complete(arg);
+}
+
+static int send_blu_matrix_async(struct blu_device *blu)
+{
+	struct spi_transfer	*xfer = &blu->irq_transfer;
+	struct spi_message *msg = &blu->irq_msg;
+
+	xfer->tx_buf = blu->brightness_buffer;
+	xfer->len = blu->matrix_size;
+	spi_message_init_with_transfers(msg, xfer, 1);
+
+	reinit_completion(&blu->irq_completion);
+	msg->complete = spi_complete;
+	msg->context = &blu->irq_completion;
+
+	return spi_async(blu->spi, msg);
+}
+
 static irqreturn_t blu_isr(int isr, void *blu_dev)
 {
 	/* SPI commands to enter/exit soft reset mode */
@@ -333,6 +359,13 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 		if (ret)
 			dev_err(&spi->dev, "failed to exit soft reset mode, error %d\n", ret);
 	} else {
+		/* Drop frame if previous transfer is still pending */
+		if (!try_wait_for_completion(&blu->irq_completion)) {
+			dev_err(&spi->dev, "IRQ transfer is still in progress, dropping frame\n");
+			blu->dropped_frames++;
+			goto end;
+		}
+
 		old = atomic_read(&blu->buffer_dirty);
 
 		/* if the back buffer is dirty, get the new matrix */
@@ -346,7 +379,7 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 		apply_blu_brightness(blu);
 
 		/* send the backlight matrix */
-		ret = spi_write(spi, &(blu->brightness_buffer[0]), blu->matrix_size);
+		ret = send_blu_matrix_async(blu);
 		if (ret) {
 			dev_err(&spi->dev, "failed to send backlight matrix, error %d\n", ret);
 			/* add dropped frame for failed spi write */
@@ -354,6 +387,7 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 		}
 
 		if (blu->debug_blu) {
+			wait_for_completion(&blu->irq_completion);
 			usleep_range(MIN_SPI_DELAY_US, MAX_SPI_DELAY_US);
 
 			/* verify the SPI transfer */
@@ -371,6 +405,7 @@ static irqreturn_t blu_isr(int isr, void *blu_dev)
 		}
 	}
 
+end:
 	++blu->frame_counts;
 
 	return IRQ_HANDLED;
@@ -896,6 +931,9 @@ static int blu_spi_probe(struct spi_device *spi)
 				__func__, vsync_gpio);
 		return ret;
 	}
+
+	init_completion(&blu->irq_completion);
+	complete(&blu->irq_completion);
 
 	dev_set_drvdata(&spi->dev, blu);
 

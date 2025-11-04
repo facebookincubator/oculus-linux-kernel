@@ -1189,6 +1189,7 @@ static ssize_t dock_type_show(struct device *dev,
 	case VDM_PID_BURU:
 	case VDM_PID_MOKU_APP:
 	case VDM_PID_UPA_18W:
+	case VDM_PID_UPA_18W_V2:
 	case VDM_PID_UPA_45W:
 		dock_type = 1;
 		break;

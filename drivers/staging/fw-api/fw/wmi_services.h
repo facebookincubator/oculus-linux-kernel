@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2011-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -692,6 +692,9 @@ typedef  enum  {
     WMI_SERVICE_DYNAMIC_TWT_MODE_SUPPORT = 433, /* Indicates FW supports Dynamic TWT mode for vdevs */
     WMI_SERVICE_SPECTRAL_SPUR_BIN_INFO_SUPPORT = 434, /* Indicates FW supports indicating spur frequency and spectral bin that gets affected due to spur frequency */
     WMI_SERVICE_TWT_P2P_GO_CONCURRENCY_SUPPORT = 435, /* Indicates FW supports TWT in P2P GO concurrency mode */
+    WMI_SERVICE_UMAC_MIGRATION_SUPPORT = 436, /* Indicates that FW supports UMAC migration */
+    WMI_SERVICE_STA_TWT_STATS_EXT = 437, /* FW supports additional info in TWT stats and ADD COMPLETION Event */
+    WMI_SERVICE_OPT_DP_DIAG_SUPPORT = 438, /* FW supports diag QDATA feature */
 
 
     WMI_MAX_EXT2_SERVICE
