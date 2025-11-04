@@ -2067,7 +2067,7 @@ QDF_STATUS hdd_hostapd_sap_event_cb(struct sap_event *sap_event,
 	struct hdd_context *hdd_ctx;
 	struct iw_michaelmicfailure msg;
 	uint8_t ignoreCAC = 0;
-	eSapDfsCACState_t cac_state = eSAP_DFS_DO_NOT_SKIP_CAC;
+	bool cac_state = false;
 	struct hdd_config *cfg = NULL;
 	struct wlan_dfs_info dfs_info;
 	struct hdd_adapter *con_sap_adapter;
@@ -2169,7 +2169,9 @@ QDF_STATUS hdd_hostapd_sap_event_cb(struct sap_event *sap_event,
 				hdd_ctx->psoc, adapter->vdev_id))
 			ignoreCAC = true;
 
-		wlansap_get_dfs_cac_state(mac_handle, &cac_state);
+		wlansap_get_dfs_cac_state(mac_handle,
+					  WLAN_HDD_GET_SAP_CTX_PTR(adapter),
+					  &cac_state);
 
 		/* DFS requirement: DO NOT transmit during CAC. */
 
@@ -2181,7 +2183,7 @@ QDF_STATUS hdd_hostapd_sap_event_cb(struct sap_event *sap_event,
 					      ap_ctx->operating_chan_freq) ||
 		    ignoreCAC ||
 		    hdd_ctx->dev_dfs_cac_status == DFS_CAC_ALREADY_DONE ||
-		    eSAP_DFS_SKIP_CAC == cac_state)
+		    !cac_state)
 			ap_ctx->dfs_cac_block_tx = false;
 		else
 			ap_ctx->dfs_cac_block_tx = true;
@@ -6886,7 +6888,8 @@ int wlan_hdd_cfg80211_start_bss(struct hdd_adapter *adapter,
 		hdd_set_connection_in_progress(false);
 		sme_get_command_q_status(mac_handle);
 		wlansap_stop_bss(WLAN_HDD_GET_SAP_CTX_PTR(adapter));
-		if (!cds_is_driver_recovering())
+		if (!cds_is_driver_recovering() &&
+		    QDF_IS_STATUS_ERROR(qdf_status))
 			QDF_ASSERT(0);
 		ret = -EINVAL;
 		goto error;

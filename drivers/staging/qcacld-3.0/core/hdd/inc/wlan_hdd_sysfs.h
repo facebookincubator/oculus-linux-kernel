@@ -99,6 +99,19 @@ void hdd_sysfs_create_wifi_root_obj(void);
  * Return: none
  */
 void hdd_sysfs_destroy_wifi_root_obj(void);
+/**
+ * hdd_sysfs_create_regulatory_root_obj() - create regulatory interface
+ *
+ * Return: none
+ */
+void hdd_sysfs_create_regulatory_root_obj(void);
+
+/**
+ * hdd_sysfs_destroy_regulatory_root_obj() - destroy regulatory interface
+ *
+ * Return: none
+ */
+void hdd_sysfs_destroy_regulatory_root_obj(void);
 
 #else
 static inline int
@@ -147,6 +160,15 @@ static inline void hdd_sysfs_create_wifi_root_obj(void)
 }
 
 static inline void hdd_sysfs_destroy_wifi_root_obj(void)
+{
+}
+static inline
+void hdd_sysfs_create_regulatory_root_obj(void)
+{
+}
+
+static inline
+void hdd_sysfs_destroy_regulatory_root_obj(void)
 {
 }
 #endif /* End of WLAN SYSFS*/

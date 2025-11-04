@@ -638,6 +638,14 @@ csiphy_reg_t csiphy_3ph_v1_2_3_low_peak_reg[MAX_LANES][MAX_SETTINGS_PER_LANE] = 
 	},
 };
 
+/*
+ * these 3 lanes register for each CSI port is for:
+ *   TITAN_A_PHY_*_CSIPHY_LN1_CSI_3PHASE_CTRL27
+ *   TITAN_A_PHY_*_CSIPHY_LN3_CSI_3PHASE_CTRL27
+ *   TITAN_A_PHY_*_CSIPHY_LN5_CSI_3PHASE_CTRL27
+ */
+int32_t csiphy_3ph_v1_2_3_rx_eq_reg_addr[MAX_LANES] = {0x016C, 0x036C, 0x056C};
+
 struct data_rate_settings_t data_rate_delta_table_1_2_3 = {
 	.num_data_rate_settings = 3,
 	.data_rate_settings = {

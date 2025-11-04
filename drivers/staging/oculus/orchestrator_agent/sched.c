@@ -190,22 +190,9 @@ int orchestrator_task_setscheduler(struct task_struct *task,
 
 	if ((policy == SCHED_FIFO || policy == SCHED_RR) &&
 	    !orchestrator_task_has_flag(task, ORCHESTRATOR_FLAG_ALLOW_RT)) {
-		bool is_service = orchestrator_task_has_flag(task, ORCHESTRATOR_FLAG_IS_SERVICE);
-		const char *str = is_service ? "rejecting" : "but allowing";
 
-		pr_info("%s[%d] ALLOW_RT permission denied, %s",
-			task->comm, task->pid, str);
-		/*
-		 * For now, only prevent services from using RT as we only have
-		 * the init.rc files to configure whether they can or can't use
-		 * RT. Once the Orchestrator service is up and running, we can
-		 * tighten this restriction (and possibly remove the IS_SERVICE
-		 * flag).
-		 */
-		if (is_service)
-			return -EPERM;
-		else
-			return 0;
+		pr_info("%s[%d] ALLOW_RT permission denied", task->comm, task->pid);
+		return -EPERM;
 	}
 
 	return 0;

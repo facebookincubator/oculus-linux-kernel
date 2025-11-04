@@ -613,6 +613,30 @@ QDF_COMPILE_TIME_ASSERT(qdf_nbuf_cb_size,
 #define __qdf_nbuf_reset_num_frags(skb) \
 	(QDF_NBUF_CB_TX_NUM_EXTRA_FRAGS(skb) = 0)
 
+/*
+ * struct flow_info - Structure used for defining flow
+ * @proto: Flow proto
+ * @src_port: Source port
+ * @dst_port: Destination port
+ * @src_ip: Source IP (IPv4/IPv6)
+ * @dst_ip: Destination IP (IPv4/IPv6)
+ * @flow_label: Flow label if IPv6 is used for src_ip/dst_ip
+ */
+struct qdf_flow_info {
+	uint8_t proto;
+	uint16_t src_port;
+	uint16_t dst_port;
+	union {
+		uint32_t ipv4_addr;
+		uint32_t ipv6_addr[4];
+	} src_ip;
+	union {
+		uint32_t ipv4_addr;
+		uint32_t ipv6_addr[4];
+	} dst_ip;
+	uint32_t flow_label;
+};
+
 /**
  *   end of nbuf->cb access macros
  */
@@ -1179,6 +1203,132 @@ static inline void __qdf_nbuf_set_tx_ip_cksum(struct sk_buff *skb)
 
 	iph = (struct iphdr *)(skb->data + QDF_NBUF_TRAC_IPV4_OFFSET);
 	ip_send_check(iph);
+}
+
+/**
+ * __qdf_nbuf_is_ipv4_first_fragment() - check if first fragmented packet
+ * @skb: Pointer to network buffer
+ *
+ * Return: true if first frag else false
+ */
+static inline bool __qdf_nbuf_is_ipv4_first_fragment(const struct sk_buff *skb)
+{
+	struct iphdr *iph;
+
+	if (skb->protocol == htons(ETH_P_IP)) {
+		iph = (struct iphdr *)((uint8_t *)(skb->data) +
+						QDF_NBUF_TRAC_IPV4_OFFSET);
+		if ((iph->frag_off & htons(IP_OFFSET)) == 0)
+			return true;
+	}
+	return false;
+}
+
+/**
+ * __qdf_nbuf_get_ipv4_flow_info() - get ipv4 flow info
+ * @skb: Pointer to network buffer
+ * @flow_info: pointer to qdf_flow_info
+ *
+ * Return: QDF_STATUS
+ */
+static inline
+QDF_STATUS __qdf_nbuf_get_ipv4_flow_info(const struct sk_buff *skb,
+					 struct qdf_flow_info *flow_info)
+{
+	struct iphdr *iph;
+	struct tcphdr *tcph;
+	unsigned int ihl;
+	struct udphdr *udph;
+
+	if (skb->protocol != htons(ETH_P_IP))
+		return QDF_STATUS_E_NOSUPPORT;
+
+	iph = (struct iphdr *)((uint8_t *)(skb->data) +
+					QDF_NBUF_TRAC_IPV4_OFFSET);
+	ihl = iph->ihl << 2;
+
+	flow_info->src_ip.ipv4_addr = ntohl(iph->saddr);
+	flow_info->dst_ip.ipv4_addr = ntohl(iph->daddr);
+	flow_info->proto = iph->protocol;
+
+	if (IPPROTO_UDP == iph->protocol) {
+		udph = (struct udphdr *)((uint8_t *)(skb->data) +
+			QDF_NBUF_TRAC_IPV4_OFFSET + ihl);
+		flow_info->src_port = ntohs(udph->source);
+		flow_info->dst_port = ntohs(udph->dest);
+		return QDF_STATUS_SUCCESS;
+	} else if (IPPROTO_TCP == iph->protocol) {
+		tcph = (struct tcphdr *)((uint8_t *)(skb->data) +
+			QDF_NBUF_TRAC_IPV4_OFFSET + ihl);
+		flow_info->src_port = ntohs(tcph->source);
+		flow_info->dst_port = ntohs(tcph->dest);
+		return QDF_STATUS_SUCCESS;
+	}
+	return QDF_STATUS_E_NOSUPPORT;
+}
+
+/**
+ * __qdf_nbuf_get_ipv6_flow_info() - get ipv6 flow info
+ * @skb: Pointer to network buffer
+ * @flow_info: pointer to qdf_flow_info
+ *
+ * Return: QDF_STATUS
+ */
+static inline
+QDF_STATUS __qdf_nbuf_get_ipv6_flow_info(const struct sk_buff *skb,
+					 struct qdf_flow_info *flow_info)
+{
+	struct ipv6hdr *ipv6h;
+	unsigned char offset;
+	unsigned int nexthdr;
+
+	if (skb->protocol == htons(ETH_P_IPV6)) {
+		ipv6h = (struct ipv6hdr *)skb_network_header(skb);
+
+		memcpy(&flow_info->src_ip.ipv6_addr, &ipv6h->saddr,
+		       sizeof(flow_info->src_ip.ipv6_addr));
+		memcpy(&flow_info->dst_ip.ipv6_addr, &ipv6h->daddr,
+		       sizeof(flow_info->dst_ip.ipv6_addr));
+
+		nexthdr = ipv6h->nexthdr;
+		offset = sizeof(struct ipv6hdr);
+
+		while (nexthdr != NEXTHDR_NONE) {
+			switch (nexthdr) {
+			case NEXTHDR_HOP:
+			case NEXTHDR_ROUTING:
+			case NEXTHDR_DEST:
+				nexthdr = ((struct ipv6_opt_hdr *)(skb_network_header(skb) +
+						offset))->nexthdr;
+				offset += (((struct ipv6_opt_hdr *)(skb_network_header(skb) +
+						offset))->hdrlen + 1) << 3;
+				break;
+			case IPPROTO_TCP:
+				if ((offset + sizeof(struct tcphdr)) > skb->len)
+					return QDF_STATUS_E_INVAL;
+
+				flow_info->src_port = ntohs(*(uint16_t *)
+					(skb_network_header(skb) + offset));
+				flow_info->dst_port = ntohs(*(uint16_t *)
+					(skb_network_header(skb) + offset + 2));
+				flow_info->proto = IPPROTO_TCP;
+				return QDF_STATUS_SUCCESS;
+			case IPPROTO_UDP:
+				if ((offset + sizeof(struct udphdr)) > skb->len)
+					return QDF_STATUS_E_INVAL;
+
+				flow_info->src_port = ntohs(*(uint16_t *)
+					(skb_network_header(skb) + offset));
+				flow_info->dst_port = ntohs(*(uint16_t *)
+					(skb_network_header(skb) + offset + 2));
+				flow_info->proto = IPPROTO_UDP;
+				return QDF_STATUS_SUCCESS;
+			default:
+				return QDF_STATUS_E_NOSUPPORT;
+			}
+		}
+	}
+	return QDF_STATUS_E_NOSUPPORT;
 }
 
 /**

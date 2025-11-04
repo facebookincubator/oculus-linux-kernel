@@ -50,10 +50,8 @@ dp_lapb_tcl_hp_update_timer_handler(qdf_hrtimer_data_t *arg)
 	soc = lapb_ctx->soc;
 
 	hal_ring_hdl = soc->tcl_data_ring[ring_id].hal_srng;
-	if (!hal_ring_hdl)
-		goto fail;
 
-	if (hal_srng_try_access_start(soc->hal_soc, hal_ring_hdl) < 0)
+	if (qdf_unlikely(hal_srng_access_start(soc->hal_soc, hal_ring_hdl)))
 		goto fail;
 
 	if (hif_rtpm_get(HIF_RTPM_GET_ASYNC, HIF_RTPM_ID_DP)) {

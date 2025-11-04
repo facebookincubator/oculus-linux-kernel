@@ -315,6 +315,17 @@ const char *fw_to_hw_delay_bucket[CDP_DELAY_BUCKET_MAX + 1] = {
 };
 #endif
 
+#if defined(HW_TX_DELAY_STATS_ENABLE)
+const char *fw_to_hw_delay_bkt_str[CDP_DELAY_BUCKET_MAX + 1] = {
+	"0-2ms", "2-4",
+	"4-6", "6-8",
+	"8-10", "10-20",
+	"20-30", "30-40",
+	"40-50", "50-100",
+	"100-250", "250-500", "500+ ms"
+};
+#endif
+
 #ifdef QCA_ENH_V3_STATS_SUPPORT
 #ifndef WLAN_CONFIG_TX_DELAY
 const char *sw_enq_delay_bucket[CDP_DELAY_BUCKET_MAX + 1] = {
@@ -4961,6 +4972,20 @@ static inline const char *dp_vow_str_fw_to_hw_delay(uint8_t index)
 }
 
 #if defined(HW_TX_DELAY_STATS_ENABLE)
+/**
+ * dp_str_fw_to_hw_delay_bkt() - Return string for concise logging of delay
+ * @index: Index of delay
+ *
+ * Return: char const pointer
+ */
+static inline const char *dp_str_fw_to_hw_delay_bkt(uint8_t index)
+{
+	if (index > CDP_DELAY_BUCKET_MAX)
+		return "Invalid";
+
+	return fw_to_hw_delay_bkt_str[index];
+}
+
 static inline
 uint32_t dp_sum_avg_with_weightage(uint32_t avg1, uint64_t count1,
 				   uint32_t avg2, uint64_t count2)
@@ -5429,19 +5454,39 @@ QDF_STATUS dp_pdev_get_tid_stats(struct cdp_soc_t *soc_hdl, uint8_t pdev_id,
 #endif
 
 #ifdef HW_TX_DELAY_STATS_ENABLE
+#define DP_TX_DELAY_STATS_STR_LEN 512
+#define DP_SHORT_DELAY_BKT_COUNT 5
 static void dp_vdev_print_tx_delay_stats(struct dp_vdev *vdev)
 {
 	struct cdp_delay_stats delay_stats;
 	struct cdp_tid_tx_stats *per_ring;
 	uint8_t tid, index;
-	uint64_t count = 0;
+	uint32_t count = 0;
 	uint8_t ring_id;
+	char *buf;
+	size_t pos, buf_len;
+	char hw_tx_delay_str[DP_TX_DELAY_STATS_STR_LEN] = {"\0"};
 
+	buf_len = DP_TX_DELAY_STATS_STR_LEN;
 	if (!vdev)
 		return;
 
-	DP_PRINT_STATS("vdev_id: %d Per TID Delay Non-Zero Stats:\n",
-		       vdev->vdev_id);
+	dp_info("vdev_id: %d Per TID HW Tx completion latency Stats:",
+		vdev->vdev_id);
+	buf = hw_tx_delay_str;
+	dp_info("  Tid%32sPkts_per_delay_bucket%60s | Min | Max | Avg |",
+		"", "");
+	pos = 0;
+	pos += qdf_scnprintf(buf + pos, buf_len - pos, "%6s", "");
+	for (index = 0; index < CDP_DELAY_BUCKET_MAX; index++) {
+		if (index < DP_SHORT_DELAY_BKT_COUNT)
+			pos += qdf_scnprintf(buf + pos, buf_len - pos, "%7s",
+					     dp_str_fw_to_hw_delay_bkt(index));
+		else
+			pos += qdf_scnprintf(buf + pos, buf_len - pos, "%9s",
+					     dp_str_fw_to_hw_delay_bkt(index));
+	}
+	dp_info("%s", hw_tx_delay_str);
 	for (tid = 0; tid < CDP_MAX_DATA_TIDS; tid++) {
 		qdf_mem_zero(&delay_stats, sizeof(delay_stats));
 		for (ring_id = 0; ring_id < CDP_MAX_TX_COMP_RINGS; ring_id++) {
@@ -5449,21 +5494,21 @@ static void dp_vdev_print_tx_delay_stats(struct dp_vdev *vdev)
 			dp_accumulate_delay_stats(&delay_stats,
 						  &per_ring->hwtx_delay);
 		}
-
-		DP_PRINT_STATS("Hardware Tx completion latency stats TID: %d",
-			       tid);
+		pos = 0;
+		pos += qdf_scnprintf(buf + pos, buf_len - pos, "%4u  ", tid);
 		for (index = 0; index < CDP_DELAY_BUCKET_MAX; index++) {
 			count = delay_stats.delay_bucket[index];
-			if (count) {
-				DP_PRINT_STATS("%s:  Packets = %llu",
-					       dp_vow_str_fw_to_hw_delay(index),
-					       count);
-			}
+			if (index < DP_SHORT_DELAY_BKT_COUNT)
+				pos += qdf_scnprintf(buf + pos, buf_len - pos,
+						     "%6u|", count);
+			else
+				pos += qdf_scnprintf(buf + pos, buf_len - pos,
+						     "%8u|", count);
 		}
-
-		DP_PRINT_STATS("Min = %u", delay_stats.min_delay);
-		DP_PRINT_STATS("Max = %u", delay_stats.max_delay);
-		DP_PRINT_STATS("Avg = %u\n", delay_stats.avg_delay);
+		pos += qdf_scnprintf(buf + pos, buf_len - pos,
+			"%10u | %3u | %3u|", delay_stats.min_delay,
+			delay_stats.max_delay, delay_stats.avg_delay);
+		dp_info("%s", hw_tx_delay_str);
 	}
 }
 
@@ -5497,7 +5542,8 @@ void dp_pdev_print_tx_delay_stats(struct dp_soc *soc)
 
 	for (index = 0; index < num_vdev; index++) {
 		vdev = vdev_array[index];
-		dp_vdev_print_tx_delay_stats(vdev);
+		if (qdf_unlikely(dp_is_vdev_tx_delay_stats_enabled(vdev)))
+			dp_vdev_print_tx_delay_stats(vdev);
 		dp_vdev_unref_delete(soc, vdev, DP_MOD_ID_GENERIC_STATS);
 	}
 	qdf_mem_free(vdev_array);

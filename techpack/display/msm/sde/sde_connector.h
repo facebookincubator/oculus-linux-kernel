@@ -185,6 +185,14 @@ struct sde_connector_ops {
 			void *display, u32 bl_lvl);
 
 	/**
+	 * get_backlight - get backlight level
+	 * @connector: Pointer to drm connector structure
+	 * @display: Pointer to private display structure
+	 */
+	 int (*get_backlight)(struct drm_connector *connector,
+		void *display);
+
+	/**
 	 * set_colorspace - set colorspace for connector
 	 * @connector: Pointer to drm connector structure
 	 * @display: Pointer to private display structure

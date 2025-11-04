@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -63,6 +64,8 @@ struct dp_rx_tm_handle_cmn;
  * @dropped_others: packets dropped due to other reasons
  * @dropped_enq_fail: packets dropped due to pending queue full
  * @rx_nbufq_loop_yield: rx loop yield counter
+ * @num_ndev_hold: number of netdevice references hold
+ * @num_ndev_release: number of netdevice references released
  */
 struct dp_rx_thread_stats {
 	unsigned int nbuf_queued[DP_RX_TM_MAX_REO_RINGS];
@@ -79,6 +82,8 @@ struct dp_rx_thread_stats {
 	unsigned int dropped_others;
 	unsigned int dropped_enq_fail;
 	unsigned int rx_nbufq_loop_yield;
+	unsigned int num_ndev_hold;
+	unsigned int num_ndev_release;
 };
 
 /**
@@ -104,10 +109,11 @@ enum dp_rx_refill_thread_state {
  * @suspend_event: handle of Event for DP Rx thread to signal suspend
  * @resume_event: handle of Event for DP Rx thread to signal resume
  * @shutdown_event: handle of Event for DP Rx thread to signal shutdown
- * @vdev_del_event: handle of Event for vdev del thread to signal completion
- *		    for gro flush
+ * @vdev_del_event: Per vdev handle of Event for vdev del thread to signal
+ *		    completion for gro flush
  * @gro_flush_ind: gro flush indication for DP Rx thread
  * @event_flag: event flag to post events to DP Rx thread
+ * @vdev_del_event_flag: vdev bit map for per vdev delete event flags
  * @nbuf_queue:nbuf queue used to store RX packets
  * @nbufq_len: length of the nbuf queue
  * @aff_mask: cuurent affinity mask of the DP Rx thread
@@ -117,6 +123,7 @@ enum dp_rx_refill_thread_state {
  * @napi: napi to deliver packet to stack via GRO
  * @wait_q: wait queue to conditionally wait on events for DP Rx thread
  * @netdev: dummy netdev to initialize the napi structure with
+ * @net_dev: Array to store the netdev references
  */
 struct dp_rx_thread {
 	uint8_t id;
@@ -125,9 +132,10 @@ struct dp_rx_thread {
 	qdf_event_t suspend_event;
 	qdf_event_t resume_event;
 	qdf_event_t shutdown_event;
-	qdf_event_t vdev_del_event;
+	qdf_event_t vdev_del_event[WLAN_PDEV_MAX_VDEVS];
 	qdf_atomic_t gro_flush_ind;
 	unsigned long event_flag;
+	unsigned long vdev_del_event_flag;
 	qdf_nbuf_queue_head_t nbuf_queue;
 	unsigned long aff_mask;
 	struct dp_rx_thread_stats stats;
@@ -135,6 +143,7 @@ struct dp_rx_thread {
 	qdf_napi_struct napi;
 	qdf_wait_queue_head_t wait_q;
 	qdf_dummy_netdev_t netdev;
+	qdf_netdev_t net_dev[WLAN_PDEV_MAX_VDEVS];
 };
 
 /**

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -374,22 +374,10 @@ policy_mgr_get_dfs_sta_sap_go_scc_movement(struct wlan_objmgr_psoc *psoc,
 uint32_t policy_mgr_get_connected_vdev_band_mask(struct wlan_objmgr_vdev *vdev);
 
 /**
- * policy_mgr_get_dfs_master_dynamic_enabled() - query current
- * dfs master support when STA+SAP(GO) concurrency
+ * policy_mgr_get_dfs_master_dynamic_enabled() - support dfs master or not
+ * on AP interface when STA+SAP(GO) concurrency
  * @psoc: pointer to psoc
  * @vdev_id: sap vdev id
- *
- * Return: true if dfs master functionality should be enabled.
- */
-bool
-policy_mgr_get_dfs_master_dynamic_enabled(struct wlan_objmgr_psoc *psoc,
-					  uint8_t vdev_id);
-
-/**
- * policy_mgr_update_dfs_master_dynamic_enabled() - update dfs master support
- * or not on AP interface when STA+SAP(GO) concurrency
- * @psoc: pointer to psoc
- * @always_update_target: force update the setting to target
  *
  * This API is used to check AP dfs master functionality enabled or not when
  * STA+SAP(GO) concurrency.
@@ -408,8 +396,8 @@ policy_mgr_get_dfs_master_dynamic_enabled(struct wlan_objmgr_psoc *psoc,
  * Return: true if dfs master functionality should be enabled.
  */
 bool
-policy_mgr_update_dfs_master_dynamic_enabled(struct wlan_objmgr_psoc *psoc,
-					     bool always_update_target);
+policy_mgr_get_dfs_master_dynamic_enabled(struct wlan_objmgr_psoc *psoc,
+					  uint8_t vdev_id);
 
 /**
  * policy_mgr_get_can_skip_radar_event - Can skip DFS Radar event or not
@@ -3814,6 +3802,7 @@ bool policy_mgr_is_safe_channel(struct wlan_objmgr_psoc *psoc,
 /**
  * policy_mgr_is_sap_freq_allowed - Check if the channel is allowed for sap
  * @psoc: PSOC object information
+ * @opmode: Current op_mode, helps to check whether it's P2P_GO/SAP
  * @sap_freq: channel frequency to be checked
  *
  * Check the factors as below to decide whether the channel is allowed or not:
@@ -3824,6 +3813,7 @@ bool policy_mgr_is_safe_channel(struct wlan_objmgr_psoc *psoc,
  * Return: true for allowed, else false
  */
 bool policy_mgr_is_sap_freq_allowed(struct wlan_objmgr_psoc *psoc,
+				    enum QDF_OPMODE opmode,
 				    uint32_t sap_freq);
 
 /**
@@ -5038,4 +5028,36 @@ bool policy_mgr_is_sap_allowed_on_indoor(struct wlan_objmgr_pdev *pdev,
 
 bool policy_mgr_get_nan_sap_scc_on_lte_coex_chnl(struct wlan_objmgr_psoc *psoc);
 
+/**
+ * policy_mgr_sap_on_non_psc_channel() - Check if STA operates in PSC or Non-PSC
+ *					 channel to restart SAP on Non-PSC
+ *					 channel
+ * @psoc: PSOC object information
+ * @intf_ch_freq: input/out interference channel frequency to sap
+ * @sap_vdev_id: SAP vdev id
+ *
+ * This function is to check if STA operates in PSC or Non-PSC channel
+ * to restart SAP on Non-PSC channel.
+ *
+ * Return: None
+ */
+void
+policy_mgr_sap_on_non_psc_channel(struct wlan_objmgr_psoc *psoc,
+				  qdf_freq_t *intf_ch_freq,
+				  uint8_t sap_vdev_id);
+
+/**
+ * policy_mgr_modify_pcl_for_vlp_channels() - Update weightage for VLP channels.
+ *
+ * @psoc: Pointer to the psoc
+ * @pdev: Pointer to the pdev
+ * @pcl: PCL channel list
+ * @num_pcl: Length of the PCL channel list
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS policy_mgr_modify_pcl_for_vlp_channels(struct wlan_objmgr_psoc *psoc,
+						  struct wlan_objmgr_pdev *pdev,
+						  struct weighed_pcl *pcl,
+						  uint32_t num_pcl);
 #endif /* __WLAN_POLICY_MGR_API_H */

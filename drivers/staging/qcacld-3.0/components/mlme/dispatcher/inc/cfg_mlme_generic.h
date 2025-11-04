@@ -267,29 +267,6 @@ enum t2lm_negotiation_support {
 
 #ifdef CONFIG_BAND_6GHZ
 /*
- * disable_vlp_sta_conn_to_sp_ap - Disable VLP STA connection to SP AP
- * @Min: 0
- * @Max: 1
- * @Default: 0
- *
- * This cfg is used to disable connection when AP is operating in 6 GHz
- * SP mode but STA doesn't support SP mode and supports VLP mode.
- *
- * Related: None
- *
- * Supported Feature: STA
- */
-#define CFG_DISABLE_VLP_STA_CONN_TO_SP_AP CFG_BOOL( \
-		"disable_vlp_sta_conn_to_sp_ap", \
-		0, \
-		"disable vlp sta conn to sp ap")
-#define CFG_DIS_VLP_STA_CONN_TO_SP_AP	CFG(CFG_DISABLE_VLP_STA_CONN_TO_SP_AP)
-#else
-#define CFG_DIS_VLP_STA_CONN_TO_SP_AP
-#endif
-
-#ifdef CONFIG_BAND_6GHZ
-/*
  * standard_6ghz_connection_policy - Enable 6 GHz standard connection policy
  * @Min: 0
  * @Max: 1
@@ -1219,6 +1196,5 @@ enum t2lm_negotiation_support {
 	CFG_6GHZ_STD_CONN_POLICY \
 	CFG_EMLSR_MODE_ENABLED \
 	CFG_SR_ENABLE_MODES_ALL \
-	CFG_T2LM_NEGOTIATION_SUPPORTED\
-	CFG_DIS_VLP_STA_CONN_TO_SP_AP
+	CFG_T2LM_NEGOTIATION_SUPPORTED
 #endif /* __CFG_MLME_GENERIC_H */

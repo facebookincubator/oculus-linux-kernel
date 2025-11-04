@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -15913,9 +15913,12 @@ static QDF_STATUS extract_reg_chan_list_ext_update_event_tlv(
 	ext_chan_list_event_hdr = param_buf->fixed_param;
 	ext_wmi_chan_priority = param_buf->reg_chan_priority;
 
-	if (ext_wmi_chan_priority)
+	if (ext_wmi_chan_priority) {
 		reg_info->reg_6g_thresh_priority_freq =
 			WMI_GET_BITS(ext_wmi_chan_priority->freq_info, 0, 16);
+		wmi_debug("VLP cut-off frequency %u",
+			  reg_info->reg_6g_thresh_priority_freq);
+	}
 	reg_info->num_2g_reg_rules = ext_chan_list_event_hdr->num_2g_reg_rules;
 	reg_info->num_5g_reg_rules = ext_chan_list_event_hdr->num_5g_reg_rules;
 	reg_info->num_6g_reg_rules_ap[REG_STANDARD_POWER_AP] =
@@ -21872,6 +21875,7 @@ void wmi_tlv_attach(wmi_unified_t wmi_handle)
 	wmi_gpio_attach_tlv(wmi_handle);
 	wmi_11be_attach_tlv(wmi_handle);
 	wmi_coap_attach_tlv(wmi_handle);
+	wmi_mlme_attach_tlv(wmi_handle);
 }
 qdf_export_symbol(wmi_tlv_attach);
 

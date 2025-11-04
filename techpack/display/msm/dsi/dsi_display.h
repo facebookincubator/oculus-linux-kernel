@@ -694,6 +694,13 @@ int dsi_display_set_backlight(struct drm_connector *connector,
 		void *display, u32 bl_lvl);
 
 /**
+ * dsi_display_get_backlight() - get backlight
+ * @connector:          Pointer to drm connector structure
+ * @display:            Handle to display.
+ */
+int dsi_display_get_backlight(struct drm_connector *connector, void *display);
+
+/**
  * dsi_display_check_status() - check if panel is dead or alive
  * @connector:          Pointer to drm connector structure
  * @display:            Handle to display.

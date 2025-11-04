@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015,2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -211,6 +211,10 @@ enum wlan_cm_source {
  * @vht_caps_mask: mask of valid vht caps
  * @fils_info: Fills related connect info
  * @is_non_assoc_link: non assoc link
+ * @link_id: IEEE link ID of the candidate
+ *              -mandatory and only used for link VDEV connect
+ * @mld_addr: MLD address of candidate
+ *              -mandatory and only used for link VDEV connect
  * @ml_parnter_info: ml partner link info
  */
 struct wlan_cm_connect_req {
@@ -240,6 +244,8 @@ struct wlan_cm_connect_req {
 #endif
 	bool is_non_assoc_link;
 #ifdef WLAN_FEATURE_11BE_MLO
+	uint8_t link_id;
+	struct qdf_mac_addr mld_addr;
 	struct mlo_partner_info ml_parnter_info;
 #endif
 };
@@ -459,6 +465,7 @@ struct wlan_connect_rsp_ies {
  * struct wlan_roam_sync_info - roam sync information populated
  * from roam sync indication struct
  * @auth_status: roam auth status (authenticated or connected)
+ * @num_setup_links: Number of links from FW roam sync event
  * @kck_len: kck length
  * @kck: kck info in roam sync
  * @kek_len: kek length
@@ -477,6 +484,9 @@ struct wlan_connect_rsp_ies {
  */
 struct wlan_roam_sync_info {
 	uint8_t auth_status;
+#ifdef WLAN_FEATURE_11BE
+	uint8_t num_setup_links;
+#endif
 	uint8_t kck_len;
 	uint8_t kck[MAX_KCK_LEN];
 	uint8_t kek_len;

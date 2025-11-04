@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -308,7 +308,9 @@ wlansap_filter_unsafe_ch(struct wlan_objmgr_psoc *psoc,
 	 */
 	for (i = 0; i < sap_ctx->acs_cfg->ch_list_count; i++) {
 		freq = sap_ctx->acs_cfg->freq_list[i];
-		if (!policy_mgr_is_sap_freq_allowed(psoc, freq)) {
+		if (!policy_mgr_is_sap_freq_allowed(psoc,
+				wlan_vdev_mlme_get_opmode(sap_ctx->vdev),
+				freq)) {
 			sap_debug("remove freq %d from acs list", freq);
 			continue;
 		}
@@ -457,6 +459,8 @@ wlansap_roam_process_ch_change_success(struct mac_context *mac_ctx,
 	QDF_STATUS qdf_status;
 	bool is_ch_dfs = false;
 	uint32_t target_chan_freq;
+	eSapDfsCACState_t cac_state = eSAP_DFS_DO_NOT_SKIP_CAC;
+
 	/*
 	 * Channel change is successful. If the new channel is a DFS channel,
 	 * then we will to perform channel availability check for 60 seconds
@@ -520,9 +524,11 @@ wlansap_roam_process_ch_change_success(struct mac_context *mac_ctx,
 		sap_event.u1 = eCSR_ROAM_INFRA_IND;
 		sap_event.u2 = eCSR_ROAM_RESULT_INFRA_STARTED;
 	} else if (is_ch_dfs) {
-		if ((false == mac_ctx->sap.SapDfsInfo.ignore_cac)
-		    && (eSAP_DFS_DO_NOT_SKIP_CAC ==
-			mac_ctx->sap.SapDfsInfo.cac_state) &&
+		if (sap_plus_sap_cac_skip(mac_ctx, sap_ctx,
+					  sap_ctx->chan_freq))
+			cac_state = eSAP_DFS_SKIP_CAC;
+		if ((false == mac_ctx->sap.SapDfsInfo.ignore_cac) &&
+		    (cac_state == eSAP_DFS_DO_NOT_SKIP_CAC) &&
 		    policy_mgr_get_dfs_master_dynamic_enabled(
 					mac_ctx->psoc,
 					sap_ctx->sessionId)) {
@@ -868,8 +874,6 @@ static void wlansap_update_vendor_acs_chan(struct mac_context *mac_ctx,
 				sap_ctx->dfs_vendor_chan_bw;
 
 	if (mac_ctx->sap.SapDfsInfo.target_chan_freq != 0) {
-		mac_ctx->sap.SapDfsInfo.cac_state =
-			eSAP_DFS_DO_NOT_SKIP_CAC;
 		sap_cac_reset_notify(MAC_HANDLE(mac_ctx));
 		return;
 	}
@@ -1177,8 +1181,6 @@ QDF_STATUS wlansap_roam_callback(void *ctx,
 			goto EXIT;
 		}
 		if (mac_ctx->sap.SapDfsInfo.target_chan_freq != 0) {
-			mac_ctx->sap.SapDfsInfo.cac_state =
-				eSAP_DFS_DO_NOT_SKIP_CAC;
 			sap_cac_reset_notify(mac_handle);
 			break;
 		}
@@ -1704,8 +1706,12 @@ void wlansap_process_chan_info_event(struct sap_context *sap_ctx,
 		goto exit;
 
 	if (!policy_mgr_is_sap_freq_allowed(mac->psoc,
+				wlan_vdev_mlme_get_opmode(sap_ctx->vdev),
+				roam_info->chan_info_freq) ||
+	    wlan_reg_is_vlp_depriority_freq(mac->pdev,
 					    roam_info->chan_info_freq))
 		goto exit;
+
 	if (sap_ctx->acs_cfg->ch_width > CH_WIDTH_20MHZ) {
 		sap_mark_freq_as_clean(sap_ctx->clean_channel_array,
 				       roam_info->chan_info_freq);

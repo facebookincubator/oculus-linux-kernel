@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022,2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1423,6 +1423,22 @@ qdf_freq_t reg_country_chan_opclass_to_freq(struct wlan_objmgr_pdev *pdev,
 	reg_debug_rl("Got invalid freq 0 for ch %d", chan);
 
 	return 0;
+}
+
+qdf_freq_t
+reg_chan_opclass_to_freq_prefer_global(struct wlan_objmgr_pdev *pdev,
+				       const uint8_t *country, uint8_t chan_num,
+				       uint8_t opclass)
+{
+	qdf_freq_t freq;
+
+	freq = reg_chan_opclass_to_freq(chan_num, opclass, true);
+	if (!freq && country) {
+		freq = reg_country_chan_opclass_to_freq(pdev, country, chan_num,
+							opclass, true);
+	}
+
+	return freq;
 }
 #endif
 

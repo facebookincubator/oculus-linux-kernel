@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1939,7 +1939,8 @@ static void hdd_regulatory_dyn_cbk(struct wlan_objmgr_psoc *psoc,
 	wiphy = pdev_priv->wiphy;
 	hdd_ctx = wiphy_priv(wiphy);
 
-	nb_flag = ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer(hdd_ctx->psoc);
+	nb_flag = ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
+								hdd_ctx->psoc);
 	reg_flag = ucfg_mlme_get_coex_unsafe_chan_reg_disable(hdd_ctx->psoc);
 
 	if (avoid_freq_ind && nb_flag && reg_flag)
@@ -2113,3 +2114,39 @@ void hdd_update_regdb_offload_config(struct hdd_context *hdd_ctx)
 	hdd_debug("Ignore regdb offload Indication from FW");
 	ucfg_set_ignore_fw_reg_offload_ind(hdd_ctx->psoc);
 }
+
+void hdd_remove_vlp_depriority_channels(struct wlan_objmgr_pdev *pdev,
+					uint16_t *ch_freq_list,
+					uint32_t *num_channels)
+{
+	uint32_t num_chan_temp = 0;
+	uint16_t i;
+	uint8_t country[REG_ALPHA2_LEN + 1];
+	struct wlan_objmgr_psoc *psoc;
+
+	psoc = wlan_pdev_get_psoc(pdev);
+	if (!psoc)
+		return;
+
+	if (!(*num_channels > 1))
+		return;
+
+	ucfg_reg_get_current_country(psoc, country);
+	if (!ucfg_reg_get_num_rules_of_ap_pwr_type(pdev,
+						   REG_VERY_LOW_POWER_AP)) {
+		hdd_debug("Current country %.2s don't support VLP", country);
+		return;
+	}
+
+	for (i = 0; i < *num_channels; i++) {
+		if (ucfg_reg_is_vlp_depriority_freq(pdev,
+						    ch_freq_list[i])) {
+			hdd_nofl_debug("skip freq %u", ch_freq_list[i]);
+			continue;
+		}
+		ch_freq_list[num_chan_temp++] = ch_freq_list[i];
+	}
+
+	*num_channels = num_chan_temp;
+}
+

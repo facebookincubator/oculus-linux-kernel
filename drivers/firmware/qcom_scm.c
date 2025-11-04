@@ -59,6 +59,9 @@ struct qcom_scm {
 	struct qcom_scm_waitq waitq;
 
 	u64 dload_mode_addr;
+	// Added by Meta to support dload mode on some reboot paths
+	// where we need to elide the call to qcom_scm_disable_sdi();
+	bool dload_mode_reboot;
 };
 
 #define QCOM_SCM_FLAG_COLDBOOT_CPU0	0x00
@@ -806,26 +809,6 @@ int qcom_scm_get_sec_dump_state(u32 *dump_state)
 }
 EXPORT_SYMBOL(qcom_scm_get_sec_dump_state);
 
-int qcom_scm_get_secure_status(u64 *secure_status)
-{
-	int ret;
-	struct qcom_scm_desc desc = {
-		.svc = QCOM_SCM_SVC_INFO,
-		.cmd = QCOM_SCM_UTIL_GET_SECURE_STATUS,
-		.owner = ARM_SMCCC_OWNER_SIP
-	};
-	struct qcom_scm_res res;
-
-	if (!secure_status)
-		return -EINVAL;
-
-	ret = qcom_scm_call(__scm ? __scm->dev : NULL, &desc, &res);
-	*secure_status = res.result[0];
-
-	return ret;
-}
-EXPORT_SYMBOL_GPL(qcom_scm_get_secure_status);
-
 int __qcom_scm_get_llcc_missrate(struct device *dev, phys_addr_t in_buf,
 	size_t in_buf_size, phys_addr_t out_buf, size_t out_buf_size)
 {
@@ -853,6 +836,32 @@ int qcom_scm_get_llcc_missrate(phys_addr_t in_buf,
 			in_buf_size, out_buf, out_buf_size);
 }
 EXPORT_SYMBOL_GPL(qcom_scm_get_llcc_missrate);
+
+int __qcom_scm_memory_lat_profiler(struct device *dev, phys_addr_t in_buf,
+	size_t in_buf_size, phys_addr_t out_buf, size_t out_buf_size)
+{
+	int ret;
+	struct qcom_scm_desc desc = {
+		.svc = QCOM_SCM_SVC_MEM_LAT,
+		.cmd = QCOM_SCM_GET_MEM_LAT_STATS_ID,
+		.owner = ARM_SMCCC_OWNER_SIP,
+		.arginfo = QCOM_SCM_ARGS(4, QCOM_SCM_RW, QCOM_SCM_VAL, QCOM_SCM_RW, QCOM_SCM_VAL),
+	};
+	desc.args[0] = in_buf;
+	desc.args[1] = in_buf_size;
+	desc.args[2] = out_buf;
+	desc.args[3] = out_buf_size;
+	ret = qcom_scm_call(dev, &desc, NULL);
+	return ret;
+}
+
+int qcom_scm_memory_lat_profiler(phys_addr_t in_buf,
+	size_t in_buf_size, phys_addr_t out_buf, size_t out_buf_size)
+{
+	return __qcom_scm_memory_lat_profiler(__scm ? __scm->dev : NULL, in_buf,
+			in_buf_size, out_buf, out_buf_size);
+}
+EXPORT_SYMBOL_GPL(qcom_scm_memory_lat_profiler);
 
 int qcom_scm_assign_dump_table_region(bool is_assign, phys_addr_t addr, size_t size)
 {
@@ -2637,6 +2646,13 @@ void *qcom_get_scm_device(void)
 }
 EXPORT_SYMBOL(qcom_get_scm_device);
 
+void qcom_scm_force_dload_mode_reboot(void)
+{
+	if (__scm)
+		__scm->dload_mode_reboot = true;
+}
+EXPORT_SYMBOL(qcom_scm_force_dload_mode_reboot);
+
 static int qcom_scm_do_restart(struct notifier_block *this, unsigned long event,
 			      void *ptr)
 {
@@ -2914,7 +2930,8 @@ static int qcom_scm_probe(struct platform_device *pdev)
 static void qcom_scm_shutdown(struct platform_device *pdev)
 {
 	idr_destroy(&__scm->waitq.idr);
-	qcom_scm_disable_sdi();
+	if (!__scm->dload_mode_reboot)
+		qcom_scm_disable_sdi();
 	qcom_scm_halt_spmi_pmic_arbiter();
 	/* Clean shutdown, disable download mode to allow normal restart */
 	if (download_mode)

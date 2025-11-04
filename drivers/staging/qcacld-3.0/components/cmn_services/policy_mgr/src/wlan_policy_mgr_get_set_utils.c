@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -304,17 +304,15 @@ policy_mgr_get_dfs_sta_sap_go_scc_movement(struct wlan_objmgr_psoc *psoc,
 	return QDF_STATUS_SUCCESS;
 }
 
-bool
-policy_mgr_update_dfs_master_dynamic_enabled(struct wlan_objmgr_psoc *psoc,
-					     bool always_update_target)
+static bool
+policy_mgr_update_dfs_master_dynamic_enabled(
+	struct wlan_objmgr_psoc *psoc, uint8_t vdev_id)
 {
 	struct policy_mgr_psoc_priv_obj *pm_ctx;
 	bool sta_on_5g = false;
 	bool sta_on_2g = false;
-	bool ap_on_5g = false;
 	uint32_t i;
 	bool enable = true;
-	bool curr_enabled;
 
 	pm_ctx = policy_mgr_get_context(psoc);
 	if (!pm_ctx) {
@@ -341,18 +339,10 @@ policy_mgr_update_dfs_master_dynamic_enabled(struct wlan_objmgr_psoc *psoc,
 
 	qdf_mutex_acquire(&pm_ctx->qdf_conc_list_lock);
 	for (i = 0; i < MAX_NUMBER_OF_CONC_CONNECTIONS; i++) {
-		if (!pm_conc_connection_list[i].in_use)
-			continue;
-		if ((pm_conc_connection_list[i].mode == PM_SAP_MODE ||
-		     pm_conc_connection_list[i].mode == PM_P2P_GO_MODE) &&
-		     WLAN_REG_IS_5GHZ_CH_FREQ(
-		     pm_conc_connection_list[i].freq)) {
-			ap_on_5g = true;
-			continue;
-		}
-
-		if (!(pm_conc_connection_list[i].mode == PM_STA_MODE ||
-		      pm_conc_connection_list[i].mode == PM_P2P_CLIENT_MODE))
+		if (!((pm_conc_connection_list[i].vdev_id != vdev_id) &&
+		      pm_conc_connection_list[i].in_use &&
+		      (pm_conc_connection_list[i].mode == PM_STA_MODE ||
+		       pm_conc_connection_list[i].mode == PM_P2P_CLIENT_MODE)))
 			continue;
 		if (WLAN_REG_IS_5GHZ_CH_FREQ(pm_conc_connection_list[i].freq))
 			sta_on_5g = true;
@@ -368,18 +358,11 @@ policy_mgr_update_dfs_master_dynamic_enabled(struct wlan_objmgr_psoc *psoc,
 	else
 		enable = false;
 end:
-	curr_enabled = !pm_ctx->dynamic_dfs_master_disabled;
 	pm_ctx->dynamic_dfs_master_disabled = !enable;
 	if (!enable)
-		policy_mgr_debug("sta_sap_scc_on_dfs_chnl %d sta_on_2g %d sta_on_5g %d enable %d curr %d",
-				 pm_ctx->cfg.sta_sap_scc_on_dfs_chnl,
-				 sta_on_2g, sta_on_5g, enable, curr_enabled);
-
-	if ((curr_enabled != enable) && ap_on_5g)
-		always_update_target = true;
-
-	if (always_update_target)
-		tgt_dfs_radar_enable(pm_ctx->pdev, 0, 0, enable);
+		policy_mgr_debug("sta_sap_scc_on_dfs_chnl %d sta_on_2g %d sta_on_5g %d enable %d",
+				 pm_ctx->cfg.sta_sap_scc_on_dfs_chnl, sta_on_2g,
+				 sta_on_5g, enable);
 
 	return enable;
 }
@@ -396,12 +379,7 @@ policy_mgr_get_dfs_master_dynamic_enabled(
 		return true;
 	}
 
-	if (pm_ctx->dynamic_dfs_master_disabled)
-		policy_mgr_debug("sta_sap_scc_on_dfs_chnl %d enable %d",
-				 pm_ctx->cfg.sta_sap_scc_on_dfs_chnl,
-				 !pm_ctx->dynamic_dfs_master_disabled);
-
-	return !pm_ctx->dynamic_dfs_master_disabled;
+	return policy_mgr_update_dfs_master_dynamic_enabled(psoc, vdev_id);
 }
 
 bool
@@ -4371,7 +4349,7 @@ void policy_mgr_incr_active_session(struct wlan_objmgr_psoc *psoc,
 						conn_6ghz_flag);
 	if (mode == QDF_SAP_MODE || mode == QDF_P2P_GO_MODE ||
 	    mode == QDF_STA_MODE || mode == QDF_P2P_CLIENT_MODE)
-		policy_mgr_update_dfs_master_dynamic_enabled(psoc, false);
+		policy_mgr_update_dfs_master_dynamic_enabled(psoc, session_id);
 
 	policy_mgr_dump_current_concurrency(psoc);
 
@@ -4551,7 +4529,7 @@ QDF_STATUS policy_mgr_decr_active_session(struct wlan_objmgr_psoc *psoc,
 
 	if (mode == QDF_SAP_MODE || mode == QDF_P2P_GO_MODE ||
 	    mode == QDF_STA_MODE || mode == QDF_P2P_CLIENT_MODE)
-		policy_mgr_update_dfs_master_dynamic_enabled(psoc, false);
+		policy_mgr_update_dfs_master_dynamic_enabled(psoc, session_id);
 
 	if (!pm_ctx->last_disconn_sta_freq) {
 		if (policy_mgr_update_indoor_concurrency(psoc, session_id,
@@ -9799,6 +9777,49 @@ bool policy_mgr_is_sap_go_on_2g(struct wlan_objmgr_psoc *psoc)
 	return ret;
 }
 
+static inline bool
+policy_mgr_is_chan_eligible_for_sap(struct policy_mgr_psoc_priv_obj *pm_ctx,
+				    uint8_t vdev_id, qdf_freq_t freq)
+{
+	struct wlan_objmgr_vdev *vdev;
+	enum channel_state ch_state;
+	enum reg_6g_ap_type sta_connected_pwr_type;
+	uint32_t ap_power_type_6g = 0;
+	bool is_eligible = false;
+
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(pm_ctx->psoc, vdev_id,
+						    WLAN_POLICY_MGR_ID);
+	if (!vdev)
+		return false;
+
+	ch_state = wlan_reg_get_channel_state_for_pwrmode(pm_ctx->pdev,
+							  freq,
+							  REG_CURRENT_PWR_MODE);
+	sta_connected_pwr_type = mlme_get_best_6g_power_type(vdev);
+	wlan_reg_get_cur_6g_ap_pwr_type(pm_ctx->pdev, &ap_power_type_6g);
+
+	/*
+	 * If the SAP user configured frequency is 6 GHz,
+	 * move the SAP to STA SCC in 6 GHz only if:
+	 * a) The channel is PSC
+	 * b) The channel supports AP in VLP power type
+	 * c) The DUT is configured to operate SAP in VLP only
+	 * d) The STA is connected to the 6 GHz AP in
+	 *    either VLP or LPI.
+	 *    - If the STA is in LPI, then lim_update_tx_power()
+	 *	would move the STA to VLP.
+	 */
+	if (WLAN_REG_IS_6GHZ_PSC_CHAN_FREQ(freq) &&
+	    ap_power_type_6g == REG_VERY_LOW_POWER_AP &&
+	    ch_state == CHANNEL_STATE_ENABLE &&
+	    (sta_connected_pwr_type == REG_VERY_LOW_POWER_AP ||
+	     sta_connected_pwr_type == REG_INDOOR_AP))
+		is_eligible = true;
+
+	wlan_objmgr_vdev_release_ref(vdev, WLAN_POLICY_MGR_ID);
+	return is_eligible;
+}
+
 bool policy_mgr_is_restart_sap_required(struct wlan_objmgr_psoc *psoc,
 					uint8_t vdev_id,
 					qdf_freq_t freq,
@@ -9812,6 +9833,7 @@ bool policy_mgr_is_restart_sap_required(struct wlan_objmgr_psoc *psoc,
 	struct policy_mgr_conc_connection_info *connection;
 	bool sta_sap_scc_on_dfs_chan, sta_sap_scc_allowed_on_indoor_ch;
 	qdf_freq_t user_config_freq;
+	uint8_t num_5_or_6_conn = 0;
 
 	pm_ctx = policy_mgr_get_context(psoc);
 	if (!pm_ctx) {
@@ -9833,6 +9855,9 @@ bool policy_mgr_is_restart_sap_required(struct wlan_objmgr_psoc *psoc,
 					      IEEE80211_CHAN_DFS_CFREQ2)))
 				sap_on_dfs = true;
 			break;
+		} else {
+			if (!WLAN_REG_IS_24GHZ_CH_FREQ(connection[i].freq))
+				num_5_or_6_conn++;
 		}
 	}
 	if (i == MAX_NUMBER_OF_CONC_CONNECTIONS) {
@@ -9925,6 +9950,23 @@ bool policy_mgr_is_restart_sap_required(struct wlan_objmgr_psoc *psoc,
 			policy_mgr_debug("SAP in indoor freq: sta:%d sap:%d",
 					 connection[i].freq, freq);
 			restart_required = true;
+		}
+
+		if (scc_mode == QDF_MCC_TO_SCC_SWITCH_WITH_FAVORITE_CHANNEL &&
+		    WLAN_REG_IS_24GHZ_CH_FREQ(freq) && user_config_freq) {
+			if (connection[i].freq == freq && !num_5_or_6_conn &&
+			    !WLAN_REG_IS_24GHZ_CH_FREQ(user_config_freq)) {
+				policy_mgr_debug("SAP move to user configure %d from %d",
+						 user_config_freq, freq);
+				restart_required = true;
+			} else if (connection[i].freq != freq &&
+				   WLAN_REG_IS_6GHZ_CHAN_FREQ(user_config_freq) &&
+				   policy_mgr_is_chan_eligible_for_sap(pm_ctx,
+								       connection[i].vdev_id,
+								       connection[i].freq)) {
+				policy_mgr_debug("Move SAP to STA 6 GHz channel");
+				restart_required = true;
+			}
 		}
 	}
 

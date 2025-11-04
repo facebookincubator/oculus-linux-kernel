@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,6 +29,7 @@
 #include "wlan_mlme_vdev_mgr_interface.h"
 #include <include/wlan_pdev_mlme.h>
 #include "wlan_pdev_mlme_api.h"
+#include <wlan_psoc_mlme_api.h>
 #include "wlan_vdev_mgr_tgt_if_tx_api.h"
 #include "wlan_policy_mgr_public_struct.h"
 #include "spatial_reuse_api.h"
@@ -107,6 +108,7 @@ QDF_STATUS ucfg_mlme_psoc_open(struct wlan_objmgr_psoc *psoc)
 void ucfg_mlme_psoc_close(struct wlan_objmgr_psoc *psoc)
 {
 	/* Clear the MLME CFG Structure */
+	wlan_mlme_psoc_flush_peer_trans_history(psoc);
 }
 
 QDF_STATUS ucfg_mlme_pdev_open(struct wlan_objmgr_pdev *pdev)
@@ -408,7 +410,6 @@ ucfg_mlme_send_ch_width_update_with_notify(struct wlan_objmgr_psoc *psoc,
 
 	status = wlan_mlme_send_ch_width_update_with_notify(psoc, vdev,
 							    vdev_id, ch_width);
-
 release:
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_OBJMGR_ID);
 
@@ -1885,7 +1886,13 @@ bool ucfg_mlme_validate_scan_period(struct wlan_objmgr_psoc *psoc,
 bool ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer(
 		struct wlan_objmgr_psoc *psoc)
 {
-	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(psoc);
+	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(psoc);
+}
+
+bool ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
+		struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(psoc);
 }
 
 bool ucfg_mlme_get_coex_unsafe_chan_reg_disable(

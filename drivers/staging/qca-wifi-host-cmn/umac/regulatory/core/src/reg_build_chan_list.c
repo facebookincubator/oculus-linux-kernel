@@ -1073,6 +1073,27 @@ static void reg_find_high_limit_chan_enum(
 
 #ifdef CONFIG_AFC_SUPPORT
 /**
+ * reg_is_indoor_sp_only() - Check if its Indoor with SP rules only
+ * @pdev_priv_obj: Regulatory pdev private object.
+ *
+ * Return: boolean. true if its Indoor with SP rules only else false
+ */
+static bool
+reg_is_indoor_sp_only(struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
+{
+	uint8_t  *num_rules;
+
+	num_rules = pdev_priv_obj->reg_rules.num_of_6g_ap_reg_rules;
+
+	if ((pdev_priv_obj->reg_afc_dev_deployment_type == AFC_DEPLOYMENT_INDOOR)
+	    && (!num_rules[REG_INDOOR_AP] && !num_rules[REG_VERY_LOW_POWER_AP])
+		&& num_rules[REG_STANDARD_POWER_AP])
+		return true;
+
+	return false;
+}
+
+/**
  * reg_modify_chan_list_for_outdoor() - Set the channel flag for the
  * enabled SP channels as REGULATORY_CHAN_AFC_NOT_DONE.
  * @pdev_priv_obj: Regulatory pdev private object.
@@ -1086,7 +1107,8 @@ reg_modify_chan_list_for_outdoor(struct wlan_regulatory_pdev_priv_obj *pdev_priv
 	int i;
 
 	sp_chan_list =  pdev_priv_obj->mas_chan_list_6g_ap[REG_STANDARD_POWER_AP];
-	if (pdev_priv_obj->reg_afc_dev_deployment_type != AFC_DEPLOYMENT_OUTDOOR)
+	if (pdev_priv_obj->reg_afc_dev_deployment_type != AFC_DEPLOYMENT_OUTDOOR
+		&& !reg_is_indoor_sp_only(pdev_priv_obj))
 		return;
 
 	if (pdev_priv_obj->is_6g_afc_power_event_received)
@@ -1204,7 +1226,6 @@ static void reg_propagate_6g_mas_channel_list(
 		mas_chan_params->reg_6g_superid;
 	pdev_priv_obj->reg_6g_thresh_priority_freq =
 				mas_chan_params->reg_6g_thresh_priority_freq;
-	reg_set_ap_pwr_type(pdev_priv_obj);
 }
 
 #ifdef CONFIG_AFC_SUPPORT
@@ -1227,6 +1248,9 @@ void reg_set_ap_pwr_type(struct wlan_regulatory_pdev_priv_obj *pdev_priv_obj)
 		else if (num_rules[REG_VERY_LOW_POWER_AP])
 			pdev_priv_obj->reg_cur_6g_ap_pwr_type =
 				REG_VERY_LOW_POWER_AP;
+		else if (num_rules[REG_STANDARD_POWER_AP])
+			pdev_priv_obj->reg_cur_6g_ap_pwr_type =
+				REG_STANDARD_POWER_AP;
 		else
 			pdev_priv_obj->reg_cur_6g_ap_pwr_type =
 				REG_INDOOR_AP;
@@ -1623,6 +1647,10 @@ reg_append_mas_chan_list_for_6g_sp(struct wlan_regulatory_pdev_priv_obj
 			       *pdev_priv_obj)
 {
 	struct regulatory_channel *master_chan_list_6g_client_sp;
+	struct wlan_objmgr_pdev *pdev = pdev_priv_obj->pdev_ptr;
+
+	if (!wlan_reg_is_afc_power_event_received(pdev))
+		return;
 
 	master_chan_list_6g_client_sp = pdev_priv_obj->afc_chan_list;
 
@@ -1748,8 +1776,9 @@ static void
 reg_append_mas_chan_list_for_6g(struct wlan_regulatory_pdev_priv_obj
 				*pdev_priv_obj)
 {
-	if (pdev_priv_obj->reg_cur_6g_ap_pwr_type >= REG_CURRENT_MAX_AP_TYPE ||
-	    pdev_priv_obj->reg_cur_6g_client_mobility_type >=
+	struct wlan_objmgr_pdev *pdev = pdev_priv_obj->pdev_ptr;
+
+	if (pdev_priv_obj->reg_cur_6g_client_mobility_type >=
 	    REG_MAX_CLIENT_TYPE) {
 		reg_debug("invalid 6G AP or client power type");
 		return;
@@ -1761,6 +1790,9 @@ reg_append_mas_chan_list_for_6g(struct wlan_regulatory_pdev_priv_obj
 	 * gindoor_channel_support ini value
 	 */
 
+	if (wlan_reg_is_afc_power_event_received(pdev))
+		reg_append_mas_chan_list_for_6g_sp(pdev_priv_obj);
+
 	if (pdev_priv_obj->indoor_chan_enabled) {
 		reg_append_mas_chan_list_for_6g_lpi(pdev_priv_obj);
 		reg_append_mas_chan_list_for_6g_vlp(pdev_priv_obj);
@@ -1769,7 +1801,8 @@ reg_append_mas_chan_list_for_6g(struct wlan_regulatory_pdev_priv_obj
 		reg_append_mas_chan_list_for_6g_lpi(pdev_priv_obj);
 	}
 
-	reg_append_mas_chan_list_for_6g_sp(pdev_priv_obj);
+	if (!wlan_reg_is_afc_power_event_received(pdev))
+		reg_append_mas_chan_list_for_6g_sp(pdev_priv_obj);
 }
 
 /**
@@ -2049,8 +2082,9 @@ reg_intersect_6g_afc_chan_list(struct wlan_regulatory_pdev_priv_obj
 					(int16_t)afc_mas_chan_list[i].psd_eirp);
 			 afc_chan_list[i].chan_flags &=
 				 ~REGULATORY_CHAN_AFC_NOT_DONE;
-		} else if ((pdev_priv_obj->reg_afc_dev_deployment_type ==
-			    AFC_DEPLOYMENT_OUTDOOR) &&
+		} else if (((pdev_priv_obj->reg_afc_dev_deployment_type ==
+			    AFC_DEPLOYMENT_OUTDOOR) ||
+				reg_is_indoor_sp_only(pdev_priv_obj)) &&
 			   (sp_chan_list[i].chan_flags &
 			    REGULATORY_CHAN_AFC_NOT_DONE)) {
 			/* This is for the SP channels supported by
@@ -4290,9 +4324,15 @@ QDF_STATUS reg_process_master_chan_list_ext(
 		mas_chan_list_6g_ap[i] =
 			this_mchan_params->mas_chan_list_6g_ap[i];
 
-		for (j = 0; j < REG_MAX_CLIENT_TYPE; j++)
+		qdf_mem_zero(mas_chan_list_6g_ap[i],
+			     NUM_6GHZ_CHANNELS * sizeof(struct regulatory_channel));
+
+		for (j = 0; j < REG_MAX_CLIENT_TYPE; j++) {
 			mas_chan_list_6g_client[i][j] =
 				this_mchan_params->mas_chan_list_6g_client[i][j];
+			qdf_mem_zero(mas_chan_list_6g_client[i][j],
+				     NUM_6GHZ_CHANNELS * sizeof(struct regulatory_channel));
+		}
 	}
 
 	reg_init_channel_map(regulat_info->dfs_region);

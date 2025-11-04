@@ -23,9 +23,6 @@ QDF_STATUS ucfg_dp_fim_update_metadata(qdf_nbuf_t nbuf,
 {
 	struct wlan_dp_intf *dp_intf;
 
-	if (qdf_unlikely(!vdev))
-		return QDF_STATUS_E_INVAL;
-
 	dp_intf = dp_get_vdev_priv_obj(vdev);
 	if (qdf_unlikely(!dp_intf)) {
 		dp_err_rl("DP interface not found");

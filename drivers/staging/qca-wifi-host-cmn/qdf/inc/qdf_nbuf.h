@@ -1330,6 +1330,7 @@ qdf_nbuf_unmap_nbytes_single_paddr(qdf_device_t osdev, qdf_nbuf_t buf,
 				   qdf_dma_addr_t phy_addr, qdf_dma_dir_t dir,
 				   int nbytes)
 {
+	__qdf_record_nbuf_nbytes(__qdf_nbuf_get_end_offset(buf), dir, false);
 	__qdf_mem_unmap_nbytes_single(osdev, phy_addr, dir, nbytes);
 }
 #endif /* NBUF_MAP_UNMAP_DEBUG */
@@ -3143,6 +3144,45 @@ static inline qdf_nbuf_tx_cksum_t qdf_nbuf_get_tx_cksum(qdf_nbuf_t buf)
 static inline void qdf_nbuf_set_tx_ip_cksum(qdf_nbuf_t buf)
 {
 	__qdf_nbuf_set_tx_ip_cksum(buf);
+}
+
+/**
+ * qdf_nbuf_is_ipv4_first_fragment() - check if first fragmented packet
+ * @buf: Network buffer
+ *
+ * Return: true if first frag else false
+ */
+static inline bool qdf_nbuf_is_ipv4_first_fragment(qdf_nbuf_t buf)
+{
+	return __qdf_nbuf_is_ipv4_first_fragment(buf);
+}
+
+/**
+ * qdf_nbuf_get_ipv4_flow_info() - get ipv4 flow info
+ * @buf: Network buffer
+ * @flow_info: pointer to qdf_flow_info
+ *
+ * Return: QDF_STATUS
+ */
+static inline
+QDF_STATUS qdf_nbuf_get_ipv4_flow_info(qdf_nbuf_t buf,
+				       struct qdf_flow_info *flow_info)
+{
+	return __qdf_nbuf_get_ipv4_flow_info(buf, flow_info);
+}
+
+/**
+ * qdf_nbuf_get_ipv6_flow_info() - get ipv6 flow info
+ * @buf: Network buffer
+ * @flow_info: pointer to qdf_flow_info
+ *
+ * Return: QDF_STATUS
+ */
+static inline
+QDF_STATUS qdf_nbuf_get_ipv6_flow_info(qdf_nbuf_t buf,
+				       struct qdf_flow_info *flow_info)
+{
+	return __qdf_nbuf_get_ipv6_flow_info(buf, flow_info);
 }
 
 /**

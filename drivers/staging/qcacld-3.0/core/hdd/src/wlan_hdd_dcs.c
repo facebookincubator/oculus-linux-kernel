@@ -30,6 +30,7 @@
 #include <wlan_osif_priv.h>
 #include <wlan_objmgr_vdev_obj.h>
 #include <wlan_dcs_ucfg_api.h>
+#include "wlan_hdd_regulatory.h"
 
 /* Time(in milliseconds) before which the AP doesn't expect a connection */
 #define HDD_DCS_AWGN_BSS_RETRY_DELAY (5 * 60 * 1000)
@@ -207,9 +208,12 @@ hdd_dcs_select_random_chan(struct wlan_objmgr_pdev *pdev,
 		qdf_mem_free(res_msg);
 		return QDF_STATUS_E_INVAL;
 	}
-	hdd_debug("channel count %d for band %d", count, REG_BAND_6G);
+
 	for (i = 0; i < count; i++)
 		final_lst[i] = res_msg[i].freq;
+
+	hdd_remove_vlp_depriority_channels(pdev, final_lst, &count);
+	hdd_debug("channel count %d for band %d", count, REG_BAND_6G);
 
 	intf_ch_freq = wlan_get_rand_from_lst_for_freq(final_lst, count);
 	if (!intf_ch_freq || intf_ch_freq > wlan_reg_max_6ghz_chan_freq()) {

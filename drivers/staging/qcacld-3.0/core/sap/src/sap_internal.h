@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -508,6 +508,26 @@ bool
 sap_chan_bond_dfs_sub_chan(struct sap_context *sap_context,
 			   qdf_freq_t channel_freq,
 			   ePhyChanBondState bond_state);
+
+/**
+ * sap_plus_sap_cac_skip() - Check current sap can skip CAC or not
+ *  in SAP+SAP concurrency
+ * @mac: mac ctx
+ * @sap_ctx: SAP context
+ * @chan_freq: SAP channel frequency
+ *
+ * All APs are done with CAC timer, all APs should start beaconing.
+ * Lets assume AP1 and AP2 started beaconing on DFS channel, Now lets
+ * say AP1 goes down and comes back on same DFS channel. In this case
+ * AP1 shouldn't start CAC timer and start beacon immediately because
+ * AP2 is already beaconing on this channel. This case will be handled
+ * by checking CAC completion on AP2.
+ *
+ * Return: true if current SAP can skip CAC
+ */
+bool sap_plus_sap_cac_skip(struct mac_context *mac,
+			   struct sap_context *sap_ctx,
+			   qdf_freq_t chan_freq);
 
 void
 sap_build_start_bss_config(struct start_bss_config *sap_bss_cfg,

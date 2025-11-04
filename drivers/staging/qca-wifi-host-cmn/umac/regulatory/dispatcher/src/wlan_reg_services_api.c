@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -56,6 +56,11 @@ QDF_STATUS wlan_reg_read_default_country(struct wlan_objmgr_psoc *psoc,
 	 * Get the default country information
 	 */
 	return reg_read_default_country(psoc, country);
+}
+
+enum phy_ch_width wlan_get_next_lower_bandwidth(enum phy_ch_width ch_width)
+{
+	return get_next_lower_bandwidth(ch_width);
 }
 
 QDF_STATUS wlan_reg_read_current_country(struct wlan_objmgr_psoc *psoc,
@@ -1679,6 +1684,15 @@ wlan_reg_country_chan_opclass_to_freq(struct wlan_objmgr_pdev *pdev,
 	return reg_country_chan_opclass_to_freq(pdev, country, chan, op_class,
 						strict);
 }
+
+qdf_freq_t
+wlan_reg_chan_opclass_to_freq_prefer_global(struct wlan_objmgr_pdev *pdev,
+					    const uint8_t *country,
+					    uint8_t chan_num, uint8_t opclass)
+{
+	return reg_chan_opclass_to_freq_prefer_global(pdev, country,
+						      chan_num, opclass);
+}
 #endif
 
 uint16_t wlan_reg_chan_opclass_to_freq(uint8_t chan,
@@ -2090,3 +2104,11 @@ wlan_reg_unregister_is_chan_connected_callback(struct wlan_objmgr_psoc *psoc,
 	reg_unregister_is_chan_connected_callback(psoc,
 					(reg_is_chan_connected_callback)cbk);
 }
+
+#if defined(CONFIG_BAND_6GHZ) && defined(CONFIG_REG_CLIENT)
+bool wlan_reg_is_vlp_depriority_freq(struct wlan_objmgr_pdev *pdev,
+				     qdf_freq_t freq)
+{
+	return reg_is_vlp_depriority_freq(pdev, freq);
+}
+#endif

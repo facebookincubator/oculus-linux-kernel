@@ -614,6 +614,14 @@ config USB_FUNC_WAKEUP_SUPPORTED
 	  composite driver, which in turn will issue a device notification
 	  packet request to the device controller driver.
 
+config USB_ETHER_AQM_SUPPORT
+	bool "Allow support for AQM in u_ether"
+	default n
+	help
+		AQM uses netif queue control, which clashes with u_ether's usage
+		If enabled, u_ether will skip netif queue operations that interfere
+		with AQM.
+
 source "drivers/usb/gadget/legacy/Kconfig"
 
 endif # USB_GADGET

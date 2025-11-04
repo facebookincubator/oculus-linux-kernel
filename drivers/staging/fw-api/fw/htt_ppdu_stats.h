@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -922,6 +922,8 @@ typedef struct {
      * part of existing DL/UL data sequence
      */
     A_UINT32 is_combined_ul_bsrp_trigger;
+    /* Flag to indicate if the channel chosen is 320_1 / 320_2 */
+    A_UINT32 chan_type_320mhz;
 } htt_ppdu_stats_common_tlv;
 
 #define HTT_PPDU_STATS_USER_COMMON_TLV_TID_NUM_M     0x000000ff

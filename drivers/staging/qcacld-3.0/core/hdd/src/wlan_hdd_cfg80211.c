@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -10548,13 +10548,15 @@ static uint32_t hdd_mac_chwidth_to_bonding_mode(
 }
 
 int hdd_set_mac_chan_width(struct hdd_adapter *adapter,
-			   enum eSirMacHTChannelWidth chwidth)
+			   enum eSirMacHTChannelWidth chwidth,
+			   bool is_restore)
 {
 	uint32_t bonding_mode;
 
 	bonding_mode = hdd_mac_chwidth_to_bonding_mode(chwidth);
 
-	return hdd_update_channel_width(adapter, chwidth, bonding_mode);
+	return hdd_update_channel_width(adapter, chwidth,
+					bonding_mode, is_restore);
 }
 
 /**
@@ -10578,7 +10580,7 @@ static int hdd_set_channel_width(struct hdd_adapter *adapter,
 		return -EINVAL;
 	}
 
-	return hdd_set_mac_chan_width(adapter, chwidth);
+	return hdd_set_mac_chan_width(adapter, chwidth, false);
 }
 
 /**
@@ -13142,7 +13144,8 @@ __wlan_hdd_cfg80211_set_wifi_test_config(struct wiphy *wiphy,
 		if (cfg_val)
 			hdd_update_channel_width(
 					adapter, eHT_CHANNEL_WIDTH_20MHZ,
-					WNI_CFG_CHANNEL_BONDING_MODE_DISABLE);
+					WNI_CFG_CHANNEL_BONDING_MODE_DISABLE,
+					false);
 	}
 
 	cmd_id = QCA_WLAN_VENDOR_ATTR_WIFI_TEST_CONFIG_ER_SU_PPDU_TYPE;
@@ -13152,7 +13155,8 @@ __wlan_hdd_cfg80211_set_wifi_test_config(struct wiphy *wiphy,
 		if (cfg_val) {
 			hdd_update_channel_width(
 					adapter, eHT_CHANNEL_WIDTH_20MHZ,
-					WNI_CFG_CHANNEL_BONDING_MODE_DISABLE);
+					WNI_CFG_CHANNEL_BONDING_MODE_DISABLE,
+					false);
 			hdd_set_tx_stbc(adapter, 0);
 			hdd_set_11ax_rate(adapter, 0x400, NULL);
 			status = wma_cli_set_command(adapter->vdev_id,
@@ -13170,7 +13174,8 @@ __wlan_hdd_cfg80211_set_wifi_test_config(struct wiphy *wiphy,
 		} else {
 			hdd_update_channel_width(
 					adapter, eHT_CHANNEL_WIDTH_160MHZ,
-					WNI_CFG_CHANNEL_BONDING_MODE_ENABLE);
+					WNI_CFG_CHANNEL_BONDING_MODE_ENABLE,
+					false);
 			hdd_set_tx_stbc(adapter, 1);
 			hdd_set_11ax_rate(adapter, 0xFFFF, NULL);
 			status = wma_cli_set_command(adapter->vdev_id,
@@ -14379,18 +14384,6 @@ static int wlan_hdd_cfg80211_set_ns_offload(struct wiphy *wiphy,
 }
 #endif /* WLAN_NS_OFFLOAD */
 
-/**
- * struct weighed_pcl: Preferred channel info
- * @freq: Channel frequency
- * @weight: Weightage of the channel
- * @flag: Validity of the channel in p2p negotiation
- */
-struct weighed_pcl {
-		u32 freq;
-		u32 weight;
-		u32 flag;
-};
-
 const struct nla_policy get_preferred_freq_list_policy[
 		QCA_WLAN_VENDOR_ATTR_GET_PREFERRED_FREQ_LIST_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_GET_PREFERRED_FREQ_LIST_IFACE_TYPE] = {
@@ -14463,6 +14456,24 @@ static uint32_t wlan_hdd_populate_weigh_pcl(
 		}
 	}
 	return chan_idx;
+}
+
+/** wlan_hdd_modify_pcl_for_vlp_channels() - Update weights for the VLP
+ * deprority channels
+ * @hdd_ctx: pointer to hdd context
+ * @pcl: Calculated PCL as per concurrency policies
+ * @num_pcl: Number of entries in @pcl
+ *
+ * Return: QDF_STATUS
+ */
+static QDF_STATUS
+wlan_hdd_modify_pcl_for_vlp_channels(struct hdd_context *hdd_ctx,
+				     struct weighed_pcl *pcl,
+				     uint32_t num_pcl)
+{
+	return policy_mgr_modify_pcl_for_vlp_channels(hdd_ctx->psoc,
+						      hdd_ctx->pdev,
+						      pcl, num_pcl);
 }
 
 /** __wlan_hdd_cfg80211_get_preferred_freq_list() - get preferred frequency list
@@ -14569,6 +14580,10 @@ static int __wlan_hdd_cfg80211_get_preferred_freq_list(struct wiphy *wiphy,
 	pcl_len = wlan_hdd_populate_weigh_pcl(hdd_ctx->psoc, chan_weights,
 					      w_pcl, intf_mode);
 	qdf_mem_free(chan_weights);
+
+	/* Modify the PCL weight for VLP channels */
+	if (intf_mode == PM_P2P_CLIENT_MODE || intf_mode == PM_P2P_GO_MODE)
+		wlan_hdd_modify_pcl_for_vlp_channels(hdd_ctx, w_pcl, pcl_len);
 
 	for (i = 0; i < pcl_len; i++)
 		freq_list[i] = w_pcl[i].freq;
@@ -15633,7 +15648,6 @@ __wlan_hdd_cfg80211_avoid_freq(struct wiphy *wiphy,
 	}
 	num_args = (data_len - sizeof(channel_list->ch_avoid_range_cnt)) /
 		   sizeof(channel_list->avoid_freq_range[0].start_freq);
-
 
 	if (num_args < 2 || num_args > CH_AVOID_MAX_RANGE * 2 ||
 	    num_args % 2 != 0) {
@@ -27335,7 +27349,8 @@ static int __wlan_hdd_cfg80211_tx_control_port(struct wiphy *wiphy,
 					       struct net_device *dev,
 					       const u8 *buf, size_t len,
 					       const u8 *src, const u8 *dest,
-						__be16 proto, bool unencrypted)
+						__be16 proto, bool unencrypted,
+						int link_id)
 {
 	qdf_nbuf_t nbuf;
 	struct ethhdr *ehdr;
@@ -27377,7 +27392,8 @@ static int _wlan_hdd_cfg80211_tx_control_port(struct wiphy *wiphy,
 					      struct net_device *dev,
 					      const u8 *buf, size_t len,
 					      const u8 *src, const u8 *dest,
-					      __be16 proto, bool unencrypted)
+					      __be16 proto, bool unencrypted,
+					      int link_id)
 {
 	int errno;
 	struct osif_vdev_sync *vdev_sync;
@@ -27387,14 +27403,15 @@ static int _wlan_hdd_cfg80211_tx_control_port(struct wiphy *wiphy,
 		return errno;
 
 	errno = __wlan_hdd_cfg80211_tx_control_port(wiphy, dev, buf, len, src,
-						    dest, proto, unencrypted);
+						    dest, proto, unencrypted,
+						    link_id);
 
 	osif_vdev_sync_op_stop(vdev_sync);
 
 	return errno;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0) || \
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 41) || \
 	defined(CFG80211_TX_CONTROL_PORT_LINK_SUPPORT))
 static int wlan_hdd_cfg80211_tx_control_port(struct wiphy *wiphy,
 					     struct net_device *dev,
@@ -27403,28 +27420,54 @@ static int wlan_hdd_cfg80211_tx_control_port(struct wiphy *wiphy,
 					     const u8 *dest, const __be16 proto,
 					     bool unencrypted, int link_id,
 					     u64 *cookie)
+{
+	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+
+	return _wlan_hdd_cfg80211_tx_control_port(wiphy, dev, buf, len,
+						  adapter->mac_addr.bytes,
+						  dest, proto, unencrypted,
+						  link_id);
+}
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0))
 static int wlan_hdd_cfg80211_tx_control_port(struct wiphy *wiphy,
 					     struct net_device *dev,
 					     const u8 *buf, size_t len,
 					     const u8 *dest, __be16 proto,
 					     bool unencrypted, u64 *cookie)
+{
+	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+
+	return _wlan_hdd_cfg80211_tx_control_port(wiphy, dev, buf, len,
+						  adapter->mac_addr.bytes,
+						  dest, proto, unencrypted, -1);
+}
 #else
 static int wlan_hdd_cfg80211_tx_control_port(struct wiphy *wiphy,
 					     struct net_device *dev,
 					     const u8 *buf, size_t len,
 					     const u8 *dest, __be16 proto,
 					     bool unencrypted)
-#endif
 {
 	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
 
 	return _wlan_hdd_cfg80211_tx_control_port(wiphy, dev, buf, len,
 						  adapter->mac_addr.bytes,
-						  dest, proto, unencrypted);
+						  dest, proto, unencrypted, -1);
 }
+#endif
 
 #if defined(CFG80211_CTRL_FRAME_SRC_ADDR_TA_ADDR)
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 41))
+bool wlan_hdd_cfg80211_rx_control_port(struct net_device *dev,
+				       u8 *ta_addr,
+				       struct sk_buff *skb,
+				       bool unencrypted)
+{
+	return cfg80211_rx_control_port(dev, skb, unencrypted, -1);
+}
+
+#else
 bool wlan_hdd_cfg80211_rx_control_port(struct net_device *dev,
 				       u8 *ta_addr,
 				       struct sk_buff *skb,
@@ -27432,6 +27475,8 @@ bool wlan_hdd_cfg80211_rx_control_port(struct net_device *dev,
 {
 	return cfg80211_rx_control_port(dev, ta_addr, skb, unencrypted);
 }
+#endif
+
 #else
 bool wlan_hdd_cfg80211_rx_control_port(struct net_device *dev,
 				       u8 *ta_addr,

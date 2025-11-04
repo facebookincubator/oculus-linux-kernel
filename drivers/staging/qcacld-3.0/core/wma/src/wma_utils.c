@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -357,9 +357,9 @@ static uint16_t wma_match_he_rate(uint16_t raw_rate,
 		return 0;
 
 	if (is_he_mcs_12_13_supported)
-		max_he_mcs_idx = MAX_HE_MCS12_13_IDX;
+		max_he_mcs_idx = QDF_ARRAY_SIZE(he_mcs_nss1);
 	else
-		max_he_mcs_idx = MAX_HE_MCS_IDX;
+		max_he_mcs_idx = QDF_ARRAY_SIZE(he_mcs_nss1) - 2;
 
 	for (index = 0; index < max_he_mcs_idx; index++) {
 		dcm_index_max = IS_MCS_HAS_DCM_RATE(index) ? 2 : 1;
@@ -468,6 +468,7 @@ uint8_t wma_get_mcs_idx(uint16_t raw_rate, enum tx_rate_info rate_flags,
 {
 	uint8_t  index = 0;
 	uint16_t match_rate = 0;
+	uint8_t max_ht_mcs_idx;
 	const uint16_t *nss1_rate;
 	const uint16_t *nss2_rate;
 
@@ -489,7 +490,7 @@ uint8_t wma_get_mcs_idx(uint16_t raw_rate, enum tx_rate_info rate_flags,
 	if (match_rate)
 		goto rate_found;
 
-	for (index = 0; index < MAX_VHT_MCS_IDX; index++) {
+	for (index = 0; index < QDF_ARRAY_SIZE(vht_mcs_nss1); index++) {
 		if (rate_flags & TX_RATE_VHT160) {
 			nss1_rate = &vht_mcs_nss1[index].ht160_rate[0];
 			nss2_rate = &vht_mcs_nss2[index].ht160_rate[0];
@@ -544,7 +545,8 @@ uint8_t wma_get_mcs_idx(uint16_t raw_rate, enum tx_rate_info rate_flags,
 			}
 		}
 	}
-	for (index = 0; index < MAX_HT_MCS_IDX; index++) {
+	max_ht_mcs_idx = QDF_ARRAY_SIZE(mcs_nss1);
+	for (index = 0; index < max_ht_mcs_idx; index++) {
 		if (rate_flags & TX_RATE_HT40) {
 			nss1_rate = &mcs_nss1[index].ht40_rate[0];
 			nss2_rate = &mcs_nss2[index].ht40_rate[0];
@@ -556,7 +558,7 @@ uint8_t wma_get_mcs_idx(uint16_t raw_rate, enum tx_rate_info rate_flags,
 			if (match_rate) {
 				*mcs_rate_flag = TX_RATE_HT40;
 				if (*nss == 2)
-					index += MAX_HT_MCS_IDX;
+					index += max_ht_mcs_idx;
 				goto rate_found;
 			}
 		}
@@ -571,7 +573,7 @@ uint8_t wma_get_mcs_idx(uint16_t raw_rate, enum tx_rate_info rate_flags,
 			if (match_rate) {
 				*mcs_rate_flag = TX_RATE_HT20;
 				if (*nss == 2)
-					index += MAX_HT_MCS_IDX;
+					index += max_ht_mcs_idx;
 				goto rate_found;
 			}
 		}
@@ -4393,6 +4395,8 @@ void wma_remove_bss_peer_on_failure(tp_wma_handle wma, uint8_t vdev_id)
 			QDF_MAC_ADDR_REF(bss_peer.bytes));
 		return;
 	}
+
+	wma_delete_peer_mlo(wma->psoc, bss_peer.bytes);
 
 	wma_remove_peer(wma, bss_peer.bytes, vdev_id, false);
 }

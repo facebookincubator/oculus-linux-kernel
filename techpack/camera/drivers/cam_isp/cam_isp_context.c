@@ -130,6 +130,16 @@ static inline bool is_request_valid(
 	return true;
 }
 
+static inline void init_monitors(
+	struct cam_isp_context *ctx_isp)
+{
+	ctx_isp->num_state_monitor_transitions = 0;
+	atomic64_set(&ctx_isp->state_monitor_head, -1);
+	ctx_isp->num_event_monitor_events = 0;
+	atomic64_set(&ctx_isp->event_monitor_head, -1);
+}
+
+
 static void __cam_isp_ctx_update_event_record(
 	struct cam_isp_context *ctx_isp,
 	enum cam_isp_ctx_event  event,
@@ -447,6 +457,7 @@ static void __cam_isp_ctx_update_state_monitor_array(
 
 	INC_HEAD(&ctx_isp->state_monitor_head,
 		CAM_ISP_CTX_STATE_MONITOR_MAX_ENTRIES, &iterator);
+	ctx_isp->num_state_monitor_transitions++;
 
 	ctx_isp->cam_isp_ctx_state_monitor[iterator].curr_state =
 		ctx_isp->substate_activated;
@@ -529,6 +540,7 @@ static void __cam_isp_ctx_update_event_monitor_array(
 
 	INC_HEAD(&ctx_isp->event_monitor_head,
 		CAM_ISP_CTX_EVENT_MONITOR_MAX_ENTRIES, &iterator);
+	ctx_isp->num_event_monitor_events++;
 	ev_record = &ctx_isp->cam_isp_ctx_event_monitor[iterator];
 	ev_record->evt_time_stamp = ktime_get_real();
 	ev_record->begin_state = begin_state;
@@ -559,7 +571,8 @@ static void __cam_isp_ctx_dump_event_monitor_array(
 	event_head = atomic64_read(&ctx_isp->event_monitor_head);
 
 	if (event_head == -1) {
-		CAM_ERR(CAM_ISP, "No events information available");
+		CAM_ERR(CAM_ISP, "No events information available. Total Events %d",
+			ctx_isp->num_event_monitor_events);
 		return;
 	} else if (event_head < CAM_ISP_CTX_STATE_MONITOR_MAX_ENTRIES) {
 		num_entries = event_head;
@@ -571,8 +584,8 @@ static void __cam_isp_ctx_dump_event_monitor_array(
 	}
 
 	CAM_ERR(CAM_ISP,
-		"----------------   Dumping information for preceding Events: %3d ctx:%2u   ----------------",
-		num_entries, ctx_isp->base->ctx_id);
+		"----------------   Dumping information for preceding Events: %3d total %d ctx:%2u   ----------------",
+		num_entries, ctx_isp->num_event_monitor_events, ctx_isp->base->ctx_id);
 
 	index = oldest_entry;
 	CAM_ERR(CAM_ISP,
@@ -585,7 +598,7 @@ static void __cam_isp_ctx_dump_event_monitor_array(
 		ts = ktime_to_timespec64(ev_record->evt_time_stamp);
 		CAM_CONVERT_TIMESTAMP_FORMAT(ts, hrs, min, sec, ms);
 
-		CAM_ERR(CAM_ISP,
+		CAM_ERR_RATE_LIMIT(CAM_ISP,
 			"  [%03d]  : %02llu:%02llu:%02llu.%06llu : %15s   %15s   %15s   ctx %2u",
 			index,
 			hrs, min, sec, ts.tv_nsec/1000,
@@ -596,6 +609,7 @@ static void __cam_isp_ctx_dump_event_monitor_array(
 
 		index = (index + 1) % CAM_ISP_CTX_EVENT_MONITOR_MAX_ENTRIES;
 	}
+	atomic64_set(&ctx_isp->event_monitor_head, -1);
 }
 
 static void __cam_isp_ctx_dump_state_monitor_array(
@@ -616,7 +630,8 @@ static void __cam_isp_ctx_dump_state_monitor_array(
 	state_head = atomic64_read(&ctx_isp->state_monitor_head);
 
 	if (state_head == -1) {
-		CAM_ERR(CAM_ISP, "No state information available");
+		CAM_ERR(CAM_ISP, "No state information available. Total State Transitions %d",
+			ctx_isp->num_state_monitor_transitions);
 		return;
 	} else if (state_head < CAM_ISP_CTX_STATE_MONITOR_MAX_ENTRIES) {
 		num_entries = state_head;
@@ -628,8 +643,10 @@ static void __cam_isp_ctx_dump_state_monitor_array(
 	}
 
 	CAM_ERR(CAM_ISP,
-		"Dumping state information for preceding Events: %d ctx: %u",
-		num_entries, ctx_isp->base->ctx_id);
+		"Dumping state information for preceding Events: %d total %d ctx: %u",
+		num_entries,
+		ctx_isp->num_state_monitor_transitions,
+		ctx_isp->base->ctx_id);
 
 	index = oldest_entry;
 
@@ -638,7 +655,7 @@ static void __cam_isp_ctx_dump_state_monitor_array(
 		ts = ktime_to_timespec64(state_record->evt_time_stamp);
 		CAM_CONVERT_TIMESTAMP_FORMAT(ts, hrs, min, sec, ms);
 
-		CAM_ERR(CAM_ISP,
+		CAM_ERR_RATE_LIMIT(CAM_ISP,
 		"Index[%2d] time: %02llu:%02llu:%02llu.%06llu : Substate[%10s] Frame[%3lld] ReqId[%3llu] evt_type[%10s] ctx %2u",
 		index,
 		hrs, min, sec, ts.tv_nsec/1000,
@@ -652,6 +669,7 @@ static void __cam_isp_ctx_dump_state_monitor_array(
 
 		index = (index + 1) % CAM_ISP_CTX_STATE_MONITOR_MAX_ENTRIES;
 	}
+	atomic64_set(&ctx_isp->state_monitor_head, -1);
 }
 
 static int cam_isp_context_info_dump(void *context,
@@ -8099,8 +8117,7 @@ static int __cam_isp_ctx_release_hw_in_top_state(struct cam_context *ctx,
 	ctx_isp->sensor_req_info.prev_applied_req = 0;
 	ctx_isp->mcu_enable = 0;
 
-	atomic64_set(&ctx_isp->state_monitor_head, -1);
-	atomic64_set(&ctx_isp->event_monitor_head, -1);
+	init_monitors(ctx_isp);
 
 	for (i = 0; i < CAM_ISP_CTX_EVENT_MAX; i++)
 		atomic64_set(&ctx_isp->event_record_head[i], -1);
@@ -8216,8 +8233,7 @@ static int __cam_isp_ctx_release_dev_in_top_state(struct cam_context *ctx,
 	ctx_isp->sensor_req_info.last_applied_req = 0;
 	ctx_isp->sensor_req_info.prev_applied_req = 0;
 
-	atomic64_set(&ctx_isp->state_monitor_head, -1);
-	atomic64_set(&ctx_isp->event_monitor_head, -1);
+	init_monitors(ctx_isp);
 
 	for (i = 0; i < CAM_ISP_CTX_EVENT_MAX; i++)
 		atomic64_set(&ctx_isp->event_record_head[i], -1);
@@ -9133,8 +9149,7 @@ static int __cam_isp_ctx_acquire_dev_in_available(struct cam_context *ctx,
 	ctx_isp->hw_acquired = true;
 	ctx_isp->split_acquire = false;
 	ctx->ctxt_to_hw_map = param.ctxt_to_hw_map;
-	atomic64_set(&ctx_isp->state_monitor_head, -1);
-	atomic64_set(&ctx_isp->event_monitor_head, -1);
+	init_monitors(ctx_isp);
 
 	for (i = 0; i < CAM_ISP_CTX_EVENT_MAX; i++)
 		atomic64_set(&ctx_isp->event_record_head[i], -1);
@@ -9320,8 +9335,7 @@ static int __cam_isp_ctx_acquire_hw_v1(struct cam_context *ctx,
 	ctx_isp->hw_acquired = true;
 	ctx->ctxt_to_hw_map = param.ctxt_to_hw_map;
 
-	atomic64_set(&ctx_isp->state_monitor_head, -1);
-	atomic64_set(&ctx_isp->event_monitor_head, -1);
+	init_monitors(ctx_isp);
 
 	for (i = 0; i < CAM_ISP_CTX_EVENT_MAX; i++)
 		atomic64_set(&ctx_isp->event_record_head[i], -1);
@@ -10663,8 +10677,7 @@ static int __cam_isp_ctx_start_dev_in_ready(struct cam_context *ctx,
 		(req_isp->num_fence_map_out) ? CAM_ISP_CTX_ACTIVATED_EPOCH :
 		CAM_ISP_CTX_ACTIVATED_SOF;
 
-	atomic64_set(&ctx_isp->state_monitor_head, -1);
-	atomic64_set(&ctx_isp->event_monitor_head, -1);
+	init_monitors(ctx_isp);
 
 	for (i = 0; i < CAM_ISP_CTX_EVENT_MAX; i++)
 		atomic64_set(&ctx_isp->event_record_head[i], -1);
@@ -10937,8 +10950,7 @@ static int __cam_isp_ctx_stop_dev_in_activated_unlock(
 		__cam_isp_ctx_dump_event_monitor_array(ctx_isp);
 	}
 
-	atomic64_set(&ctx_isp->state_monitor_head, -1);
-	atomic64_set(&ctx_isp->event_monitor_head, -1);
+	init_monitors(ctx_isp);
 
 	for (i = 0; i < CAM_ISP_CTX_EVENT_MAX; i++)
 		atomic64_set(&ctx_isp->event_record_head[i], -1);
@@ -12440,8 +12452,7 @@ int cam_isp_context_init(struct cam_isp_context *ctx,
 		ctx->cam_isp_ctx_state_monitor[i].curr_state =
 		CAM_ISP_CTX_ACTIVATED_MAX;
 	}
-	atomic64_set(&ctx->state_monitor_head, -1);
-	atomic64_set(&ctx->event_monitor_head, -1);
+	init_monitors(ctx);
 
 	for (i = 0; i < CAM_ISP_CTX_EVENT_MAX; i++)
 		atomic64_set(&ctx->event_record_head[i], -1);

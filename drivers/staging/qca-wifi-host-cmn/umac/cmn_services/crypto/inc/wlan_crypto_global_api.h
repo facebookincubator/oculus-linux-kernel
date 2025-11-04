@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022,2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -848,6 +848,17 @@ enum wlan_crypto_cipher_type
 wlan_crypto_get_cipher(struct wlan_objmgr_vdev *vdev,
 		       bool pairwise, uint8_t key_index);
 
+/**
+ * wlan_crypto_get_secure_akm_available() - Search the AKM bitmap to
+ * find the most secure AKM.
+ * @akm: Bitmap of available AKMs.
+ *
+ * Search in the decreasing order of AKM security and return the
+ * first matching AKM available in @akm bitmap.
+ *
+ * Return: enum wlan_crypto_key_mgmt
+ */
+wlan_crypto_key_mgmt wlan_crypto_get_secure_akm_available(uint32_t akm);
 #ifdef CRYPTO_SET_KEY_CONVERGED
 /**
  * wlan_crypto_update_set_key_peer() - Update the peer for set key

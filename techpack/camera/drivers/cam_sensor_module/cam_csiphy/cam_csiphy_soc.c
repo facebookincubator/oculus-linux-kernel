@@ -254,6 +254,83 @@ int32_t cam_csiphy_disable_hw(struct csiphy_device *csiphy_dev)
 	return 0;
 }
 
+static bool apply_csiphy_reg_patch(struct csiphy_reg_t *csiphy_reg, int32_t patch_addr, int32_t patch_data)
+{
+	int i = 0;
+
+	for (i = 0; i < MAX_SETTINGS_PER_LANE; i++) {
+		if (csiphy_reg[i].reg_addr == patch_addr) {
+			csiphy_reg[i].reg_data = patch_data;
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool apply_3ph_rx_eq_for_all_cfgs(struct csiphy_device *csi_dev, int32_t lane_idx, int32_t lane_eq_addr, int32_t lane_eq)
+{
+	int i = 0;
+	struct csiphy_ctrl_t *ctrl_reg = csi_dev->ctrl_reg;
+
+	if (!apply_csiphy_reg_patch(ctrl_reg->csiphy_3ph_reg[lane_idx], lane_eq_addr, lane_eq)) {
+		CAM_ERR(CAM_CSIPHY, "failed to patch lane[%d] C-PHY EQ register", lane_idx);
+		return false;
+	}
+
+	// Although we know the lane index, the C-PHY/D-PHY combo mode 2L_1T or 1L_2T does not declare C-PHY lanes in order.
+	// However, one of the lanes must have the specified C-PHY EQ register address.
+	for (i = 0; i < MAX_LANES; i++) {
+		if (apply_csiphy_reg_patch(ctrl_reg->csiphy_2ph_3ph_mode_reg[i], lane_eq_addr, lane_eq))
+			return true;
+	}
+	CAM_ERR(CAM_CSIPHY, "failed to patch combo lane[%d] C-PHY EQ register", lane_idx);
+	return false;
+}
+
+static void apply_3ph_rx_eq(struct csiphy_device *csiphy_dev, const int32_t *lane_idx_to_eq_addr)
+{
+	/*
+	 *	'cphy-lane-rx-eq-table' property is a list of {u32 lane_idx; u32 lane_eq} pairs.
+	 *	(c-phy) lane_idx can be {0, 1, 2}; lane_eq bits definition:
+	 *	Bits[7:6]: Buffer output resistor control
+	 *			   b00: 4R/4 b01: 4R/3 b10: 4R/2 b11: 4R/1
+	 *	Bits[5:3] : equalization level control
+	 *				b000: bypass equalization, b001: 1 dB, b010: 2 dB, ... b111: 7 dB
+	 *	Bits[2:0]: Equalizer peaking frequency control
+	 *			   b000: Lowest peaking frequency
+	 *			   b111: Largest peaking frequency
+	 *			   b101: Normal operation
+	 */
+	const char *prop_name = "cphy-lane-rx-eq-table";
+	struct device_node *np = csiphy_dev->soc_info.dev->of_node;
+	uint32_t raw_array[MAX_LANES * 2];
+	int num_lanes = 0, i = 0;
+
+	int32_t ret = of_property_read_variable_u32_array(np, prop_name, raw_array, 0,
+						 ARRAY_SIZE(raw_array));
+	if (ret < 0)
+		return;
+
+
+	num_lanes = ret / 2;
+	for (i = 0; i < num_lanes; i++) {
+		const int32_t lane_idx = raw_array[i * 2];
+		const int32_t lane_eq = raw_array[i * 2 + 1];
+		int32_t lane_eq_addr = 0;
+
+		if (lane_idx >= MAX_LANES) {
+			CAM_ERR(CAM_CSIPHY, "DT %s has lane_idx %d > %d", prop_name, lane_idx, MAX_LANES);
+			return;
+		}
+
+		lane_eq_addr = lane_idx_to_eq_addr[lane_idx];
+		CAM_INFO(CAM_CSIPHY,
+			 "DT %s lane[%d]: reg_addr 0x%x, lane_eq 0x%x",
+			 prop_name, lane_idx, lane_eq_addr, lane_eq);
+		apply_3ph_rx_eq_for_all_cfgs(csiphy_dev, lane_idx, lane_eq_addr, lane_eq);
+	}
+}
+
 int32_t cam_csiphy_parse_dt_info(struct platform_device *pdev,
 	struct csiphy_device *csiphy_dev)
 {
@@ -406,6 +483,7 @@ int32_t cam_csiphy_parse_dt_info(struct platform_device *pdev,
 		csiphy_dev->ctrl_reg->data_rates_settings_table = &data_rate_delta_table_1_2_3;
 		if (of_property_read_bool(soc_info->dev->of_node, "rx-eq-lowest-peak-freq"))
 			csiphy_dev->ctrl_reg->csiphy_3ph_reg = csiphy_3ph_v1_2_3_low_peak_reg;
+		apply_3ph_rx_eq(csiphy_dev, csiphy_3ph_v1_2_3_rx_eq_reg_addr);
 	} else if (of_device_is_compatible(soc_info->dev->of_node,
 		"qcom,csiphy-v1.2.4")) {
 		csiphy_dev->ctrl_reg->csiphy_2ph_reg = csiphy_2ph_v1_2_3_reg;

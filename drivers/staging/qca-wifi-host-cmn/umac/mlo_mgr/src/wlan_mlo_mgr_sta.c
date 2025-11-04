@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -755,6 +755,7 @@ mlo_update_connect_req_chan_info(struct wlan_cm_connect_req *req)
  * @ml_parnter_info: ml partner link info
  * @link_info: link info on which connect req will be sent
  * @ssid: ssid to connect
+ * @mld_addr: MLD address for connect request.
  *
  * Return: none
  */
@@ -763,7 +764,8 @@ static void
 mlo_prepare_and_send_connect(struct wlan_objmgr_vdev *vdev,
 			     struct mlo_partner_info ml_parnter_info,
 			     struct mlo_link_info link_info,
-			     struct wlan_ssid ssid)
+			     struct wlan_ssid ssid,
+			     struct qdf_mac_addr *mld_addr)
 {
 	struct wlan_cm_connect_req req = {0};
 	struct wlan_mlo_dev_context *mlo_dev_ctx = vdev->mlo_dev_ctx;
@@ -795,8 +797,13 @@ mlo_prepare_and_send_connect(struct wlan_objmgr_vdev *vdev,
 		     &ml_parnter_info,
 		     sizeof(struct mlo_partner_info));
 
+	req.vdev_id = wlan_vdev_get_id(vdev);
 	req.ssid.length = ssid.length;
+	req.chan_freq = link_info.chan_freq;
+	req.link_id =  link_info.link_id;
 	qdf_mem_copy(&req.ssid.ssid, &ssid.ssid, ssid.length);
+	if (mld_addr)
+		qdf_copy_macaddr(&req.mld_addr, mld_addr);
 
 	mlo_allocate_and_copy_ies(&req, sta_ctx->copied_conn_req);
 	if (!req.assoc_ie.ptr)
@@ -832,10 +839,12 @@ mlo_send_link_connect(struct wlan_objmgr_vdev *vdev,
 		      struct mlo_partner_info *ml_parnter_info)
 {
 	/* Create the secondary interface, Send keys if the last link */
+	QDF_STATUS status;
 	uint8_t i, partner_idx = 0;
 	struct wlan_ssid ssid = {0};
 	struct wlan_objmgr_vdev *wlan_vdev_list[WLAN_UMAC_MLO_MAX_VDEVS];
 	uint16_t vdev_count = 0;
+	struct qdf_mac_addr mld_addr;
 
 	mlo_debug("Sending link connect on partner interface");
 	wlan_vdev_mlme_get_ssid(
@@ -849,6 +858,21 @@ mlo_send_link_connect(struct wlan_objmgr_vdev *vdev,
 
 	if(wlan_vdev_mlme_is_mlo_link_vdev(vdev))
 		return;
+
+	status = wlan_vdev_get_bss_peer_mld_mac(vdev, &mld_addr);
+	if (QDF_IS_STATUS_ERROR(status))
+		return;
+
+	copied_conn_req_lock_acquire(mlo_dev_ctx->sta_ctx);
+	if (!mlo_dev_ctx->sta_ctx->copied_conn_req) {
+		mlo_dev_ctx->sta_ctx->copied_conn_req =
+			qdf_mem_malloc(sizeof(struct wlan_cm_connect_req));
+		if (mlo_dev_ctx->sta_ctx->copied_conn_req) {
+			wlan_cm_get_active_connect_req_param(vdev,
+							     mlo_dev_ctx->sta_ctx->copied_conn_req);
+		}
+	}
+	copied_conn_req_lock_release(mlo_dev_ctx->sta_ctx);
 
 	mlo_sta_get_vdev_list(vdev, &vdev_count, wlan_vdev_list);
 	for (i = 0; i < vdev_count; i++) {
@@ -868,7 +892,7 @@ mlo_send_link_connect(struct wlan_objmgr_vdev *vdev,
 				wlan_vdev_list[i],
 				*ml_parnter_info,
 				ml_parnter_info->partner_link_info[partner_idx],
-				ssid);
+				ssid, &mld_addr);
 		mlo_update_connected_links(wlan_vdev_list[i], 1);
 		partner_idx++;
 		mlo_release_vdev_ref(wlan_vdev_list[i]);
@@ -915,7 +939,7 @@ mlo_send_link_connect(struct wlan_objmgr_vdev *vdev,
 							mlo_dev_ctx->wlan_vdev_list[i],
 							*ml_parnter_info,
 							ml_parnter_info->partner_link_info[j],
-							ssid);
+							ssid, NULL);
 					}
 					mlo_dev_lock_release(mlo_dev_ctx);
 					return;
@@ -1014,12 +1038,17 @@ static QDF_STATUS ml_activate_pend_disconn_req_cb(struct scheduler_msg *msg)
 
 	mlo_dev_ctx = vdev->mlo_dev_ctx;
 	sta_ctx = mlo_dev_ctx->sta_ctx;
+	if (!sta_ctx || !sta_ctx->disconn_req)
+		goto release_ref;
+
 	mlo_disconnect_req(vdev, sta_ctx->disconn_req->source,
 			   sta_ctx->disconn_req->reason_code,
 			   &sta_ctx->disconn_req->bssid, false);
 
 	qdf_mem_free(sta_ctx->disconn_req);
 	sta_ctx->disconn_req = NULL;
+
+release_ref:
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLO_MGR_ID);
 
 	return QDF_STATUS_SUCCESS;
@@ -1141,27 +1170,6 @@ void mlo_handle_pending_disconnect(struct wlan_objmgr_vdev *vdev)
 	}
 }
 
-#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
-static bool
-mlo_sta_ignore_link_connect_fail(struct wlan_objmgr_vdev *vdev)
-{
-	if (wlan_cm_is_vdev_disconnected(vdev)) {
-		if (!wlan_vdev_mlme_is_mlo_link_vdev(vdev))
-			return false;
-		else
-			return true;
-	}
-
-	return false;
-}
-#else
-static inline bool
-mlo_sta_ignore_link_connect_fail(struct wlan_objmgr_vdev *vdev)
-{
-	return false;
-}
-#endif
-
 void mlo_sta_link_connect_notify(struct wlan_objmgr_vdev *vdev,
 				 struct wlan_cm_connect_resp *rsp)
 {
@@ -1181,9 +1189,6 @@ void mlo_sta_link_connect_notify(struct wlan_objmgr_vdev *vdev,
 		mlo_handle_pending_disconnect(vdev);
 		return;
 	}
-
-	if (mlo_sta_ignore_link_connect_fail(vdev))
-		return;
 
 	if (wlan_cm_is_vdev_disconnected(vdev))
 		mlo_free_copied_conn_req(sta_ctx);

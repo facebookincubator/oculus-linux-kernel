@@ -39,8 +39,8 @@
 #define LINK_SCORE                     BIT(0)
 #define ASSOC_LINK                     BIT(1)
 
-#define IS_LINK_SCORE(ml_flag)         (ml_flag & LINK_SCORE)
-#define IS_ASSOC_LINK(ml_flag)         (ml_flag & ASSOC_LINK)
+#define IS_LINK_SCORE(ml_flag)         ml_flag & LINK_SCORE
+#define IS_ASSOC_LINK(ml_flag)         ml_flag & ASSOC_LINK
 
 #define CM_BAND_2G_INDEX                   0
 #define CM_BAND_5G_INDEX                   1
@@ -1716,15 +1716,8 @@ static inline int cm_calculate_emlsr_score(struct weight_cfg *weight_config)
 	return weight_config->emlsr_weightage * mlo_boost_pct[MLSR];
 }
 
-/**
- * cm_get_entry() - Get bss scan entry by link mac address
- * @scan_list: Scan entry list of bss candidates after filtering
- * @link_addr: link mac address
- *
- * Return: Pointer to bss scan entry
- */
-static struct scan_cache_entry *cm_get_entry(qdf_list_t *scan_list,
-					     struct qdf_mac_addr *link_addr)
+struct scan_cache_entry *cm_get_entry(qdf_list_t *scan_list,
+				      struct qdf_mac_addr *link_addr)
 {
 	qdf_list_node_t *cur_node = NULL, *next_node = NULL;
 	struct scan_cache_node *curr_entry = NULL;
@@ -2530,7 +2523,7 @@ static int cm_calculate_bss_score(struct wlan_objmgr_psoc *psoc,
 		entry->bss_score = score;
 
 	if (bss_mlo_type == SLO || IS_LINK_SCORE(ml_flag))
-		mlme_nofl_info("%s("QDF_MAC_ADDR_FMT" freq %d): rssi %d HT %d VHT %d HE %d EHT %d su_bfer %d phy %d atf %d qbss %d cong_pct %d NSS %d ap_tx_pwr %d oce_subnet %d sae_pk_cap %d prorated_pcnt %d keymgmt 0x%x mlo type %d",
+		mlme_nofl_debug("%s("QDF_MAC_ADDR_FMT" freq %d): rssi %d HT %d VHT %d HE %d EHT %d su_bfer %d phy %d atf %d qbss %d cong_pct %d NSS %d ap_tx_pwr %d oce_subnet %d sae_pk_cap %d prorated_pcnt %d keymgmt 0x%x mlo type %d",
 				IS_ASSOC_LINK(ml_flag) ? "Candidate" : "Partner",
 				QDF_MAC_ADDR_REF(entry->bssid.bytes),
 				entry->channel.chan_freq,
@@ -2547,7 +2540,7 @@ static int cm_calculate_bss_score(struct wlan_objmgr_psoc *psoc,
 				prorated_pcnt, entry->neg_sec_info.key_mgmt,
 				bss_mlo_type);
 
-	mlme_nofl_info("%s score("QDF_MAC_ADDR_FMT" freq %d): rssi %d pcl %d ht %d vht %d he %d bfee %d bw %d band %d cong %d nss %d oce_wan %d oce_ap_pwr %d oce_subnet %d sae_pk %d eht %d security %d ml %d TOTAL %d",
+	mlme_nofl_debug("%s score("QDF_MAC_ADDR_FMT" freq %d): rssi %d pcl %d ht %d vht %d he %d bfee %d bw %d band %d cong %d nss %d oce_wan %d oce_ap_pwr %d oce_subnet %d sae_pk %d eht %d security %d ml %d TOTAL %d",
 			IS_LINK_SCORE(ml_flag) ? "Link" : "Candidate",
 			QDF_MAC_ADDR_REF(entry->bssid.bytes),
 			entry->channel.chan_freq,
@@ -2670,6 +2663,49 @@ cm_update_bss_score_for_mac_addr_matching(struct scan_cache_node *scan_entry,
 }
 #endif
 
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+static void cm_validate_partner_links_rsn_cap(struct scan_cache_entry *entry,
+					      qdf_list_t *scan_list)
+{
+	uint8_t idx;
+	struct scan_cache_entry *partner_entry;
+	struct partner_link_info *partner_info;
+
+	if (!entry->ie_list.multi_link_bv || !entry->ml_info.num_links)
+		return;
+
+	for (idx = 0; idx < entry->ml_info.num_links; idx++) {
+		partner_info = &entry->ml_info.link_info[idx];
+		if (!partner_info->is_valid_link)
+			continue;
+
+		/*
+		 * If partner link is not found in the current candidate list
+		 * don't treat it as failure, it can be removed post ML
+		 * probe resp generation time.
+		 */
+		partner_entry = cm_get_entry(scan_list,
+					     &partner_info->link_addr);
+		if (!partner_entry)
+			continue;
+
+		if (wlan_scan_entries_contain_cmn_akm(entry, partner_entry))
+			continue;
+
+		partner_info->is_valid_link = false;
+		mlme_debug(QDF_MAC_ADDR_FMT "link (%d) akm not matching",
+			   QDF_MAC_ADDR_REF(partner_entry->bssid.bytes),
+			   partner_info->freq);
+	}
+}
+#else
+static inline void
+cm_validate_partner_links_rsn_cap(struct scan_cache_entry *entry,
+				  qdf_list_t *scan_list)
+{
+}
+#endif
+
 void wlan_cm_calculate_bss_score(struct wlan_objmgr_pdev *pdev,
 				 struct pcl_freq_weight_list *pcl_lst,
 				 qdf_list_t *scan_list,
@@ -2756,6 +2792,8 @@ void wlan_cm_calculate_bss_score(struct wlan_objmgr_pdev *pdev,
 			}
 		}
 
+		/* Check if the partner links RSN caps are matching. */
+		cm_validate_partner_links_rsn_cap(scan_entry->entry, scan_list);
 		if (denylist_action == CM_DLM_NO_ACTION ||
 		    (are_all_candidate_denylisted && denylist_action ==
 		     CM_DLM_REMOVE)) {
@@ -2855,25 +2893,6 @@ void wlan_cm_calculate_bss_score(struct wlan_objmgr_pdev *pdev,
 }
 
 #ifdef CONFIG_BAND_6GHZ
-static bool cm_check_h2e_support(const uint8_t *rsnxe)
-{
-	const uint8_t *rsnxe_cap;
-	uint8_t cap_len;
-
-	rsnxe_cap = wlan_crypto_parse_rsnxe_ie(rsnxe, &cap_len);
-	if (!rsnxe_cap) {
-		mlme_debug("RSNXE caps not present");
-		return false;
-	}
-
-	if (*rsnxe_cap & WLAN_CRYPTO_RSNX_CAP_SAE_H2E)
-		return true;
-
-	mlme_debug("RSNXE caps %x dont have H2E support", *rsnxe_cap);
-
-	return false;
-}
-
 #ifdef CONN_MGR_ADV_FEATURE
 static bool wlan_cm_wfa_get_test_feature_flags(struct wlan_objmgr_psoc *psoc)
 {
@@ -2943,7 +2962,7 @@ bool wlan_cm_6ghz_allowed_for_akm(struct wlan_objmgr_psoc *psoc,
 	    QDF_HAS_PARAM(key_mgmt, WLAN_CRYPTO_KEY_MGMT_FT_SAE_EXT_KEY)))
 		return true;
 
-	return (cm_check_h2e_support(rsnxe) ||
+	return (util_is_rsnxe_h2e_capable(rsnxe) ||
 		wlan_cm_wfa_get_test_feature_flags(psoc));
 }
 
@@ -3007,8 +3026,8 @@ bool wlan_cm_get_standard_6ghz_conn_policy(struct wlan_objmgr_psoc *psoc)
 	return mlme_psoc_obj->psoc_cfg.score_config.standard_6ghz_conn_policy;
 }
 
-void wlan_cm_set_disable_vlp_sta_conn_to_sp_ap(struct wlan_objmgr_psoc *psoc,
-					       bool value)
+void wlan_cm_set_relaxed_lpi_conn_policy(struct wlan_objmgr_psoc *psoc,
+					 bool value)
 {
 	struct psoc_mlme_obj *mlme_psoc_obj;
 
@@ -3016,11 +3035,11 @@ void wlan_cm_set_disable_vlp_sta_conn_to_sp_ap(struct wlan_objmgr_psoc *psoc,
 	if (!mlme_psoc_obj)
 		return;
 
-	mlme_debug("disable_vlp_sta_conn_to_sp_ap val %x", value);
-	mlme_psoc_obj->psoc_cfg.score_config.disable_vlp_sta_conn_to_sp_ap = value;
+	mlme_debug("relaxed lpi connection policy val %x", value);
+	mlme_psoc_obj->psoc_cfg.score_config.relaxed_lpi_conn_policy = value;
 }
 
-bool wlan_cm_get_disable_vlp_sta_conn_to_sp_ap(struct wlan_objmgr_psoc *psoc)
+bool wlan_cm_get_relaxed_lpi_conn_policy(struct wlan_objmgr_psoc *psoc)
 {
 	struct psoc_mlme_obj *mlme_psoc_obj;
 
@@ -3028,7 +3047,7 @@ bool wlan_cm_get_disable_vlp_sta_conn_to_sp_ap(struct wlan_objmgr_psoc *psoc)
 	if (!mlme_psoc_obj)
 		return false;
 
-	return mlme_psoc_obj->psoc_cfg.score_config.disable_vlp_sta_conn_to_sp_ap;
+	return mlme_psoc_obj->psoc_cfg.score_config.relaxed_lpi_conn_policy;
 }
 
 void wlan_cm_set_6ghz_key_mgmt_mask(struct wlan_objmgr_psoc *psoc,

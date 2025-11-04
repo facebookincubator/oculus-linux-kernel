@@ -797,6 +797,11 @@
 #define HWIO_REO_R0_REO2SW1_RING_MISC_ADDR(x)                                                                          ((x) + 0x510)
 #define HWIO_REO_R0_REO2SW1_RING_MISC_TRANSACTION_TYPE_BMSK                                                             0x8000000
 #define HWIO_REO_R0_REO2SW1_RING_MISC_TRANSACTION_TYPE_SHFT                                                                    27
+#define HWIO_REO_R0_REO2SW1_RING_STATUS_ADDR(x)                                                                        ((x) + 0x50c)
+#define HWIO_REO_R0_REO2SW1_RING_STATUS_NUM_AVAIL_WORDS_BMSK                                                           0xffff0000
+#define HWIO_REO_R0_REO2SW1_RING_STATUS_NUM_AVAIL_WORDS_SHFT                                                                   16
+#define HWIO_REO_R0_REO2SW1_RING_STATUS_NUM_VALID_WORDS_BMSK                                                               0xffff
+#define HWIO_REO_R0_REO2SW1_RING_STATUS_NUM_VALID_WORDS_SHFT                                                                    0
 #define HWIO_REO_R0_REO2SW1_RING_HP_ADDR_LSB_ADDR(x)                                                                   ((x) + 0x514)
 #define HWIO_REO_R0_REO2SW1_RING_HP_ADDR_MSB_ADDR(x)                                                                   ((x) + 0x518)
 #define HWIO_REO_R0_REO2SW1_RING_PRODUCER_INT_SETUP_ADDR(x)                                                            ((x) + 0x524)

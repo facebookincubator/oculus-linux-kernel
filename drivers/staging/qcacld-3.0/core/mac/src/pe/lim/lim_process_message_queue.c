@@ -182,10 +182,11 @@ static void lim_process_sae_msg_ap(struct mac_context *mac,
 		if (assoc_req->present) {
 			pe_debug("Assoc req cached; clean it up");
 			lim_process_assoc_cleanup(mac, session,
-						  assoc_req->assoc_req,
 						  assoc_req->sta_ds,
 						  assoc_req->assoc_req_copied);
 			assoc_req->present = false;
+			lim_free_assoc_req_frm_buf(assoc_req->assoc_req);
+			qdf_mem_free(assoc_req->assoc_req);
 		}
 		lim_delete_pre_auth_node(mac, sae_msg->peer_mac_addr);
 		return;
@@ -211,11 +212,13 @@ static void lim_process_sae_msg_ap(struct mac_context *mac,
 						  &assoc_req_copied,
 						  assoc_req->dup_entry, false,
 						  assoc_req->partner_peer_idx);
-		if (!assoc_ind_sent)
+		if (!assoc_ind_sent) {
 			lim_process_assoc_cleanup(mac, session,
-						  assoc_req->assoc_req,
 						  assoc_req->sta_ds,
 						  assoc_req_copied);
+			lim_free_assoc_req_frm_buf(assoc_req->assoc_req);
+			qdf_mem_free(assoc_req->assoc_req);
+		}
 	}
 }
 

@@ -3445,6 +3445,34 @@ void hal_srng_dst_set_tp(hal_ring_handle_t hal_ring_hdl, uint16_t idx)
 }
 
 /**
+ * hal_srng_src_get_hp() - get head idx.
+ * @hal_ring_hdl: srng handle
+ *
+ * Return: head idx
+ */
+static inline
+uint32_t hal_srng_src_get_hp(hal_ring_handle_t hal_ring_hdl)
+{
+	struct hal_srng *srng = (struct hal_srng *)hal_ring_hdl;
+
+	return srng->u.src_ring.hp;
+}
+
+/**
+ * hal_srng_dst_get_tp() - get tail idx.
+ * @hal_ring_hdl: srng handle
+ *
+ * Return: head idx
+ */
+static inline
+uint32_t hal_srng_dst_get_tp(hal_ring_handle_t hal_ring_hdl)
+{
+	struct hal_srng *srng = (struct hal_srng *)hal_ring_hdl;
+
+	return srng->u.dst_ring.tp;
+}
+
+/**
  * hal_srng_src_get_tpidx() - get tail idx
  * @hal_soc_hdl: HAL SOC handle
  *

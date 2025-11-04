@@ -377,6 +377,21 @@ scm_get_mld_addr_by_link_addr(struct wlan_objmgr_pdev *pdev,
 	return QDF_STATUS_E_NOSUPPORT;
 }
 #endif
+
+/**
+ * scm_scan_entries_contain_cmn_akm() - Check if two entries have common
+ * RSN capabilities.
+ * @entry1: Primary scan entry for comparison
+ * @entry2: Secondary scan entry for comparison
+ *
+ * Checks various RSN parameters of two scan entries to determine
+ * whether both have similar capabilities or not.
+ *
+ * Return: bool
+ */
+bool scm_scan_entries_contain_cmn_akm(struct scan_cache_entry *entry1,
+				      struct scan_cache_entry *entry2);
+
 #ifdef CONFIG_BAND_6GHZ
 /**
  * util_scan_get_he_6g_params() - Function provides HE 6GHz params from HE ops
@@ -389,7 +404,8 @@ struct he_oper_6g_param *util_scan_get_he_6g_params(uint8_t *he_ops);
 static inline struct
 he_oper_6g_param *util_scan_get_he_6g_params(uint8_t *he_ops)
 {
- return NULL;
+	return NULL;
 }
 #endif
+
 #endif

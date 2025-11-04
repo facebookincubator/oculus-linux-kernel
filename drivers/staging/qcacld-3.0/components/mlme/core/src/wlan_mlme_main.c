@@ -964,30 +964,6 @@ static void mlme_init_wds_config_cfg(struct wlan_objmgr_psoc *psoc,
 
 #ifdef CONFIG_BAND_6GHZ
 /**
- * mlme_init_disable_vlp_sta_conn_to_sp_ap() - initialize disable vlp STA
- *                                             connection to sp AP flag
- * @psoc: Pointer to PSOC
- * @gen: pointer to generic CFG items
- *
- * Return: None
- */
-static void mlme_init_disable_vlp_sta_conn_to_sp_ap(
-						struct wlan_objmgr_psoc *psoc,
-						struct wlan_mlme_generic *gen)
-{
-	gen->disable_vlp_sta_conn_to_sp_ap =
-		cfg_default(CFG_DISABLE_VLP_STA_CONN_TO_SP_AP);
-}
-#else
-static void mlme_init_disable_vlp_sta_conn_to_sp_ap(
-						struct wlan_objmgr_psoc *psoc,
-						struct wlan_mlme_generic *gen)
-{
-}
-#endif
-
-#ifdef CONFIG_BAND_6GHZ
-/**
  * mlme_init_standard_6ghz_conn_policy() - initialize standard 6GHz
  *                                         policy connection flag
  * @psoc: Pointer to PSOC
@@ -1178,7 +1154,6 @@ static void mlme_init_generic_cfg(struct wlan_objmgr_psoc *psoc,
 	mlme_init_emlsr_mode(psoc, gen);
 	mlme_init_tl2m_negotiation_support(psoc, gen);
 	mlme_init_standard_6ghz_conn_policy(psoc, gen);
-	mlme_init_disable_vlp_sta_conn_to_sp_ap(psoc, gen);
 }
 
 static void mlme_init_edca_ani_cfg(struct wlan_objmgr_psoc *psoc,
@@ -4023,6 +3998,33 @@ bool mlme_get_follow_ap_edca_flag(struct wlan_objmgr_vdev *vdev)
 	return mlme_priv->follow_ap_edca;
 }
 
+void mlme_set_best_6g_power_type(struct wlan_objmgr_vdev *vdev,
+				 enum reg_6g_ap_type best_6g_power_type)
+{
+	struct mlme_legacy_priv *mlme_priv;
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv) {
+		mlme_legacy_err("vdev legacy private object is NULL");
+		return;
+	}
+
+	mlme_priv->best_6g_power_type = best_6g_power_type;
+}
+
+enum reg_6g_ap_type mlme_get_best_6g_power_type(struct wlan_objmgr_vdev *vdev)
+{
+	struct mlme_legacy_priv *mlme_priv;
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv) {
+		mlme_legacy_err("vdev legacy private object is NULL");
+		return REG_VERY_LOW_POWER_AP;
+	}
+
+	return mlme_priv->best_6g_power_type;
+}
+
 void mlme_set_reconn_after_assoc_timeout_flag(struct wlan_objmgr_psoc *psoc,
 					      uint8_t vdev_id, bool flag)
 {
@@ -5148,4 +5150,33 @@ QDF_STATUS wlan_mlme_get_sta_rx_nss(struct wlan_objmgr_psoc *psoc,
 	}
 
 	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+wlan_mlme_send_csa_event_status_ind_cmd(struct wlan_objmgr_vdev *vdev,
+					uint8_t csa_status)
+{
+	struct wlan_objmgr_psoc *psoc;
+	struct  wlan_mlme_tx_ops *tx_ops;
+	mlme_psoc_ext_t *mlme_priv;
+
+	psoc = wlan_vdev_get_psoc(vdev);
+	if (!psoc) {
+		mlme_err("vdev_id %d psoc object is NULL",
+			 wlan_vdev_get_id(vdev));
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	mlme_priv = wlan_psoc_mlme_get_ext_hdl(psoc);
+	if (!mlme_priv)
+		return QDF_STATUS_E_FAILURE;
+
+	tx_ops = &mlme_priv->mlme_tx_ops;
+
+	if (!tx_ops || !tx_ops->send_csa_event_status_ind) {
+		mlme_err("CSA no op defined");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return tx_ops->send_csa_event_status_ind(vdev, csa_status);
 }

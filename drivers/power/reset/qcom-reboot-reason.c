@@ -51,7 +51,7 @@ static int qcom_reboot_reason_reboot(struct notifier_block *this,
 	if (!cmd)
 		return NOTIFY_OK;
 	for (reason = reasons; reason->cmd; reason++) {
-		if (!strcmp(cmd, reason->cmd)) {
+		if (!strncmp(cmd, reason->cmd, strlen(reason->cmd))) {
 			nvmem_cell_write(reboot->nvmem_cell,
 					 &reason->pon_reason,
 					 sizeof(reason->pon_reason));

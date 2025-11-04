@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -113,6 +113,7 @@
 #include "target_if_vdev_mgr_tx_ops.h"
 #include "wlan_vdev_mgr_utils_api.h"
 #include "target_if.h"
+#include <wlan_psoc_mlme_api.h>
 
 /*
  * FW only supports 8 clients in SAP/GO mode for D3 WoW feature
@@ -1308,7 +1309,7 @@ QDF_STATUS wma_vdev_start_resp_handler(struct vdev_mlme_obj *vdev_mlme,
 	}
 
 	if (wma_is_vdev_in_ap_mode(wma, rsp->vdev_id))
-		policy_mgr_update_dfs_master_dynamic_enabled(psoc, true);
+		tgt_dfs_radar_enable(wma->pdev, 0, 0, true);
 
 	iface = &wma->interfaces[rsp->vdev_id];
 	if (!iface->vdev) {
@@ -1651,6 +1652,69 @@ bool wma_objmgr_peer_exist(tp_wma_handle wma,
 	return true;
 }
 
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+void wma_peer_tbl_trans_add_entry(struct wlan_objmgr_peer *peer, bool is_create,
+				  struct cdp_peer_setup_info *peer_info)
+{
+	QDF_STATUS status;
+	struct wlan_objmgr_vdev *vdev;
+	struct wlan_objmgr_psoc *psoc;
+	struct wlan_peer_tbl_trans_entry *peer_trans_entry;
+	uint8_t *peer_mac, *peer_mld;
+
+	vdev = wlan_peer_get_vdev(peer);
+	if (!vdev)
+		return;
+
+	psoc = wlan_vdev_get_psoc(vdev);
+	if (!psoc)
+		return;
+
+	peer_trans_entry = qdf_mem_malloc(sizeof(*peer_trans_entry));
+	if (!peer_trans_entry)
+		return;
+
+	peer_trans_entry->ts = qdf_get_log_timestamp();
+	peer_trans_entry->vdev_id = wlan_vdev_get_id(vdev);
+	peer_trans_entry->opmode = wlan_vdev_mlme_get_opmode(vdev);
+
+	peer_mac = wlan_peer_get_macaddr(peer);
+	peer_mld = wlan_peer_mlme_get_mldaddr(peer);
+	qdf_ether_addr_copy(&peer_trans_entry->peer_addr.bytes[0], peer_mac);
+	if (peer_mld) {
+		qdf_ether_addr_copy(&peer_trans_entry->peer_mld_addr.bytes[0],
+				    peer_mld);
+	}
+
+	peer_trans_entry->is_mlo = wlan_vdev_mlme_is_mlo_vdev(vdev);
+	peer_trans_entry->is_mlo_link = wlan_vdev_mlme_is_mlo_link_vdev(vdev);
+
+	if (wlan_cm_is_vdev_roam_sync_inprogress(vdev)) {
+		peer_trans_entry->peer_flags |= WLAN_PEER_TBL_TRANS_ROAM;
+		peer_trans_entry->auth_status =
+				wlan_cm_check_mlo_roam_auth_status(vdev);
+		peer_trans_entry->num_roam_links = mlo_mgr_num_roam_links(vdev);
+	} else if (is_create) {
+		peer_trans_entry->peer_flags |= WLAN_PEER_TBL_TRANS_CONNECT;
+	} else {
+		peer_trans_entry->peer_flags |= WLAN_PEER_TBL_TRANS_DISCONNECT;
+	}
+
+	if (is_create) {
+		peer_trans_entry->peer_flags |= WLAN_PEER_TBL_TRANS_CREATE;
+		peer_trans_entry->is_primary = peer_info->is_primary_link;
+		peer_trans_entry->is_first_link = peer_info->is_first_link;
+	} else {
+		peer_trans_entry->peer_flags |= WLAN_PEER_TBL_TRANS_DESTROY;
+	}
+
+	status = wlan_mlme_psoc_peer_tbl_trans_add_entry(psoc,
+							 peer_trans_entry);
+	if (QDF_IS_STATUS_ERROR(status))
+		qdf_mem_free(peer_trans_entry);
+}
+#endif
+
 /**
  * wma_remove_peer() - remove peer information from host driver and fw
  * @wma: wma handle
@@ -1674,6 +1738,7 @@ QDF_STATUS wma_remove_peer(tp_wma_handle wma, uint8_t *mac_addr,
 	bool peer_unmap_conf_support_enabled;
 	uint8_t peer_vdev_id;
 	struct peer_delete_cmd_params del_param = {0};
+	struct wlan_objmgr_peer *peer;
 
 	if (!wma->interfaces[vdev_id].peer_count) {
 		wma_err("Can't remove peer with peer_addr "QDF_MAC_ADDR_FMT" vdevid %d peer_count %d",
@@ -1688,19 +1753,25 @@ QDF_STATUS wma_remove_peer(tp_wma_handle wma, uint8_t *mac_addr,
 		return QDF_STATUS_E_INVAL;
 	}
 
-	if (!wma_objmgr_peer_exist(wma, peer_addr, &peer_vdev_id)) {
+	peer = wlan_objmgr_get_peer_by_mac(wma->psoc, peer_addr,
+					   WLAN_LEGACY_WMA_ID);
+	if (!peer) {
 		wma_err("peer doesn't exist peer_addr "QDF_MAC_ADDR_FMT" vdevid %d peer_count %d",
 			 QDF_MAC_ADDR_REF(peer_addr), vdev_id,
 			 wma->interfaces[vdev_id].peer_count);
 		return QDF_STATUS_E_INVAL;
 	}
 
+	peer_vdev_id = wlan_vdev_get_id(wlan_peer_get_vdev(peer));
 	if (peer_vdev_id != vdev_id) {
 		wma_err("peer "QDF_MAC_ADDR_FMT" is on vdev id %d but delete req on vdevid %d peer_count %d",
 			 QDF_MAC_ADDR_REF(peer_addr), peer_vdev_id, vdev_id,
 			 wma->interfaces[vdev_id].peer_count);
+		wlan_objmgr_peer_release_ref(peer, WLAN_LEGACY_WMA_ID);
 		return QDF_STATUS_E_INVAL;
 	}
+
+	wma_peer_tbl_trans_add_entry(peer, false, NULL);
 	peer_unmap_conf_support_enabled =
 				cdp_cfg_get_peer_unmap_conf_support(soc);
 
@@ -1764,6 +1835,7 @@ peer_detach:
 			cdp_peer_delete(soc, vdev_id, peer_addr, bitmap);
 	}
 
+	wlan_objmgr_peer_release_ref(peer, WLAN_LEGACY_WMA_ID);
 	wlan_release_peer_key_wakelock(wma->pdev, peer_mac);
 	wma_remove_objmgr_peer(wma, wma->interfaces[vdev_id].vdev, peer_mac);
 
@@ -2122,70 +2194,75 @@ QDF_STATUS wma_add_peer(tp_wma_handle wma,
 }
 
 #ifdef WLAN_FEATURE_11BE_MLO
+static void wma_peer_setup_fill_info(struct wlan_objmgr_psoc *psoc,
+				     struct wlan_objmgr_peer *peer,
+				     struct cdp_peer_setup_info *peer_info)
+{
+	uint8_t vdev_id = wlan_vdev_get_id(wlan_peer_get_vdev(peer));
+
+	peer_info->mld_peer_mac = wlan_peer_mlme_get_mldaddr(peer);
+	if (MLME_IS_MLO_ROAM_SYNCH_IN_PROGRESS(psoc, vdev_id) &&
+	    wlan_vdev_mlme_get_is_mlo_link(psoc, vdev_id)) {
+		peer_info->is_first_link = true;
+		peer_info->is_primary_link = false;
+	} else if (wlan_cm_is_roam_sync_in_progress(psoc, vdev_id) &&
+		   wlan_vdev_mlme_get_is_mlo_vdev(psoc, vdev_id)) {
+		if (mlo_get_single_link_ml_roaming(psoc, vdev_id)) {
+			peer_info->is_first_link = true;
+			peer_info->is_primary_link = true;
+		} else {
+			peer_info->is_first_link = false;
+			peer_info->is_primary_link = true;
+		}
+	} else {
+		peer_info->is_first_link = wlan_peer_mlme_is_assoc_peer(peer);
+		peer_info->is_primary_link = peer_info->is_first_link;
+	}
+}
+
 /**
  * wma_cdp_peer_setup() - provide mlo information to cdp_peer_setup
- * @wma: wma handle
  * @dp_soc: dp soc
  * @vdev_id: vdev id
- * @peer_addr: peer mac addr
+ * @peer: Object manager peer pointer
+ * @peer_info: Peer setup info
  *
  * Return: VOID
  */
-static void wma_cdp_peer_setup(tp_wma_handle wma,
-			       ol_txrx_soc_handle dp_soc,
-			       uint8_t vdev_id,
-			       uint8_t *peer_addr)
+static void wma_cdp_peer_setup(ol_txrx_soc_handle dp_soc,
+			       uint8_t vdev_id, struct wlan_objmgr_peer *peer,
+			       struct cdp_peer_setup_info *peer_info)
 {
-	struct cdp_peer_setup_info peer_info;
-	uint8_t *mld_mac;
-	struct wlan_objmgr_peer *obj_peer = NULL;
+	uint8_t *mld_mac, *peer_addr;
 
-	obj_peer = wlan_objmgr_get_peer_by_mac(wma->psoc,
-					       peer_addr,
-					       WLAN_LEGACY_WMA_ID);
-	if (!obj_peer) {
-		wma_err("Invalid obj_peer");
-		return;
-	}
-
-	mld_mac = wlan_peer_mlme_get_mldaddr(obj_peer);
+	peer_addr = wlan_peer_get_macaddr(peer);
+	mld_mac = peer_info->mld_peer_mac;
 
 	if (!mld_mac || qdf_is_macaddr_zero((struct qdf_mac_addr *)mld_mac)) {
 		cdp_peer_setup(dp_soc, vdev_id, peer_addr, NULL);
-		wlan_objmgr_peer_release_ref(obj_peer, WLAN_LEGACY_WMA_ID);
 		return;
 	}
 
-	qdf_mem_zero(&peer_info, sizeof(peer_info));
-
-	peer_info.mld_peer_mac = mld_mac;
-	if (MLME_IS_MLO_ROAM_SYNCH_IN_PROGRESS(wma->psoc, vdev_id) &&
-	    wlan_vdev_mlme_get_is_mlo_link(wma->psoc, vdev_id)) {
-		peer_info.is_first_link = 1;
-		peer_info.is_primary_link = 0;
-	} else if (wlan_cm_is_roam_sync_in_progress(wma->psoc, vdev_id) &&
-		   wlan_vdev_mlme_get_is_mlo_vdev(wma->psoc, vdev_id)) {
-		if (mlo_get_single_link_ml_roaming(wma->psoc, vdev_id)) {
-			peer_info.is_first_link = 1;
-			peer_info.is_primary_link = 1;
-		} else {
-			peer_info.is_first_link = 0;
-			peer_info.is_primary_link = 1;
-		}
-	} else {
-		peer_info.is_first_link = wlan_peer_mlme_is_assoc_peer(obj_peer);
-		peer_info.is_primary_link = peer_info.is_first_link;
-	}
-
-	cdp_peer_setup(dp_soc, vdev_id, peer_addr, &peer_info);
-	wlan_objmgr_peer_release_ref(obj_peer, WLAN_LEGACY_WMA_ID);
+	cdp_peer_setup(dp_soc, vdev_id, peer_addr, peer_info);
 }
 #else
-static void wma_cdp_peer_setup(tp_wma_handle wma,
-			       ol_txrx_soc_handle dp_soc,
-			       uint8_t vdev_id,
-			       uint8_t *peer_addr)
+static inline void
+wma_peer_setup_fill_info(struct wlan_objmgr_psoc *psoc,
+			 struct wlan_objmgr_peer *peer,
+			 struct cdp_peer_setup_info *peer_info)
 {
+	peer_info->mld_peer_mac = NULL;
+	peer_info->is_first_link = false;
+	peer_info->is_primary_link = false;
+}
+
+static void wma_cdp_peer_setup(ol_txrx_soc_handle dp_soc,
+			       uint8_t vdev_id, struct wlan_objmgr_peer *peer,
+			       struct cdp_peer_setup_info *peer_info)
+{
+	uint8_t *peer_addr;
+
+	peer_addr = wlan_peer_get_macaddr(peer);
 	cdp_peer_setup(dp_soc, vdev_id, peer_addr, NULL);
 }
 #endif
@@ -2198,6 +2275,8 @@ QDF_STATUS wma_create_peer(tp_wma_handle wma,
 {
 	void *dp_soc = cds_get_context(QDF_MODULE_ID_SOC);
 	QDF_STATUS status;
+	struct wlan_objmgr_peer *obj_peer;
+	struct cdp_peer_setup_info peer_info = {0};
 
 	if (!dp_soc)
 		return QDF_STATUS_E_FAILURE;
@@ -2206,8 +2285,17 @@ QDF_STATUS wma_create_peer(tp_wma_handle wma,
 	if (QDF_IS_STATUS_ERROR(status))
 		return status;
 
+	obj_peer = wlan_objmgr_get_peer_by_mac(wma->psoc, peer_addr,
+					       WLAN_LEGACY_WMA_ID);
+	if (!obj_peer)
+		return QDF_STATUS_E_FAILURE;
+
 	wma_increment_peer_count(wma, vdev_id);
-	wma_cdp_peer_setup(wma, dp_soc, vdev_id, peer_addr);
+
+	wma_peer_setup_fill_info(wma->psoc, obj_peer, &peer_info);
+	wma_peer_tbl_trans_add_entry(obj_peer, true, &peer_info);
+	wma_cdp_peer_setup(dp_soc, vdev_id, obj_peer, &peer_info);
+	wlan_objmgr_peer_release_ref(obj_peer, WLAN_LEGACY_WMA_ID);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -3464,6 +3552,8 @@ int wma_peer_create_confirm_handler(void *handle, uint8_t *evt_param_info,
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
 	int ret = -EINVAL;
 	uint8_t req_msg_type;
+	struct wlan_objmgr_peer *peer;
+	struct cdp_peer_setup_info peer_info = {0};
 
 	param_buf = (WMI_PEER_CREATE_CONF_EVENTID_param_tlvs *)evt_param_info;
 	if (!param_buf) {
@@ -3515,8 +3605,18 @@ int wma_peer_create_confirm_handler(void *handle, uint8_t *evt_param_info,
 			goto fail;
 		}
 
-		wma_cdp_peer_setup(wma, dp_soc, peer_create_rsp->vdev_id,
-				   peer_mac.bytes);
+		peer = wlan_objmgr_get_peer_by_mac(wma->psoc, peer_mac.bytes,
+						   WLAN_LEGACY_WMA_ID);
+		if (!peer) {
+			status = QDF_STATUS_E_FAILURE;
+			goto fail;
+		}
+
+		wma_peer_setup_fill_info(wma->psoc, peer, &peer_info);
+		wma_peer_tbl_trans_add_entry(peer, true, &peer_info);
+		wma_cdp_peer_setup(dp_soc, peer_create_rsp->vdev_id,
+				   peer, &peer_info);
+		wlan_objmgr_peer_release_ref(peer, WLAN_LEGACY_WMA_ID);
 
 		status = QDF_STATUS_SUCCESS;
 		ret = 0;
@@ -5034,7 +5134,7 @@ static void wma_add_sta_req_sta_mode(tp_wma_handle wma, tpAddStaParams params)
 	}
 
 	if (cdp_peer_state_get(soc, params->smesessionId,
-			       params->bssId, true) == OL_TXRX_PEER_STATE_DISC) {
+			       params->bssId) == OL_TXRX_PEER_STATE_DISC) {
 		/*
 		 * This is the case for reassociation.
 		 * peer state update and peer_assoc is required since it

@@ -1511,30 +1511,24 @@ void dp_vdev_peer_stats_update_protocol_cnt_tx(struct dp_vdev *vdev_hdl,
 }
 #endif
 
-#ifdef WLAN_SUPPORT_LAPB
 #ifdef WLAN_DP_FEATURE_SW_LATENCY_MGR
-#error LAPB and SWLM features are not validated together
-#endif
-int
-dp_tx_attempt_coalescing(struct dp_soc *soc, struct dp_vdev *vdev,
-			 struct dp_tx_desc_s *tx_desc,
-			 uint8_t tid,
-			 struct dp_tx_msdu_info_s *msdu_info,
-			 uint8_t ring_id)
+/**
+ * dp_tx_update_stats() - Update soc level tx stats
+ * @soc: DP soc handle
+ * @tx_desc: TX descriptor reference
+ * @ring_id: TCL ring id
+ *
+ * Returns: none
+ */
+void dp_tx_update_stats(struct dp_soc *soc,
+			struct dp_tx_desc_s *tx_desc,
+			uint8_t ring_id)
 {
-	struct wlan_lapb *lapb = &soc->lapb;
-	int coalesce = 0;
+	uint32_t stats_len = dp_tx_get_pkt_len(tx_desc);
 
-	if (!lapb->is_init)
-		return coalesce;
-
-	soc->lapb.ops->wlan_dp_lapb_handle_frame(soc, tx_desc->nbuf,
-							 &coalesce, msdu_info);
-	return coalesce;
+	DP_STATS_INC_PKT(soc, tx.egress[ring_id], 1, stats_len);
 }
-#endif
 
-#ifdef WLAN_DP_FEATURE_SW_LATENCY_MGR
 int
 dp_tx_attempt_coalescing(struct dp_soc *soc, struct dp_vdev *vdev,
 			 struct dp_tx_desc_s *tx_desc,
@@ -1573,17 +1567,6 @@ dp_tx_attempt_coalescing(struct dp_soc *soc, struct dp_vdev *vdev,
 	}
 
 	return ret;
-}
-#endif
-
-#if defined(WLAN_DP_FEATURE_SW_LATENCY_MGR) || defined(WLAN_SUPPORT_LAPB)
-void dp_tx_update_stats(struct dp_soc *soc,
-			struct dp_tx_desc_s *tx_desc,
-			uint8_t ring_id)
-{
-	uint32_t stats_len = dp_tx_get_pkt_len(tx_desc);
-
-	DP_STATS_INC_PKT(soc, tx.egress[ring_id], 1, stats_len);
 }
 
 void
@@ -1628,6 +1611,67 @@ dp_tx_check_and_flush_hp(struct dp_soc *soc,
 		dp_flush_tcp_hp(soc,
 			(msdu_info->tx_queue.ring_id & DP_TX_QUEUE_MASK));
 	}
+}
+#elif defined(WLAN_SUPPORT_LAPB)
+/**
+ * dp_tx_update_stats() - Update soc level tx stats
+ * @soc: DP soc handle
+ * @tx_desc: TX descriptor reference
+ * @ring_id: TCL ring id
+ *
+ * Returns: none
+ */
+void dp_tx_update_stats(struct dp_soc *soc,
+			struct dp_tx_desc_s *tx_desc,
+			uint8_t ring_id)
+{
+	uint32_t stats_len = dp_tx_get_pkt_len(tx_desc);
+
+	DP_STATS_INC_PKT(soc, tx.egress[ring_id], 1, stats_len);
+}
+
+void
+dp_tx_ring_access_end(struct dp_soc *soc, hal_ring_handle_t hal_ring_hdl,
+		      int coalesce)
+{
+	if (coalesce)
+		dp_tx_hal_ring_access_end_reap(soc, hal_ring_hdl);
+	else
+		dp_tx_hal_ring_access_end(soc, hal_ring_hdl);
+}
+
+int
+dp_tx_attempt_coalescing(struct dp_soc *soc, struct dp_vdev *vdev,
+			 struct dp_tx_desc_s *tx_desc,
+			 uint8_t tid,
+			 struct dp_tx_msdu_info_s *msdu_info,
+			 uint8_t ring_id)
+{
+	int coalesce = 0;
+
+	if (!soc->lapb.is_init)
+		return coalesce;
+
+	soc->lapb.ops->wlan_dp_lapb_handle_frame(soc, tx_desc->nbuf,
+						 &coalesce, msdu_info);
+
+	return coalesce;
+}
+
+static inline void
+dp_tx_is_hp_update_required(uint32_t i, struct dp_tx_msdu_info_s *msdu_info)
+{
+	if (((i + 1) < msdu_info->num_seg))
+		msdu_info->skip_hp_update = 1;
+	else
+		msdu_info->skip_hp_update = 0;
+}
+
+static inline void
+dp_tx_check_and_flush_hp(struct dp_soc *soc,
+			 QDF_STATUS status,
+			 struct dp_tx_msdu_info_s *msdu_info)
+{
 }
 #else
 static inline void
@@ -2058,7 +2102,7 @@ is_nbuf_frm_rmnet(qdf_nbuf_t nbuf, struct dp_tx_msdu_info_s *msdu_info)
 	ingress_dev = dev_get_by_index(dev_net(nbuf->dev), nbuf->skb_iif);
 
 	if ((ingress_dev->priv_flags & IFF_PHONY_HEADROOM)) {
-		dev_put(ingress_dev);
+		qdf_net_if_release_dev((struct qdf_net_if *)ingress_dev);
 		frag = &(skb_shinfo(nbuf)->frags[0]);
 		buf_len = skb_frag_size(frag);
 		payload_addr = (uint8_t *)skb_frag_address(frag);
@@ -2074,7 +2118,7 @@ is_nbuf_frm_rmnet(qdf_nbuf_t nbuf, struct dp_tx_msdu_info_s *msdu_info)
 
 		return true;
 	}
-	dev_put(ingress_dev);
+	qdf_net_if_release_dev((struct qdf_net_if *)ingress_dev);
 	return false;
 }
 
@@ -5079,7 +5123,8 @@ dp_tx_comp_process_desc(struct dp_soc *soc,
 		qdf_trace_dp_packet(desc->nbuf, QDF_TX,
 				    desc->msdu_ext_desc ?
 				    desc->msdu_ext_desc->tso_desc : NULL,
-				    qdf_ktime_to_us(desc->timestamp));
+				    qdf_ktime_to_us(desc->timestamp),
+				    desc->tx_status);
 
 	if (!(desc->msdu_ext_desc)) {
 		dp_tx_enh_unmap(soc, desc);

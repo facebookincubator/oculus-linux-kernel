@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1923,6 +1923,9 @@ QDF_STATUS csr_change_default_config_param(struct mac_context *mac,
 		mac->roam.configParam.channelBondingMode5GHz =
 			csr_convert_cb_ini_value_to_phy_cb_state(pParam->
 							channelBondingMode5GHz);
+		sme_debug("cb mode 2g %d 5g %d",
+			  mac->roam.configParam.channelBondingMode24GHz,
+			  mac->roam.configParam.channelBondingMode5GHz);
 		mac->roam.configParam.phyMode = pParam->phyMode;
 		mac->roam.configParam.HeartbeatThresh50 =
 			pParam->HeartbeatThresh50;
@@ -5584,6 +5587,7 @@ static void csr_fill_connected_profile(struct mac_context *mac_ctx,
 
 	if (rsp->connect_rsp.is_reassoc)
 		mlme_set_mbssid_info(vdev, &cur_node->entry->mbssid_info);
+
 
 	if (bcn_ies->Country.present)
 		qdf_mem_copy(country_code, bcn_ies->Country.country,

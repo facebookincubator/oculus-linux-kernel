@@ -227,6 +227,21 @@ void dsi_rect_intersect(const struct dsi_rect *r1,
 	}
 }
 
+int dsi_display_get_backlight(struct drm_connector *connector, void *display)
+{
+	struct dsi_display *dsi_display = display;
+	struct dsi_panel *panel;
+
+	if (dsi_display == NULL || dsi_display->panel == NULL)
+		return -EINVAL;
+
+	panel = dsi_display->panel;
+
+	/* bl_level is currently saved back to the config */
+	/* we don't support reading from panel for actual brightness */
+	return panel->bl_config.bl_level;
+}
+
 int dsi_display_set_backlight(struct drm_connector *connector,
 		void *display, u32 bl_lvl)
 {

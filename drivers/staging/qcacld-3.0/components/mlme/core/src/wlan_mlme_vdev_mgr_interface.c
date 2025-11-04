@@ -47,6 +47,8 @@
 #include <wlan_lmac_if_def.h>
 #include "wlan_cp_stats_mc_tgt_api.h"
 #include "wlan_objmgr_pdev_obj.h"
+#include <wlan_lmac_if_def.h>
+#include "target_if_mlme.h"
 
 static struct vdev_mlme_ops sta_mlme_ops;
 static struct vdev_mlme_ops ap_mlme_ops;
@@ -1937,6 +1939,9 @@ QDF_STATUS psoc_mlme_ext_hdl_create(struct psoc_mlme_obj *psoc_mlme)
 			&psoc_mlme->ext_psoc_ptr->wfa_testcmd.tx_ops);
 	target_if_cm_roam_register_rx_ops(
 			&psoc_mlme->ext_psoc_ptr->rso_rx_ops);
+
+	target_if_mlme_register_tx_ops(
+			&psoc_mlme->ext_psoc_ptr->mlme_tx_ops);
 
 	return QDF_STATUS_SUCCESS;
 }
