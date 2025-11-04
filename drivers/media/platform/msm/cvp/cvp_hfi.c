@@ -2954,7 +2954,7 @@ static void print_sfr_message(struct iris_hfi_device *device)
 			vsfr->bufSize, device->sfr.mem_size);
 			return;
 		}
-		vsfr_size = vsfr->bufSize - sizeof(u32);
+		vsfr_size = device->sfr.mem_size - sizeof(u32);
 		p = memchr(vsfr->rg_data, '\0', vsfr_size);
 		/*
 		 * SFR isn't guaranteed to be NULL terminated
