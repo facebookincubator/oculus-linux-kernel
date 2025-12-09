@@ -5,16 +5,26 @@
  * Copyright (c) 2025 Meta Platforms, Inc. and affiliates
  */
 
+#include <linux/cgroup.h>
+#include <linux/cgroup-defs.h>
+#include <linux/cpuidle.h>
 #include <linux/cpumask.h>
 #include <linux/errno.h>
+#include <linux/fs.h>
 #include <linux/lockdep.h>
+#include <linux/mutex.h>
+#include <linux/orchestrator-kern.h>
 #include <linux/percpu-defs.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/types.h>
 
+#ifdef CONFIG_ANDROID_VENDOR_HOOKS
 #include <trace/hooks/cgroup.h>
 #include <trace/hooks/cpuidle.h>
 #include <trace/hooks/sched.h>
+#endif /* CONFIG_ANDROID_VENDOR_HOOKS */
 
 #include <uapi/linux/sched/types.h>
 
@@ -46,6 +56,15 @@ static struct pcpu_ctx *get_curr_cpu_ctx(void)
 	return this_cpu_ptr(&pcpu_ctxs);
 }
 
+static const struct cpumask *task_cpumask(struct task_struct *p)
+{
+#ifdef CONFIG_ANDROID_VENDOR_HOOKS
+	return p->cpus_ptr;
+#else
+	return &p->cpus_allowed;
+#endif
+}
+
 static void task_update_allowed(struct task_struct *p,
 				const struct cpumask *allowed)
 {
@@ -67,12 +86,6 @@ static void set_allowed_mask_handler(void *unused, struct task_struct *p,
 				     const struct cpumask *new_mask)
 {
 	task_update_allowed(p, new_mask);
-}
-
-static void set_preferred_mask_handler(void *unused, struct task_struct *p,
-				       const struct cpumask *new_preferred)
-{
-	task_update_allowed(p, p->cpus_ptr);
 }
 
 static void record_idle_enter_handler(void *unused, int *state,
@@ -150,8 +163,7 @@ static void select_task_rq_handler(void *unused, struct task_struct *p,
 	}
 
 	while (true) {
-		cpu = cpumask_any_and_distribute(&p->orchestrator.preferred_mask,
-						 idle_mask);
+		cpu = cpumask_any_and(&p->orchestrator.preferred_mask, idle_mask);
 
 		if (cpu >= nr_cpu_ids)
 			return;
@@ -180,22 +192,24 @@ static void dequeue_entity_handler(void *unused, struct cfs_rq *cfs_rq,
 }
 #endif
 
-int orchestrator_task_setscheduler(struct task_struct *task,
-			           const struct sched_attr *attr)
+void orchestrator_task_setscheduler(void *unused, struct task_struct *task,
+			        const struct sched_attr *attr, int *retval)
 {
 	int policy = attr->sched_policy;
 
+	*retval = 0;
+
 	if (!orchestrator_feature_enabled(ORCHESTRATOR_FEATURE_ALLOW_RT))
-		return 0;
+		return;
 
 	if ((policy == SCHED_FIFO || policy == SCHED_RR) &&
 	    !orchestrator_task_has_flag(task, ORCHESTRATOR_FLAG_ALLOW_RT)) {
 
 		pr_info("%s[%d] ALLOW_RT permission denied", task->comm, task->pid);
-		return -EPERM;
+		*retval = -EPERM;
 	}
 
-	return 0;
+	return;
 }
 
 void orchestrator_sched_post_clone(struct task_struct *new)
@@ -205,16 +219,78 @@ void orchestrator_sched_post_clone(struct task_struct *new)
 
 	/*
 	 * task_update_allowed() can be called with interrupts disabled when
-	 * updating its allowed cpus_ptr. That should never happen here due to
+	 * updating its allowed cpumask. That should never happen here due to
 	 * the fact that we're still on the clone path and the task is not yet
 	 * runnable, but just to future proof let's do the safe thing and also
 	 * disable interrupts here as this is a cold path and a small critical
 	 * path.
 	 */
 	raw_spin_lock_irqsave(&new->pi_lock, flags);
-	task_update_allowed(new, new->cpus_ptr);
+	task_update_allowed(new, task_cpumask(new));
 	raw_spin_unlock_irqrestore(&new->pi_lock, flags);
 #endif
+}
+
+static DEFINE_MUTEX(preferred_mask_mutex);
+static ssize_t sched_group_set_preferred_mask(struct cgroup_subsys_state *css,
+											  const struct cpumask *preferred)
+{
+	struct task_struct *p;
+	struct css_task_iter it;
+	unsigned long flags;
+	struct cpumask *tg_mask = css_tg_preferred_mask(css);
+
+	/* We can't change the preferred mask of the root cgroup */
+	if (!css->parent)
+		return -EINVAL;
+
+	mutex_lock(&preferred_mask_mutex);
+	css_task_iter_start(css, 0, &it);
+	cpumask_copy(tg_mask, preferred);
+	while ((p = css_task_iter_next(&it))) {
+		raw_spin_lock_irqsave(&p->pi_lock, flags);
+		task_update_allowed(p, task_cpumask(p));
+		raw_spin_unlock_irqrestore(&p->pi_lock, flags);
+	}
+	mutex_unlock(&preferred_mask_mutex);
+	css_task_iter_end(&it);
+
+	return 0;
+}
+
+ssize_t orchestrator_preferred_mask_write(struct kernfs_open_file *of, char *buf,
+			     size_t nbytes, loff_t off)
+{
+	ssize_t err;
+	cpumask_var_t new_mask;
+
+	if (!alloc_cpumask_var(&new_mask, GFP_KERNEL))
+		return -ENOMEM;
+
+	err = cpumask_parse(buf, new_mask);
+	if (err)
+		goto free_mask;
+
+	err = sched_group_set_preferred_mask(of_css(of), new_mask);
+free_mask:
+	free_cpumask_var(new_mask);
+	return err ?: nbytes;
+}
+
+int orchestrator_preferred_mask_read(struct seq_file *sf, void *v)
+{
+	char *kbuf = kmalloc(cpumask_size() + 1, GFP_KERNEL);
+	struct cpumask *tg_mask;
+
+	if (!kbuf)
+		return -ENOMEM;
+
+	tg_mask = css_tg_preferred_mask(seq_css(sf));
+	cpumap_print_to_pagebuf(false, kbuf, tg_mask);
+	seq_printf(sf, "0x%s\n", kbuf);
+	kfree(kbuf);
+
+	return 0;
 }
 
 void orchestrator_sched_init(void)
@@ -222,13 +298,50 @@ void orchestrator_sched_init(void)
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	BUG_ON(!alloc_cpumask_var(&idle_mask, GFP_KERNEL));
 
+#ifdef CONFIG_ANDROID_VENDOR_HOOKS
 	register_trace_android_rvh_set_cpus_allowed_comm(set_allowed_mask_handler, NULL);
-	register_trace_android_vh_sched_tg_setpreferred(set_preferred_mask_handler, NULL);
 	register_trace_android_vh_cpu_idle_enter(record_idle_enter_handler, NULL);
 	register_trace_android_vh_cpu_idle_exit(record_idle_exit_handler, NULL);
+	register_trace_android_vh_task_setscheduler(orchestrator_task_setscheduler, NULL);
 
 	register_trace_android_rvh_select_task_rq_fair(select_task_rq_handler, NULL);
 	register_trace_android_rvh_enqueue_entity(enqueue_entity_handler, NULL);
 	register_trace_android_rvh_dequeue_entity(dequeue_entity_handler, NULL);
-#endif
+#endif /* CONFIG_ANDROID_VENDOR_HOOKS */
+#endif /* CONFIG_FAIR_GROUP_SCHED */
 }
+
+#ifndef CONFIG_ANDROID_VENDOR_HOOKS
+void orchestrator_set_cpus_allowed(struct task_struct *p,
+				     const struct cpumask *new_mask)
+{
+	set_allowed_mask_handler(NULL, p, new_mask);
+}
+
+void orchestrator_cpu_idle_enter(int *state, struct cpuidle_device *dev)
+{
+	record_idle_enter_handler(NULL, state, dev);
+}
+
+void orchestrator_cpu_idle_exit(int state, struct cpuidle_device *dev)
+{
+	record_idle_exit_handler(NULL, state, dev);
+}
+
+void orchestrator_select_task_rq_fair(struct task_struct *p, int prev_cpu,
+									  int sd_flag, int wake_flags,
+									  int *target_cpu)
+{
+	select_task_rq_handler(NULL, p, prev_cpu, sd_flag, wake_flags, target_cpu);
+}
+
+void orchestrator_enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+	enqueue_entity_handler(NULL, cfs_rq, se);
+}
+
+void orchestrator_dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+	dequeue_entity_handler(NULL, cfs_rq, se);
+}
+#endif /* !CONFIG_ANDROID_VENDOR_HOOKS */

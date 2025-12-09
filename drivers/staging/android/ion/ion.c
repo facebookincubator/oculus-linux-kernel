@@ -30,6 +30,7 @@
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 #include <linux/bitops.h>
+#include <linux/fdtable.h>
 #include <linux/msm_dma_iommu_mapping.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/ion.h>
@@ -1260,9 +1261,6 @@ struct ion_orphan_buf_ref {
 	struct hlist_node node;
 	struct ion_buffer *buf;
 };
-
-extern int iterate_fd(struct files_struct *, unsigned,
-	int (*)(const void *, struct file *, unsigned), const void *);
 
 static int fd_info(const void *data, struct file *file, unsigned int n)
 {

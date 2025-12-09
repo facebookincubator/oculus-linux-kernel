@@ -23,6 +23,7 @@
 #include "../workqueue_internal.h"
 #include "../smpboot.h"
 
+#include "orchestrator.h"
 #include "pelt.h"
 #include "walt.h"
 
@@ -1691,6 +1692,7 @@ void set_cpus_allowed_common(struct task_struct *p, const struct cpumask *new_ma
 {
 	cpumask_copy(&p->cpus_allowed, new_mask);
 	p->nr_cpus_allowed = cpumask_weight(new_mask);
+	orchestrator_set_cpus_allowed(p, new_mask);
 }
 
 void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
@@ -5123,7 +5125,10 @@ recheck:
 
 #ifdef CONFIG_ORCHESTRATOR_AGENT
 	if (!(p->flags & PF_KTHREAD)) {
-		retval = orchestrator_task_setscheduler(p, attr);
+		int ret_addr = 0;
+
+		orchestrator_task_setscheduler(NULL, p, attr, &ret_addr);
+		retval = ret_addr;
 		if (retval)
 			return retval;
 	}
@@ -7091,7 +7096,7 @@ int sched_cpu_deactivate(unsigned int cpu)
 	sched_domains_numa_masks_clear(cpu);
 	return 0;
 }
-	
+
 void sched_update_domains(void)
 {
 	const struct sched_class *class;
@@ -8350,6 +8355,13 @@ static struct cftype cpu_legacy_files[] = {
 		.name = "shares",
 		.read_u64 = cpu_shares_read_u64,
 		.write_u64 = cpu_shares_write_u64,
+	},
+#endif
+#ifdef CONFIG_ORCHESTRATOR_AGENT
+	{
+		.name = "preferred_mask",
+		.seq_show = orchestrator_preferred_mask_read,
+		.write = orchestrator_preferred_mask_write,
 	},
 #endif
 #ifdef CONFIG_CFS_BANDWIDTH

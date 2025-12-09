@@ -148,6 +148,8 @@
 			/* MDIO */
 			AM33XX_IOPAD(0x948, PIN_INPUT_PULLUP | SLEWCTRL_FAST | MUX_MODE0)	/* mdio_data.mdio_data */
 			AM33XX_IOPAD(0x94c, PIN_OUTPUT_PULLUP | MUX_MODE0)			/* mdio_clk.mdio_clk */
+			/* Added to support GPIO controlled PHY reset */
+			AM33XX_IOPAD(0x968, PIN_OUTPUT_PULLUP | MUX_MODE7)
 		>;
 	};
 
@@ -156,6 +158,8 @@
 			/* MDIO reset value */
 			AM33XX_IOPAD(0x948, PIN_INPUT_PULLDOWN | MUX_MODE7)
 			AM33XX_IOPAD(0x94c, PIN_INPUT_PULLDOWN | MUX_MODE7)
+			/* Added to support GPIO controlled PHY reset */
+			AM33XX_IOPAD(0x968, PIN_INPUT_PULLDOWN | MUX_MODE7)
 		>;
 	};
 
@@ -379,7 +383,7 @@
 };
 
 &cpsw_emac0 {
-	phy_id = <&davinci_mdio>, <0>;
+	phy-handle = <&ethphy0>;
 	phy-mode = "mii";
 };
 
@@ -396,6 +400,14 @@
 	pinctrl-0 = <&davinci_mdio_default>;
 	pinctrl-1 = <&davinci_mdio_sleep>;
 	status = "okay";
+
+	ethphy0: ethernet-phy@0 {
+		reg = <0>;
+		/* Support GPIO reset on revision C3 boards */
+		reset-gpios = <&gpio1 8 GPIO_ACTIVE_LOW>;
+		reset-assert-us = <300>;
+		reset-deassert-us = <50000>;
+	};
 };
 
 &mmc1 {

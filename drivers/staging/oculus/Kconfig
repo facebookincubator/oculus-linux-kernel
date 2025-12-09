@@ -75,6 +75,14 @@ config CYPD_POLICY_ENGINE
 	  controller device driver in order to transmit and receive PD messages
 	  on its behalf.
 
+config FAULT_INJECTOR
+	tristate "Fault injector test driver"
+	default n
+	help
+	  This driver is intended for testing and validation of hardware fault
+	  handling and watchdog mechanisms. It can deliberately trigger XPU, NOC,
+	  and bus fault violations, as well as watchdog bark and bite events.
+
 config FPGA_AGGREGATOR
 	tristate "FPGA Aggregator Kernel Driver"
 	default n
@@ -103,9 +111,9 @@ config GPU_ERROR_SYSCTL
 	tristate "Enable creation of SysCtl nodes for GPU Error Logs"
 	default n
 	help
-		Enable creation of SysCtl nodes for GPU Error Logs that is
-		consumed by user-space for telemetry purposes to get insight
-		into GPU Errors.
+	  Enable creation of SysCtl nodes for GPU Error Logs that is
+	  consumed by user-space for telemetry purposes to get insight
+	  into GPU Errors.
 
 config IIO_CHANNEL_SENSOR
 	tristate "IIO Channel Virtual Sensor Driver"
@@ -318,6 +326,23 @@ config VIRTUAL_SENSOR
 	help
 	  This driver implements a virtual sensor driver representing a particular
 	  component of a device that can be configured in the device tree.
+
+config W1_SLAVE_DS28E18
+	tristate "1-wire-to-I2C master bridge (DS28E18)"
+	select CRC16
+	depends on I2C && W1
+	help
+	  Say Y here if you want to use the DS28E18 1-wire-to-I2C/SPI bridge.
+          The driver presently supports I2C mode only.
+
+	  For each DS28E18 detected, a new I2C adapter is created within the
+	  kernel. I2C devices on that bus can be configured to be used by the
+	  kernel and userspace tools as on any other "native" I2C bus.
+
+	  This driver is also available as a module. If so, the module
+	  will be called w1_ds28e18.
+
+	  If you are unsure, say N.
 
 source "drivers/staging/oculus/langdon/Kconfig"
 source "drivers/staging/oculus/mcu/Kconfig"

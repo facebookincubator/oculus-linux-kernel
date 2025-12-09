@@ -470,7 +470,9 @@ struct task_group {
 	/* Latency-sensitive flag used for a task group */
 	unsigned int		latency_sensitive;
 #endif
-
+#ifdef CONFIG_ORCHESTRATOR_AGENT
+	cpumask_t android_vendor_data1;
+#endif
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED

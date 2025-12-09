@@ -12,6 +12,7 @@
 #include "syncboss_swd_ops_nrf52xxx.h"
 #include "syncboss_swd_ops_nrf5340.h"
 #include "syncboss_swd_ops_nrf54l15.h"
+#include "syncboss_swd_ops_nrf54h20.h"
 #include "stm32g0_swd_ops.h"
 #include "qm35xxx_swd_ops.h"
 #include "stm32l47xxx_swd_ops.h"
@@ -113,6 +114,34 @@ static struct {
 			.target_get_write_chunk_size = syncboss_swd_nrf54l15_get_write_chunk_size,
 			.target_program_read = syncboss_swd_nrf54l15_read,
 			.target_chip_erase = syncboss_swd_nrf54l15_chip_erase,
+		}
+	},
+#endif
+#ifdef CONFIG_META_SWD_SYNCBOSS_NRF54H20
+	{
+		.flavor = "nrf54h20",
+		.swd_ops = {
+			.target_erase = syncboss_swd_nrf54h20_target_erase,
+			.target_get_write_chunk_size = syncboss_swd_nrf54h20_get_app_write_chunk_size,
+			.target_program_write_chunk = syncboss_swd_nrf54h20_write_chunk,
+			.target_chip_erase = syncboss_swd_nrf54h20_chip_erase,
+			.target_program_read = syncboss_swd_nrf54h20_read,
+			.read_part_number = syncboss_swd_nrf54h20_read_part_number,
+			.set_mcu_quirk = syncboss_swd_nrf54h20_force_sec_dom_fw_version,
+		}
+	},
+	{
+		.flavor = "nrf54h20_app",
+		.swd_ops = {
+			.target_get_write_chunk_size = syncboss_swd_nrf54h20_get_app_write_chunk_size,
+			.target_program_write_chunk = syncboss_swd_nrf54h20_write_chunk,
+			.target_program_read = syncboss_swd_nrf54h20_read,
+		}
+	},
+	{
+		.flavor = "nrf54h20_net",
+		.swd_ops = {
+			.target_get_write_chunk_size = syncboss_swd_nrf54h20_get_net_write_chunk_size,
 		}
 	},
 #endif
@@ -338,15 +367,15 @@ static int fwupdate_get_num_flash_pages_to_erase(
 	struct flash_info *flash = &mcudata->flash_info;
 	int pgs_to_skip = 0;
 
-	/* 
+	/*
 	 * If the entire flash is erased, then we dont erase pg by pg, which is
-	 * a lot quicker, therefore return 0 
+	 * a lot quicker, therefore return 0
 	 */
 	if (erase_all)
 		return 0;
 
 	pgs_to_skip = flash->num_retained_pages;
-	pgs_to_skip += force_bootloader_update ? 0 : 
+	pgs_to_skip += force_bootloader_update ? 0 :
 			flash->num_protected_bootloader_pages;
 
 	if (pgs_to_skip < flash->num_pages) {
@@ -383,7 +412,7 @@ int fwupdate_update_single_app(
 			     fw->data, fw->size);
 #endif
 	chunk_size = mcudata->swd_ops.target_get_write_chunk_size(dev);
-	/* 
+	/*
 	 * Need to erase pages and write chunks. Approximate a page erase op as
 	 * equal to a chunk write to report progres
 	 */

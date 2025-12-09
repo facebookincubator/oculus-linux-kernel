@@ -345,6 +345,9 @@ static void kgsl_destroy_anon(struct kgsl_memdesc *memdesc,
 	if (memdesc->priv & KGSL_MEMDESC_MAPPED)
 		return;
 
+	if (IS_ERR_OR_NULL(memdesc->sgt))
+		return;
+
 	for_each_sg(memdesc->sgt->sgl, sg, memdesc->sgt->nents, i) {
 		page = sg_page(sg);
 		for (j = 0; j < (sg->length >> PAGE_SHIFT); j++) {

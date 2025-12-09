@@ -11,7 +11,7 @@
 #include "fwupdate_manager.h"
 
 /* Initialize the SWD GPIO state */
-void swd_init(struct device *dev);
+int swd_init(struct device *dev);
 
 /* Deinit the SWD GPIO state */
 void swd_deinit(struct device *dev);
@@ -19,6 +19,7 @@ void swd_deinit(struct device *dev);
 /* Stop the target */
 void swd_halt(struct device *dev);
 
+u32 swd_dp_read_rd_buff(struct device *dev);
 /*
  * Flush the SW-DP. Should be called after the last SP transaction to be executed
  * to guarantee it actually takes effect.
@@ -28,8 +29,11 @@ void swd_flush(struct device *dev);
 /* Select the Access Port */
 void swd_select_ap(struct device *dev, u8 apsel);
 
+/* Select the AP+Register combination for APs with more than one reg bank */
+void swd_select_ap_reg(struct device *dev, u8 apsel, u32 reg_addr_sel);
+
 /* Write a word to the selected SWD Access Port */
-void swd_ap_write(struct device *dev, u8 reg, u32 data);
+int swd_ap_write(struct device *dev, u8 reg, u32 data);
 
 /* Read a word from the selected SWD Access Port */
 u32 swd_ap_read(struct device *dev, u8 reg);
@@ -41,7 +45,7 @@ u32 swd_memory_read(struct device *dev, u32 address);
 u32 swd_memory_read_next(struct device *dev);
 
 /* Write 4 bytes of memory at a given address */
-void swd_memory_write(struct device *dev, u32 address, u32 data);
+int swd_memory_write(struct device *dev, u32 address, u32 data);
 
 /* Write 4 bytes of memory to the next address after the previously-read/written word */
 void swd_memory_write_next(struct device *dev, u32 data);
@@ -139,6 +143,18 @@ struct swd_ops_params {
 	 * Final steps after SWD update is completed. E.g., verify success.
 	 */
 	int (*target_finalize)(struct device *dev);
+
+	/*
+	 * Read mcu part number
+	 */
+	int (*read_part_number)(struct device *dev);
+
+	/*
+   * Set any mcu specific 'quirks', e.g. different SDFW versions
+	 * return: 0 success
+	 */
+	int (*set_mcu_quirk)(struct device *dev, const char *str);
+
 };
 
 struct flash_info {
@@ -151,6 +167,12 @@ struct flash_info {
 	u32 num_protected_bootloader_pages;
 	/* For devices that have multple banks of flash, i.e. stm32l */
 	u32 bank_count;
+	/* For devices that have discontiguous protected regions in memory! */
+	bool  is_protected_region_valid;
+	struct {
+		u32 start_addr;
+		u32 end_addr;
+	} protected_region;
 };
 
 struct swd_mcu_data {
@@ -221,6 +243,10 @@ struct swd_dev_data {
 	struct fwupdate_header *data_hdr;
 
 	/*
+	 * Track the Secure Domain Firmware version in the MCU.
+	 */
+	u32 sdfw_version;
+	/*
 	 * Whether provisioning data should be programmed via SWD (ex. board_id,
 	 * serial, handedness)
 	 */
@@ -239,6 +265,9 @@ struct swd_dev_data {
 	int num_children;
 
 	struct dentry *debug_entry;
+
+	/* Enable direct access via file operations */
+	bool direct_fd;
 };
 
 ssize_t fwupdate_update_firmware_show(struct device *dev, char *buf);

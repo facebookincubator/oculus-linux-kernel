@@ -20,6 +20,13 @@ config META_SWD_DEBUG
 	help
 	  Meta SWD Debug support
 
+config META_SWD_DIRECTFD
+	bool "SWD data streaming support over fd"
+	depends on META_SWD
+	default n
+	help
+	  Support for streaming SWD data to/from a file descriptor
+
 config META_SWD_HUBERT
 	bool "Hubert SWD Driver"
 	depends on META_SWD
@@ -61,6 +68,13 @@ config META_SWD_SYNCBOSS_NRF54L15
 	default n
 	help
 	  Meta Syncboss SWD Support for NRF54L15
+
+config META_SWD_SYNCBOSS_NRF54H20
+	bool "Syncboss SWD Driver for NRF54H20"
+	depends on META_SWD
+	default n
+	help
+	  Meta Syncboss SWD Support for NRF54H20
 
 config META_SWD_STM32L4
 	bool "STM32L4 SWD Driver"

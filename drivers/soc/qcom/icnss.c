@@ -1063,8 +1063,16 @@ static int icnss_driver_event_server_arrive(void *data)
 	int ret = 0;
 	bool ignore_assert = false;
 
-	if (!penv)
+	if (!penv) {
+		kfree(data);
 		return -ENODEV;
+	}
+
+	if (test_bit(ICNSS_MODEM_SHUTDOWN, &penv->state)) {
+		icnss_pr_dbg("WLFW server arrive: Modem is down");
+		kfree(data);
+		return -EINVAL;
+	}
 
 	set_bit(ICNSS_WLFW_EXISTS, &penv->state);
 	clear_bit(ICNSS_FW_DOWN, &penv->state);
@@ -1715,13 +1723,19 @@ static int icnss_modem_notifier_nb(struct notifier_block *nb,
 			icnss_pr_err("Not able to Collect msa0 segment dump, Apps permissions not assigned %d\n",
 				     ret);
 		}
+		clear_bit(ICNSS_MODEM_SHUTDOWN, &priv->state);
 		goto out;
 	}
+
+	if (code == SUBSYS_AFTER_SHUTDOWN)
+		clear_bit(ICNSS_MODEM_SHUTDOWN, &priv->state);
 
 	if (code != SUBSYS_BEFORE_SHUTDOWN)
 		goto out;
 
 	priv->is_ssr = true;
+
+	set_bit(ICNSS_MODEM_SHUTDOWN, &priv->state);
 
 	icnss_update_state_send_modem_shutdown(priv, data);
 
@@ -3086,6 +3100,9 @@ static int icnss_stats_show_state(struct seq_file *s, struct icnss_priv *priv)
 			continue;
 		case ICNSS_DEL_SERVER:
 			seq_puts(s, "DEL SERVER");
+			continue;
+		case ICNSS_MODEM_SHUTDOWN:
+			seq_puts(s, "MODEM SHUTDOWN");
 		}
 
 		seq_printf(s, "UNKNOWN-%d", i);
