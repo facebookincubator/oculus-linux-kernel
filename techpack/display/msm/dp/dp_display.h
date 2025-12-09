@@ -12,6 +12,7 @@
 
 #include "dp_panel.h"
 #include "dp_parser.h"
+#include "drm/msm_drm.h"
 
 #define MAX_DP_ACTIVE_DISPLAY	8
 
@@ -61,9 +62,9 @@ struct dp_display {
 	u32 max_mixer_count;
 	u32 max_dsc_count;
 
-	u32 max_hdisplay;
-	u32 max_vdisplay;
-	u32 max_vrefresh;
+	/* DP Mode Limits */
+	struct drm_msm_dp_mode_limit dp_mode_limit;
+	struct drm_msm_dp_mode_limit edp_mode_limit;
 
 	int (*enable)(struct dp_display *dp_display, void *panel);
 	int (*post_enable)(struct dp_display *dp_display, void *panel);
@@ -158,4 +159,7 @@ static inline int dp_display_mmrm_callback(struct mmrm_client_notifier_data *not
 	return 0;
 }
 #endif /* CONFIG_DRM_MSM_DP */
+
+int dp_display_set_mode_limit(struct drm_device *dev, struct drm_msm_dp_mode_limit *limit);
+int dp_display_get_mode_limit(struct drm_device *dev, struct drm_msm_dp_mode_limit *limit);
 #endif /* _DP_DISPLAY_H_ */

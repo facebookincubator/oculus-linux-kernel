@@ -10,6 +10,7 @@
 #include <linux/sysfs.h>
 
 #include "fwupdate_debug.h"
+#include "swd_chardev.h"
 #include "swd.h"
 
 static ssize_t swd_driver_update_firmware_show(struct device *dev,
@@ -28,6 +29,9 @@ static ssize_t swd_driver_update_firmware_store(struct device *dev,
 static int swd_driver_init_flash_parameters(struct device *dev, struct swd_mcu_data *mcudata, struct device_node *node)
 {
 	int ret;
+	int address_width, size_width, rlen;
+	const u32 *dt_region, *cell;
+	u32 size;
 
 	ret = of_property_read_u32(node, "meta,flash-block-size",
 				   &mcudata->flash_info.block_size);
@@ -71,7 +75,39 @@ static int swd_driver_init_flash_parameters(struct device *dev, struct swd_mcu_d
 		ret = 0;
 	}
 
-	return 0;
+	dt_region = of_get_property(node, "reg", &rlen);
+	if (!dt_region) {
+		mcudata->flash_info.is_protected_region_valid = false;
+		ret = 0;
+	} else {
+		/* Get node address width */
+		cell = of_get_property(node, "#address-cells", NULL);
+		if (cell)
+			address_width = *cell;
+		else
+			address_width = of_n_addr_cells(node);
+		/* Get node size width */
+		cell = of_get_property(node, "#size-cells", NULL);
+		if (cell)
+			size_width = *cell;
+		else
+			size_width = of_n_size_cells(node);
+
+		mcudata->flash_info.protected_region.start_addr =
+			of_read_number(dt_region, address_width);
+		size = of_read_number(dt_region + address_width, size_width);
+		mcudata->flash_info.protected_region.end_addr =
+			mcudata->flash_info.protected_region.start_addr + size;
+
+		mcudata->flash_info.is_protected_region_valid = true;
+		dev_info(dev, "meta,flash address protected region: 0x%x-0x%x",
+			mcudata->flash_info.protected_region.start_addr,
+			mcudata->flash_info.protected_region.end_addr);
+
+		ret = 0;
+	}
+
+	return ret;
 }
 
 static int swd_driver_init_single_target(struct device *dev, struct swd_mcu_data *mcudata, struct device_node *node, bool flash_params_required)
@@ -160,6 +196,7 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 	}
 
 	devdata->erase_all = of_property_read_bool(node, "meta,flash-erase-all");
+	devdata->direct_fd = of_property_read_bool(node, "meta,swd-direct-fd");
 	devdata->swd_provisioning = of_property_read_bool(node, "meta,swd-provisioning");
 
 	if (mcu_node) {
@@ -196,6 +233,14 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 	ret = fwupdate_create_debugfs(dev, swdflavor);
 	if (ret < 0)
 		return ret;
+#endif
+
+#ifdef CONFIG_META_SWD_DIRECTFD
+	if (devdata->direct_fd) {
+		ret = swd_driver_init_chardev(dev, swdflavor);
+		if (ret < 0)
+			return ret;
+	}
 #endif
 
 	devdata->workqueue = create_singlethread_workqueue(

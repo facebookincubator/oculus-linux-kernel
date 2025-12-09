@@ -366,6 +366,21 @@ struct drm_msm_dpu_histogram_control {
 	__u32 read_interval_msec;
 };
 
+/**
+ * struct drm_msm_dp_mode_limit - DisplayPort mode limits for a connector
+ * @connector_type:    Connector type (10 = DP, 14 = eDP).
+ * @max_width:         Maximum allowed width in pixels for this mode.
+ * @max_height:        Maximum allowed height in pixels for this mode.
+ * @max_refresh_rate:  Maximum allowed refresh rate in Hz for this mode.
+ */
+struct drm_msm_dp_mode_limit {
+	__u32 connector_type;
+	__u32 max_width;
+	__u32 max_height;
+	__u32 max_refresh_rate;
+};
+
+
 #define DRM_MSM_GET_PARAM              0x00
 /* placeholder:
 #define DRM_MSM_SET_PARAM              0x01
@@ -388,6 +403,8 @@ struct drm_msm_dpu_histogram_control {
 #define DRM_MSM_DISPLAY_CAC            0x0F
 #define DRM_MSM_SETTLE_TIME_SCALE      0x10
 #define DRM_MSM_DPU_HISTOGRAM_CONTROL  0x11
+#define DRM_MSM_DP_SET_MODE_LIMIT      0x12
+#define DRM_MSM_DP_GET_MODE_LIMIT      0x13
 
 #define DRM_IOCTL_MSM_GET_PARAM        DRM_IOWR(DRM_COMMAND_BASE + DRM_MSM_GET_PARAM, struct drm_msm_param)
 #define DRM_IOCTL_MSM_GEM_NEW          DRM_IOWR(DRM_COMMAND_BASE + DRM_MSM_GEM_NEW, struct drm_msm_gem_new)
@@ -405,6 +422,8 @@ struct drm_msm_dpu_histogram_control {
 #define DRM_IOCTL_MSM_DISPLAY_CAC        DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_DISPLAY_CAC, struct drm_msm_display_cac)
 #define DRM_IOCTL_MSM_SETTLE_TIME_SCALE  DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_SETTLE_TIME_SCALE, struct drm_msm_settle_time_scale)
 #define DRM_IOCTL_MSM_DPU_HISTOGRAM_CONTROL  DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_DPU_HISTOGRAM_CONTROL, struct drm_msm_dpu_histogram_control)
+#define DRM_IOCTL_MSM_DP_SET_MODE_LIMIT DRM_IOW (DRM_COMMAND_BASE + DRM_MSM_DP_SET_MODE_LIMIT, struct drm_msm_dp_mode_limit)
+#define DRM_IOCTL_MSM_DP_GET_MODE_LIMIT DRM_IOWR (DRM_COMMAND_BASE + DRM_MSM_DP_GET_MODE_LIMIT, struct drm_msm_dp_mode_limit)
 
 #if defined(__cplusplus)
 }

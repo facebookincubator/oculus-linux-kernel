@@ -59,6 +59,7 @@
 #include "sde_wb.h"
 #include "sde_dbg.h"
 #include "sde_trace.h"
+#include "dp_display.h"
 
 /*
  * MSM driver version:
@@ -2031,6 +2032,60 @@ out:
 	return ret;
 }
 
+int msm_ioctl_dp_set_mode_limit_ops(struct drm_device *dev, void *data,
+			struct drm_file *file_priv)
+{
+	struct drm_msm_dp_mode_limit *dp_mode_limit = data;
+	struct msm_drm_private *priv;
+	struct msm_kms *kms;
+	struct sde_kms *sde_kms;
+
+	priv = dev->dev_private;
+	kms = priv->kms;
+
+	if (!kms)
+		return -ENODEV;
+
+	sde_kms = to_sde_kms(kms);
+	if (!sde_kms || !sde_kms->dev)
+		return -ENODEV;
+
+	if ((dp_mode_limit->connector_type != DRM_MODE_CONNECTOR_DisplayPort) &&
+		(dp_mode_limit->connector_type != DRM_MODE_CONNECTOR_eDP)) {
+		/* Unknown connector type */
+		return -EINVAL;
+	}
+
+	return dp_display_set_mode_limit(sde_kms->dev, dp_mode_limit);
+}
+
+int msm_ioctl_dp_get_mode_limit_ops(struct drm_device *dev, void *data,
+			struct drm_file *file_priv)
+{
+	struct drm_msm_dp_mode_limit *dp_mode_limit = data;
+	struct msm_drm_private *priv;
+	struct msm_kms *kms;
+	struct sde_kms *sde_kms;
+
+	priv = dev->dev_private;
+	kms = priv->kms;
+
+	if (!kms)
+		return -ENODEV;
+
+	sde_kms = to_sde_kms(kms);
+	if (!sde_kms || !sde_kms->dev)
+		return -ENODEV;
+
+	if ((dp_mode_limit->connector_type != DRM_MODE_CONNECTOR_DisplayPort) &&
+		(dp_mode_limit->connector_type != DRM_MODE_CONNECTOR_eDP)) {
+		/* Unknown connector type */
+		return -EINVAL;
+	}
+
+	return dp_display_get_mode_limit(sde_kms->dev, dp_mode_limit);
+}
+
 static u64 msm_vsync_trigger_next_vsync_ns(u64 last_vsync_ns, u32 min_fps)
 {
 	u64 res;
@@ -2162,6 +2217,10 @@ static const struct drm_ioctl_desc msm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(MSM_SETTLE_TIME_SCALE, msm_ioctl_settle_time_scalar_control_ops,
 			DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(MSM_DPU_HISTOGRAM_CONTROL, msm_ioctl_dpu_histogram_control_ops,
+			DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(MSM_DP_SET_MODE_LIMIT, msm_ioctl_dp_set_mode_limit_ops,
+			DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(MSM_DP_GET_MODE_LIMIT, msm_ioctl_dp_get_mode_limit_ops,
 			DRM_RENDER_ALLOW),
 };
 

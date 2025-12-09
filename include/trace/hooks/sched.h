@@ -164,6 +164,10 @@ DECLARE_RESTRICTED_HOOK(android_rvh_sched_fork,
 	TP_PROTO(struct task_struct *p),
 	TP_ARGS(p), 1);
 
+DECLARE_HOOK(android_vh_task_setscheduler,
+	TP_PROTO(struct task_struct *task, const struct sched_attr *attr, int *retval),
+	TP_ARGS(task, attr, retval));
+
 DECLARE_RESTRICTED_HOOK(android_rvh_wake_up_new_task,
 	TP_PROTO(struct task_struct *p),
 	TP_ARGS(p), 1);
@@ -227,6 +231,10 @@ DECLARE_RESTRICTED_HOOK(android_rvh_cpu_cgroup_online,
 DECLARE_RESTRICTED_HOOK(android_rvh_sched_fork_init,
 	TP_PROTO(struct task_struct *p),
 	TP_ARGS(p), 1);
+
+DECLARE_HOOK(android_vh_post_clone,
+	TP_PROTO(struct task_struct *new_task, struct task_struct *orig),
+	TP_ARGS(new_task, orig));
 
 DECLARE_RESTRICTED_HOOK(android_rvh_ttwu_cond,
 	TP_PROTO(bool *cond),
@@ -398,10 +406,6 @@ DECLARE_HOOK(android_vh_mmput,
 DECLARE_HOOK(android_vh_sched_pelt_multiplier,
 	TP_PROTO(unsigned int old, unsigned int cur, int *ret),
 	TP_ARGS(old, cur, ret));
-
-DECLARE_HOOK(android_vh_sched_tg_setpreferred,
-	TP_PROTO(struct task_struct *p, const struct cpumask *new_mask),
-	TP_ARGS(p, new_mask));
 /* macro versions of hooks are no longer required */
 
 #endif /* _TRACE_HOOK_SCHED_H */

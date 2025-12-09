@@ -112,6 +112,7 @@ enum battery_property_id {
 	BATT_FCT,
 	BATT_FCT_STATE,
 	BATT_RBLT_STATE,
+	BATT_CHARGER_MODE,
 	BATT_PROP_MAX,
 };
 
@@ -149,6 +150,8 @@ enum usb_property_id {
 	USB_CABLE_MAX_SPEED,
 	USB_CABLE_VID,
 	USB_CABLE_PID,
+	USB_MOISTURE_DET_REASON,
+	USB_MOISTURE_TRIP_IMPEDANCE,
 	USB_PROP_MAX,
 };
 
@@ -2330,6 +2333,40 @@ static ssize_t moisture_detection_cc2_kohm_show(struct class *c,
 }
 static CLASS_ATTR_RO(moisture_detection_cc2_kohm);
 
+static ssize_t moisture_detection_reason_show(struct class *c,
+					struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_MOISTURE_DET_REASON);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			pst->prop[USB_MOISTURE_DET_REASON]);
+}
+static CLASS_ATTR_RO(moisture_detection_reason);
+
+static ssize_t moisture_detection_trip_impedance_show(struct class *c,
+					struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_MOISTURE_TRIP_IMPEDANCE);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			pst->prop[USB_MOISTURE_TRIP_IMPEDANCE]);
+}
+static CLASS_ATTR_RO(moisture_detection_trip_impedance);
+
 static ssize_t cable_discovery_en_store(struct class *c,
 					struct class_attribute *attr,
 					const char *buf, size_t count)
@@ -2670,6 +2707,43 @@ static ssize_t charge_capacity_limit_show(struct class *c, struct class_attribut
 }
 static CLASS_ATTR_RW(charge_capacity_limit);
 
+static ssize_t batt_charger_mode_store(struct class *c, struct class_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	int rc;
+	bool val;
+
+	if (kstrtobool(buf, &val))
+		return -EINVAL;
+
+	rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_BATTERY],
+					BATT_CHARGER_MODE, val);
+	if (rc < 0) {
+		pr_err("Failed to change charger mode value, error ret: %d.\n", rc);
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static ssize_t batt_charger_mode_show(struct class *c, struct class_attribute *attr,
+				char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, BATT_CHARGER_MODE);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", pst->prop[BATT_CHARGER_MODE]);
+}
+static CLASS_ATTR_RW(batt_charger_mode);
+
 static struct attribute *battery_class_attrs[] = {
 	&class_attr_soh.attr,
 	&class_attr_resistance.attr,
@@ -2680,6 +2754,8 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_moisture_detection_sbu2_kohm.attr,
 	&class_attr_moisture_detection_cc1_kohm.attr,
 	&class_attr_moisture_detection_cc2_kohm.attr,
+	&class_attr_moisture_detection_reason.attr,
+	&class_attr_moisture_detection_trip_impedance.attr,
 	&class_attr_wireless_boost_en.attr,
 	&class_attr_fake_soc.attr,
 	&class_attr_wireless_fw_update.attr,
@@ -2706,6 +2782,7 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_cable_max_speed.attr,
 	&class_attr_cable_vid.attr,
 	&class_attr_cable_pid.attr,
+	&class_attr_batt_charger_mode.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_class);
@@ -2720,6 +2797,8 @@ static struct attribute *battery_class_no_wls_attrs[] = {
 	&class_attr_moisture_detection_sbu2_kohm.attr,
 	&class_attr_moisture_detection_cc1_kohm.attr,
 	&class_attr_moisture_detection_cc2_kohm.attr,
+	&class_attr_moisture_detection_reason.attr,
+	&class_attr_moisture_detection_trip_impedance.attr,
 	&class_attr_fake_soc.attr,
 	&class_attr_ship_mode_en.attr,
 	&class_attr_restrict_chg.attr,
@@ -2740,6 +2819,7 @@ static struct attribute *battery_class_no_wls_attrs[] = {
 	&class_attr_cable_max_speed.attr,
 	&class_attr_cable_vid.attr,
 	&class_attr_cable_pid.attr,
+	&class_attr_batt_charger_mode.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_class_no_wls);

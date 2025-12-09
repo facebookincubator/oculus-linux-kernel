@@ -439,7 +439,7 @@ static ssize_t gpumem_account(struct kgsl_process_private *priv, int type,
 	}
 	spin_unlock(&priv->mem_lock);
 
-	queue_work(kgsl_driver.mem_workqueue, &work->work);
+	queue_work(kgsl_driver.lockless_workqueue, &work->work);
 
 	if (mapped)
 		*mapped = gpumem_mapped;

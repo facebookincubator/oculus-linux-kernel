@@ -1,89 +1,55 @@
-// SPDX-License-Identifier: GPL-2.0-only
-/*
- *  kernel/sched/orchestrator.c
- *
- *  Meta-specific scheduler logic.
- *
- *  Copyright (C) 2025 Meta Platforms, Inc. and affiliates
- */
-
 #include <linux/cgroup.h>
+#include <linux/cgroup-defs.h>
 #include <linux/cpumask.h>
-#include <linux/fs.h>
 #include <linux/sched.h>
-#include <linux/types.h>
-
-#include <trace/hooks/sched.h>
 
 #include "sched.h"
-#include "orchestrator.h"
 
-static inline struct task_group *css_tg(struct cgroup_subsys_state *css)
+static struct cpumask *tg_preferred_mask(struct task_group *tg)
+{
+	/*
+	 * Cgroups may set a "preferred" cpumask that the CPU scheduler may use
+	 * to inform how it chooses to schedule the task. For instance, tasks
+	 * in a system-service cgroup may prefer to run on silver cores.
+	 *
+	 * In CPU schedulers, a task is generally preferred to run on either:
+	 *
+	 * 1. The "domain" (L3 cache, NUMA node, etc) it's currently *scheduled* in
+	 * 2. The "domain" (L3 cache, NUMA node, etc) it's currently *assigned* to.
+	 *
+	 * In the default fair.c scheduler, the above two are the same. A task
+	 * becomes "assigned" to a domain as soon as its load balanced.
+	 * However, "scheduled in" and "assigned to" need not mean the same
+	 * thing. Consider for instance that a task may want to *temporarily*
+	 * run in another domain if that target domain has no work to do if it
+	 * would otherwise suffer runqueue latency. Perhaps an application
+	 * thread would like to run on a silver core rather than have to wait
+	 * for a gold core. However, once it's run on the silver core and the
+	 * traffic dies down on the gold core, it wants to go back to the gold
+	 * core to take advantage of higher frequencies.
+	 *
+	 * This is what the preferred mask accomplishes. It's a hint to the
+	 * fair scheduler, especially during task wakeup, for where a task
+	 * should be migrated to and enqueued on.
+	 *
+	 * Note that we follow the mm philosophy here in that we don't validate
+	 * parent cgroup preferred masks. If a user sets a preferred mask for a
+	 * cgroup that conflicts (meaning it is not a subset) of the preferred
+	 * mask of its parent, we simply let it happen. The preferred mask is a
+	 * _hint_ to the scheduler, so we leave it to user space to provide
+	 * logical hints.
+	 */
+	return (struct cpumask *)tg->android_vendor_data1;
+}
+
+static struct task_group *css_tg(struct cgroup_subsys_state *css)
 {
 	return css ? container_of(css, struct task_group, css) : NULL;
 }
 
-static DEFINE_MUTEX(preferred_mask_mutex);
-static ssize_t sched_group_set_preferred_mask(struct task_group *tg,
-					      const struct cpumask *preferred)
+struct cpumask *css_tg_preferred_mask(struct cgroup_subsys_state *css)
 {
-	struct task_struct *p;
-	struct css_task_iter it;
-	unsigned long flags;
-
-	/* We can't change the preferred mask of the root cgroup */
-	if (!tg->se[0])
-		return -EINVAL;
-
-	css_task_iter_start(&tg->css, 0, &it);
-	mutex_lock(&preferred_mask_mutex);
-	cpumask_copy(tg_preferred_mask(tg), preferred);
-	while ((p = css_task_iter_next(&it))) {
-		raw_spin_lock_irqsave(&p->pi_lock, flags);
-		trace_android_vh_sched_tg_setpreferred(p, preferred);
-		raw_spin_unlock_irqrestore(&p->pi_lock, flags);
-	}
-	mutex_unlock(&preferred_mask_mutex);
-	css_task_iter_end(&it);
-
-	return 0;
-}
-
-ssize_t preferred_mask_write(struct kernfs_open_file *of, char *buf,
-			     size_t nbytes, loff_t off)
-{
-	struct task_group *tg;
-	ssize_t err;
-	cpumask_var_t new_mask;
-
-	if (!alloc_cpumask_var(&new_mask, GFP_KERNEL))
-		return -ENOMEM;
-
-	tg = css_tg(of_css(of));
-	err = cpumask_parse(buf, new_mask);
-	if (err)
-		goto free_mask;
-
-	err = sched_group_set_preferred_mask(tg, new_mask);
-free_mask:
-	free_cpumask_var(new_mask);
-	return err ?: nbytes;
-}
-
-int preferred_mask_read(struct seq_file *sf, void *v)
-{
-	char *kbuf = kmalloc(cpumask_size() + 1, GFP_KERNEL);
-	struct task_group *tg;
-
-	if (!kbuf)
-		return -ENOMEM;
-
-	tg = css_tg(seq_css(sf));
-	cpumap_print_to_pagebuf(false, kbuf, tg_preferred_mask(tg));
-	seq_printf(sf, "0x%s\n", kbuf);
-	kfree(kbuf);
-
-	return 0;
+	return tg_preferred_mask(css_tg(css));
 }
 
 const struct cpumask *task_group_preferred_mask(struct task_struct *p)

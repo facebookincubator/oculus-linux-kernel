@@ -2121,7 +2121,7 @@ static void dp_panel_handle_sink_request(struct dp_panel *dp_panel)
 	}
 }
 
-static void dp_panel_tpg_config(struct dp_panel *dp_panel, bool enable)
+static void dp_panel_tpg_config(struct dp_panel *dp_panel, u32 pattern)
 {
 	u32 hsync_start_x, hsync_end_x, hactive;
 	struct dp_catalog_panel *catalog;
@@ -2147,8 +2147,8 @@ static void dp_panel_tpg_config(struct dp_panel *dp_panel, bool enable)
 		return;
 	}
 
-	if (!enable) {
-		panel->catalog->tpg_config(catalog, false);
+	if (!pattern) {
+		panel->catalog->tpg_config(catalog, pattern);
 		return;
 	}
 
@@ -2179,7 +2179,7 @@ static void dp_panel_tpg_config(struct dp_panel *dp_panel, bool enable)
 			pinfo->h_sync_width;
 	catalog->display_hctl = (hsync_end_x << 16) | hsync_start_x;
 
-	panel->catalog->tpg_config(catalog, true);
+	panel->catalog->tpg_config(catalog, pattern);
 }
 
 static int dp_panel_config_timing(struct dp_panel *dp_panel)

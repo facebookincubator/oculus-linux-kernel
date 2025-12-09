@@ -674,6 +674,12 @@
 		cooling-levels = <0 1000 2000 3000 4000 5000 6000 7000 8000>;
 	};
 
+	fault_injector: meta,fault_injector {
+		compatible = "meta,fault_injector";
+		/* common Reserved gpio’s for anorak https://fburl.com/code/ajffkmfm GPIO 3 */
+		phymem-violator-base-addr = <0x0F103004>;
+	};
+
 	uefi_logs {
 		compatible = "meta,uefi-logs";
 		memory-region = <&uefi_log_mem>;

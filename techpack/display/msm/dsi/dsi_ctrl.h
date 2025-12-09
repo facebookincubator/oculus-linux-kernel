@@ -570,16 +570,16 @@ int dsi_ctrl_set_roi(struct dsi_ctrl *dsi_ctrl, struct dsi_rect *roi,
 		bool *changed);
 
 /**
- * dsi_ctrl_set_tpg_state() - enable/disable test pattern on the controller
+ * dsi_ctrl_set_tpg_pattern() - enable/disable test pattern on the controller
  * @dsi_ctrl:          DSI controller handle.
- * @on:                enable/disable test pattern.
+ * @pattern:           Test pattern to apply.
  *
  * Test pattern can be enabled only after Video engine (for video mode panels)
  * or command engine (for cmd mode panels) is enabled.
  *
  * Return: error code.
  */
-int dsi_ctrl_set_tpg_state(struct dsi_ctrl *dsi_ctrl, bool on);
+int dsi_ctrl_set_tpg_pattern(struct dsi_ctrl *dsi_ctrl, u32 pattern);
 
 /**
  * dsi_ctrl_transfer_prepare() - Set up a command transfer

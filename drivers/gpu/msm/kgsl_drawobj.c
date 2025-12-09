@@ -333,7 +333,7 @@ static void drawobj_sync_timeline_fence_callback(struct dma_fence *f,
 	 * removing the fence
 	 */
 	if (drawobj_sync_expire(event->device, event))
-		queue_work(kgsl_driver.mem_workqueue, &event->work);
+		queue_work(kgsl_driver.lockless_workqueue, &event->work);
 }
 
 static void syncobj_destroy(struct kgsl_drawobj *drawobj)
@@ -437,8 +437,10 @@ static void cmdobj_destroy(struct kgsl_drawobj *drawobj)
 		kmem_cache_free(memobjs_cache, mem);
 	}
 
-	if (drawobj->type & CMDOBJ_TYPE)
+	if (drawobj->type & CMDOBJ_TYPE) {
 		atomic_dec(&drawobj->context->proc_priv->cmd_count);
+		atomic_dec(&drawobj->context->proc_priv->period->active_cmds);
+	}
 }
 
 /**
@@ -1124,6 +1126,7 @@ struct kgsl_drawobj_cmd *kgsl_drawobj_cmd_create(struct kgsl_device *device,
 {
 	struct kgsl_drawobj_cmd *cmdobj = kzalloc(sizeof(*cmdobj), GFP_KERNEL);
 	int ret;
+	unsigned long spin_flags;
 
 	if (!cmdobj)
 		return ERR_PTR(-ENOMEM);
@@ -1152,8 +1155,24 @@ struct kgsl_drawobj_cmd *kgsl_drawobj_cmd_create(struct kgsl_device *device,
 	INIT_LIST_HEAD(&cmdobj->memlist);
 	cmdobj->requeue_cnt = 0;
 
-	if (type & CMDOBJ_TYPE)
-		atomic_inc(&context->proc_priv->cmd_count);
+	if (!(type & CMDOBJ_TYPE))
+		return cmdobj;
+
+	spin_lock_irqsave(&device->work_period_lock, spin_flags);
+
+	atomic_inc(&context->proc_priv->cmd_count);
+	atomic_inc(&context->proc_priv->period->active_cmds);
+	if (!__test_and_set_bit(KGSL_WORK_PERIOD, &device->flags)) {
+		mod_timer(&device->work_period_timer,
+			  jiffies + msecs_to_jiffies(KGSL_WORK_PERIOD_MS));
+		device->gpu_period.begin = ktime_get_ns();
+	}
+
+	/* Take a refcount here and put it back in kgsl_work_period_timer() */
+	if (!__test_and_set_bit(KGSL_WORK_PERIOD, &context->proc_priv->period->flags))
+		kref_get(&context->proc_priv->period->refcount);
+
+	spin_unlock_irqrestore(&device->work_period_lock, spin_flags);
 
 	return cmdobj;
 }

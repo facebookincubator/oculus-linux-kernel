@@ -42,6 +42,9 @@
 #include "kgsl_sysfs.h"
 #include "kgsl_threadstats.h"
 #include "kgsl_trace.h"
+/* Instantiate tracepoints */
+#define CREATE_TRACE_POINTS
+#include "kgsl_power_trace.h"
 
 #if defined(CONFIG_ARM64) || defined(CONFIG_ARM_LPAE)
 #define KGSL_DMA_BIT_MASK	DMA_BIT_MASK(64)
@@ -256,7 +259,7 @@ static void kgsl_mem_entry_destroy_deferred(struct kref *kref)
 		container_of(kref, struct kgsl_mem_entry, refcount);
 
 	INIT_WORK(&entry->work, _deferred_destroy);
-	queue_work(kgsl_driver.mem_workqueue, &entry->work);
+	queue_work(kgsl_driver.lockless_workqueue, &entry->work);
 }
 
 void kgsl_mem_entry_put_deferred(struct kgsl_mem_entry *entry)
@@ -891,6 +894,26 @@ bool kgsl_check_timestamp(struct kgsl_device *device,
 	return (timestamp_cmp(ts_processed, timestamp) >= 0);
 }
 
+static void kgsl_work_period_release(struct kref *kref)
+{
+	struct gpu_work_period *wp = container_of(kref,
+			struct gpu_work_period, refcount);
+	unsigned long spin_flags;
+
+	spin_lock_irqsave(&kgsl_driver.wp_list_lock, spin_flags);
+	if (!list_empty(&wp->list))
+		list_del_init(&wp->list);
+	spin_unlock_irqrestore(&kgsl_driver.wp_list_lock, spin_flags);
+
+	kfree(wp);
+}
+
+static void kgsl_put_work_period(struct gpu_work_period *wp)
+{
+	if (!IS_ERR_OR_NULL(wp))
+		kref_put(&wp->refcount, kgsl_work_period_release);
+}
+
 /**
  * kgsl_destroy_process_private() - Cleanup function to free process private
  * @kref: - Pointer to object being destroyed's kref struct
@@ -905,6 +928,7 @@ static void kgsl_destroy_process_private(struct kref *kref)
 	struct kgsl_process_private *private = container_of(kref,
 			struct kgsl_process_private, refcount);
 
+	kgsl_put_work_period(private->period);
 	/*
 	 * While removing sysfs entries, kernfs_mutex is held by sysfs apis. Since
 	 * it is a global fs mutex, sometimes it takes longer for kgsl to get hold
@@ -971,6 +995,154 @@ struct kgsl_process_private *kgsl_process_private_find(pid_t pid)
 	return private;
 }
 
+void kgsl_work_period_update(struct kgsl_device *device,
+				  struct gpu_work_period *period, u64 active)
+{
+	unsigned long spin_flags;
+	spin_lock_irqsave(&device->work_period_lock, spin_flags);
+	if (test_bit(KGSL_WORK_PERIOD, &period->flags)) {
+		period->active += active;
+		period->cmds++;
+	}
+	spin_unlock_irqrestore(&device->work_period_lock, spin_flags);
+}
+
+static void _defer_work_period_put(struct work_struct *work)
+{
+	struct gpu_work_period *wp =
+		container_of(work, struct gpu_work_period, defer_ws);
+
+	/* Put back the refcount that was taken in kgsl_drawobj_cmd_create() */
+	kgsl_put_work_period(wp);
+}
+
+#define KGSL_GPU_ID 1
+static void _log_gpu_work_events(struct work_struct *work)
+{
+	struct kgsl_device *device = container_of(work, struct kgsl_device,
+							work_period_ws);
+	struct gpu_work_period *wp;
+	u64 active_time;
+	bool restart = false;
+	bool barrier_sync = false;
+	unsigned long spin_flags;
+	u64 begin, end;
+	uid_t uid;
+
+	spin_lock_irqsave(&device->work_period_lock, spin_flags);
+	/* grab window endpoints for consistent accounting for the items in
+	 * list
+	 */
+	device->gpu_period.end = ktime_get_ns();
+	end = device->gpu_period.end;
+	begin = device->gpu_period.begin;
+	spin_unlock_irqrestore(&device->work_period_lock, spin_flags);
+
+	spin_lock(&kgsl_driver.wp_list_lock); /* protect list modifications */
+	list_for_each_entry(wp, &kgsl_driver.wp_list, list) {
+		spin_lock_irqsave(&device->work_period_lock, spin_flags); /* protect wp */
+		if (!test_bit(KGSL_WORK_PERIOD, &wp->flags)) {
+			spin_unlock_irqrestore(&device->work_period_lock, spin_flags);
+			continue;
+		}
+
+		/* Active time in XO cycles(19.2MHz), convert to nanoseconds */
+		active_time = wp->active * 10000;
+		do_div(active_time, 192);
+
+		uid = wp->uid;
+
+		/* Ensure active_time is within work period */
+		active_time = min_t(u64, active_time,
+			end - begin);
+
+		/* Reset gpu work period stats */
+		wp->active = 0;
+		wp->cmds = 0;
+		atomic_set(&wp->frames, 0);
+
+		barrier_sync = true;
+
+		if (!atomic_read(&wp->active_cmds)) {
+			__clear_bit(KGSL_WORK_PERIOD, &wp->flags);
+			queue_work(kgsl_driver.lockless_workqueue, &wp->defer_ws);
+		} else {
+			restart = true;
+		}
+		spin_unlock_irqrestore(&device->work_period_lock, spin_flags);
+
+		/*
+		 * Emit GPU work period events via a kernel tracepoint
+		 * to provide information to the Android OS about how
+		 * apps are using the GPU.
+		 */
+		if (active_time)
+			trace_gpu_work_period(KGSL_GPU_ID, uid,
+					begin,
+					end,
+					active_time);
+
+	}
+
+	/* make sure other CPUs see updates before giving up the lock */
+	if (barrier_sync)
+		smp_wmb();
+
+	spin_unlock(&kgsl_driver.wp_list_lock);
+
+	spin_lock_irqsave(&device->work_period_lock, spin_flags);
+	if (restart) {
+		/*
+		 * GPU work period duration (end time - begin time) must be at
+		 * most 1 second. The event for a period must be emitted within
+		 * 1 second of the end time of the period. Restart timer within
+		 * 1 second to emit gpu work period events.
+		 */
+		mod_timer(&device->work_period_timer,
+			  jiffies + msecs_to_jiffies(KGSL_WORK_PERIOD_MS));
+		device->gpu_period.begin = device->gpu_period.end;
+	} else {
+		memset(&device->gpu_period, 0, sizeof(device->gpu_period));
+		__clear_bit(KGSL_WORK_PERIOD, &device->flags);
+	}
+	spin_unlock_irqrestore(&device->work_period_lock, spin_flags);
+}
+
+static void kgsl_work_period_timer(struct timer_list *t)
+{
+	struct kgsl_device *device = from_timer(device, t, work_period_timer);
+
+	queue_work(kgsl_driver.lockless_workqueue, &device->work_period_ws);
+}
+
+static struct gpu_work_period *kgsl_get_work_period(uid_t uid)
+{
+	struct gpu_work_period *wp;
+	unsigned long spin_flags;
+
+	spin_lock_irqsave(&kgsl_driver.wp_list_lock, spin_flags);
+	list_for_each_entry(wp, &kgsl_driver.wp_list, list) {
+		if ((uid == wp->uid) && kref_get_unless_zero(&wp->refcount)) {
+			spin_unlock_irqrestore(&kgsl_driver.wp_list_lock, spin_flags);
+			return wp;
+		}
+	}
+
+	wp = kzalloc(sizeof(*wp), GFP_ATOMIC);
+	if (!wp) {
+		spin_unlock(&kgsl_driver.wp_list_lock);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	kref_init(&wp->refcount);
+	wp->uid = uid;
+	INIT_WORK(&wp->defer_ws, _defer_work_period_put);
+	list_add(&wp->list, &kgsl_driver.wp_list);
+	spin_unlock_irqrestore(&kgsl_driver.wp_list_lock, spin_flags);
+
+	return wp;
+}
+
 static struct kgsl_process_private *kgsl_process_private_new(
 		struct kgsl_device *device)
 {
@@ -1012,6 +1184,14 @@ static struct kgsl_process_private *kgsl_process_private_new(
 		return ERR_PTR(-ENOMEM);
 	}
 
+	private->period = kgsl_get_work_period(current_uid().val);
+	if (IS_ERR(private->period)) {
+		int err = PTR_ERR(private->period);
+
+		kfree(private);
+		return ERR_PTR(err);
+	}
+
 	kref_init(&private->refcount);
 
 	private->fd_count = 1;
@@ -1034,6 +1214,7 @@ static struct kgsl_process_private *kgsl_process_private_new(
 	if (IS_ERR(private->pagetable)) {
 		int err = PTR_ERR(private->pagetable);
 
+		kgsl_put_work_period(private->period);
 		idr_destroy(&private->mem_idr);
 		idr_destroy(&private->syncsource_idr);
 		put_pid(private->pid);
@@ -4903,6 +5084,7 @@ struct kgsl_driver kgsl_driver  = {
 	.process_mutex = __MUTEX_INITIALIZER(kgsl_driver.process_mutex),
 	.proclist_lock = __RW_LOCK_UNLOCKED(kgsl_driver.proclist_lock),
 	.ptlock = __SPIN_LOCK_UNLOCKED(kgsl_driver.ptlock),
+	.wp_list_lock = __SPIN_LOCK_UNLOCKED(kgsl_driver.wp_list_lock),
 	.devlock = __MUTEX_INITIALIZER(kgsl_driver.devlock),
 	/*
 	 * Full cache flushes are faster than line by line on at least
@@ -5135,6 +5317,10 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 	/* Initialize common sysfs entries */
 	kgsl_pwrctrl_init_sysfs(device);
 
+	timer_setup(&device->work_period_timer, kgsl_work_period_timer, 0);
+	spin_lock_init(&device->work_period_lock);
+	INIT_WORK(&device->work_period_ws, _log_gpu_work_events);
+
 	return 0;
 
 error_pwrctrl_close:
@@ -5151,6 +5337,8 @@ error:
 
 void kgsl_device_platform_remove(struct kgsl_device *device)
 {
+	del_timer(&device->work_period_timer);
+
 	if (device->events_wq) {
 		destroy_workqueue(device->events_wq);
 		device->events_wq = NULL;
@@ -5186,6 +5374,11 @@ void kgsl_core_exit(void)
 	if (kgsl_driver.mem_workqueue) {
 		destroy_workqueue(kgsl_driver.mem_workqueue);
 		kgsl_driver.mem_workqueue = NULL;
+	}
+
+	if (kgsl_driver.lockless_workqueue) {
+		destroy_workqueue(kgsl_driver.lockless_workqueue);
+		kgsl_driver.lockless_workqueue = NULL;
 	}
 
 	kgsl_events_exit();
@@ -5290,6 +5483,8 @@ int __init kgsl_core_init(void)
 
 	INIT_LIST_HEAD(&kgsl_driver.pagetable_list);
 
+	INIT_LIST_HEAD(&kgsl_driver.wp_list);
+
 	kgsl_driver.workqueue = alloc_workqueue("kgsl-workqueue",
 		WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_SYSFS, 0);
 
@@ -5304,6 +5499,19 @@ int __init kgsl_core_init(void)
 
 	if (!kgsl_driver.mem_workqueue) {
 		pr_err("kgsl: Failed to allocate mem workqueue\n");
+		result = -ENOMEM;
+		goto err;
+	}
+
+	/*
+	 * The lockless workqueue is used to perform work which doesn't need to
+	 * take the device mutex
+	 */
+	kgsl_driver.lockless_workqueue = alloc_workqueue("kgsl-lockless-work",
+		WQ_UNBOUND | WQ_MEM_RECLAIM, 0);
+
+	if (!kgsl_driver.lockless_workqueue) {
+		pr_err("kgsl: Failed to allocate lockless workqueue\n");
 		result = -ENOMEM;
 		goto err;
 	}

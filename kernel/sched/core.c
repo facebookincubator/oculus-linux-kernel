@@ -25,7 +25,6 @@
 #include "../../io_uring/io-wq.h"
 #include "../smpboot.h"
 
-#include "orchestrator.h"
 #include "pelt.h"
 #include "smp.h"
 
@@ -5562,13 +5561,14 @@ recheck:
 			return retval;
 	}
 
-#ifdef CONFIG_ORCHESTRATOR_AGENT
 	if (!(p->flags & PF_KTHREAD)) {
-		retval = orchestrator_task_setscheduler(p, attr);
+		int hook_retval = 0;
+
+		trace_android_vh_task_setscheduler(p, attr, &hook_retval);
+		retval = hook_retval;
 		if (retval)
 			return retval;
 	}
-#endif
 
 	/* Update task specific "requested" clamps */
 	if (attr->sched_flags & SCHED_FLAG_UTIL_CLAMP) {
@@ -8650,8 +8650,8 @@ static struct cftype cpu_legacy_files[] = {
 #ifdef CONFIG_ORCHESTRATOR_AGENT
 	{
 		.name = "preferred_mask",
-		.seq_show = preferred_mask_read,
-		.write = preferred_mask_write,
+		.seq_show = orchestrator_preferred_mask_read,
+		.write = orchestrator_preferred_mask_write,
 	},
 #endif
 #endif

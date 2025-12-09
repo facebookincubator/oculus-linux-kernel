@@ -58,6 +58,7 @@ enum vdm_pid {
 	VDM_PID_UPA_18W = 0x2200,
 	VDM_PID_UPA_18W_V2 = 0x501d,
 	VDM_PID_UPA_45W = 0x2103,
+	VDM_PID_UPA_45W_V2 = 0x501b,
 	VDM_PID_MOKU_APP = 0x5004,
 	VDM_PID_MOKU_BOOTLOADER = 0x5006,
 	/* External batteries */
