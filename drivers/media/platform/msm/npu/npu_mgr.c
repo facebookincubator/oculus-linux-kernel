@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 /* -------------------------------------------------------------------------
@@ -2709,15 +2709,15 @@ int32_t npu_host_exec_network_v2(struct npu_client *client,
 		goto exec_v2_done;
 	}
 
-	if (network->fw_error) {
-		NPU_ERR("fw is in error state\n");
-		ret = -EIO;
-		goto exec_v2_done;
-	}
-
 	if (network->is_executing) {
 		pr_err("network is already in execution\n");
 		ret = -EINVAL;
+		goto exec_v2_done;
+	}
+
+	if (network->fw_error) {
+		NPU_ERR("fw is in error state\n");
+		ret = -EIO;
 		goto exec_v2_done;
 	}
 

@@ -548,6 +548,7 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 			dev_err(ddev->dev,
 				"Error: State-of-Charge received: %d != sent: %d\n",
 				(vdos[0] & 0x01), ddev->state_of_charge);
+		break;
 	case PARAMETER_TYPE_LOG_TRANSMIT:
 		/* Receiving a response to one of two messages
 		 * - TRANSMIT_STOP
@@ -1191,6 +1192,7 @@ static ssize_t dock_type_show(struct device *dev,
 	case VDM_PID_UPA_18W:
 	case VDM_PID_UPA_18W_V2:
 	case VDM_PID_UPA_45W:
+	case VDM_PID_UPA_45W_V2:
 		dock_type = 1;
 		break;
 	case VDM_PID_SKELLIG:

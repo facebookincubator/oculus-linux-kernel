@@ -87,9 +87,9 @@
 
 static void swd_wire_write_len(struct swd_dev_data *devdata, bool value,
 			       size_t len);
-static bool swd_mode_switch(struct device *dev);
+static int swd_mode_switch(struct device *dev);
 
-void swd_init(struct device *dev)
+int swd_init(struct device *dev)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 
@@ -101,7 +101,7 @@ void swd_init(struct device *dev)
 
 	/* must be 150+ clocks @125kHz+ */
 	swd_wire_write_len(devdata, 1, 200);
-	swd_mode_switch(dev);
+	return swd_mode_switch(dev);
 }
 
 void swd_deinit(struct device *dev)
@@ -222,7 +222,7 @@ void swd_flush(struct device *dev)
 		swd_wire_write(devdata, 0);
 }
 
-static void swd_dpap_write_delayed(struct device *dev, bool apndp, u8 reg, u32 data, u32 delay_us)
+static int swd_dpap_write_delayed(struct device *dev, bool apndp, u8 reg, u32 data, u32 delay_us)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	int bitcount = 0;
@@ -231,11 +231,12 @@ static void swd_dpap_write_delayed(struct device *dev, bool apndp, u8 reg, u32 d
 	u64 start_time_us = ktime_to_us(ktime_get());
 	int elapsed_us;
 	int remaining_us;
+	int status = swd_wire_header(dev, SWD_VAL_WRITE, apndp, reg);
 
-	if (!swd_wire_header(dev, SWD_VAL_WRITE, apndp, reg)) {
-		dev_err_ratelimited(dev, "SWD response is invalid/unknown in %s\n",
-			__func__);
-		return;
+	if (!status) {
+		dev_err_ratelimited(dev, "SWD response is invalid/unknown %d in %s\n",
+			status, __func__);
+		return -EIO;
 	}
 	swd_wire_turnaround(devdata);
 
@@ -257,11 +258,12 @@ static void swd_dpap_write_delayed(struct device *dev, bool apndp, u8 reg, u32 d
 
 	parity = bitcount & 1;
 	swd_wire_write(devdata, parity);
+	return 0;
 }
 
-static void swd_dpap_write(struct device *dev, bool apndp, u8 reg, u32 data)
+static int swd_dpap_write(struct device *dev, bool apndp, u8 reg, u32 data)
 {
-	swd_dpap_write_delayed(dev, apndp, reg, data, 0);
+	return swd_dpap_write_delayed(dev, apndp, reg, data, 0);
 }
 
 static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
@@ -272,9 +274,11 @@ static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
 	int i = 0;
 	bool parity, check;
 
-	if (!swd_wire_header(dev, SWD_VAL_READ, apndp, reg)) {
-		dev_err_ratelimited(dev, "SWD response is invalid/unknown in %s\n",
-			__func__);
+	int status = swd_wire_header(dev, SWD_VAL_READ, apndp, reg);
+
+	if (!status) {
+		dev_err_ratelimited(dev, "SWD response %d is invalid/unknown in %s\n",
+			status, __func__);
 		return 0;
 	}
 
@@ -295,9 +299,9 @@ static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
 	return le32_to_cpu(data);
 }
 
-void swd_ap_write(struct device *dev, u8 reg, u32 data)
+int swd_ap_write(struct device *dev, u8 reg, u32 data)
 {
-	swd_dpap_write(dev, SWD_VAL_AP, reg, data);
+	return swd_dpap_write(dev, SWD_VAL_AP, reg, data);
 }
 
 static void swd_ap_write_delayed(struct device *dev, u8 reg, u32 data, u32 delay_us)
@@ -320,16 +324,32 @@ static u32 swd_dp_read(struct device *dev, u8 reg)
 	return swd_dpap_read(dev, SWD_VAL_DP, reg);
 }
 
+u32 swd_dp_read_rd_buff(struct device *dev)
+{
+	return swd_dpap_read(dev, SWD_VAL_DP, SWD_DP_REG_RO_RDBUFF);
+}
+
+void swd_select_ap_reg(struct device *dev, u8 apsel, u32 reg_addr_sel)
+{
+	u32 ap_bank = (reg_addr_sel & 0x00F0) >> 4;
+	u32 address = (((u32)apsel) << SWD_VAL_SELECT_AP_SHIFT) | (ap_bank) << 4;
+	swd_dp_write(dev, SWD_DP_REG_WO_SELECT, address);
+}
+
 void swd_select_ap(struct device *dev, u8 apsel)
 {
 	swd_dp_write(dev, SWD_DP_REG_WO_SELECT, ((u32)apsel) << SWD_VAL_SELECT_AP_SHIFT);
 	swd_ap_write(dev, SWD_MEMAP_REG_RW_CSW, SWD_VAL_DHCSR_INC_32);
 }
 
-void swd_memory_write(struct device *dev, u32 address, u32 data)
+int swd_memory_write(struct device *dev, u32 address, u32 data)
 {
-	swd_ap_write(dev, SWD_MEMAP_REG_RW_TAR, address);
-	swd_ap_write(dev, SWD_MEMAP_REG_RW_DRW, data);
+	int ret = swd_ap_write(dev, SWD_MEMAP_REG_RW_TAR, address);
+
+	if (ret == 0)
+		ret = swd_ap_write(dev, SWD_MEMAP_REG_RW_DRW, data);
+
+	return ret;
 }
 
 void swd_memory_write_next(struct device *dev, u32 data)
@@ -354,13 +374,17 @@ u32 swd_memory_read_next(struct device *dev)
 	return swd_ap_read(dev, SWD_MEMAP_REG_RW_DRW);
 }
 
-static bool swd_mode_switch(struct device *dev)
+static int swd_mode_switch(struct device *dev)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	int i = 0;
 	bool status = true;
+	bool acked = false;
 	const u16 jtag_to_swd = 0xE79E;
+	const u64 timeout_ms = 20;
 	u32 idcode, ack, req;
+	u64 timeout_time_ns = ktime_get_ns() + (timeout_ms * NSEC_PER_MSEC);
+	int ret = 0;
 
 	/* JTAG to SWD */
 	swd_wire_write_len(devdata, 1, 100);
@@ -400,10 +424,12 @@ static bool swd_mode_switch(struct device *dev)
 			(1<<SWD_VAL_CTRLSTAT_CDBGPWRUPACK);
 		req = (1<<SWD_VAL_CTRLSTAT_CSYSPWRUPREQ) |
 			(1<<SWD_VAL_CTRLSTAT_CDBGPWRUPREQ);
+		acked = false;
 		do {
 			swd_dp_write(dev, SWD_DP_REG_RW_CTRLSTAT, req);
-		} while ((swd_dp_read(dev, SWD_DP_REG_RW_CTRLSTAT) & ack)
-			 != ack);
+			acked = (swd_dp_read(dev, SWD_DP_REG_RW_CTRLSTAT) & ack) == ack;
+		} while (acked == false &&
+				 (ktime_get_ns() < timeout_time_ns));
 
 		swd_dp_write(dev,
 			     SWD_DP_REG_WO_ABORT,
@@ -411,9 +437,14 @@ static bool swd_mode_switch(struct device *dev)
 		swd_ap_write(dev,
 			     SWD_MEMAP_REG_RW_CSW,
 			     SWD_VAL_DHCSR_INC_32);
+
+		if (acked == false)
+			ret = -ETIMEDOUT;
+	} else {
+		ret = -EIO;
 	}
 
-	return status;
+	return ret;
 }
 
 void swd_halt(struct device *dev)

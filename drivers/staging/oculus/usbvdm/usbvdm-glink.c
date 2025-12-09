@@ -26,7 +26,7 @@
 #define OEM_NOTIFICATION_CONNECTED		0x1
 #define OEM_NOTIFICATION_DISCONNECTED	0x2
 
-#define GLINK_WAIT_TIME_MS	1000
+#define GLINK_TIMEOUT (msecs_to_jiffies(1000))
 #define PD_MAX_EXTENDED_MSG_LEN	260
 
 struct usbvdm_dev {
@@ -121,7 +121,7 @@ static int usbvdm_glink_ext_msg(struct usbvdm_engine *engine,
 		goto out;
 	}
 
-	if (!wait_for_completion_timeout(&uv_dev->ack_complete, GLINK_WAIT_TIME_MS)) {
+	if (!wait_for_completion_timeout(&uv_dev->ack_complete, GLINK_TIMEOUT)) {
 		rc = -ETIMEDOUT;
 		dev_err(uv_dev->dev,
 				"Timed out waiting for glink ACK for ExtMsgType=0x%02x",
@@ -168,7 +168,7 @@ static int usbvdm_glink_vdm(struct usbvdm_engine *engine,
 		goto out;
 	}
 
-	if (!wait_for_completion_timeout(&uv_dev->ack_complete, GLINK_WAIT_TIME_MS)) {
+	if (!wait_for_completion_timeout(&uv_dev->ack_complete, GLINK_TIMEOUT)) {
 		rc = -ETIMEDOUT;
 		dev_err(uv_dev->dev,
 				"Timed out waiting for glink ACK for VDM, vdm_hdr=0x%04x",
@@ -236,7 +236,7 @@ int usbvdm_glink_transfer_firmware(struct usbvdm_engine *engine,
 			goto unlock;
 		}
 
-		if (!wait_for_completion_timeout(&uv_dev->ack_complete, GLINK_WAIT_TIME_MS)) {
+		if (!wait_for_completion_timeout(&uv_dev->ack_complete, GLINK_TIMEOUT)) {
 			rc = -ETIMEDOUT;
 			dev_err(uv_dev->dev, "Timed out waiting for glink ACK for transferring firmware");
 			kfree(msg);
