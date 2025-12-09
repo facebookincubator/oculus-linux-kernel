@@ -1294,6 +1294,7 @@ static void kgsl_pool_free_pages(struct kgsl_memdesc *memdesc,
 	list_for_each_entry_safe(page, tmp, page_list, lru) {
 		list_del(&page->lru);
 
+		order = compound_order(page);
 		freed_size += (size_t)order << PAGE_SHIFT;
 		kgsl_pool_free_page(page);
 	}
@@ -1395,9 +1396,10 @@ static void _free_pages_from_array(struct kgsl_memdesc *memdesc,
 	if (!memdesc->ops || !memdesc->ops->free)
 		return;
 
-	for (i = 0; i < count; i++)
-		list_add_tail(&pages[i]->lru, &page_list);
-
+	for (i = 0; i < count; i++) {
+		if (!PageTail(pages[i]))
+			list_add_tail(&pages[i]->lru, &page_list);
+	}
 	memdesc->ops->free(memdesc, &page_list);
 }
 
@@ -1452,6 +1454,7 @@ static int kgsl_alloc_secure_pages(struct kgsl_device *device,
 	sgt = kgsl_alloc_sgt_from_pages(pages, count);
 	if (IS_ERR_OR_NULL(sgt)) {
 		_free_pages_from_array(memdesc, pages, count);
+		kvfree(pages);
 		return PTR_ERR(sgt);
 	}
 
@@ -1549,6 +1552,7 @@ static int kgsl_alloc_pages(struct kgsl_device *device,
 	sgt = kgsl_alloc_sgt_from_pages(pages, count);
 	if (IS_ERR_OR_NULL(sgt)) {
 		_free_pages_from_array(memdesc, pages, count);
+		kvfree(pages);
 		return PTR_ERR(sgt);
 	}
 

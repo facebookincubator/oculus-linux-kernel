@@ -857,6 +857,7 @@ static void cam_isp_fpc_handle_workqueue_event(struct work_struct *work)
 
 			if (j == req_isp->num_fence_map_out) {
 				CAM_ERR(CAM_ISP, "resource not found");
+				list_del_init(&req_isp->list);
 				mutex_unlock(&ctx->mutex_list);
 				kmem_cache_free(ctx->request_cache, req_isp);
 				kmem_cache_free(ctx->payload_cache, payload);

@@ -24,6 +24,7 @@
 
 #include <trace/events/sched.h>
 
+#include "orchestrator.h"
 #include "walt.h"
 
 #ifdef CONFIG_SMP
@@ -901,6 +902,8 @@ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	struct sched_entity *entry;
 	bool leftmost = true;
 
+	orchestrator_enqueue_entity(cfs_rq, se);
+
 	if (entity_is_task(se))
 		shared_runq_enqueue_task(rq_of(cfs_rq), task_of(se));
 
@@ -929,6 +932,7 @@ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
 static void __dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
+	orchestrator_dequeue_entity(cfs_rq, se);
 	rb_erase_cached(&se->run_node, &cfs_rq->tasks_timeline);
 	if (entity_is_task(se))
 		shared_runq_dequeue_task(task_of(se));
@@ -8255,6 +8259,11 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	int new_cpu = prev_cpu;
 	int want_affine = 0;
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
+	int target_cpu = -1;
+
+	orchestrator_select_task_rq_fair(p, prev_cpu, sd_flag, wake_flags, &target_cpu);
+	if (target_cpu >= 0)
+		return target_cpu;
 
 	if (static_branch_unlikely(&sched_energy_present)) {
 		rcu_read_lock();

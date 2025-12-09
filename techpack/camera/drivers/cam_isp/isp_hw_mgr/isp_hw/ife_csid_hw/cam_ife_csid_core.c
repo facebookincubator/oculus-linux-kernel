@@ -49,6 +49,8 @@
 /* factor to conver qtime to boottime */
 static int64_t qtime_to_boottime;
 
+int cam_ife_csid_stop(void *hw_priv, void *stop_args, uint32_t arg_size);
+
 static int cam_ife_csid_reset_regs(
 	struct cam_ife_csid_hw *csid_hw, bool reset_hw);
 
@@ -3611,6 +3613,31 @@ int cam_ife_csid_reserve(void *hw_priv,
 	return rc;
 }
 
+void cam_ife_csid_stop_streaming_resource(void *hw_priv,
+					  struct cam_isp_resource_node *res)
+{
+	struct cam_csid_hw_stop_args csid_stop;
+	struct cam_isp_resource_node *node_res[1];
+
+	if (!hw_priv) {
+		CAM_ERR(CAM_ISP, "Invalid hw_priv arg");
+		return;
+	}
+
+	if (!res) {
+		CAM_ERR(CAM_ISP, "Invalid res arg");
+		return;
+	}
+
+	csid_stop.stop_cmd = CAM_CSID_HALT_IMMEDIATELY;
+	csid_stop.num_res = 1;
+	node_res[0] = res;
+	csid_stop.node_res = node_res;
+
+	cam_ife_csid_stop(hw_priv, &csid_stop,
+			  sizeof(struct cam_csid_hw_stop_args));
+}
+
 int cam_ife_csid_release(void *hw_priv,
 	void *release_args, uint32_t arg_size)
 {
@@ -3651,7 +3678,11 @@ int cam_ife_csid_release(void *hw_priv,
 			csid_hw->hw_intf->hw_idx,
 			res->res_type, res->res_id,
 			res->res_state);
-		goto end;
+
+		if (res->res_state == CAM_ISP_RESOURCE_STATE_STREAMING)
+			cam_ife_csid_stop_streaming_resource(hw_priv, res);
+		else
+			goto end;
 	}
 
 	CAM_DBG(CAM_ISP, "CSID:%d res type :%d Resource id:%d",

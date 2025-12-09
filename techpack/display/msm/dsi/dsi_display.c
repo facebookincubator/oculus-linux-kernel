@@ -3557,7 +3557,7 @@ static int dsi_display_parse_lane_map(struct dsi_display *display)
 		for (i = DSI_LOGICAL_LANE_0; i < (DSI_LANE_MAX - 1); i++)
 			display->lane_map.lane_map_v2[i] = BIT(temp[i]);
 		return 0;
-	} else if (rc != EINVAL) {
+	} else if (rc != -EINVAL) {
 		DSI_DEBUG("Incorrect mapping, configure default\n");
 		goto set_default;
 	}

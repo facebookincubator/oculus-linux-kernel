@@ -1291,6 +1291,11 @@ static int wlfw_new_server(struct qmi_handle *qmi,
 		return 0;
 	}
 
+	if (test_bit(ICNSS_MODEM_SHUTDOWN, &priv->state)) {
+		icnss_pr_dbg("WLFW server arrive: Modem is down");
+		return -EINVAL;
+	}
+
 	icnss_pr_dbg("WLFW server arrive: node %u port %u\n",
 		     service->node, service->port);
 

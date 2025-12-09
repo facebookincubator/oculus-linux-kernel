@@ -269,6 +269,54 @@ static int swd_debug_flash_application(struct device *dev)
 	return 0;
 }
 
+static ssize_t swd_debug_set_mcu_quirk(struct file *fp,
+					 const char __user *user_buffer,
+					 size_t count, loff_t *position)
+{
+#define MAX_MCU_QUIRK_SIZE (16)
+	int status = 0;
+	char str[MAX_MCU_QUIRK_SIZE];
+	struct device *dev = fp->private_data;
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	size_t n = (count < (MAX_MCU_QUIRK_SIZE - 1)) ?
+				count : (MAX_MCU_QUIRK_SIZE - 1);
+
+	dev_info(dev, "manually set sdfw version");
+	if (n == 0)
+		return count; /* nothing to do, still report consumed */
+
+	status = fwupdate_check_swd_ops(dev);
+	if (status) {
+		dev_err(dev, "Invalid SWD Ops");
+		return status;
+	}
+
+	if (!mutex_trylock(&devdata->state_mutex)) {
+		dev_err(dev, "Failed to get state mutex");
+		return -EBUSY;
+	}
+
+	if (devdata->fw_update_state == FW_UPDATE_STATE_WRITING_TO_HW) {
+		dev_err(dev, "Update in progress, skipping");
+		status = -EBUSY;
+		goto exit_debug_set_mcu_quirk;
+	}
+
+	if (copy_from_user(str, user_buffer, n))
+		return -EFAULT;
+
+	str[n] = '\0';
+	/* Trim trailing newline/carriage-return characters */
+	while (n > 0 && (str[n - 1] == '\n' || str[n - 1] == '\r'))
+		str[--n] = '\0';
+
+	status = devdata->mcu_data.swd_ops.set_mcu_quirk(dev, str);
+
+exit_debug_set_mcu_quirk:
+	mutex_unlock(&devdata->state_mutex);
+	return status ? status : count;
+}
+
 static ssize_t swd_debug_force_write_all_write(struct file *fp,
 					 const char __user *user_buffer,
 					 size_t count, loff_t *position)
@@ -360,6 +408,38 @@ exit_debug_write:
 	return status ? status : count;
 }
 
+static ssize_t swd_debug_part_number_read(struct file *fp,
+					  char __user *user_buffer,
+					  size_t count, loff_t *position)
+{
+	struct device *dev = fp->private_data;
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	char str[16];
+	int  s;
+	int  partnum;
+
+	if (!devdata->mcu_data.swd_ops.read_part_number) {
+		dev_err(dev, "read part number not supported!");
+		return -EOPNOTSUPP;
+	}
+
+	partnum = devdata->mcu_data.swd_ops.read_part_number(dev);
+	s = snprintf(str, sizeof(str), "0x%x", partnum);
+
+	if (*position >= s)
+		return 0;
+
+	s -= *position;
+	s = min_t(u32, s, count);
+	if (copy_to_user(user_buffer, &str[*position], s)) {
+		return -EFAULT;
+	}
+
+	*position += s;
+
+	return s;
+}
+
 static const struct file_operations swd_debug_reset_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
@@ -388,6 +468,18 @@ static const struct file_operations swd_debug_force_write_all_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
 	.write = swd_debug_force_write_all_write,
+};
+
+static const struct file_operations swd_debug_read_part_number_all_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = swd_debug_part_number_read,
+};
+
+static const struct file_operations swd_debug_set_mcu_quirk_all_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.write = swd_debug_set_mcu_quirk,
 };
 
 int fwupdate_create_debugfs(struct device *dev, const char *const flavor)
@@ -449,6 +541,20 @@ int fwupdate_create_debugfs(struct device *dev, const char *const flavor)
 
 	entry = debugfs_create_file("force_write_all", 0644, devdata->debug_entry, dev,
 			    &swd_debug_force_write_all_fops);
+	if (!entry) {
+		status = -ENOMEM;
+		goto exit_error;
+	}
+
+	entry = debugfs_create_file("read_part_num", 0644, devdata->debug_entry, dev,
+			    &swd_debug_read_part_number_all_fops);
+	if (!entry) {
+		status = -ENOMEM;
+		goto exit_error;
+	}
+
+	entry = debugfs_create_file("set_mcu_quirk", 0644, devdata->debug_entry,
+			dev, &swd_debug_set_mcu_quirk_all_fops);
 	if (!entry) {
 		status = -ENOMEM;
 		goto exit_error;

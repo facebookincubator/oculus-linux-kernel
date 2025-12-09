@@ -1,0 +1,11 @@
+{
+  // this is supposed to tell infra what tests to run when this folder changes
+  "presubmit": [
+    {
+      "name": "gpuprofilertest",
+      "file_patterns": [
+        "drivers/gpu/msm/*"
+      ]
+    }
+  ]
+}

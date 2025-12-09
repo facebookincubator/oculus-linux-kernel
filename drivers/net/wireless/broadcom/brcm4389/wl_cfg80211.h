@@ -2606,9 +2606,6 @@ wl_delete_all_netinfo(struct bcm_cfg80211 *cfg)
 			bss->fils_ind_ie = NULL;
 		}
 		list_del(&_net_info->list);
-		if (_net_info->wdev) {
-			MFREE(cfg->osh, _net_info->wdev, sizeof(struct wireless_dev));
-		}
 		MFREE(cfg->osh, _net_info, sizeof(struct net_info));
 	}
 	cfg->iface_cnt = 0;

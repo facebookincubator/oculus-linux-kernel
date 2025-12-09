@@ -114,6 +114,8 @@
 static u8 nlink_tid __ro_after_init;
 static u8 nlink_tgid __ro_after_init;
 
+extern const struct file_operations proc_orchestrator_flag_ops;
+
 struct pid_entry {
 	const char *name;
 	unsigned int len;
@@ -375,7 +377,7 @@ static const struct file_operations proc_pid_cmdline_ops = {
 #ifdef CONFIG_KALLSYMS
 /*
  * Provides a wchan file via kallsyms in a proper one-value-per-file format.
- * Returns the resolved symbol.  If that fails, simply return the address.
+ * Returns the resolved symbol to user space.
  */
 static int proc_pid_wchan(struct seq_file *m, struct pid_namespace *ns,
 			  struct pid *pid, struct task_struct *task)
@@ -3484,6 +3486,10 @@ static const struct pid_entry tgid_base_stuff[] = {
 #endif
 #ifdef CONFIG_CPU_FREQ_TIMES
 	ONE("time_in_state", 0444, proc_time_in_state_show),
+#endif
+#ifdef CONFIG_ORCHESTRATOR_AGENT
+	REG("orchestrator_flags", S_IRUGO|S_IWUGO,
+	    proc_orchestrator_flag_ops),
 #endif
 };
 

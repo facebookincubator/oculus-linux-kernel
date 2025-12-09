@@ -547,6 +547,9 @@ int cnss_driver_event_post(struct cnss_plat_data *plat_priv,
 	if (!plat_priv)
 		return -ENODEV;
 
+	if (!plat_priv->event_wq)
+		return -ENODEV;
+
 	cnss_pr_dbg("Posting event: %s(%d)%s, state: 0x%lx flags: 0x%0x\n",
 		    cnss_driver_event_to_str(type), type,
 		    flags ? "-sync" : "", plat_priv->driver_state, flags);
@@ -2560,6 +2563,7 @@ static int cnss_event_work_init(struct cnss_plat_data *plat_priv)
 static void cnss_event_work_deinit(struct cnss_plat_data *plat_priv)
 {
 	destroy_workqueue(plat_priv->event_wq);
+	plat_priv->event_wq = NULL;
 }
 
 static int cnss_reboot_notifier(struct notifier_block *nb,

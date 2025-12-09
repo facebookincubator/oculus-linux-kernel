@@ -69,4 +69,12 @@ static inline void cpuidle_coupled_unregister_device(struct cpuidle_device *dev)
 }
 #endif
 
+#ifdef CONFIG_ORCHESTRATOR_AGENT
+void orchestrator_cpu_idle_enter(int *state, struct cpuidle_device *dev);
+void orchestrator_cpu_idle_exit(int state, struct cpuidle_device *dev);
+#else
+static void orchestrator_cpu_idle_enter(int *state, struct cpuidle_device *dev) {}
+static void orchestrator_cpu_idle_exit(int state, struct cpuidle_device *dev) {}
+#endif
+
 #endif /* __DRIVER_CPUIDLE_H */

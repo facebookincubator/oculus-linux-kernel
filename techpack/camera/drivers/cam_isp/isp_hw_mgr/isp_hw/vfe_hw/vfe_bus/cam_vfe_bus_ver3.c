@@ -195,6 +195,8 @@ struct cam_vfe_bus_ver3_priv {
 	void                               *tasklet_info;
 };
 
+static int cam_vfe_bus_ver3_stop_vfe_out(struct cam_isp_resource_node *vfe_out);
+
 static int cam_vfe_bus_ver3_process_cmd(
 	struct cam_isp_resource_node *priv,
 	uint32_t cmd_type, void *cmd_args, uint32_t arg_size);
@@ -2064,7 +2066,13 @@ static int cam_vfe_bus_ver3_release_vfe_out(void *bus_priv, void *release_args,
 	vfe_out = release_args;
 	rsrc_data = vfe_out->res_priv;
 
-	if (vfe_out->res_state != CAM_ISP_RESOURCE_STATE_RESERVED) {
+	if (vfe_out->res_state == CAM_ISP_RESOURCE_STATE_STREAMING) {
+		CAM_ERR(CAM_ISP,
+			"Invalid resource state: STREAMING, VFE:%d out_type:0x%X. Force stop! ",
+			vfe_out->res_state, rsrc_data->common_data->core_index,
+			rsrc_data->out_type);
+		cam_vfe_bus_ver3_stop_vfe_out(vfe_out);
+	} else if (vfe_out->res_state != CAM_ISP_RESOURCE_STATE_RESERVED) {
 		CAM_ERR(CAM_ISP,
 			"Invalid resource state:%d VFE:%d out_type:0x%X",
 			vfe_out->res_state, rsrc_data->common_data->core_index,
@@ -2110,8 +2118,7 @@ static int cam_vfe_bus_ver3_release_vfe_out(void *bus_priv, void *release_args,
 	}
 	mutex_unlock(&rsrc_data->common_data->bus_mutex);
 
-	if (vfe_out->res_state == CAM_ISP_RESOURCE_STATE_RESERVED)
-		vfe_out->res_state = CAM_ISP_RESOURCE_STATE_AVAILABLE;
+	vfe_out->res_state = CAM_ISP_RESOURCE_STATE_AVAILABLE;
 
 	return 0;
 }

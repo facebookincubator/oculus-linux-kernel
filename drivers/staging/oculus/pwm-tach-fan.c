@@ -36,6 +36,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/sysfs.h>
 #include <linux/thermal.h>
+#include <linux/version.h>
 
 #include <drm/drm_panel.h>
 
@@ -593,10 +594,44 @@ end_set_cur_state:
 	return ret;
 }
 
+#if (KERNEL_VERSION(5, 10, 0) <= LINUX_VERSION_CODE)
+static int pwm_fan_get_requested_power(struct thermal_cooling_device *cdev,
+					u32 *power)
+{
+	dev_err(&cdev->device, "%s: not implemented\n", __func__);
+	return -EPERM;
+}
+
+static int pwm_fan_state2power(struct thermal_cooling_device *cdev,
+				unsigned long state, u32 *power)
+{
+	dev_err(&cdev->device, "%s: not implemented\n", __func__);
+	return -EPERM;
+}
+
+static int pwm_fan_power2state(struct thermal_cooling_device *cdev, u32 power,
+				unsigned long *state)
+{
+	struct pwm_fan_ctx *ctx = cdev->devdata;
+
+	if (power > ctx->pwm_fan_max_state)
+		power = ctx->pwm_fan_max_state;
+
+	*state = power;
+	dev_dbg(&cdev->device, "%s: state %lu power %d\n", __func__, *state, power);
+	return 0;
+}
+#endif
+
 static const struct thermal_cooling_device_ops pwm_fan_cooling_ops = {
 	.get_max_state = pwm_fan_get_max_state,
 	.get_cur_state = pwm_fan_get_cur_state,
 	.set_cur_state = pwm_fan_set_cur_state,
+#if (KERNEL_VERSION(5, 10, 0) <= LINUX_VERSION_CODE)
+	.get_requested_power = pwm_fan_get_requested_power,
+	.state2power = pwm_fan_state2power,
+	.power2state = pwm_fan_power2state,
+#endif
 };
 
 #if IS_ENABLED(CONFIG_DRM)
@@ -715,6 +750,9 @@ static void fan_recovery_work_func(struct work_struct *work)
 	struct pwm_fan_ctx *ctx = container_of(work, struct pwm_fan_ctx,
 			fan_recovery_work);
 
+	if (ctx == NULL || ctx->cdev == NULL)
+		return;
+
 	mutex_lock(&ctx->lock);
 
 	if (ctx->pwm_value == 0) {
@@ -782,6 +820,7 @@ static void fan_work_func(struct work_struct *work)
 		dev_dbg(&ctx->cdev->device, "performing fan health check\n");
 		ctx->target_acquired = false;
 		reset_counters(ctx);
+		ctx->ignore_tach_irqs = false;
 		enable_irq(ctx->irq);
 
 		/*
@@ -903,38 +942,53 @@ static int pwm_fan_of_get_cooling_data(struct device *dev,
 	struct device_node *np = dev->of_node;
 	int num, i, ret;
 
-	if (!of_find_property(np, "cooling-levels", NULL))
-		return 0;
+	if (device_property_read_bool(dev, "cooling-level-as-percent")) {
+		const int max_percentage = 100;
+		int rpm_increment = ctx->max_rpm / max_percentage;
 
-	ret = of_property_count_u32_elems(np, "cooling-levels");
-	if (ret <= 0) {
-		dev_err(dev, "invalid cooling-levels property!!\n");
-		return ret ? : -EINVAL;
-	}
+		ctx->pwm_fan_cooling_levels = devm_kcalloc(dev, max_percentage, sizeof(*ctx->pwm_fan_cooling_levels),
+							GFP_KERNEL);
+		ctx->pwm_fan_cooling_levels[0] = 0;
+		for (i = 1; i < max_percentage; i++)
+			ctx->pwm_fan_cooling_levels[i] =
+				ctx->pwm_fan_cooling_levels[i - 1] + rpm_increment;
 
-	num = ret;
-	ctx->pwm_fan_cooling_levels = devm_kcalloc(dev, num, sizeof(*ctx->pwm_fan_cooling_levels),
-						   GFP_KERNEL);
-	if (!ctx->pwm_fan_cooling_levels)
-		return -ENOMEM;
+		ctx->pwm_fan_cooling_levels[max_percentage - 1] = ctx->max_rpm;
+		ctx->pwm_fan_max_state = max_percentage - 1;
+	} else {
+		if (!of_find_property(np, "cooling-levels", NULL))
+			return 0;
 
-	ret = of_property_read_u32_array(np, "cooling-levels",
-					 ctx->pwm_fan_cooling_levels, num);
-	if (ret) {
-		dev_err(dev, "Property 'cooling-levels' cannot be read!\n");
-		return ret;
-	}
-
-	/* Cooling levels are expressed in RPM */
-	for (i = 0; i < num; i++) {
-		if (ctx->pwm_fan_cooling_levels[i] > ctx->max_rpm) {
-			dev_err(dev, "RPM fan state[%d]:%d > %d\n", i,
-				ctx->pwm_fan_cooling_levels[i], ctx->max_rpm);
-			return -EINVAL;
+		ret = of_property_count_u32_elems(np, "cooling-levels");
+		if (ret <= 0) {
+			dev_err(dev, "invalid cooling-levels property!!\n");
+			return ret ? : -EINVAL;
 		}
-	}
 
-	ctx->pwm_fan_max_state = num - 1;
+		num = ret;
+		ctx->pwm_fan_cooling_levels = devm_kcalloc(dev, num, sizeof(*ctx->pwm_fan_cooling_levels),
+							   GFP_KERNEL);
+		if (!ctx->pwm_fan_cooling_levels)
+			return -ENOMEM;
+
+		ret = of_property_read_u32_array(np, "cooling-levels",
+					 ctx->pwm_fan_cooling_levels, num);
+		if (ret) {
+			dev_err(dev, "Property 'cooling-levels' cannot be read!\n");
+			return ret;
+		}
+
+		/* Cooling levels are expressed in RPM */
+		for (i = 0; i < num; i++) {
+			if (ctx->pwm_fan_cooling_levels[i] > ctx->max_rpm) {
+				dev_err(dev, "RPM fan state[%d]:%d > %d\n", i,
+					ctx->pwm_fan_cooling_levels[i], ctx->max_rpm);
+				return -EINVAL;
+			}
+		}
+
+		ctx->pwm_fan_max_state = num - 1;
+	}
 
 	return 0;
 }
