@@ -1,9 +1,16 @@
+This repository supports the following devices:
+Quest 3/eureka
+Quest 3S/panther
+Quest 3S/xse_panther
+
+Please use the appropriate identifier ("eureka", "panther") in the build instructions below.
+
 To compile the kernel image as used by the Quest headset, follow the
 instructions below.
 
 * Obtain the necessary toolchain from AOSP:
-  * git clone --depth=1 -b android12L-release https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
-  * git clone --depth=1 -b android12L-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+  * git clone --depth=1 -b android14-release https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+  * git clone --depth=1 -b android14-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
 * Use the following script to build the kernel image:
 ```
 LLVM_PATH=$1

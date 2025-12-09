@@ -178,7 +178,7 @@ struct dp_panel {
 			bool dhdr_update, u64 core_clk_rate, bool flush);
 	int (*set_colorspace)(struct dp_panel *dp_panel,
 		u32 colorspace);
-	void (*tpg_config)(struct dp_panel *dp_panel, bool enable);
+	void (*tpg_config)(struct dp_panel *dp_panel, u32 pattern);
 	int (*spd_config)(struct dp_panel *dp_panel);
 	bool (*hdr_supported)(struct dp_panel *dp_panel);
 

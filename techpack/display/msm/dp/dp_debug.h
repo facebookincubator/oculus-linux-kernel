@@ -52,7 +52,7 @@
  * @psm_enabled: specifies whether psm enabled
  * @hdcp_disabled: specifies if hdcp is disabled
  * @hdcp_wait_sink_sync: used to wait for sink synchronization before HDCP auth
- * @tpg_state: specifies whether tpg feature is enabled
+ * @tpg_pattern: selects tpg pattern on the controller
  * @max_pclk_khz: max pclk supported
  * @force_encryption: enable/disable forced encryption for HDCP 2.2
  * @skip_uevent: skip hotplug uevent to the user space
@@ -70,7 +70,7 @@ struct dp_debug {
 	bool psm_enabled;
 	bool hdcp_disabled;
 	bool hdcp_wait_sink_sync;
-	bool tpg_state;
+	u32 tpg_pattern;
 	u32 max_pclk_khz;
 	bool force_encryption;
 	bool skip_uevent;

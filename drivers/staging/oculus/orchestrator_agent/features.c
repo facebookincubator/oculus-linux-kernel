@@ -142,10 +142,17 @@ static ssize_t feature_write_procfs(struct file *file,
 	return count;
 }
 
+#ifdef CONFIG_ANDROID_VENDOR_HOOKS
 const struct proc_ops features_proc_ops = {
 	.proc_read	= features_read_procfs,
 	.proc_write	= feature_write_procfs,
 };
+#else
+const struct file_operations features_proc_ops = {
+	.read		= features_read_procfs,
+	.write		= feature_write_procfs,
+};
+#endif
 
 void orchestrator_features_init(void)
 {

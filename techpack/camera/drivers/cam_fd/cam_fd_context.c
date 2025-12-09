@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/module.h>
@@ -9,6 +9,7 @@
 
 #include "cam_debug_util.h"
 #include "cam_fd_context.h"
+#include "cam_fd_hw_intf.h"
 #include "cam_trace.h"
 
 static const char fd_dev_name[] = "cam-fd";
@@ -245,9 +246,9 @@ int cam_fd_context_init(struct cam_fd_context *fd_ctx,
 	fd_ctx->base = base_ctx;
 	base_ctx->ctx_priv = fd_ctx;
 	base_ctx->state_machine = cam_fd_ctx_state_machine;
-	base_ctx->max_hw_update_entries = CAM_CTX_CFG_MAX;
-	base_ctx->max_in_map_entries = CAM_CTX_CFG_MAX;
-	base_ctx->max_out_map_entries = CAM_CTX_CFG_MAX;
+	base_ctx->max_hw_update_entries = CAM_FD_MAX_HW_ENTRIES;
+	base_ctx->max_in_map_entries = CAM_FD_MAX_IO_BUFFERS;
+	base_ctx->max_out_map_entries = CAM_FD_MAX_IO_BUFFERS;
 
 	return rc;
 }

@@ -1032,8 +1032,9 @@ static int rpmh_rsc_cpu_pm_callback(struct notifier_block *nfb,
 int rpmh_rsc_mode_solver_set(struct rsc_drv *drv, bool enable)
 {
 	int ret = -EBUSY;
+	unsigned long flags;
 
-	if (spin_trylock(&drv->lock)) {
+	if (spin_trylock_irqsave(&drv->lock, flags)) {
 		if (!enable || !rpmh_rsc_ctrlr_is_busy(drv)) {
 			drv->in_solver_mode = enable;
 			trace_rpmh_solver_set(drv, enable);
@@ -1041,7 +1042,7 @@ int rpmh_rsc_mode_solver_set(struct rsc_drv *drv, bool enable)
 				       "solver mode set: %d", enable);
 			ret = 0;
 		}
-		spin_unlock(&drv->lock);
+		spin_unlock_irqrestore(&drv->lock, flags);
 	}
 
 	return ret;

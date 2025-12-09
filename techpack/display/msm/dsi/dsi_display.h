@@ -647,7 +647,7 @@ int dsi_pre_clkon_cb(void *priv, enum dsi_clk_type clk_type,
  */
 int dsi_display_unprepare(struct dsi_display *display);
 
-int dsi_display_set_tpg_state(struct dsi_display *display, bool enable);
+int dsi_display_set_tpg_pattern(struct dsi_display *display, u32 pattern);
 
 int dsi_display_clock_gate(struct dsi_display *display, bool enable);
 int dsi_dispaly_static_frame(struct dsi_display *display, bool enable);

@@ -13,8 +13,13 @@
 #include "features.h"
 #include "flags.h"
 #include "sched.h"
+#include "mem.h"
 
-void orchestrator_post_clone(struct task_struct *new, struct task_struct *orig)
+#ifdef CONFIG_ANDROID_VENDOR_HOOKS
+#include <trace/hooks/sched.h>
+#endif /* CONFIG_ANDROID_VENDOR_HOOKS */
+
+void orchestrator_post_clone(void *unused, struct task_struct *new, struct task_struct *orig)
 {
 	/* Clear orchestrator object for new processes */
 	if (new->pid == new->tgid)
@@ -30,6 +35,11 @@ static int __init init_orchestrator(void)
 
 	orchestrator_features_init();
 	orchestrator_sched_init();
+	orchestrator_mem_init();
+
+#ifdef CONFIG_ANDROID_VENDOR_HOOKS
+	register_trace_android_vh_post_clone(orchestrator_post_clone, NULL);
+#endif /* CONFIG_ANDROID_VENDOR_HOOKS */
 
 	return 0;
 }

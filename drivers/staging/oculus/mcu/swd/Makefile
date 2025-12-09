@@ -5,6 +5,10 @@ ifeq ($(CONFIG_META_SWD_DEBUG),y)
 meta_swd-objs += fwupdate_debug.o
 endif
 
+ifeq ($(CONFIG_META_SWD_DIRECTFD),y)
+meta_swd-objs += swd_chardev.o
+endif
+
 ifeq ($(CONFIG_META_SWD_HUBERT),y)
 meta_swd-objs += hubert_swd_ops.o
 endif
@@ -31,4 +35,8 @@ endif
 
 ifeq ($(CONFIG_META_SWD_SYNCBOSS_NRF54L15),y)
 meta_swd-objs += syncboss_swd_ops_nrf54l15.o
+endif
+
+ifeq ($(CONFIG_META_SWD_SYNCBOSS_NRF54H20),y)
+meta_swd-objs += syncboss_swd_ops_nrf54h20.o
 endif

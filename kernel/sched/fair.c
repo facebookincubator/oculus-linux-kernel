@@ -21,7 +21,6 @@
  *  Copyright (C) 2007 Red Hat, Inc., Peter Zijlstra
  */
 #include "sched.h"
-#include "orchestrator.h"
 
 #include <trace/hooks/sched.h>
 
@@ -11714,7 +11713,6 @@ int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent)
 		goto err;
 
 	tg->shares = NICE_0_LOAD;
-	cpumask_setall(tg_preferred_mask(tg));
 
 	init_cfs_bandwidth(tg_cfs_bandwidth(tg));
 

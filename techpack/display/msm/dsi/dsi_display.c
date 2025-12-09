@@ -4453,7 +4453,7 @@ static int dsi_display_parse_lane_map(struct dsi_display *display)
 		for (i = DSI_LOGICAL_LANE_0; i < (DSI_LANE_MAX - 1); i++)
 			display->lane_map.lane_map_v2[i] = BIT(temp[i]);
 		return 0;
-	} else if (rc != EINVAL) {
+	} else if (rc != -EINVAL) {
 		DSI_DEBUG("Incorrect mapping, configure default\n");
 		goto set_default;
 	}
@@ -8339,7 +8339,7 @@ error:
 	return rc;
 }
 
-int dsi_display_set_tpg_state(struct dsi_display *display, bool enable)
+int dsi_display_set_tpg_pattern(struct dsi_display *display, u32 pattern)
 {
 	int rc = 0;
 	int i;
@@ -8352,7 +8352,7 @@ int dsi_display_set_tpg_state(struct dsi_display *display, bool enable)
 
 	display_for_each_ctrl(i, display) {
 		ctrl = &display->ctrl[i];
-		rc = dsi_ctrl_set_tpg_state(ctrl->ctrl, enable);
+		rc = dsi_ctrl_set_tpg_pattern(ctrl->ctrl, pattern);
 		if (rc) {
 			DSI_ERR("[%s] failed to set tpg state for host_%d\n",
 			       display->name, i);
@@ -8360,7 +8360,7 @@ int dsi_display_set_tpg_state(struct dsi_display *display, bool enable)
 		}
 	}
 
-	display->is_tpg_enabled = enable;
+	display->is_tpg_enabled = (pattern ? true : false);
 error:
 	return rc;
 }

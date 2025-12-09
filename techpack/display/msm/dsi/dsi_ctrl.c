@@ -3752,16 +3752,16 @@ error:
 }
 
 /**
- * dsi_ctrl_set_tpg_state() - enable/disable test pattern on the controller
+ * dsi_ctrl_set_tpg_pattern() - enable/disable test pattern on the controller
  * @dsi_ctrl:          DSI controller handle.
- * @on:                enable/disable test pattern.
+ * @pattern:           test pattern to apply.
  *
  * Test pattern can be enabled only after Video engine (for video mode panels)
  * or command engine (for cmd mode panels) is enabled.
  *
  * Return: error code.
  */
-int dsi_ctrl_set_tpg_state(struct dsi_ctrl *dsi_ctrl, bool on)
+int dsi_ctrl_set_tpg_pattern(struct dsi_ctrl *dsi_ctrl, u32 pattern)
 {
 	int rc = 0;
 
@@ -3772,14 +3772,14 @@ int dsi_ctrl_set_tpg_state(struct dsi_ctrl *dsi_ctrl, bool on)
 
 	mutex_lock(&dsi_ctrl->ctrl_lock);
 
-	rc = dsi_ctrl_check_state(dsi_ctrl, DSI_CTRL_OP_TPG, on);
+	rc = dsi_ctrl_check_state(dsi_ctrl, DSI_CTRL_OP_TPG, (pattern ? 1 : 0));
 	if (rc) {
 		DSI_CTRL_ERR(dsi_ctrl, "Controller state check failed, rc=%d\n",
 				rc);
 		goto error;
 	}
 
-	if (on) {
+	if (pattern) {
 		if (dsi_ctrl->host_config.panel_mode == DSI_OP_VIDEO_MODE) {
 			dsi_ctrl->hw.ops.video_test_pattern_setup(&dsi_ctrl->hw,
 							  DSI_TEST_PATTERN_INC,
@@ -3792,10 +3792,10 @@ int dsi_ctrl_set_tpg_state(struct dsi_ctrl *dsi_ctrl, bool on)
 							0x0);
 		}
 	}
-	dsi_ctrl->hw.ops.test_pattern_enable(&dsi_ctrl->hw, on);
+	dsi_ctrl->hw.ops.test_pattern_enable(&dsi_ctrl->hw, pattern);
 
-	DSI_CTRL_DEBUG(dsi_ctrl, "Set test pattern state=%d\n", on);
-	dsi_ctrl_update_state(dsi_ctrl, DSI_CTRL_OP_TPG, on);
+	DSI_CTRL_DEBUG(dsi_ctrl, "Set test pattern state=%d\n", pattern);
+	dsi_ctrl_update_state(dsi_ctrl, DSI_CTRL_OP_TPG, pattern);
 error:
 	mutex_unlock(&dsi_ctrl->ctrl_lock);
 	return rc;
