@@ -249,8 +249,8 @@ void sctp_generate_t3_rtx_event(unsigned long peer)
 
 	/* Check whether a task is in the sock.  */
 
-	bh_lock_sock(asoc->base.sk);
-	if (sock_owned_by_user(asoc->base.sk)) {
+	bh_lock_sock(sk);
+	if (sock_owned_by_user(sk)) {
 		pr_debug("%s: sock is busy\n", __func__);
 
 		/* Try again later.  */
@@ -273,7 +273,7 @@ void sctp_generate_t3_rtx_event(unsigned long peer)
 			   transport, GFP_ATOMIC);
 
 	if (error)
-		asoc->base.sk->sk_err = -error;
+		sk->sk_err = -error;
 
 out_unlock:
 	bh_unlock_sock(sk);
@@ -367,7 +367,8 @@ void sctp_generate_heartbeat_event(unsigned long data)
 	int error = 0;
 	struct sctp_transport *transport = (struct sctp_transport *) data;
 	struct sctp_association *asoc = transport->asoc;
-	struct net *net = sock_net(asoc->base.sk);
+	struct sock *sk = asoc->base.sk;
+	struct net *net = sock_net(sk);
 
 	bh_lock_sock(sk);
 	if (sock_owned_by_user(sk)) {
