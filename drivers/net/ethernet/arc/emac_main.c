@@ -163,7 +163,7 @@ static void arc_emac_tx_clean(struct net_device *ndev)
 		struct sk_buff *skb = tx_buff->skb;
 		unsigned int info = le32_to_cpu(txbd->info);
 
-		if ((info & FOR_EMAC) || !txbd->data)
+		if ((info & FOR_EMAC) || !txbd->data || !skb)
 			break;
 
 		if (unlikely(info & (DROP | DEFR | LTCL | UFLO))) {
@@ -191,6 +191,7 @@ static void arc_emac_tx_clean(struct net_device *ndev)
 
 		txbd->data = 0;
 		txbd->info = 0;
+		tx_buff->skb = NULL;
 
 		*txbd_dirty = (*txbd_dirty + 1) % TX_BD_NUM;
 	}
