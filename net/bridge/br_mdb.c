@@ -83,6 +83,7 @@ static int br_mdb_fill_info(struct sk_buff *skb, struct netlink_callback *cb,
 				if (port) {
 					struct br_mdb_entry e;
 					memset(&e, 0, sizeof(e));
+					memset(&e, 0, sizeof(e));
 					e.ifindex = port->dev->ifindex;
 					e.state = p->state;
 					if (p->addr.proto == htons(ETH_P_IP))
