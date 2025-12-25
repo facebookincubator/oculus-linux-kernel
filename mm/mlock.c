@@ -332,8 +332,8 @@ static void __putback_lru_fast(struct pagevec *pvec, int pgrescued)
 static void __munlock_pagevec(struct pagevec *pvec, struct zone *zone)
 {
 	int i;
+	int delta_munlocked = -nr;
 	int nr = pagevec_count(pvec);
-	int delta_munlocked;
 	struct pagevec pvec_putback;
 	int pgrescued = 0;
 
