@@ -389,6 +389,7 @@ int udpv6_recvmsg(struct kiocb *iocb, struct sock *sk,
 	int err;
 	int is_udplite = IS_UDPLITE(sk);
 	bool checksum_valid = false;
+	bool checksum_valid = false;
 	int is_udp4;
 	bool slow;
 
