@@ -829,6 +829,7 @@ static int dccp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 	struct dccp_sock *dp = dccp_sk(sk);
 	struct in6_addr *saddr = NULL, *final_p, final;
 	struct ipv6_txoptions *opt;
+	struct ipv6_txoptions *opt;
 	struct flowi6 fl6;
 	struct dst_entry *dst;
 	int addr_type;
