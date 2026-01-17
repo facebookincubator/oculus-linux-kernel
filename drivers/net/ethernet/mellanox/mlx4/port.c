@@ -181,6 +181,11 @@ int __mlx4_register_mac(struct mlx4_dev *dev, u8 port, u64 mac)
 		}
 	}
 
+	if (free < 0) {
+		err = -ENOMEM;
+		goto out;
+	}
+
 	mlx4_dbg(dev, "Free MAC index is %d\n", free);
 
 	if (table->total == table->max) {
@@ -376,6 +381,11 @@ int __mlx4_register_vlan(struct mlx4_dev *dev, u8 port, u16 vlan,
 	int free = -1;
 
 	mutex_lock(&table->mutex);
+
+	if (free < 0) {
+		err = -ENOMEM;
+		goto out;
+	}
 
 	if (table->total == table->max) {
 		/* No free vlan entries */
