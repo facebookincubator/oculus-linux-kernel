@@ -266,7 +266,7 @@ static int swd_dpap_write(struct device *dev, bool apndp, u8 reg, u32 data)
 	return swd_dpap_write_delayed(dev, apndp, reg, data, 0);
 }
 
-static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
+static int swd_dpap_read_robust(struct device *dev, bool apndp, u8 reg, u32 *data_ptr)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	u32 data = 0;
@@ -279,7 +279,7 @@ static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
 	if (!status) {
 		dev_err_ratelimited(dev, "SWD response %d is invalid/unknown in %s\n",
 			status, __func__);
-		return 0;
+		return -EIO;
 	}
 
 	for (i = 0; i < 32; i++) {
@@ -292,11 +292,20 @@ static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
 	check = swd_wire_read(devdata);
 	if (check != parity) {
 		dev_err_ratelimited(dev, "SWD Parity error in %s\n", __func__);
-		return 0;
+		return -EIO;
 	}
 	swd_wire_turnaround(devdata);
 
-	return le32_to_cpu(data);
+	*data_ptr = le32_to_cpu(data);
+	return 0;
+}
+
+static u32 swd_dpap_read(struct device *dev, bool apndp, u8 reg)
+{
+	u32 data = 0;
+
+	swd_dpap_read_robust(dev, apndp, reg, &data);
+	return data;
 }
 
 int swd_ap_write(struct device *dev, u8 reg, u32 data)
@@ -314,6 +323,11 @@ u32 swd_ap_read(struct device *dev, u8 reg)
 	return swd_dpap_read(dev, SWD_VAL_AP, reg);
 }
 
+int swd_ap_read_robust(struct device *dev, u8 reg, u32 *data)
+{
+	return swd_dpap_read_robust(dev, SWD_VAL_AP, reg, data);
+}
+
 static void swd_dp_write(struct device *dev, u8 reg, u32 data)
 {
 	swd_dpap_write(dev, SWD_VAL_DP, reg, data);
@@ -324,9 +338,9 @@ static u32 swd_dp_read(struct device *dev, u8 reg)
 	return swd_dpap_read(dev, SWD_VAL_DP, reg);
 }
 
-u32 swd_dp_read_rd_buff(struct device *dev)
+int swd_dp_read_rd_buff(struct device *dev, u32 *data_ptr)
 {
-	return swd_dpap_read(dev, SWD_VAL_DP, SWD_DP_REG_RO_RDBUFF);
+	return swd_dpap_read_robust(dev, SWD_VAL_DP, SWD_DP_REG_RO_RDBUFF, data_ptr);
 }
 
 void swd_select_ap_reg(struct device *dev, u8 apsel, u32 reg_addr_sel)
@@ -367,6 +381,27 @@ u32 swd_memory_read(struct device *dev, u32 address)
 	swd_ap_write(dev, SWD_MEMAP_REG_RW_TAR, address);
 	swd_ap_read(dev, SWD_MEMAP_REG_RW_DRW);
 	return swd_ap_read(dev, SWD_MEMAP_REG_RW_DRW);
+}
+
+int swd_memory_read_robust(struct device *dev, u32 address, u32 *data)
+{
+	int ret;
+
+	ret = swd_ap_write(dev, SWD_MEMAP_REG_RW_TAR, address);
+	if (ret)
+		return ret;
+
+	/* Issue two reads to get the read data out from the mcu! */
+	ret = swd_ap_read_robust(dev, SWD_MEMAP_REG_RW_DRW, data);
+	if (ret)
+		return ret;
+
+	ret = swd_ap_read_robust(dev, SWD_MEMAP_REG_RW_DRW, data);
+	if (ret)
+		return ret;
+
+	/* success! */
+	return 0;
 }
 
 u32 swd_memory_read_next(struct device *dev)

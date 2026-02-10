@@ -1083,6 +1083,7 @@ int iwl_fw_dbg_collect(struct iwl_fw_runtime *fwrt,
 		       const struct iwl_fw_dbg_trigger_tlv *trigger)
 {
 	struct iwl_fw_dump_desc *desc;
+	int ret;
 
 	if (trigger && trigger->flags & IWL_FW_DBG_FORCE_RESTART) {
 		IWL_WARN(fwrt, "Force restart: trigger %d fired.\n", trig);
@@ -1098,7 +1099,11 @@ int iwl_fw_dbg_collect(struct iwl_fw_runtime *fwrt,
 	desc->trig_desc.type = cpu_to_le32(trig);
 	memcpy(desc->trig_desc.data, str, len);
 
-	return iwl_fw_dbg_collect_desc(fwrt, desc, trigger);
+	ret = iwl_fw_dbg_collect_desc(fwrt, desc, trigger);
+	if (ret)
+		kfree(desc);
+
+	return ret;
 }
 IWL_EXPORT_SYMBOL(iwl_fw_dbg_collect);
 

@@ -620,7 +620,7 @@ static int vd6281_write_reg8(struct vd6281_adapter *adp, void __user *p)
 
 	ret = i2c_transfer(adp->adapter, &msg, 1);
 
-	// QUP/I2C case, ret in the number of messages sucessfully sent
+	// QUP/I2C case, ret in the number of messages successfully sent
 	// CCI : 0 is returned if camera_io_dev_read is successfull
 	if (ret < 0) {
 		dev_err(adp->dev, "Failed to write register %x with error %d", reg.index, ret);

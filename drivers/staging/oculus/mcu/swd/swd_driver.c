@@ -183,6 +183,23 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 		return -EINVAL;
 	}
 
+	/* Regulator is optional and will be initialized to NULL if not found */
+	devdata->swd_core = devm_regulator_get(dev, "meta,swd-core");
+	if (PTR_ERR(devdata->swd_core) == -EPROBE_DEFER) {
+		dev_dbg(dev, "Defer swd probe, regulator not ready %ld", PTR_ERR(devdata->swd_core));
+		return -EPROBE_DEFER;
+	} else if (IS_ERR(devdata->swd_core)) {
+		dev_info(dev, "No regulator found for swd error: %ld", PTR_ERR(devdata->swd_core));
+		devdata->swd_core = NULL;
+	} else {
+		/*
+		 * TODO: Powering mcu needs to move to a different driver as per T240185502
+		 * Done temporarily as that driver is not ready.
+		 */
+		ret = regulator_enable(devdata->swd_core);
+		dev_info(dev, "Found a regulator for meta,swd-core enable status %d", ret);
+	}
+
 	mcu_node = of_get_child_by_name(node, "meta,mcus");
 	ret = of_property_read_string(node, "meta,fw-path", &devdata->mcu_data.fw_path);
 	if (ret < 0 && !mcu_node) {
@@ -221,9 +238,6 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 			child_index++;
 		}
 	}
-
-	/* Regulator is optional and will be initialized to NULL if not found */
-	devdata->swd_core = devm_regulator_get(dev, "meta,swd-core");
 
 	ret = swd_driver_init_single_target(dev, &devdata->mcu_data, node, !mcu_node);
 	if (ret < 0)
