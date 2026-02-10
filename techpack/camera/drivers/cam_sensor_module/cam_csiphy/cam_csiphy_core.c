@@ -1007,7 +1007,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 			goto release_mutex;
 		}
 
-		CAM_INFO(CAM_CSIPHY,
+		CAM_ERR(CAM_CSIPHY,
 			"STOP_DEV: CSIPHY_IDX: %d, Device_slot: %d, Datarate: %llu, Settletime: %llu",
 			csiphy_dev->soc_info.index, offset,
 			csiphy_dev->csiphy_info[offset].data_rate,
@@ -1162,7 +1162,7 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 			goto release_mutex;
 		}
 
-		CAM_INFO(CAM_CSIPHY,
+		CAM_ERR(CAM_CSIPHY,
 			"START_DEV: CSIPHY_IDX: %d, Device_slot: %d, Datarate: %llu, Settletime: %llu",
 			csiphy_dev->soc_info.index, offset,
 			csiphy_dev->csiphy_info[offset].data_rate,

@@ -20,6 +20,9 @@ struct __call_single_data {
 	smp_call_func_t func;
 	void *info;
 	unsigned int flags;
+#ifdef CONFIG_CSD_LOCK_WAIT_DEBUG
+	u16 src, dst;
+#endif
 };
 
 /* Use __aligned() to avoid to use 2 cache lines for 1 csd */

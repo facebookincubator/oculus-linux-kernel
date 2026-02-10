@@ -425,7 +425,8 @@ static void ping_other_cpus(struct msm_watchdog_data *wdog_dd)
 	cpu_hotplug_disable();
 
 	for_each_cpu(cpu, cpu_online_mask) {
-		if (!cpu_idle_pc_state[cpu] && !cpu_isolated(cpu))
+		if (!cpu_idle_pc_state[cpu] && !cpu_isolated(cpu) &&
+			(cpu != raw_smp_processor_id()))
 			cpumask_set_cpu(cpu, &wdog_dd->ping_pending_mask);
 	}
 
@@ -439,8 +440,13 @@ static void ping_other_cpus(struct msm_watchdog_data *wdog_dd)
 					 wdog_dd, 0);
 	}
 
-	wait_event_interruptible(wdog_dd->ping_complete,
-				 cpumask_empty(&wdog_dd->ping_pending_mask));
+	while (!wait_event_interruptible_timeout(wdog_dd->ping_complete,
+		cpumask_empty(&wdog_dd->ping_pending_mask), msecs_to_jiffies(1000))) {
+		dev_info(wdog_dd->dev, "Timeout waiting for ping response, pending mask %*pb",
+			 cpumask_pr_args(&wdog_dd->ping_pending_mask));
+		for_each_cpu(cpu, &wdog_dd->ping_pending_mask)
+			arch_send_call_function_single_ipi(cpu);
+	}
 
 	cpu_hotplug_enable();
 }

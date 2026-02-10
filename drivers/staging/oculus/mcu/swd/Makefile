@@ -1,3 +1,6 @@
+LINUXINCLUDE    += \
+        -I$(srctree)/drivers/staging/oculus/internal/include
+
 obj-$(CONFIG_META_SWD)		+= meta_swd.o
 meta_swd-objs += fwupdate_manager.o swd.o swd_driver.o syncboss_swd_common_ops.o
 

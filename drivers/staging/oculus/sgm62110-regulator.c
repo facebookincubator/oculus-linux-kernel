@@ -145,7 +145,7 @@ static int sgm62110_i2c_probe(struct i2c_client *client)
 
 	if (!IS_ERR(info->en_gpiod)) {
 		gpiod_set_value(info->en_gpiod, 1);
-		dev_dbg(info->dev, "Set gpio state: %d sucess\n",
+		dev_dbg(info->dev, "Set gpio state: %d success\n",
 			info->en_gpio_state);
 	}
 

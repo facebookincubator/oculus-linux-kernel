@@ -1,6 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Meta Orchestrator Agent scheduler subsystem
+ * Meta HzOS Ext scheduler subsystem
  *
  * Copyright (c) 2025 Meta Platforms, Inc. and affiliates
  */
@@ -13,7 +12,7 @@
 #include <linux/fs.h>
 #include <linux/lockdep.h>
 #include <linux/mutex.h>
-#include <linux/orchestrator-kern.h>
+#include <linux/hzos_ext-kern.h>
 #include <linux/percpu-defs.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -79,7 +78,7 @@ static void task_update_allowed(struct task_struct *p,
 	 */
 	preferred = task_group_preferred_mask(p);
 	if (likely(preferred))
-		cpumask_and(&p->orchestrator.preferred_mask, preferred, allowed);
+		cpumask_and(&p->hzos_ext.preferred_mask, preferred, allowed);
 }
 
 static void set_allowed_mask_handler(void *unused, struct task_struct *p,
@@ -112,7 +111,7 @@ static bool try_reserve_store_idle_cpu(int cpu, int *target_cpu)
 
 static bool task_prefers_cpu(struct task_struct *p, int cpu)
 {
-	return cpumask_test_cpu(cpu, &p->orchestrator.preferred_mask);
+	return cpumask_test_cpu(cpu, &p->hzos_ext.preferred_mask);
 }
 
 static bool try_reserve_idle_if_preferred(struct task_struct *p, int cpu,
@@ -132,7 +131,7 @@ static void select_task_rq_handler(void *unused, struct task_struct *p,
 	struct pcpu_ctx *ctx;
 	bool sync;
 
-	if (!orchestrator_feature_enabled(ORCHESTRATOR_FEATURE_SELECT_RQ_IDLE))
+	if (!hzos_ext_feature_enabled(HZOS_EXT_FEATURE_SELECT_RQ_IDLE))
 		return;
 
 	/*
@@ -144,7 +143,7 @@ static void select_task_rq_handler(void *unused, struct task_struct *p,
 	 *   migrates it to another rq.
 	 */
 	if (try_reserve_idle_if_preferred(p, prev_cpu, target_cpu)) {
-		orchestrator_stat_event_inc(p, NR_SRQ_PREV);
+		hzos_ext_stat_event_inc(p, NR_SRQ_PREV);
 		return;
 	}
 
@@ -157,19 +156,19 @@ static void select_task_rq_handler(void *unused, struct task_struct *p,
 		curr_cpu = smp_processor_id();
 		if (task_prefers_cpu(p, curr_cpu)) {
 			*target_cpu = smp_processor_id();
-			orchestrator_stat_event_inc(p, NR_SRQ_SYNC);
+			hzos_ext_stat_event_inc(p, NR_SRQ_SYNC);
 			return;
 		}
 	}
 
 	while (true) {
-		cpu = cpumask_any_and(&p->orchestrator.preferred_mask, idle_mask);
+		cpu = cpumask_any_and(&p->hzos_ext.preferred_mask, idle_mask);
 
 		if (cpu >= nr_cpu_ids)
 			return;
 
 		if (try_reserve_store_idle_cpu(cpu, target_cpu)) {
-			orchestrator_stat_event_inc(p, NR_SRQ_ANY);
+			hzos_ext_stat_event_inc(p, NR_SRQ_ANY);
 			return;
 		}
 	}
@@ -192,18 +191,18 @@ static void dequeue_entity_handler(void *unused, struct cfs_rq *cfs_rq,
 }
 #endif
 
-void orchestrator_task_setscheduler(void *unused, struct task_struct *task,
-			        const struct sched_attr *attr, int *retval)
+void hzos_ext_task_setscheduler(void *unused, struct task_struct *task,
+			        		    const struct sched_attr *attr, int *retval)
 {
 	int policy = attr->sched_policy;
 
 	*retval = 0;
 
-	if (!orchestrator_feature_enabled(ORCHESTRATOR_FEATURE_ALLOW_RT))
+	if (!hzos_ext_feature_enabled(HZOS_EXT_FEATURE_ALLOW_RT))
 		return;
 
 	if ((policy == SCHED_FIFO || policy == SCHED_RR) &&
-	    !orchestrator_task_has_flag(task, ORCHESTRATOR_FLAG_ALLOW_RT)) {
+	    !hzos_ext_task_has_flag(task, HZOS_EXT_FLAG_ALLOW_RT)) {
 
 		pr_info("%s[%d] ALLOW_RT permission denied", task->comm, task->pid);
 		*retval = -EPERM;
@@ -212,7 +211,7 @@ void orchestrator_task_setscheduler(void *unused, struct task_struct *task,
 	return;
 }
 
-void orchestrator_sched_post_clone(struct task_struct *new)
+void hzos_ext_sched_post_clone(struct task_struct *new)
 {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	unsigned long flags;
@@ -258,7 +257,7 @@ static ssize_t sched_group_set_preferred_mask(struct cgroup_subsys_state *css,
 	return 0;
 }
 
-ssize_t orchestrator_preferred_mask_write(struct kernfs_open_file *of, char *buf,
+ssize_t hzos_ext_preferred_mask_write(struct kernfs_open_file *of, char *buf,
 			     size_t nbytes, loff_t off)
 {
 	ssize_t err;
@@ -277,7 +276,7 @@ free_mask:
 	return err ?: nbytes;
 }
 
-int orchestrator_preferred_mask_read(struct seq_file *sf, void *v)
+int hzos_ext_preferred_mask_read(struct seq_file *sf, void *v)
 {
 	char *kbuf = kmalloc(cpumask_size() + 1, GFP_KERNEL);
 	struct cpumask *tg_mask;
@@ -293,7 +292,7 @@ int orchestrator_preferred_mask_read(struct seq_file *sf, void *v)
 	return 0;
 }
 
-void orchestrator_sched_init(void)
+void hzos_ext_sched_init(void)
 {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	BUG_ON(!alloc_cpumask_var(&idle_mask, GFP_KERNEL));
@@ -302,7 +301,7 @@ void orchestrator_sched_init(void)
 	register_trace_android_rvh_set_cpus_allowed_comm(set_allowed_mask_handler, NULL);
 	register_trace_android_vh_cpu_idle_enter(record_idle_enter_handler, NULL);
 	register_trace_android_vh_cpu_idle_exit(record_idle_exit_handler, NULL);
-	register_trace_android_vh_task_setscheduler(orchestrator_task_setscheduler, NULL);
+	register_trace_android_vh_task_setscheduler(hzos_ext_task_setscheduler, NULL);
 
 	register_trace_android_rvh_select_task_rq_fair(select_task_rq_handler, NULL);
 	register_trace_android_rvh_enqueue_entity(enqueue_entity_handler, NULL);
@@ -312,35 +311,35 @@ void orchestrator_sched_init(void)
 }
 
 #ifndef CONFIG_ANDROID_VENDOR_HOOKS
-void orchestrator_set_cpus_allowed(struct task_struct *p,
-				     const struct cpumask *new_mask)
+void hzos_ext_set_cpus_allowed(struct task_struct *p,
+				     		   const struct cpumask *new_mask)
 {
 	set_allowed_mask_handler(NULL, p, new_mask);
 }
 
-void orchestrator_cpu_idle_enter(int *state, struct cpuidle_device *dev)
+void hzos_ext_cpu_idle_enter(int *state, struct cpuidle_device *dev)
 {
 	record_idle_enter_handler(NULL, state, dev);
 }
 
-void orchestrator_cpu_idle_exit(int state, struct cpuidle_device *dev)
+void hzos_ext_cpu_idle_exit(int state, struct cpuidle_device *dev)
 {
 	record_idle_exit_handler(NULL, state, dev);
 }
 
-void orchestrator_select_task_rq_fair(struct task_struct *p, int prev_cpu,
-									  int sd_flag, int wake_flags,
-									  int *target_cpu)
+void hzos_ext_select_task_rq_fair(struct task_struct *p, int prev_cpu,
+								  int sd_flag, int wake_flags,
+								  int *target_cpu)
 {
 	select_task_rq_handler(NULL, p, prev_cpu, sd_flag, wake_flags, target_cpu);
 }
 
-void orchestrator_enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+void hzos_ext_enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 	enqueue_entity_handler(NULL, cfs_rq, se);
 }
 
-void orchestrator_dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+void hzos_ext_dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 	dequeue_entity_handler(NULL, cfs_rq, se);
 }

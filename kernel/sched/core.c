@@ -12,7 +12,7 @@
 #include <linux/kcov.h>
 #include <linux/irq.h>
 #include <linux/delay.h>
-#include <linux/orchestrator.h>
+#include <linux/hzos_ext.h>
 #include <linux/scs.h>
 
 #include <asm/switch_to.h>
@@ -23,7 +23,7 @@
 #include "../workqueue_internal.h"
 #include "../smpboot.h"
 
-#include "orchestrator.h"
+#include "hzos_ext.h"
 #include "pelt.h"
 #include "walt.h"
 
@@ -1692,7 +1692,7 @@ void set_cpus_allowed_common(struct task_struct *p, const struct cpumask *new_ma
 {
 	cpumask_copy(&p->cpus_allowed, new_mask);
 	p->nr_cpus_allowed = cpumask_weight(new_mask);
-	orchestrator_set_cpus_allowed(p, new_mask);
+	hzos_ext_set_cpus_allowed(p, new_mask);
 }
 
 void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
@@ -5123,11 +5123,11 @@ recheck:
 			return retval;
 	}
 
-#ifdef CONFIG_ORCHESTRATOR_AGENT
+#ifdef CONFIG_HZOS_EXT
 	if (!(p->flags & PF_KTHREAD)) {
 		int ret_addr = 0;
 
-		orchestrator_task_setscheduler(NULL, p, attr, &ret_addr);
+		hzos_ext_task_setscheduler(NULL, p, attr, &ret_addr);
 		retval = ret_addr;
 		if (retval)
 			return retval;
@@ -8357,11 +8357,11 @@ static struct cftype cpu_legacy_files[] = {
 		.write_u64 = cpu_shares_write_u64,
 	},
 #endif
-#ifdef CONFIG_ORCHESTRATOR_AGENT
+#ifdef CONFIG_HZOS_EXT
 	{
 		.name = "preferred_mask",
-		.seq_show = orchestrator_preferred_mask_read,
-		.write = orchestrator_preferred_mask_write,
+		.seq_show = hzos_ext_preferred_mask_read,
+		.write = hzos_ext_preferred_mask_write,
 	},
 #endif
 #ifdef CONFIG_CFS_BANDWIDTH

@@ -417,14 +417,18 @@ static ssize_t swd_debug_part_number_read(struct file *fp,
 	char str[16];
 	int  s;
 	int  partnum;
+	int  ret;
 
 	if (!devdata->mcu_data.swd_ops.read_part_number) {
 		dev_err(dev, "read part number not supported!");
 		return -EOPNOTSUPP;
 	}
 
-	partnum = devdata->mcu_data.swd_ops.read_part_number(dev);
-	s = snprintf(str, sizeof(str), "0x%x", partnum);
+	ret = devdata->mcu_data.swd_ops.read_part_number(dev, &partnum);
+	if (ret)
+		s = snprintf(str, sizeof(str), "Err: %d", ret);
+	else
+		s = snprintf(str, sizeof(str), "0x%x", partnum);
 
 	if (*position >= s)
 		return 0;

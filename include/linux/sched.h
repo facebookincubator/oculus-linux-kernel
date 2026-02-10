@@ -20,7 +20,7 @@
 #include <linux/hrtimer.h>
 #include <linux/seccomp.h>
 #include <linux/nodemask.h>
-#include <linux/orchestrator_types.h>
+#include <linux/hzos_ext_types.h>
 #include <linux/rcupdate.h>
 #include <linux/resource.h>
 #include <linux/latencytop.h>
@@ -1485,8 +1485,8 @@ struct task_struct {
 	/* Used by LSM modules for access restriction: */
 	void				*security;
 #endif
-#ifdef CONFIG_ORCHESTRATOR_AGENT
-	struct orchestrator		orchestrator;
+#ifdef CONFIG_HZOS_EXT
+	struct hzos_ext		hzos_ext;
 #endif
 	/* task is frozen/stopped (used by the cgroup freezer) */
 	ANDROID_KABI_USE(1, unsigned frozen:1);

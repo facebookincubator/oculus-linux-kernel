@@ -259,6 +259,7 @@ struct cam_isp_stream_image {
 	struct cam_isp_prepare_hw_update_data hw_update_data;
 	struct cam_hw_mgr_dump_pf_data      pf_data;
 	uint64_t                            capture_timestamp;
+	uint64_t                            sof_timestamp;
 	int64_t                             frame_num;
 };
 

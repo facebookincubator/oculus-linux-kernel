@@ -468,6 +468,7 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 		u32 vdm_hdr, const u32 *vdos, int num_vdos)
 {
 	u32 protocol_type, parameter_type, sb, high_bytes, acked;
+	bool charger_plugged_updated = false;
 	int rc = 0;
 
 	dev_dbg(pd->dev,
@@ -678,11 +679,15 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 				sizeof(pd->params.manufacturer_info_b.values.higher));
 		break;
 	case EXT_BATT_FW_CHARGER_PLUGGED:
+		charger_plugged_updated = (pd->params.charger_plugged != vdos[0]) ? true : false;
 		pd->params.charger_plugged = vdos[0];
 		/* Force re-evaluation on charger status update */
 		power_supply_changed(pd->usb_psy);
 		ext_batt_psy_notifier_call(&pd->nb, PSY_EVENT_PROP_CHANGED,
 				pd->battery_psy);
+
+		if (charger_plugged_updated)
+			sysfs_notify(&pd->dev->kobj, NULL, "charger_plugged");
 		break;
 	}
 }
