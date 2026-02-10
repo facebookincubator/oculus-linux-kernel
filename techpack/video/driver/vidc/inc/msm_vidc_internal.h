@@ -393,6 +393,8 @@ enum msm_vidc_inst_capability_type {
 	META_TRANSCODING_STAT_INFO,
 	META_DOLBY_RPU,
 	META_MULTI_VIEW_ID,
+	META_MULTI_VIEW_PAIR,
+	META_THREE_D_REF_DISP_INFO,
 	META_CAP_MAX,
 	/* end of metadata caps */
 	FRAME_WIDTH,
@@ -413,6 +415,7 @@ enum msm_vidc_inst_capability_type {
 	OPERATING_RATE,
 	INPUT_RATE,
 	TIMESTAMP_RATE,
+	MULTI_VIEW_ENABLE,
 	SCALE_FACTOR,
 	MB_CYCLES_VSP,
 	MB_CYCLES_VPP,

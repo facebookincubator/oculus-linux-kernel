@@ -71,6 +71,8 @@ static const struct msm_vidc_cap_name cap_name_arr[] = {
 	{META_CONCEALED_MB_CNT,          "META_CONCEALED_MB_CNT"      },
 	{META_HIST_INFO,                 "META_HIST_INFO"             },
 	{META_MULTI_VIEW_ID,             "META_MULTI_VIEW_ID"         },
+	{META_MULTI_VIEW_PAIR,           "META_MULTI_VIEW_PAIR"       },
+	{META_THREE_D_REF_DISP_INFO,     "META_THREE_D_REF_DISP_INFO" },
 	{META_PICTURE_TYPE,              "META_PICTURE_TYPE"          },
 	{META_SEI_MASTERING_DISP,        "META_SEI_MASTERING_DISP"    },
 	{META_SEI_CLL,                   "META_SEI_CLL"               },
@@ -1647,7 +1649,6 @@ bool msm_vidc_allow_metadata_subscription(struct msm_vidc_inst *inst, u32 cap_id
 		case META_CROP_OFFSETS:
 		case META_SEI_MASTERING_DISP:
 		case META_SEI_CLL:
-		case METADATA_MULTI_VIEW:
 		case META_HDR10PLUS:
 			if (!is_meta_rx_inp_enabled(inst, META_OUTBUF_FENCE)) {
 				i_vpr_h(inst,
@@ -1663,7 +1664,6 @@ bool msm_vidc_allow_metadata_subscription(struct msm_vidc_inst *inst, u32 cap_id
 	} else if (port == OUTPUT_PORT) {
 		switch (cap_id) {
 		case META_DPB_TAG_LIST:
-		case METADATA_MULTI_VIEW:
 			if (!is_ubwc_colorformat(inst->capabilities->cap[PIX_FMTS].value)) {
 				i_vpr_h(inst,
 					"%s: cap: %24s not allowed for split mode\n",

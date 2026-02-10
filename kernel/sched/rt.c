@@ -1128,7 +1128,10 @@ static int get_cmdline_nofault(struct task_struct *task, char *buffer, int bufle
 	if (len > buflen)
 		len = buflen;
 
+	if (!mmap_read_trylock(mm))
+		goto out_mm;
 	res = access_process_vm(task, arg_start, buffer, len, FOLL_FORCE | FOLL_NOFAULT);
+	mmap_read_unlock(mm);
 
 out_mm:
 	mmput(mm);

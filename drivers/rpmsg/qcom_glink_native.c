@@ -980,6 +980,7 @@ static void qcom_glink_handle_intent_req(struct qcom_glink *glink,
 static int qcom_glink_rx_defer(struct qcom_glink *glink, size_t extra)
 {
 	struct glink_defer_cmd *dcmd;
+	unsigned long flags;
 
 	extra = ALIGN(extra, 8);
 
@@ -996,9 +997,9 @@ static int qcom_glink_rx_defer(struct qcom_glink *glink, size_t extra)
 
 	qcom_glink_rx_peak(glink, &dcmd->msg, 0, sizeof(dcmd->msg) + extra);
 
-	spin_lock(&glink->rx_lock);
+	spin_lock_irqsave(&glink->rx_lock, flags);
 	list_add_tail(&dcmd->node, &glink->rx_queue);
-	spin_unlock(&glink->rx_lock);
+	spin_unlock_irqrestore(&glink->rx_lock, flags);
 
 	schedule_work(&glink->rx_work);
 	qcom_glink_rx_advance(glink, sizeof(dcmd->msg) + extra);
@@ -1112,7 +1113,7 @@ static int qcom_glink_rx_data(struct qcom_glink *glink, size_t avail)
 
 	/* Handle message when no fragments remain to be received */
 	if (!left_size) {
-		spin_lock(&channel->recv_lock);
+		spin_lock_irqsave(&channel->recv_lock, flags);
 		if (channel->ept.cb) {
 			ret = channel->ept.cb(channel->ept.rpdev,
 					intent->data,
@@ -1130,7 +1131,7 @@ static int qcom_glink_rx_data(struct qcom_glink *glink, size_t avail)
 		} else {
 			CH_ERR(channel, "callback not present\n");
 		}
-		spin_unlock(&channel->recv_lock);
+		spin_unlock_irqrestore(&channel->recv_lock, flags);
 
 		if (qcom_glink_is_wakeup(true)) {
 			pr_info("%s[%d:%d] %s: wakeup packet size:%d\n",

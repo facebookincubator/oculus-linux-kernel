@@ -217,6 +217,9 @@ static void shared_runq_toggle(bool enabling)
 static DEFINE_MUTEX(swqueue_toggle_mutex);
 __read_mostly unsigned int sysctl_sched_swqueue = 1;
 
+/* Whether to pull swqueue when doing sched_yield(). */
+__read_mostly unsigned int sysctl_sched_swqueue_on_yield;
+
 int sysctl_swqueue_toggle(struct ctl_table *table, int write,
 			  void __user *buffer, size_t *lenp, loff_t *ppos)
 {
@@ -7816,12 +7819,26 @@ static void yield_task_fair(struct rq *rq)
 	struct task_struct *curr = rq->curr;
 	struct cfs_rq *cfs_rq = task_cfs_rq(curr);
 	struct sched_entity *se = &curr->se;
+	int pulled_task = 0;
+	struct rq_flags rf;
 
 	/*
 	 * Are we the only task in the tree?
 	 */
-	if (unlikely(rq->nr_running == 1))
-		return;
+	if (unlikely(rq->nr_running == 1)) {
+		if (!shared_runq_enabled() || !sysctl_sched_swqueue_on_yield)
+			return;
+
+		/*
+		 * If we are the only task in the tree, we should
+		 * attempt to pull a task from the shared runqueue.
+		 */
+		pulled_task = shared_runq_pick_next_task(rq, &rf);
+		if (!pulled_task)
+			return;
+
+		// We have pulled a task from the shared runqueue. Continue.
+	}
 
 	clear_buddies(cfs_rq, se);
 

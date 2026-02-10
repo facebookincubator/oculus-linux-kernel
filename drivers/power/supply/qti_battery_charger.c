@@ -112,6 +112,7 @@ enum battery_property_id {
 	BATT_FCT,
 	BATT_FCT_STATE,
 	BATT_RBLT_STATE,
+	BATT_RBLT_OVERRIDE,
 	BATT_CHARGER_MODE,
 	BATT_PROP_MAX,
 };
@@ -152,6 +153,7 @@ enum usb_property_id {
 	USB_CABLE_PID,
 	USB_MOISTURE_DET_REASON,
 	USB_MOISTURE_TRIP_IMPEDANCE,
+	USB_MOISTURE_OVERRIDE_THRES_KOHM,
 	USB_PROP_MAX,
 };
 
@@ -2517,7 +2519,39 @@ static ssize_t rblt_state_show(struct class *c,
 
 	return scnprintf(buf, PAGE_SIZE, "%u\n", pst->prop[BATT_RBLT_STATE]);
 }
-static CLASS_ATTR_RO(rblt_state);
+
+static ssize_t rblt_state_store(struct class *c,
+					struct class_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	struct device *dev = bcdev->dev;
+	unsigned int val;
+	int rc;
+	if (sysfs_streq(buf, "OK") || sysfs_streq(buf, "ok")) {
+		val = 0;
+	} else if (sysfs_streq(buf, "WARN") || sysfs_streq(buf, "warn")) {
+		val = 1;
+	} else if (sysfs_streq(buf, "CRIT") || sysfs_streq(buf, "crit")) {
+		val = 2;
+	} else if (sysfs_streq(buf, "") || count == 0) {
+		val = 3;
+	} else {
+		dev_err(dev, "RBLT: Invalid input '%s' (valid: OK, WARN, CRIT, or empty)\n", buf);
+		return -EINVAL;
+	}
+	rc = write_property_id(bcdev, pst, BATT_RBLT_OVERRIDE, val);
+	if (rc < 0) {
+		dev_err(dev, "RBLT: Failed to send override to DSP: %d\n", rc);
+		return rc;
+	}
+	dev_info(dev, "RBLT: Successfully sent override (0x%x) to DSP\n", val);
+	return count;
+}
+static CLASS_ATTR_RW(rblt_state);
+
 
 static ssize_t flash_active_show(struct class *c,
 					struct class_attribute *attr, char *buf)
@@ -2744,6 +2778,43 @@ static ssize_t batt_charger_mode_show(struct class *c, struct class_attribute *a
 }
 static CLASS_ATTR_RW(batt_charger_mode);
 
+static ssize_t moisture_detection_override_thres_kohm_store(struct class *c, struct class_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	int rc;
+	int val;
+
+	if (kstrtoint(buf, 0, &val))
+		return -EINVAL;
+
+	rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_USB],
+					USB_MOISTURE_OVERRIDE_THRES_KOHM, val);
+	if (rc < 0) {
+		pr_err("Failed to change charger mode value, error ret: %d.\n", rc);
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static ssize_t moisture_detection_override_thres_kohm_show(struct class *c, struct class_attribute *attr,
+				char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_MOISTURE_OVERRIDE_THRES_KOHM);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", pst->prop[USB_MOISTURE_OVERRIDE_THRES_KOHM]);
+}
+static CLASS_ATTR_RW(moisture_detection_override_thres_kohm);
+
 static struct attribute *battery_class_attrs[] = {
 	&class_attr_soh.attr,
 	&class_attr_resistance.attr,
@@ -2756,6 +2827,7 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_moisture_detection_cc2_kohm.attr,
 	&class_attr_moisture_detection_reason.attr,
 	&class_attr_moisture_detection_trip_impedance.attr,
+	&class_attr_moisture_detection_override_thres_kohm.attr,
 	&class_attr_wireless_boost_en.attr,
 	&class_attr_fake_soc.attr,
 	&class_attr_wireless_fw_update.attr,
@@ -2799,6 +2871,7 @@ static struct attribute *battery_class_no_wls_attrs[] = {
 	&class_attr_moisture_detection_cc2_kohm.attr,
 	&class_attr_moisture_detection_reason.attr,
 	&class_attr_moisture_detection_trip_impedance.attr,
+	&class_attr_moisture_detection_override_thres_kohm.attr,
 	&class_attr_fake_soc.attr,
 	&class_attr_ship_mode_en.attr,
 	&class_attr_restrict_chg.attr,

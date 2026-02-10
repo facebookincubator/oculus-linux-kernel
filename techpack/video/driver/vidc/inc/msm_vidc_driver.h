@@ -40,6 +40,11 @@ static inline bool is_image_decode_session(struct msm_vidc_inst *inst)
 	return inst->codec == MSM_VIDC_HEIC && inst->domain == MSM_VIDC_DECODER;
 }
 
+static inline int is_multi_view_session(struct msm_vidc_inst *inst)
+{
+	return !!(inst->capabilities->cap[MULTI_VIEW_ENABLE].value);
+}
+
 static inline bool is_image_session(struct msm_vidc_inst *inst)
 {
 	return inst->codec == MSM_VIDC_HEIC;

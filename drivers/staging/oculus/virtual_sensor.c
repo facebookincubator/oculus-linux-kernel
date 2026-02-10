@@ -15,6 +15,7 @@
 #include <linux/sysfs.h>
 #include <linux/thermal.h>
 #include <linux/types.h>
+#include <linux/version.h>
 
 /*
  * How long it takes to fully transition between charging/discharging
@@ -304,9 +305,17 @@ static int virtual_sensor_calculate_temp_for_coeffs(
 	return 0;
 }
 
+#if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE)
+static int virtual_sensor_get_temp(struct thermal_zone_device *tz, int *temperature)
+#else
 static int virtual_sensor_get_temp(void *data, int *temperature)
+#endif
 {
+#if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE)
+	struct virtual_sensor_drvdata *vs = tz->devdata;
+#else
 	struct virtual_sensor_drvdata *vs = data;
+#endif
 	const bool charging = is_charging(vs->batt_psy);
 	const ktime_t curr_ktime = ktime_get_boottime();
 	const bool should_inc_smoothing_factor =
@@ -386,7 +395,12 @@ get_temp_unlock:
 	return 0;
 }
 
+
+#if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE)
+static const struct thermal_zone_device_ops virtual_sensor_thermal_ops = {
+#else
 static const struct thermal_zone_of_device_ops virtual_sensor_thermal_ops = {
+#endif
 	.get_temp = virtual_sensor_get_temp,
 };
 
@@ -1009,8 +1023,15 @@ no_fallback:
 	virtual_sensor_reset_history(&vs->data_charging);
 	virtual_sensor_reset_history(&vs->data_discharging);
 
-	tzd = thermal_zone_of_sensor_register(&pdev->dev, 0, vs,
+#if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE)
+	tzd = devm_thermal_of_zone_register
+			(&pdev->dev, 0, vs,
 			&virtual_sensor_thermal_ops);
+#else
+	tzd = thermal_zone_of_sensor_register
+			(&pdev->dev, 0, vs,
+			&virtual_sensor_thermal_ops);
+#endif
 	if (IS_ERR(tzd)) {
 		ret = PTR_ERR(tzd);
 		dev_err(&pdev->dev, "Sensor register error: %d",
@@ -1036,8 +1057,9 @@ static int virtual_sensor_remove(struct platform_device *pdev)
 	struct virtual_sensor_drvdata *vs =
 			(struct virtual_sensor_drvdata *) platform_get_drvdata(pdev);
 
+#if (KERNEL_VERSION(6, 1, 0) >= LINUX_VERSION_CODE)
 	thermal_zone_of_sensor_unregister(&pdev->dev, vs->tzd);
-
+#endif
 	power_supply_put(vs->batt_psy);
 
 	sysfs_remove_groups(&pdev->dev.kobj, virtual_sensor_groups);

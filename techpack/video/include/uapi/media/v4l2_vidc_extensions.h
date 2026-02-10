@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __V4l2_VIDC_EXTENSIONS_H__
@@ -53,6 +54,9 @@
 #endif
 #ifndef V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN
 #define V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN    (4)
+#endif
+#ifndef V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN_10
+#define V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN_10    (5)
 #endif
 
 /* vendor controls start */
@@ -283,8 +287,14 @@ enum v4l2_h264_encode_delivery_mode {
 #define V4L2_CID_MPEG_VIDC_EARLY_NOTIFY_LINE_COUNT                            \
 	(V4L2_CID_MPEG_VIDC_BASE + 0x45)
 
-#define V4L2_CID_MPEG_VIDC_METADATA_VIEW_ID_INFO                            \
+#define V4L2_CID_MPEG_VIDC_METADATA_VIEW_ID_INFO                              \
 	(V4L2_CID_MPEG_VIDC_BASE + 0x46)
+
+#define V4L2_CID_MPEG_VIDC_METADATA_VIEW_PAIR_INFO                            \
+	(V4L2_CID_MPEG_VIDC_BASE + 0x47)
+
+#define V4L2_CID_MPEG_VIDC_METADATA_THREE_DIMENSIONAL_REF_DISP_INFO           \
+	(V4L2_CID_MPEG_VIDC_BASE + 0x48)
 
 /* add new controls above this line */
 /* Deprecate below controls once availble in gki and gsi bionic header */
@@ -430,6 +440,8 @@ enum v4l2_mpeg_vidc_metadata {
 	METADATA_TRANSCODING_STAT_INFO        = 0x03000191,
 	METADATA_DV_RPU                       = 0x03000192,
 	METADATA_MULTI_VIEW                   = 0x030001A5,
+	METADATA_PAIRED_VIEW                  = 0x030001AA,
+	METADATA_THREE_D_REF_DISP             = 0x030001AB,
 };
 enum meta_interlace_info {
 	META_INTERLACE_INFO_NONE                            = 0x00000000,

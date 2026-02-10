@@ -6,6 +6,7 @@
 #include "eureka-panel-jdi.dtsi"
 #include "eureka-panel-jdi-experimental.dtsi"
 #include "eureka-panel-sharp.dtsi"
+#include "eureka-panel-sharp-tokki-h.dtsi"
 #include "eureka-panel-sharp-experimental.dtsi"
 
 &aliases {
@@ -273,6 +274,33 @@
 	meta,thermal-zone = "disp-virt";
 	meta,ddic-family = "ddic_family_nvt";
 	meta,max-blu-pulse-overlap-us = <500>;
+
+	meta,blu-pwm-gpio = <&tlmm 109 0>;
+	meta,te-gpio = <&tlmm 110 0>;
+	meta,te-active-low;
+};
+
+&eureka_panel_sharp_tokki_h {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_eureka>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_tokki_a";
+	meta,blu-default-duty-cycle = <80>; /* 8.04% duty */
+	qcom,mdss-dsi-bl-min-level = <0>;
+	qcom,mdss-dsi-bl-max-level = <1000>;
+
+	qcom,platform-reset-gpio = <&tlmm 108 0>;
+	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
+
+	meta,settling-time-target-us = <3600>;
+//	meta,temperature-dependent-backlight;
+	meta,response-time-curve =
+		<25000 6330>,
+		<30000 6050>,
+		<35000 5380>,
+		<45000 4140>,
+		<55000 3220>;
+	meta,thermal-zone = "disp-virt";
+	meta,ddic-family = "ddic_family_nvt";
+	meta,max-blu-pulse-overlap-us = <00>;
 
 	meta,blu-pwm-gpio = <&tlmm 109 0>;
 	meta,te-gpio = <&tlmm 110 0>;

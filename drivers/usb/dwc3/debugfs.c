@@ -33,6 +33,12 @@
 	.offset	= DWC3_ ##nm,				\
 }
 
+#define dump_register31(nm)				\
+{							\
+	.name   = __stringify(nm),			\
+	.offset = DWC31_ ##nm,				\
+}
+
 #define dump_ep_register_set(n)			\
 	{					\
 		.name = "DEPCMDPAR2("__stringify(n)")",	\
@@ -57,6 +63,8 @@
 
 
 static const struct debugfs_reg32 dwc3_regs[] = {
+	dump_register(VER_NUMBER),
+	dump_register31(GDBGLNMCC0),
 	dump_register(GSBUSCFG0),
 	dump_register(GSBUSCFG1),
 	dump_register(GTXTHRCFG),
