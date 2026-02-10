@@ -199,6 +199,10 @@
 	};
 };
 
+&wdog {
+	qcom,bark-time = <12000>;
+};
+
 &wlan {
 	reg = <0xb0000000 0x0>;
 	reg-names = "";

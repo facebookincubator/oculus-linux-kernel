@@ -95,7 +95,7 @@
 #include <linux/thread_info.h>
 #include <linux/cpufreq_times.h>
 #include <linux/scs.h>
-#include <linux/orchestrator.h>
+#include <linux/hzos_ext.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -2245,8 +2245,8 @@ static __latent_entropy struct task_struct *copy_process(
 	cgroup_post_fork(p);
 	cgroup_threadgroup_change_end(current);
 	perf_event_fork(p);
-#ifdef CONFIG_ORCHESTRATOR_AGENT
-	orchestrator_post_clone(NULL, p, current);
+#ifdef CONFIG_HZOS_EXT
+	hzos_ext_post_clone(NULL, p, current);
 #endif
 
 	trace_task_newtask(p, clone_flags);

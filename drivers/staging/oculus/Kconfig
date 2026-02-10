@@ -185,20 +185,19 @@ config OCULUS_CHARGING_DOCK
 	  This driver also creates sysfs nodes to advertise dock parameters which
 	  can be queried from user-space for gathering required dock telemetry.
 
-config ORCHESTRATOR_AGENT
-	bool "Orchestrator Agent subsystem"
+config HZOS_EXT
+	bool "HzOS Ext subsystem"
 	default n
 	help
-	  Enables the Orchestrator Agent subsystem, which is used to
-	  implement Meta-specific kernel policies for the orchestrator
-	  service.
+	  Enables the HzOS Ext subsystem, which is used to
+	  implement Meta-specific kernel policies.
 
-config ORCHESTRATOR_AGENT_STATS
-	bool "Orchestrator Agent stats collection"
-	depends on ORCHESTRATOR_AGENT
+config HZOS_EXT_STATS
+	bool "HzOS Ext stats collection"
+	depends on HZOS_EXT
 	default n
 	help
-	  Whether we should collect stats in the Orchestrator Agent subsystem.
+	  Whether we should collect stats in the HzOS Ext subsystem.
 
 config POWERSTATE_MANAGER
 	tristate "Powerstate manager driver"
@@ -207,6 +206,21 @@ config POWERSTATE_MANAGER
 	  Driver for allowing services to prevent AP suspend. Specifically useful
 	  for vendor services, which cannot talk to the PowerManager service and
 	  have no other robust way to acquire wakelocks.
+
+config QCOM_MINIDUMP_PARSER
+	tristate "Meta Qualcomm Minidump Parser"
+	depends on BLOCK
+	help
+	  This driver reads and parses the rawdump partition and exposes it via
+	  sysfs at /sys/fs/minidump/. It will also attempt to populate pstore
+	  with the rawdump data when possible.
+
+	  When CONFIG_DEBUG_FS is enabled, individual minidump sections are also
+	  exposed via debugfs at /sys/kernel/debug/minidump_sections/ for
+	  low-level debugging and crash analysis.
+
+	  This driver is specifically designed for Meta's Qualcomm-based
+	  platforms to parse and expose minidump contents for debugging.
 
 config POWER_STATE_VIRTUAL_SENSOR
 	tristate "SN Power State Driver"

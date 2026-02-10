@@ -19,7 +19,7 @@ void swd_deinit(struct device *dev);
 /* Stop the target */
 void swd_halt(struct device *dev);
 
-u32 swd_dp_read_rd_buff(struct device *dev);
+int swd_dp_read_rd_buff(struct device *dev, u32 *data_ptr);
 /*
  * Flush the SW-DP. Should be called after the last SP transaction to be executed
  * to guarantee it actually takes effect.
@@ -40,6 +40,9 @@ u32 swd_ap_read(struct device *dev, u8 reg);
 
 /* Read 4 bytes of memory from a given address */
 u32 swd_memory_read(struct device *dev, u32 address);
+
+/* Read 4 bytes of memory from a given address, return error code */
+int swd_memory_read_robust(struct device *dev, u32 address, u32 *data);
 
 /* Read 4 bytes of memory from the next address after the previously-read/written word */
 u32 swd_memory_read_next(struct device *dev);
@@ -147,7 +150,7 @@ struct swd_ops_params {
 	/*
 	 * Read mcu part number
 	 */
-	int (*read_part_number)(struct device *dev);
+	int (*read_part_number)(struct device *dev, u32 *partnum);
 
 	/*
    * Set any mcu specific 'quirks', e.g. different SDFW versions

@@ -19,7 +19,7 @@ int syncboss_swd_nrf54h20_target_erase(struct device *dev);
 int syncboss_swd_nrf54h20_write_chunk(struct device *dev, int addr,
 				      const u8 *data, size_t len);
 
-int syncboss_swd_nrf54h20_read_part_number(struct device *dev);
+int syncboss_swd_nrf54h20_read_part_number(struct device *dev, u32 *partnum);
 
 int syncboss_swd_nrf54h20_read(struct device *dev, int addr, u8 *const dest,
 			       size_t len);

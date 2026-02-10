@@ -1010,6 +1010,7 @@ static int __cam_isp_ctx_rdi_stream_buf_done_in_activated_state(
 	ctx_isp->active_req_cnt--;
 
 	stream_image->capture_timestamp = done->timestamp;
+	stream_image->sof_timestamp = ctx_isp->monotonic_timestamp;
 
 	/*
 	 * only signal completion when first image is added because,
@@ -5744,7 +5745,7 @@ static int __cam_isp_ctx_stream_mode_cmd_get_image(
 
 	cmd_get->images[0].image_id = stream_image->image_id;
 	cmd_get->images[0].timestamp = stream_image->capture_timestamp;
-	cmd_get->images[0].sof_timestamp = ctx_isp->monotonic_timestamp;
+	cmd_get->images[0].sof_timestamp = stream_image->sof_timestamp;
 	cmd_get->images[0].frame_num = stream_image->frame_num;
 	cmd_get->num_images = 1;
 

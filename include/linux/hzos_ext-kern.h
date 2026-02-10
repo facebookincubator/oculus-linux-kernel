@@ -1,5 +1,5 @@
-#ifndef _LINUX_ORCHESTRATOR_KERN_H
-#define _LINUX_ORCHESTRATOR_KERN_H
+#ifndef _LINUX_HZOS_EXT_KERN_H
+#define _LINUX_HZOS_EXT_KERN_H
 
 #include <linux/cpumask.h>
 #include <linux/cgroup-defs.h>
@@ -26,4 +26,4 @@ const struct cpumask *task_group_preferred_mask(struct task_struct *p);
  */
 struct cpumask *css_tg_preferred_mask(struct cgroup_subsys_state *css);
 
-#endif /* _LINUX_ORCHESTRATOR_KERN_H */
+#endif /* _LINUX_HZOS_EXT_KERN_H */
