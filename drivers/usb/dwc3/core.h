@@ -172,6 +172,9 @@
 
 #define DWC3_LLUCTL		0xd024
 
+#define DWC31_GDBGLNMCC0 0xd054
+#define DWC31_GDBGLNMCC_LERC_MASK 0xff
+
 /* Bit fields */
 
 /* Global SoC Bus Configuration INCRx Register 0 */
@@ -433,6 +436,7 @@
 #define DWC3_DCTL_TRGTULST_SS_INACT	(DWC3_DCTL_TRGTULST(6))
 
 /* These apply for core versions 1.94a and later */
+#define DWC3_DCTL_NYET_THRES_MASK	(0xf << 20)
 #define DWC3_DCTL_NYET_THRES(n)		(((n) & 0xf) << 20)
 
 #define DWC3_DCTL_KEEP_CONNECT		BIT(19)

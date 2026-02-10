@@ -141,8 +141,9 @@ static void handle_display_event(struct timesync_dev_data *devdata, const struct
 	struct syncboss_display_event *dfevent = (struct syncboss_display_event *)packet->data;
 	int64_t mcu_ts_us = dfevent->timestamp;
 	int64_t ap_ts_us;
+	unsigned long flags;
 
-	spin_lock(&devdata->lock);
+	spin_lock_irqsave(&devdata->lock, flags);
 	if (unlikely(!devdata->waiting_for_msg)) {
 		dev_warn_ratelimited(devdata->dev, "ignoring mcu timestamp without corresponding IRQ\n");
 		goto out;
@@ -158,7 +159,7 @@ static void handle_display_event(struct timesync_dev_data *devdata, const struct
 
 	devdata->stats.prev_mcu_ts_us = mcu_ts_us;
 out:
-	spin_unlock(&devdata->lock);
+	spin_unlock_irqrestore(&devdata->lock, flags);
 }
 
 #ifdef CONFIG_SYNCBOSS_PERIPHERAL

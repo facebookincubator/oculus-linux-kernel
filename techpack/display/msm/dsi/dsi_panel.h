@@ -33,6 +33,8 @@
 #define MAX_BL_SCALE_LEVEL_SETTLE_TIME 10000
 #define MAX_DSI_CTRLS_PER_PANEL 2
 
+#define PANEL_STARTUP_TIME_MAX_THRESHOLD_NS		(250*1000000)
+
 #define DSI_CMD_PPS_HDR_SIZE 7
 #define DSI_MODE_MAX 32
 
@@ -205,6 +207,10 @@ struct dsi_backlight_config {
 	u32 settling_time_us[2];
 	u32 blu_default_duty_override;
 	u32 blu_current_duty_cycle;
+
+	/* Debug tuning parameters */
+	u32 override_blu_delta_left;
+	u32 override_blu_delta_right;
 
 	/* Temperature-dependent timing */
 	bool temperature_dependent_timing;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2002,2007-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/component.h>
 #include <linux/delay.h>
@@ -3239,6 +3239,15 @@ static int adreno_register_gdsc_notifier(struct kgsl_device *device)
 	return devm_regulator_register_notifier(pwr->cx_gdsc, &pwr->cx_gdsc_nb);
 }
 
+static void adreno_set_thermal_index(struct kgsl_device *device)
+{
+	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+	const struct adreno_power_ops *ops = ADRENO_POWER_OPS(adreno_dev);
+
+	if (ops->set_thermal_index)
+		ops->set_thermal_index(adreno_dev);
+}
+
 static const struct kgsl_functable adreno_functable = {
 	/* Mandatory functions */
 	.suspend_context = adreno_suspend_context,
@@ -3281,6 +3290,7 @@ static const struct kgsl_functable adreno_functable = {
 	.dequeue_recurring_cmd = adreno_dequeue_recurring_cmd,
 	.create_hw_fence = adreno_create_hw_fence,
 	.register_gdsc_notifier = adreno_register_gdsc_notifier,
+	.set_thermal_index = adreno_set_thermal_index,
 };
 
 static const struct component_master_ops adreno_ops = {

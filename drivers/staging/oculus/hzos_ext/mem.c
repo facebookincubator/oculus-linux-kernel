@@ -1,6 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Meta Orchestrator Agent memory subsystem
+ * Meta HzOS Ext memory subsystem
  *
  * Copyright (c) 2025 Meta Platforms, Inc. and affiliates
  */
@@ -12,11 +11,11 @@
 
 static void balance_reclaim(void *unused, bool *balance_anon_file_reclaim)
 {
-	*balance_anon_file_reclaim = orchestrator_feature_enabled(
-		ORCHESTRATOR_FEATURE_BALANCE_ANON_FILE_RECLAIM);
+	*balance_anon_file_reclaim = hzos_ext_feature_enabled(
+		HZOS_EXT_FEATURE_BALANCE_ANON_FILE_RECLAIM);
 }
 
-void orchestrator_mem_init(void)
+void hzos_ext_mem_init(void)
 {
 	int ret;
 
@@ -29,7 +28,7 @@ void orchestrator_mem_init(void)
 
 #else
 
-void orchestrator_mem_init(void)
+void hzos_ext_mem_init(void)
 {
 }
 

@@ -14,8 +14,8 @@
 
 #include <linux/nospec.h>
 
+#include <linux/hzos_ext.h>
 #include <linux/kcov.h>
-#include <linux/orchestrator.h>
 #include <linux/scs.h>
 
 #include <asm/switch_to.h>
@@ -296,13 +296,15 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
 #endif
 #ifdef CONFIG_PARAVIRT_TIME_ACCOUNTING
 	if (static_key_false((&paravirt_steal_rq_enabled))) {
-		steal = paravirt_steal_clock(cpu_of(rq));
+		u64 prev_steal;
+
+		steal = prev_steal = paravirt_steal_clock(cpu_of(rq));
 		steal -= rq->prev_steal_time_rq;
 
 		if (unlikely(steal > delta))
 			steal = delta;
 
-		rq->prev_steal_time_rq += steal;
+		rq->prev_steal_time_rq = prev_steal;
 		delta -= steal;
 	}
 #endif
@@ -6377,6 +6379,11 @@ static void do_sched_yield(void)
 {
 	struct rq_flags rf;
 	struct rq *rq;
+	bool skip = 0;
+
+	trace_android_rvh_before_do_sched_yield(&skip);
+	if (skip)
+		return;
 
 	rq = this_rq_lock_irq(&rf);
 
@@ -6401,7 +6408,7 @@ SYSCALL_DEFINE0(sched_yield)
 #ifndef CONFIG_PREEMPTION
 int __sched _cond_resched(void)
 {
-	if (should_resched(0)) {
+	if (should_resched(0) && !irqs_disabled()) {
 		preempt_schedule_common();
 		return 1;
 	}
@@ -8647,11 +8654,11 @@ static struct cftype cpu_legacy_files[] = {
 		.read_u64 = cpu_shares_read_u64,
 		.write_u64 = cpu_shares_write_u64,
 	},
-#ifdef CONFIG_ORCHESTRATOR_AGENT
+#ifdef CONFIG_HZOS_EXT
 	{
 		.name = "preferred_mask",
-		.seq_show = orchestrator_preferred_mask_read,
-		.write = orchestrator_preferred_mask_write,
+		.seq_show = hzos_ext_preferred_mask_read,
+		.write = hzos_ext_preferred_mask_write,
 	},
 #endif
 #endif

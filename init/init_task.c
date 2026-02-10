@@ -217,8 +217,8 @@ struct task_struct init_task
 #ifdef CONFIG_SECCOMP_FILTER
 	.seccomp	= { .filter_count = ATOMIC_INIT(0) },
 #endif
-#ifdef CONFIG_ORCHESTRATOR_AGENT
-	.orchestrator	= { 0, },
+#ifdef CONFIG_HZOS_EXT
+	.hzos_ext	= { 0, },
 #endif
 #ifdef CONFIG_ANDROID_VENDOR_OEM_DATA
 	.android_vendor_data1 = {0, },

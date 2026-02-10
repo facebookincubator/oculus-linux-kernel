@@ -1836,6 +1836,8 @@ area_found:
 	}
 
 	/* clear the areas and return address relative to base address */
+	if (WARN_ON(!chunk->base_addr))
+		goto fail;
 	for_each_possible_cpu(cpu)
 		memset((void *)pcpu_chunk_addr(chunk, cpu, 0) + off, 0, size);
 

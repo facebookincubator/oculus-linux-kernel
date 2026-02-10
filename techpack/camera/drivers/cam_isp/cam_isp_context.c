@@ -8086,6 +8086,7 @@ static int __cam_isp_ctx_release_hw_in_top_state(struct cam_context *ctx,
 		(struct cam_isp_context *) ctx->ctx_priv;
 	struct cam_req_mgr_flush_request flush_req;
 	int i;
+	struct cam_isp_ul_resource_update_entry *res_data;
 
 	if (ctx_isp->hw_ctx) {
 		rel_arg.ctxt_to_hw_map = ctx_isp->hw_ctx;
@@ -8141,6 +8142,16 @@ static int __cam_isp_ctx_release_hw_in_top_state(struct cam_context *ctx,
 	__cam_isp_ctx_free_mem_hw_entries(ctx);
 	cam_req_mgr_worker_destroy(&ctx_isp->worker);
 	ctx->state = CAM_CTX_ACQUIRED;
+
+	res_data = ctx_isp->ul_data.resource_data;
+	// Release reference to producer Qs to allow
+	// mem_mgr to properly unmap the buffer.
+	for (i = 0; i < MAX_IO_RESOURCES; i++) {
+		if (res_data[i].is_producer_q_valid) {
+			res_data[i].is_producer_q_valid = false;
+			cam_mem_put_cpu_buf(res_data[i].producer_q_hdl);
+		}
+	}
 	kfree(ctx_isp->ul_fp_results);
 	ctx_isp->ul_fp_results = NULL;
 	ctx_isp->ul_path_en = false;

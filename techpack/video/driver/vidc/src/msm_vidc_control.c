@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  */
-/* Copyright (c) 2022. Qualcomm Innovation Center, Inc. All rights reserved. */
+/* Copyright (c) 2022,2025 Qualcomm Innovation Center, Inc. All rights reserved. */
 
 #include "msm_vidc_control.h"
 #include "msm_vidc_debug.h"
@@ -103,6 +103,7 @@ static const char *const mpeg_video_hevc_profile[] = {
 	"Main 10",
 	"Main 10 Still Picture",
 	"Main Multi View",
+	"Main 10 Multi View",
 	NULL,
 };
 
@@ -1417,14 +1418,20 @@ int msm_vidc_adjust_profile(void *instance, struct v4l2_ctrl *ctrl)
 	if (pix_fmt == MSM_VIDC_FMT_TP10C || pix_fmt == MSM_VIDC_FMT_P010) {
 		if (is_image_session(inst))
 			adjusted_value = V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN_10_STILL_PICTURE;
+		else if (inst->capabilities->cap[PROFILE].value == V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN_10) {
+			adjusted_value = V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN_10;
+			msm_vidc_update_cap_value(inst, MULTI_VIEW_ENABLE, 1, __func__);
+		}
 		else
 			adjusted_value = V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN_10;
 	} else {
 		/* 8 bit profile for 8 bit color format */
 		if (is_image_session(inst))
 			adjusted_value = V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN_STILL_PICTURE;
-		else if (inst->capabilities->cap[PROFILE].value == V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN)
+		else if (inst->capabilities->cap[PROFILE].value == V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN) {
 			adjusted_value = V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN;
+			msm_vidc_update_cap_value(inst, MULTI_VIEW_ENABLE, 1, __func__);
+		}
 		else
 			adjusted_value = V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN;
 	}

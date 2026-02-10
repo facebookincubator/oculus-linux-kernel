@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/sysfs.h>
@@ -68,10 +68,15 @@ static int _rt_bus_hint_store(struct adreno_device *adreno_dev, u32 val)
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct kgsl_pwrctrl *pwrctrl = &device->pwrctrl;
 
+	if (!ADRENO_FEATURE(adreno_dev, ADRENO_RT_HINT) ||
+		val == pwrctrl->rt_bus_hint)
+		return 0;
+
 	if (val > pwrctrl->pwrlevels[0].bus_max)
-		return -EINVAL;
+		val = 0;
 
 	adreno_power_cycle_u32(adreno_dev, &pwrctrl->rt_bus_hint, val);
+
 	return 0;
 }
 
@@ -80,6 +85,30 @@ static u32 _rt_bus_hint_show(struct adreno_device *adreno_dev)
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 
 	return device->pwrctrl.rt_bus_hint;
+}
+
+static int _rt_pwrlevel_hint_store(struct adreno_device *adreno_dev, u32 val)
+{
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	struct kgsl_pwrctrl *pwrctrl = &device->pwrctrl;
+
+	if (!ADRENO_FEATURE(adreno_dev, ADRENO_RT_HINT) ||
+		val == pwrctrl->rt_pwrlevel_hint)
+		return 0;
+
+	if (val > pwrctrl->num_pwrlevels - 1)
+		val = INVALID_DCVS_IDX;
+
+	adreno_power_cycle_u32(adreno_dev, &pwrctrl->rt_pwrlevel_hint, val);
+
+	return 0;
+}
+
+static u32 _rt_pwrlevel_hint_show(struct adreno_device *adreno_dev)
+{
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+
+	return device->pwrctrl.rt_pwrlevel_hint;
 }
 
 static int _gpu_llc_slice_enable_store(struct adreno_device *adreno_dev,
@@ -343,6 +372,7 @@ ssize_t adreno_sysfs_show_bool(struct device *dev,
 static ADRENO_SYSFS_U32(ft_policy);
 static ADRENO_SYSFS_U32(ft_pagefault_policy);
 static ADRENO_SYSFS_U32(rt_bus_hint);
+static ADRENO_SYSFS_U32(rt_pwrlevel_hint);
 static ADRENO_SYSFS_RO_BOOL(ft_hang_intr_status);
 static ADRENO_SYSFS_BOOL(gpu_llc_slice_enable);
 static ADRENO_SYSFS_BOOL(gpuhtw_llc_slice_enable);
@@ -370,6 +400,7 @@ static const struct attribute *_attr_list[] = {
 	&adreno_attr_ft_policy.attr.attr,
 	&adreno_attr_ft_pagefault_policy.attr.attr,
 	&adreno_attr_rt_bus_hint.attr.attr,
+	&adreno_attr_rt_pwrlevel_hint.attr.attr,
 	&adreno_attr_ft_hang_intr_status.attr.attr,
 	&dev_attr_wake_nice.attr.attr,
 	&dev_attr_wake_timeout.attr.attr,

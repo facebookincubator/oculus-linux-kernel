@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/dma-fence-array.h>
@@ -1215,6 +1215,7 @@ static int enable_preemption(struct adreno_device *adreno_dev)
 {
 	const struct adreno_gen7_core *gen7_core = to_gen7_core(adreno_dev);
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
 	u32 data;
 	int ret;
 
@@ -1247,12 +1248,27 @@ static int enable_preemption(struct adreno_device *adreno_dev)
 				gen7_core->qos_value[i]);
 		}
 	}
+	if (ADRENO_FEATURE(adreno_dev, ADRENO_RT_HINT)) {
+		struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 
-	if (device->pwrctrl.rt_bus_hint) {
-		ret = gen7_hfi_send_set_value(adreno_dev, HFI_VALUE_RB_IB_RULE, 0,
-			device->pwrctrl.rt_bus_hint);
-		if (ret)
-			device->pwrctrl.rt_bus_hint = 0;
+		if (pwr->rt_bus_hint) {
+			ret = gen7_hfi_send_set_value(adreno_dev, HFI_VALUE_RB_IB_RULE, 0,
+				pwr->rt_bus_hint);
+			if (ret) {
+				dev_err(&gmu->pdev->dev, "Failed to set rt bus hint %u, ret: %d\n",
+						pwr->rt_bus_hint, ret);
+				pwr->rt_bus_hint = 0;
+			}
+		}
+		if (pwr->rt_pwrlevel_hint != INVALID_DCVS_IDX) {
+			ret = gen7_hfi_send_set_value(adreno_dev, HFI_VALUE_RB_GPULEVEL_RULE, 0,
+				pwr->num_pwrlevels - pwr->rt_pwrlevel_hint);
+			if (ret) {
+				dev_err(&gmu->pdev->dev, "Failed to set rt pwrlevel hint %u, ret: %d\n",
+						pwr->rt_pwrlevel_hint, ret);
+				pwr->rt_pwrlevel_hint = INVALID_DCVS_IDX;
+			}
+		}
 	}
 
 	/*
@@ -1314,6 +1330,45 @@ done:
 		return 0;
 
 	return pending_ack.results[2];
+}
+
+int gen7_hwsched_hfi_set_value(struct adreno_device *adreno_dev, u32 type, u32 subtype, u32 data)
+{
+	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
+	struct gen7_hwsched_hfi *hfi = to_gen7_hwsched_hfi(adreno_dev);
+	struct pending_cmd pending_ack;
+	int rc;
+	u32 seqnum;
+	struct hfi_set_value_cmd cmd = {
+		.type = type,
+		.subtype = subtype,
+		.data = data,
+	};
+
+	rc = CMD_MSG_HDR(cmd, H2F_MSG_SET_VALUE);
+	if (rc)
+		return 0;
+
+	seqnum = atomic_inc_return(&gmu->hfi.seqnum);
+	cmd.hdr = MSG_HDR_SET_SEQNUM_SIZE(cmd.hdr, seqnum, sizeof(cmd) >> 2);
+
+	add_waiter(hfi, cmd.hdr, &pending_ack);
+
+	rc = gen7_hfi_cmdq_write(adreno_dev, (u32 *)&cmd, sizeof(cmd));
+	if (rc)
+		goto done;
+
+	rc = adreno_hwsched_wait_ack_completion(adreno_dev, &gmu->pdev->dev,
+			&pending_ack, gen7_hwsched_process_msgq);
+
+	if (rc)
+		goto done;
+
+	rc = check_ack_failure(adreno_dev, &pending_ack);
+done:
+	del_waiter(hfi, &pending_ack);
+
+	return rc;
 }
 
 static int gen7_hfi_send_hw_fence_feature_ctrl(struct adreno_device *adreno_dev)

@@ -4788,11 +4788,22 @@ static ssize_t bus_vote_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(bus_vote);
 
+static ssize_t port_err_count_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	struct dwc3_msm *mdwc = dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			dwc3_msm_read_reg(mdwc->base, DWC31_GDBGLNMCC0) & DWC31_GDBGLNMCC_LERC_MASK);
+}
+static DEVICE_ATTR_RO(port_err_count);
+
 static struct attribute *dwc3_msm_attrs[] = {
 	&dev_attr_orientation.attr,
 	&dev_attr_mode.attr,
 	&dev_attr_speed.attr,
 	&dev_attr_bus_vote.attr,
+	&dev_attr_port_err_count.attr,
 	NULL
 };
 ATTRIBUTE_GROUPS(dwc3_msm);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2010-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/clk/qcom.h>
@@ -1573,6 +1573,8 @@ int kgsl_pwrctrl_init(struct kgsl_device *device)
 	}
 
 	pwr->power_flags = 0;
+
+	pwr->rt_pwrlevel_hint = INVALID_DCVS_IDX;
 
 	pm_runtime_enable(&pdev->dev);
 

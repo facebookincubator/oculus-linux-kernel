@@ -720,10 +720,11 @@ typedef HFI_U32 HFI_BOOL;
 #define H265_NUM_TILE (H265_NUM_TILE_ROW * H265_NUM_TILE_COL + 1)
 #define H265_NUM_FRM_INFO (48)
 #define H265_DISPLAY_BUF_SIZE (3072)
+#define SIZE_THREE_DIMENSION_USERDATA 768
 #define HFI_BUFFER_PERSIST_H265D(_size, rpu_enabled) \
 	_size = HFI_ALIGN((SIZE_SLIST_BUF_H265 * NUM_SLIST_BUF_H265 + \
 	H265_NUM_FRM_INFO * H265_DISPLAY_BUF_SIZE + \
-	H265_NUM_TILE * sizeof(HFI_U32) + NUM_HW_PIC_BUF * SIZE_SEI_USERDATA + \
+	H265_NUM_TILE * sizeof(HFI_U32) + NUM_HW_PIC_BUF * (SIZE_SEI_USERDATA + SIZE_THREE_DIMENSION_USERDATA) + \
 	rpu_enabled * NUM_HW_PIC_BUF * SIZE_DOLBY_RPU_METADATA),\
 	VENUS_DMA_ALIGNMENT)
 
@@ -1332,7 +1333,7 @@ _yuv_bufcount_min, is_opb, num_vpp_pipes)           \
 #endif
 
 #define HFI_IRIS3_ENC_RECON_BUF_COUNT(num_recon, n_bframe, ltr_count, \
-	_total_hp_layers, _total_hb_layers, hybrid_hp, codec_standard) \
+	_total_hp_layers, _total_hb_layers, hybrid_hp, codec_standard, profile) \
 	do \
 	{ \
 		HFI_U32 num_ref = 1; \
@@ -1352,12 +1353,21 @@ _yuv_bufcount_min, is_opb, num_vpp_pipes)           \
 		} \
 		if (ltr_count) \
 			num_ref = num_ref + ltr_count; \
+		if (codec_standard == HFI_CODEC_ENCODE_HEVC && \
+			profile == HFI_H265_PROFILE_MULTIVIEW_MAIN) \
+			num_ref = 3; \
 		if (_total_hb_layers > 1) \
 		{ \
-			if (codec_standard == HFI_CODEC_ENCODE_HEVC) \
+			if (codec_standard == HFI_CODEC_ENCODE_HEVC)   \
+			{ \
 				num_ref = (_total_hb_layers); \
+				if (profile == HFI_H265_PROFILE_MULTIVIEW_MAIN) \
+					num_ref = num_ref * 2;                 \
+			} \
 			else if (codec_standard == HFI_CODEC_ENCODE_AVC) \
+			{ \
 				num_ref = (1 << (_total_hb_layers - 2)) + 1; \
+			} \
 		} \
 		num_recon = num_ref + 1; \
 	} while (0)
@@ -1886,13 +1896,16 @@ _yuv_bufcount_min, is_opb, num_vpp_pipes)           \
 		} \
 	} while (0)
 
-#define HFI_IRIS3_ENC_MIN_INPUT_BUF_COUNT(numInput, TotalHBLayers) \
+#define HFI_IRIS3_ENC_MIN_INPUT_BUF_COUNT(numInput, TotalHBLayers, profile, codec_standard) \
 	do                                                                \
 	{                                                                 \
 		numInput = 3;                                             \
 		if (TotalHBLayers >= 2)                                   \
 		{                                                         \
 			numInput = (1 << (TotalHBLayers - 1)) + 2;        \
+			if (codec_standard == HFI_CODEC_ENCODE_HEVC &&    \
+				profile == HFI_H265_PROFILE_MULTIVIEW_MAIN)   \
+				numInput = (((1 << (TotalHBLayers - 1)) * 2) - 1) + 2;        \
 		}                                                         \
 	} while (0)
 

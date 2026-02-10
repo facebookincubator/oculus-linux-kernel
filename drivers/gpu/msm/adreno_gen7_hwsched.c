@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/clk.h>
@@ -1408,6 +1408,24 @@ done:
 	return ret;
 }
 
+static void gen7_hwsched_set_thermal_index(struct adreno_device *adreno_dev)
+{
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
+	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
+	int ret;
+
+	if (device->state != KGSL_STATE_ACTIVE)
+		return;
+
+	/* If GMU is up, send the constraint to GMU */
+	ret = gen7_hwsched_hfi_set_value(adreno_dev, HFI_VALUE_MAX_GPU_THERMAL_INDEX, 0,
+			(pwr->num_pwrlevels - pwr->thermal_pwrlevel));
+	if (ret)
+		dev_err(&gmu->pdev->dev, "Failed to set thermal level %u, ret: %d\n",
+							pwr->thermal_pwrlevel, ret);
+}
+
 const struct adreno_power_ops gen7_hwsched_power_ops = {
 	.first_open = gen7_hwsched_first_open,
 	.last_close = gen7_hwsched_power_off,
@@ -1419,6 +1437,7 @@ const struct adreno_power_ops gen7_hwsched_power_ops = {
 	.gpu_clock_set = gen7_hwsched_clock_set,
 	.gpu_bus_set = gen7_hwsched_bus_set,
 	.register_gdsc_notifier = gen7_gmu_register_gdsc_notifier,
+	.set_thermal_index = gen7_hwsched_set_thermal_index,
 };
 
 const struct adreno_hwsched_ops gen7_hwsched_ops = {

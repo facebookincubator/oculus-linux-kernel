@@ -8,6 +8,7 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/err.h>
+#include <linux/ktime.h>
 #include <video/mipi_display.h>
 
 #include "msm_drv.h"
@@ -1408,11 +1409,14 @@ int dsi_display_set_power(struct drm_connector *connector,
 {
 	struct dsi_display *display = disp;
 	int rc = 0;
+	ktime_t t_start_ns, t_end_ns, t_delta_ns;
 
 	if (!display || !display->panel) {
 		DSI_ERR("invalid display/panel\n");
 		return -EINVAL;
 	}
+
+	t_start_ns = ktime_get();
 
 	switch (power_mode) {
 	case SDE_MODE_DPMS_LP1:
@@ -1435,8 +1439,14 @@ int dsi_display_set_power(struct drm_connector *connector,
 	DSI_DEBUG("Power mode transition from %d to %d %s",
 			display->panel->power_mode, power_mode,
 			rc ? "failed" : "successful");
-	if (!rc)
+	if (!rc) {
 		display->panel->power_mode = power_mode;
+
+		t_end_ns = ktime_get();
+		t_delta_ns = ktime_to_ns(ktime_sub(t_end_ns, t_start_ns));
+		if (t_delta_ns > DSI_DISPLAY_EVENTS_MAX_THRESHOLD_TIME_NS)
+			DSI_WARN("%s exceeded threshold time, took %lld ms\n", __func__, t_delta_ns/1000000);
+	}
 
 	return rc;
 }
@@ -2582,6 +2592,9 @@ static int dsi_display_debugfs_init(struct dsi_display *display)
 	debugfs_create_u32("settling_time_left_us", 0400, dir, &display->panel->bl_config.settling_time_us[1]);
 
 	debugfs_create_u32("override_default_duty", 0600, dir, &display->panel->bl_config.blu_default_duty_override);
+
+	debugfs_create_u32("override_blu_delta_left", 0600, dir, &display->panel->bl_config.override_blu_delta_left);
+	debugfs_create_u32("override_blu_delta_right", 0600, dir, &display->panel->bl_config.override_blu_delta_right);
 
 	ddic_family = debugfs_create_file("ddic_family", 0400, dir, display,
 					  &ddic_family_fops);
@@ -6732,6 +6745,7 @@ int dsi_display_drm_bridge_init(struct dsi_display *display,
 		struct drm_encoder *enc)
 {
 	int rc = 0;
+	ktime_t t_start_ns, t_end_ns, t_delta_ns;
 	struct dsi_bridge *bridge;
 	struct msm_drm_private *priv = NULL;
 
@@ -6739,6 +6753,8 @@ int dsi_display_drm_bridge_init(struct dsi_display *display,
 		DSI_ERR("invalid param(s)\n");
 		return -EINVAL;
 	}
+
+	t_start_ns = ktime_get();
 
 	mutex_lock(&display->display_lock);
 	priv = display->drm_dev->dev_private;
@@ -6769,6 +6785,12 @@ int dsi_display_drm_bridge_init(struct dsi_display *display,
 		if (rc)
 			DSI_ERR("failed to allocate cmd tx buffer memory\n");
 	}
+
+	t_end_ns = ktime_get();
+	t_delta_ns = ktime_to_ns(ktime_sub(t_end_ns, t_start_ns));
+	if (!rc && t_delta_ns > DSI_DISPLAY_EVENTS_MAX_THRESHOLD_TIME_NS)
+		DSI_WARN("%s exceeded threshold time, took %lld ms\n", __func__, t_delta_ns/1000000);
+
 
 error:
 	mutex_unlock(&display->display_lock);
@@ -8695,6 +8717,7 @@ int dsi_display_prepare(struct dsi_display *display)
 {
 	int rc = 0;
 	struct dsi_display_mode *mode;
+	ktime_t t_start_ns, t_end_ns, t_delta_ns;
 
 	if (!display) {
 		DSI_ERR("Invalid params\n");
@@ -8705,6 +8728,8 @@ int dsi_display_prepare(struct dsi_display *display)
 		DSI_ERR("no valid mode set for the display\n");
 		return -EINVAL;
 	}
+
+	t_start_ns = ktime_get();
 
 	SDE_EVT32(SDE_EVTLOG_FUNC_ENTRY, display->is_master);
 	mutex_lock(&display->display_lock);
@@ -8832,6 +8857,12 @@ int dsi_display_prepare(struct dsi_display *display)
 			goto error_ctrl_link_off;
 		}
 	}
+
+	t_end_ns = ktime_get();
+	t_delta_ns = ktime_to_ns(ktime_sub(t_end_ns, t_start_ns));
+	if (!rc && t_delta_ns > DSI_DISPLAY_EVENTS_MAX_THRESHOLD_TIME_NS)
+		DSI_WARN("%s exceeded threshold time, took %lld ms\n", __func__, t_delta_ns/1000000);
+
 	goto error;
 
 error_ctrl_link_off:
@@ -9508,11 +9539,14 @@ end:
 int dsi_display_unprepare(struct dsi_display *display)
 {
 	int rc = 0;
+	ktime_t t_start_ns, t_end_ns, t_delta_ns;
 
 	if (!display) {
 		DSI_ERR("Invalid params\n");
 		return -EINVAL;
 	}
+
+	t_start_ns = ktime_get();
 
 	SDE_EVT32(SDE_EVTLOG_FUNC_ENTRY, display->is_master);
 	mutex_lock(&display->display_lock);
@@ -9572,6 +9606,11 @@ int dsi_display_unprepare(struct dsi_display *display)
 
 	/* Free up DSI ERROR event callback */
 	dsi_display_unregister_error_handler(display);
+
+	t_end_ns = ktime_get();
+	t_delta_ns = ktime_to_ns(ktime_sub(t_end_ns, t_start_ns));
+	if (t_delta_ns > DSI_DISPLAY_EVENTS_MAX_THRESHOLD_TIME_NS)
+		DSI_WARN("%s exceeded threshold time, took %lld ms\n", __func__, t_delta_ns/1000000);
 
 	SDE_EVT32(SDE_EVTLOG_FUNC_EXIT, display->is_master);
 	return rc;

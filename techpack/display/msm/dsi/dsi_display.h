@@ -31,6 +31,9 @@
 #define DSI_MODE_MATCH_FULL_TIMINGS (DSI_MODE_MATCH_ACTIVE_TIMINGS | DSI_MODE_MATCH_PORCH_TIMINGS)
 #define DSI_MODE_MATCH_DSC_CONFIG (1 << 2)
 
+/* Threshold to monitor excessive delays */
+#define DSI_DISPLAY_EVENTS_MAX_THRESHOLD_TIME_NS				(200*1000000)
+
 /*
  * DSI Validate Mode modifiers
  * @DSI_VALIDATE_FLAG_ALLOW_ADJUST:	Allow mode validation to also do fixup

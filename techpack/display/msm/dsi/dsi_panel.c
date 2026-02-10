@@ -8,6 +8,7 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/gpio.h>
+#include <linux/ktime.h>
 #include <linux/of_gpio.h>
 #include <linux/pwm.h>
 #include <linux/thermal.h>
@@ -408,6 +409,9 @@ static int dsi_panel_set_pinctrl_state(struct dsi_panel *panel, bool enable)
 static int dsi_panel_power_on(struct dsi_panel *panel)
 {
 	int rc = 0;
+	ktime_t t_start_ns, t_end_ns, t_delta_ns;
+
+	t_start_ns = ktime_get();
 
 	rc = dsi_pwr_enable_regulator(&panel->power_info, true);
 	if (rc) {
@@ -443,6 +447,10 @@ error_disable_vregs:
 	(void)dsi_pwr_enable_regulator(&panel->power_info, false);
 
 exit:
+	t_end_ns = ktime_get();
+	t_delta_ns = ktime_to_ns(ktime_sub(t_end_ns, t_start_ns));
+	if (!rc && t_delta_ns > PANEL_STARTUP_TIME_MAX_THRESHOLD_NS)
+		DSI_WARN("Panel startup exceeded threshold time, took %lld ms\n", t_delta_ns/1000000);
 	return rc;
 }
 
@@ -850,6 +858,14 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 		/* If the start time is within the guardband, make the pulse begin just before the guardband margin. */
 		blu_start_time_ns = frame_period_ns - guardband_margin_prior - internal_1h_ns;
 		blu_end_time_ns = blu_start_time_ns + blu_duration_ns;
+	}
+
+	if (bl_config->override_blu_delta_left || bl_config->override_blu_delta_right) {
+		DSI_INFO("Using backlight timing overrides.\n");
+		if (bl_config->override_blu_delta_left)
+			blu_start_time_ns += (bl_config->override_blu_delta_left - 10000) * internal_1h_ns;
+		if (bl_config->override_blu_delta_right)
+			blu_end_time_ns += (bl_config->override_blu_delta_right - 10000)  * internal_1h_ns;
 	}
 
 	/* Calculate which (internal) scanline the backlight flash should start on. */

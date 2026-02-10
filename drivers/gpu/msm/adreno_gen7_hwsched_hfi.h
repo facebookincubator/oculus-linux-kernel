@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef _ADRENO_GEN7_HWSCHED_HFI_H_
@@ -193,6 +193,19 @@ void gen7_hwsched_context_destroy(struct adreno_device *adreno_dev,
  * Return: On success, return the value in the GMU response. On failure, return 0
  */
 u32 gen7_hwsched_hfi_get_value(struct adreno_device *adreno_dev, u32 prop);
+
+/**
+ * gen7_hwsched_hfi_set_value - Send SET_VALUE packet to GMU to set the value of a property
+ * @adreno_dev: Pointer to adreno device
+ * @type: Type of the property to set
+ * @subtype: Sub type of the property to set
+ * @data: Value to be set to the property
+ *
+ * This functions sends SET_VALUE HFI packet to set value of a property
+ *
+ * Return: On success, return 0. On failure, return error code
+ */
+int gen7_hwsched_hfi_set_value(struct adreno_device *adreno_dev, u32 type, u32 subtype, u32 data);
 
 /**
  * gen7_hwsched_send_hw_fence - Send hardware fence info to GMU

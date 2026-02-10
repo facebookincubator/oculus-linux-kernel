@@ -1158,6 +1158,13 @@ PAGE_SIZE multiple when read back.
 	over the high boundary, the processes of the cgroup are
 	throttled and put under heavy reclaim pressure.
 
+    If memory.high is opened with O_NONBLOCK then the synchronous
+    reclaim is bypassed. This is useful for admin processes that
+    need to dynamically adjust the job's memory limits without
+    expending their own CPU resources on memory reclamation. The
+    job will trigger the reclaim and/or get throttled on its
+    next charge request.
+
 	Going over the high limit never invokes the OOM killer and
 	under extreme conditions the limit may be breached.
 
@@ -1177,6 +1184,13 @@ PAGE_SIZE multiple when read back.
 	Some kinds of allocations don't invoke the OOM killer.
 	Caller could retry them differently, return into userspace
 	as -ENOMEM or silently ignore in cases like disk readahead.
+
+    If memory.max is opened with O_NONBLOCK, then the synchronous
+    reclaim and oom-kill are bypassed. This is useful for admin
+    processes that need to dynamically adjust the job's memory limits
+    without expending their own CPU resources on memory reclamation.
+    The job will trigger the reclaim and/or oom-kill on its next
+    charge request.
 
 	This is the ultimate protection mechanism.  As long as the
 	high limit is used and monitored properly, this limit's

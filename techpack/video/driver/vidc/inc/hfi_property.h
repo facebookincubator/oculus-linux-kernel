@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __H_HFI_PROPERTY_H__
@@ -101,6 +101,7 @@ enum hfi_hevc_profile_type {
 	HFI_H265_PROFILE_MAIN_10               = 2,
 	HFI_H265_PROFILE_MAIN_10_STILL_PICTURE = 3,
 	HFI_H265_PROFILE_MULTIVIEW_MAIN        = 4,
+	HFI_H265_PROFILE_MULTIVIEW_MAIN_10     = 5,
 };
 
 enum hfi_vp9_profile_type {
@@ -582,6 +583,10 @@ enum hfi_saliency_type {
 #define HFI_PROP_EARLY_NOTIFY_FENCE_COUNT                       0x0300019A
 
 #define HFI_PROP_VIEW_ID                                        0x030001A5
+
+#define HFI_PROP_PAIRED_YUV                                     0x030001AA
+
+#define HFI_PROP_THREE_DIMENSIONAL_REFERENCE_DISPLAYS_INFO      0x030001AB
 
 #define HFI_PROP_END                                            0x03FFFFFF
 

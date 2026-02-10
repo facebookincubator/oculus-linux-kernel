@@ -8108,7 +8108,7 @@ static int __init pcie_init(void)
 {
 	int ret = 0, i;
 
-	pr_alert("pcie:%s.\n", __func__);
+	pr_debug("pcie:%s.\n", __func__);
 
 	pcie_drv.rc_num = 0;
 	mutex_init(&pcie_drv.drv_lock);

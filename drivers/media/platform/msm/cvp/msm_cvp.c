@@ -207,7 +207,8 @@ static int msm_cvp_session_process_hfi(
 	}
 	if (!is_buf_param_valid(buf_num, offset)) {
 		dprintk(CVP_ERR, "Incorrect buffer num and offset in cmd\n");
-		return -EINVAL;
+		rc = -EINVAL;
+		goto exit;
 	}
 	pkt_type = in_pkt->pkt_data[1];
 	if (pkt_type == HFI_CMD_SESSION_CVP_SET_PERSIST_BUFFERS ||

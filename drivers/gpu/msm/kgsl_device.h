@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2002,2007-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef __KGSL_DEVICE_H
 #define __KGSL_DEVICE_H
@@ -173,6 +173,8 @@ struct kgsl_functable {
 	void (*create_hw_fence)(struct kgsl_device *device, struct kgsl_sync_fence *kfence);
 	/** @register_gdsc_notifier: Target specific function to register gdsc notifier */
 	int (*register_gdsc_notifier)(struct kgsl_device *device);
+	/** @set_thermal_index: Target specific function to send thermal constraint to GMU */
+	void (*set_thermal_index)(struct kgsl_device *device);
 };
 
 struct kgsl_ioctl {
