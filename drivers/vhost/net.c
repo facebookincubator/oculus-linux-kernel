@@ -538,10 +538,16 @@ static int get_rx_bufs(struct vhost_virtqueue *vq,
 	if (unlikely(log))
 		*log_num = nlogs;
 
+
+	/* Detect overrun */
 	/* Detect overrun */
 	if (unlikely(datalen > 0)) {
+	if (unlikely(datalen > 0)) {
+		r = UIO_MAXIOV + 1;
 		r = UIO_MAXIOV + 1;
 		goto err;
+		goto err;
+	}
 	}
 	return headcount;
 err:
