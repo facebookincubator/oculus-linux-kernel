@@ -48,6 +48,7 @@
 
 #include "drm_crtc_internal.h"
 #include "drm_internal.h"
+#include "drm_trace_atomic.h"
 
 /**
  * DOC: overview
@@ -193,13 +194,16 @@ static const struct dma_fence_ops drm_crtc_fence_ops = {
 struct dma_fence *drm_crtc_create_fence(struct drm_crtc *crtc)
 {
 	struct dma_fence *fence;
-
+	DRM_ATRACE_FUNC_BEGIN();
 	fence = kzalloc(sizeof(*fence), GFP_KERNEL);
-	if (!fence)
+	if (!fence) {
+		DRM_ATRACE_FUNC_END();
 		return NULL;
+	}
 
 	dma_fence_init(fence, &drm_crtc_fence_ops, &crtc->fence_lock,
 		       crtc->fence_context, ++crtc->fence_seqno);
+	DRM_ATRACE_FUNC_END();
 
 	return fence;
 }
@@ -266,6 +270,8 @@ int drm_crtc_init_with_planes(struct drm_device *dev, struct drm_crtc *crtc,
 	if (WARN_ON(config->num_crtc >= 32))
 		return -EINVAL;
 
+	DRM_ATRACE_FUNC_BEGIN();
+
 	WARN_ON(drm_drv_uses_atomic_modeset(dev) &&
 		(!funcs->atomic_destroy_state ||
 		 !funcs->atomic_duplicate_state));
@@ -278,8 +284,10 @@ int drm_crtc_init_with_planes(struct drm_device *dev, struct drm_crtc *crtc,
 
 	drm_modeset_lock_init(&crtc->mutex);
 	ret = drm_mode_object_add(dev, &crtc->base, DRM_MODE_OBJECT_CRTC);
-	if (ret)
+	if (ret) {
+		DRM_ATRACE_FUNC_END();
 		return ret;
+	}
 
 	if (name) {
 		va_list ap;
@@ -293,6 +301,7 @@ int drm_crtc_init_with_planes(struct drm_device *dev, struct drm_crtc *crtc,
 	}
 	if (!crtc->name) {
 		drm_mode_object_unregister(dev, &crtc->base);
+		DRM_ATRACE_FUNC_END();
 		return -ENOMEM;
 	}
 
@@ -316,6 +325,7 @@ int drm_crtc_init_with_planes(struct drm_device *dev, struct drm_crtc *crtc,
 	ret = drm_crtc_crc_init(crtc);
 	if (ret) {
 		drm_mode_object_unregister(dev, &crtc->base);
+		DRM_ATRACE_FUNC_END();
 		return ret;
 	}
 
@@ -328,6 +338,7 @@ int drm_crtc_init_with_planes(struct drm_device *dev, struct drm_crtc *crtc,
 					   config->prop_vrr_enabled, 0);
 	}
 
+	DRM_ATRACE_FUNC_END();
 	return 0;
 }
 EXPORT_SYMBOL(drm_crtc_init_with_planes);
@@ -349,6 +360,7 @@ void drm_crtc_cleanup(struct drm_crtc *crtc)
 	 * the indices on the drm_crtc after us in the crtc_list.
 	 */
 
+	DRM_ATRACE_FUNC_BEGIN();
 	drm_crtc_crc_fini(crtc);
 
 	kfree(crtc->gamma_store);
@@ -367,6 +379,7 @@ void drm_crtc_cleanup(struct drm_crtc *crtc)
 	kfree(crtc->name);
 
 	memset(crtc, 0, sizeof(*crtc));
+	DRM_ATRACE_FUNC_END();
 }
 EXPORT_SYMBOL(drm_crtc_cleanup);
 
@@ -574,9 +587,12 @@ int drm_mode_setcrtc(struct drm_device *dev, void *data,
 	if (crtc_req->x & 0xffff0000 || crtc_req->y & 0xffff0000)
 		return -ERANGE;
 
+	DRM_ATRACE_FUNC_BEGIN();
+
 	crtc = drm_crtc_find(dev, file_priv, crtc_req->crtc_id);
 	if (!crtc) {
 		DRM_DEBUG_KMS("Unknown CRTC ID %d\n", crtc_req->crtc_id);
+		DRM_ATRACE_FUNC_END();
 		return -ENOENT;
 	}
 	DRM_DEBUG_KMS("[CRTC:%d:%s]\n", crtc->base.id, crtc->name);
@@ -584,8 +600,10 @@ int drm_mode_setcrtc(struct drm_device *dev, void *data,
 	plane = crtc->primary;
 
 	/* allow disabling with the primary plane leased */
-	if (crtc_req->mode_valid && !drm_lease_held(file_priv, plane->base.id))
+	if (crtc_req->mode_valid && !drm_lease_held(file_priv, plane->base.id)) {
+		DRM_ATRACE_FUNC_END();
 		return -EACCES;
+	}
 
 	DRM_MODESET_LOCK_ALL_BEGIN(dev, ctx,
 				   DRM_MODESET_ACQUIRE_INTERRUPTIBLE, ret);
@@ -758,6 +776,7 @@ out:
 
 	DRM_MODESET_LOCK_ALL_END(dev, ctx, ret);
 
+	DRM_ATRACE_FUNC_END();
 	return ret;
 }
 

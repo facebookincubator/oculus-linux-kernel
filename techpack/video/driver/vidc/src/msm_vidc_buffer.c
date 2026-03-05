@@ -42,8 +42,12 @@ u32 msm_vidc_input_min_count(struct msm_vidc_inst* inst)
 		return 0;
 	}
 
-	if (is_thumbnail_session(inst) || is_image_session(inst))
-		input_min_count = 1;
+	if (is_thumbnail_session(inst) || is_image_session(inst)) {
+		if (is_multi_view_session(inst))
+			input_min_count = 2;
+		else
+			input_min_count = 1;
+	}
 
 	return input_min_count;
 }
@@ -60,9 +64,12 @@ u32 msm_vidc_output_min_count(struct msm_vidc_inst *inst)
 	if (!is_decode_session(inst) && !is_encode_session(inst))
 		return 0;
 
-	if (is_thumbnail_session(inst))
-		return 1;
-
+	if (is_thumbnail_session(inst)) {
+		if (is_multi_view_session(inst))
+			return 2;
+		else
+			return 1;
+	}
 	if (is_decode_session(inst)) {
 		switch (inst->codec) {
 		case MSM_VIDC_H264:

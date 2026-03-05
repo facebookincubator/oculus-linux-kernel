@@ -708,8 +708,12 @@ static int msm_vidc_input_min_count_iris3(struct msm_vidc_inst* inst)
 		return 0;
 	}
 
-	if (is_thumbnail_session(inst) || is_image_session(inst))
-		input_min_count = 1;
+	if (is_thumbnail_session(inst) || is_image_session(inst)) {
+		if (is_multi_view_session(inst))
+			input_min_count = 2;
+		else
+			input_min_count = 1;
+	}
 
 	return input_min_count;
 }

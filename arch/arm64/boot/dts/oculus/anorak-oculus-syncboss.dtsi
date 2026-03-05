@@ -179,8 +179,8 @@
 
 		meta,syncboss-supply = <&L6B>;
 
-		meta,syncboss-reset  = <&tlmm 112 0>;
-		meta,syncboss-wakeup  = <&tlmm 41 0>;
+		reset-gpios = <&tlmm 112 0>;
+		ready-gpios = <&tlmm 41 0>;
 
 		meta,min-time-between-trans-ns = <150000>;
 		meta,syncboss-use-fastpath;
@@ -218,7 +218,7 @@
 			pinctrl-names = "default", "active";
 			pinctrl-0 = <&syncboss_timesync_default>;
 			pinctrl-1 = <&syncboss_timesync_active>;
-			timesync-gpio = <&tlmm 125 0>;
+			timesync-gpios = <&tlmm 125 0>;
 		};
 
 		directchannel@0 {

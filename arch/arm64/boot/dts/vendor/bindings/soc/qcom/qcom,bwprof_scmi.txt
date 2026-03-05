@@ -1,0 +1,78 @@
+QTI BWPROF SCMI Driver
+
+The QTI BWPROF SCMI Driver is responsible for monitoring bandwidth counters on
+Qualcomm Technologies, Inc. (QTI) chipsets. These counters represent the
+read/write traffic on DDR memory initiated by various masters. The driver
+supports multiple sampling modes, allowing users to configure different
+sampling periods for different masters. This enables fine-grained bandwidth
+profiling across time intervals. The collected data is exposed to userspace.
+
+[First Level Nodes]
+Required properties:
+- compatible:		Must be "qcom,bwprof-scmi".
+- reg:			Base address and size of the memory-mapped region.
+- reg-names:		Must be "mem-base".
+- mboxes:		Mailbox reference used for SCMI communication.
+
+[Second Level Nodes]
+Required properties:
+- compatible:		Must be "qcom,bwprof-hw".
+- qcom,hw-type:		Integer specifying the hardware type which should be
+			BWPROF_DDR or BWPROF_LLCC depending on which traffic
+			is profiled
+- qcom,bus_width:	Width of the bus in bits.
+
+[Third Level Nodes]
+Required properties:
+- compatible:		Must be "qcom,bwprof-sampling-mode".
+- qcom,sample-period:	Sampling interval in milliseconds.
+- qcom,master-list:	List of master IDs (8-bit values). Supported
+			master-list are as below depending on the HW support
+			on the target.
+			For BWPROF_LLCC - LLCC_CPU,LLCC_GPU,LLCC_TOTAL,
+			LLCC_CAMERA,LLCC_DPU, LLCC_EVA,LLCC_VPU and LLCC_PCIe.
+			For BWPROF_DDR - DDR_CPU,DDR_GPU, DDR_TOTAL,DDR_CAMERA,
+			DDR_DPU,DDR_EVA, DDR_VPU and DDR_PCIe.
+
+-Optional properties:
+- qcom,hist-enable:	Boolean property to enable histogram mode.
+
+Example:
+
+	bwprof_scmi: qcom,bwprof-scmi {
+		compatible = "qcom,bwprof-scmi";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+		reg = <0x17D0B000 0x1000>;
+		reg-names = "mem-base";
+		mboxes = <&rimps 2>;
+
+		bwprof_ddr: ddr {
+			compatible = "qcom,bwprof-hw";
+			qcom,hw-type = < 0 >;
+			qcom,bus_width = < 16 >;
+
+			bwprof_ddr_1ms: 1ms {
+				compatible = "qcom,bwprof-sampling-mode";
+				qcom,sample-period = < 1 >;
+				qcom,master-list = /bits/ 8 < 50 51 >;
+			};
+			bwprof_ddr_10ms: 10ms {
+				compatible = "qcom,bwprof-sampling-mode";
+				com,sample-period = < 10 >;
+				qcom,master-list = /bits/ 8 < 50 51 >;
+			};
+			bwprof_ddr_100ms: 100ms {
+				compatible = "qcom,bwprof-sampling-mode";
+				qcom,sample-period = < 100 >;
+				qcom,master-list = /bits/ 8 < 50 51 52 >;
+			};
+			bwprof_ddr_hist: Hist {
+				compatible = "qcom,bwprof-sampling-mode";
+				qcom,sample-period = < 1 >;
+				qcom,master-list = /bits/ 8 < 50 51 52 >;
+				qcom,delta-enable;
+			};
+		};
+	};

@@ -150,6 +150,9 @@ static int swd_get_flash_write_time_us(struct device *dev)
 
 int syncboss_swd_nrf52832_prepare(struct device *dev)
 {
+	swd_init(dev);
+	swd_halt(dev);
+
 	/* BPROT is nR52832-specific (not present on nRF52833 or nRF52840) */
 	swd_select_ap(dev, SWD_NRF_APSEL_MEMAP);
 	swd_memory_write(dev, SWD_NRF52832_BPROT_DISABLEINDEBUG,
@@ -163,6 +166,9 @@ int syncboss_swd_nrf52833_prepare(struct device *dev)
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	bool force_bootloader_update = false;
 	bool enable_noaccess_recovery = false;
+
+	swd_init(dev);
+	swd_halt(dev);
 
 	if (devdata->data_hdr) {
 		enable_noaccess_recovery = devdata->data_hdr->enable_noaccess_recovery;
@@ -437,15 +443,18 @@ int syncboss_swd_nrf52xxx_finalize(struct device *dev)
 	static const int RESET_GPIO_TIME_MS = 5;
 	static const int BOOT_TIME_MS = 100;
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	int status = 0;
 
 	// In GTK OS, ensure that firmware will be updateable even without ERASEALL.
 	// In Meta OS, we've just completed an update without ERASEALL, so skip this check because it's
 	// unnecessary and because failing here would be needlessly catastrophic for a customer's unit.
 	if (!devdata->erase_all)
-		return 0;
+		goto out;
 
-	if (!gpio_is_valid(devdata->gpio_reset))
-		return -EINVAL;
+	if (!gpio_is_valid(devdata->gpio_reset)) {
+		status = -EINVAL;
+		goto out;
+	}
 
 	// Soft reset so that firmware can configure the RESET pin on first boot.
 	swd_reset(dev);
@@ -461,9 +470,14 @@ int syncboss_swd_nrf52xxx_finalize(struct device *dev)
 	swd_init(dev);
 	swd_halt(dev);
 
-	if (approtect_is_disabled(dev))
-		return 0;
+	if (!approtect_is_disabled(dev)) {
+		WARN(true, "APPROTECT is enabled! Don't ship like this!");
+		status = -EIO;
+	}
 
-	WARN(true, "APPROTECT is enabled! Don't ship like this!");
-	return -EIO;
+out:
+	swd_reset(dev);
+	swd_flush(dev);
+
+	return status;
 }

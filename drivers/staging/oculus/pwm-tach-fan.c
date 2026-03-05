@@ -96,7 +96,7 @@ struct pwm_fan_ctx {
 	int32_t pwm_fan_max_state;
 	int32_t *pwm_fan_cooling_levels;
 	uint32_t irq;
-	u64 tach_periods;
+	u64 tach_irqs;
 	atomic64_t rpm;
 	ktime_t last_disable_timestamp;
 	ktime_t last_enable_timestamp;
@@ -156,7 +156,7 @@ static void reset_counters(struct pwm_fan_ctx *ctx)
 	memset(ctx->rpm_history, 0, sizeof(ctx->rpm_history));
 	ctx->ignore_tach_irqs = true;
 	ctx->timer_ticks = 0;
-	ctx->tach_periods = 0;
+	ctx->tach_irqs = 0;
 }
 
 static int enable_fan_notimestamp_locked(struct pwm_fan_ctx *ctx)
@@ -717,13 +717,15 @@ static int pwm_fan_fb_notifier_cb(struct notifier_block *nb,
 static irqreturn_t pwm_fan_irq_handler(int irq, void *dev_id)
 {
 	struct pwm_fan_ctx *ctx = dev_id;
+	u64 tach_period;
 
 	BUG_ON(irq != ctx->irq);
 
 	if (ctx->ignore_tach_irqs)
 		return IRQ_HANDLED;
 
-	ctx->tach_periods++;
+	tach_period = ctx->tach_irqs;
+	ctx->tach_irqs++;
 
 	/*
 	 * T = T1 + T2 + T3 + T4 = 60 / N (Sec)  N:SPEED (RPM)
@@ -732,14 +734,21 @@ static irqreturn_t pwm_fan_irq_handler(int irq, void *dev_id)
 	 * Refer to ND35C04-19F19-318002200012-REV01
 	 * RPM = (tach_periods / 6) * 60 * 1000 * 1000 / (elapsed_us / 3)
 	 */
-	if ((ctx->tach_periods % 6) == 0) {
+	if (tach_period % 6 == 0) {
 		ktime_t curr_time = ktime_get();
 		s64 elapsed_us = ktime_to_us(ktime_sub(
 					curr_time, ctx->last_tach_timestamp));
 		ctx->last_tach_timestamp = curr_time;
 
-		/* Instant RPM: (60 * 1000 * 1000) us * 3rot / elapsed_us */
-		atomic64_set(&ctx->rpm, 60 * 3 * 1000 * 1000 / elapsed_us);
+		/*
+		 * Wait at least two tach periods before updating instant RPM value
+		 * since its calculation depends on timestamp from the previous
+		 * interval (last_tach_timestamp).
+		 */
+		if (tach_period != 0) {
+			/* Instant RPM: (60 * 1000 * 1000) us * 3rot / elapsed_us */
+			atomic64_set(&ctx->rpm, 60 * 3 * 1000 * 1000 / elapsed_us);
+		}
 	}
 
 	return IRQ_HANDLED;

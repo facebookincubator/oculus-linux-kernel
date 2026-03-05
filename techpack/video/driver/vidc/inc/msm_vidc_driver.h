@@ -40,11 +40,6 @@ static inline bool is_image_decode_session(struct msm_vidc_inst *inst)
 	return inst->codec == MSM_VIDC_HEIC && inst->domain == MSM_VIDC_DECODER;
 }
 
-static inline int is_multi_view_session(struct msm_vidc_inst *inst)
-{
-	return !!(inst->capabilities->cap[MULTI_VIEW_ENABLE].value);
-}
-
 static inline bool is_image_session(struct msm_vidc_inst *inst)
 {
 	return inst->codec == MSM_VIDC_HEIC;
@@ -403,6 +398,15 @@ static inline bool is_hevc_10bit_decode_session(struct msm_vidc_inst *inst)
 	return inst->domain == MSM_VIDC_DECODER &&
 				inst->codec == MSM_VIDC_HEVC &&
 				is10bit;
+}
+
+static inline bool is_multi_view_session(struct msm_vidc_inst *inst)
+{
+	return (inst->codec == MSM_VIDC_HEVC &&
+		(inst->capabilities->cap[PROFILE].value ==
+		V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN ||
+		inst->capabilities->cap[PROFILE].value ==
+		V4L2_MPEG_VIDEO_HEVC_PROFILE_MULTIVIEW_MAIN_10));
 }
 
 const char *cap_name(enum msm_vidc_inst_capability_type cap_id);

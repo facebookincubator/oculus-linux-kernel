@@ -1034,7 +1034,7 @@ static int _parse_dt_bit_offset(struct device_node *np,
 	char *prop_name, struct sde_prop_value *prop_value, u32 prop_index,
 	u32 count, bool mandatory)
 {
-	int rc = 0, len, i, j;
+	int rc = -EINVAL, len, i, j;
 	const u32 *arr;
 
 	arr = of_get_property(np, prop_name, &len);
@@ -1057,11 +1057,11 @@ static int _parse_dt_bit_offset(struct device_node *np,
 				be32_to_cpu(arr[i]);
 			i++;
 		}
+		rc = 0;
 	} else {
 		if (mandatory) {
 			SDE_ERROR("error mandatory property '%s' not found\n",
 				prop_name);
-			rc = -EINVAL;
 		} else {
 			SDE_DEBUG("error optional property '%s' not found\n",
 				prop_name);
@@ -1115,8 +1115,11 @@ static int _validate_dt_entry(struct device_node *np,
 				rc = prop_count[i];
 			break;
 		case PROP_TYPE_BIT_OFFSET_ARRAY:
-			of_get_property(np, sde_prop[i].prop_name, &val);
-			prop_count[i] = val / (MAX_BIT_OFFSET * sizeof(u32));
+			if (of_get_property(np, sde_prop[i].prop_name, &val)) {
+				prop_count[i] = val / (MAX_BIT_OFFSET * sizeof(u32));
+			} else {
+				prop_count[i] = 0;
+			}
 			break;
 		case PROP_TYPE_NODE:
 			snp = of_get_child_by_name(np,
@@ -1237,11 +1240,13 @@ static int _read_dt_entry(struct device_node *np,
 					"prop id:%d prop name:%s prop type:%d",
 					i, sde_prop[i].prop_name,
 					sde_prop[i].type);
-				for (j = 0; j < prop_count[i]; j++)
-					SDE_DEBUG(" value[%d]:0x%x ", j,
-						PROP_VALUE_ACCESS(prop_value, i,
-								j));
-				SDE_DEBUG("\n");
+				if (prop_exists[i]) {
+					for (j = 0; j < prop_count[i]; j++)
+						SDE_DEBUG(" value[%d]:0x%x ", j,
+							PROP_VALUE_ACCESS(prop_value, i,
+									j));
+					SDE_DEBUG("\n");
+				}
 			}
 			break;
 		case PROP_TYPE_BIT_OFFSET_ARRAY:
@@ -1261,14 +1266,16 @@ static int _read_dt_entry(struct device_node *np,
 					"prop id:%d prop name:%s prop type:%d",
 					i, sde_prop[i].prop_name,
 					sde_prop[i].type);
-				for (j = 0; j < prop_count[i]; j++)
-					SDE_DEBUG(
-					"count[%d]: bit:0x%x off:0x%x\n", j,
-					PROP_BITVALUE_ACCESS(prop_value,
-						i, j, 0),
-					PROP_BITVALUE_ACCESS(prop_value,
-						i, j, 1));
-				SDE_DEBUG("\n");
+				if (prop_exists[i]) {
+					for (j = 0; j < prop_count[i]; j++)
+						SDE_DEBUG(
+						"count[%d]: bit:0x%x off:0x%x\n", j,
+						PROP_BITVALUE_ACCESS(prop_value,
+							i, j, 0),
+						PROP_BITVALUE_ACCESS(prop_value,
+							i, j, 1));
+					SDE_DEBUG("\n");
+				}
 			}
 			break;
 		case PROP_TYPE_NODE:

@@ -1029,6 +1029,7 @@ static void _log_gpu_work_events(struct work_struct *work)
 	unsigned long spin_flags;
 	u64 begin, end;
 	uid_t uid;
+	pid_t pid;
 
 	spin_lock_irqsave(&device->work_period_lock, spin_flags);
 	/* grab window endpoints for consistent accounting for the items in
@@ -1052,6 +1053,7 @@ static void _log_gpu_work_events(struct work_struct *work)
 		do_div(active_time, 192);
 
 		uid = wp->uid;
+		pid = wp->pid;
 
 		/* Ensure active_time is within work period */
 		active_time = min_t(u64, active_time,
@@ -1077,12 +1079,13 @@ static void _log_gpu_work_events(struct work_struct *work)
 		 * to provide information to the Android OS about how
 		 * apps are using the GPU.
 		 */
-		if (active_time)
+		if (active_time) {
 			trace_gpu_work_period(KGSL_GPU_ID, uid,
 					begin,
 					end,
-					active_time);
-
+					active_time,
+					pid);
+		}
 	}
 
 	/* make sure other CPUs see updates before giving up the lock */
@@ -1116,14 +1119,14 @@ static void kgsl_work_period_timer(struct timer_list *t)
 	queue_work(kgsl_driver.lockless_workqueue, &device->work_period_ws);
 }
 
-static struct gpu_work_period *kgsl_get_work_period(uid_t uid)
+static struct gpu_work_period *kgsl_get_work_period(uid_t uid, pid_t pid)
 {
 	struct gpu_work_period *wp;
 	unsigned long spin_flags;
 
 	spin_lock_irqsave(&kgsl_driver.wp_list_lock, spin_flags);
 	list_for_each_entry(wp, &kgsl_driver.wp_list, list) {
-		if ((uid == wp->uid) && kref_get_unless_zero(&wp->refcount)) {
+		if ((uid == wp->uid) && (pid == wp->pid) && kref_get_unless_zero(&wp->refcount)) {
 			spin_unlock_irqrestore(&kgsl_driver.wp_list_lock, spin_flags);
 			return wp;
 		}
@@ -1137,6 +1140,7 @@ static struct gpu_work_period *kgsl_get_work_period(uid_t uid)
 
 	kref_init(&wp->refcount);
 	wp->uid = uid;
+	wp->pid = pid;
 	INIT_WORK(&wp->defer_ws, _defer_work_period_put);
 	list_add(&wp->list, &kgsl_driver.wp_list);
 	spin_unlock_irqrestore(&kgsl_driver.wp_list_lock, spin_flags);
@@ -1185,7 +1189,7 @@ static struct kgsl_process_private *kgsl_process_private_new(
 		return ERR_PTR(-ENOMEM);
 	}
 
-	private->period = kgsl_get_work_period(current_uid().val);
+	private->period = kgsl_get_work_period(current_uid().val, pid_nr(cur_pid));
 	if (IS_ERR(private->period)) {
 		int err = PTR_ERR(private->period);
 

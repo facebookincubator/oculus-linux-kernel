@@ -193,13 +193,14 @@ int kgsl_memdesc_init_fixed(struct kgsl_device *device,
 void kgsl_free_globals(struct kgsl_device *device);
 
 /**
- * kgsl_page_sync_for_device - Initialize SG table with page & sync it for device
+ * kgsl_page_sync_for_device - Initialize SG table with page & sync to/from device
  * @dev: A GPU device handle
  * @page: Pointer to the struct page
  * @size: Size of the page
+ * @dir: DMA direction flag
  */
-void kgsl_page_sync_for_device(struct device *dev, struct page *page,
-		size_t size);
+void kgsl_page_sync(struct device *dev, struct page *page,
+		size_t size, enum dma_data_direction dir);
 
 /*
  * kgsl_memdesc_get_align - Get alignment flags from a memdesc

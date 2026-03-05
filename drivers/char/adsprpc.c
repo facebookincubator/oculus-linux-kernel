@@ -1257,8 +1257,8 @@ static int fastrpc_alloc_cma_memory(dma_addr_t *region_phys, void **vaddr,
 	VERIFY(err, size > 0 && size < me->max_size_limit);
 	if (err) {
 		err = -EFAULT;
-		pr_err("adsprpc: %s: invalid allocation size 0x%zx\n",
-			__func__, size);
+		pr_err("adsprpc: %s: invalid allocation size 0x%zx, max 0x%x\n",
+			__func__, size, me->max_size_limit);
 		return err;
 	}
 	*vaddr = dma_alloc_attrs(me->dev, size, region_phys,
@@ -8343,14 +8343,17 @@ static int __init fastrpc_device_init(void)
 								&region_vaddr,
 								MINI_DUMP_DBG_SIZE,
 								(unsigned long)attr);
-			if (err)
+			if (err) {
 				ADSPRPC_WARN("%s: CMA alloc failed  err 0x%x\n",
 						__func__, err);
+				goto buf_bail;
+			}
 			VERIFY(err, NULL != (buf = kzalloc(sizeof(*buf), GFP_KERNEL)));
 			if (err) {
 				err = -ENOMEM;
 				ADSPRPC_WARN("%s: CMA alloc failed  err 0x%x\n",
 							__func__, err);
+				goto buf_bail;
 			}
 			INIT_HLIST_NODE(&buf->hn);
 			buf->virt = region_vaddr;
@@ -8360,6 +8363,7 @@ static int __init fastrpc_device_init(void)
 			buf->raddr = 0;
 			ktime_get_real_ts64(&buf->buf_start_time);
 			me->channel[i].buf = buf;
+buf_bail:;
 		}
 		if (IS_ERR_OR_NULL(me->channel[i].handle))
 			pr_warn("adsprpc: %s: SSR notifier register failed for %s with err %d\n",

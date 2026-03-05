@@ -910,6 +910,66 @@ static ssize_t backlight_temperature_override_store(struct device *device,
 	return count;
 }
 
+static ssize_t perceptual_brightness_override_show(struct device *device,
+	struct device_attribute *attr, char *buf)
+{
+	struct drm_crtc *crtc;
+	struct sde_crtc *sde_crtc;
+	struct dsi_backlight_config *bl_config = NULL;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	sde_crtc = to_sde_crtc(crtc);
+	bl_config = &sde_crtc->vblank_last_cb_bl_config;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+			bl_config->perceptual_brightness_override);
+}
+
+static ssize_t perceptual_brightness_override_store(struct device *device,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct drm_crtc *crtc;
+	struct drm_encoder *enc;
+	struct sde_crtc_state *cstate;
+	u32 perceptual_brightness_override = 0;
+	int res, i;
+
+	if (!device || !buf) {
+		SDE_ERROR("invalid input param(s)\n");
+		return -EAGAIN;
+	}
+
+	crtc = dev_get_drvdata(device);
+	if (!crtc)
+		return -EINVAL;
+
+	res = kstrtou32(buf, 10, &perceptual_brightness_override);
+	if (res < 0)
+		return res;
+
+	drm_for_each_encoder_mask(enc, crtc->dev, crtc->state->encoder_mask) {
+		if (enc->crtc != crtc || !sde_encoder_is_dsi_display(enc))
+			continue;
+
+		cstate = to_sde_crtc_state(crtc->state);
+		for (i = 0; i < cstate->num_connectors; i++) {
+			struct sde_connector *c_conn = to_sde_connector(
+					cstate->connectors[i]);
+			struct dsi_display *display = c_conn->display;
+
+			display->panel->bl_config.perceptual_brightness_override =
+					perceptual_brightness_override;
+		}
+	}
+
+	return count;
+}
+
 static ssize_t backlight_changes_blocked_show(struct device *device,
 	struct device_attribute *attr, char *buf)
 {
@@ -1001,6 +1061,7 @@ static DEVICE_ATTR_RW(fps_periodicity_ms);
 static DEVICE_ATTR_RO(retire_frame_event);
 static DEVICE_ATTR_RW(backlight_temperature_override);
 static DEVICE_ATTR_RW(backlight_changes_blocked);
+static DEVICE_ATTR_RW(perceptual_brightness_override);
 
 static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_vsync_event.attr,
@@ -1020,6 +1081,7 @@ static struct attribute *sde_crtc_dev_attrs[] = {
 	&dev_attr_retire_frame_event.attr,
 	&dev_attr_backlight_temperature_override.attr,
 	&dev_attr_backlight_changes_blocked.attr,
+	&dev_attr_perceptual_brightness_override.attr,
 	NULL
 };
 

@@ -197,6 +197,7 @@ struct cam_isp_ctx_ul_data {
 	struct cam_isp_ul_rup_aup_cmd               rup_aup_cmd;
 	uint64_t                                    sensor_applied_setting_id;
 	uint64_t                                    curr_index_period;
+	uint32_t                                    ul_signal_record[MAX_IO_PACKETS][4];
 };
 
 /**

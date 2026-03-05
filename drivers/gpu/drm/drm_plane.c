@@ -33,6 +33,7 @@
 #include <drm/drm_vblank.h>
 
 #include "drm_crtc_internal.h"
+#include "drm_trace_atomic.h"
 
 /**
  * DOC: overview
@@ -193,13 +194,17 @@ int drm_universal_plane_init(struct drm_device *dev, struct drm_plane *plane,
 	if (WARN_ON(format_count > 64))
 		return -EINVAL;
 
+	DRM_ATRACE_FUNC_BEGIN();
+
 	WARN_ON(drm_drv_uses_atomic_modeset(dev) &&
 		(!funcs->atomic_destroy_state ||
 		 !funcs->atomic_duplicate_state));
 
 	ret = drm_mode_object_add(dev, &plane->base, DRM_MODE_OBJECT_PLANE);
-	if (ret)
+	if (ret) {
+		DRM_ATRACE_FUNC_END();
 		return ret;
+	}
 
 	drm_modeset_lock_init(&plane->mutex);
 
@@ -211,6 +216,7 @@ int drm_universal_plane_init(struct drm_device *dev, struct drm_plane *plane,
 	if (!plane->format_types) {
 		DRM_DEBUG_KMS("out of memory when allocating plane\n");
 		drm_mode_object_unregister(dev, &plane->base);
+		DRM_ATRACE_FUNC_END();
 		return -ENOMEM;
 	}
 
@@ -233,6 +239,7 @@ int drm_universal_plane_init(struct drm_device *dev, struct drm_plane *plane,
 		DRM_DEBUG_KMS("out of memory when allocating plane\n");
 		kfree(plane->format_types);
 		drm_mode_object_unregister(dev, &plane->base);
+		DRM_ATRACE_FUNC_END();
 		return -ENOMEM;
 	}
 
@@ -250,6 +257,7 @@ int drm_universal_plane_init(struct drm_device *dev, struct drm_plane *plane,
 		kfree(plane->format_types);
 		kfree(plane->modifiers);
 		drm_mode_object_unregister(dev, &plane->base);
+		DRM_ATRACE_FUNC_END();
 		return -ENOMEM;
 	}
 
@@ -284,6 +292,7 @@ int drm_universal_plane_init(struct drm_device *dev, struct drm_plane *plane,
 	if (config->allow_fb_modifiers)
 		create_in_format_blob(dev, plane);
 
+	DRM_ATRACE_FUNC_END();
 	return 0;
 }
 EXPORT_SYMBOL(drm_universal_plane_init);
@@ -346,11 +355,17 @@ int drm_plane_init(struct drm_device *dev, struct drm_plane *plane,
 		   bool is_primary)
 {
 	enum drm_plane_type type;
+	int ret;
+
+	DRM_ATRACE_FUNC_BEGIN();
 
 	type = is_primary ? DRM_PLANE_TYPE_PRIMARY : DRM_PLANE_TYPE_OVERLAY;
-	return drm_universal_plane_init(dev, plane, possible_crtcs, funcs,
+	ret = drm_universal_plane_init(dev, plane, possible_crtcs, funcs,
 					formats, format_count,
 					NULL, type, NULL);
+
+	DRM_ATRACE_FUNC_END();
+	return ret;
 }
 EXPORT_SYMBOL(drm_plane_init);
 
@@ -435,6 +450,8 @@ void drm_plane_force_disable(struct drm_plane *plane)
 	if (!plane->fb)
 		return;
 
+	DRM_ATRACE_FUNC_BEGIN();
+
 	WARN_ON(drm_drv_uses_atomic_modeset(plane->dev));
 
 	plane->old_fb = plane->fb;
@@ -442,6 +459,7 @@ void drm_plane_force_disable(struct drm_plane *plane)
 	if (ret) {
 		DRM_ERROR("failed to disable plane with busy fb\n");
 		plane->old_fb = NULL;
+		DRM_ATRACE_FUNC_END();
 		return;
 	}
 	/* disconnect the plane from the fb and crtc: */
@@ -449,6 +467,7 @@ void drm_plane_force_disable(struct drm_plane *plane)
 	plane->old_fb = NULL;
 	plane->fb = NULL;
 	plane->crtc = NULL;
+	DRM_ATRACE_FUNC_END();
 }
 EXPORT_SYMBOL(drm_plane_force_disable);
 
@@ -809,6 +828,8 @@ int drm_mode_setplane(struct drm_device *dev, void *data,
 	if (!drm_core_check_feature(dev, DRIVER_MODESET))
 		return -EOPNOTSUPP;
 
+	DRM_ATRACE_FUNC_BEGIN();
+
 	/*
 	 * First, find the plane, crtc, and fb objects.  If not available,
 	 * we don't bother to call the driver.
@@ -817,6 +838,7 @@ int drm_mode_setplane(struct drm_device *dev, void *data,
 	if (!plane) {
 		DRM_DEBUG_KMS("Unknown plane ID %d\n",
 			      plane_req->plane_id);
+		DRM_ATRACE_FUNC_END();
 		return -ENOENT;
 	}
 
@@ -825,6 +847,7 @@ int drm_mode_setplane(struct drm_device *dev, void *data,
 		if (!fb) {
 			DRM_DEBUG_KMS("Unknown framebuffer ID %d\n",
 				      plane_req->fb_id);
+			DRM_ATRACE_FUNC_END();
 			return -ENOENT;
 		}
 

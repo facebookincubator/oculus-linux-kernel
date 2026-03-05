@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2002,2007-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <asm/cacheflush.h>
@@ -421,8 +421,12 @@ static ssize_t gpumem_account(struct kgsl_process_private *priv, int type,
 		 * for counting PSS to match proc/smaps behavior.
 		 */
 		for (i = 0; i < m->page_count; i++) {
-			const int mapcount = page_mapcount(m->pages[i]);
+			int mapcount;
 
+			if (!m->pages[i])
+				continue;
+
+			mapcount = page_mapcount(m->pages[i]);
 			if (mapcount <= 0)
 				continue;
 
@@ -744,7 +748,7 @@ static vm_fault_t kgsl_paged_vmfault(struct kgsl_memdesc *memdesc,
 			kgsl_gfp_mask(0));
 		if (IS_ERR(page))
 			return VM_FAULT_SIGBUS;
-		kgsl_page_sync_for_device(memdesc->dev, page, PAGE_SIZE);
+		kgsl_page_sync(memdesc->dev, page, PAGE_SIZE, DMA_BIDIRECTIONAL);
 
 		spin_lock(&memdesc->lock);
 		/*
@@ -987,7 +991,13 @@ void kgsl_memdesc_init(struct kgsl_device *device,
 		memdesc->priv |= KGSL_MEMDESC_SECURE;
 
 	memdesc->flags = flags;
-	memdesc->dev = &device->pdev->dev;
+
+	/*
+	 * For io-coherent buffers don't set memdesc->dev, so that we skip DMA
+	 * cache operations at allocation time
+	 */
+	if (!(flags & KGSL_MEMFLAGS_IOCOHERENT))
+		memdesc->dev = &device->pdev->dev;
 
 	align = max_t(unsigned int,
 		kgsl_memdesc_get_align(memdesc), ilog2(PAGE_SIZE));
@@ -1234,10 +1244,10 @@ static void kgsl_contiguous_free(struct kgsl_memdesc *memdesc)
 }
 
 #ifdef CONFIG_QCOM_KGSL_USE_SHMEM
-static int kgsl_alloc_page(int *page_size, struct page **pages,
-			unsigned int pages_len, unsigned int *align,
-			unsigned int page_off, struct file *shmem_filp,
-			struct device *dev)
+static int kgsl_alloc_page(struct kgsl_memdesc *memdesc, int *page_size,
+			struct page **pages, unsigned int pages_len,
+			unsigned int *align, unsigned int page_off)
+
 {
 	struct page *page;
 
@@ -1247,12 +1257,12 @@ static int kgsl_alloc_page(int *page_size, struct page **pages,
 	if (fatal_signal_pending(current))
 		return -ENOMEM;
 
-	page = shmem_read_mapping_page_gfp(shmem_filp->f_mapping, page_off,
+	page = shmem_read_mapping_page_gfp(memdesc->shmem_filp->f_mapping, page_off,
 			kgsl_gfp_mask(0));
 	if (IS_ERR(page))
 		return PTR_ERR(page);
 
-	kgsl_zero_page(page, 0, dev);
+	kgsl_zero_page(page, 0, memdesc->dev);
 	*pages = page;
 
 	return 1;
@@ -1292,16 +1302,16 @@ static void _kgsl_free_pages(struct kgsl_memdesc *memdesc, unsigned int pcount)
 	fput(memdesc->shmem_filp);
 }
 #else
-static int kgsl_alloc_page(int *page_size, struct page **pages,
-			unsigned int pages_len, unsigned int *align,
-			unsigned int page_off, struct file *shmem_filp,
-			struct device *dev)
+static int kgsl_alloc_page(struct kgsl_memdesc *memdesc, int *page_size,
+			struct page **pages, unsigned int pages_len,
+			unsigned int *align, unsigned int page_off)
+
 {
 	if (fatal_signal_pending(current))
 		return -ENOMEM;
 
 	return kgsl_pool_alloc_page(page_size, pages,
-			pages_len, align, dev);
+			pages_len, align, memdesc->dev);
 }
 
 static int kgsl_memdesc_file_setup(struct kgsl_memdesc *memdesc, uint64_t size)
@@ -1351,8 +1361,8 @@ static void kgsl_free_pages_from_sgt(struct kgsl_memdesc *memdesc)
 		fput(memdesc->shmem_filp);
 }
 
-void kgsl_page_sync_for_device(struct device *dev, struct page *page,
-		size_t size)
+void kgsl_page_sync(struct device *dev, struct page *page,
+		size_t size, enum dma_data_direction dir)
 {
 	struct scatterlist sg;
 
@@ -1364,7 +1374,7 @@ void kgsl_page_sync_for_device(struct device *dev, struct page *page,
 	sg_set_page(&sg, page, size, 0);
 	sg_dma_address(&sg) = page_to_phys(page);
 
-	dma_sync_sg_for_device(dev, &sg, 1, DMA_BIDIRECTIONAL);
+	dma_sync_sg_for_device(dev, &sg, 1, dir);
 }
 
 void kgsl_zero_page(struct page *p, unsigned int order,
@@ -1378,7 +1388,7 @@ void kgsl_zero_page(struct page *p, unsigned int order,
 		clear_highpage(page);
 	}
 
-	kgsl_page_sync_for_device(dev, p, PAGE_SIZE << order);
+	kgsl_page_sync(dev, p, PAGE_SIZE << order, DMA_TO_DEVICE);
 }
 
 gfp_t kgsl_gfp_mask(int page_order)
@@ -1397,19 +1407,18 @@ gfp_t kgsl_gfp_mask(int page_order)
 	return gfp_mask;
 }
 
-static int _kgsl_alloc_pages(struct kgsl_memdesc *memdesc,
-		u64 size, struct page ***pages, struct device *dev)
+static int _kgsl_alloc_pages(struct kgsl_memdesc *memdesc, struct page ***pages)
 {
 	int count = 0;
-	int npages = size >> PAGE_SHIFT;
+	int npages = memdesc->size >> PAGE_SHIFT;
 	struct page **local = kvcalloc(npages, sizeof(*local), GFP_KERNEL);
 	u32 page_size, align;
-	u64 len = size;
+	u64 len = memdesc->size;
 
 	if (!local)
 		return -ENOMEM;
 
-	count = kgsl_memdesc_file_setup(memdesc, size);
+	count = kgsl_memdesc_file_setup(memdesc, memdesc->size);
 	if (count) {
 		kvfree(local);
 		return count;
@@ -1421,8 +1430,8 @@ static int _kgsl_alloc_pages(struct kgsl_memdesc *memdesc,
 	page_size = kgsl_get_page_size(len, align);
 
 	while (len) {
-		int ret = kgsl_alloc_page(&page_size, &local[count],
-			npages, &align, count, memdesc->shmem_filp, dev);
+		int ret = kgsl_alloc_page(memdesc, &page_size, &local[count],
+			npages, &align, count);
 
 		if (ret == -EAGAIN)
 			continue;
@@ -1439,7 +1448,7 @@ static int _kgsl_alloc_pages(struct kgsl_memdesc *memdesc,
 
 			if (!kgsl_sharedmem_noretry_flag)
 				pr_err_ratelimited("kgsl: out of memory: only allocated %lldKb of %lldKb requested\n",
-					(size - len) >> 10, size >> 10);
+					(memdesc->size - len) >> 10, memdesc->size >> 10);
 
 			if (memdesc->shmem_filp)
 				fput(memdesc->shmem_filp);
@@ -1624,12 +1633,11 @@ static const struct kgsl_memdesc_ops kgsl_system_ops = {
 	.unmap_kernel = kgsl_paged_unmap_kernel,
 };
 
-static int kgsl_system_alloc_pages(u64 size, struct page ***pages,
-		struct device *dev)
+static int kgsl_system_alloc_pages(struct kgsl_memdesc *memdesc, struct page ***pages)
+
 {
-	struct scatterlist sg;
 	struct page **local;
-	int i, npages = size >> PAGE_SHIFT;
+	int i, npages = memdesc->size >> PAGE_SHIFT;
 
 	local = kvcalloc(npages, sizeof(*pages), GFP_KERNEL | __GFP_NORETRY);
 	if (!local)
@@ -1652,11 +1660,7 @@ static int kgsl_system_alloc_pages(u64 size, struct page ***pages,
 		}
 
 		/* Make sure the cache is clean */
-		sg_init_table(&sg, 1);
-		sg_set_page(&sg, local[i], PAGE_SIZE, 0);
-		sg_dma_address(&sg) = page_to_phys(local[i]);
-
-		dma_sync_sg_for_device(dev, &sg, 1, DMA_BIDIRECTIONAL);
+		kgsl_page_sync(memdesc->dev, local[i], PAGE_SIZE, DMA_TO_DEVICE);
 	}
 
 	*pages = local;
@@ -1679,13 +1683,14 @@ static int kgsl_alloc_secure_pages(struct kgsl_device *device,
 
 	kgsl_memdesc_init(device, memdesc, flags);
 	memdesc->priv |= priv;
+	memdesc->size = size;
 
 	if (priv & KGSL_MEMDESC_SYSMEM) {
 		memdesc->ops = &kgsl_secure_system_ops;
-		count = kgsl_system_alloc_pages(size, &pages, device->dev);
+		count = kgsl_system_alloc_pages(memdesc, &pages);
 	} else {
 		memdesc->ops = &kgsl_secure_page_ops;
-		count = _kgsl_alloc_pages(memdesc, size, &pages, device->dev);
+		count = _kgsl_alloc_pages(memdesc, &pages);
 	}
 
 	if (count < 0)
@@ -1719,7 +1724,6 @@ static int kgsl_alloc_secure_pages(struct kgsl_device *device,
 	}
 
 	memdesc->sgt = sgt;
-	memdesc->size = size;
 
 	KGSL_STATS_ADD(size, &kgsl_driver.stats.secure,
 		&kgsl_driver.stats.secure_max);
@@ -1741,20 +1745,20 @@ static int kgsl_alloc_pages(struct kgsl_device *device,
 
 	kgsl_memdesc_init(device, memdesc, flags);
 	memdesc->priv |= priv;
+	memdesc->size = size;
 
 	if (priv & KGSL_MEMDESC_SYSMEM) {
 		memdesc->ops = &kgsl_system_ops;
-		count = kgsl_system_alloc_pages(size, &pages, device->dev);
+		count = kgsl_system_alloc_pages(memdesc, &pages);
 	} else {
 		memdesc->ops = &kgsl_page_ops;
-		count = _kgsl_alloc_pages(memdesc, size, &pages, device->dev);
+		count = _kgsl_alloc_pages(memdesc, &pages);
 	}
 
 	if (count < 0)
 		return count;
 
 	memdesc->pages = pages;
-	memdesc->size = size;
 	memdesc->page_count = count;
 
 	KGSL_STATS_ADD(size, &kgsl_driver.stats.page_alloc,

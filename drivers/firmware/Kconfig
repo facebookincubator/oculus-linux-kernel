@@ -71,6 +71,18 @@ config QTI_SCMI_MEMLAT_PROTOCOL
 	  this protocol provides interface to communicate with micro controller
 	  which is executing the hw memlat governor
 
+config QTI_SCMI_BWPROF_PROTOCOL
+	tristate "Qualcomm Technologies, Inc. SCMI BWPROF vendor Protocol"
+	depends on ARM || ARM64 || COMPILE_TEST
+	depends on ARM_SCMI_PROTOCOL && QCOM_RIMPS
+	help
+	  System Control and Management Interface (SCMI) bwprof vendor protocol
+	  this protocol provides interface to communicate with micro controller
+	  which is executing the bandwidth profiling.
+
+	  This driver defines the commands or message ID's used for this
+	  communication and also exposes the operations used by clients.
+
 config QTI_SCMI_GPLAF_PROTOCOL
 	tristate "Qualcomm Technologies, Inc. SCMI GPLAF vendor Protocol"
 	depends on ARM_SCMI_PROTOCOL && QCOM_RIMPS

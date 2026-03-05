@@ -1678,9 +1678,50 @@
 		#size-cells = <2>;
 		compatible = "qcom,rimps";
 		reg =   <0x17400000 0x10>,
-			<0x17d90000 0x2000>;
+			<0x17d90000 0x3000>;
 		#mbox-cells = <1>;
 		interrupts = <GIC_SPI 62 IRQ_TYPE_LEVEL_HIGH>;
+	};
+
+	bwprof_scmi: qcom,bwprof-scmi {
+		compatible = "qcom,bwprof-scmi";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+		reg = <0x17D0B000 0x1000>;
+		reg-names = "mem-base";
+		mboxes = <&rimps 2>;
+
+		bwprof_ddr: ddr {
+			compatible = "qcom,bwprof-hw";
+			qcom,hw-type = < 0 >;
+			qcom,bus_width = < 16 >;
+
+			bwprof_ddr_1ms: 1ms {
+				compatible = "qcom,bwprof-sampling-mode";
+				qcom,sample-period = < 1 >;
+				qcom,master-list = /bits/ 8 < 50 51 >;
+			};
+
+			bwprof_ddr_10ms: 10ms {
+				compatible = "qcom,bwprof-sampling-mode";
+				qcom,sample-period = < 10 >;
+				qcom,master-list = /bits/ 8 < 50 51 >;
+			};
+
+			bwprof_ddr_100ms: 100ms {
+				compatible = "qcom,bwprof-sampling-mode";
+				qcom,sample-period = < 100 >;
+				qcom,master-list = /bits/ 8 < 50 51 52 >;
+			};
+
+			bwprof_ddr_hist: Hist {
+				compatible = "qcom,bwprof-sampling-mode";
+				qcom,sample-period = < 1 >;
+				qcom,master-list = /bits/ 8 < 50 51 52 >;
+				qcom,hist-enable;
+			};
+		};
 	};
 
 	scmi: qcom,scmi {
@@ -1703,6 +1744,10 @@
 
 		scmi_pmu: protocol@86 {
 			reg = <0x86>;
+			#clock-cells = <1>;
+		};
+		scmi_bwprof: protocol@8A {
+			reg = <0x8A>;
 			#clock-cells = <1>;
 		};
 

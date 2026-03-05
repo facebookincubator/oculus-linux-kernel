@@ -466,7 +466,7 @@ int kgsl_pool_alloc_page(int *page_size, struct page **pages,
 
 	/* If the pool is not configured get pages from the system */
 	if (!kgsl_num_pools) {
-		gfp_t gfp_mask = kgsl_gfp_mask(order);
+		gfp_t gfp_mask = (kgsl_gfp_mask(order) | __GFP_ZERO);
 
 		page = alloc_pages(gfp_mask, order);
 		if (page == NULL) {
@@ -479,6 +479,7 @@ int kgsl_pool_alloc_page(int *page_size, struct page **pages,
 				return -ENOMEM;
 		}
 		trace_kgsl_pool_alloc_page_system(order);
+		kgsl_page_sync(dev, page, PAGE_SIZE << order, DMA_TO_DEVICE);
 		goto done;
 	}
 
@@ -493,12 +494,13 @@ int kgsl_pool_alloc_page(int *page_size, struct page **pages,
 			 * Fall back to direct allocation in case
 			 * pool with zero order is not present
 			 */
-			gfp_t gfp_mask = kgsl_gfp_mask(order);
+			gfp_t gfp_mask = (kgsl_gfp_mask(order) | __GFP_ZERO);
 
 			page = alloc_pages(gfp_mask, order);
 			if (page == NULL)
 				return -ENOMEM;
 			trace_kgsl_pool_alloc_page_system(order);
+			kgsl_page_sync(dev, page, PAGE_SIZE << order, DMA_TO_DEVICE);
 			goto done;
 		}
 	}
@@ -508,7 +510,7 @@ int kgsl_pool_alloc_page(int *page_size, struct page **pages,
 
 	/* Allocate a new page if not allocated from pool */
 	if (page == NULL) {
-		gfp_t gfp_mask = kgsl_gfp_mask(order);
+		gfp_t gfp_mask = (kgsl_gfp_mask(order) | __GFP_ZERO);
 
 		page = alloc_pages(gfp_mask, order);
 
@@ -522,11 +524,13 @@ int kgsl_pool_alloc_page(int *page_size, struct page **pages,
 				return -ENOMEM;
 		}
 		trace_kgsl_pool_alloc_page_system(order);
+		kgsl_page_sync(dev, page, PAGE_SIZE << order, DMA_TO_DEVICE);
+		goto done;
 	}
 
-done:
 	kgsl_zero_page(page, order, dev);
 
+done:
 	for (j = 0; j < (*page_size >> PAGE_SHIFT); j++) {
 		p = nth_page(page, j);
 		pages[pcount] = p;

@@ -121,13 +121,14 @@ static struct {
 	{
 		.flavor = "nrf54h20",
 		.swd_ops = {
+			.target_prepare = syncboss_swd_nrf54h20_prepare,
 			.target_erase = syncboss_swd_nrf54h20_target_erase,
 			.target_get_write_chunk_size = syncboss_swd_nrf54h20_get_app_write_chunk_size,
 			.target_program_write_chunk = syncboss_swd_nrf54h20_write_chunk,
 			.target_chip_erase = syncboss_swd_nrf54h20_chip_erase,
 			.target_program_read = syncboss_swd_nrf54h20_read,
-			.read_part_number = syncboss_swd_nrf54h20_read_part_number,
 			.set_mcu_quirk = syncboss_swd_nrf54h20_force_sec_dom_fw_version,
+			.target_finalize = syncboss_swd_nrf54h20_finalize,
 		}
 	},
 	{
@@ -307,6 +308,9 @@ int fwupdate_update_prepare(struct device *dev)
 		status = devdata->mcu_data.swd_ops.target_prepare(dev);
 		if (status)
 			return status;
+	} else {
+		swd_init(dev);
+		swd_halt(dev);
 	}
 
 	if (devdata->num_children == 0)
@@ -497,6 +501,10 @@ static int fwupdate_update_finalize(struct device *dev)
 		status = devdata->mcu_data.swd_ops.target_finalize(dev);
 		if (status)
 			return status;
+	} else {
+		/* reset the mcu if no finalize operation present! */
+		swd_reset(dev);
+		swd_flush(dev);
 	}
 
 	return 0;
@@ -543,9 +551,6 @@ static int fwupdate_update_firmware(struct device *dev)
 		msleep(DEFAULT_MCU_RESET_MS);
 	}
 
-	swd_init(dev);
-	swd_halt(dev);
-
 	status = fwupdate_update_prepare(dev);
 	if (status)
 		goto error;
@@ -567,9 +572,6 @@ static int fwupdate_update_firmware(struct device *dev)
 	status = fwupdate_update_finalize(dev);
 	if (status)
 		goto error;
-
-	swd_reset(dev);
-	swd_flush(dev);
 
 	if (gpio_is_valid(devdata->gpio_reset)) {
 		dev_info(dev, "Re-applying MCU reset");

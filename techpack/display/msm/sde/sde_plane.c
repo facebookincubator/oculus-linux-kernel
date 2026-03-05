@@ -5012,7 +5012,7 @@ void sde_plane_get_frame_data(struct drm_plane *plane,
 	if (ubwc_stats->error || ubwc_stats->meta_error) {
 		SDE_EVT32(DRMID(plane),  ubwc_stats->error, ubwc_stats->meta_error,
 				SDE_EVTLOG_ERROR);
-		SDE_DEBUG_PLANE(psde, "plane%d ubwc_error %d meta_error %d\n",
+		SDE_DEBUG_PLANE(psde, "ubwc_error %d meta_error %d\n",
 				ubwc_stats->error, ubwc_stats->meta_error);
 	}
 }

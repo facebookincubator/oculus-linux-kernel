@@ -644,7 +644,7 @@ void sde_core_perf_crtc_update_uidle(struct drm_crtc *crtc,
 			 */
 			fps = sde_crtc_get_dfps_maxfps(tmp_crtc);
 
-			SDE_DEBUG("crtc=%d fps:%d wb:%d cwb:%d dis:%d en:%d\n",
+			SDE_DEBUG("crtc=%d fps:%d wb:%d cwb:%d uidle:%d uidle_crtc:%d en:%d\n",
 				tmp_crtc->base.id, fps,
 				_sde_core_perf_is_wb(tmp_crtc),
 				_sde_core_perf_is_cwb(tmp_crtc),

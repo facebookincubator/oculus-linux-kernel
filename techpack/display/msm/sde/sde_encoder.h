@@ -23,6 +23,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_bridge.h>
 #include <linux/sde_rsc.h>
+#include <linux/uio_driver.h>
 
 #include "msm_prop.h"
 #include "sde_hw_mdss.h"
@@ -275,6 +276,10 @@ struct sde_encoder_virt {
 
 	struct device *sysfs_dev;
 	u32 missed_event_count[MSM_ENC_WAIT_MAX];
+
+	/* uio driver */
+	struct uio_info uio_info;
+	struct sde_encoder_hw_resources *uio_hw_res;
 };
 
 #define to_sde_encoder_virt(x) container_of(x, struct sde_encoder_virt, base)
@@ -288,6 +293,14 @@ struct sde_encoder_virt {
 void sde_encoder_get_hw_resources(struct drm_encoder *encoder,
 		struct sde_encoder_hw_resources *hw_res,
 		struct drm_connector_state *conn_state);
+
+/**
+ * sde_encoder_uio_init: Initializes a UIO driver for the provided encoder.
+ ** @encoder:	encoder pointer
+ * @hw_res:	resource table to populate UIO maps with
+ */
+int sde_encoder_uio_init(struct drm_encoder *encoder,
+		struct sde_encoder_hw_resources *hw_res);
 
 /**
  * sde_encoder_trigger_rsc_state_change - rsc state change.

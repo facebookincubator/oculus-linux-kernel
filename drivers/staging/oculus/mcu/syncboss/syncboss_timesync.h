@@ -6,6 +6,7 @@
 #include <linux/ktime.h>
 #include <linux/notifier.h>
 #include <linux/of_platform.h>
+#include <linux/gpio/consumer.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/syncboss/consumer.h>
 
@@ -24,7 +25,7 @@ struct timesync_dev_data {
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pinctrl_default_state;
 	struct pinctrl_state *pinctrl_active_state;
-	int gpio;
+	struct gpio_desc *gpio;
 
 	/* Timer used for scheduling timesync_gpio toggles */
 	struct hrtimer timer;
@@ -66,6 +67,7 @@ struct timesync_dev_data {
 		 * index 40 -> >= +20us
 		 */
 		uint32_t histogram[DRIFT_HISTOGRAM_SIZE];
+		uint64_t sync_count;
 		uint64_t prev_ap_ts_us;
 		uint64_t prev_mcu_ts_us;
 		int64_t max_drift_us;

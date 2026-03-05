@@ -1055,6 +1055,14 @@ static int dsi_panel_stark_olivia_set_pwm(struct dsi_panel *panel, u32 bl_lvl)
 	left_settle = (left_scanline - (timing->v_back_porch + timing->v_sync_width + timing->v_active)) * panel_1h_ns / 1000;
 	right_settle = (right_scanline - (timing->v_back_porch + timing->v_sync_width + timing->v_active / 2)) * panel_1h_ns / 1000;
 
+	if (bl_config->override_blu_delta_left || bl_config->override_blu_delta_right) {
+		DSI_INFO("Using backlight timing overrides.\n");
+		if (bl_config->override_blu_delta_left)
+			left_scanline += bl_config->override_blu_delta_left - 10000;
+		if (bl_config->override_blu_delta_right)
+			right_scanline += bl_config->override_blu_delta_right - 10000;
+	}
+
 	if (right_scanline > vtotal)
 		right_scanline -= vtotal;
 	if (left_scanline > vtotal)
@@ -2300,7 +2308,7 @@ static int dsi_panel_parse_avr_caps(struct dsi_panel *panel,
 		return rc;
 	} else if (val > 1 && val != panel->dfps_caps.dfps_list_len) {
 		DSI_ERR("[%s] avr step list size %d not same as dfps list %d\n",
-				val, panel->dfps_caps.dfps_list_len);
+				panel->name, val, panel->dfps_caps.dfps_list_len);
 		return -EINVAL;
 	}
 

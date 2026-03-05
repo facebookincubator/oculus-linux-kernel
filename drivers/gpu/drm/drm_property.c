@@ -30,6 +30,7 @@
 #include <drm/drm_property.h>
 
 #include "drm_crtc_internal.h"
+#include "drm_trace_atomic.h"
 
 /**
  * DOC: overview
@@ -99,16 +100,23 @@ struct drm_property *drm_property_create(struct drm_device *dev,
 {
 	struct drm_property *property = NULL;
 	int ret;
+	DRM_ATRACE_FUNC_BEGIN();
 
-	if (WARN_ON(!drm_property_flags_valid(flags)))
+	if (WARN_ON(!drm_property_flags_valid(flags))) {
+		DRM_ATRACE_FUNC_END();
 		return NULL;
+	}
 
-	if (WARN_ON(strlen(name) >= DRM_PROP_NAME_LEN))
+	if (WARN_ON(strlen(name) >= DRM_PROP_NAME_LEN)) {
+		DRM_ATRACE_FUNC_END();
 		return NULL;
+	}
 
 	property = kzalloc(sizeof(struct drm_property), GFP_KERNEL);
-	if (!property)
+	if (!property) {
+		DRM_ATRACE_FUNC_END();
 		return NULL;
+	}
 
 	property->dev = dev;
 
@@ -132,10 +140,12 @@ struct drm_property *drm_property_create(struct drm_device *dev,
 
 	list_add_tail(&property->head, &dev->mode_config.property_list);
 
+	DRM_ATRACE_FUNC_END();
 	return property;
 fail:
 	kfree(property->values);
 	kfree(property);
+	DRM_ATRACE_FUNC_END();
 	return NULL;
 }
 EXPORT_SYMBOL(drm_property_create);
@@ -334,18 +344,24 @@ struct drm_property *drm_property_create_object(struct drm_device *dev,
 						uint32_t type)
 {
 	struct drm_property *property;
+	DRM_ATRACE_FUNC_BEGIN();
 
 	flags |= DRM_MODE_PROP_OBJECT;
 
-	if (WARN_ON(!(flags & DRM_MODE_PROP_ATOMIC)))
+	if (WARN_ON(!(flags & DRM_MODE_PROP_ATOMIC))) {
+		DRM_ATRACE_FUNC_END();
 		return NULL;
+	}
 
 	property = drm_property_create(dev, flags, name, 1);
-	if (!property)
+	if (!property) {
+		DRM_ATRACE_FUNC_END();
 		return NULL;
+	}
 
 	property->values[0] = type;
 
+	DRM_ATRACE_FUNC_END();
 	return property;
 }
 EXPORT_SYMBOL(drm_property_create_object);
