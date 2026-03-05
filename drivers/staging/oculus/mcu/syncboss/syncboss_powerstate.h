@@ -32,8 +32,11 @@ struct powerstate_dev_data {
 	/* True if syncboss controls a prox sensor */
 	bool has_prox;
 
-	/* True if prox calibration data is not required for prox to work */
-	bool has_no_prox_cal;
+	/* True if prox calibration data is required for prox to work */
+	bool requires_prox_cal;
+
+	/* True if prox calibration read has been attempted */
+	bool prox_cal_read_attempted;
 
 	/* prox calibration values */
 	int prox_canc;

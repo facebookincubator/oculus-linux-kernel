@@ -722,6 +722,9 @@ static ssize_t charger_plugged_store(struct device *dev,
 	power_supply_changed(pd->usb_psy);
 	ext_batt_psy_notifier_call(&pd->nb, PSY_EVENT_PROP_CHANGED,
 			pd->battery_psy);
+
+	sysfs_notify(&pd->dev->kobj, NULL, "charger_plugged");
+
 	return count;
 }
 static DEVICE_ATTR_RW(charger_plugged);
@@ -751,6 +754,8 @@ static ssize_t connected_store(struct device *dev,
 	}
 
 	pd->connected = temp;
+
+	sysfs_notify(&pd->dev->kobj, NULL, "connected");
 
 	return count;
 }

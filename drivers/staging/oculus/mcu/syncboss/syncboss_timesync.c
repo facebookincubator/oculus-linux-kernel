@@ -2,10 +2,10 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/of.h>
-#include <linux/of_gpio.h>
 #include <linux/slab.h>
 #include <linux/version.h>
 #include <linux/syncboss/consumer.h>
@@ -24,7 +24,9 @@ static void reset_histogram(struct timesync_dev_data *devdata)
 
 static void reset_timesync_values(struct timesync_dev_data *devdata)
 {
-	spin_lock(&devdata->lock);
+	unsigned long flags;
+
+	spin_lock_irqsave(&devdata->lock, flags);
 
 	devdata->waiting_for_msg = false;
 	devdata->ap_ts_us = 0;
@@ -41,9 +43,10 @@ static void reset_timesync_values(struct timesync_dev_data *devdata)
 	devdata->stats.prev_mcu_ts_us = 0;
 	devdata->stats.min_drift_us = 0;
 	devdata->stats.max_drift_us = 0;
+	devdata->stats.sync_count = 0;
 	reset_histogram(devdata);
 
-	spin_unlock(&devdata->lock);
+	spin_unlock_irqrestore(&devdata->lock, flags);
 }
 
 static void trigger_timesync_event(struct timesync_dev_data *devdata)
@@ -62,35 +65,52 @@ static void trigger_timesync_event(struct timesync_dev_data *devdata)
 	devdata->stats.prev_ap_ts_us = devdata->ap_ts_us;
 
 	/* The following two lines should be as close together as possible */
-	gpio_set_value(devdata->gpio, 1);
+	gpiod_set_value(devdata->gpio, 1);
 	devdata->ap_ts_us = ktime_to_us(ktime_get());
 	spin_unlock_irqrestore(&devdata->lock, flags);
 
 	udelay(1);
-	gpio_set_value(devdata->gpio, 0);
+	gpiod_set_value(devdata->gpio, 0);
 }
 
-static void enable_timesync(struct timesync_dev_data *devdata)
+static int enable_timesync(struct timesync_dev_data *devdata)
 {
+	struct device *dev = devdata->dev;
+	unsigned long flags;
+	int ret;
+
+	devdata->gpio = devm_gpiod_get(dev, "timesync", GPIOD_OUT_LOW);
+	if (IS_ERR(devdata->gpio)) {
+		ret = PTR_ERR(devdata->gpio);
+		dev_err(dev, "failed to get reset gpio: %d\n", ret);
+		return ret;
+	}
+
 	pinctrl_select_state(devdata->pinctrl, devdata->pinctrl_active_state);
 	trigger_timesync_event(devdata);
 
-	spin_lock(&devdata->lock);
+	spin_lock_irqsave(&devdata->lock, flags);
 	devdata->period_ktime = ms_to_ktime(devdata->period_ms);
-	spin_unlock(&devdata->lock);
+	spin_unlock_irqrestore(&devdata->lock, flags);
 
 	hrtimer_start(&devdata->timer, devdata->period_ktime, HRTIMER_MODE_REL);
+
+	return 0;
 }
 
 static void disable_timesync(struct timesync_dev_data *devdata)
 {
+	struct device *dev = devdata->dev;
+
 	hrtimer_cancel(&devdata->timer);
 	pinctrl_select_state(devdata->pinctrl, devdata->pinctrl_default_state);
+	devm_gpiod_put(dev, devdata->gpio);
 }
 
 static int syncboss_state_handler(struct notifier_block *nb, unsigned long event, void *p)
 {
 	struct timesync_dev_data *devdata = container_of(nb, struct timesync_dev_data, syncboss_state_nb);
+	int ret;
 
 	switch (event) {
 	case SYNCBOSS_EVENT_STREAMING_STARTING:
@@ -99,7 +119,9 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 		return NOTIFY_OK;
 	case SYNCBOSS_EVENT_STREAMING_STARTED:
 	case SYNCBOSS_EVENT_STREAMING_RESUMED:
-		enable_timesync(devdata);
+		ret = enable_timesync(devdata);
+		if (ret < 0)
+			return NOTIFY_BAD;
 		return NOTIFY_OK;
 	case SYNCBOSS_EVENT_STREAMING_STOPPING:
 	case SYNCBOSS_EVENT_STREAMING_SUSPENDING:
@@ -133,6 +155,7 @@ static void update_stats(struct timesync_dev_data *devdata,
 		else
 			idx = drift_us + DRIFT_HISTOGRAM_OFFSET;
 		++devdata->stats.histogram[idx];
+		++devdata->stats.sync_count;
 	}
 }
 
@@ -230,13 +253,42 @@ static enum hrtimer_restart timer_callback(struct hrtimer *timer)
 	return HRTIMER_RESTART;
 }
 
+static ssize_t sync_count_show(
+		struct device *dev,
+		struct device_attribute *attr, char *buf) {
+	struct timesync_dev_data *devdata = dev_get_drvdata(dev);
+	unsigned long flags;
+	size_t ret;
+
+	spin_lock_irqsave(&devdata->lock, flags);
+	ret = scnprintf(buf, PAGE_SIZE, "%llu\n", devdata->stats.sync_count);
+	spin_unlock_irqrestore(&devdata->lock, flags);
+
+	return ret;
+}
+static ssize_t sync_count_store(
+		struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count) {
+	struct timesync_dev_data *devdata = dev_get_drvdata(dev);
+	unsigned long flags;
+
+	spin_lock_irqsave(&devdata->lock, flags);
+	devdata->stats.sync_count = 0;
+	spin_unlock_irqrestore(&devdata->lock, flags);
+
+	return count;
+}
+static DEVICE_ATTR_RW(sync_count);
+
 static ssize_t drift_histogram_show(
 		struct device *dev,
 		struct device_attribute *attr, char *buf) {
 	struct timesync_dev_data *devdata = dev_get_drvdata(dev);
+	unsigned long flags;
 	int i, pos = 0;
 
-	spin_lock(&devdata->lock);
+	spin_lock_irqsave(&devdata->lock, flags);
 	pos += scnprintf(buf + pos, PAGE_SIZE - pos,
 			"usec per %dmsec: count\n",
 			devdata->period_ms);
@@ -248,7 +300,7 @@ static ssize_t drift_histogram_show(
 			i - DRIFT_HISTOGRAM_OFFSET,
 			devdata->stats.histogram[i]);
 	}
-	spin_unlock(&devdata->lock);
+	spin_unlock_irqrestore(&devdata->lock, flags);
 
 	return pos;
 }
@@ -257,10 +309,11 @@ static ssize_t drift_histogram_store(
 		struct device_attribute *attr,
 	        const char *buf, size_t count) {
 	struct timesync_dev_data *devdata = dev_get_drvdata(dev);
+	unsigned long flags;
 
-	spin_lock(&devdata->lock);
+	spin_lock_irqsave(&devdata->lock, flags);
 	reset_histogram(devdata);
-	spin_unlock(&devdata->lock);
+	spin_unlock_irqrestore(&devdata->lock, flags);
 
 	return count;
 }
@@ -270,11 +323,12 @@ static ssize_t max_drift_us_show(
 		struct device *dev,
 		struct device_attribute *attr, char *buf) {
 	struct timesync_dev_data *devdata = dev_get_drvdata(dev);
+	unsigned long flags;
 	size_t ret;
 
-	spin_lock(&devdata->lock);
+	spin_lock_irqsave(&devdata->lock, flags);
 	ret = scnprintf(buf, PAGE_SIZE, "%lld\n", devdata->stats.max_drift_us);
-	spin_unlock(&devdata->lock);
+	spin_unlock_irqrestore(&devdata->lock, flags);
 
 	return ret;
 }
@@ -283,10 +337,11 @@ static ssize_t max_drift_us_store(
 		struct device_attribute *attr,
 	        const char *buf, size_t count) {
 	struct timesync_dev_data *devdata = dev_get_drvdata(dev);
+	unsigned long flags;
 
-	spin_lock(&devdata->lock);
+	spin_lock_irqsave(&devdata->lock, flags);
 	devdata->stats.max_drift_us = 0;
-	spin_unlock(&devdata->lock);
+	spin_unlock_irqrestore(&devdata->lock, flags);
 
 	return count;
 }
@@ -296,11 +351,12 @@ static ssize_t min_drift_us_show(
 		struct device *dev,
 		struct device_attribute *attr, char *buf) {
 	struct timesync_dev_data *devdata = dev_get_drvdata(dev);
+	unsigned long flags;
 	size_t ret;
 
-	spin_lock(&devdata->lock);
+	spin_lock_irqsave(&devdata->lock, flags);
 	ret = scnprintf(buf, PAGE_SIZE, "%lld\n", devdata->stats.min_drift_us);
-	spin_unlock(&devdata->lock);
+	spin_unlock_irqrestore(&devdata->lock, flags);
 
 	return ret;
 }
@@ -309,10 +365,11 @@ static ssize_t min_drift_us_store(
 		struct device_attribute *attr,
 	        const char *buf, size_t count) {
 	struct timesync_dev_data *devdata = dev_get_drvdata(dev);
+	unsigned long flags;
 
-	spin_lock(&devdata->lock);
+	spin_lock_irqsave(&devdata->lock, flags);
 	devdata->stats.min_drift_us = 0;
-	spin_unlock(&devdata->lock);
+	spin_unlock_irqrestore(&devdata->lock, flags);
 
 	return count;
 }
@@ -322,11 +379,12 @@ static ssize_t period_ms_show(
 		struct device *dev,
 		struct device_attribute *attr, char *buf) {
 	struct timesync_dev_data *devdata = dev_get_drvdata(dev);
+	unsigned long flags;
 	int ret;
 
-	spin_lock(&devdata->lock);
+	spin_lock_irqsave(&devdata->lock, flags);
 	ret = scnprintf(buf, PAGE_SIZE, "%d\n", devdata->period_ms);
-	spin_unlock(&devdata->lock);
+	spin_unlock_irqrestore(&devdata->lock, flags);
 
 	return ret;
 }
@@ -335,12 +393,13 @@ static ssize_t period_ms_store(
 		struct device_attribute *attr,
 	        const char *buf, size_t count) {
 	struct timesync_dev_data *devdata = dev_get_drvdata(dev);
+	unsigned long flags;
 	int ret = count;
 
-	spin_lock(&devdata->lock);
+	spin_lock_irqsave(&devdata->lock, flags);
 	if (kstrtou32(buf, 10, &devdata->period_ms))
 		ret = -EINVAL;
-	spin_unlock(&devdata->lock);
+	spin_unlock_irqrestore(&devdata->lock, flags);
 
 	return ret;
 }
@@ -351,6 +410,7 @@ static const struct attribute *timesync_attrs[] = {
 	&dev_attr_min_drift_us.attr,
 	&dev_attr_max_drift_us.attr,
 	&dev_attr_period_ms.attr,
+	&dev_attr_sync_count.attr,
 	NULL
 };
 
@@ -398,14 +458,6 @@ static int syncboss_timesync_probe(struct platform_device *pdev)
 	devdata->pinctrl_active_state = pinctrl_lookup_state(devdata->pinctrl, "active");
 	if (IS_ERR(devdata->pinctrl_active_state)) {
 		dev_err(dev, "pinctrl has no active state\n");
-		goto err_after_get_parent;
-	}
-
-	devdata->gpio = of_get_named_gpio(
-		dev->of_node, "timesync-gpio", 0);
-	if (!gpio_is_valid(devdata->gpio)) {
-		dev_err(dev, "invalid gpio\n");
-		ret = devdata->gpio;
 		goto err_after_get_parent;
 	}
 

@@ -2674,6 +2674,7 @@ int sde_rm_reserve(
 	struct sde_kms *sde_kms;
 	struct msm_compression_info *comp_info;
 	int ret = 0;
+	bool init_uio = false;
 
 	if (!rm || !enc || !crtc_state || !conn_state) {
 		SDE_ERROR("invalid arguments\n");
@@ -2798,6 +2799,7 @@ int sde_rm_reserve(
 		if (test_only && RM_RQ_LOCK(&reqs))
 			SDE_DEBUG("test_only & LOCK: lock rsvp[s%de%d]\n",
 					rsvp_nxt->seq, rsvp_nxt->enc_id);
+		init_uio = !test_only;
 	}
 
 commit_rsvp:
@@ -2809,6 +2811,14 @@ end:
 	kfree(comp_info);
 	_sde_rm_print_rsvps(rm, SDE_RM_STAGE_FINAL);
 	mutex_unlock(&rm->rm_lock);
+
+	/*
+	 * Initialize the UIO device for this encoder if hardware requirements
+	 * were populated above and not only for testing. This must be called
+	 * outside the `rm_lock` mutex to avoid deadlocks.
+	 */
+	if (init_uio)
+		sde_encoder_uio_init(enc, &reqs.hw_res);
 
 	return ret;
 }

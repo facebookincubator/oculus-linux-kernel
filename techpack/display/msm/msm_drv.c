@@ -100,7 +100,7 @@ static void msm_drm_bl_scale_worker(struct work_struct *work)
 	struct msm_drm_bl_scale_work_data *work_data = container_of(work, struct msm_drm_bl_scale_work_data, work.work);
 
 	if (work_data->bl_config && work_data->bl_device) {
-		DRM_DEBUG("Setting bl_scale_brightness to: %d\n", __LINE__, work_data->bl_scale);
+		DRM_DEBUG("Setting bl_scale_brightness to: %d\n", work_data->bl_scale);
 		if (work_data->dirty & MSM_BL_SCALE_MASK_BRIGHTNESSS)
 			work_data->bl_config->bl_scale_brightness = work_data->bl_scale;
 		if (work_data->dirty & MSM_BL_SCALE_MASK_SETTLE_TIME)

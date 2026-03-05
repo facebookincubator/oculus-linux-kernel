@@ -3902,6 +3902,32 @@ static void dwc3_gadget_disconnect_interrupt(struct dwc3 *dwc)
 static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 {
 	u32			reg;
+	bool			was_enumerated;
+
+	/* Check if device was enumerated (configured state means enumeration complete) */
+	was_enumerated = (dwc->gadget->state == USB_STATE_CONFIGURED);
+
+	/* Read current link state from DSTS register */
+	reg = dwc3_readl(dwc->regs, DWC3_DSTS);
+
+	/*
+	 * Only report reset if device was already enumerated.
+	 * Normal enumeration involves 2 resets which we should ignore.
+	 */
+	if (was_enumerated) {
+		char reset_type_str[64];
+		char *envp[2] = { NULL, NULL };
+
+		/* Log and report abnormal reset */
+		dev_err(dwc->dev, "Abnormal USB Reset received\n");
+
+		/* Send event to userspace (USB HAL) */
+		strscpy(reset_type_str, "USB_RESET_EVENT", sizeof("USB_RESET_EVENT"));
+		envp[0] = reset_type_str;
+		envp[1] = NULL;
+		kobject_uevent_env(&dwc->dev->kobj, KOBJ_CHANGE, envp);
+		dev_dbg(dwc->dev, "USB_RESET_EVENT uevent sent to USB HAL\n");
+	}
 
 	/*
 	 * Ideally, dwc3_reset_gadget() would trigger the function
@@ -4422,6 +4448,12 @@ static irqreturn_t dwc3_check_event_buf(struct dwc3_event_buffer *evt)
 	count &= DWC3_GEVNTCOUNT_MASK;
 	if (!count || count > evt->length)
 		return IRQ_NONE;
+
+	if (count > evt->length) {
+		dev_err_ratelimited(dwc->dev, "invalid count(%u) > evt->length(%u)\n",
+			count, evt->length);
+		return IRQ_NONE;
+	}
 
 	evt->count = count;
 	evt->flags |= DWC3_EVENT_PENDING;

@@ -47,6 +47,8 @@
 
 #define MDP_MAX 2
 
+#define CUBE(x) ((u64)(x) * (x) * (x) / 1000000ULL)
+
 u8 dbgfs_tx_cmd_buf[SZ_4K];
 static char dsi_display_primary[MAX_CMDLINE_PARAM_LEN];
 static char dsi_display_secondary[MAX_CMDLINE_PARAM_LEN];
@@ -251,6 +253,9 @@ int dsi_display_set_backlight(struct drm_connector *connector,
 	u32 bl_scale, bl_scale_sv;
 	u64 bl_temp;
 	int rc = 0;
+	/* Variables for perceptual lightness calculation */
+	u32 scale, threshold, linear_gain, offset;
+	u64 bl_lvl_tmp = 0, lightness = 0;
 
 	if (dsi_display == NULL || dsi_display->panel == NULL)
 		return -EINVAL;
@@ -261,6 +266,46 @@ int dsi_display_set_backlight(struct drm_connector *connector,
 	if (!dsi_panel_initialized(panel)) {
 		rc = -EINVAL;
 		goto error;
+	}
+
+	/* Perceptual brightness override */
+	if (panel->bl_config.perceptual_brightness_override > 0) {
+		/*
+		 * Perceptual lightness transformation using CIE L* formula
+		 * approximation. Fixed-point constants are scaled by 1000.
+		 */
+		scale = 1000;
+		threshold = (24 * scale) / 116;      /* ~206 */
+		linear_gain = (108 * scale) / 841;   /* ~128 */
+		offset = (16 * scale) / 116;         /* ~137 */
+
+		/*
+		 * We assume that bl_lvl is lightness ranging from 0 to 1000.
+		 * However, the minimum display luminance we can set on Quest 3
+		 * and Quest 3S is 15 nits. If we convert that luminance into
+		 * lightness, it's approximately 456.
+		 */
+		bl_lvl_tmp = (1000 - 456) * bl_lvl / 1000 + 456;
+		/*
+		 * By definition, CIE L* ranges from 0 to 100 while bl_lvl and
+		 * bl_lvl_tmp range from 0 to 1000. To optimize fixed-point math,
+		 * we scale bl_lvl_tmp up to 10^5, so we can minimize the loss of
+		 * precision in the following CIE L* formula.
+		 */
+		bl_lvl_tmp *= 100;
+
+		/* Compute lightness in fixed-point (scaled by 1000) */
+		lightness = (bl_lvl_tmp + 16000) / 116;
+		if (lightness > threshold) {
+			/* Cube the fixed-point value, lightness (L*) will be still from 0 to 1000*/
+			lightness = CUBE(lightness);
+		} else {
+			lightness = (linear_gain * (lightness - offset)) / 1000;
+		}
+		/* Remap lightness back to the original display duty scale (0 to 1000) */
+		lightness = 100 * lightness / 85;
+		lightness = (lightness > 176) ? (lightness - 176) : 0;
+		bl_lvl = (u32)lightness;
 	}
 
 	panel->bl_config.bl_level = bl_lvl;
@@ -290,8 +335,8 @@ int dsi_display_set_backlight(struct drm_connector *connector,
 	if (bl_temp && (bl_temp < panel->bl_config.bl_min_level))
 		bl_temp = panel->bl_config.bl_min_level;
 
-	DSI_DEBUG("bl_scale_brightness = %d bl_scale = %u, bl_scale_sv = %u, bl_lvl = %u\n",
-		panel->bl_config.bl_scale_brightness, bl_scale, bl_scale_sv, (u32)bl_temp);
+	DSI_DEBUG("lightness = %llu, bl_scale_brightness = %d bl_scale = %u, bl_scale_sv = %u, bl_lvl = %u\n",
+		lightness, panel->bl_config.bl_scale_brightness, bl_scale, bl_scale_sv, (u32)bl_temp);
 
 	/* Save the new value of bl, if the backlight scaling is on. */
 	if (panel->bl_config.bl_scale_brightness)

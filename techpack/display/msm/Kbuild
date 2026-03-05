@@ -83,6 +83,9 @@ CHIP_NAME ?= $(MODNAME)
 CDEFINES += -DMULTI_IF_NAME=\"$(CHIP_NAME)\"
 endif
 
+ccflags-y += -Wformat-extra-args -Wstrict-prototypes -Wformat-insufficient-args \
+		-Wformat-invalid-specifier -Wformat-zero-length -Wnonnull
+
 ######### CONFIG_DRM_MSM ########
 obj-m += msm_drm.o
 

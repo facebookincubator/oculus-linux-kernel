@@ -97,6 +97,8 @@ struct gpu_work_period {
 	struct list_head list;
 	/** @uid: application unique identifier */
 	uid_t uid;
+	/** @pid: pid */
+	pid_t pid;
 	/** @active: Total amount of time the GPU spent running work */
 	u64 active;
 	/** @cmds: Total number of commands completed within work period */

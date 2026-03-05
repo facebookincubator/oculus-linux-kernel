@@ -585,9 +585,9 @@ int msm_vidc_scale_power(struct msm_vidc_inst *inst, bool scale_buses)
 	}
 	/*
 	 * MVHEVC decode has single input buffer with 2 views,
-	 * so double the FPS to match dual-view input rate for proper clock calculation
+	 * double the FPS to match dual-view input rate for proper clock calculation.
 	 */
-	if (is_multi_view_session(inst))
+	if (is_decode_session(inst) && is_multi_view_session(inst))
 		fps = fps * 2;
 	inst->max_rate = fps;
 

@@ -44,6 +44,15 @@ config DRM_DP_AUX_CHARDEV
 	  read and write values to arbitrary DPCD registers on the DP aux
 	  channel.
 
+config DRM_ATRACE
+	bool "Enable tracing for DRM via trace_puts"
+	default n
+	depends on DRM && DEBUG_KERNEL
+	help
+	  Enable tracing for DRM via trace_puts. This can be used to trace DRM
+	  events in Perfetto traces. This should not be enabled in production
+	  kernels since it relies on trace_printk buffers.
+
 config DRM_DEBUG_MM
 	bool "Insert extra checks and debug info into the DRM range managers"
 	default n

@@ -76,16 +76,20 @@ struct uapi_pkt_v3_t {
 	uint8_t payload[SYNCBOSS_MAX_DATA_PKT_SIZE];
 } __attribute__((packed));
 
-/* Max number of stream events to filter */
-#define SYNCBOSS_MAX_FILTERED_TYPES 16
+/* Max number of packet types */
+#define SYNCBOSS_NUM_PACKET_TYPES 256
+#define SYNCBOSS_ALLOWLIST_LEN \
+	DIV_ROUND_UP(SYNCBOSS_NUM_PACKET_TYPES, sizeof(uint64_t) * __CHAR_BIT__)
+
+#define SYNCBOSS_FILTER_FLAG_CLEAR_STREAM 1
 
 /* Struct passed to SYNCBOSS_SET_STREAMFILTER_IOCTL which is used to
  * specify the set of desired stream event types a client is
  * interested in.
  */
 struct syncboss_driver_stream_type_filter {
-	uint8_t selected_types[SYNCBOSS_MAX_FILTERED_TYPES];
-	uint8_t num_selected;
+	uint64_t allowlist[SYNCBOSS_ALLOWLIST_LEN];
+	uint32_t flags;
 } __attribute__((packed));
 
 struct syncboss_nsync_event {

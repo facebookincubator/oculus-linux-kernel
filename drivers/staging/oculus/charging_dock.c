@@ -28,7 +28,7 @@ struct charging_dock_request_work_item {
 static int batt_psy_notifier_call(struct notifier_block *nb,
 	unsigned long ev, void *ptr);
 
-static void charging_dock_send_vdm_request(
+static int charging_dock_send_vdm_request(
 	struct charging_dock_device_t *ddev, u32 parameter, u32 vdo, int num_vdos)
 {
 	u32 vdm_header = 0;
@@ -38,7 +38,7 @@ static void charging_dock_send_vdm_request(
 	if (num_vdos > 1) {
 		dev_err(ddev->dev,
 			"Error: send_vdm_request only supports a max of 1 VDO");
-		return;
+		return -EINVAL;
 	}
 
 	/* header(32) = svid(16) ack(1) proto(2) high(1) size(3) param(8) */
@@ -50,7 +50,7 @@ static void charging_dock_send_vdm_request(
 	}
 
 	if (!sub_data)
-		return;
+		return -ENODEV;
 
 	reinit_completion(&ddev->rx_complete);
 
@@ -58,7 +58,7 @@ static void charging_dock_send_vdm_request(
 	if (result != 0) {
 		dev_err(ddev->dev,
 			"Error sending vdm, parameter type:%d, result:%d", parameter, result);
-		return;
+		return result;
 	}
 
 	dev_dbg(ddev->dev, "Sent vdm: header=0x%x, num_vdos= %d, vdo=0x%x",
@@ -71,8 +71,10 @@ static void charging_dock_send_vdm_request(
 	if (!result || (result && ddev->ack_parameter != parameter)) {
 		dev_err(ddev->dev, "%s: failed to receive ack, ret=%d ack_param=%d sent_param=%d\n", __func__,
 			result, ddev->ack_parameter, parameter);
-		return;
+		return -ETIMEDOUT;
 	}
+
+	return 0;
 }
 
 static void charging_dock_handle_queued_request_work(struct work_struct *work)
@@ -242,10 +244,14 @@ static void charging_dock_usbvdm_connect(struct usbvdm_subscription *sub,
 
 	sysfs_notify(&ddev->dev->kobj, NULL, "docked");
 
-	if (pid == VDM_PID_MOKU_APP) {
+	switch (pid) {
+	case VDM_PID_MOKU_APP:
 		charging_dock_queue_initial_requests(ddev);
 		schedule_delayed_work(&ddev->periodic_work, msecs_to_jiffies(ddev->broadcast_period * 60 * 1000));
-	} else {
+		break;
+	case VDM_PID_NIKU:
+		break;
+	default:
 		schedule_work(&ddev->work);
 
 		if (ddev->send_state_of_charge) {
@@ -254,6 +260,7 @@ static void charging_dock_usbvdm_connect(struct usbvdm_subscription *sub,
 			batt_psy_notifier_call(&ddev->nb, PSY_EVENT_PROP_CHANGED,
 					ddev->battery_psy);
 		}
+		break;
 	}
 }
 
@@ -508,7 +515,14 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 
 	switch (parameter_type) {
 	case PARAMETER_TYPE_FW_VERSION_NUMBER:
-		if (ddev->current_pid == VDM_PID_MOKU_APP) {
+		if (ddev->current_pid == VDM_PID_NIKU) {
+			if (num_vdos != 3) {
+				dev_err(ddev->dev, "Error: expected 3 VDOs for Niku FW Version but received %d\n", num_vdos);
+			} else {
+				ddev->params.fw_version = (((u64) vdos[0]) << 32) | vdos[1];
+				ddev->params.fw_version_secondary = vdos[2];
+			}
+		} else if (ddev->current_pid == VDM_PID_MOKU_APP) {
 			if (num_vdos != 2) {
 				dev_err(ddev->dev, "Error: expected 2 VDOs for Moku FW Version but received %d", num_vdos);
 			} else {
@@ -811,14 +825,44 @@ static ssize_t fw_version_show(struct device *dev,
 {
 	struct charging_dock_device_t *ddev =
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+	int rc;
 
 	if (ddev->current_pid == VDM_PID_MOKU_APP) {
+		return scnprintf(buf, PAGE_SIZE, "%llu\n", ddev->params.fw_version);
+	}
+
+	if (ddev->current_pid == VDM_PID_NIKU) {
+		mutex_lock(&ddev->lock);
+		rc = charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_FW_VERSION_NUMBER, 0, 0);
+		mutex_unlock(&ddev->lock);
+		if (rc)
+			return rc;
 		return scnprintf(buf, PAGE_SIZE, "%llu\n", ddev->params.fw_version);
 	}
 
 	return scnprintf(buf, PAGE_SIZE, "%u\n", (u32) ddev->params.legacy_fw_version);
 }
 static DEVICE_ATTR_RO(fw_version);
+
+static ssize_t fw_version_secondary_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct charging_dock_device_t *ddev =
+		(struct charging_dock_device_t *) dev_get_drvdata(dev);
+	int rc;
+
+	if (ddev->current_pid != VDM_PID_NIKU)
+		return -EINVAL;
+
+	mutex_lock(&ddev->lock);
+	rc = charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_FW_VERSION_NUMBER, 0, 0);
+	mutex_unlock(&ddev->lock);
+	if (rc)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", (u32) ddev->params.fw_version_secondary);
+}
+static DEVICE_ATTR_RO(fw_version_secondary);
 
 static ssize_t serial_number_mlb_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -1297,10 +1341,50 @@ static ssize_t port_3_board_temp_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(port_3_board_temp);
 
+static ssize_t switch_data_lanes_store(struct device *dev,
+				       struct device_attribute *attr,
+				       const char *buf, size_t count)
+{
+	struct charging_dock_device_t *ddev = dev_get_drvdata(dev);
+	unsigned int val;
+	int rc;
+
+	rc = kstrtouint(buf, 0, &val);
+	if (rc < 0 || val > 2) {
+		dev_err(ddev->dev, "Illegal input: %s", buf);
+		return -EINVAL;
+	}
+
+	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_SWITCH_DATA_LANES, val, 1);
+	return count;
+}
+static DEVICE_ATTR_WO(switch_data_lanes);
+
+static ssize_t chip_reset_store(struct device *dev,
+				struct device_attribute *attr, const char *buf,
+				size_t count)
+{
+	struct charging_dock_device_t *ddev = dev_get_drvdata(dev);
+	bool should_reset;
+	int rc;
+
+	rc = kstrtobool(buf, &should_reset);
+	if (rc < 0) {
+		dev_err(ddev->dev, "Illegal input: %s", buf);
+		return -EINVAL;
+	}
+
+	if (should_reset)
+		charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_CHIP_RESET, 0, 0);
+	return count;
+}
+static DEVICE_ATTR_WO(chip_reset);
+
 static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_docked.attr,
 	&dev_attr_broadcast_period.attr,
 	&dev_attr_fw_version.attr,
+	&dev_attr_fw_version_secondary.attr,
 	&dev_attr_serial_number_mlb.attr,
 	&dev_attr_serial_number_system.attr,
 	&dev_attr_log.attr,
@@ -1349,6 +1433,8 @@ static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_vid.attr,
 	&dev_attr_pid.attr,
 	&dev_attr_reboot_into_bootloader.attr,
+	&dev_attr_switch_data_lanes.attr,
+	&dev_attr_chip_reset.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(charging_dock);

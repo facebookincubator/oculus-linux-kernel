@@ -68,7 +68,7 @@ struct pdfu_data {
 	struct completion rx_complete;
 	struct pdfu_message *rx_msg;
 
-	char fw_path[MAX_FW_PATH_LEN];
+	char fw_path[MAX_FW_PATH_LEN + 1];
 	bool fw_manual_override;
 	const struct firmware *fw;
 
@@ -266,8 +266,8 @@ static int handle_state_acquisition(struct pdfu_data *pdfu)
 
 	if (!pdfu->fw_manual_override) {
 		memset(pdfu->fw_path, 0, sizeof(pdfu->fw_path));
-		rc = snprintf(pdfu->fw_path, MAX_FW_PATH_LEN, "%04x-%04x.pdfu",
-			      pdfu->vid, pdfu->pid);
+		rc = snprintf(pdfu->fw_path, sizeof(pdfu->fw_path),
+			      "%04x-%04x.pdfu", pdfu->vid, pdfu->pid);
 		if (rc < 0)
 			return rc;
 	}

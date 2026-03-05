@@ -291,7 +291,7 @@
 	qcom,panel-sec-reset-gpio = <&tlmm 140 0>;
 
 	meta,settling-time-target-us = <3600>;
-//	meta,temperature-dependent-backlight;
+	meta,temperature-dependent-backlight;
 	meta,response-time-curve =
 		<25000 6330>,
 		<30000 6050>,

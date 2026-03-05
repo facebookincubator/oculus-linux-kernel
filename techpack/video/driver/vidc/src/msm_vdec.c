@@ -1342,10 +1342,18 @@ static int msm_vdec_read_input_subcr_params(struct msm_vidc_inst *inst)
 	inst->buffers.output.extra_count = call_session_op(core,
 		extra_count, inst, MSM_VIDC_BUF_OUTPUT);
 	if (is_thumbnail_session(inst) && inst->codec != MSM_VIDC_VP9) {
-		if (inst->buffers.output.min_count != 1) {
-			i_vpr_e(inst, "%s: invalid min count %d in thumbnail case\n",
-				__func__, inst->buffers.output.min_count);
-			msm_vidc_change_state(inst, MSM_VIDC_ERROR, __func__);
+		if (is_multi_view_session(inst)) {
+			if (inst->buffers.output.min_count != 2) {
+				i_vpr_e(inst, "%s: invalid min count %d in mvhevc thumbnail case\n",
+					__func__, inst->buffers.output.min_count);
+				msm_vidc_change_state(inst, MSM_VIDC_ERROR, __func__);
+			}
+		} else {
+			if (inst->buffers.output.min_count != 1) {
+				i_vpr_e(inst, "%s: invalid min count %d in thumbnail case\n",
+					__func__, inst->buffers.output.min_count);
+				msm_vidc_change_state(inst, MSM_VIDC_ERROR, __func__);
+			}
 		}
 	}
 	inst->crop.top = subsc_params.crop_offsets[0] & 0xFFFF;

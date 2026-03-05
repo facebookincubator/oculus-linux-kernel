@@ -362,7 +362,7 @@ static void skewed_vsync_config(struct sde_encoder_phys *phys_enc,
 		cfg->skew_offset_line = min_skew_offset_line;
 
 	SDE_DEBUG_VIDENC(vid_enc,
-		 "skewed_vsync offset_line curr: %d old: %d is set to: %u skew en: %d\n",
+		 "skewed_vsync offset_line curr: %d is set to: %u skew en: %d\n",
 		 cfg->skew_offset_line, cfg->fixed_skew_offset_line, cfg->skew_intf_offset_en);
 	SDE_EVT32_VERBOSE(cfg->skew_offset_line, cfg->fixed_skew_offset_line,
 			cfg->skew_intf_offset_en,

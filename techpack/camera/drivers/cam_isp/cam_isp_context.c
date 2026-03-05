@@ -9429,7 +9429,7 @@ static void __cam_isp_ctx_ul_fastpath_populate_buf_hdls(
 
 static bool __cam_isp_ctx_ul_fastpath_match_for_primary_port(
 	uint32_t primary_res_type, uint32_t last_consumed_addr,
-	struct cam_ctx_request *req)
+	struct cam_ctx_request *req, uint32_t *buf_addr)
 {
 	uint32_t cmp_addr, primary_port_idx = 0;
 	struct cam_isp_ctx_req *req_isp = (struct cam_isp_ctx_req *)req->req_priv;
@@ -9442,9 +9442,88 @@ static bool __cam_isp_ctx_ul_fastpath_match_for_primary_port(
 		req_isp->fence_map_out[primary_port_idx].image_buf_addr[0]) :
 		req_isp->fence_map_out[primary_port_idx].image_buf_addr[0];
 
+	*buf_addr = cmp_addr;
 	if (cmp_addr == last_consumed_addr)
 		return true;
 	return false;
+}
+
+static bool __cam_isp_ctx_ul_fastpath_iterate_req_list(
+	int32_t *result_idx, uint32_t last_consumed_addr, uint64_t timestamp,
+	uint64_t boot_timestamp, struct cam_context *ctx,
+	struct response_buffer *response_buffers, uint32_t status,
+	struct list_head *req_list, bool is_active_list, bool skip_check_match)
+{
+	bool found_match = false;
+	bool found_flag = false;
+	struct cam_isp_context *isp_ctx = (struct cam_isp_context *)ctx->ctx_priv;
+	struct cam_ctx_request *req, *req_tmp;
+	struct cam_isp_ctx_req *req_isp;
+	uint32_t req_buf_addr;
+	int i;
+
+	if (!list_empty(req_list)) {
+		/* Iterate through the wait list to find the match */
+		list_for_each_entry_safe(req, req_tmp, req_list, list) {
+			req_isp = (struct cam_isp_ctx_req *)req->req_priv;
+			if (req_isp->ul_fp_result_posted)
+				continue;
+			found_match = __cam_isp_ctx_ul_fastpath_match_for_primary_port(
+				isp_ctx->primary_port_info[0].res_id,
+				last_consumed_addr, req, &req_buf_addr);
+
+			if (found_match) {
+				found_flag = true;
+				break;
+			}
+		}
+	}
+
+	if (!list_empty(req_list) && (found_flag || skip_check_match)) {
+		/* Iterate through the req list to find the match */
+		list_for_each_entry_safe(req, req_tmp, req_list, list) {
+			req_isp = (struct cam_isp_ctx_req *)req->req_priv;
+
+			if (req_isp->ul_fp_result_posted)
+				continue;
+
+			if (!skip_check_match)
+				found_match = __cam_isp_ctx_ul_fastpath_match_for_primary_port(
+					isp_ctx->primary_port_info[0].res_id,
+					last_consumed_addr, req, &req_buf_addr);
+
+			req_isp->ul_fp_result_posted = true;
+			found_flag = true;
+			__cam_isp_ctx_ul_fastpath_populate_buf_hdls(result_idx,
+						timestamp, boot_timestamp, req->request_id, isp_ctx,
+						req_isp, response_buffers, status);
+			if (is_active_list) {
+				isp_ctx->active_req_cnt--;
+				__cam_isp_ctx_handle_req_reset_util(isp_ctx, req);
+			} else {
+				CAM_DBG(CAM_ISP,
+					"Match for last_consumed: 0x%x found in request: %llu in ctx: %u on link: 0x%x",
+					last_consumed_addr, req->request_id,
+					ctx->ctx_id, ctx->link_hdl);
+			}
+			for (i = 0; i < MAX_IO_PACKETS; i++) {
+				if (isp_ctx->ul_data.ul_signal_record[i][0] == req_buf_addr
+					|| isp_ctx->ul_data.ul_signal_record[i][0] == 0) {
+					isp_ctx->ul_data.ul_signal_record[i][2] =
+						last_consumed_addr;
+					isp_ctx->ul_data.ul_signal_record[i][1] =
+						jiffies_to_msecs(jiffies) - isp_ctx->init_timestamp;
+					isp_ctx->ul_data.ul_signal_record[i][0] = req_buf_addr;
+					break;
+				}
+			}
+
+			if (found_match)
+				return found_flag;
+		}
+	}
+
+	return found_flag;
 }
 
 static int __cam_isp_ctx_ul_fastpath_retrieve_result_util(
@@ -9452,101 +9531,77 @@ static int __cam_isp_ctx_ul_fastpath_retrieve_result_util(
 	uint64_t boot_timestamp, struct cam_context *ctx,
 	struct response_buffer *response_buffers, uint32_t status)
 {
-	int rc = -EAGAIN;
-	bool found_match;
+	int rc = -EAGAIN, i;
 	struct cam_isp_context *isp_ctx = (struct cam_isp_context *)ctx->ctx_priv;
-	struct cam_ctx_request *req, *req_tmp;
-	struct cam_isp_ctx_req *req_isp;
+	bool skip_check_match = false;
+	bool found = false;
 
 	mutex_lock(&isp_ctx->isp_mutex);
 
-	if (list_empty(&ctx->active_req_list)) {
-		/* Check in wait list */
-		if (!list_empty(&ctx->wait_req_list)) {
+	/* Check in active list */
+	found = __cam_isp_ctx_ul_fastpath_iterate_req_list(
+		result_idx, last_consumed_addr, timestamp, boot_timestamp,
+		ctx, response_buffers, status, &ctx->active_req_list, true,
+		skip_check_match);
+	if (found) {
+		rc = 0;
+		goto end;
+	};
 
-			/* Iterate through the wait list to find the match */
-			list_for_each_entry_safe(req, req_tmp, &ctx->wait_req_list, list) {
-				req_isp = (struct cam_isp_ctx_req *)req->req_priv;
-
-				if (req_isp->ul_fp_result_posted)
-					continue;
-
-				found_match = __cam_isp_ctx_ul_fastpath_match_for_primary_port(
-					isp_ctx->primary_port_info[0].res_id,
-					last_consumed_addr, req);
-
-				if (found_match) {
-					req_isp->ul_fp_result_posted = true;
-					__cam_isp_ctx_ul_fastpath_populate_buf_hdls(result_idx,
-						timestamp, boot_timestamp, req->request_id, isp_ctx,
-						req_isp, response_buffers, status);
-					CAM_WARN(CAM_ISP,
-						"Match for last_consumed: 0x%x found in request: %llu [wait list] in ctx: %u on link: 0x%x",
-						last_consumed_addr, req->request_id,
-						ctx->ctx_id, ctx->link_hdl);
-					rc = 0;
-					goto end;
-				}
-			}
-		}
-
-		/* Check in pending list */
-		if (!list_empty(&ctx->pending_req_list)) {
-
-			/* Iterate through the wait list to find the match */
-			list_for_each_entry_safe(req, req_tmp, &ctx->pending_req_list, list) {
-				req_isp = (struct cam_isp_ctx_req *)req->req_priv;
-
-				if (req_isp->ul_fp_result_posted)
-					continue;
-
-				found_match = __cam_isp_ctx_ul_fastpath_match_for_primary_port(
-					isp_ctx->primary_port_info[0].res_id,
-					last_consumed_addr, req);
-
-				if (found_match) {
-					req_isp->ul_fp_result_posted = true;
-					__cam_isp_ctx_ul_fastpath_populate_buf_hdls(result_idx,
-						timestamp, boot_timestamp, req->request_id,
-						isp_ctx, req_isp, response_buffers, status);
-					CAM_WARN(CAM_ISP,
-						"Match for last_consumed: 0x%x found in request: %llu [pending list] in ctx: %u on link: 0x%x",
-						last_consumed_addr, req->request_id,
-						ctx->ctx_id, ctx->link_hdl);
-					rc = 0;
-					goto end;
-				}
-			}
-		}
+	/* Check in wait list */
+	found = __cam_isp_ctx_ul_fastpath_iterate_req_list(
+		result_idx, last_consumed_addr, timestamp, boot_timestamp,
+		ctx, response_buffers, status, &ctx->wait_req_list, false,
+		skip_check_match);
+	if (found) {
+		CAM_WARN(CAM_ISP,
+			"Match for last_consumed: 0x%x found in wait list in ctx: %u on link: 0x%x",
+			last_consumed_addr, ctx->ctx_id, ctx->link_hdl);
+		skip_check_match = true;
+		rc = 0;
+		goto active_list;
 	}
 
-	/* Iterate through the active list to find the match */
-	list_for_each_entry_safe(req, req_tmp, &ctx->active_req_list, list) {
-		req_isp = (struct cam_isp_ctx_req *)req->req_priv;
-
-		if (req_isp->ul_fp_result_posted)
-			continue;
-
-		found_match = __cam_isp_ctx_ul_fastpath_match_for_primary_port(
-			isp_ctx->primary_port_info[0].res_id,
-			last_consumed_addr, req);
-
-		if (found_match) {
-			__cam_isp_ctx_ul_fastpath_populate_buf_hdls(result_idx,
-				timestamp, boot_timestamp, req->request_id, isp_ctx,
-				req_isp, response_buffers, status);
-			isp_ctx->active_req_cnt--;
-			__cam_isp_ctx_handle_req_reset_util(isp_ctx, req);
-			rc = 0;
-			goto end;
-		}
+	/* Check in pending list */
+	found = __cam_isp_ctx_ul_fastpath_iterate_req_list(
+		result_idx, last_consumed_addr, timestamp, boot_timestamp,
+		ctx, response_buffers, status, &ctx->pending_req_list, false,
+		skip_check_match);
+	if (found) {
+		CAM_WARN(CAM_ISP,
+			"Match for last_consumed: 0x%x found in pending list in ctx: %u on link: 0x%x",
+			last_consumed_addr, ctx->ctx_id, ctx->link_hdl);
+		skip_check_match = true;
+		rc = 0;
+		goto wait_list;
 	}
 
 	CAM_ERR(CAM_ISP,
 		"Fatal last_consumed: 0x%x not found in any request in ctx: %u on link: 0x%x",
 		last_consumed_addr, ctx->ctx_id, ctx->link_hdl);
 
-end:
+	CAM_INFO(CAM_ISP, "Dumping buffer signal info:");
+	for (i = 0; i < MAX_IO_PACKETS; i++)
+		CAM_INFO(CAM_ISP, "lca 0x%x   req_buf_addr 0x%x  result_ts 0x%x prepare_ts 0x%x",
+			isp_ctx->ul_data.ul_signal_record[i][2], isp_ctx->ul_data.ul_signal_record[i][0],
+			isp_ctx->ul_data.ul_signal_record[i][1], isp_ctx->ul_data.ul_signal_record[i][3]);
+
+	mutex_unlock(&isp_ctx->isp_mutex);
+	return rc;
+
+wait_list:
+	/* Check in wait list */
+	found = __cam_isp_ctx_ul_fastpath_iterate_req_list(
+		result_idx, last_consumed_addr, timestamp, boot_timestamp,
+		ctx, response_buffers, status, &ctx->wait_req_list, false,
+		skip_check_match);
+active_list:
+	/* Check in active list */
+	found = __cam_isp_ctx_ul_fastpath_iterate_req_list(
+		result_idx, last_consumed_addr, timestamp, boot_timestamp,
+		ctx, response_buffers, status, &ctx->active_req_list, true,
+		skip_check_match);
+ end:
 	mutex_unlock(&isp_ctx->isp_mutex);
 	return rc;
 }
@@ -11454,6 +11509,7 @@ static int cam_context_prepare_ul_request(struct cam_isp_context *ctx_isp)
 	uint8_t *producer_queue;
 	uint32_t rd_idx, wr_idx;
 	unsigned long flags;
+	int primary_port_idx;
 
 	if (list_empty(&cam_ctx->free_req_list)) {
 		CAM_INFO(CAM_ISP, "free list empty, returning ctx:%u",
@@ -11613,7 +11669,15 @@ static int cam_context_prepare_ul_request(struct cam_isp_context *ctx_isp)
 			req_isp->hw_update_data.virtual_frame_en = true;
 		}
 	}
-
+	primary_port_idx = req_isp->hw_update_data.primary_port_entry_index;
+	for (i = 0; i< MAX_IO_PACKETS; i++) {
+		if ((ctx_isp->ul_data.ul_signal_record[i][0] == req_isp->fence_map_out[primary_port_idx].image_buf_addr[0]) ||
+				ctx_isp->ul_data.ul_signal_record[i][0] == 0) {
+			ctx_isp->ul_data.ul_signal_record[i][0] = req_isp->fence_map_out[primary_port_idx].image_buf_addr[0];
+			ctx_isp->ul_data.ul_signal_record[i][3] = jiffies_to_msecs(jiffies) - ctx_isp->init_timestamp;
+			break;
+		}
+	}
 	for (i = 0; i < MAX_IO_RESOURCES; i++) {
 		if (!ctx_isp->ul_data.pattern_period[i].resource_type)
 			break;
@@ -11658,7 +11722,7 @@ static int __cam_isp_ctx_no_crm_apply(struct cam_isp_context *ctx_isp,
 	struct cam_isp_ctx_req           *req_isp;
 	struct cam_context               *cam_ctx = ctx_isp->base;
 	struct cam_ctx_ops               *ctx_ops = NULL;
-	struct cam_req_mgr_apply_request apply_req;
+	struct cam_req_mgr_apply_request apply_req = {0};
 	uint64_t prev_ts, curr_ts = 0, boot_ts;
 
 	CAM_DBG(CAM_ISP, "enter no crm apply ctx:%u", cam_ctx->ctx_id);
@@ -11671,7 +11735,7 @@ static int __cam_isp_ctx_no_crm_apply(struct cam_isp_context *ctx_isp,
 		return 0;
 	}
 
-	if (ctx_isp->ul_path_en)
+	if (ctx_isp->ul_path_en && list_empty(&cam_ctx->pending_req_list))
 		cam_context_prepare_ul_request(ctx_isp);
 	mutex_lock(&ctx_isp->isp_mutex);
 	if (list_empty(&cam_ctx->pending_req_list)) {

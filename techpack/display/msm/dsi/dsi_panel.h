@@ -211,6 +211,7 @@ struct dsi_backlight_config {
 	/* Debug tuning parameters */
 	u32 override_blu_delta_left;
 	u32 override_blu_delta_right;
+	u32 perceptual_brightness_override;
 
 	/* Temperature-dependent timing */
 	bool temperature_dependent_timing;

@@ -70,8 +70,12 @@ static int erase_page(struct device *dev, u32 page_to_erase)
 
 int stm32l47xxx_swd_prepare(struct device *dev)
 {
-	int status = stm32l47xxx_swd_wait_for_flash_ready(dev);
+	int status;
 
+	swd_init(dev);
+	swd_halt(dev);
+
+	status = stm32l47xxx_swd_wait_for_flash_ready(dev);
 	if (status != 0)
 		return status;
 

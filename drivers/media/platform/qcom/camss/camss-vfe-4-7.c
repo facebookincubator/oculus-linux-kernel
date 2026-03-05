@@ -1058,7 +1058,7 @@ static irqreturn_t vfe_isr(int irq, void *dev)
 
 	vfe->ops->isr_read(vfe, &value0, &value1);
 
-	trace_printk("VFE: status0 = 0x%08x, status1 = 0x%08x\n",
+	pr_debug("VFE: status0 = 0x%08x, status1 = 0x%08x\n",
 		     value0, value1);
 
 	if (value0 & VFE_0_IRQ_STATUS_0_RESET_ACK)

@@ -781,6 +781,242 @@ void sde_encoder_get_hw_resources(struct drm_encoder *drm_enc,
 		SDE_ERROR("failed to get compression info ret %d\n", ret);
 }
 
+static int _sde_encoder_uio_open(struct uio_info *info, struct inode *inode)
+{
+	struct drm_encoder *encoder = info->priv;
+
+	/* Ensure that the MDSS clocks are enabled while the device is open. */
+	pm_runtime_get_sync(encoder->dev->dev);
+
+	return 0;
+}
+
+static int _sde_encoder_uio_release(struct uio_info *info, struct inode *inode)
+{
+	struct drm_encoder *encoder = info->priv;
+
+	/* We can let go of the MDSS clocks when the device is released. */
+	pm_runtime_put_sync(encoder->dev->dev);
+
+	return 0;
+}
+
+static void _sde_encoder_uio_unregister_device(struct drm_encoder *encoder)
+{
+	struct sde_encoder_virt *sde_enc = to_sde_encoder_virt(encoder);
+	struct device *dev = encoder->dev->dev;
+	int i = 0;
+
+	/* Unregister the UIO device and free the allocated strings. */
+	uio_unregister_device(&sde_enc->uio_info);
+
+	if (sde_enc->uio_info.name)
+		SDE_INFO("unregistered UIO device \"%s\" for encoder %u\n",
+				sde_enc->uio_info.name, encoder->base.id);
+
+	for (i = 0; i < ARRAY_SIZE(sde_enc->uio_info.mem); i++)
+		devm_kfree(dev, sde_enc->uio_info.mem[i].name);
+	devm_kfree(dev, sde_enc->uio_info.name);
+	devm_kfree(dev, sde_enc->uio_info.version);
+
+	/* Clear the UIO device info. */
+	memset(&sde_enc->uio_info, 0, sizeof(struct uio_info));
+
+	/* Free the cached HW resources. */
+	devm_kfree(dev, sde_enc->uio_hw_res);
+	sde_enc->uio_hw_res = NULL;
+}
+
+static bool _sde_encoder_uio_init_required(struct drm_encoder *encoder,
+		struct sde_encoder_hw_resources *hw_res)
+{
+	struct sde_encoder_virt *sde_enc = to_sde_encoder_virt(encoder);
+	int i = 0;
+	bool needs_map = false;
+
+	/*
+	 * If there are no intfs/writebacks required for this encoder for some
+	 * reason then clear out any UIO device we already have and bail out.
+	 */
+	for (i = 0; i < ARRAY_SIZE(hw_res->intfs); i++) {
+		if (hw_res->intfs[i] != INTF_MODE_NONE) {
+			needs_map = true;
+			break;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(hw_res->wbs); i++) {
+		if (hw_res->wbs[i] != INTF_MODE_NONE) {
+			needs_map = true;
+			break;
+		}
+	}
+
+	if (!needs_map) {
+		_sde_encoder_uio_unregister_device(encoder);
+		return false;
+	}
+
+	/* If we don't have a UIO device yet then we need to register one. */
+	if (!sde_enc->uio_info.uio_dev || !sde_enc->uio_hw_res)
+		return true;
+
+	/*
+	 * If we already have a UIO device for this encoder then check if the
+	 * hardware resources have changed. If so, we need to re-register the
+	 * UIO device.
+	 */
+	for (i = 0; i < ARRAY_SIZE(hw_res->intfs); i++) {
+		if (sde_enc->uio_hw_res->intfs[i] != hw_res->intfs[i])
+			return true;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(hw_res->wbs); i++) {
+		if (sde_enc->uio_hw_res->wbs[i] != hw_res->wbs[i])
+			return true;
+	}
+
+	return false;
+}
+
+int _sde_encoder_fill_uio_mem(struct drm_encoder *encoder,
+		struct sde_hw_blk_reg_map *hw, u32 type, u32 id,
+		struct uio_mem *mem)
+{
+	struct device *dev = encoder->dev->dev;
+	struct platform_device *pdev = to_platform_device(dev);
+	const char *type_str = NULL;
+	phys_addr_t base_addr;
+
+	/*
+	 * Interface types are sparsely defined. Use a switch block to determine
+	 * the MMIO block names.
+	 */
+	switch (type) {
+	case INTF_DSI:
+		type_str = "dsi";
+		break;
+	case INTF_HDMI:
+		type_str = "hdmi";
+		break;
+	case INTF_LCDC:
+		type_str = "lcdc";
+		break;
+	case INTF_EDP:
+		type_str = "edp";
+		break;
+	case INTF_DP:
+		type_str = "dp";
+		break;
+	case INTF_WB:
+		type_str = "wb";
+		break;
+	default:
+		/* Invalid type for this function. */
+		SDE_ERROR("invalid type %u for uio device for encoder %u\n",
+				type, encoder->base.id);
+		return -EINVAL;
+	};
+
+	base_addr = msm_get_phys_addr(pdev, "mdp_phys") + hw->blk_off;
+	mem->name = devm_kasprintf(dev, GFP_KERNEL, "%s_%u", type_str, id);
+	mem->addr = base_addr & PAGE_MASK;
+	mem->offs = base_addr & ~PAGE_MASK;
+	mem->size = PAGE_ALIGN(mem->offs + hw->length);
+	mem->memtype = UIO_MEM_PHYS;
+
+	return 0;
+}
+
+int sde_encoder_uio_init(struct drm_encoder *encoder,
+		struct sde_encoder_hw_resources *hw_res)
+{
+	struct device *dev = encoder->dev->dev;
+	struct sde_encoder_virt *sde_enc = to_sde_encoder_virt(encoder);
+	struct sde_kms *sde_kms;
+	struct sde_rm_hw_iter intf_iter, wb_iter;
+	int rc = 0, map_count = 0;
+
+	/*
+	 * If we've already registered this encoder, and the required HW
+	 * resources haven't changed, we can bail out here.
+	 */
+	if (!_sde_encoder_uio_init_required(encoder, hw_res))
+		return 0;
+
+	/* Unregister the old UIO device (if necessary). */
+	_sde_encoder_uio_unregister_device(encoder);
+
+	/* We need KMS to be functional. */
+	sde_kms = sde_encoder_get_kms(encoder);
+	if (!sde_kms)
+		return -EINVAL;
+
+	/* Cache a copy of the hardware resources used for this UIO device. */
+	sde_enc->uio_hw_res = devm_kmemdup(dev, hw_res, sizeof(*hw_res), GFP_KERNEL);
+
+	/* UIO requires us to name and version the device. */
+	sde_enc->uio_info.name = devm_kasprintf(dev, GFP_KERNEL,
+			"msm_drm-encoder%u", encoder->base.id);
+	sde_enc->uio_info.version = devm_kasprintf(dev, GFP_KERNEL, "%u.%u.%u",
+			SDE_HW_MAJOR(sde_kms->catalog->hwversion),
+			SDE_HW_MINOR(sde_kms->catalog->hwversion),
+			SDE_HW_STEP(sde_kms->catalog->hwversion));
+
+	/* Add memory mappings for intfs/wbs. */
+	sde_rm_init_hw_iter(&intf_iter, encoder->base.id, SDE_HW_BLK_INTF);
+	while (sde_rm_get_hw(&sde_kms->rm, &intf_iter) &&
+			map_count < ARRAY_SIZE(sde_enc->uio_info.mem)) {
+		struct sde_hw_intf *intf =
+			(struct sde_hw_intf *)intf_iter.hw;
+
+		if (!intf)
+			continue;
+
+		rc = _sde_encoder_fill_uio_mem(encoder, &intf->hw,
+				intf->cap->type, intf->cap->controller_id,
+				&sde_enc->uio_info.mem[map_count++]);
+		if (rc)
+			goto uio_register_fail;
+	}
+
+	sde_rm_init_hw_iter(&wb_iter, encoder->base.id, SDE_HW_BLK_WB);
+	while (sde_rm_get_hw(&sde_kms->rm, &wb_iter) &&
+			map_count < ARRAY_SIZE(sde_enc->uio_info.mem)) {
+		struct sde_hw_wb *wb =
+			(struct sde_hw_wb *)wb_iter.hw;
+
+		if (!wb)
+			continue;
+
+		rc = _sde_encoder_fill_uio_mem(encoder, &wb->hw, INTF_WB,
+				wb->idx, &sde_enc->uio_info.mem[map_count++]);
+		if (rc)
+			goto uio_register_fail;
+	}
+
+	/* Hold a pointer to the encoder for the UIO callbacks. */
+	sde_enc->uio_info.priv = encoder;
+	sde_enc->uio_info.open = _sde_encoder_uio_open;
+	sde_enc->uio_info.release = _sde_encoder_uio_release;
+
+	rc = uio_register_device(dev, &sde_enc->uio_info);
+	if (rc) {
+		SDE_ERROR("unable to register uio device for encoder %u\n",
+				encoder->base.id);
+		goto uio_register_fail;
+	}
+
+	SDE_INFO("registered UIO device \"%s\" for encoder %u\n",
+			sde_enc->uio_info.name, encoder->base.id);
+
+uio_register_fail:
+	if (rc)
+		_sde_encoder_uio_unregister_device(encoder);
+
+	return rc;
+}
+
 void sde_encoder_destroy(struct drm_encoder *drm_enc)
 {
 	struct sde_encoder_virt *sde_enc = NULL;
@@ -791,6 +1027,8 @@ void sde_encoder_destroy(struct drm_encoder *drm_enc)
 		SDE_ERROR("invalid encoder\n");
 		return;
 	}
+
+	_sde_encoder_uio_unregister_device(drm_enc);
 
 	sde_enc = to_sde_encoder_virt(drm_enc);
 	SDE_DEBUG_ENC(sde_enc, "\n");

@@ -271,8 +271,6 @@ static struct msm_platform_inst_capability instance_cap_data_anorak[] = {
 		(MINIMUM_FPS << 16), INT_MAX,
 		1, (DEFAULT_FPS << 16)},
 
-	{MULTI_VIEW_ENABLE, DEC, HEVC, 0, 1, 1, 0},
-
 	{SCALE_FACTOR, ENC, H264|HEVC, 1, 8, 1, 8},
 
 	{MB_CYCLES_VSP, ENC, CODECS_ALL, 25, 25, 1, 25},

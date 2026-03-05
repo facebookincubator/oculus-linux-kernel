@@ -288,7 +288,7 @@ static int sde_power_parse_dt_clock(struct platform_device *pdev,
 			mp->clk_config[i].type = DSS_CLK_MMRM;
 			mp->clk_config[i].mmrm.clk_id = clock_mmrm;
 		}
-		pr_debug("clk[%d]:%d mmrm:%d rate:%d name:%s dev:%s\n",
+		pr_debug("clk[%d] mmrm:%d rate:%d name:%s dev:%s\n",
 			i, clock_mmrm, clock_rate, clock_name,
 			pdev->name ? pdev->name : "<unknown>");
 

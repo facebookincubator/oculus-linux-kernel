@@ -33,6 +33,7 @@
 
 #include "drm_crtc_internal.h"
 #include "drm_internal.h"
+#include "drm_trace_atomic.h"
 
 /**
  * DOC: overview
@@ -224,6 +225,8 @@ int drm_connector_init(struct drm_device *dev,
 	struct ida *connector_ida =
 		&drm_connector_enum_list[connector_type].ida;
 
+	DRM_ATRACE_FUNC_BEGIN();
+
 	WARN_ON(drm_drv_uses_atomic_modeset(dev) &&
 		(!funcs->atomic_destroy_state ||
 		 !funcs->atomic_duplicate_state));
@@ -231,8 +234,10 @@ int drm_connector_init(struct drm_device *dev,
 	ret = __drm_mode_object_add(dev, &connector->base,
 				    DRM_MODE_OBJECT_CONNECTOR,
 				    false, drm_connector_free);
-	if (ret)
+	if (ret) {
+		DRM_ATRACE_FUNC_END();
 		return ret;
+	}
 
 	connector->base.properties = &connector->properties;
 	connector->dev = dev;
@@ -317,6 +322,7 @@ out_put:
 	if (ret)
 		drm_mode_object_unregister(dev, &connector->base);
 
+	DRM_ATRACE_FUNC_END();
 	return ret;
 }
 EXPORT_SYMBOL(drm_connector_init);
@@ -509,6 +515,8 @@ int drm_connector_register(struct drm_connector *connector)
 	if (!connector->dev->registered)
 		return 0;
 
+	DRM_ATRACE_FUNC_BEGIN();
+
 	mutex_lock(&connector->mutex);
 	if (connector->registration_state != DRM_CONNECTOR_INITIALIZING)
 		goto unlock;
@@ -539,6 +547,8 @@ err_debugfs:
 	drm_sysfs_connector_remove(connector);
 unlock:
 	mutex_unlock(&connector->mutex);
+
+	DRM_ATRACE_FUNC_END();
 	return ret;
 }
 EXPORT_SYMBOL(drm_connector_register);
@@ -1519,6 +1529,8 @@ int drm_mode_create_tv_properties(struct drm_device *dev,
 	if (dev->mode_config.tv_select_subconnector_property)
 		return 0;
 
+	DRM_ATRACE_FUNC_BEGIN();
+
 	/*
 	 * Basic connector properties
 	 */
@@ -1586,8 +1598,10 @@ int drm_mode_create_tv_properties(struct drm_device *dev,
 	if (!dev->mode_config.tv_hue_property)
 		goto nomem;
 
+	DRM_ATRACE_FUNC_END();
 	return 0;
 nomem:
+	DRM_ATRACE_FUNC_END();
 	return -ENOMEM;
 }
 EXPORT_SYMBOL(drm_mode_create_tv_properties);
@@ -2349,11 +2363,14 @@ int drm_mode_getconnector(struct drm_device *dev, void *data,
 	if (!drm_core_check_feature(dev, DRIVER_MODESET))
 		return -EOPNOTSUPP;
 
+	DRM_ATRACE_FUNC_BEGIN();
 	memset(&u_mode, 0, sizeof(struct drm_mode_modeinfo));
 
 	connector = drm_connector_lookup(dev, file_priv, out_resp->connector_id);
-	if (!connector)
+	if (!connector) {
+		DRM_ATRACE_FUNC_END();
 		return -ENOENT;
+	}
 
 	encoders_count = hweight32(connector->possible_encoders);
 
@@ -2463,6 +2480,7 @@ int drm_mode_getconnector(struct drm_device *dev, void *data,
 out:
 	drm_connector_put(connector);
 
+	DRM_ATRACE_FUNC_END();
 	return ret;
 }
 
