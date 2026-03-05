@@ -117,6 +117,13 @@ void miscfifo_wake_waiters_sync(struct miscfifo *mf);
 
 /**
  * Clear any unread data from the fifo.
+ *
+ * @param  client   miscfifo instance client
+ */
+void miscfifo_client_clear(struct miscfifo_client *client);
+
+/**
+ * Clear any unread data from the all the fifos.
  * Use care when calling this. This call will block all readers and writers,
  * and may result in poor performance if called at times when readers or
  * writers are active.

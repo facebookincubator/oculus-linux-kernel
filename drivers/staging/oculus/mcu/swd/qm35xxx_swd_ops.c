@@ -77,6 +77,9 @@ static void flash_write(struct device *dev, const u32 address, const u64 value)
 
 int qm35xxx_swd_prepare(struct device *dev)
 {
+	swd_init(dev);
+	swd_halt(dev);
+
 	// Unlock the RRAM.
 	swd_memory_write(dev, QM35_RRAM_LOCK_CTRL_REG, QM35_RRAM_DISABLE_LOCK_VAL);
 	return 0;
@@ -86,8 +89,11 @@ int qm35xxx_swd_finalize(struct device *dev)
 {
 	// Lock the RRAM back.
 	swd_memory_write(dev, QM35_RRAM_LOCK_CTRL_REG, QM35_RRAM_ENABLE_LOCK_VAL);
-	return 0;
 
+	swd_reset(dev);
+	swd_flush(dev);
+
+	return 0;
 }
 
 int qm35xxx_swd_erase_app(struct device *dev)

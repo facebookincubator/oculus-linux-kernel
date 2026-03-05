@@ -148,11 +148,6 @@ struct swd_ops_params {
 	int (*target_finalize)(struct device *dev);
 
 	/*
-	 * Read mcu part number
-	 */
-	int (*read_part_number)(struct device *dev, u32 *partnum);
-
-	/*
    * Set any mcu specific 'quirks', e.g. different SDFW versions
 	 * return: 0 success
 	 */

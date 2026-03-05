@@ -468,7 +468,10 @@ static int w1_f56_i2c_master_transfer(struct i2c_adapter *adapter,
 		goto error;
 	}
 
-	if (w1_f56_ensure_device_ready(sl)) {
+	ret = w1_f56_ensure_device_ready(sl);
+	if (ret && ret == -EAGAIN)
+		ret = w1_f56_ensure_device_ready(sl);
+	if (ret) {
 		dev_err(&sl->dev, "Device not ready. Power-on-reset is set.\n");
 		ret = -EIO;
 		goto error;
@@ -484,12 +487,12 @@ static int w1_f56_i2c_master_transfer(struct i2c_adapter *adapter,
 			if (ret < 0)
 				goto error;
 
-			ret = w1_f56_run_sequencer(sl, seq_addr, 4 + msgs[i].len);
+			ret = w1_f56_run_sequencer(sl, seq_addr, 7 + msgs[i].len);
 			if (ret < 0)
 				goto error;
 
-			ret = w1_f56_read_sequencer(sl, seq_addr + 3,
-						   msgs[i].buf, msgs[i].len);
+			ret = w1_f56_read_sequencer(sl, seq_addr + 6,
+				msgs[i].buf, msgs[i].len);
 			if (ret < 0)
 				goto error;
 		} else {

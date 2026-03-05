@@ -128,8 +128,8 @@
 		meta,imu-supply = <&L7C>;
 		meta,mag-supply = <&L8C>;
 
-		meta,syncboss-reset  = <&tlmm 5 0>;
-		meta,syncboss-wakeup  = <&tlmm 4 0>;
+		reset-gpios = <&tlmm 5 0>;
+		ready-gpios = <&tlmm 4 0>;
 
 		meta,min-time-between-trans-ns = <500000>;
 		meta,syncboss-use-fastpath;

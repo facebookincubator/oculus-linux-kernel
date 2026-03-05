@@ -60,6 +60,9 @@ int stm32g0_swd_prepare(struct device *dev)
 {
 	int status;
 
+	swd_init(dev);
+	swd_halt(dev);
+
 	// When firmware is naughty and tries to write to addr 0 (NULL), this begins a flash write
 	// that blocks all FLASH_CR operations. The only way to unblock is by writing another word.
 	if (swd_memory_read(dev, SWD_STM32G0_FLASH_SR) & SWD_STM32G0_FLASH_SR_CFGBSY)
@@ -188,15 +191,17 @@ int stm32g0_swd_finalize(struct device *dev) {
 	}
 
 	// now lets figure out if we need to clear the silly empty bit
-	if((read & SWD_STM32G0_FLASH_ACR_EMPTY ) == 0 ) {
-		return 0;
+	if ((read & SWD_STM32G0_FLASH_ACR_EMPTY ) != 0) {
+	  // We are clearing this because if the STM32 was reset while it had 0xFFFFFFFF in its
+	  // first flash address it will jump into a bootloader and continue to boot there
+	  // unit a POR. if we clear this empty bit that no longer happens and it will
+	  // boot into user code.
+	  dev_info(dev, "FLASH_ACR empty bit set, clearing...");
+	  swd_memory_write(dev, SWD_STM32G0_FLASH_ACR, read & ~SWD_STM32G0_FLASH_ACR_EMPTY);
 	}
 
-	// We are clearing this because if the STM32 was reset while it had 0xFFFFFFFF in its
-	// first flash address it will jump into a bootloader and continue to boot there
-	// unit a POR. if we clear this empty bit that no longer happens and it will
-	// boot into user code.
-	dev_info(dev, "FLASH_ACR empty bit set, clearing...");
-	swd_memory_write(dev, SWD_STM32G0_FLASH_ACR, read & ~SWD_STM32G0_FLASH_ACR_EMPTY);
+	swd_reset(dev);
+	swd_flush(dev);
+
 	return 0;
 }
