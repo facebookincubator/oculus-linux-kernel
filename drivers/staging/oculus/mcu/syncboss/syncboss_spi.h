@@ -236,9 +236,9 @@ struct syncboss_dev_data {
 	struct mutex state_mutex;
 
 	/* GPIO line for pin reset */
-	int gpio_reset;
+	struct gpio_desc *gpio_reset;
 	/* Data ready / wakeup line  */
-	int gpio_ready;
+	struct gpio_desc *gpio_ready;
 	/* IRQ signaling the MCU is ready for a transaction */
 	int ready_irq;
 

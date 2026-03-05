@@ -30,6 +30,8 @@
 #define PARAMETER_TYPE_STATE_OF_CHARGE 0x88
 #define PARAMETER_TYPE_MOISTURE_DETECTED 0xA0
 #define PARAMETER_TYPE_REBOOT_INTO_BOOTLOADER 0xF0
+#define PARAMETER_TYPE_SWITCH_DATA_LANES 0xF3
+#define PARAMETER_TYPE_CHIP_RESET 0xF4
 
 #define VDO_LOG_TRANSMIT_STOP 0x00
 #define VDO_LOG_TRANSMIT_START 0x01
@@ -69,6 +71,7 @@ enum state_of_charge_t {
 /* Items reported by the dock */
 struct charging_dock_params_t {
 	u64 fw_version;
+	u32 fw_version_secondary;
 	u32 legacy_fw_version;
 	char serial_number_mlb[16];
 	u16 port_board_temp[NUM_CHARGING_DOCK_PORTS];

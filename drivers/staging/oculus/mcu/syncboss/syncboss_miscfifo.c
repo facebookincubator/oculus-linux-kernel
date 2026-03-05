@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
+#include <linux/bitmap.h>
+#include <linux/build_bug.h>
 #include <linux/kernel.h>
 #include <linux/firmware.h>
 #include <linux/init.h>
@@ -8,6 +10,7 @@
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/slab.h>
+#include <linux/syncboss.h>
 #include <linux/syncboss/consumer.h>
 #include <linux/syncboss/messages.h>
 
@@ -20,6 +23,9 @@
 
 #define STREAM_DEVICE_NAME "syncboss_stream0"
 #define CONTROL_DEVICE_NAME "syncboss_control0"
+
+_Static_assert(sizeof(*((struct syncboss_driver_stream_type_filter *)NULL)->allowlist) == sizeof(unsigned long),
+	"Ensure compatibility of syncboss filter with bitmap");
 
 static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void *pi)
 {
@@ -123,6 +129,7 @@ static int syncboss_set_stream_type_filter(
 	const struct syncboss_driver_stream_type_filter __user *filter)
 {
 	struct device *dev = devdata->dev;
+	struct miscfifo_client *client = file->private_data;
 	struct syncboss_driver_stream_type_filter *new_filter = NULL;
 	struct syncboss_driver_stream_type_filter *existing_filter;
 	int ret;
@@ -134,19 +141,17 @@ static int syncboss_set_stream_type_filter(
 	ret = copy_from_user(new_filter, filter, sizeof(*new_filter));
 	if (ret != 0) {
 		dev_err(dev, "failed to copy %d bytes from user stream filter\n", ret);
+		devm_kfree(dev, new_filter);
 		return -EFAULT;
-	}
-
-	/* Sanity check new_filter */
-	if (new_filter->num_selected > SYNCBOSS_MAX_FILTERED_TYPES) {
-		dev_err(dev, "sanity check of user stream filter failed (num_selected = %d)\n",
-			new_filter->num_selected);
-		return -EINVAL;
 	}
 
 	existing_filter = miscfifo_fop_xchg_context(file, new_filter);
 	if (existing_filter)
 		devm_kfree(dev, existing_filter);
+
+	if (new_filter->flags & SYNCBOSS_FILTER_FLAG_CLEAR_STREAM)
+		miscfifo_client_clear(client);
+
 	return 0;
 }
 
@@ -158,23 +163,17 @@ static bool should_send_stream_packet(const void *context,
 				      const u8 *header, size_t header_len,
 				      const u8 *payload, size_t payload_len)
 {
-	int x = 0;
 	const struct syncboss_driver_stream_type_filter *stream_type_filter =
 		context;
 	const struct uapi_pkt_t *uapi_pkt = (struct uapi_pkt_t *) payload;
 	const struct syncboss_data *packet;
 
-	/* Special case for when no filter is set or there's no payload */
-	if (!stream_type_filter || (stream_type_filter->num_selected == 0) ||
-	    !payload)
+	/* When no payload or filter is set, we allow the packets */
+	if (!stream_type_filter || !payload)
 		return true;
 
 	packet = (struct syncboss_data *) uapi_pkt->payload;
-	for (x = 0; x < stream_type_filter->num_selected; ++x) {
-		if (packet->type == stream_type_filter->selected_types[x])
-			return true;
-	}
-	return false;
+	return test_bit(packet->type, (const unsigned long *)stream_type_filter->allowlist);
 }
 
 static int syncboss_stream_open(struct inode *inode, struct file *f)

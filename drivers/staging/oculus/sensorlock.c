@@ -300,7 +300,7 @@ static int sensorlock_send_cmd(struct device *dev, void *cmd, size_t cmd_size, v
 	int rc;
 
 	rc = sensorlock_try_connect(dev);
-	if (rc < 0)
+	if (rc)
 		return rc;
 
 	args[0].b.ptr = cmd;

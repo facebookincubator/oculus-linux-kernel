@@ -90,12 +90,18 @@ static int prox_cal_valid(struct powerstate_dev_data *devdata)
 static void read_prox_cal(struct powerstate_dev_data *devdata)
 {
 	/* If prox doesn't require calibration, use dummy values. */
-	if (devdata->has_no_prox_cal) {
+	if (!devdata->requires_prox_cal) {
 		devdata->prox_config_version = 0;
 		devdata->prox_canc = 0;
 		devdata->prox_thdl = 0;
 		return;
 	}
+
+	/* Avoid repeated firmware load attempts if already attempted read */
+	if (devdata->prox_cal_read_attempted)
+		return;
+
+	devdata->prox_cal_read_attempted = true;
 
 	devdata->prox_config_version = read_cal_int(devdata, "PROX_PS_CAL_VERSION");
 	devdata->prox_canc = read_cal_int(devdata, "PROX_PS_CANC");
@@ -477,7 +483,7 @@ static int syncboss_powerstate_probe(struct platform_device *pdev)
 	}
 
 	devdata->has_prox = of_property_read_bool(node, "meta,syncboss-has-prox");
-	devdata->has_no_prox_cal = of_property_read_bool(node, "meta,syncboss-has-no-prox-cal");
+	devdata->requires_prox_cal = !of_property_read_bool(node, "meta,syncboss-has-no-prox-cal");
 	dev_dbg(dev, "has-prox: %s", devdata->has_prox ? "true" : "false");
 
 	devdata->prox_canc = INVALID_PROX_CAL_VALUE;
@@ -485,6 +491,7 @@ static int syncboss_powerstate_probe(struct platform_device *pdev)
 	devdata->prox_thdh = INVALID_PROX_CAL_VALUE;
 	devdata->prox_config_version = DEFAULT_PROX_CONFIG_VERSION_VALUE;
 	devdata->powerstate_last_evt = INVALID_POWERSTATE_VALUE;
+	devdata->prox_cal_read_attempted = false;
 
 	devdata->powerstate_fifo.config.kfifo_size = POWERSTATE_MISCFIFO_SIZE;
 	ret = devm_miscfifo_register(dev, &devdata->powerstate_fifo);

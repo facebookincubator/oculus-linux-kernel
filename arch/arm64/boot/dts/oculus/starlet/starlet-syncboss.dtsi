@@ -245,8 +245,8 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&syncboss_reset_default &syncboss_wakeup>;
 
-		meta,syncboss-reset  = <&tlmm 65 0>;
-		meta,syncboss-wakeup = <&tlmm 34 0>;
+		reset-gpios = <&tlmm 65 0>;
+		ready-gpios = <&tlmm 34 0>;
 
 		meta,syncboss-supply = <&pm6125_l13>;
 		meta,hall-supply = <&pm6125_l5>;
@@ -286,7 +286,7 @@
 			pinctrl-names = "default", "active";
 			pinctrl-0 = <&syncboss_timesync_default>;
 			pinctrl-1 = <&syncboss_timesync_active>;
-			timesync-gpio = <&tlmm 18 0>;
+			timesync-gpios = <&tlmm 18 0>;
 		};
 
 		miscfifo@0 {

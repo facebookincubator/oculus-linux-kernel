@@ -338,21 +338,27 @@ void miscfifo_wake_waiters_sync(struct miscfifo *mf)
 }
 EXPORT_SYMBOL(miscfifo_wake_waiters_sync);
 
+void miscfifo_client_clear(struct miscfifo_client *client)
+{
+	mutex_lock(&client->consumer_lock);
+	mutex_lock(&client->producer_lock);
+
+	kfifo_reset(&client->fifo);
+	client->logged_fifo_full = false;
+	atomic_set(&client->cancel, 0);
+
+	mutex_unlock(&client->producer_lock);
+	mutex_unlock(&client->consumer_lock);
+}
+EXPORT_SYMBOL(miscfifo_client_clear);
+
 void miscfifo_clear(struct miscfifo *mf)
 {
 	struct miscfifo_client *client;
 
 	down_read(&mf->clients.rw_lock);
 	list_for_each_entry(client, &mf->clients.list, node) {
-		mutex_lock(&client->consumer_lock);
-		mutex_lock(&client->producer_lock);
-
-		kfifo_reset(&client->fifo);
-		client->logged_fifo_full = false;
-		atomic_set(&client->cancel, 0);
-
-		mutex_unlock(&client->producer_lock);
-		mutex_unlock(&client->consumer_lock);
+		miscfifo_client_clear(client);
 	}
 	up_read(&mf->clients.rw_lock);
 }

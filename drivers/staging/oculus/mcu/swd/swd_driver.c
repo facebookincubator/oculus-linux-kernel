@@ -184,7 +184,7 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 	}
 
 	/* Regulator is optional and will be initialized to NULL if not found */
-	devdata->swd_core = devm_regulator_get(dev, "meta,swd-core");
+	devdata->swd_core = devm_regulator_get_optional(dev, "meta,swd-core");
 	if (PTR_ERR(devdata->swd_core) == -EPROBE_DEFER) {
 		dev_dbg(dev, "Defer swd probe, regulator not ready %ld", PTR_ERR(devdata->swd_core));
 		return -EPROBE_DEFER;
