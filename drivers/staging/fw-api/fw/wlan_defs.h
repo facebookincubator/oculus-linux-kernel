@@ -270,6 +270,13 @@ typedef enum {
         ((mode) == MODE_11BE_EHT320)    || \
         ((mode) == MODE_11BE_EHT20_2G)  || \
         ((mode) == MODE_11BE_EHT40_2G))
+#define IS_MODE_EHT_5G_6G(mode) (((mode) == MODE_11BE_EHT20) || \
+        ((mode) == MODE_11BE_EHT40)     || \
+        ((mode) == MODE_11BE_EHT80)     || \
+        ((mode) == MODE_11BE_EHT80_80)  || \
+        ((mode) == MODE_11BE_EHT160)    || \
+        ((mode) == MODE_11BE_EHT160_160)|| \
+        ((mode) == MODE_11BE_EHT320))
 #define IS_MODE_EHT_2G(mode) (((mode) == MODE_11BE_EHT20_2G) || \
         ((mode) == MODE_11BE_EHT40_2G))
 #endif /* SUPPORT_11BE */
@@ -284,6 +291,13 @@ typedef enum {
         ((mode) == MODE_11BN_UHR320)    || \
         ((mode) == MODE_11BN_UHR20_2G)  || \
         ((mode) == MODE_11BN_UHR40_2G))
+#define IS_MODE_UHR_5G_6G(mode) (((mode) == MODE_11BN_UHR20) || \
+        ((mode) == MODE_11BN_UHR40)     || \
+        ((mode) == MODE_11BN_UHR80)     || \
+        ((mode) == MODE_11BN_UHR80_80)  || \
+        ((mode) == MODE_11BN_UHR160)    || \
+        ((mode) == MODE_11BN_UHR160_160)|| \
+        ((mode) == MODE_11BN_UHR320))
 #define IS_MODE_UHR_2G(mode) (((mode) == MODE_11BN_UHR20_2G) || \
         ((mode) == MODE_11BN_UHR40_2G))
 #endif /* SUPPORT_11BN */

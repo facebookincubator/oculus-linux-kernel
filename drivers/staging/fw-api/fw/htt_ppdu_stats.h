@@ -707,6 +707,58 @@ typedef enum HTT_PPDU_STATS_SPATIAL_REUSE HTT_PPDU_STATS_SPATIAL_REUSE;
         (((_val) & HTT_PPDU_STATS_COMMON_TRIG_COOKIE_M) >> \
          HTT_PPDU_STATS_COMMON_TRIG_COOKIE_S)
 
+#define HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_M    0x00000001
+#define HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_S             0
+
+#define HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_GET(_var) \
+    (((_var) & HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_M) >> \
+    HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_S)
+
+#define HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE, _val); \
+        ((_var) |= ((_val) << HTT_PPDU_STATS_COMMON_TLV_HTT_SEQ_TYPE_S)); \
+    } while (0)
+
+#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_M    0x00000002
+#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_S             1
+
+#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_GET(_var) \
+    (((_var) & HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_M) >> \
+    HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_S)
+
+#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER, _val); \
+        ((_var) |= ((_val) << HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BASIC_TRIGGER_S)); \
+    } while (0)
+
+#define HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_M    0x00000004
+#define HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_S             2
+
+#define HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_GET(_var) \
+    (((_var) & HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_M) >> \
+    HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_S)
+
+#define HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER, _val); \
+        ((_var) |= ((_val) << HTT_PPDU_STATS_COMMON_TLV_IS_MANUAL_ULOFDMA_TRIGGER_S)); \
+    } while (0)
+
+#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_M    0x00000008
+#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_S             3
+
+#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_GET(_var) \
+    (((_var) & HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_M) >> \
+    HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_S)
+
+#define HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER, _val); \
+        ((_var) |= ((_val) << HTT_PPDU_STATS_COMMON_TLV_IS_COMBINED_UL_BSRP_TRIGGER_S)); \
+    } while (0)
+
 enum HTT_SEQ_TYPE {
     WAL_PPDU_SEQ_TYPE = 0,
     HTT_PPDU_SEQ_TYPE = 1,
@@ -902,26 +954,26 @@ typedef struct {
      *               HTT_PPDU_SEQ_TYPE then decoder should interpret the
      *               seq type as HTT_PPDU_STATS_SEQ_TYPE.
      *               htt_seq_type field will be set to HTT_PPDU_SEQ_TYPE in
-     *               firmware versions where this field is defined.
-     * BIT [31: 1] - reserved
+     * BIT [1 : 1] - is_combined_ul_basic_trigger - Flag to indicate if a
+     *               given UL OFDMA/MU-MIMO Basic trigger is sent combined
+     *               as part of existing DL data sequence.
+     * BIT [2 : 2] - is_manual_ulofdma_trigger - Flag to indicate if a
+     *               given UL OFDMA trigger is manually triggered from the Host.
+     * BIT [3 : 3] - is_combined_ul_bsrp_trigger - Flag to indicate if a
+     *               given UL BSRP trigger is sent combined as part of
+     *               an existing DL/UL data sequence
+     * BIT [31: 4] - reserved
      */
     union {
         A_UINT32 reserved__htt_seq_type;
         struct {
             A_UINT32 htt_seq_type:  1,
-                     reserved3:     31;
+                     is_combined_ul_basic_trigger: 1,
+                     is_manual_ulofdma_trigger: 1,
+                     is_combined_ul_bsrp_trigger: 1,
+                     reserved3:     28;
         };
     };
-    /* is_manual_ulofdma_trigger:
-     * Flag to indicate if a given UL OFDMA trigger is manually triggered
-     * from the Host
-     */
-    A_UINT32 is_manual_ulofdma_trigger;
-    /* is_combined_ul_bsrp_trigger:
-     * Flag to indicate if a given UL BSRP trigger is sent combined as
-     * part of existing DL/UL data sequence
-     */
-    A_UINT32 is_combined_ul_bsrp_trigger;
     /* Flag to indicate if the channel chosen is 320_1 / 320_2 */
     A_UINT32 chan_type_320mhz;
 } htt_ppdu_stats_common_tlv;
@@ -1888,6 +1940,32 @@ typedef enum HTT_PPDU_STATS_RESP_PPDU_TYPE HTT_PPDU_STATS_RESP_PPDU_TYPE;
         ((_var) |= ((_val) << HTT_PPDU_STATS_USER_RATE_TLV_IS_MIN_RATE_S)); \
     } while (0)
 
+#define HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_M  0x00040000
+#define HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_S          18
+
+#define HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_GET(_var) \
+    (((_var) & HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_M) >> \
+    HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_S)
+
+#define HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_SET (_var , _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_USER_RATE_TLV_2XLDPC, _val); \
+        ((_var) |= ((_val) << HTT_PPDU_STATS_USER_RATE_TLV_2xLDPC_S)); \
+    } while (0)
+
+#define HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_M  0x00080000
+#define HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_S          19
+
+#define HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_GET(_var) \
+    (((_var) & HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_M) >> \
+    HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_S)
+
+#define HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_SET (_var , _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED, _val); \
+        ((_var) |= ((_val) << HTT_PPDU_STATS_USER_RATE_TLV_IS_NPCA_ENABLED_S)); \
+    } while (0)
+
 typedef enum HTT_PPDU_STATS_RU_SIZE {
     HTT_PPDU_STATS_RU_26,
     HTT_PPDU_STATS_RU_52,
@@ -2075,11 +2153,16 @@ typedef struct {
      *                punctured.
      * BIT 16      :- flag showing whether EHT extra LTF is applied
      *                for current PPDU
+     * BIT 17      :- flag to show is_min_rate
+     * BIT 18      :- flag showing whether PPDU is transmitted with 2xLDPC
+     * BIT 19      :- flag showing whether PPDU is transmitted with NPCA enabled
      */
     A_UINT32 punc_pattern_bitmap: 16,
-             extra_eht_ltf:       1,
-             is_min_rate:         1,
-             reserved4:           14;
+             extra_eht_ltf:        1,
+             is_min_rate:          1,
+             is_2xldpc:            1,
+             is_npca_enabled:      1,
+             reserved4:           12;
 } htt_ppdu_stats_user_rate_tlv;
 
 #define HTT_PPDU_STATS_USR_RATE_VALID_M     0x80000000

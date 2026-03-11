@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/delay.h>
-#include <linux/gpio.h>
+#include <linux/gpio/consumer.h>
 #include <linux/hrtimer.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
 #include <linux/kernel.h>
 #include <linux/kfifo.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
-#include <linux/of_gpio.h>
 #include <linux/pm.h>
 #include <linux/regulator/consumer.h>
 #include <linux/sched.h>
@@ -115,7 +115,7 @@ static void syncboss_dec_mcu_client_count_locked(struct syncboss_dev_data *devda
 
 	if (--devdata->mcu_client_count == 0) {
 		dev_info(&devdata->spi->dev, "asserting MCU reset");
-		gpio_set_value(devdata->gpio_reset, 0);
+		gpiod_set_value(devdata->gpio_reset, 0);
 		regulator_bulk_disable(devdata->reg_count, devdata->reg_consumers);
 	}
 }
@@ -1188,20 +1188,18 @@ static int syncboss_spi_transfer_thread(void *ptr)
  */
 static bool is_mcu_awake(const struct syncboss_dev_data *devdata)
 {
-	if (gpio_is_valid(devdata->gpio_ready)) {
-		if (gpio_get_value(devdata->gpio_ready) == 1)
-			return true;
+	if (gpiod_get_value(devdata->gpio_ready) == 1)
+		return true;
 
-		/*
-		 * The GPIO is low, but make sure it stays low for at
-		 * least a couple uS to be sure the MCU's GPIO isn't in
-		 * the middle of a high-low-high transition for
-		 * triggering an IRQ.
-		 */
-		udelay(5);
-		if (gpio_get_value(devdata->gpio_ready) == 0)
-			return false;
-	}
+	/*
+	 * The GPIO is low, but make sure it stays low for at
+	 * least a couple uS to be sure the MCU's GPIO isn't in
+	 * the middle of a high-low-high transition for
+	 * triggering an IRQ.
+	 */
+	udelay(5);
+	if (gpiod_get_value(devdata->gpio_ready) == 0)
+		return false;
 
 	return true;
 }
@@ -1337,22 +1335,16 @@ error:
 /* Toggle the MCU pin reset GPIO to force it to (re-)boot. */
 void syncboss_pin_reset(struct syncboss_dev_data *devdata)
 {
-	if (!gpio_is_valid(devdata->gpio_reset)) {
-		dev_err(&devdata->spi->dev,
-			"cannot pin-reset becauses reset pin was not specified in device tree");
-		return;
-	}
-
 	dev_info(&devdata->spi->dev, "pin-resetting MCU");
 
-	if (gpio_get_value(devdata->gpio_reset) == 1) {
-		gpio_set_value(devdata->gpio_reset, 0);
+	if (gpiod_get_value(devdata->gpio_reset) == 1) {
+		gpiod_set_value(devdata->gpio_reset, 0);
 		msleep(SYNCBOSS_RESET_TIME_MS);
 	}
 
 	raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_MCU_PIN_RESET, NULL);
 	devdata->last_reset_time_ms = ktime_get_ms();
-	gpio_set_value(devdata->gpio_reset, 1);
+	gpiod_set_value(devdata->gpio_reset, 1);
 }
 
 /*
@@ -1862,20 +1854,6 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	hrtimer_init(&devdata->send_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	devdata->send_timer.function = send_timer_callback;
 
-	devdata->gpio_reset = of_get_named_gpio(node,
-			"meta,syncboss-reset", 0);
-	devdata->gpio_ready = of_get_named_gpio(node,
-			"meta,syncboss-wakeup", 0);
-
-	dev_dbg(&devdata->spi->dev,
-		 "GPIOs: reset: %d, wakeup/ready: %d",
-		 devdata->gpio_reset, devdata->gpio_ready);
-
-	if (devdata->gpio_reset < 0) {
-		dev_err(&devdata->spi->dev,
-			"reset GPIO was not specificed in the device tree. MCU reset and firmware updates will fail.");
-	}
-
 	devdata->consumer_ops.get_is_streaming = consumer_get_is_streaming;
 	devdata->consumer_ops.syncboss_state_lock = consumer_syncboss_state_lock;
 	devdata->consumer_ops.syncboss_state_unlock = consumer_syncboss_state_unlock;
@@ -1952,12 +1930,6 @@ static int syncboss_probe(struct spi_device *spi)
 		goto error_after_regulator_get;
 	}
 
-	/*
-	 * Configure the MCU pin reset as an output, and leave it asserted
-	 * until the syncboss device is opened by userspace.
-	 */
-	gpio_direction_output(devdata->gpio_reset, 0);
-
 	/* Create child devices, if any */
 	status = of_platform_populate(dev->of_node, syncboss_subdevice_match_table,
 				      NULL, dev);
@@ -1968,13 +1940,25 @@ static int syncboss_probe(struct spi_device *spi)
 	if (status < 0)
 		goto error_after_of_platform_populate;
 
-	/* Init interrupts */
-	if (devdata->gpio_ready < 0) {
-		dev_err(dev, "device tree is missing 'syncboss-ready' GPIO");
-		status = devdata->gpio_ready;
+	devdata->gpio_reset = devm_gpiod_get(&devdata->spi->dev,
+			"reset", GPIOD_OUT_LOW);
+	if (IS_ERR(devdata->gpio_reset)) {
+		status = PTR_ERR(devdata->gpio_reset);
+		dev_err(&devdata->spi->dev,
+			"failed to get reset GPIO: %d\n", status);
 		goto error_after_sysfs;
 	}
-	devdata->ready_irq = gpio_to_irq(devdata->gpio_ready);
+
+	devdata->gpio_ready = devm_gpiod_get(&devdata->spi->dev,
+			"ready", GPIOD_IN);
+	if (IS_ERR(devdata->gpio_ready)) {
+		status = PTR_ERR(devdata->gpio_ready);
+		dev_err(&devdata->spi->dev,
+			"failed to get ready GPIO: %d\n", status);
+		goto error_after_sysfs;
+	}
+
+	devdata->ready_irq = gpiod_to_irq(devdata->gpio_ready);
 	irq_set_status_flags(devdata->ready_irq, IRQ_DISABLE_UNLAZY);
 	/* This irq must be able to wake up the system */
 	irq_set_irq_wake(devdata->ready_irq, /*on*/ 1);

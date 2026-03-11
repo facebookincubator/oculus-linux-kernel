@@ -127,9 +127,6 @@ static int device_open(struct inode *inode, struct file *filp)
 	if (filp->f_flags & O_NONBLOCK)
 		return 0;
 
-	swd_init(swd_dev);
-	swd_halt(swd_dev);
-
 	devdata = dev_get_drvdata(swd_dev);
 
 	if (devdata->mcu_data.swd_ops.target_prepare) {
@@ -138,6 +135,9 @@ static int device_open(struct inode *inode, struct file *filp)
 			dev_err(dev, "target prepare failed!");
 			goto err;
 		}
+	} else {
+		swd_init(swd_dev);
+		swd_halt(swd_dev);
 	}
 
 	return 0;
@@ -163,10 +163,11 @@ static int device_release(struct inode *inode, struct file *filp)
 		if (ret)
 			dev_err(dev, "finalize failed!");
 		/* ignore the failure */
+	} else {
+		/* reset the mcu if no finalize operation present */
+		swd_reset(dev);
+		swd_flush(dev);
 	}
-
-	swd_reset(swd_dev);
-	swd_flush(swd_dev);
 
 out:
 	dev_info(dev, "releasing");

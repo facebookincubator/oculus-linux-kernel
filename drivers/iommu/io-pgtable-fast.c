@@ -148,7 +148,8 @@ struct av8l_fast_io_pgtable {
 
 #define PTE_SH_IDX(pte) (pte & AV8L_FAST_PTE_SH_MASK)
 
-#define iopte_pmd_offset(pmds, base, iova) (pmds + ((iova - base) >> 12))
+#define iopte_pmd_offset(pmds, base, iova) \
+	 (pmds + ((iova - ALIGN_DOWN(base, SZ_2M)) >> 12))
 
 #ifdef CONFIG_IOMMU_IO_PGTABLE_FAST_PROVE_TLB
 

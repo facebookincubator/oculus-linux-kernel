@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012, 2014-2017, 2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, 2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -92,6 +92,11 @@ typedef enum {
  * rx indications can be processed in parallel.
  */
 #define HTT_DATA3_MSG_SVC MAKE_SERVICE_ID(HTT_SERVICE_GROUP,2)
+
+/* HTT_DATA4_MSG_SVC
+ * H2T channel to transfer MSDU/MPDU queue info from host to target
+ */
+#define HTT_DATA4_MSG_SVC MAKE_SERVICE_ID(HTT_SERVICE_GROUP,3)
 
 /* raw stream service (i.e. flash, tcmd, calibration apps) */
 #define HTC_RAW_STREAMS_SVC MAKE_SERVICE_ID(HTC_TEST_GROUP,0)

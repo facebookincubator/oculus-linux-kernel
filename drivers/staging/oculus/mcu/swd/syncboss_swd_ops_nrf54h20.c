@@ -2,6 +2,7 @@
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/slab.h>
+#include <linux/meta-hpd.h>
 #include <linux/meta-proglogic.h>
 #include <linux/i2c.h>
 
@@ -13,35 +14,64 @@
 #include "swd_registers_nrf54h20.h"
 #include "syncboss_swd_ops_nrf54h20.h"
 
+/*
+ * TODO T245743071: revisit and correct/optimize delays.
+ */
 #define POWER_STATE_CHANGE_WAIT_MS	(200ll)
+#define MCU_BOOT_DELAY_MS		(200ll)
 
+#define MUX_STATE_CHANGE_WAIT_US	(2)
+#define POLL_INTERVAL_MS		(10)
+#define BOOT_TIMEOUT_MS			(8000ll)
+#define ERASE_TIMEOUT_MS		(8000ll)
 #define MBOX_TIMEOUT_MS			(1000ll)
-#define POLL_INTERVAL_MS		(100ll)
+#define SWD_INIT_TIMEOUT_MS		(1000ll)
 
-#define SUIT_SWD_READY_TIMEOUT_MS	(500ll)
-#define SUIT_BOOT_TIMEOUT_MS		(400ll)
+enum boot_stage {
+	BOOT_STAGE_UNKNOWN,
+	BOOT_STAGE_UNSET,
+	BOOT_STAGE_SYSCTRL,
+	BOOT_STAGE_SYSROM,
+	BOOT_STAGE_SDROM,
+	BOOT_STAGE_SUIT,
+	BOOT_STAGE_IRONSIDE,
+	BOOT_STAGE_RECOVERY,
+};
 
-#define IRONSIDE_ERASE_TIMEOUT_MS	(8000ll)
-#define IRONSIDE_BOOT_TIMEOUT_MS	(8000ll)
-
-static void syncboss_swd_mux_state(struct device *dev, bool swd_mux_state)
+static void syncboss_swd_setstate(struct device *dev, bool enable)
 {
 	struct device_node *np = dev->of_node;
 	int count, i, ret;
 	struct device_node *proglogic_dev_node;
+	struct device_node *tether_hpd;
+	struct platform_device *meta_hpd;
 	struct i2c_client *i2c_usb_mux_client;
+	bool proglogic_client_probed = false;
 
 	if (!np) {
-		dev_err(dev, "no dtsi entry for nrf54h20!");
+		dev_err(dev, "%s: no dtsi entry for nrf54h20\n", __func__);
 		return;
 	}
+
+	tether_hpd = of_parse_phandle(np, "meta,hpd", 0);
+	if (!tether_hpd) {
+		dev_err(dev, "%s: meta,hpd handle not found\n", __func__);
+		return;
+	}
+	meta_hpd = of_find_device_by_node(tether_hpd);
+	if (!meta_hpd) {
+		dev_err(dev, "%s: ynable to find meta-hpd platform device\n", __func__);
+		of_node_put(tether_hpd);
+		return;
+	}
+	of_node_put(tether_hpd);
 
 	count = of_count_phandle_with_args(np, "meta,proglogic", NULL);
 	if (count <= 0) {
-		dev_err(dev, "nrf54h20 proglogic device not found in dts! %d", count);
+		dev_err(dev, "%s: proglogic handle not found: %d\n", __func__, count);
 		return;
 	}
-	dev_dbg(dev, "nrf54h20 found %d devices!", count);
+	dev_dbg(dev, "%s: found %d devices!", __func__, count);
 
 	for (i = 0; i < count; i++) {
 		proglogic_dev_node = of_parse_phandle(np, "meta,proglogic", i);
@@ -50,43 +80,90 @@ static void syncboss_swd_mux_state(struct device *dev, bool swd_mux_state)
 		i2c_usb_mux_client = of_find_i2c_device_by_node(proglogic_dev_node);
 
 		of_node_put(proglogic_dev_node);
-		if (i2c_usb_mux_client)
-			break; /* Use the first device found */
+		if (!i2c_usb_mux_client) {
+			dev_dbg(dev, "Skipping %d proglogic_client is NULL", count);
+			continue;
+		}
+		if (i2c_usb_mux_client->dev.driver) {
+			dev_dbg(dev, "Probe driver for %s found !", dev_name(&i2c_usb_mux_client->dev));
+			proglogic_client_probed = true;
+			break;
+		} else {
+			dev_dbg(dev, "Driver %s did not probe", dev_name(&i2c_usb_mux_client->dev));
+		}
 	}
-
-	if (i2c_usb_mux_client) {
-		ret = swd_mux_state ?
-			proglogic_swd_enable(&i2c_usb_mux_client->dev) :
-			proglogic_swd_disable(&i2c_usb_mux_client->dev);
+	dev_dbg(dev, "%s: setting swd enable=%d\n", __func__, enable);
+	if (proglogic_client_probed && i2c_usb_mux_client) {
+		if (enable) {
+			ret = hpd_enable_detect(&meta_hpd->dev, false);
+			if (ret)
+				dev_err(dev, "%s: unable to disable HPD detection: %d\n", __func__, ret);
+			ret = proglogic_swd_enable(&i2c_usb_mux_client->dev);
+			if (ret)
+				dev_err(dev, "%s: unable to enable SWD: %d\n", __func__, ret);
+			udelay(MUX_STATE_CHANGE_WAIT_US);
+		} else {
+			ret = proglogic_swd_disable(&i2c_usb_mux_client->dev);
+			if (ret)
+				dev_err(dev, "%s: unable to disable SWD: %d\n", __func__, ret);
+			udelay(MUX_STATE_CHANGE_WAIT_US);
+			ret = hpd_enable_detect(&meta_hpd->dev, true);
+			if (ret)
+				dev_err(dev, "%s: unnable to re-enable HPD detection: %d\n", __func__, ret);
+		}
 		put_device(&i2c_usb_mux_client->dev);
-		if (ret)
-			dev_err(dev, "nrf54h20 swd mux switch state fail %d!", ret);
+		put_device(&meta_hpd->dev);
 	} else {
-		dev_err(dev, "nrf54h20 failed to find swd mux device!");
+		put_device(&meta_hpd->dev);
+		dev_err(dev, "%s: failed to find swd mux device\n", __func__);
 	}
+}
+
+static int syncboss_swd_set_tetherpower(struct device *dev, bool enable)
+{
+	struct device_node *np = dev->of_node;
+	struct device_node *tether_hpd;
+	struct platform_device *meta_hpd;
+	int ret;
+
+	if (!np) {
+		dev_err(dev, "%s: no dtsi entry for nrf54h20\n", __func__);
+		return -EINVAL;
+	}
+	tether_hpd = of_parse_phandle(np, "meta,hpd", 0);
+	if (!tether_hpd) {
+		dev_err(dev, "%s: meta,hpd handle not found\n", __func__);
+		return -EINVAL;
+	}
+	meta_hpd = of_find_device_by_node(tether_hpd);
+	if (!meta_hpd) {
+		dev_err(dev, "%s: unable to find meta-hpd platform device!\n", __func__);
+		return -EINVAL;
+	}
+	of_node_put(tether_hpd);
+	ret = hpd_set_tether_power(&meta_hpd->dev, enable);
+	put_device(&meta_hpd->dev);
+	return ret;
 }
 
 static void syncboss_deep_powercycle(struct device *dev)
 {
-	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	int status = 0;
 
-	dev_dbg(dev, "nrf54h20 deep power cycle!");
-	if (devdata->swd_core == NULL) {
-		dev_err(dev, "nrf54h20 no regulator!!");
-		return;
-	}
+	dev_dbg(dev, "%s start\n", __func__);
 
-	syncboss_swd_mux_state(dev, false);
-	status = regulator_disable(devdata->swd_core);
-	dev_dbg(dev, "nrf54h20 regulator disable status %d!", status);
+	syncboss_swd_setstate(dev, false);
+	status = syncboss_swd_set_tetherpower(dev, false);
+	if (status)
+		dev_err(dev, "%s: tether power disable failed: %d\n", __func__, status);
 
 	msleep(POWER_STATE_CHANGE_WAIT_MS);
 
-	status = regulator_enable(devdata->swd_core);
-	dev_dbg(dev, "nrf54h20 regulator enable status %d!", status);
+	status = syncboss_swd_set_tetherpower(dev, true);
+	if (status)
+		dev_err(dev, "%s: tether power enable failed: %d\n", __func__, status);
 
-	syncboss_swd_mux_state(dev, true);
+	syncboss_swd_setstate(dev, true);
 }
 
 static int syncboss_swd_nrf54h20_read_ctrl_ap_reg(struct device *dev,
@@ -97,20 +174,62 @@ static int syncboss_swd_nrf54h20_read_ctrl_ap_reg(struct device *dev,
 	return swd_dp_read_rd_buff(dev, data_ptr);
 }
 
-static int syncboss_swd_nrf54h20_write_ctrl_ap_reg(struct device *dev,
-						    u32 reg_addr, u32 data)
+static int syncboss_swd_nrf54h20_wait_swd_init(struct device *dev)
 {
-	swd_select_ap_reg(dev, SWD_NRF54H20_APSEL_DEVICE_CTRLAP, reg_addr);
-	return swd_ap_write(dev, reg_addr, data);
+	int ret;
+	u64 timeout_time_ns =
+	    ktime_get_ns() + (SWD_INIT_TIMEOUT_MS * NSEC_PER_MSEC);
+
+	/*
+	 * If the mcu is not present or booted up after a reset on the other end of
+	 * the swd lines, an swd_init can fail. Retry for the provided timeout
+	 * before returning failure.
+	 */
+	while (ktime_get_ns() < timeout_time_ns) {
+		ret = swd_init(dev);
+		if (ret == 0)
+			return ret;
+		msleep(POLL_INTERVAL_MS);
+	}
+	dev_err(dev, "%s: SWD Init timeout\n", __func__);
+	return -ETIMEDOUT;
 }
 
-static int syncboss_swd_nrf54h20_write_reset_word(struct device *dev)
+
+static int syncboss_swd_nrf54h20_issue_reset(struct device *dev)
 {
-	dev_dbg(dev, "Reset mcu using Ctrl AP reset!");
+	int ret;
+
+	dev_dbg(dev, "%s: reseting MCU via CtrlAP reset\n", __func__);
 	swd_select_ap_reg(dev, SWD_NRF54H20_APSEL_DEVICE_CTRLAP,
-			  SWD_NRF54H20_APREG_RESET);
-	return swd_ap_write(dev, SWD_NRF54H20_APREG_RESET,
-						SWD_NRF54H20_APREG_RESET_Reset);
+			       SWD_NRF54H20_APREG_RESET);
+	ret = swd_ap_write(dev, SWD_NRF54H20_APREG_RESET,
+				 SWD_NRF54H20_APREG_RESET_Reset);
+	if (ret) {
+		dev_err(dev, "%s failed to write reset register\n", __func__);
+		return ret;
+	}
+	swd_flush(dev);
+	swd_deinit(dev);
+
+	ret = syncboss_swd_nrf54h20_wait_swd_init(dev);
+	if (ret) {
+		dev_err(dev, "%s: swd_init timeout after reset\n", __func__);
+		return ret;
+	}
+
+	swd_select_ap_reg(dev, SWD_NRF54H20_APSEL_DEVICE_CTRLAP,
+			       SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS);
+	ret = syncboss_swd_wait_reg_value_mask(
+		    dev, SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS,
+		    0x0, SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_cmderr_mask,
+		    BOOT_TIMEOUT_MS);
+	if (ret) {
+		dev_err(dev, "%s: reset command failed\n", __func__);
+		return ret;
+	}
+
+	return 0;
 }
 
 int syncboss_swd_nrf54h20_force_sec_dom_fw_version(struct device *dev,
@@ -126,376 +245,136 @@ int syncboss_swd_nrf54h20_force_sec_dom_fw_version(struct device *dev,
 	} else {
 		status = -EINVAL;
 	}
-	dev_info(dev, "Set SDFW Version to %s aka %d!", str, devdata->sdfw_version);
+	dev_info(dev, "Set SDFW Version to %s aka %d!\n", str, devdata->sdfw_version);
 
 	return status;
+}
+
+static enum boot_stage syncboss_swd_nrf54h20_get_boot_stage(struct device *dev)
+{
+	int ret;
+	u32 bootstatus, stage;
+
+	ret = syncboss_swd_nrf54h20_read_ctrl_ap_reg(dev,
+		SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS, &bootstatus);
+	if (ret) {
+		dev_err(dev, "%s: bootstatus read failed\n", __func__);
+		return BOOT_STAGE_UNKNOWN;
+	}
+	dev_dbg(dev, "%s: bootstatus = %x", __func__, bootstatus);
+
+	stage = (bootstatus & SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_stage_mask) >>
+		SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_stage_shift;
+
+	switch (stage) {
+	case SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_unset_stage_val:
+		return BOOT_STAGE_UNSET;
+	case SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_sysrom_stage_val:
+		return BOOT_STAGE_SYSROM;
+	case SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_sdrom_stage_val:
+		return BOOT_STAGE_SDROM;
+	case SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_suit_stage_val:
+		return BOOT_STAGE_SUIT;
+	case SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_ironside_stage_val:
+		return BOOT_STAGE_IRONSIDE;
+	default:
+		dev_err(dev, "%s: unexpected boot stage 0x%x\n", __func__, stage);
+		return BOOT_STAGE_UNKNOWN;
+	};
 }
 
 static void syncboss_swd_nrf54h20_detect_sec_dom_fw_version(struct device *dev)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	u32 bootstatus;
 
 	/* bootstatus is read only once! a suit mcu can't change to an ironside mcu */
 	if (devdata->sdfw_version == SWD_NRF54H20_SDFW_VERSION_IRONSIDE ||
 	    devdata->sdfw_version == SWD_NRF54H20_SDFW_VERSION_SUIT) {
-		dev_info(dev, "sdfw version preset to %x", devdata->sdfw_version);
+		dev_dbg(dev, "%s: sdfw version preset to %x\n", __func__, devdata->sdfw_version);
 		return;
 	}
 
-	if (syncboss_swd_nrf54h20_read_ctrl_ap_reg(
-	    dev, SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS, &bootstatus) != 0) {
-		dev_err(dev, "Ctrl AP Reg failed");
-		return;
+	switch (syncboss_swd_nrf54h20_get_boot_stage(dev)) {
+	case BOOT_STAGE_SUIT:
+		devdata->sdfw_version = SWD_NRF54H20_SDFW_VERSION_SUIT;
+		break;
+	default:
+		dev_err(dev, "%s: nrf54h20 Unknown SDFW version! Default to Ironside\n", __func__);
+		fallthrough;
+	case BOOT_STAGE_IRONSIDE:
+		devdata->sdfw_version = SWD_NRF54H20_SDFW_VERSION_IRONSIDE;
+		break;
 	}
-
-	dev_info(dev, "bootstatus = %x", bootstatus);
-
-	bootstatus = bootstatus & 0xff000000;
-	if ((bootstatus == SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_suit_mask) ||
-	    (bootstatus == 0x0)) {
-		dev_err(dev, "Unsupported SDFW version SUIT! Default to Ironside");
-	} else if (bootstatus !=
-		   SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_ironside_mask) {
-		dev_err(dev, "nrf54h20 Unknown SDFW version! Default to Ironside");
-	}
-	devdata->sdfw_version = SWD_NRF54H20_SDFW_VERSION_IRONSIDE;
 }
 
-static bool syncboss_swd_nrf54h20_is_adac_needed(struct device *dev)
-{
-	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-
-	if ((devdata->sdfw_version != SWD_NRF54H20_SDFW_VERSION_SUIT) &&
-		(devdata->sdfw_version != SWD_NRF54H20_SDFW_VERSION_IRONSIDE)) {
-		syncboss_swd_nrf54h20_detect_sec_dom_fw_version(dev);
-	}
-
-	return (devdata->sdfw_version == SWD_NRF54H20_SDFW_VERSION_SUIT);
-}
-
-/*
- * Wait for the Mbox TxStatus to turn 'not pending' and Write a u32 word to the
- * Mbox TxData register of the Ctrl AP. Assumes already connected to the CTRL AP
- */
-static int syncboss_swd_nrf54h20_ctrl_ap_mbox_write_tx_data(struct device *dev,
-							    u32 data)
-{
-	swd_select_ap_reg(dev, SWD_NRF54H20_APSEL_DEVICE_CTRLAP,
-			  SWD_NRF54H20_APREG_MAILBOX_TXSTATUS);
-	if (syncboss_swd_wait_reg_value(
-		    dev, SWD_NRF54H20_APREG_MAILBOX_TXSTATUS,
-		    SWD_NRF54H20_APREG_MAILBOX_TXSTATUS_NotPending,
-		    MBOX_TIMEOUT_MS) == 0) {
-		return syncboss_swd_nrf54h20_write_ctrl_ap_reg(
-					dev, SWD_NRF54H20_APREG_MAILBOX_TXDATA, data);
-	}
-	return -ETIMEDOUT;
-}
-
-/*
- * Wait for the Mbox RxStatus to turn 'pending' and Read a u32 word from the
- * Mbox RxData register of the Ctrl AP. Assumes already connected to the CTRL AP
- */
-static int syncboss_swd_nrf54h20_ctrl_ap_mbox_read_rx_data(struct device *dev,
-							    u32 *data)
-{
-	swd_select_ap_reg(dev, SWD_NRF54H20_APSEL_DEVICE_CTRLAP,
-			  SWD_NRF54H20_APREG_MAILBOX_RXSTATUS);
-	if (syncboss_swd_wait_reg_value(
-		    dev, SWD_NRF54H20_APREG_MAILBOX_RXSTATUS,
-		    SWD_NRF54H20_APREG_MAILBOX_RXSTATUS_Pending,
-		    MBOX_TIMEOUT_MS) == 0) {
-		return syncboss_swd_nrf54h20_read_ctrl_ap_reg(
-				dev, SWD_NRF54H20_APREG_MAILBOX_RXDATA, data);
-	}
-	return -ETIMEDOUT;
-}
-
-static int syncboss_swd_nrf54h20_wait_swd_init(struct device *dev, u64 timeout_ms)
+static int syncboss_swd_nrf54h20_wait_for_boot_stage(struct device *dev, enum boot_stage stage)
 {
 	int ret;
-	u64 timeout_time_ns =
-	    ktime_get_ns() + (timeout_ms * NSEC_PER_MSEC);
+	u32 reg_val;
+
+	switch (stage) {
+	case BOOT_STAGE_SUIT:
+		reg_val = SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_suit_stage_val;
+		break;
+	case BOOT_STAGE_IRONSIDE:
+		reg_val = SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_ironside_stage_val;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	swd_select_ap_reg(dev, SWD_NRF54H20_APSEL_DEVICE_CTRLAP,
+			  SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS);
+	ret = syncboss_swd_wait_reg_value_mask(
+		    dev, SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS,
+		    reg_val, SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_stage_mask,
+		    BOOT_TIMEOUT_MS);
+	if (ret)
+		return ret;
 
 	/*
-	 * If the mcu is not present or booted up after a reset on the other end of
-	 * the swd lines, an swd_init can fail. Retry for the provided timeout
-	 * before returning failure.
+	 * Some accesses fail if we make them too soon after booting.
+	 * Value is borrowed from vendor scripts but could likely
+	 * be optimized for removed if we knew what we were actually
+	 * waiting for.
 	 */
-	while (ktime_get_ns() < timeout_time_ns) {
-		ret = swd_init(dev);
-		if (ret == 0)
-			return ret;
-		dev_dbg(dev, "nrf54h20 sleep 100ms");
-		msleep(POLL_INTERVAL_MS);
-	}
-	dev_err(dev, "nrf54h20 SWD Init timeout!");
-	return -ETIMEDOUT;
-}
-
-/*
- * Reset the mcu running ironside sdfw, assumes that the reboot mode is already
- * set. Reinit SWD after reset and return status.
- */
-int syncboss_swd_nrf54h20_reset_device_ironside(struct device *dev)
-{
-	int ret;
-
-	/* Reset device using the CTRL-AP */
-	ret = syncboss_swd_nrf54h20_write_reset_word(dev);
-	if (ret) {
-		dev_err(dev, "nrf54h20 failed to write reset word!");
-		return ret;
-	}
-	swd_deinit(dev);
-	msleep(POLL_INTERVAL_MS);
-
-	/* Try to reinit SWD with retries if we fail */
-	ret = syncboss_swd_nrf54h20_wait_swd_init(dev, IRONSIDE_BOOT_TIMEOUT_MS);
-	if (ret) {
-		dev_err(dev, "nrf54h20 ironside swd_init timedout after reset!");
-		return ret;
-	}
+	msleep(MCU_BOOT_DELAY_MS);
 
 	return 0;
-}
-
-/*
- * Reset the nrf, assumes that we are already connected to CTRL-AP
- * and the reboot mode is already set
- */
-static int syncboss_swd_nrf54h20_reset_device_suit(struct device *dev)
-{
-	u64 timeout_time_ns = 0;
-	const u32 canary = 0x7FFF0000;
-	int ret;
-	u32 data;
-
-	/* Connect to CTRL-AP */
-	dev_dbg(dev, "Ctrl AP select!");
-	ret = syncboss_swd_nrf54h20_write_ctrl_ap_reg(
-			dev, SWD_NRF54H20_APREG_MAILBOX_TXDATA, canary);
-	if (ret) {
-		dev_err(dev, "nrf54h20 failed to write ctrl ap reg!");
-		return ret;
-	}
-
-	/* Reset device using the CTRL-AP */
-	ret = syncboss_swd_nrf54h20_write_reset_word(dev);
-	if (ret) {
-		dev_err(dev, "nrf54h20 failed to write reset word!");
-		return ret;
-	}
-
-	swd_deinit(dev);
-	msleep(SUIT_BOOT_TIMEOUT_MS);
-
-	/* Reinit SWD */
-	ret = syncboss_swd_nrf54h20_wait_swd_init(dev, SUIT_BOOT_TIMEOUT_MS);
-	if (ret) {
-		dev_err(dev, "nrf54h20 suit swd_init timedout after reset!");
-		return ret;
-	}
-
-	/* Wait for Canary in TxData to be cleared */
-	timeout_time_ns =
-		ktime_get_ns() + (SUIT_SWD_READY_TIMEOUT_MS	* NSEC_PER_MSEC);
-	while (ktime_get_ns() < timeout_time_ns) {
-		dev_dbg(dev, "Read Ctrl AP TxData Canary!");
-		if ((syncboss_swd_nrf54h20_read_ctrl_ap_reg(
-			    dev, SWD_NRF54H20_APREG_MAILBOX_TXDATA, &data) == 0x0) && data == 0) {
-			dev_dbg(dev, "Canary cleared! Reset successful");
-			break;
-		}
-		msleep(100);
-	}
-
-	/* Wait for CtrlAP Ready to be 0 */
-	timeout_time_ns =
-		ktime_get_ns() + (SUIT_SWD_READY_TIMEOUT_MS	* NSEC_PER_MSEC);
-	while (ktime_get_ns() < timeout_time_ns) {
-		dev_dbg(dev, "Read Ctrl AP Ready!");
-		if ((syncboss_swd_nrf54h20_read_ctrl_ap_reg(
-			    dev, SWD_NRF54H20_APREG_READY, &data) == 0x0) &&
-		     data == SWD_NRF54H20_APREG_READY_Ready) {
-			dev_dbg(dev, "Ctrl AP Ready set!");
-			return 0;
-		}
-		msleep(100);
-	}
-	dev_err(dev, "nrf54H20 Reset Failed! Ctrl AP Ready not set!");
-
-	return -ETIMEDOUT;
 }
 
 static int syncboss_swd_nrf54h20_chip_reboot_into_bootmode(struct device *dev,
 							   u32 bootmode)
 {
 	int ret;
-	struct swd_dev_data *devdata;
 
 	/* Connect to CTRL-AP */
-	dev_dbg(dev, "%s Set bootmode %d!", __func__, bootmode);
+	dev_dbg(dev, "%s: setting bootmode to %d\n", __func__, bootmode);
 	swd_select_ap_reg(dev, SWD_NRF54H20_APSEL_DEVICE_CTRLAP,
 			  SWD_NRF54H20_APREG_MAILBOX_BOOTMODE);
 
+	/* Select Boot Mode */
 	ret = swd_ap_write(dev, SWD_NRF54H20_APREG_MAILBOX_BOOTMODE, bootmode);
 	if (ret) {
-		dev_err(dev, "%s Set bootmode failure!", __func__);
+		dev_err(dev, "%s: set bootmode failure\n", __func__);
 		return ret;
 	}
 
-	devdata = dev_get_drvdata(dev);
-	if (devdata->sdfw_version == SWD_NRF54H20_SDFW_VERSION_IRONSIDE)
-		ret = syncboss_swd_nrf54h20_reset_device_ironside(dev);
-	else
-		ret = syncboss_swd_nrf54h20_reset_device_suit(dev);
-
-	return ret;
-}
-
-static int syncboss_swd_nrf54h20_tx_sdfw_cmd(struct device *dev,
-					     u32 sdfw_req_word,
-					     u32 data_count_bytes,
-					     const u32 *data)
-{
-	u32 lcs_change_response = 0x0;
-	u32 status = 0x0;
-	u32 data_count = 0;
-	u32 data_idx = 0;
-	u32 num_words = 0;
-
-	/*
-	 * Write the command request to mbox
-	 * Command: write cmd, data len 4, 32-bit domain ID
-	 */
-	dev_dbg(dev, "%s write sdfw_req_word! 0x%x", __func__, sdfw_req_word);
-	syncboss_swd_nrf54h20_ctrl_ap_mbox_write_tx_data(dev, sdfw_req_word);
-	dev_dbg(dev, "%s write data_count=%d bytes", __func__,
-		data_count_bytes);
-	syncboss_swd_nrf54h20_ctrl_ap_mbox_write_tx_data(dev, data_count_bytes);
-	num_words = (data_count_bytes + sizeof(*data) - 1) / sizeof(*data);
-	while (data_idx < num_words && data != NULL) {
-		dev_dbg(dev, "%s write data 0x%x", __func__, data[data_idx]);
-		syncboss_swd_nrf54h20_ctrl_ap_mbox_write_tx_data(
-			dev, data[data_idx]);
-		data_idx++;
+	/* Reset device using the CTRL-AP */
+	ret = syncboss_swd_nrf54h20_issue_reset(dev);
+	if (ret) {
+		dev_err(dev, "%s: failed to write reset word\n", __func__);
+		return ret;
 	}
 
-	/* Read LCS Change response */
-	dev_dbg(dev, "%s read lcs change response", __func__);
-	status = syncboss_swd_nrf54h20_ctrl_ap_mbox_read_rx_data(dev,
-			&lcs_change_response);
-	if (status) {
-		dev_err(dev, "Read LCS Change response failed");
-		return status;
+	/* Wait for Ironside to boot */
+	ret = syncboss_swd_nrf54h20_wait_for_boot_stage(dev, BOOT_STAGE_IRONSIDE);
+	if (ret) {
+		dev_err(dev, "%s: ironside boot timeout after reset\n", __func__);
+		return ret;
 	}
 
-	status = syncboss_swd_nrf54h20_ctrl_ap_mbox_read_rx_data(dev, &data_count);
-	if (status) {
-		dev_err(dev, "Read LCS Change response data cnt failed");
-		return status;
-	}
-
-	status = (lcs_change_response >> 16) & 0xFFFF;
-
-	if (status != 0) {
-		dev_err(dev, "SDFW_ADAC response 0x%x", lcs_change_response);
-		dev_err(dev, "SDFW_ADAC response status 0x%x data_count 0x%x",
-			status, data_count);
-	} else {
-		dev_dbg(dev, "SDFW_ADAC response 0x%x", lcs_change_response);
-		dev_dbg(dev, "SDFW_ADAC response status 0x%x data_count 0x%x",
-			status, data_count);
-	}
-
-	num_words = (data_count + sizeof(data_count) - 1) / sizeof(data_count);
-	while (num_words > 0) {
-		u32 data_resp;
-
-		syncboss_swd_nrf54h20_ctrl_ap_mbox_read_rx_data(dev, &data_resp);
-
-		if (status != 0)
-			dev_err(dev, "%s read data =0x%x", __func__, data_resp);
-
-		num_words--;
-	}
-
-	return status;
-}
-
-/*
- * Send a domain purge request to SUIT secure domain fw for one domain (radio/app)
- */
-static int syncboss_swd_nrf54h20_adac_domain_purge_suit(struct device *dev,
-							u32 domain_id)
-{
-	const u32 sdfw_adac_domain_purge_cmd = 0xA308;
-	const u32 sdfw_req_word = (sdfw_adac_domain_purge_cmd << 16);
-	u32 data_count = 4;
-
-	dev_dbg(dev, "SDFW_ADAC cmd Purge Suit for domain 0x%x", domain_id);
-	return syncboss_swd_nrf54h20_tx_sdfw_cmd(dev, sdfw_req_word, data_count,
-						 &domain_id);
-}
-
-int syncboss_swd_nrf54h20_lcs_discovery(struct device *dev)
-{
-	const u32 sdfw_adac_discovery_cmd = 0x0001;
-	const u32 sdfw_req_word = (sdfw_adac_discovery_cmd << 16);
-	u32 data_count = 0x0;
-
-	u32 status = 0x0;
-
-	/* Reset MCU into ROM Mode! */
-	dev_dbg(dev, "Reboot device into ROM mode!");
-	status = syncboss_swd_nrf54h20_chip_reboot_into_bootmode(
-		dev, SWD_NRD45H20_APREG_MAILBOX_BOOTMODE_Rom);
-	if (status != 0)
-		goto error;
-
-	dev_dbg(dev, "Send SDFW_ADAC cmd ADAC discovery command!");
-	syncboss_swd_nrf54h20_tx_sdfw_cmd(dev, sdfw_req_word, data_count, NULL);
-
-	dev_dbg(dev, "Reboot device into normal mode!");
-	status = syncboss_swd_nrf54h20_chip_reboot_into_bootmode(
-		dev, SWD_NRD45H20_APREG_MAILBOX_BOOTMODE_Normal);
-
-error:
-	return status;
-}
-
-static int syncboss_swd_nrf54h20_chip_erase_suit(struct device *dev)
-{
-	int status = 0;
-
-	/* Reboot device into recovery app */
-	dev_dbg(dev, "Reboot device into recovery app!");
-	status = syncboss_swd_nrf54h20_chip_reboot_into_bootmode(
-		dev, SWD_NRD45H20_APREG_MAILBOX_BOOTMODE_SafeOp);
-	if (status != 0)
-		goto error;
-
-	dev_dbg(dev, "Purge Application Core!");
-	status = syncboss_swd_nrf54h20_adac_domain_purge_suit(
-		dev, SWD_NRF54H20_SDFW_APPLICATION_OWNER_ID);
-	if (status != 0)
-		goto error;
-
-	dev_dbg(dev, "Purge Radio Core!");
-	status = syncboss_swd_nrf54h20_adac_domain_purge_suit(
-		dev, SWD_NRF54H20_SDFW_RADIO_OWNER_ID);
-	if (status != 0)
-		goto error;
-
-	dev_dbg(dev, "Reboot device into normal mode!");
-	status = syncboss_swd_nrf54h20_chip_reboot_into_bootmode(
-		dev, SWD_NRD45H20_APREG_MAILBOX_BOOTMODE_Normal);
-	if (status != 0)
-		goto error;
-error:
-	return status;
+	return 0;
 }
 
 static int syncboss_swd_nrf54h20_chip_erase_ironside(struct device *dev)
@@ -509,13 +388,13 @@ static int syncboss_swd_nrf54h20_chip_erase_ironside(struct device *dev)
 	status = syncboss_swd_nrf54h20_chip_reboot_into_bootmode(
 		dev, SWD_NRD45H20_APREG_MAILBOX_BOOTMODE_EraseAll);
 	if (status != 0) {
-		dev_err(dev, "nrf54h20 Could not reset into EraseAll mode!");
+		dev_err(dev, "%s: ould not reset into EraseAll mode\n", __func__);
 		goto error;
 	}
 
 	/* 2. Check the status of the erase command by reading the boot status word */
 	timeout_time_ns =
-	    ktime_get_ns() + (IRONSIDE_ERASE_TIMEOUT_MS * NSEC_PER_MSEC);
+	    ktime_get_ns() + (ERASE_TIMEOUT_MS * NSEC_PER_MSEC);
 	while (ktime_get_ns() < timeout_time_ns) {
 		syncboss_swd_nrf54h20_read_ctrl_ap_reg(dev,
 				SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS, &bootstatus);
@@ -525,19 +404,23 @@ static int syncboss_swd_nrf54h20_chip_erase_ironside(struct device *dev)
 			continue;
 		}
 
-		boot_stage = (bootstatus >> 24) & 0xf;  /* bits 27:24 */
-		fw_version = (bootstatus >> 15) & 0x7f; /* bits 21:15 */
-		opcode     = (bootstatus >> 12) & 0x7;  /* bits 14:12 */
-		cmd_error  = (bootstatus >>  9) & 0x7;  /* bits 11: 9 */
-		boot_error = (bootstatus & 0xff);       /* bits  7: 0 */
+		boot_stage = (bootstatus & SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_stage_mask)
+				>> SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_stage_shift;
+		fw_version = (bootstatus & SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_fwver_mask)
+				>> SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_fwver_shift;
+		opcode     = (bootstatus & SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_opcode_mask)
+				>> SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_opcode_shift;
+		cmd_error  = (bootstatus & SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_cmderr_mask)
+				>> SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_cmderr_shift;
+		boot_error = (bootstatus & SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_booterr_mask)
+				>> SWD_NRF54H20_APREG_MAILBOX_BOOTSTATUS_booterr_shift;
 
-		if ((opcode == 0x1) && (cmd_error == 0x0)) {
-			dev_dbg(dev, "nrf reset success. bootstatus = 0x%x!", bootstatus);
+		if (cmd_error == 0x0) {
+			dev_dbg(dev, "%s: nrf reset success. bootstatus = 0x%x\n", __func__, bootstatus);
 			status = 0;
 		} else {
-			dev_err(dev, "!!!NRF54H20 BootFailure. Status Word!!!");
-			dev_err(dev, "status word stage:0x%x fw:0x%x opcode:0x%x err:0x%x boot_err:0x%x",
-				boot_stage, fw_version, opcode, cmd_error, boot_error);
+			dev_err(dev, "%s: NRF54H20 Boot Failure! stage:0x%x fw:0x%x opcode:0x%x err:0x%x boot_err:0x%x\n",
+				__func__, boot_stage, fw_version, opcode, cmd_error, boot_error);
 			status = -EIO;
 			goto error;
 		}
@@ -546,10 +429,16 @@ static int syncboss_swd_nrf54h20_chip_erase_ironside(struct device *dev)
 
 	/* 3. Yank power, sorcery needed to make the erase all work on ironside */
 	syncboss_deep_powercycle(dev);
-	status = syncboss_swd_nrf54h20_wait_swd_init(dev, IRONSIDE_BOOT_TIMEOUT_MS);
+	status = syncboss_swd_nrf54h20_wait_swd_init(dev);
 	if (status) {
-		dev_err(dev, "swd init failed after deep powercycle!");
+		dev_err(dev, "%s: swd init failed after deep powercycle\n", __func__);
 		goto error;
+	}
+
+	status = syncboss_swd_nrf54h20_wait_for_boot_stage(dev, BOOT_STAGE_IRONSIDE);
+	if (status) {
+		dev_err(dev, "%s: ironside boot timeout after powercycle!\n", __func__);
+		return status;
 	}
 
 	/*
@@ -561,7 +450,7 @@ static int syncboss_swd_nrf54h20_chip_erase_ironside(struct device *dev)
 		return status;
 
 error:
-	dev_err(dev, "nrf54h20 Ironside erase failure!");
+	dev_err(dev, "%s: ironside erase failure\n", __func__);
 	return status;
 }
 
@@ -573,76 +462,16 @@ int syncboss_swd_nrf54h20_chip_erase(struct device *dev)
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	int ret;
 
-	syncboss_deep_powercycle(dev);
-	syncboss_swd_nrf54h20_wait_swd_init(dev, IRONSIDE_BOOT_TIMEOUT_MS);
-
 	syncboss_swd_nrf54h20_detect_sec_dom_fw_version(dev);
-	dev_dbg(dev, "sdfw version == 0x%x!", devdata->sdfw_version);
+	dev_dbg(dev, "%s: sdfw version == 0x%x\n", __func__, devdata->sdfw_version);
 
 	if (devdata->sdfw_version == SWD_NRF54H20_SDFW_VERSION_IRONSIDE) {
-		dev_dbg(dev, "syncboss erase ironside..");
+		dev_dbg(dev, "%s: syncboss erase ironside..\n", __func__);
 		ret = syncboss_swd_nrf54h20_chip_erase_ironside(dev);
 	} else {
-		dev_dbg(dev, "syncboss erase suit..");
-		ret = syncboss_swd_nrf54h20_chip_erase_suit(dev);
+		ret = -EIO;
 	}
 	return ret;
-}
-
-static int syncboss_swd_nrf54h20_adac_start(struct device *dev)
-{
-	const u32 sdfw_adac_start_cmd = 0xA309;
-	const u32 sdfw_req_word = (sdfw_adac_start_cmd << 16);
-	const u32 data =
-		0x01020000; /* Reserved, domain ID 2 (app core), flags 1 (HALT) */
-	const u32 data_count = sizeof(data);
-
-	dev_dbg(dev, "Send SDFW_ADAC cmd ADAC Start!");
-	return syncboss_swd_nrf54h20_tx_sdfw_cmd(dev, sdfw_req_word, data_count,
-						 &data);
-}
-
-static int syncboss_swd_nrf54h20_adac_mem_cfg(struct device *dev, u32 owner_id,
-					      u32 address, u32 length)
-{
-	const u32 sdfw_adac_mem_cfg = 0xA301;
-	const u32 sdfw_req_word = (sdfw_adac_mem_cfg << 16);
-	u32 data[3];
-	const u32 data_count = sizeof(data);
-
-	data[0] = owner_id;
-	data[1] = address;
-	data[2] = length;
-	dev_dbg(dev, "Send SDFW_ADAC cmd ADAC Mem Config %d %d %d %d!",
-		data_count, data[0], data[1], data[2]);
-	return syncboss_swd_nrf54h20_tx_sdfw_cmd(dev, sdfw_req_word, data_count,
-						 data);
-}
-
-static int syncboss_swd_nrf54h20_adac_config(struct device *dev, u32 start_addr,
-					     u32 len)
-{
-	const u32 pg_alignment = 4096;
-	int ret = syncboss_swd_nrf54h20_adac_start(dev);
-
-	if (ret < 0) {
-		dev_err(dev, "ADAC Start Failure! %d", ret);
-		return ret;
-	}
-
-	dev_dbg(dev, "ADAC config start_addr 0x%x len 0x%x", start_addr, len);
-
-	/* Request must be 4k aligned, and a multiple of 4k length */
-	ret = syncboss_swd_nrf54h20_adac_mem_cfg(
-		dev, SWD_NRF54H20_SDFW_APPLICATION_OWNER_ID,
-		start_addr & ~(pg_alignment - 1),
-		(len + pg_alignment - 1) & ~(pg_alignment - 1));
-	if (ret != 0) {
-		dev_err(dev, "ADAC MemCfg Failure! %d addr 0x%x len %u", ret,
-			start_addr, len);
-		return ret;
-	}
-	return 0;
 }
 
 int syncboss_swd_nrf54h20_read(struct device *dev, int addr, u8 * const dest,
@@ -653,36 +482,13 @@ int syncboss_swd_nrf54h20_read(struct device *dev, int addr, u8 * const dest,
 	int read_idx = 0;
 	int ret;
 
-	const u32 chunk_sz = syncboss_swd_nrf54h20_get_app_write_chunk_size(dev);
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	bool need_adac = syncboss_swd_nrf54h20_is_adac_needed(dev);
 
-	dev_dbg(dev, "Read Addr 0x%08x Len %lu sdfw version %d", addr, len, devdata->sdfw_version);
+	dev_dbg(dev, "%s: Read Addr 0x%08x Len %lu sdfw version %d\n",
+			__func__, addr, len, devdata->sdfw_version);
 	if (addr % sizeof(u32) != 0 || len % sizeof(u32) != 0) {
-		dev_err(dev, "Read isn't word-aligned. Addr 0x%08x Len %lu",
-			addr, len);
-		return -EINVAL;
-	}
-
-	/* 4. Connect to the AHB */
-	ret = syncboss_swd_nrf54h20_chip_reboot_into_bootmode(
-		dev, SWD_NRD45H20_APREG_MAILBOX_BOOTMODE_Normal);
-	if (ret)
-		return ret;
-
-	msleep(500);
-	ret = swd_init(dev);
-	if (ret) {
-		dev_err(dev, "nrf54h20 SWD Init failure!");
-		return ret;
-	}
-	msleep(500);
-
-	/* config the adac from the first chunk boundary before or at addr */
-	if (need_adac &&
-	    syncboss_swd_nrf54h20_adac_config(dev, addr, len) != 0) {
-		dev_err(dev, "ADAC cfg failure! addr 0x%x len %u", addr,
-			chunk_sz);
+		dev_err(dev, "%s: read isn't word-aligned. Addr 0x%08x Len %lu\n",
+			__func__, addr, len);
 		return -EINVAL;
 	}
 
@@ -691,11 +497,11 @@ int syncboss_swd_nrf54h20_read(struct device *dev, int addr, u8 * const dest,
 	while (words > 0) {
 		ret = swd_memory_read_robust(dev, addr, &((u32 *) dest)[read_idx]);
 		if (ret) {
-			dev_err(dev, "nrf54h20 SWD memory read failure! %d", ret);
+			dev_err(dev, "%s: SWD memory read word failure %d\n", __func__, ret);
 			return ret;
 		}
 		read_idx++;
-		dev_dbg(dev, "Read: addr 0x%x Value 0x%x!", addr,
+		dev_dbg(dev, "%s: Read: addr 0x%x Value 0x%x!", __func__, addr,
 			((u32 *)dest)[read_idx - 1]);
 
 		addr += sizeof(u32);
@@ -707,7 +513,7 @@ int syncboss_swd_nrf54h20_read(struct device *dev, int addr, u8 * const dest,
 
 		ret = swd_memory_read_robust(dev, addr, &val);
 		if (ret) {
-			dev_err(dev, "nrf54h20 SWD memory read failure! %d", ret);
+			dev_err(dev, "%s: SWD memory read byte failure %d\n", __func__, ret);
 			return ret;
 		}
 
@@ -746,7 +552,17 @@ static inline int syncboss_swd_nrfh20_write_memory_retry(struct device *dev,
 	while (unlikely(++i < n_retries && ret)) {
 		msleep(retry_interval_ms);
 		ret = swd_memory_write(dev, addr, value);
+		if (ret) {
+			dev_warn_ratelimited(dev, "%s: write failure, err %d addr = %#x, retrying..", __func__, ret, addr);
+
+			ret = swd_init(dev);
+			if (ret) {
+				dev_err(dev, "swd init failed, err %d, giving up write!", ret);
+				return ret;
+			}
+		}
 	}
+
 	return ret;
 }
 
@@ -763,19 +579,18 @@ int syncboss_swd_nrf54h20_write_chunk(struct device *dev, int addr,
 	const u32 word_sz = sizeof(value);
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 	int ret;
-	bool need_adac = syncboss_swd_nrf54h20_is_adac_needed(dev);
 
 	/* 1. Check Address ranges! */
 	if (addr % sizeof(value) != 0) {
-		dev_err(dev, "Write start address 0x%08X is not word-aligned.",
-			addr);
+		dev_err(dev, "%s: write start address 0x%08X is not word-aligned.\n",
+			__func__, addr);
 		return -EINVAL;
 	}
 
 	if (addr + len > addr) {
 		end_addr = addr + len;
 	} else {
-		dev_err(dev, "Invalid address! addr 0x%x len 0x%lx", addr, len);
+		dev_err(dev, "%s: invalid address! addr 0x%x len 0x%lx\n", __func__, addr, len);
 		return -EINVAL;
 	}
 
@@ -783,32 +598,20 @@ int syncboss_swd_nrf54h20_write_chunk(struct device *dev, int addr,
 	if (syncboss_swd_nrf54h20_address_range_writable(
 		    addr, addr + len, &devdata->child_mcu_data[0].flash_info) ==
 	    false) {
-		dev_err(dev, "Cant write to protected addr range! 0x%x-0x%lx",
-			addr, addr + len);
+		dev_err(dev, "%s: can't write to protected addr range! 0x%x-0x%lx\n",
+			__func__, addr, addr + len);
 		return -EINVAL;
 	}
 
-	/* 3. Configure the ADAC, if needed! */
-	if (need_adac && syncboss_swd_nrf54h20_adac_config(dev, addr, len) != 0) {
-		dev_err(dev, "ADAC Config failure!");
-		return -EINVAL;
-	}
-
-	/* 4. Connect to the AHB */
-	ret = swd_init(dev);
-	if (ret == 0) {
-		swd_select_ap(dev, SWD_NRF54H20_APSEL_APP_AHBAP);
-	} else {
-		dev_err(dev, "SWD Init failure!");
-		return ret;
-	}
+	/* 3. Connect to the AHB */
+	swd_select_ap(dev, SWD_NRF54H20_APSEL_APP_AHBAP);
 
 	/* Start and End address need to be aligned to 16 bytes! */
 	start_addr_aligned = addr & ~(alignment - 1);
 	end_addr_aligned = (addr + len + alignment - 1) & ~(alignment - 1);
 
 	/*
-	 * 5. Write 16 byte sections, 4 byte words at a time, starting from the
+	 * 4. Write 16 byte sections, 4 byte words at a time, starting from the
 	 * last section. Writes are not flushed to storage till the last word
 	 * in the section is written. Pad any gaps at the end in alignment
 	 * with FF.
@@ -829,15 +632,15 @@ int syncboss_swd_nrf54h20_write_chunk(struct device *dev, int addr,
 				value = *((u32 *)&data[data_idx]);
 			}
 			dev_dbg(dev,
-				"Write: curr_addr 0x%x end_addr 0x%x value 0x%x",
-				curr_addr, end_addr, value);
+				"%s: Write: curr_addr 0x%x end_addr 0x%x value 0x%x\n",
+				__func__, curr_addr, end_addr, value);
 
 			ret = syncboss_swd_nrfh20_write_memory_retry(
 					dev, curr_addr, value);
 			if (ret) {
 				dev_err(dev,
-					"nrf54h20 write failure! err %d addr = 0x%x",
-					ret, curr_addr);
+					"%s: write failure! err %d addr = 0x%x\n",
+					__func__, ret, curr_addr);
 				return ret;
 			}
 		}
@@ -845,8 +648,8 @@ int syncboss_swd_nrf54h20_write_chunk(struct device *dev, int addr,
 		curr_addr -= 2 * alignment;
 		data_idx -= 2 * alignment;
 	}
-	dev_dbg(dev, "chunk update complete! curr_addr 0x%x end_addr 0x%x value 0x%x",
-				curr_addr, end_addr, value);
+	dev_dbg(dev, "%s: chunk update complete! curr_addr 0x%x end_addr 0x%x value 0x%x\n",
+				__func__, curr_addr, end_addr, value);
 
 	return 0;
 }
@@ -878,20 +681,26 @@ int syncboss_swd_nrf54h20_target_erase(struct device *dev)
 	return 0;
 }
 
-int syncboss_swd_nrf54h20_read_part_number(struct device *dev, u32 *partnum)
+int syncboss_swd_nrf54h20_prepare(struct device *dev)
 {
-	int ret = swd_init(dev);
+	/*
+	 * As per Nordic, a new debug connection is not reliable or possible
+	 * on nrf54h20 when the mcu cores are running. Reset the mcu which
+	 * resets the debugging state, giving the debugger time to attach to
+	 * the mcu cores. We should do this before and after flashing for
+	 * robustness.
+	 */
+	syncboss_deep_powercycle(dev);
 
-	if (ret) {
-		dev_err(dev, "nrf54h20 SWD Init failure!");
-		return ret;
-	}
-	swd_select_ap(dev, SWD_NRF54H20_APSEL_APP_AHBAP);
-	ret = swd_memory_read_robust(dev, SWD_NRF54H20_FICR_APP_BASE |
-				    SWD_NRF54H20_FICR_PART_OFFSET, partnum);
-	if (ret) {
-		dev_err(dev, "nrf54h20 SWD Read failure!");
-		return ret;
-	}
+	return syncboss_swd_nrf54h20_wait_swd_init(dev);
+}
+
+int syncboss_swd_nrf54h20_finalize(struct device *dev)
+{
+	swd_reset(dev);
+	swd_flush(dev);
+
+	/* Disable swd_en & re-enable HPD IRQ at end of fw_init */
+	syncboss_swd_setstate(dev, false);
 	return 0;
 }

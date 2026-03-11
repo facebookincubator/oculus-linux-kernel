@@ -333,5 +333,8 @@ int syncboss_swd_nrf5340_finalize(struct device *dev)
 	swd_memory_write(dev, SWD_NRF5340_NVMC_NET_CONFIG,
 			 SWD_NRF5340_NVMC_CONFIG_REN);
 
+	swd_reset(dev);
+	swd_flush(dev);
+
 	return 0;
 }

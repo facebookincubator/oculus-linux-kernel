@@ -408,42 +408,6 @@ exit_debug_write:
 	return status ? status : count;
 }
 
-static ssize_t swd_debug_part_number_read(struct file *fp,
-					  char __user *user_buffer,
-					  size_t count, loff_t *position)
-{
-	struct device *dev = fp->private_data;
-	struct swd_dev_data *devdata = dev_get_drvdata(dev);
-	char str[16];
-	int  s;
-	int  partnum;
-	int  ret;
-
-	if (!devdata->mcu_data.swd_ops.read_part_number) {
-		dev_err(dev, "read part number not supported!");
-		return -EOPNOTSUPP;
-	}
-
-	ret = devdata->mcu_data.swd_ops.read_part_number(dev, &partnum);
-	if (ret)
-		s = snprintf(str, sizeof(str), "Err: %d", ret);
-	else
-		s = snprintf(str, sizeof(str), "0x%x", partnum);
-
-	if (*position >= s)
-		return 0;
-
-	s -= *position;
-	s = min_t(u32, s, count);
-	if (copy_to_user(user_buffer, &str[*position], s)) {
-		return -EFAULT;
-	}
-
-	*position += s;
-
-	return s;
-}
-
 static const struct file_operations swd_debug_reset_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
@@ -472,12 +436,6 @@ static const struct file_operations swd_debug_force_write_all_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
 	.write = swd_debug_force_write_all_write,
-};
-
-static const struct file_operations swd_debug_read_part_number_all_fops = {
-	.owner = THIS_MODULE,
-	.open = simple_open,
-	.read = swd_debug_part_number_read,
 };
 
 static const struct file_operations swd_debug_set_mcu_quirk_all_fops = {
@@ -545,13 +503,6 @@ int fwupdate_create_debugfs(struct device *dev, const char *const flavor)
 
 	entry = debugfs_create_file("force_write_all", 0644, devdata->debug_entry, dev,
 			    &swd_debug_force_write_all_fops);
-	if (!entry) {
-		status = -ENOMEM;
-		goto exit_error;
-	}
-
-	entry = debugfs_create_file("read_part_num", 0644, devdata->debug_entry, dev,
-			    &swd_debug_read_part_number_all_fops);
 	if (!entry) {
 		status = -ENOMEM;
 		goto exit_error;

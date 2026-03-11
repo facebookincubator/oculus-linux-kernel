@@ -270,9 +270,10 @@
  * 3.140 Add H2T MPDUQ_AND_MSDUQ_INFO_HDR and MPDUQ_OF_MSDUQ_INFO defs.
  * 3.141 Add H2T HTT_AST_INFO for RxOLE.
  * 3.142 Add T2H GLOBAL_PEER_ID_UNMAP def, update H2T MPDUQ_OR_MSDUQ_INFO def.
+ * 3.143 Add T2H HAPS msg def.
  */
 #define HTT_CURRENT_VERSION_MAJOR 3
-#define HTT_CURRENT_VERSION_MINOR 142
+#define HTT_CURRENT_VERSION_MINOR 143
 
 #define HTT_NUM_TX_FRAG_DESC  1024
 
@@ -771,7 +772,10 @@ typedef enum {
     HTT_STATS_AST_ENTRY_TAG                        = 132, /* htt_ast_entry_tlv */
     HTT_STATS_TX_PDEV_BE_DL_MU_OFDMA_STATS_TAG     = 133, /* htt_tx_pdev_dl_be_mu_ofdma_sch_stats_tlv, TOPIC=advanced */
     HTT_STATS_TX_PDEV_BE_UL_MU_OFDMA_STATS_TAG     = 134, /* htt_tx_pdev_ul_be_mu_ofdma_sch_stats_tlv, TOPIC=advanced */
-    HTT_STATS_TX_PDEV_RATE_STATS_BE_OFDMA_TAG      = 135, /* htt_tx_pdev_rate_stats_be_ofdma_tlv */
+    HTT_STATS_TX_PDEV_RATE_BE_BN_OFDMA_TAG         = 135, /* htt_stats_tx_pdev_rate_be_bn_ofdma_tlv */
+        /* retain deprecated name as an alias */
+        HTT_STATS_TX_PDEV_RATE_STATS_BE_OFDMA_TAG =
+             HTT_STATS_TX_PDEV_RATE_BE_BN_OFDMA_TAG,
     HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_BE_STATS_TAG  = 136, /* htt_rx_pdev_ul_mumimo_trig_be_stats_tlv, TOPIC=advanced */
     HTT_STATS_TX_SELFGEN_BE_ERR_STATS_TAG          = 137, /* htt_tx_selfgen_be_err_stats_tlv, TOPIC=advanced */
     HTT_STATS_TX_SELFGEN_BE_STATS_TAG              = 138, /* htt_tx_selfgen_be_stats_tlv, TOPIC=advanced */
@@ -779,7 +783,10 @@ typedef enum {
     HTT_STATS_TX_PDEV_BE_UL_MU_MIMO_STATS_TAG      = 140, /* htt_tx_pdev_be_ul_mu_mimo_sch_stats_tlv */
     HTT_STATS_RX_PDEV_BE_UL_MIMO_USER_STATS_TAG    = 141, /* htt_rx_pdev_be_ul_mimo_user_stats_tlv */
     HTT_STATS_RX_RING_STATS_TAG                    = 142, /* htt_rx_fw_ring_stats_tlv_v */
-    HTT_STATS_RX_PDEV_BE_UL_TRIG_STATS_TAG         = 143, /* htt_rx_pdev_be_ul_trigger_stats_tlv, TOPIC=advanced */
+    HTT_STATS_RX_PDEV_BE_BN_UL_TRIG_TAG            = 143, /* htt_stats_rx_pdev_be_bn_ul_trig_tlv, TOPIC=advanced */
+        /* retain deprecated name as an alias */
+        HTT_STATS_RX_PDEV_BE_UL_TRIG_STATS_TAG =
+            HTT_STATS_RX_PDEV_BE_BN_UL_TRIG_TAG,
     HTT_STATS_TX_PDEV_SAWF_RATE_STATS_TAG          = 144, /* htt_tx_pdev_rate_stats_sawf_tlv, TOPIC=advanced */
     HTT_STATS_STRM_GEN_MPDUS_TAG                   = 145, /* htt_stats_strm_gen_mpdus_tlv_t */
     HTT_STATS_STRM_GEN_MPDUS_DETAILS_TAG           = 146, /* htt_stats_strm_gen_mpdus_details_tlv_t */
@@ -810,7 +817,8 @@ typedef enum {
     HTT_STATS_TX_PDEV_AP_EDCA_PARAMS_STATS_TAG     = 171, /* htt_tx_pdev_ap_edca_params_stats_tlv_v, TOPIC=advanced */
     HTT_STATS_TXBF_OFDMA_AX_STEER_MPDU_STATS_TAG   = 172, /* htt_txbf_ofdma_ax_steer_mpdu_stats_tlv, TOPIC=advanced */
     HTT_STATS_TXBF_OFDMA_BE_STEER_MPDU_STATS_TAG   = 173, /* htt_txbf_ofdma_be_steer_mpdu_stats_tlv, TOPIC=advanced */
-    HTT_STATS_PEER_AX_OFDMA_STATS_TAG              = 174, /* htt_peer_ax_ofdma_stats_tlv */
+    HTT_STATS_PEER_OFDMA_STATS_TAG                 = 174, /* htt_stats_peer_ofdma_stats_tlv */
+        HTT_STATS_PEER_AX_OFDMA_STATS_TAG = HTT_STATS_PEER_OFDMA_STATS_TAG, /* DEPRECATED */
     HTT_STATS_TX_PDEV_MU_EDCA_PARAMS_STATS_TAG     = 175, /* htt_tx_pdev_mu_edca_params_stats_tlv_v, TOPIC=advanced */
     HTT_STATS_PDEV_MBSSID_CTRL_FRAME_STATS_TAG     = 176, /* htt_pdev_mbssid_ctrl_frame_stats_tlv */
     HTT_STATS_TX_PDEV_MLO_ABORT_TAG                = 177, /* htt_tx_pdev_stats_mlo_abort_tlv_v */
@@ -850,6 +858,24 @@ typedef enum {
     HTT_STATS_PDEV_UL_MUMIMO_HIST_INELIGIBILITY_TAG = 211, /* htt_stats_pdev_ulmumimo_hist_ineligibility_tlv */
     HTT_STATS_PHY_PAPRD_PB_TAG                      = 212, /* htt_stats_phy_paprd_pb_tlv */
     HTT_STATS_HDS_PROF_STATS_TAG                    = 213, /* htt_stat_hds_prof_stats_tlv */
+    HTT_STATS_TX_PDEV_MDSB_NUM_USERS_HISTOGRAM_TLV_TAG = 214, /* htt_stats_tx_pdev_mdsb_num_users_histogram_tlv */
+    HTT_STATS_TX_PDEV_PENDING_SEQ_CNT_ON_SCHED_POST_HIST_TAG = 215, /* htt_stats_tx_pdev_pending_seq_cnt_on_sched_post_hist_tlv */
+    HTT_STATS_TX_PDEV_PENDING_SEQ_CNT_IN_HWQ_HIST_TAG        = 216, /* htt_stats_tx_pdev_pending_seq_cnt_in_hwq_hist_tlv */
+    HTT_STATS_TX_PDEV_PENDING_SEQ_CNT_IN_TXQ_HIST_TAG        = 217, /* htt_stats_tx_pdev_pending_seq_cnt_in_txq_hist_tlv */
+    HTT_STATS_SCHED_TXQ_EARLY_COMPL_TAG                      = 218, /* htt_stats_sched_txq_early_compl_tlv */
+    HTT_STATS_RX_PDEV_BN_UL_OFDMA_USER_TAG                   = 219, /* htt_stats_rx_pdev_bn_ul_ofdma_user_tlv */
+    HTT_STATS_TX_SELFGEN_BN_ERR_TAG                 = 220, /* htt_stats_tx_selfgen_bn_err_tlv, TOPIC=advanced */
+    HTT_STATS_TX_SELFGEN_BN_TAG                     = 221, /* htt_stats_tx_selfgen_bn_tlv, TOPIC=advanced */
+    HTT_STATS_TX_SELFGEN_BN_SCHED_STATUS_TAG        = 222, /* htt_stats_tx_selfgen_bn_sched_status_tlv, TOPIC=advanced */
+    HTT_STATS_TX_PDEV_BN_DL_MU_OFDMA_STATS_TAG      = 223, /* htt_stats_tx_pdev_bn_dl_mu_ofdma_tlv, TOPIC=advanced */
+    HTT_STATS_TX_PDEV_BN_UL_MU_OFDMA_STATS_TAG      = 224, /* htt_stats_tx_pdev_bn_ul_mu_ofdma_tlv, TOPIC=advanced */
+    HTT_STATS_RX_PEER_TID_REO_QUEUE_BA_TAG          = 225, /* htt_stats_rx_peer_tid_reo_queue_ba_tlv */
+    HTT_STATS_TXBF_OFDMA_BN_NDPA_TAG                = 226, /* htt_stats_txbf_ofdma_bn_ndpa_tlv */
+    HTT_STATS_TXBF_OFDMA_BN_NDP_TAG                 = 227, /* htt_stats_txbf_ofdma_bn_ndp_tlv */
+    HTT_STATS_TXBF_OFDMA_BN_BRP_TAG                 = 228, /* htt_stats_txbf_ofdma_bn_brp_tlv */
+    HTT_STATS_TXBF_OFDMA_BN_STEER_TAG               = 229, /* htt_stats_txbf_ofdma_bn_steer_tlv */
+    HTT_STATS_TXBF_OFDMA_BN_STEER_MPDU_TAG          = 230, /* htt_stats_txbf_ofdma_bn_steer_mpdu_tlv */
+    HTT_STATS_TXBF_OFDMA_BN_PARBW_TAG               = 231, /* htt_stats_txbf_ofdma_bn_parbw_tlv */
 
     HTT_STATS_MAX_TAG,
 } htt_stats_tlv_tag_t;
@@ -12170,6 +12196,7 @@ enum htt_t2h_msg_type {
     HTT_T2H_MSG_TYPE_SDWF_MSDUQ_CFG_IND            = 0x3c,
     HTT_T2H_MSG_TYPE_MLO_LATENCY_REQ               = 0x3d,
     HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP          = 0x3e,
+    HTT_T2H_MSG_TYPE_HAPS                          = 0x3f,
 
 
     HTT_T2H_MSG_TYPE_TEST,
@@ -24055,6 +24082,124 @@ PREPACK struct htt_t2h_global_peer_id_unmap_t {
         HTT_CHECK_SET_VAL(HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP_HW_LINK_ID, _val); \
         ((_var) |= ((_val) << HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP_HW_LINK_ID_S)); \
     } while (0)
+
+
+/*
+ * @brief target -> pause/unpause host tx queues based on FW indication
+ * MSG_TYPE => HTT_T2H_MSG_TYPE_HAPS
+ *
+ * @details * Header fields:
+ *
+ * |31     22|21         20|19       16|15               8|7             0|
+ * |---------+-------------+-----------+------------------+---------------|
+ * | RSVD    |time_type    |action_code|      vdev_id     |   msg type    |
+ * |----------------------------------------------------------------------|
+ * |                          time_high                                   |
+ * |----------------------------------------------------------------------|
+ * |                          time_low                                    |
+ * |----------------------------------------------------------------------|
+ *
+ * dword0 - b'7:0       - msg_type: This will be set to
+ *                        0x3f (HTT_T2H_MSG_TYPE_HAPS)
+ *          b'15:8      - vdev_id
+ *          b'19:16     - action_code (HTT_T2H_HAPS_ACTION_CODE):
+ *                        b'0000: Pause
+ *                        b'0001: Pause with One-Shot Unpause
+ *                        b'0010: Unpause
+ *                        values 3-15: reserved
+ *          b'21:20     - time_type
+ *          b'31:22     - rsvd
+ * reverse action_code at time specified below
+ * (units are specified by the type_type bitfield)
+ * dword1 - b'31:0      uint32_t time_high
+ * dword2 - b'31:0      uint32_t time_low
+ */
+typedef enum {
+    HTT_T2H_HAPS_ACTION_PAUSE                          = 0x00,
+    HTT_T2H_HAPS_ACTION_PAUSE_WITH_ONESHOT_UNPAUSE     = 0x01,
+    HTT_T2H_HAPS_ACTION_UNPAUSE                        = 0x02,
+} HTT_T2H_HAPS_ACTION_CODE;
+
+typedef enum {
+    HTT_T2H_HAPS_TIME_TYPE_HOST_QTIME                  = 0x00,
+    HTT_T2H_HAPS_TIME_TYPE_TSF                         = 0x01,
+} HTT_T2H_HAPS_TIME_TYPE;
+
+PREPACK struct htt_t2h_power_state_info {
+    uint32_t msg_type : 8,           /* [7:0]   */
+             vdev_id : 8,            /* [15:8]  */
+             action_code : 4,        /* [19:16] */
+             time_type: 2,           /* [21:20] */
+             rsvd: 10;               /* [31:22] */
+    uint32_t time_low;
+    uint32_t time_high;
+} POSTPACK;
+
+#define HTT_T2H_POWER_STATE_INFO_SIZE (sizeof(struct htt_t2h_power_state_info))
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_VDEV_ID_M                 0x0000FF00
+#define HTT_T2H_POWER_STATE_INFO_HTT_VDEV_ID_S                          8
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_VDEV_ID_GET(_var) \
+    (((_var) & HTT_T2H_POWER_STATE_INFO_HTT_VDEV_ID_M) >> \
+     HTT_T2H_POWER_STATE_INFO_HTT_VDEV_ID_S)
+#define HTT_T2H_POWER_STATE_INFO_HTT_VDEV_ID_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_POWER_STATE_INFO_HTT_VDEV_ID, _val); \
+        ((_var) |= ((_val) << HTT_T2H_POWER_STATE_INFO_HTT_VDEV_ID_S));\
+    } while (0)
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_ACTION_CODE_M                 0x000F0000
+#define HTT_T2H_POWER_STATE_INFO_HTT_ACTION_CODE_S                         16
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_ACTION_CODE_GET(_var) \
+    (((_var) & HTT_T2H_POWER_STATE_INFO_HTT_ACTION_CODE_M) >> \
+     HTT_T2H_POWER_STATE_INFO_HTT_ACTION_CODE_S)
+#define HTT_T2H_POWER_STATE_INFO_HTT_ACTION_CODE_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_POWER_STATE_INFO_HTT_ACTION_CODE, _val); \
+        ((_var) |= ((_val) << HTT_T2H_POWER_STATE_INFO_HTT_ACTION_CODE_S));\
+    } while (0)
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_TYPE_M                 0x00300000
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_TYPE_S                         20
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_TYPE_GET(_var) \
+    (((_var) & HTT_T2H_POWER_STATE_INFO_HTT_TIME_TYPE_M) >> \
+     HTT_T2H_POWER_STATE_INFO_HTT_TIME_TYPE_S)
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_TYPE_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_POWER_STATE_INFO_HTT_TIME_TYPE, _val); \
+        ((_var) |= ((_val) << HTT_T2H_POWER_STATE_INFO_HTT_TIME_TYPE_S));\
+    } while (0)
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_HIGH_M                 0xFFFFFFFF
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_HIGH_S                          0
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_HIGH_GET(_var) \
+    (((_var) & HTT_T2H_POWER_STATE_INFO_HTT_TIME_HIGH_M) >> \
+     HTT_T2H_POWER_STATE_INFO_HTT_TIME_HIGH_S)
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_HIGH_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_POWER_STATE_INFO_HTT_TIME_HIGH, _val); \
+        ((_var) |= ((_val) << HTT_T2H_POWER_STATE_INFO_HTT_TIME_HIGH_S));\
+    } while (0)
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_LOW_M                 0xFFFFFFFF
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_LOW_S                          0
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_LOW_GET(_var) \
+    (((_var) & HTT_T2H_POWER_STATE_INFO_HTT_TIME_LOW_M) >> \
+     HTT_T2H_POWER_STATE_INFO_HTT_TIME_LOW_S)
+
+#define HTT_T2H_POWER_STATE_INFO_HTT_TIME_LOW_SET(_var, _val) \
+    do { \
+        HTT_CHECK_SET_VAL(HTT_T2H_POWER_STATE_INFO_HTT_TIME_LOW, _val); \
+        ((_var) |= ((_val) << HTT_T2H_POWER_STATE_INFO_HTT_TIME_LOW_S));\
+    } while (0)
+
 
 
 #endif

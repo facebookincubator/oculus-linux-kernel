@@ -47,6 +47,9 @@ int hubert_swd_prepare(struct device *dev)
 {
 	u32 value;
 
+	swd_init(dev);
+	swd_halt(dev);
+
 	/* Enable automatic page flushing mode */
 	value = swd_memory_read(dev, SWD_SAMD_NVMCTRL_CTRLB);
 	value &= ~SWD_SAMD_NVMCTRL_CTRLB_MANW;
