@@ -1,18 +1,13 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * rt5670.h  --  RT5670 ALSA SoC audio driver
  *
  * Copyright 2014 Realtek Microelectronics
  * Author: Bard Liao <bardliao@realtek.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef __RT5670_H__
 #define __RT5670_H__
-
-#include <sound/rt5670.h>
 
 /* Info */
 #define RT5670_RESET				0x00
@@ -227,6 +222,12 @@
 #define RT5670_L_VOL_SFT			8
 #define RT5670_R_VOL_MASK			(0x3f)
 #define RT5670_R_VOL_SFT			0
+
+/* SW Reset & Device ID (0x00) */
+#define RT5670_ID_MASK				(0x3 << 1)
+#define RT5670_ID_5670				(0x0 << 1)
+#define RT5670_ID_5672				(0x1 << 1)
+#define RT5670_ID_5671				(0x2 << 1)
 
 /* Combo Jack Control 1 (0x0a) */
 #define RT5670_CBJ_BST1_MASK			(0xf << 12)
@@ -754,7 +755,7 @@
 #define RT5670_PWR_VREF2_BIT			4
 #define RT5670_PWR_FV2				(0x1 << 3)
 #define RT5670_PWR_FV2_BIT			3
-#define RT5670_LDO_SEL_MASK			(0x3)
+#define RT5670_LDO_SEL_MASK			(0x7)
 #define RT5670_LDO_SEL_SFT			0
 
 /* Power Management for Analog 2 (0x64) */
@@ -967,12 +968,12 @@
 #define RT5670_SCLK_SRC_MCLK			(0x0 << 14)
 #define RT5670_SCLK_SRC_PLL1			(0x1 << 14)
 #define RT5670_SCLK_SRC_RCCLK			(0x2 << 14) /* 15MHz */
-#define RT5670_PLL1_SRC_MASK			(0x3 << 12)
-#define RT5670_PLL1_SRC_SFT			12
-#define RT5670_PLL1_SRC_MCLK			(0x0 << 12)
-#define RT5670_PLL1_SRC_BCLK1			(0x1 << 12)
-#define RT5670_PLL1_SRC_BCLK2			(0x2 << 12)
-#define RT5670_PLL1_SRC_BCLK3			(0x3 << 12)
+#define RT5670_PLL1_SRC_MASK			(0x7 << 11)
+#define RT5670_PLL1_SRC_SFT			11
+#define RT5670_PLL1_SRC_MCLK			(0x0 << 11)
+#define RT5670_PLL1_SRC_BCLK1			(0x1 << 11)
+#define RT5670_PLL1_SRC_BCLK2			(0x2 << 11)
+#define RT5670_PLL1_SRC_BCLK3			(0x3 << 11)
 #define RT5670_PLL1_PD_MASK			(0x1 << 3)
 #define RT5670_PLL1_PD_SFT			3
 #define RT5670_PLL1_PD_1			(0x0 << 3)
@@ -1017,50 +1018,33 @@
 #define RT5670_DMIC_2_M_NOR			(0x0 << 8)
 #define RT5670_DMIC_2_M_ASYN			(0x1 << 8)
 
+/* ASRC clock source selection (0x84, 0x85) */
+#define RT5670_CLK_SEL_SYS			(0x0)
+#define RT5670_CLK_SEL_I2S1_ASRC		(0x1)
+#define RT5670_CLK_SEL_I2S2_ASRC		(0x2)
+#define RT5670_CLK_SEL_I2S3_ASRC		(0x3)
+#define RT5670_CLK_SEL_SYS2			(0x5)
+#define RT5670_CLK_SEL_SYS3			(0x6)
+
 /* ASRC Control 2 (0x84) */
-#define RT5670_MDA_L_M_MASK			(0x1 << 15)
-#define RT5670_MDA_L_M_SFT			15
-#define RT5670_MDA_L_M_NOR			(0x0 << 15)
-#define RT5670_MDA_L_M_ASYN			(0x1 << 15)
-#define RT5670_MDA_R_M_MASK			(0x1 << 14)
-#define RT5670_MDA_R_M_SFT			14
-#define RT5670_MDA_R_M_NOR			(0x0 << 14)
-#define RT5670_MDA_R_M_ASYN			(0x1 << 14)
-#define RT5670_MAD_L_M_MASK			(0x1 << 13)
-#define RT5670_MAD_L_M_SFT			13
-#define RT5670_MAD_L_M_NOR			(0x0 << 13)
-#define RT5670_MAD_L_M_ASYN			(0x1 << 13)
-#define RT5670_MAD_R_M_MASK			(0x1 << 12)
-#define RT5670_MAD_R_M_SFT			12
-#define RT5670_MAD_R_M_NOR			(0x0 << 12)
-#define RT5670_MAD_R_M_ASYN			(0x1 << 12)
-#define RT5670_ADC_M_MASK			(0x1 << 11)
-#define RT5670_ADC_M_SFT			11
-#define RT5670_ADC_M_NOR			(0x0 << 11)
-#define RT5670_ADC_M_ASYN			(0x1 << 11)
-#define RT5670_STO_DAC_M_MASK			(0x1 << 5)
-#define RT5670_STO_DAC_M_SFT			5
-#define RT5670_STO_DAC_M_NOR			(0x0 << 5)
-#define RT5670_STO_DAC_M_ASYN			(0x1 << 5)
-#define RT5670_I2S1_R_D_MASK			(0x1 << 4)
-#define RT5670_I2S1_R_D_SFT			4
-#define RT5670_I2S1_R_D_DIS			(0x0 << 4)
-#define RT5670_I2S1_R_D_EN			(0x1 << 4)
-#define RT5670_I2S2_R_D_MASK			(0x1 << 3)
-#define RT5670_I2S2_R_D_SFT			3
-#define RT5670_I2S2_R_D_DIS			(0x0 << 3)
-#define RT5670_I2S2_R_D_EN			(0x1 << 3)
-#define RT5670_PRE_SCLK_MASK			(0x3)
-#define RT5670_PRE_SCLK_SFT			0
-#define RT5670_PRE_SCLK_512			(0x0)
-#define RT5670_PRE_SCLK_1024			(0x1)
-#define RT5670_PRE_SCLK_2048			(0x2)
+#define RT5670_DA_STO_CLK_SEL_MASK		(0xf << 12)
+#define RT5670_DA_STO_CLK_SEL_SFT		12
+#define RT5670_DA_MONOL_CLK_SEL_MASK		(0xf << 8)
+#define RT5670_DA_MONOL_CLK_SEL_SFT		8
+#define RT5670_DA_MONOR_CLK_SEL_MASK		(0xf << 4)
+#define RT5670_DA_MONOR_CLK_SEL_SFT		4
+#define RT5670_AD_STO1_CLK_SEL_MASK		(0xf << 0)
+#define RT5670_AD_STO1_CLK_SEL_SFT		0
 
 /* ASRC Control 3 (0x85) */
-#define RT5670_I2S1_RATE_MASK			(0xf << 12)
-#define RT5670_I2S1_RATE_SFT			12
-#define RT5670_I2S2_RATE_MASK			(0xf << 8)
-#define RT5670_I2S2_RATE_SFT			8
+#define RT5670_UP_CLK_SEL_MASK			(0xf << 12)
+#define RT5670_UP_CLK_SEL_SFT			12
+#define RT5670_DOWN_CLK_SEL_MASK		(0xf << 8)
+#define RT5670_DOWN_CLK_SEL_SFT			8
+#define RT5670_AD_MONOL_CLK_SEL_MASK		(0xf << 4)
+#define RT5670_AD_MONOL_CLK_SEL_SFT		4
+#define RT5670_AD_MONOR_CLK_SEL_MASK		(0xf << 0)
+#define RT5670_AD_MONOR_CLK_SEL_SFT		0
 
 /* ASRC Control 4 (0x89) */
 #define RT5670_I2S1_PD_MASK			(0x7 << 12)
@@ -1827,6 +1811,10 @@
 #define RT5670_ZCD_HP_DIS			(0x0 << 15)
 #define RT5670_ZCD_HP_EN			(0x1 << 15)
 
+/* General Control 3 (0xfc) */
+#define RT5670_TDM_DATA_MODE_SEL		(0x1 << 11)
+#define RT5670_TDM_DATA_MODE_NOR		(0x0 << 11)
+#define RT5670_TDM_DATA_MODE_50FS		(0x1 << 11)
 
 /* Codec Private Register definition */
 /* 3D Speaker Control (0x63) */
@@ -1925,6 +1913,7 @@ enum {
 #define RT5670_IF1_ADC1_IN2_SFT			11
 #define RT5670_IF1_ADC2_IN1_SEL			(0x1 << 10)
 #define RT5670_IF1_ADC2_IN1_SFT			10
+#define RT5670_MCLK_DET				(0x1 << 3)
 
 /* General Control2 (0xfb) */
 #define RT5670_RXDC_SRC_MASK			(0x1 << 7)
@@ -1961,26 +1950,58 @@ enum {
 };
 
 enum {
+	RT5670_DMIC1_DISABLED,
 	RT5670_DMIC_DATA_GPIO6,
 	RT5670_DMIC_DATA_IN2P,
 	RT5670_DMIC_DATA_GPIO7,
 };
 
 enum {
+	RT5670_DMIC2_DISABLED,
 	RT5670_DMIC_DATA_GPIO8,
 	RT5670_DMIC_DATA_IN3N,
 };
 
 enum {
+	RT5670_DMIC3_DISABLED,
 	RT5670_DMIC_DATA_GPIO9,
 	RT5670_DMIC_DATA_GPIO10,
 	RT5670_DMIC_DATA_GPIO5,
 };
 
+/* filter mask */
+enum {
+	RT5670_DA_STEREO_FILTER = 0x1,
+	RT5670_DA_MONO_L_FILTER = (0x1 << 1),
+	RT5670_DA_MONO_R_FILTER = (0x1 << 2),
+	RT5670_AD_STEREO_FILTER = (0x1 << 3),
+	RT5670_AD_MONO_L_FILTER = (0x1 << 4),
+	RT5670_AD_MONO_R_FILTER = (0x1 << 5),
+	RT5670_UP_RATE_FILTER   = (0x1 << 6),
+	RT5670_DOWN_RATE_FILTER = (0x1 << 7),
+};
+
+int rt5670_sel_asrc_clk_src(struct snd_soc_component *component,
+			    unsigned int filter_mask, unsigned int clk_src);
+
 struct rt5670_priv {
-	struct snd_soc_codec *codec;
-	struct rt5670_platform_data pdata;
+	struct snd_soc_component *component;
 	struct regmap *regmap;
+	struct snd_soc_jack *jack;
+	struct snd_soc_jack_gpio hp_gpio;
+
+	int jd_mode;
+	bool in2_diff;
+	bool gpio1_is_irq;
+	bool gpio1_is_ext_spk_en;
+
+	bool dmic_en;
+	unsigned int dmic1_data_pin;
+	/* 0 = GPIO6; 1 = IN2P; 3 = GPIO7*/
+	unsigned int dmic2_data_pin;
+	/* 0 = GPIO8; 1 = IN3N; */
+	unsigned int dmic3_data_pin;
+	/* 0 = GPIO9; 1 = GPIO10; 2 = GPIO5*/
 
 	int sysclk;
 	int sysclk_src;
@@ -1995,6 +2016,11 @@ struct rt5670_priv {
 	int dsp_sw; /* expected parameter setting */
 	int dsp_rate;
 	int jack_type;
+	int jack_type_saved;
 };
 
+void rt5670_jack_suspend(struct snd_soc_component *component);
+void rt5670_jack_resume(struct snd_soc_component *component);
+int rt5670_set_jack_detect(struct snd_soc_component *component,
+	struct snd_soc_jack *jack);
 #endif /* __RT5670_H__ */

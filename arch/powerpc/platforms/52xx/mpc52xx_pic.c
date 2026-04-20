@@ -196,7 +196,7 @@ static int mpc52xx_extirq_set_type(struct irq_data *d, unsigned int flow_type)
 	ctrl_reg |= (type << (22 - (l2irq * 2)));
 	out_be32(&intr->ctrl, ctrl_reg);
 
-	__irq_set_handler_locked(d->irq, handler);
+	irq_set_handler_locked(d, handler);
 
 	return 0;
 }
@@ -340,7 +340,7 @@ static int mpc52xx_irqhost_map(struct irq_domain *h, unsigned int virq,
 {
 	int l1irq;
 	int l2irq;
-	struct irq_chip *uninitialized_var(irqchip);
+	struct irq_chip *irqchip;
 	void *hndlr;
 	int type;
 	u32 reg;
@@ -511,7 +511,7 @@ unsigned int mpc52xx_get_irq(void)
 			irq |= (MPC52xx_IRQ_L1_PERP << MPC52xx_IRQ_L1_OFFSET);
 		}
 	} else {
-		return NO_IRQ;
+		return 0;
 	}
 
 	return irq_linear_revmap(mpc52xx_irqhost, irq);

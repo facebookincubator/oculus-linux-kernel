@@ -1,22 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2010 ST-Ericsson AB
  * Mian Yousaf Kaukab <mian.yousaf.kaukab@stericsson.com>
  *
  * Based on omap2430.c
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/module.h>
@@ -30,7 +17,7 @@
 
 #include "musb_core.h"
 
-static struct musb_hdrc_config ux500_musb_hdrc_config = {
+static const struct musb_hdrc_config ux500_musb_hdrc_config = {
 	.multipoint	= true,
 	.dyn_fifo	= true,
 	.num_eps	= 16,
@@ -56,7 +43,7 @@ static void ux500_musb_set_vbus(struct musb *musb, int is_on)
 	devctl = musb_readb(musb->mregs, MUSB_DEVCTL);
 
 	if (is_on) {
-		if (musb->xceiv->state == OTG_STATE_A_IDLE) {
+		if (musb->xceiv->otg->state == OTG_STATE_A_IDLE) {
 			/* start the session */
 			devctl |= MUSB_DEVCTL_SESSION;
 			musb_writeb(musb->mregs, MUSB_DEVCTL, devctl);
@@ -75,8 +62,7 @@ static void ux500_musb_set_vbus(struct musb *musb, int is_on)
 
 		} else {
 			musb->is_active = 1;
-			musb->xceiv->otg->default_a = 1;
-			musb->xceiv->state = OTG_STATE_A_WAIT_VRISE;
+			musb->xceiv->otg->state = OTG_STATE_A_WAIT_VRISE;
 			devctl |= MUSB_DEVCTL_SESSION;
 			MUSB_HST_MODE(musb);
 		}
@@ -86,7 +72,6 @@ static void ux500_musb_set_vbus(struct musb *musb, int is_on)
 		/* NOTE: we're skipping A_WAIT_VFALL -> A_IDLE and jumping
 		 * right to B_IDLE...
 		 */
-		musb->xceiv->otg->default_a = 0;
 		devctl &= ~MUSB_DEVCTL_SESSION;
 		MUSB_DEV_MODE(musb);
 	}
@@ -102,7 +87,7 @@ static void ux500_musb_set_vbus(struct musb *musb, int is_on)
 		mdelay(200);
 
 	dev_dbg(musb->controller, "VBUS %s, devctl %02x\n",
-		usb_otg_state_string(musb->xceiv->state),
+		usb_otg_state_string(musb->xceiv->otg->state),
 		musb_readb(musb->mregs, MUSB_DEVCTL));
 }
 
@@ -112,7 +97,7 @@ static int musb_otg_notifications(struct notifier_block *nb,
 	struct musb *musb = container_of(nb, struct musb, nb);
 
 	dev_dbg(musb->controller, "musb_otg_notifications %ld %s\n",
-			event, usb_otg_state_string(musb->xceiv->state));
+			event, usb_otg_state_string(musb->xceiv->otg->state));
 
 	switch (event) {
 	case UX500_MUSB_ID:
@@ -127,7 +112,7 @@ static int musb_otg_notifications(struct notifier_block *nb,
 		if (is_host_active(musb))
 			ux500_musb_set_vbus(musb, 0);
 		else
-			musb->xceiv->state = OTG_STATE_B_IDLE;
+			musb->xceiv->otg->state = OTG_STATE_B_IDLE;
 		break;
 	default:
 		dev_dbg(musb->controller, "ID float\n");
@@ -188,8 +173,14 @@ static int ux500_musb_exit(struct musb *musb)
 }
 
 static const struct musb_platform_ops ux500_ops = {
+	.quirks		= MUSB_DMA_UX500 | MUSB_INDEXED_EP,
+#ifdef CONFIG_USB_UX500_DMA
+	.dma_init	= ux500_dma_controller_create,
+	.dma_exit	= ux500_dma_controller_destroy,
+#endif
 	.init		= ux500_musb_init,
 	.exit		= ux500_musb_exit,
+	.fifo_mode	= 5,
 
 	.set_vbus	= ux500_musb_set_vbus,
 };
@@ -247,10 +238,8 @@ static int ux500_probe(struct platform_device *pdev)
 	}
 
 	glue = devm_kzalloc(&pdev->dev, sizeof(*glue), GFP_KERNEL);
-	if (!glue) {
-		dev_err(&pdev->dev, "failed to allocate glue context\n");
+	if (!glue)
 		goto err0;
-	}
 
 	musb = platform_device_alloc("musb-hdrc", PLATFORM_DEVID_AUTO);
 	if (!musb) {
@@ -338,13 +327,15 @@ static int ux500_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int ux500_suspend(struct device *dev)
 {
 	struct ux500_glue	*glue = dev_get_drvdata(dev);
 	struct musb		*musb = glue_to_musb(glue);
 
-	usb_phy_set_suspend(musb->xceiv, 1);
+	if (musb)
+		usb_phy_set_suspend(musb->xceiv, 1);
+
 	clk_disable_unprepare(glue->clk);
 
 	return 0;
@@ -362,7 +353,8 @@ static int ux500_resume(struct device *dev)
 		return ret;
 	}
 
-	usb_phy_set_suspend(musb->xceiv, 0);
+	if (musb)
+		usb_phy_set_suspend(musb->xceiv, 0);
 
 	return 0;
 }
@@ -374,6 +366,8 @@ static const struct of_device_id ux500_match[] = {
         { .compatible = "stericsson,db8500-musb", },
         {}
 };
+
+MODULE_DEVICE_TABLE(of, ux500_match);
 
 static struct platform_driver ux500_driver = {
 	.probe		= ux500_probe,

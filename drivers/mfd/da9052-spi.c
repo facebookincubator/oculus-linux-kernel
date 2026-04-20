@@ -1,15 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * SPI access for Dialog DA9052 PMICs.
  *
  * Copyright(c) 2011 Dialog Semiconductor Ltd.
  *
  * Author: David Dajun Chen <dchen@diasemi.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
  */
 
 #include <linux/device.h>
@@ -32,7 +27,7 @@ static int da9052_spi_probe(struct spi_device *spi)
 	if (!da9052)
 		return -ENOMEM;
 
-	spi->mode = SPI_MODE_0 | SPI_CPOL;
+	spi->mode = SPI_MODE_0;
 	spi->bits_per_word = 8;
 	spi_setup(spi);
 
@@ -43,6 +38,11 @@ static int da9052_spi_probe(struct spi_device *spi)
 
 	config = da9052_regmap_config;
 	config.read_flag_mask = 1;
+	config.reg_bits = 7;
+	config.pad_bits = 1;
+	config.val_bits = 8;
+	config.use_single_read = true;
+	config.use_single_write = true;
 
 	da9052->regmap = devm_regmap_init_spi(spi, &config);
 	if (IS_ERR(da9052->regmap)) {
@@ -52,11 +52,7 @@ static int da9052_spi_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	ret = da9052_device_init(da9052, id->driver_data);
-	if (ret != 0)
-		return ret;
-
-	return 0;
+	return da9052_device_init(da9052, id->driver_data);
 }
 
 static int da9052_spi_remove(struct spi_device *spi)
@@ -67,7 +63,7 @@ static int da9052_spi_remove(struct spi_device *spi)
 	return 0;
 }
 
-static struct spi_device_id da9052_spi_id[] = {
+static const struct spi_device_id da9052_spi_id[] = {
 	{"da9052", DA9052},
 	{"da9053-aa", DA9053_AA},
 	{"da9053-ba", DA9053_BA},
@@ -82,7 +78,6 @@ static struct spi_driver da9052_spi_driver = {
 	.id_table = da9052_spi_id,
 	.driver = {
 		.name = "da9052",
-		.owner = THIS_MODULE,
 	},
 };
 

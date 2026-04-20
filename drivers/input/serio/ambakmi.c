@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  linux/drivers/input/serio/ambakmi.c
  *
  *  Copyright (C) 2000-2003 Deep Blue Solutions Ltd.
  *  Copyright (C) 2002 Russell King.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 #include <linux/module.h>
 #include <linux/serio.h>
@@ -163,7 +159,7 @@ static int amba_kmi_probe(struct amba_device *dev,
 	return ret;
 }
 
-static int amba_kmi_remove(struct amba_device *dev)
+static void amba_kmi_remove(struct amba_device *dev)
 {
 	struct amba_kmi_port *kmi = amba_get_drvdata(dev);
 
@@ -172,12 +168,11 @@ static int amba_kmi_remove(struct amba_device *dev)
 	iounmap(kmi->base);
 	kfree(kmi);
 	amba_release_regions(dev);
-	return 0;
 }
 
-static int amba_kmi_resume(struct amba_device *dev)
+static int __maybe_unused amba_kmi_resume(struct device *dev)
 {
-	struct amba_kmi_port *kmi = amba_get_drvdata(dev);
+	struct amba_kmi_port *kmi = dev_get_drvdata(dev);
 
 	/* kick the serio layer to rescan this port */
 	serio_reconnect(kmi->io);
@@ -185,7 +180,9 @@ static int amba_kmi_resume(struct amba_device *dev)
 	return 0;
 }
 
-static struct amba_id amba_kmi_idtable[] = {
+static SIMPLE_DEV_PM_OPS(amba_kmi_dev_pm_ops, NULL, amba_kmi_resume);
+
+static const struct amba_id amba_kmi_idtable[] = {
 	{
 		.id	= 0x00041050,
 		.mask	= 0x000fffff,
@@ -199,11 +196,11 @@ static struct amba_driver ambakmi_driver = {
 	.drv		= {
 		.name	= "kmi-pl050",
 		.owner	= THIS_MODULE,
+		.pm	= &amba_kmi_dev_pm_ops,
 	},
 	.id_table	= amba_kmi_idtable,
 	.probe		= amba_kmi_probe,
 	.remove		= amba_kmi_remove,
-	.resume		= amba_kmi_resume,
 };
 
 module_amba_driver(ambakmi_driver);

@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2004 Anton Blanchard <anton@au.ibm.com>, IBM
  * Added mmcra[slot] support:
  * Copyright (C) 2006-2007 Will Schmidt <willschm@us.ibm.com>, IBM
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
  */
 
 #include <linux/oprofile.h>
@@ -207,7 +203,7 @@ static int power4_start(struct op_counter_config *ctr)
 	unsigned int mmcr0;
 
 	/* set the PMM bit (see comment below) */
-	mtmsrd(mfmsr() | MSR_PMM);
+	mtmsr(mfmsr() | MSR_PMM);
 
 	for (i = 0; i < cur_cpu_spec->num_pmcs; ++i) {
 		if (ctr[i].enabled) {
@@ -377,7 +373,7 @@ static void power4_handle_interrupt(struct pt_regs *regs,
 	is_kernel = get_kernel(pc, mmcra);
 
 	/* set the PMM bit (see comment below) */
-	mtmsrd(mfmsr() | MSR_PMM);
+	mtmsr(mfmsr() | MSR_PMM);
 
 	/* Check that the SIAR  valid bit in MMCRA is set to 1. */
 	if ((mmcra & MMCRA_SIAR_VALID_MASK) == MMCRA_SIAR_VALID_MASK)

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_SERIAL_BCM63XX_H
 #define _LINUX_SERIAL_BCM63XX_H
 
@@ -115,7 +116,5 @@
 #define UART_FIFO_ANYERR_MASK		(UART_FIFO_FRAMEERR_MASK |	\
 					UART_FIFO_PARERR_MASK |		\
 					UART_FIFO_BRKDET_MASK)
-
-#define UART_REG_SIZE			24
 
 #endif /* _LINUX_SERIAL_BCM63XX_H */

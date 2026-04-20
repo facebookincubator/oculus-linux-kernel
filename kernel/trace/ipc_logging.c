@@ -1,14 +1,6 @@
-/* Copyright (c) 2012-2015,2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <asm/arch_timer.h>
@@ -27,13 +19,19 @@
 #include <linux/wait.h>
 #include <linux/delay.h>
 #include <linux/completion.h>
+#include <linux/sched/clock.h>
 #include <linux/ipc_logging.h>
+#include <soc/qcom/minidump.h>
 
 #include "ipc_logging_private.h"
 
 #define LOG_PAGE_DATA_SIZE	sizeof(((struct ipc_log_page *)0)->data)
 #define LOG_PAGE_FLAG (1 << 31)
+#define MAX_MINIDUMP_BUFFERS CONFIG_IPC_LOG_MINIDUMP_BUFFERS
+/*16th bit is used for minidump feature*/
+#define FEATURE_MASK 0x10000
 
+static int minidump_buf_cnt;
 static LIST_HEAD(ipc_log_context_list);
 static DEFINE_RWLOCK(context_list_lock_lha1);
 static void *get_deserialization_func(struct ipc_log_context *ilctxt,
@@ -133,6 +131,31 @@ static struct ipc_log_page *get_next_page(struct ipc_log_context *ilctxt,
 	return pg;
 }
 
+static void register_minidump(u64 vaddr, u64 size,
+			      const char *buf_name, int index)
+{
+	struct md_region md_entry;
+	int ret;
+
+	if (msm_minidump_enabled()
+	    && (minidump_buf_cnt < MAX_MINIDUMP_BUFFERS)) {
+		scnprintf(md_entry.name, sizeof(md_entry.name), "%s_%d",
+			  buf_name, index);
+		md_entry.virt_addr = vaddr;
+		md_entry.phys_addr = virt_to_phys((void *)vaddr);
+		md_entry.size = size;
+
+		ret = msm_minidump_add_region(&md_entry);
+		if (ret < 0) {
+			pr_err(
+		 "Failed to register log buffer %s_%d in Minidump ret %d\n",
+		  buf_name, index, ret);
+
+			return;
+		}
+		minidump_buf_cnt++;
+	}
+}
 /**
  * ipc_log_read - do non-destructive read of the log
  *
@@ -162,7 +185,8 @@ static void ipc_log_read(struct ipc_log_context *ilctxt,
 		ilctxt->nd_read_page->hdr.nd_read_offset = 0;
 		ilctxt->nd_read_page = get_next_page(ilctxt,
 			ilctxt->nd_read_page);
-		BUG_ON(ilctxt->nd_read_page == NULL);
+		if (WARN_ON(ilctxt->nd_read_page == NULL))
+			return;
 
 		memcpy((data + bytes_to_read),
 			   (ilctxt->nd_read_page->data +
@@ -202,12 +226,14 @@ static void ipc_log_drop(struct ipc_log_context *ilctxt, void *data,
 			ilctxt->read_page->hdr.nd_read_offset = 0;
 			ilctxt->read_page = get_next_page(ilctxt,
 				ilctxt->read_page);
-			BUG_ON(ilctxt->read_page == NULL);
+			if (WARN_ON(ilctxt->read_page == NULL))
+				return;
 			ilctxt->nd_read_page = ilctxt->read_page;
 		} else {
 			ilctxt->read_page = get_next_page(ilctxt,
 				ilctxt->read_page);
-			BUG_ON(ilctxt->read_page == NULL);
+			if (WARN_ON(ilctxt->read_page == NULL))
+				return;
 		}
 
 		if (data)
@@ -311,7 +337,11 @@ void ipc_log_write(void *ctxt, struct encode_context *ectxt)
 		ilctxt->write_page->hdr.end_time = t_now;
 
 		ilctxt->write_page = get_next_page(ilctxt, ilctxt->write_page);
-		BUG_ON(ilctxt->write_page == NULL);
+		if (WARN_ON(ilctxt->write_page == NULL)) {
+			spin_unlock(&ilctxt->context_lock_lhb1);
+			read_unlock_irqrestore(&context_list_lock_lha1, flags);
+			return;
+		}
 		ilctxt->write_page->hdr.write_offset = 0;
 		ilctxt->write_page->hdr.start_time = t_now;
 		memcpy((ilctxt->write_page->data +
@@ -357,13 +387,12 @@ void msg_encode_end(struct encode_context *ectxt)
 
 	/* finalize data size */
 	ectxt->hdr.size = ectxt->offset - sizeof(ectxt->hdr);
-	BUG_ON(ectxt->hdr.size > MAX_MSG_SIZE);
 	memcpy(ectxt->buff, &ectxt->hdr, sizeof(ectxt->hdr));
 }
 EXPORT_SYMBOL(msg_encode_end);
 
 /*
- * Helper funtion used to write data to a message context.
+ * Helper function used to write data to a message context.
  *
  * @ectxt context initialized by calling msg_encode_start()
  * @data  data to write
@@ -428,7 +457,7 @@ EXPORT_SYMBOL(tsv_timestamp_write);
 int tsv_qtimer_write(struct encode_context *ectxt)
 {
 	int ret;
-	uint64_t t_now = arch_counter_get_cntpct();
+	uint64_t t_now = __arch_counter_get_cntvct();
 
 	ret = tsv_write_header(ectxt, TSV_TYPE_QTIMER, sizeof(t_now));
 	if (ret)
@@ -446,6 +475,7 @@ EXPORT_SYMBOL(tsv_qtimer_write);
 int tsv_pointer_write(struct encode_context *ectxt, void *pointer)
 {
 	int ret;
+
 	ret = tsv_write_header(ectxt, TSV_TYPE_POINTER, sizeof(pointer));
 	if (ret)
 		return ret;
@@ -462,6 +492,7 @@ EXPORT_SYMBOL(tsv_pointer_write);
 int tsv_int32_write(struct encode_context *ectxt, int32_t n)
 {
 	int ret;
+
 	ret = tsv_write_header(ectxt, TSV_TYPE_INT32, sizeof(n));
 	if (ret)
 		return ret;
@@ -480,6 +511,7 @@ int tsv_byte_array_write(struct encode_context *ectxt,
 			 void *data, int data_size)
 {
 	int ret;
+
 	ret = tsv_write_header(ectxt, TSV_TYPE_BYTE_ARRAY, data_size);
 	if (ret)
 		return ret;
@@ -538,6 +570,7 @@ int ipc_log_extract(void *ctxt, char *buff, int size)
 				 struct decode_context *dctxt);
 	struct ipc_log_context *ilctxt = (struct ipc_log_context *)ctxt;
 	unsigned long flags;
+	int ret;
 
 	if (size < MAX_MSG_DECODED_SIZE)
 		return -EINVAL;
@@ -547,6 +580,11 @@ int ipc_log_extract(void *ctxt, char *buff, int size)
 	dctxt.size = size;
 	read_lock_irqsave(&context_list_lock_lha1, flags);
 	spin_lock(&ilctxt->context_lock_lhb1);
+	if (ilctxt->destroyed) {
+		ret = -EIO;
+		goto done;
+	}
+
 	while (dctxt.size >= MAX_MSG_DECODED_SIZE &&
 	       !is_nd_read_empty(ilctxt)) {
 		msg_read(ilctxt, &ectxt);
@@ -562,16 +600,22 @@ int ipc_log_extract(void *ctxt, char *buff, int size)
 		read_lock_irqsave(&context_list_lock_lha1, flags);
 		spin_lock(&ilctxt->context_lock_lhb1);
 	}
-	if ((size - dctxt.size) == 0)
-		reinit_completion(&ilctxt->read_avail);
+	ret = size - dctxt.size;
+	if (ret == 0) {
+		if (!ilctxt->destroyed)
+			reinit_completion(&ilctxt->read_avail);
+		else
+			ret = -EIO;
+	}
+done:
 	spin_unlock(&ilctxt->context_lock_lhb1);
 	read_unlock_irqrestore(&context_list_lock_lha1, flags);
-	return size - dctxt.size;
+	return ret;
 }
 EXPORT_SYMBOL(ipc_log_extract);
 
 /*
- * Helper funtion used to read data from a message context.
+ * Helper function used to read data from a message context.
  *
  * @ectxt  context initialized by calling msg_read()
  * @data  data to read
@@ -580,7 +624,12 @@ EXPORT_SYMBOL(ipc_log_extract);
 static void tsv_read_data(struct encode_context *ectxt,
 			  void *data, uint32_t size)
 {
-	BUG_ON((ectxt->offset + size) > MAX_MSG_SIZE);
+	if (WARN_ON((ectxt->offset + size) > MAX_MSG_SIZE)) {
+		memcpy(data, (ectxt->buff + ectxt->offset),
+			MAX_MSG_SIZE - ectxt->offset - 1);
+		ectxt->offset += MAX_MSG_SIZE - ectxt->offset - 1;
+		return;
+	}
 	memcpy(data, (ectxt->buff + ectxt->offset), size);
 	ectxt->offset += size;
 }
@@ -595,7 +644,12 @@ static void tsv_read_data(struct encode_context *ectxt,
 static void tsv_read_header(struct encode_context *ectxt,
 			    struct tsv_header *hdr)
 {
-	BUG_ON((ectxt->offset + sizeof(*hdr)) > MAX_MSG_SIZE);
+	if (WARN_ON((ectxt->offset + sizeof(*hdr)) > MAX_MSG_SIZE)) {
+		memcpy(hdr, (ectxt->buff + ectxt->offset),
+			MAX_MSG_SIZE - ectxt->offset - 1);
+		ectxt->offset += MAX_MSG_SIZE - ectxt->offset - 1;
+		return;
+	}
 	memcpy(hdr, (ectxt->buff + ectxt->offset), sizeof(*hdr));
 	ectxt->offset += sizeof(*hdr);
 }
@@ -615,11 +669,12 @@ void tsv_timestamp_read(struct encode_context *ectxt,
 	unsigned long nanosec_rem;
 
 	tsv_read_header(ectxt, &hdr);
-	BUG_ON(hdr.type != TSV_TYPE_TIMESTAMP);
+	if (WARN_ON(hdr.type != TSV_TYPE_TIMESTAMP))
+		return;
 	tsv_read_data(ectxt, &val, sizeof(val));
 	nanosec_rem = do_div(val, 1000000000U);
 	IPC_SPRINTF_DECODE(dctxt, "[%6u.%09lu%s/",
-			(unsigned)val, nanosec_rem, format);
+			(unsigned int)val, nanosec_rem, format);
 }
 EXPORT_SYMBOL(tsv_timestamp_read);
 
@@ -637,7 +692,8 @@ void tsv_qtimer_read(struct encode_context *ectxt,
 	uint64_t val;
 
 	tsv_read_header(ectxt, &hdr);
-	BUG_ON(hdr.type != TSV_TYPE_QTIMER);
+	if (WARN_ON(hdr.type != TSV_TYPE_QTIMER))
+		return;
 	tsv_read_data(ectxt, &val, sizeof(val));
 
 	/*
@@ -662,7 +718,8 @@ void tsv_pointer_read(struct encode_context *ectxt,
 	void *val;
 
 	tsv_read_header(ectxt, &hdr);
-	BUG_ON(hdr.type != TSV_TYPE_POINTER);
+	if (WARN_ON(hdr.type != TSV_TYPE_POINTER))
+		return;
 	tsv_read_data(ectxt, &val, sizeof(val));
 
 	IPC_SPRINTF_DECODE(dctxt, format, val);
@@ -683,7 +740,8 @@ int32_t tsv_int32_read(struct encode_context *ectxt,
 	int32_t val;
 
 	tsv_read_header(ectxt, &hdr);
-	BUG_ON(hdr.type != TSV_TYPE_INT32);
+	if (WARN_ON(hdr.type != TSV_TYPE_INT32))
+		return -EINVAL;
 	tsv_read_data(ectxt, &val, sizeof(val));
 
 	IPC_SPRINTF_DECODE(dctxt, format, val);
@@ -704,7 +762,8 @@ void tsv_byte_array_read(struct encode_context *ectxt,
 	struct tsv_header hdr;
 
 	tsv_read_header(ectxt, &hdr);
-	BUG_ON(hdr.type != TSV_TYPE_BYTE_ARRAY);
+	if (WARN_ON(hdr.type != TSV_TYPE_BYTE_ARRAY))
+		return;
 	tsv_read_data(ectxt, dctxt->buff, hdr.size);
 	dctxt->buff += hdr.size;
 	dctxt->size -= hdr.size;
@@ -753,39 +812,59 @@ static void *get_deserialization_func(struct ipc_log_context *ilctxt,
 }
 
 /**
- * ipc_log_context_create: Create a debug log context
+ * ipc_log_context_create: Create a debug log context if context does not exist.
  *                         Should not be called from atomic context
  *
  * @max_num_pages: Number of pages of logging space required (max. 10)
  * @mod_name     : Name of the directory entry under DEBUGFS
- * @user_version : Version number of user-defined message formats
+ * @feature_version : First 16 bit for version number of user-defined message
+ *		      formats and next 16 bit for enabling minidump
  *
  * returns context id on success, NULL on failure
  */
 void *ipc_log_context_create(int max_num_pages,
-			     const char *mod_name, uint16_t user_version)
+			     const char *mod_name, uint32_t feature_version)
 {
-	struct ipc_log_context *ctxt;
+	struct ipc_log_context *ctxt = NULL, *tmp;
 	struct ipc_log_page *pg = NULL;
 	int page_cnt;
 	unsigned long flags;
+	int enable_minidump;
+
+	/* check if ipc ctxt already exists */
+	read_lock_irq(&context_list_lock_lha1);
+	list_for_each_entry(tmp, &ipc_log_context_list, list)
+		if (!strcmp(tmp->name, mod_name)) {
+			ctxt = tmp;
+			break;
+		}
+	read_unlock_irq(&context_list_lock_lha1);
+
+	if (ctxt)
+		return ctxt;
 
 	ctxt = kzalloc(sizeof(struct ipc_log_context), GFP_KERNEL);
-	if (!ctxt) {
-		pr_err("%s: cannot create ipc_log_context\n", __func__);
+	if (!ctxt)
 		return 0;
-	}
 
 	init_completion(&ctxt->read_avail);
 	INIT_LIST_HEAD(&ctxt->page_list);
 	INIT_LIST_HEAD(&ctxt->dfunc_info_list);
 	spin_lock_init(&ctxt->context_lock_lhb1);
+
+	enable_minidump = feature_version & FEATURE_MASK;
+
+	spin_lock_irqsave(&ctxt->context_lock_lhb1, flags);
+	if (enable_minidump) {
+		register_minidump((u64)ctxt, sizeof(struct ipc_log_context),
+				  "ipc_ctxt", minidump_buf_cnt);
+	}
+	spin_unlock_irqrestore(&ctxt->context_lock_lhb1, flags);
+
 	for (page_cnt = 0; page_cnt < max_num_pages; page_cnt++) {
 		pg = kzalloc(sizeof(struct ipc_log_page), GFP_KERNEL);
-		if (!pg) {
-			pr_err("%s: cannot create ipc_log_page\n", __func__);
+		if (!pg)
 			goto release_ipc_log_context;
-		}
 		pg->hdr.log_id = (uint64_t)(uintptr_t)ctxt;
 		pg->hdr.page_num = LOG_PAGE_FLAG | page_cnt;
 		pg->hdr.ctx_offset = (int64_t)((uint64_t)(uintptr_t)ctxt -
@@ -797,13 +876,18 @@ void *ipc_log_context_create(int max_num_pages,
 
 		spin_lock_irqsave(&ctxt->context_lock_lhb1, flags);
 		list_add_tail(&pg->hdr.list, &ctxt->page_list);
+
+		if (enable_minidump) {
+			register_minidump((u64)pg, sizeof(struct ipc_log_page),
+					  mod_name, minidump_buf_cnt);
+		}
 		spin_unlock_irqrestore(&ctxt->context_lock_lhb1, flags);
 	}
 
 	ctxt->log_id = (uint64_t)(uintptr_t)ctxt;
 	ctxt->version = IPC_LOG_VERSION;
 	strlcpy(ctxt->name, mod_name, IPC_LOG_MAX_CONTEXT_NAME_LEN);
-	ctxt->user_version = user_version;
+	ctxt->user_version = feature_version & 0xffff;
 	ctxt->first_page = get_first_page(ctxt);
 	ctxt->last_page = pg;
 	ctxt->write_page = ctxt->first_page;
@@ -811,6 +895,8 @@ void *ipc_log_context_create(int max_num_pages,
 	ctxt->nd_read_page = ctxt->first_page;
 	ctxt->write_avail = max_num_pages * LOG_PAGE_DATA_SIZE;
 	ctxt->header_size = sizeof(struct ipc_log_page_header);
+	kref_init(&ctxt->refcount);
+	ctxt->destroyed = false;
 	create_ctx_debugfs(ctxt, mod_name);
 
 	/* set magic last to signal context init is complete */
@@ -818,8 +904,12 @@ void *ipc_log_context_create(int max_num_pages,
 	ctxt->nmagic = ~(IPC_LOG_CONTEXT_MAGIC_NUM);
 
 	write_lock_irqsave(&context_list_lock_lha1, flags);
-	list_add_tail(&ctxt->list, &ipc_log_context_list);
+	if (enable_minidump  && (minidump_buf_cnt < MAX_MINIDUMP_BUFFERS))
+		list_add(&ctxt->list, &ipc_log_context_list);
+	else
+		list_add_tail(&ctxt->list, &ipc_log_context_list);
 	write_unlock_irqrestore(&context_list_lock_lha1, flags);
+
 	return (void *)ctxt;
 
 release_ipc_log_context:
@@ -833,6 +923,21 @@ release_ipc_log_context:
 }
 EXPORT_SYMBOL(ipc_log_context_create);
 
+void ipc_log_context_free(struct kref *kref)
+{
+	struct ipc_log_context *ilctxt = container_of(kref,
+				struct ipc_log_context, refcount);
+	struct ipc_log_page *pg = NULL;
+
+	while (!list_empty(&ilctxt->page_list)) {
+		pg = get_first_page(ilctxt);
+		list_del(&pg->hdr.list);
+		kfree(pg);
+	}
+
+	kfree(ilctxt);
+}
+
 /*
  * Destroy debug log context
  *
@@ -841,25 +946,29 @@ EXPORT_SYMBOL(ipc_log_context_create);
 int ipc_log_context_destroy(void *ctxt)
 {
 	struct ipc_log_context *ilctxt = (struct ipc_log_context *)ctxt;
-	struct ipc_log_page *pg = NULL;
+	struct dfunc_info *df_info = NULL, *tmp = NULL;
 	unsigned long flags;
 
 	if (!ilctxt)
 		return 0;
 
-	while (!list_empty(&ilctxt->page_list)) {
-		pg = get_first_page(ctxt);
-		list_del(&pg->hdr.list);
-		kfree(pg);
+	debugfs_remove_recursive(ilctxt->dent);
+
+	spin_lock(&ilctxt->context_lock_lhb1);
+	ilctxt->destroyed = true;
+	complete_all(&ilctxt->read_avail);
+	list_for_each_entry_safe(df_info, tmp, &ilctxt->dfunc_info_list, list) {
+		list_del(&df_info->list);
+		kfree(df_info);
 	}
+	spin_unlock(&ilctxt->context_lock_lhb1);
 
 	write_lock_irqsave(&context_list_lock_lha1, flags);
 	list_del(&ilctxt->list);
 	write_unlock_irqrestore(&context_list_lock_lha1, flags);
 
-	debugfs_remove_recursive(ilctxt->dent);
+	ipc_log_context_put(ilctxt);
 
-	kfree(ilctxt);
 	return 0;
 }
 EXPORT_SYMBOL(ipc_log_context_destroy);
@@ -867,6 +976,10 @@ EXPORT_SYMBOL(ipc_log_context_destroy);
 static int __init ipc_logging_init(void)
 {
 	check_and_create_debugfs();
+
+	register_minidump((u64)&ipc_log_context_list, sizeof(struct list_head),
+			  "ipc_log_ctxt_list", minidump_buf_cnt);
+
 	return 0;
 }
 

@@ -28,10 +28,6 @@
  * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -48,7 +44,6 @@
 #include <linux/module.h>
 #include <linux/io.h>
 
-#include <asm/irq.h>
 #include <mach/hardware.h>
 #include <asm/mach-types.h>
 
@@ -210,7 +205,7 @@ static void uwire_chipselect(struct spi_device *spi, int value)
 static int uwire_txrx(struct spi_device *spi, struct spi_transfer *t)
 {
 	unsigned	len = t->len;
-	unsigned	bits = t->bits_per_word ? : spi->bits_per_word;
+	unsigned	bits = t->bits_per_word;
 	unsigned	bytes;
 	u16		val, w;
 	int		status = 0;
@@ -349,9 +344,10 @@ static int uwire_setup_transfer(struct spi_device *spi, struct spi_transfer *t)
 	/* assume it's already enabled */
 	rate = clk_get_rate(uwire->ck);
 
-	hz = spi->max_speed_hz;
-	if (t != NULL && t->speed_hz)
+	if (t != NULL)
 		hz = t->speed_hz;
+	else
+		hz = spi->max_speed_hz;
 
 	if (!hz) {
 		pr_debug("%s: zero speed?\n", dev_name(&spi->dev));
@@ -428,15 +424,22 @@ done:
 static int uwire_setup(struct spi_device *spi)
 {
 	struct uwire_state *ust = spi->controller_state;
+	bool initial_setup = false;
+	int status;
 
 	if (ust == NULL) {
 		ust = kzalloc(sizeof(*ust), GFP_KERNEL);
 		if (ust == NULL)
 			return -ENOMEM;
 		spi->controller_state = ust;
+		initial_setup = true;
 	}
 
-	return uwire_setup_transfer(spi, NULL);
+	status = uwire_setup_transfer(spi, NULL);
+	if (status && initial_setup)
+		kfree(ust);
+
+	return status;
 }
 
 static void uwire_cleanup(struct spi_device *spi)
@@ -447,7 +450,7 @@ static void uwire_cleanup(struct spi_device *spi)
 static void uwire_off(struct uwire_spi *uwire)
 {
 	uwire_write_reg(UWIRE_SR3, 0);
-	clk_disable(uwire->ck);
+	clk_disable_unprepare(uwire->ck);
 	spi_master_put(uwire->bitbang.master);
 }
 
@@ -479,7 +482,7 @@ static int uwire_probe(struct platform_device *pdev)
 		spi_master_put(master);
 		return status;
 	}
-	clk_enable(uwire->ck);
+	clk_prepare_enable(uwire->ck);
 
 	if (cpu_is_omap7xx())
 		uwire_idx_shift = 1;
@@ -527,7 +530,6 @@ MODULE_ALIAS("platform:omap_uwire");
 static struct platform_driver uwire_driver = {
 	.driver = {
 		.name		= "omap_uwire",
-		.owner		= THIS_MODULE,
 	},
 	.probe = uwire_probe,
 	.remove = uwire_remove,

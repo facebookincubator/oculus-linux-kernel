@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2009 ST-Ericsson SA
  * Copyright (C) 2009 STMicroelectronics
@@ -7,10 +8,6 @@
  *
  * Author: Srinidhi Kasagar <srinidhi.kasagar@stericsson.com>
  * Author: Sachin Verma <sachin.verma@st.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2, as
- * published by the Free Software Foundation.
  */
 #include <linux/init.h>
 #include <linux/module.h>
@@ -399,7 +396,7 @@ static void setup_i2c_controller(struct nmk_i2c_dev *dev)
 	 * 2 whereas it is 3 for fast and fastplus mode of
 	 * operation. TODO - high speed support.
 	 */
-	div = (dev->clk_freq > 100000) ? 3 : 2;
+	div = (dev->clk_freq > I2C_MAX_STANDARD_MODE_FREQ) ? 3 : 2;
 
 	/*
 	 * generate the mask for baud rate counters. The controller
@@ -423,7 +420,7 @@ static void setup_i2c_controller(struct nmk_i2c_dev *dev)
 	if (dev->sm > I2C_FREQ_MODE_FAST) {
 		dev_err(&dev->adev->dev,
 			"do not support this mode defaulting to std. mode\n");
-		brcr2 = i2c_clk/(100000 * 2) & 0xffff;
+		brcr2 = i2c_clk / (I2C_MAX_STANDARD_MODE_FREQ * 2) & 0xffff;
 		writel((brcr1 | brcr2), dev->virtbase + I2C_BRCR);
 		writel(I2C_FREQ_MODE_STANDARD << 4,
 				dev->virtbase + I2C_CR);
@@ -446,9 +443,9 @@ static void setup_i2c_controller(struct nmk_i2c_dev *dev)
  */
 static int read_i2c(struct nmk_i2c_dev *dev, u16 flags)
 {
-	u32 status = 0;
+	int status = 0;
 	u32 mcr, irq_mask;
-	int timeout;
+	unsigned long timeout;
 
 	mcr = load_i2c_mcr_reg(dev, flags);
 	writel(mcr, dev->virtbase + I2C_MCR);
@@ -517,7 +514,7 @@ static int write_i2c(struct nmk_i2c_dev *dev, u16 flags)
 {
 	u32 status = 0;
 	u32 mcr, irq_mask;
-	int timeout;
+	unsigned long timeout;
 
 	mcr = load_i2c_mcr_reg(dev, flags);
 
@@ -932,7 +929,7 @@ static int nmk_i2c_runtime_resume(struct device *dev)
 
 static const struct dev_pm_ops nmk_i2c_pm = {
 	SET_LATE_SYSTEM_SLEEP_PM_OPS(nmk_i2c_suspend_late, nmk_i2c_resume_early)
-	SET_PM_RUNTIME_PM_OPS(nmk_i2c_runtime_suspend,
+	SET_RUNTIME_PM_OPS(nmk_i2c_runtime_suspend,
 			nmk_i2c_runtime_resume,
 			NULL)
 };
@@ -952,10 +949,10 @@ static void nmk_i2c_of_probe(struct device_node *np,
 {
 	/* Default to 100 kHz if no frequency is given in the node */
 	if (of_property_read_u32(np, "clock-frequency", &nmk->clk_freq))
-		nmk->clk_freq = 100000;
+		nmk->clk_freq = I2C_MAX_STANDARD_MODE_FREQ;
 
 	/* This driver only supports 'standard' and 'fast' modes of operation. */
-	if (nmk->clk_freq <= 100000)
+	if (nmk->clk_freq <= I2C_MAX_STANDARD_MODE_FREQ)
 		nmk->sm = I2C_FREQ_MODE_STANDARD;
 	else
 		nmk->sm = I2C_FREQ_MODE_FAST;
@@ -973,12 +970,10 @@ static int nmk_i2c_probe(struct amba_device *adev, const struct amba_id *id)
 	struct i2c_vendor_data *vendor = id->data;
 	u32 max_fifo_threshold = (vendor->fifodepth / 2) - 1;
 
-	dev = devm_kzalloc(&adev->dev, sizeof(struct nmk_i2c_dev), GFP_KERNEL);
-	if (!dev) {
-		dev_err(&adev->dev, "cannot allocate memory\n");
-		ret = -ENOMEM;
-		goto err_no_mem;
-	}
+	dev = devm_kzalloc(&adev->dev, sizeof(*dev), GFP_KERNEL);
+	if (!dev)
+		return -ENOMEM;
+
 	dev->vendor = vendor;
 	dev->adev = adev;
 	nmk_i2c_of_probe(np, dev);
@@ -999,32 +994,21 @@ static int nmk_i2c_probe(struct amba_device *adev, const struct amba_id *id)
 
 	dev->virtbase = devm_ioremap(&adev->dev, adev->res.start,
 				resource_size(&adev->res));
-	if (!dev->virtbase) {
-		ret = -ENOMEM;
-		goto err_no_mem;
-	}
+	if (!dev->virtbase)
+		return -ENOMEM;
 
 	dev->irq = adev->irq[0];
 	ret = devm_request_irq(&adev->dev, dev->irq, i2c_irq_handler, 0,
 				DRIVER_NAME, dev);
 	if (ret) {
 		dev_err(&adev->dev, "cannot claim the irq %d\n", dev->irq);
-		goto err_no_mem;
+		return ret;
 	}
 
-	pm_suspend_ignore_children(&adev->dev, true);
-
-	dev->clk = devm_clk_get(&adev->dev, NULL);
+	dev->clk = devm_clk_get_enabled(&adev->dev, NULL);
 	if (IS_ERR(dev->clk)) {
-		dev_err(&adev->dev, "could not get i2c clock\n");
-		ret = PTR_ERR(dev->clk);
-		goto err_no_mem;
-	}
-
-	ret = clk_prepare_enable(dev->clk);
-	if (ret) {
-		dev_err(&adev->dev, "can't prepare_enable clock\n");
-		goto err_no_mem;
+		dev_err(&adev->dev, "could enable i2c clock\n");
+		return PTR_ERR(dev->clk);
 	}
 
 	init_hw(dev);
@@ -1046,25 +1030,16 @@ static int nmk_i2c_probe(struct amba_device *adev, const struct amba_id *id)
 		 adap->name, dev->virtbase);
 
 	ret = i2c_add_adapter(adap);
-	if (ret) {
-		dev_err(&adev->dev, "failed to add adapter\n");
-		goto err_no_adap;
-	}
+	if (ret)
+		return ret;
 
 	pm_runtime_put(&adev->dev);
 
 	return 0;
-
- err_no_adap:
-	clk_disable_unprepare(dev->clk);
- err_no_mem:
-
-	return ret;
 }
 
-static int nmk_i2c_remove(struct amba_device *adev)
+static void nmk_i2c_remove(struct amba_device *adev)
 {
-	struct resource *res = &adev->res;
 	struct nmk_i2c_dev *dev = amba_get_drvdata(adev);
 
 	i2c_del_adapter(&dev->adap);
@@ -1073,11 +1048,6 @@ static int nmk_i2c_remove(struct amba_device *adev)
 	clear_all_interrupts(dev);
 	/* disable the controller */
 	i2c_clr_bit(dev->virtbase + I2C_CR, I2C_CR_PE);
-	clk_disable_unprepare(dev->clk);
-	if (res)
-		release_mem_region(res->start, resource_size(res));
-
-	return 0;
 }
 
 static struct i2c_vendor_data vendor_stn8815 = {
@@ -1090,7 +1060,7 @@ static struct i2c_vendor_data vendor_db8500 = {
 	.fifodepth = 32, /* Guessed from TFTR/RFTR = 15 */
 };
 
-static struct amba_id nmk_i2c_ids[] = {
+static const struct amba_id nmk_i2c_ids[] = {
 	{
 		.id	= 0x00180024,
 		.mask	= 0x00ffffff,
@@ -1130,6 +1100,7 @@ static void __exit nmk_i2c_exit(void)
 subsys_initcall(nmk_i2c_init);
 module_exit(nmk_i2c_exit);
 
-MODULE_AUTHOR("Sachin Verma, Srinidhi KASAGAR");
+MODULE_AUTHOR("Sachin Verma");
+MODULE_AUTHOR("Srinidhi KASAGAR");
 MODULE_DESCRIPTION("Nomadik/Ux500 I2C driver");
 MODULE_LICENSE("GPL");

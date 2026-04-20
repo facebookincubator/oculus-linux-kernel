@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * bebob_proc.c - a part of driver for BeBoB based devices
  *
  * Copyright (c) 2013-2014 Takashi Sakamoto
- *
- * Licensed under the terms of the GNU General Public License, version 2.
  */
 
 #include "./bebob.h"
@@ -73,7 +72,7 @@ proc_read_meters(struct snd_info_entry *entry,
 		 struct snd_info_buffer *buffer)
 {
 	struct snd_bebob *bebob = entry->private_data;
-	struct snd_bebob_meter_spec *spec = bebob->spec->meter;
+	const struct snd_bebob_meter_spec *spec = bebob->spec->meter;
 	u32 *buf;
 	unsigned int i, c, channels, size;
 
@@ -132,25 +131,27 @@ static void
 proc_read_clock(struct snd_info_entry *entry,
 		struct snd_info_buffer *buffer)
 {
+	static const char *const clk_labels[] = {
+		"Internal",
+		"External",
+		"SYT-Match",
+	};
 	struct snd_bebob *bebob = entry->private_data;
-	struct snd_bebob_rate_spec *rate_spec = bebob->spec->rate;
-	struct snd_bebob_clock_spec *clk_spec = bebob->spec->clock;
-	unsigned int rate, id;
-	bool internal;
+	const struct snd_bebob_rate_spec *rate_spec = bebob->spec->rate;
+	const struct snd_bebob_clock_spec *clk_spec = bebob->spec->clock;
+	enum snd_bebob_clock_type src;
+	unsigned int rate;
 
 	if (rate_spec->get(bebob, &rate) >= 0)
 		snd_iprintf(buffer, "Sampling rate: %d\n", rate);
 
-	if (clk_spec) {
-		if (clk_spec->get(bebob, &id) >= 0)
+	if (snd_bebob_stream_get_clock_src(bebob, &src) >= 0) {
+		if (clk_spec)
 			snd_iprintf(buffer, "Clock Source: %s\n",
-				    clk_spec->labels[id]);
-	} else {
-		if (snd_bebob_stream_check_internal_clock(bebob,
-							  &internal) >= 0)
+				    clk_labels[src]);
+		else
 			snd_iprintf(buffer, "Clock Source: %s (MSU-dest: %d)\n",
-				    (internal) ? "Internal" : "External",
-				    bebob->sync_input_plug);
+				    clk_labels[src], bebob->sync_input_plug);
 	}
 }
 
@@ -161,12 +162,8 @@ add_node(struct snd_bebob *bebob, struct snd_info_entry *root, const char *name,
 	struct snd_info_entry *entry;
 
 	entry = snd_info_create_card_entry(bebob->card, name, root);
-	if (entry == NULL)
-		return;
-
-	snd_info_set_text_ops(entry, bebob, op);
-	if (snd_info_register(entry) < 0)
-		snd_info_free_entry(entry);
+	if (entry)
+		snd_info_set_text_ops(entry, bebob, op);
 }
 
 void snd_bebob_proc_init(struct snd_bebob *bebob)
@@ -181,11 +178,7 @@ void snd_bebob_proc_init(struct snd_bebob *bebob)
 					  bebob->card->proc_root);
 	if (root == NULL)
 		return;
-	root->mode = S_IFDIR | S_IRUGO | S_IXUGO;
-	if (snd_info_register(root) < 0) {
-		snd_info_free_entry(root);
-		return;
-	}
+	root->mode = S_IFDIR | 0555;
 
 	add_node(bebob, root, "clock", proc_read_clock);
 	add_node(bebob, root, "firmware", proc_read_hw_info);

@@ -1,16 +1,7 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2014-2018, 2020, The Linux Foundation. All rights reserved.
  */
-#define pr_fmt(fmt) "COMPAT-QSEECOM: %s: " fmt, __func__
 
 #include <linux/debugfs.h>
 #include <linux/uaccess.h>
@@ -36,7 +27,8 @@ static int compat_get_qseecom_register_listener_req(
 	err |= get_user(virt_sb_base, &data32->virt_sb_base);
 	/* upper bits won't get set, zero them */
 	err |= put_user(NULL, &data->virt_sb_base);
-	err |= put_user(virt_sb_base, (compat_uptr_t *)&data->virt_sb_base);
+	err |= put_user(virt_sb_base,
+			(compat_uptr_t __user *)&data->virt_sb_base);
 
 	err |= get_user(sb_size, &data32->sb_size);
 	err |= put_user(sb_size, &data->sb_size);
@@ -52,7 +44,7 @@ static int compat_get_qseecom_load_img_req(
 	compat_ulong_t img_len;
 	compat_long_t ifd_data_fd;
 	compat_ulong_t app_arch;
-	compat_int_t app_id;
+	compat_uint_t app_id;
 
 	err = get_user(mdt_len, &data32->mdt_len);
 	err |= put_user(mdt_len, &data->mdt_len);
@@ -81,13 +73,14 @@ static int compat_get_qseecom_send_cmd_req(
 
 	err = get_user(cmd_req_buf, &data32->cmd_req_buf);
 	err |= put_user(NULL, &data->cmd_req_buf);
-	err |= put_user(cmd_req_buf, (compat_uptr_t *)&data->cmd_req_buf);
+	err |= put_user(cmd_req_buf,
+			(compat_uptr_t __user *)&data->cmd_req_buf);
 	err |= get_user(cmd_req_len, &data32->cmd_req_len);
 	err |= put_user(cmd_req_len, &data->cmd_req_len);
 
 	err |= get_user(resp_buf, &data32->resp_buf);
 	err |= put_user(NULL, &data->resp_buf);
-	err |= put_user(resp_buf, (compat_uptr_t *)&data->resp_buf);
+	err |= put_user(resp_buf, (compat_uptr_t __user *)&data->resp_buf);
 	err |= get_user(resp_len, &data32->resp_len);
 	err |= put_user(resp_len, &data->resp_len);
 	return err;
@@ -108,12 +101,13 @@ static int compat_get_qseecom_send_modfd_cmd_req(
 
 	err = get_user(cmd_req_buf, &data32->cmd_req_buf);
 	err |= put_user(NULL, &data->cmd_req_buf);
-	err |= put_user(cmd_req_buf, (compat_uptr_t *)&data->cmd_req_buf);
+	err |= put_user(cmd_req_buf,
+		(compat_uptr_t __user *)&data->cmd_req_buf);
 	err |= get_user(cmd_req_len, &data32->cmd_req_len);
 	err |= put_user(cmd_req_len, &data->cmd_req_len);
 	err |= get_user(resp_buf, &data32->resp_buf);
 	err |= put_user(NULL, &data->resp_buf);
-	err |= put_user(resp_buf, (compat_uptr_t *)&data->resp_buf);
+	err |= put_user(resp_buf, (compat_uptr_t __user *)&data->resp_buf);
 	err |= get_user(resp_len, &data32->resp_len);
 	err |= put_user(resp_len, &data->resp_len);
 	for (i = 0; i < MAX_ION_FD; i++) {
@@ -140,7 +134,8 @@ static int compat_get_qseecom_set_sb_mem_param_req(
 	err |= put_user(ifd_data_fd, &data->ifd_data_fd);
 	err |= get_user(virt_sb_base, &data32->virt_sb_base);
 	err |= put_user(NULL, &data->virt_sb_base);
-	err |= put_user(virt_sb_base, (compat_uptr_t *)&data->virt_sb_base);
+	err |= put_user(virt_sb_base,
+			(compat_uptr_t __user *)&data->virt_sb_base);
 	err |= get_user(sb_len, &data32->sb_len);
 	err |= put_user(sb_len, &data->sb_len);
 	return err;
@@ -164,7 +159,7 @@ static int compat_get_qseecom_qseos_app_load_query(
 {
 	int err = 0;
 	unsigned int i;
-	compat_int_t app_id;
+	compat_uint_t app_id;
 	char app_name;
 	compat_ulong_t app_arch;
 
@@ -194,12 +189,13 @@ static int compat_get_qseecom_send_svc_cmd_req(
 	err |= put_user(cmd_id, &data->cmd_id);
 	err |= get_user(cmd_req_buf, &data32->cmd_req_buf);
 	err |= put_user(NULL, &data->cmd_req_buf);
-	err |= put_user(cmd_req_buf, (compat_uptr_t *)&data->cmd_req_buf);
+	err |= put_user(cmd_req_buf,
+			(compat_uptr_t __user *)&data->cmd_req_buf);
 	err |= get_user(cmd_req_len, &data32->cmd_req_len);
 	err |= put_user(cmd_req_len, &data->cmd_req_len);
 	err |= get_user(resp_buf, &data32->resp_buf);
 	err |= put_user(NULL, &data->resp_buf);
-	err |= put_user(resp_buf, (compat_uptr_t *)&data->resp_buf);
+	err |= put_user(resp_buf, (compat_uptr_t __user *)&data->resp_buf);
 	err |= get_user(resp_len, &data32->resp_len);
 	err |= put_user(resp_len, &data->resp_len);
 	return err;
@@ -297,10 +293,10 @@ static int compat_get_qseecom_mdtp_cipher_dip_req(
 	err |= put_user(direction, &data->direction);
 	err |= get_user(in_buf, &data32->in_buf);
 	err |= put_user(NULL, &data->in_buf);
-	err |= put_user(in_buf, (compat_uptr_t *)&data->in_buf);
+	err |= put_user(in_buf, (compat_uptr_t __user *)&data->in_buf);
 	err |= get_user(out_buf, &data32->out_buf);
 	err |= put_user(NULL, &data->out_buf);
-	err |= put_user(out_buf, (compat_uptr_t *)&data->out_buf);
+	err |= put_user(out_buf, (compat_uptr_t __user *)&data->out_buf);
 
 	return err;
 }
@@ -318,7 +314,8 @@ static int compat_get_qseecom_send_modfd_listener_resp(
 
 	err = get_user(resp_buf_ptr, &data32->resp_buf_ptr);
 	err |= put_user(NULL, &data->resp_buf_ptr);
-	err |= put_user(resp_buf_ptr, (compat_uptr_t *)&data->resp_buf_ptr);
+	err |= put_user(resp_buf_ptr,
+			(compat_uptr_t __user *)&data->resp_buf_ptr);
 	err |= get_user(resp_len, &data32->resp_len);
 	err |= put_user(resp_len, &data->resp_len);
 
@@ -346,13 +343,13 @@ static int compat_get_qseecom_qteec_req(
 
 	err = get_user(req_ptr, &data32->req_ptr);
 	err |= put_user(NULL, &data->req_ptr);
-	err |= put_user(req_ptr, (compat_uptr_t *)&data->req_ptr);
+	err |= put_user(req_ptr, (compat_uptr_t __user *)&data->req_ptr);
 	err |= get_user(req_len, &data32->req_len);
 	err |= put_user(req_len, &data->req_len);
 
 	err |= get_user(resp_ptr, &data32->resp_ptr);
 	err |= put_user(NULL, &data->resp_ptr);
-	err |= put_user(resp_ptr, (compat_uptr_t *)&data->resp_ptr);
+	err |= put_user(resp_ptr, (compat_uptr_t __user *)&data->resp_ptr);
 	err |= get_user(resp_len, &data32->resp_len);
 	err |= put_user(resp_len, &data->resp_len);
 	return err;
@@ -372,13 +369,13 @@ static int compat_get_qseecom_qteec_modfd_req(
 
 	err = get_user(req_ptr, &data32->req_ptr);
 	err |= put_user(NULL, &data->req_ptr);
-	err |= put_user(req_ptr, (compat_uptr_t *)&data->req_ptr);
+	err |= put_user(req_ptr, (compat_uptr_t __user *)&data->req_ptr);
 	err |= get_user(req_len, &data32->req_len);
 	err |= put_user(req_len, &data->req_len);
 
 	err |= get_user(resp_ptr, &data32->resp_ptr);
 	err |= put_user(NULL, &data->resp_ptr);
-	err |= put_user(resp_ptr, (compat_uptr_t *)&data->resp_ptr);
+	err |= put_user(resp_ptr, (compat_uptr_t __user *)&data->resp_ptr);
 	err |= get_user(resp_len, &data32->resp_len);
 	err |= put_user(resp_len, &data->resp_len);
 
@@ -549,6 +546,7 @@ long compat_qseecom_ioctl(struct file *file,
 		unsigned int cmd, unsigned long arg)
 {
 	long ret;
+
 	switch (cmd) {
 
 	case COMPAT_QSEECOM_IOCTL_UNREGISTER_LISTENER_REQ:
@@ -920,4 +918,3 @@ long compat_qseecom_ioctl(struct file *file,
 	}
 	return 0;
 }
-

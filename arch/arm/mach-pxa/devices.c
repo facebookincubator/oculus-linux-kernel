@@ -1,12 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
+#include <linux/clkdev.h>
 #include <linux/dma-mapping.h>
+#include <linux/dmaengine.h>
 #include <linux/spi/pxa2xx_spi.h>
-#include <linux/i2c/pxa-i2c.h>
+#include <linux/platform_data/i2c-pxa.h>
 
-#include <mach/udc.h>
+#include "udc.h"
 #include <linux/platform_data/usb-pxa3xx-ulpi.h>
 #include <linux/platform_data/video-pxafb.h>
 #include <linux/platform_data/mmc-pxamci.h>
@@ -14,9 +17,10 @@
 #include <mach/irqs.h>
 #include <linux/platform_data/usb-ohci-pxa27x.h>
 #include <linux/platform_data/keypad-pxa27x.h>
-#include <linux/platform_data/camera-pxa.h>
+#include <linux/platform_data/media/camera-pxa.h>
 #include <mach/audio.h>
 #include <mach/hardware.h>
+#include <linux/platform_data/mmp_dma.h>
 #include <linux/platform_data/mtd-nand-pxa3xx.h>
 
 #include "devices.h"
@@ -40,7 +44,7 @@ static struct resource pxa_resource_pmu = {
 };
 
 struct platform_device pxa_device_pmu = {
-	.name		= "arm-pmu",
+	.name		= "xscale-pmu",
 	.id		= -1,
 	.resource	= &pxa_resource_pmu,
 	.num_resources	= 1,
@@ -56,16 +60,6 @@ static struct resource pxamci_resources[] = {
 		.start	= IRQ_MMC,
 		.end	= IRQ_MMC,
 		.flags	= IORESOURCE_IRQ,
-	},
-	[2] = {
-		.start	= 21,
-		.end	= 21,
-		.flags	= IORESOURCE_DMA,
-	},
-	[3] = {
-		.start	= 22,
-		.end	= 22,
-		.flags	= IORESOURCE_DMA,
 	},
 };
 
@@ -394,6 +388,16 @@ static struct resource pxa_ir_resources[] = {
 		.end    = IRQ_ICP,
 		.flags  = IORESOURCE_IRQ,
 	},
+	[3] = {
+		.start  = 0x40800000,
+		.end	= 0x4080001b,
+		.flags  = IORESOURCE_MEM,
+	},
+	[4] = {
+		.start  = 0x40700000,
+		.end	= 0x40700023,
+		.flags  = IORESOURCE_MEM,
+	},
 };
 
 struct platform_device pxa_device_ficp = {
@@ -439,25 +443,11 @@ struct platform_device pxa_device_rtc = {
 	.resource       = pxa_rtc_resources,
 };
 
-static struct resource sa1100_rtc_resources[] = {
-	{
-		.start  = IRQ_RTC1Hz,
-		.end    = IRQ_RTC1Hz,
-		.name	= "rtc 1Hz",
-		.flags  = IORESOURCE_IRQ,
-	}, {
-		.start  = IRQ_RTCAlrm,
-		.end    = IRQ_RTCAlrm,
-		.name	= "rtc alarm",
-		.flags  = IORESOURCE_IRQ,
-	},
-};
-
 struct platform_device sa1100_device_rtc = {
 	.name		= "sa1100-rtc",
 	.id		= -1,
-	.num_resources	= ARRAY_SIZE(sa1100_rtc_resources),
-	.resource	= sa1100_rtc_resources,
+	.num_resources  = ARRAY_SIZE(pxa_rtc_resources),
+	.resource       = pxa_rtc_resources,
 };
 
 static struct resource pxa_ac97_resources[] = {
@@ -488,6 +478,18 @@ struct platform_device pxa_device_ac97 = {
 
 void __init pxa_set_ac97_info(pxa2xx_audio_ops_t *ops)
 {
+	int ret;
+
+	ret = clk_add_alias("ac97_clk", "pxa2xx-ac97:0", "AC97CLK",
+			   &pxa_device_ac97.dev);
+	if (ret)
+		pr_err("PXA AC97 clock1 alias error: %d\n", ret);
+
+	ret = clk_add_alias("ac97_clk", "pxa2xx-ac97:1", "AC97CLK",
+			    &pxa_device_ac97.dev);
+	if (ret)
+		pr_err("PXA AC97 clock2 alias error: %d\n", ret);
+
 	pxa_register_device(&pxa_device_ac97, ops);
 }
 
@@ -536,18 +538,6 @@ static struct resource pxa25x_resource_ssp[] = {
 		.end	= IRQ_SSP,
 		.flags	= IORESOURCE_IRQ,
 	},
-	[2] = {
-		/* DRCMR for RX */
-		.start	= 13,
-		.end	= 13,
-		.flags	= IORESOURCE_DMA,
-	},
-	[3] = {
-		/* DRCMR for TX */
-		.start	= 14,
-		.end	= 14,
-		.flags	= IORESOURCE_DMA,
-	},
 };
 
 struct platform_device pxa25x_device_ssp = {
@@ -574,18 +564,6 @@ static struct resource pxa25x_resource_nssp[] = {
 		.end	= IRQ_NSSP,
 		.flags	= IORESOURCE_IRQ,
 	},
-	[2] = {
-		/* DRCMR for RX */
-		.start	= 15,
-		.end	= 15,
-		.flags	= IORESOURCE_DMA,
-	},
-	[3] = {
-		/* DRCMR for TX */
-		.start	= 16,
-		.end	= 16,
-		.flags	= IORESOURCE_DMA,
-	},
 };
 
 struct platform_device pxa25x_device_nssp = {
@@ -611,18 +589,6 @@ static struct resource pxa25x_resource_assp[] = {
 		.start	= IRQ_ASSP,
 		.end	= IRQ_ASSP,
 		.flags	= IORESOURCE_IRQ,
-	},
-	[2] = {
-		/* DRCMR for RX */
-		.start	= 23,
-		.end	= 23,
-		.flags	= IORESOURCE_DMA,
-	},
-	[3] = {
-		/* DRCMR for TX */
-		.start	= 24,
-		.end	= 24,
-		.flags	= IORESOURCE_DMA,
 	},
 };
 
@@ -742,18 +708,6 @@ static struct resource pxa27x_resource_ssp1[] = {
 		.end	= IRQ_SSP,
 		.flags	= IORESOURCE_IRQ,
 	},
-	[2] = {
-		/* DRCMR for RX */
-		.start	= 13,
-		.end	= 13,
-		.flags	= IORESOURCE_DMA,
-	},
-	[3] = {
-		/* DRCMR for TX */
-		.start	= 14,
-		.end	= 14,
-		.flags	= IORESOURCE_DMA,
-	},
 };
 
 struct platform_device pxa27x_device_ssp1 = {
@@ -780,18 +734,6 @@ static struct resource pxa27x_resource_ssp2[] = {
 		.end	= IRQ_SSP2,
 		.flags	= IORESOURCE_IRQ,
 	},
-	[2] = {
-		/* DRCMR for RX */
-		.start	= 15,
-		.end	= 15,
-		.flags	= IORESOURCE_DMA,
-	},
-	[3] = {
-		/* DRCMR for TX */
-		.start	= 16,
-		.end	= 16,
-		.flags	= IORESOURCE_DMA,
-	},
 };
 
 struct platform_device pxa27x_device_ssp2 = {
@@ -817,18 +759,6 @@ static struct resource pxa27x_resource_ssp3[] = {
 		.start	= IRQ_SSP3,
 		.end	= IRQ_SSP3,
 		.flags	= IORESOURCE_IRQ,
-	},
-	[2] = {
-		/* DRCMR for RX */
-		.start	= 66,
-		.end	= 66,
-		.flags	= IORESOURCE_DMA,
-	},
-	[3] = {
-		/* DRCMR for TX */
-		.start	= 67,
-		.end	= 67,
-		.flags	= IORESOURCE_DMA,
 	},
 };
 
@@ -886,16 +816,6 @@ static struct resource pxa3xx_resources_mci2[] = {
 		.end	= IRQ_MMC2,
 		.flags	= IORESOURCE_IRQ,
 	},
-	[2] = {
-		.start	= 93,
-		.end	= 93,
-		.flags	= IORESOURCE_DMA,
-	},
-	[3] = {
-		.start	= 94,
-		.end	= 94,
-		.flags	= IORESOURCE_DMA,
-	},
 };
 
 struct platform_device pxa3xx_device_mci2 = {
@@ -924,16 +844,6 @@ static struct resource pxa3xx_resources_mci3[] = {
 		.start	= IRQ_MMC3,
 		.end	= IRQ_MMC3,
 		.flags	= IORESOURCE_IRQ,
-	},
-	[2] = {
-		.start	= 100,
-		.end	= 100,
-		.flags	= IORESOURCE_DMA,
-	},
-	[3] = {
-		.start	= 101,
-		.end	= 101,
-		.flags	= IORESOURCE_DMA,
 	},
 };
 
@@ -1012,18 +922,6 @@ static struct resource pxa3xx_resources_nand[] = {
 		.end	= IRQ_NAND,
 		.flags	= IORESOURCE_IRQ,
 	},
-	[2] = {
-		/* DRCMR for Data DMA */
-		.start	= 97,
-		.end	= 97,
-		.flags	= IORESOURCE_DMA,
-	},
-	[3] = {
-		/* DRCMR for Command DMA */
-		.start	= 99,
-		.end	= 99,
-		.flags	= IORESOURCE_DMA,
-	},
 };
 
 static u64 pxa3xx_nand_dma_mask = DMA_BIT_MASK(32);
@@ -1056,18 +954,6 @@ static struct resource pxa3xx_resource_ssp4[] = {
 		.start	= IRQ_SSP4,
 		.end	= IRQ_SSP4,
 		.flags	= IORESOURCE_IRQ,
-	},
-	[2] = {
-		/* DRCMR for RX */
-		.start	= 2,
-		.end	= 2,
-		.flags	= IORESOURCE_DMA,
-	},
-	[3] = {
-		/* DRCMR for TX */
-		.start	= 3,
-		.end	= 3,
-		.flags	= IORESOURCE_DMA,
 	},
 };
 
@@ -1179,7 +1065,7 @@ struct platform_device pxa93x_device_gpio = {
 
 /* pxa2xx-spi platform-device ID equals respective SSP platform-device ID + 1.
  * See comment in arch/arm/mach-pxa/ssp.c::ssp_probe() */
-void __init pxa2xx_set_spi_info(unsigned id, struct pxa2xx_spi_master *info)
+void __init pxa2xx_set_spi_info(unsigned id, struct pxa2xx_spi_controller *info)
 {
 	struct platform_device *pd;
 
@@ -1192,4 +1078,35 @@ void __init pxa2xx_set_spi_info(unsigned id, struct pxa2xx_spi_master *info)
 
 	pd->dev.platform_data = info;
 	platform_device_add(pd);
+}
+
+static struct resource pxa_dma_resource[] = {
+	[0] = {
+		.start	= 0x40000000,
+		.end	= 0x4000ffff,
+		.flags	= IORESOURCE_MEM,
+	},
+	[1] = {
+		.start	= IRQ_DMA,
+		.end	= IRQ_DMA,
+		.flags	= IORESOURCE_IRQ,
+	},
+};
+
+static u64 pxadma_dmamask = 0xffffffffUL;
+
+static struct platform_device pxa2xx_pxa_dma = {
+	.name		= "pxa-dma",
+	.id		= 0,
+	.dev		= {
+		.dma_mask = &pxadma_dmamask,
+		.coherent_dma_mask = 0xffffffff,
+	},
+	.num_resources	= ARRAY_SIZE(pxa_dma_resource),
+	.resource	= pxa_dma_resource,
+};
+
+void __init pxa2xx_set_dmac_info(struct mmp_dma_platdata *dma_pdata)
+{
+	pxa_register_device(&pxa2xx_pxa_dma, dma_pdata);
 }

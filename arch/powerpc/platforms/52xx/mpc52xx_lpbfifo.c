@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * LocalPlus Bus FIFO driver for the Freescale MPC52xx.
  *
  * Copyright (C) 2009 Secret Lab Technologies Ltd.
- *
- * This file is released under the GPLv2
  *
  * Todo:
  * - Add support for multiple requests to be queued.
@@ -531,6 +530,7 @@ static int mpc52xx_lpbfifo_probe(struct platform_device *op)
  err_bcom_rx_irq:
 	bcom_gen_bd_rx_release(lpbfifo.bcom_rx_task);
  err_bcom_rx:
+	free_irq(lpbfifo.irq, &lpbfifo);
  err_irq:
 	iounmap(lpbfifo.regs);
 	lpbfifo.regs = NULL;
@@ -568,11 +568,11 @@ static const struct of_device_id mpc52xx_lpbfifo_match[] = {
 	{ .compatible = "fsl,mpc5200-lpbfifo", },
 	{},
 };
+MODULE_DEVICE_TABLE(of, mpc52xx_lpbfifo_match);
 
 static struct platform_driver mpc52xx_lpbfifo_driver = {
 	.driver = {
 		.name = "mpc52xx-lpbfifo",
-		.owner = THIS_MODULE,
 		.of_match_table = mpc52xx_lpbfifo_match,
 	},
 	.probe = mpc52xx_lpbfifo_probe,

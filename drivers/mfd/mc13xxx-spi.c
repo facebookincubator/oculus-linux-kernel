@@ -1,13 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2009-2010 Pengutronix
  * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
  *
  * loosely based on an earlier driver that has
  * Copyright 2009 Pengutronix, Sascha Hauer <s.hauer@pengutronix.de>
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 as published by the
- * Free Software Foundation.
  */
 
 #include <linux/slab.h>
@@ -48,7 +45,7 @@ static const struct of_device_id mc13xxx_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, mc13xxx_dt_ids);
 
-static struct regmap_config mc13xxx_regmap_spi_config = {
+static const struct regmap_config mc13xxx_regmap_spi_config = {
 	.reg_bits = 7,
 	.pad_bits = 1,
 	.val_bits = 24,
@@ -57,7 +54,8 @@ static struct regmap_config mc13xxx_regmap_spi_config = {
 	.max_register = MC13XXX_NUMREGS,
 
 	.cache_type = REGCACHE_NONE,
-	.use_single_rw = 1,
+	.use_single_read = true,
+	.use_single_write = true,
 };
 
 static int mc13xxx_spi_read(void *context, const void *reg, size_t reg_size,
@@ -177,7 +175,6 @@ static struct spi_driver mc13xxx_spi_driver = {
 	.id_table = mc13xxx_device_id,
 	.driver = {
 		.name = "mc13xxx",
-		.owner = THIS_MODULE,
 		.of_match_table = mc13xxx_dt_ids,
 	},
 	.probe = mc13xxx_spi_probe,

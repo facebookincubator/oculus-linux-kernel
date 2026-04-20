@@ -81,7 +81,7 @@ enum reg {
 	C_CAN_FUNCTION_REG,
 };
 
-static const u16 reg_map_c_can[] = {
+static const u16 __maybe_unused reg_map_c_can[] = {
 	[C_CAN_CTRL_REG]	= 0x00,
 	[C_CAN_STS_REG]		= 0x02,
 	[C_CAN_ERR_CNT_REG]	= 0x04,
@@ -121,7 +121,7 @@ static const u16 reg_map_c_can[] = {
 	[C_CAN_MSGVAL2_REG]	= 0xB2,
 };
 
-static const u16 reg_map_d_can[] = {
+static const u16 __maybe_unused reg_map_d_can[] = {
 	[C_CAN_CTRL_REG]	= 0x00,
 	[C_CAN_CTRL_EX_REG]	= 0x02,
 	[C_CAN_STS_REG]		= 0x04,
@@ -169,6 +169,28 @@ enum c_can_dev_id {
 	BOSCH_D_CAN,
 };
 
+struct raminit_bits {
+	u8 start;
+	u8 done;
+};
+
+struct c_can_driver_data {
+	enum c_can_dev_id id;
+
+	/* RAMINIT register description. Optional. */
+	const struct raminit_bits *raminit_bits; /* Array of START/DONE bit positions */
+	u8 raminit_num;		/* Number of CAN instances on the SoC */
+	bool raminit_pulse;	/* If set, sets and clears START bit (pulse) */
+};
+
+/* Out of band RAMINIT register access via syscon regmap */
+struct c_can_raminit {
+	struct regmap *syscon;	/* for raminit ctrl. reg. access */
+	unsigned int reg;	/* register index within syscon */
+	struct raminit_bits bits;
+	bool needs_pulse;
+};
+
 /* c_can private data structure */
 struct c_can_priv {
 	struct can_priv can;	/* must be the first member */
@@ -176,6 +198,7 @@ struct c_can_priv {
 	struct net_device *dev;
 	struct device *device;
 	atomic_t tx_active;
+	atomic_t sie_pending;
 	unsigned long tx_dir;
 	int last_status;
 	u16 (*read_reg) (const struct c_can_priv *priv, enum reg index);
@@ -186,8 +209,7 @@ struct c_can_priv {
 	const u16 *regs;
 	void *priv;		/* for board-specific data */
 	enum c_can_dev_id type;
-	u32 __iomem *raminit_ctrlreg;
-	int instance;
+	struct c_can_raminit raminit_sys;	/* RAMINIT via syscon regmap */
 	void (*raminit) (const struct c_can_priv *priv, bool enable);
 	u32 comm_rcv_high;
 	u32 rxmasked;

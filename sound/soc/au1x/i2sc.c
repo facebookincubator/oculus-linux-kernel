@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Au1000/Au1500/Au1100 I2S controller driver for ASoC
  *
@@ -247,7 +248,7 @@ static int au1xi2s_drvprobe(struct platform_device *pdev)
 				     pdev->name))
 		return -EBUSY;
 
-	ctx->mmio = devm_ioremap_nocache(&pdev->dev, iores->start,
+	ctx->mmio = devm_ioremap(&pdev->dev, iores->start,
 					 resource_size(iores));
 	if (!ctx->mmio)
 		return -EBUSY;
@@ -310,7 +311,6 @@ static const struct dev_pm_ops au1xi2sc_pmops = {
 static struct platform_driver au1xi2s_driver = {
 	.driver	= {
 		.name	= "alchemy-i2sc",
-		.owner	= THIS_MODULE,
 		.pm	= AU1XI2SC_PMOPS,
 	},
 	.probe		= au1xi2s_drvprobe,

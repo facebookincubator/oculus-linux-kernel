@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * f_obex.c -- USB CDC OBEX function driver
  *
@@ -5,11 +6,6 @@
  * Contact: Felipe Balbi <felipe.balbi@nokia.com>
  *
  * Based on f_acm.c by Al Borchers and David Brownell.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 /* #define VERBOSE_DEBUG */
@@ -20,7 +16,6 @@
 #include <linux/module.h>
 
 #include "u_serial.h"
-#include "gadget_chips.h"
 
 
 /*
@@ -37,7 +32,6 @@ struct f_obex {
 	u8				data_id;
 	u8				cur_alt;
 	u8				port_num;
-	u8				can_activate;
 };
 
 static inline struct f_obex *func_to_obex(struct usb_function *f)
@@ -208,7 +202,7 @@ static int obex_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 		if (alt > 1)
 			goto fail;
 
-		if (obex->port.in->driver_data) {
+		if (obex->port.in->enabled) {
 			dev_dbg(&cdev->gadget->dev,
 				"reset obex ttyGS%d\n", obex->port_num);
 			gserial_disconnect(&obex->port);
@@ -268,9 +262,6 @@ static void obex_connect(struct gserial *g)
 	struct usb_composite_dev *cdev = g->func.config->cdev;
 	int			status;
 
-	if (!obex->can_activate)
-		return;
-
 	status = usb_function_activate(&g->func);
 	if (status)
 		dev_dbg(&cdev->gadget->dev,
@@ -283,9 +274,6 @@ static void obex_disconnect(struct gserial *g)
 	struct f_obex		*obex = port_to_obex(g);
 	struct usb_composite_dev *cdev = g->func.config->cdev;
 	int			status;
-
-	if (!obex->can_activate)
-		return;
 
 	status = usb_function_deactivate(&g->func);
 	if (status)
@@ -304,7 +292,7 @@ static inline bool can_support_obex(struct usb_configuration *c)
 	 *
 	 * Altsettings are mandatory, however...
 	 */
-	if (!gadget_supports_altsettings(c->cdev->gadget))
+	if (!gadget_is_altset_supported(c->cdev->gadget))
 		return false;
 
 	/* everything else is *probably* fine ... */
@@ -356,13 +344,11 @@ static int obex_bind(struct usb_configuration *c, struct usb_function *f)
 	if (!ep)
 		goto fail;
 	obex->port.in = ep;
-	ep->driver_data = cdev;	/* claim */
 
 	ep = usb_ep_autoconfig(cdev->gadget, &obex_fs_ep_out_desc);
 	if (!ep)
 		goto fail;
 	obex->port.out = ep;
-	ep->driver_data = cdev;	/* claim */
 
 	/* support all relevant hardware speeds... we expect that when
 	 * hardware is dual speed, all bulk-capable endpoints work at
@@ -374,20 +360,10 @@ static int obex_bind(struct usb_configuration *c, struct usb_function *f)
 	obex_hs_ep_out_desc.bEndpointAddress =
 		obex_fs_ep_out_desc.bEndpointAddress;
 
-	status = usb_assign_descriptors(f, fs_function, hs_function, NULL);
+	status = usb_assign_descriptors(f, fs_function, hs_function, NULL,
+					NULL);
 	if (status)
 		goto fail;
-
-	/* Avoid letting this gadget enumerate until the userspace
-	 * OBEX server is active.
-	 */
-	status = usb_function_deactivate(f);
-	if (status < 0)
-		WARNING(cdev, "obex ttyGS%d: can't prevent enumeration, %d\n",
-			obex->port_num, status);
-	else
-		obex->can_activate = true;
-
 
 	dev_dbg(&cdev->gadget->dev, "obex ttyGS%d: %s speed IN/%s OUT/%s\n",
 		obex->port_num,
@@ -397,13 +373,7 @@ static int obex_bind(struct usb_configuration *c, struct usb_function *f)
 	return 0;
 
 fail:
-	/* we might as well release our claims on endpoints */
-	if (obex->port.out)
-		obex->port.out->driver_data = NULL;
-	if (obex->port.in)
-		obex->port.in->driver_data = NULL;
-
-	ERROR(cdev, "%s/%pK: can't bind, err %d\n", f->name, f, status);
+	ERROR(cdev, "%s/%p: can't bind, err %d\n", f->name, f, status);
 
 	return status;
 }
@@ -412,22 +382,6 @@ static inline struct f_serial_opts *to_f_serial_opts(struct config_item *item)
 {
 	return container_of(to_config_group(item), struct f_serial_opts,
 			    func_inst.group);
-}
-
-CONFIGFS_ATTR_STRUCT(f_serial_opts);
-static ssize_t f_obex_attr_show(struct config_item *item,
-				struct configfs_attribute *attr,
-				char *page)
-{
-	struct f_serial_opts *opts = to_f_serial_opts(item);
-	struct f_serial_opts_attribute *f_serial_opts_attr =
-		container_of(attr, struct f_serial_opts_attribute, attr);
-	ssize_t ret = 0;
-
-	if (f_serial_opts_attr->show)
-		ret = f_serial_opts_attr->show(opts, page);
-
-	return ret;
 }
 
 static void obex_attr_release(struct config_item *item)
@@ -439,23 +393,21 @@ static void obex_attr_release(struct config_item *item)
 
 static struct configfs_item_operations obex_item_ops = {
 	.release	= obex_attr_release,
-	.show_attribute = f_obex_attr_show,
 };
 
-static ssize_t f_obex_port_num_show(struct f_serial_opts *opts, char *page)
+static ssize_t f_obex_port_num_show(struct config_item *item, char *page)
 {
-	return sprintf(page, "%u\n", opts->port_num);
+	return sprintf(page, "%u\n", to_f_serial_opts(item)->port_num);
 }
 
-static struct f_serial_opts_attribute f_obex_port_num =
-	__CONFIGFS_ATTR_RO(port_num, f_obex_port_num_show);
+CONFIGFS_ATTR_RO(f_obex_, port_num);
 
 static struct configfs_attribute *acm_attrs[] = {
-	&f_obex_port_num.attr,
+	&f_obex_attr_port_num,
 	NULL,
 };
 
-static struct config_item_type obex_func_type = {
+static const struct config_item_type obex_func_type = {
 	.ct_item_ops	= &obex_item_ops,
 	.ct_attrs	= acm_attrs,
 	.ct_owner	= THIS_MODULE,
@@ -480,7 +432,7 @@ static struct usb_function_instance *obex_alloc_inst(void)
 		return ERR_PTR(-ENOMEM);
 
 	opts->func_inst.free_func_inst = obex_free_inst;
-	ret = gserial_alloc_line(&opts->port_num);
+	ret = gserial_alloc_line_no_console(&opts->port_num);
 	if (ret) {
 		kfree(opts);
 		return ERR_PTR(ret);
@@ -529,6 +481,7 @@ static struct usb_function *obex_alloc(struct usb_function_instance *fi)
 	obex->port.func.get_alt = obex_get_alt;
 	obex->port.func.disable = obex_disable;
 	obex->port.func.free_func = obex_free;
+	obex->port.func.bind_deactivated = true;
 
 	return &obex->port.func;
 }

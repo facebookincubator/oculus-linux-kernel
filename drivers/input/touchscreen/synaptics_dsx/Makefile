@@ -4,7 +4,6 @@
 
 # Each configuration option enables a list of files.
 
-obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_I2C_v21) += synaptics_dsx_i2c.o
-obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_SPI_v21) += synaptics_dsx_spi.o
-obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_CORE_v21) += synaptics_dsx_core.o
-obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE_v21) += synaptics_dsx_fw_update.o
+obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX) += synaptics_dsx.o
+
+synaptics_dsx-y := synaptics_dsx_i2c.o synaptics_dsx_core.o

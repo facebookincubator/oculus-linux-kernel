@@ -1,17 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (c) 1996 John Shifflett, GeoLog Consulting
  *    john@geolog.com
  *    jshiffle@netcom.com
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
@@ -744,7 +735,7 @@ transfer_bytes(const wd33c93_regs regs, struct scsi_cmnd *cmd,
  * source or destination for THIS transfer.
  */
 	if (!cmd->SCp.this_residual && cmd->SCp.buffers_residual) {
-		++cmd->SCp.buffer;
+		cmd->SCp.buffer = sg_next(cmd->SCp.buffer);
 		--cmd->SCp.buffers_residual;
 		cmd->SCp.this_residual = cmd->SCp.buffer->length;
 		cmd->SCp.ptr = sg_virt(cmd->SCp.buffer);
@@ -1578,6 +1569,7 @@ wd33c93_host_reset(struct scsi_cmnd * SCpnt)
 	int i;
 
 	instance = SCpnt->device->host;
+	spin_lock_irq(instance->host_lock);
 	hostdata = (struct WD33C93_hostdata *) instance->hostdata;
 
 	printk("scsi%d: reset. ", instance->host_no);
@@ -1603,6 +1595,7 @@ wd33c93_host_reset(struct scsi_cmnd * SCpnt)
 	reset_wd33c93(instance);
 	SCpnt->result = DID_RESET << 16;
 	enable_irq(instance->irq);
+	spin_unlock_irq(instance->host_lock);
 	return SUCCESS;
 }
 
@@ -1861,6 +1854,7 @@ round_4(unsigned int x)
 		case 1: --x;
 			break;
 		case 2: ++x;
+			fallthrough;
 		case 3: ++x;
 	}
 	return x;
@@ -2143,22 +2137,22 @@ wd33c93_show_info(struct seq_file *m, struct Scsi_Host *instance)
 		seq_printf(m, "\nclock_freq=%02x no_sync=%02x no_dma=%d"
 			" dma_mode=%02x fast=%d",
 			hd->clock_freq, hd->no_sync, hd->no_dma, hd->dma_mode, hd->fast);
-		seq_printf(m, "\nsync_xfer[] =       ");
+		seq_puts(m, "\nsync_xfer[] =       ");
 		for (x = 0; x < 7; x++)
 			seq_printf(m, "\t%02x", hd->sync_xfer[x]);
-		seq_printf(m, "\nsync_stat[] =       ");
+		seq_puts(m, "\nsync_stat[] =       ");
 		for (x = 0; x < 7; x++)
 			seq_printf(m, "\t%02x", hd->sync_stat[x]);
 	}
 #ifdef PROC_STATISTICS
 	if (hd->proc & PR_STATISTICS) {
-		seq_printf(m, "\ncommands issued:    ");
+		seq_puts(m, "\ncommands issued:    ");
 		for (x = 0; x < 7; x++)
 			seq_printf(m, "\t%ld", hd->cmd_cnt[x]);
-		seq_printf(m, "\ndisconnects allowed:");
+		seq_puts(m, "\ndisconnects allowed:");
 		for (x = 0; x < 7; x++)
 			seq_printf(m, "\t%ld", hd->disc_allowed_cnt[x]);
-		seq_printf(m, "\ndisconnects done:   ");
+		seq_puts(m, "\ndisconnects done:   ");
 		for (x = 0; x < 7; x++)
 			seq_printf(m, "\t%ld", hd->disc_done_cnt[x]);
 		seq_printf(m,
@@ -2167,7 +2161,7 @@ wd33c93_show_info(struct seq_file *m, struct Scsi_Host *instance)
 	}
 #endif
 	if (hd->proc & PR_CONNECTED) {
-		seq_printf(m, "\nconnected:     ");
+		seq_puts(m, "\nconnected:     ");
 		if (hd->connected) {
 			cmd = (struct scsi_cmnd *) hd->connected;
 			seq_printf(m, " %d:%llu(%02x)",
@@ -2175,7 +2169,7 @@ wd33c93_show_info(struct seq_file *m, struct Scsi_Host *instance)
 		}
 	}
 	if (hd->proc & PR_INPUTQ) {
-		seq_printf(m, "\ninput_Q:       ");
+		seq_puts(m, "\ninput_Q:       ");
 		cmd = (struct scsi_cmnd *) hd->input_Q;
 		while (cmd) {
 			seq_printf(m, " %d:%llu(%02x)",
@@ -2184,7 +2178,7 @@ wd33c93_show_info(struct seq_file *m, struct Scsi_Host *instance)
 		}
 	}
 	if (hd->proc & PR_DISCQ) {
-		seq_printf(m, "\ndisconnected_Q:");
+		seq_puts(m, "\ndisconnected_Q:");
 		cmd = (struct scsi_cmnd *) hd->disconnected_Q;
 		while (cmd) {
 			seq_printf(m, " %d:%llu(%02x)",
@@ -2192,7 +2186,7 @@ wd33c93_show_info(struct seq_file *m, struct Scsi_Host *instance)
 			cmd = (struct scsi_cmnd *) cmd->host_scribble;
 		}
 	}
-	seq_printf(m, "\n");
+	seq_putc(m, '\n');
 	spin_unlock_irq(&hd->lock);
 #endif				/* PROC_INTERFACE */
 	return 0;

@@ -1,17 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/drivers/firmware/memmap.c
  *  Copyright (C) 2008 SUSE LINUX Products GmbH
  *  by Bernhard Walle <bernhard.walle@gmx.de>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License v2.0 as published by
- * the Free Software Foundation
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
  */
 
 #include <linux/string.h>
@@ -19,7 +10,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/types.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/slab.h>
 #include <linux/mm.h>
 
@@ -144,7 +135,9 @@ static struct kobj_type __refdata memmap_ktype = {
  *
  * Common implementation of firmware_map_add() and firmware_map_add_early()
  * which expects a pre-allocated struct firmware_map_entry.
- **/
+ *
+ * Return: 0 always
+ */
 static int firmware_map_add_entry(u64 start, u64 end,
 				  const char *type,
 				  struct firmware_map_entry *entry)
@@ -170,7 +163,7 @@ static int firmware_map_add_entry(u64 start, u64 end,
  * @entry: removed entry.
  *
  * The caller must hold map_entries_lock, and release it properly.
- **/
+ */
 static inline void firmware_map_remove_entry(struct firmware_map_entry *entry)
 {
 	list_del(&entry->list);
@@ -208,7 +201,7 @@ static inline void remove_sysfs_fw_map_entry(struct firmware_map_entry *entry)
 	kobject_put(&entry->kobj);
 }
 
-/*
+/**
  * firmware_map_find_entry_in_list() - Search memmap entry in a given list.
  * @start: Start of the memory range.
  * @end:   End of the memory range (exclusive).
@@ -236,7 +229,7 @@ firmware_map_find_entry_in_list(u64 start, u64 end, const char *type,
 	return NULL;
 }
 
-/*
+/**
  * firmware_map_find_entry() - Search memmap entry in map_entries.
  * @start: Start of the memory range.
  * @end:   End of the memory range (exclusive).
@@ -254,7 +247,7 @@ firmware_map_find_entry(u64 start, u64 end, const char *type)
 	return firmware_map_find_entry_in_list(start, end, type, &map_entries);
 }
 
-/*
+/**
  * firmware_map_find_entry_bootmem() - Search memmap entry in map_entries_bootmem.
  * @start: Start of the memory range.
  * @end:   End of the memory range (exclusive).
@@ -283,8 +276,8 @@ firmware_map_find_entry_bootmem(u64 start, u64 end, const char *type)
  * similar to function firmware_map_add_early(). The only difference is that
  * it will create the syfs entry dynamically.
  *
- * Returns 0 on success, or -ENOMEM if no memory could be allocated.
- **/
+ * Return: 0 on success, or -ENOMEM if no memory could be allocated.
+ */
 int __meminit firmware_map_add_hotplug(u64 start, u64 end, const char *type)
 {
 	struct firmware_map_entry *entry;
@@ -325,13 +318,14 @@ int __meminit firmware_map_add_hotplug(u64 start, u64 end, const char *type)
  *
  * That function must be called before late_initcall.
  *
- * Returns 0 on success, or -ENOMEM if no memory could be allocated.
- **/
+ * Return: 0 on success, or -ENOMEM if no memory could be allocated.
+ */
 int __init firmware_map_add_early(u64 start, u64 end, const char *type)
 {
 	struct firmware_map_entry *entry;
 
-	entry = memblock_virt_alloc(sizeof(struct firmware_map_entry), 0);
+	entry = memblock_alloc(sizeof(struct firmware_map_entry),
+			       SMP_CACHE_BYTES);
 	if (WARN_ON(!entry))
 		return -ENOMEM;
 
@@ -346,8 +340,8 @@ int __init firmware_map_add_early(u64 start, u64 end, const char *type)
  *
  * removes a firmware mapping entry.
  *
- * Returns 0 on success, or -EINVAL if no entry.
- **/
+ * Return: 0 on success, or -EINVAL if no entry.
+ */
 int __meminit firmware_map_remove(u64 start, u64 end, const char *type)
 {
 	struct firmware_map_entry *entry;

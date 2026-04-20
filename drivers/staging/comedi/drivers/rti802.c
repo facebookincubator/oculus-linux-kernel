@@ -1,26 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * rti802.c
  * Comedi driver for Analog Devices RTI-802 board
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 1999 Anders Blomdell <anders.blomdell@control.lth.se>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
  * Driver: rti802
  * Description: Analog Devices RTI-802
  * Author: Anders Blomdell <anders.blomdell@control.lth.se>
- * Devices: (Analog Devices) RTI-802 [rti802]
+ * Devices: [Analog Devices] RTI-802 (rti802)
  * Status: works
  *
  * Configuration Options:
@@ -100,7 +91,6 @@ static int rti802_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	s->maxdata	= 0xfff;
 	s->n_chan	= 8;
 	s->insn_write	= rti802_ao_insn_write;
-	s->insn_read	= comedi_readback_insn_read;
 
 	ret = comedi_alloc_subdev_readback(s);
 	if (ret)
@@ -125,6 +115,6 @@ static struct comedi_driver rti802_driver = {
 };
 module_comedi_driver(rti802_driver);
 
-MODULE_AUTHOR("Comedi http://www.comedi.org");
+MODULE_AUTHOR("Comedi https://www.comedi.org");
 MODULE_DESCRIPTION("Comedi driver for Analog Devices RTI-802 board");
 MODULE_LICENSE("GPL");

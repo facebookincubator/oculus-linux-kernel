@@ -1,20 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2014 Marvell Technology Group Ltd.
  *
  * Alexandre Belloni <alexandre.belloni@free-electrons.com>
  * Sebastian Hesselbarth <sebastian.hesselbarth@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <linux/clk-provider.h>
 #include <linux/io.h>
@@ -25,14 +14,7 @@
 #include <asm/div64.h>
 
 #include "berlin2-div.h"
-
-struct berlin2_pll_map {
-	const u8 vcodiv[16];
-	u8 mult;
-	u8 fbdiv_shift;
-	u8 rfdiv_shift;
-	u8 divsel_shift;
-};
+#include "berlin2-pll.h"
 
 struct berlin2_pll {
 	struct clk_hw hw;
@@ -68,7 +50,7 @@ berlin2_pll_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 	fbdiv = (val >> map->fbdiv_shift) & FBDIV_MASK;
 	rfdiv = (val >> map->rfdiv_shift) & RFDIV_MASK;
 	if (rfdiv == 0) {
-		pr_warn("%s has zero rfdiv\n", __clk_get_name(hw->clk));
+		pr_warn("%s has zero rfdiv\n", clk_hw_get_name(hw));
 		rfdiv = 1;
 	}
 
@@ -77,7 +59,7 @@ berlin2_pll_recalc_rate(struct clk_hw *hw, unsigned long parent_rate)
 	vcodiv = map->vcodiv[vcodivsel];
 	if (vcodiv == 0) {
 		pr_warn("%s has zero vcodiv (index %d)\n",
-			__clk_get_name(hw->clk), vcodivsel);
+			clk_hw_get_name(hw), vcodivsel);
 		vcodiv = 1;
 	}
 
@@ -91,7 +73,7 @@ static const struct clk_ops berlin2_pll_ops = {
 	.recalc_rate	= berlin2_pll_recalc_rate,
 };
 
-struct clk * __init
+int __init
 berlin2_pll_register(const struct berlin2_pll_map *map,
 		     void __iomem *base, const char *name,
 		     const char *parent_name, unsigned long flags)
@@ -101,7 +83,7 @@ berlin2_pll_register(const struct berlin2_pll_map *map,
 
 	pll = kzalloc(sizeof(*pll), GFP_KERNEL);
 	if (!pll)
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 
 	/* copy pll_map to allow __initconst */
 	memcpy(&pll->map, map, sizeof(*map));
@@ -113,5 +95,5 @@ berlin2_pll_register(const struct berlin2_pll_map *map,
 	init.num_parents = 1;
 	init.flags = flags;
 
-	return clk_register(NULL, &pll->hw);
+	return clk_hw_register(NULL, &pll->hw);
 }

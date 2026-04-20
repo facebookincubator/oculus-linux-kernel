@@ -4,7 +4,8 @@
  *
  * This code is based on drivers/scsi/mpt3sas/mpt3sas_ctl.h
  * Copyright (C) 2012-2014  LSI Corporation
- *  (mailto:DL-MPTFusionLinux@lsi.com)
+ * Copyright (C) 2013-2014 Avago Technologies
+ *  (mailto: MPT-FusionLinux.pdl@avagotech.com)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -49,10 +50,13 @@
 #include <linux/miscdevice.h>
 #endif
 
-
+#ifndef MPT2SAS_MINOR
+#define MPT2SAS_MINOR		(MPT_MINOR + 1)
+#endif
 #ifndef MPT3SAS_MINOR
 #define MPT3SAS_MINOR		(MPT_MINOR + 2)
 #endif
+#define MPT2SAS_DEV_NAME	"mpt2ctl"
 #define MPT3SAS_DEV_NAME	"mpt3ctl"
 #define MPT3_MAGIC_NUMBER	'L'
 #define MPT3_IOCTL_DEFAULT_TIMEOUT (10) /* in seconds */
@@ -90,6 +94,14 @@
 	struct mpt3_diag_query)
 #define MPT3DIAGREADBUFFER _IOWR(MPT3_MAGIC_NUMBER, 30, \
 	struct mpt3_diag_read_buffer)
+
+/* Trace Buffer default UniqueId */
+#define MPT2DIAGBUFFUNIQUEID (0x07075900)
+#define MPT3DIAGBUFFUNIQUEID (0x4252434D)
+
+/* UID not found */
+#define MPT3_DIAG_UID_NOT_FOUND (0xFF)
+
 
 /**
  * struct mpt3_ioctl_header - main header structure
@@ -137,7 +149,9 @@ struct mpt3_ioctl_pci_info {
 #define MPT2_IOCTL_INTERFACE_FC_IP	(0x02)
 #define MPT2_IOCTL_INTERFACE_SAS	(0x03)
 #define MPT2_IOCTL_INTERFACE_SAS2	(0x04)
+#define MPT2_IOCTL_INTERFACE_SAS2_SSS6200	(0x05)
 #define MPT3_IOCTL_INTERFACE_SAS3	(0x06)
+#define MPT3_IOCTL_INTERFACE_SAS35	(0x07)
 #define MPT2_IOCTL_VERSION_LENGTH	(32)
 
 /**
@@ -178,7 +192,7 @@ struct mpt3_ioctl_iocinfo {
 
 
 /* number of event log entries */
-#define MPT3SAS_CTL_EVENT_LOG_SIZE (50)
+#define MPT3SAS_CTL_EVENT_LOG_SIZE (200)
 
 /**
  * struct mpt3_ioctl_eventquery - query event count and type
@@ -304,6 +318,7 @@ struct mpt3_ioctl_btdh_mapping {
 #define MPT3_APP_FLAGS_APP_OWNED	(0x0001)
 #define MPT3_APP_FLAGS_BUFFER_VALID	(0x0002)
 #define MPT3_APP_FLAGS_FW_BUFFER_ACCESS	(0x0004)
+#define MPT3_APP_FLAGS_DYNAMIC_BUFFER_ALLOC (0x0008)
 
 /* flags for mpt3_diag_read_buffer */
 #define MPT3_FLAGS_REREGISTER		(0x0001)
@@ -384,7 +399,7 @@ struct mpt3_diag_query {
  *
  * This allows ownership of the specified buffer to returned to the driver,
  * allowing an application to read the buffer without fear that firmware is
- * overwritting information in the buffer.
+ * overwriting information in the buffer.
  */
 struct mpt3_diag_release {
 	struct mpt3_ioctl_header hdr;

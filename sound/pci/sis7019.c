@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  Driver for SiS7019 Audio Accelerator
  *
@@ -6,19 +7,6 @@
  *  Inspired by the Trident 4D-WaveDX/NX driver.
  *
  *  All rights reserved.
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, version 2.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #include <linux/init.h>
@@ -159,7 +147,7 @@ struct sis7019 {
  * We'll add a constraint upon open that limits the period and buffer sample
  * size to values that are legal for the hardware.
  */
-static struct snd_pcm_hardware sis_playback_hw_info = {
+static const struct snd_pcm_hardware sis_playback_hw_info = {
 	.info = (SNDRV_PCM_INFO_MMAP |
 		 SNDRV_PCM_INFO_MMAP_VALID |
 		 SNDRV_PCM_INFO_INTERLEAVED |
@@ -180,7 +168,7 @@ static struct snd_pcm_hardware sis_playback_hw_info = {
 	.periods_max = (0xfff9 / 9),
 };
 
-static struct snd_pcm_hardware sis_capture_hw_info = {
+static const struct snd_pcm_hardware sis_capture_hw_info = {
 	.info = (SNDRV_PCM_INFO_MMAP |
 		 SNDRV_PCM_INFO_MMAP_VALID |
 		 SNDRV_PCM_INFO_INTERLEAVED |
@@ -383,9 +371,9 @@ static void __sis_map_silence(struct sis7019 *sis)
 {
 	/* Helper function: must hold sis->voice_lock on entry */
 	if (!sis->silence_users)
-		sis->silence_dma_addr = pci_map_single(sis->pci,
+		sis->silence_dma_addr = dma_map_single(&sis->pci->dev,
 						sis->suspend_state[0],
-						4096, PCI_DMA_TODEVICE);
+						4096, DMA_TO_DEVICE);
 	sis->silence_users++;
 }
 
@@ -394,8 +382,8 @@ static void __sis_unmap_silence(struct sis7019 *sis)
 	/* Helper function: must hold sis->voice_lock on entry */
 	sis->silence_users--;
 	if (!sis->silence_users)
-		pci_unmap_single(sis->pci, sis->silence_dma_addr, 4096,
-					PCI_DMA_TODEVICE);
+		dma_unmap_single(&sis->pci->dev, sis->silence_dma_addr, 4096,
+					DMA_TO_DEVICE);
 }
 
 static void sis_free_voice(struct sis7019 *sis, struct voice *voice)
@@ -509,18 +497,6 @@ static int sis_substream_close(struct snd_pcm_substream *substream)
 
 	sis_free_voice(sis, voice);
 	return 0;
-}
-
-static int sis_playback_hw_params(struct snd_pcm_substream *substream,
-					struct snd_pcm_hw_params *hw_params)
-{
-	return snd_pcm_lib_malloc_pages(substream,
-					params_buffer_bytes(hw_params));
-}
-
-static int sis_hw_free(struct snd_pcm_substream *substream)
-{
-	return snd_pcm_lib_free_pages(substream);
 }
 
 static int sis_pcm_playback_prepare(struct snd_pcm_substream *substream)
@@ -713,11 +689,6 @@ static int sis_capture_hw_params(struct snd_pcm_substream *substream,
 	if (rc)
 		goto out;
 
-	rc = snd_pcm_lib_malloc_pages(substream,
-					params_buffer_bytes(hw_params));
-	if (rc < 0)
-		goto out;
-
 	rc = sis_alloc_timing_voice(substream, hw_params);
 
 out:
@@ -872,23 +843,18 @@ static int sis_pcm_capture_prepare(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static struct snd_pcm_ops sis_playback_ops = {
+static const struct snd_pcm_ops sis_playback_ops = {
 	.open = sis_playback_open,
 	.close = sis_substream_close,
-	.ioctl = snd_pcm_lib_ioctl,
-	.hw_params = sis_playback_hw_params,
-	.hw_free = sis_hw_free,
 	.prepare = sis_pcm_playback_prepare,
 	.trigger = sis_pcm_trigger,
 	.pointer = sis_pcm_pointer,
 };
 
-static struct snd_pcm_ops sis_capture_ops = {
+static const struct snd_pcm_ops sis_capture_ops = {
 	.open = sis_capture_open,
 	.close = sis_substream_close,
-	.ioctl = snd_pcm_lib_ioctl,
 	.hw_params = sis_capture_hw_params,
-	.hw_free = sis_hw_free,
 	.prepare = sis_pcm_capture_prepare,
 	.trigger = sis_pcm_trigger,
 	.pointer = sis_pcm_pointer,
@@ -916,8 +882,8 @@ static int sis_pcm_create(struct sis7019 *sis)
 	/* Try to preallocate some memory, but it's not the end of the
 	 * world if this fails.
 	 */
-	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-				snd_dma_pci_data(sis->pci), 64*1024, 128*1024);
+	snd_pcm_set_managed_buffer_all(pcm, SNDRV_DMA_TYPE_DEV,
+				       &sis->pci->dev, 64*1024, 128*1024);
 
 	return 0;
 }
@@ -1017,7 +983,7 @@ static int sis_mixer_create(struct sis7019 *sis)
 {
 	struct snd_ac97_bus *bus;
 	struct snd_ac97_template ac97;
-	static struct snd_ac97_bus_ops ops = {
+	static const struct snd_ac97_bus_ops ops = {
 		.write = sis_ac97_write,
 		.read = sis_ac97_read,
 	};
@@ -1064,12 +1030,9 @@ static int sis_chip_free(struct sis7019 *sis)
 	if (sis->irq >= 0)
 		free_irq(sis->irq, sis);
 
-	if (sis->ioaddr)
-		iounmap(sis->ioaddr);
-
+	iounmap(sis->ioaddr);
 	pci_release_regions(sis->pci);
 	pci_disable_device(sis->pci);
-
 	sis_free_suspend(sis);
 	return 0;
 }
@@ -1211,14 +1174,12 @@ static int sis_chip_init(struct sis7019 *sis)
 #ifdef CONFIG_PM_SLEEP
 static int sis_suspend(struct device *dev)
 {
-	struct pci_dev *pci = to_pci_dev(dev);
 	struct snd_card *card = dev_get_drvdata(dev);
 	struct sis7019 *sis = card->private_data;
 	void __iomem *ioaddr = sis->ioaddr;
 	int i;
 
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
-	snd_pcm_suspend_all(sis->pcm);
 	if (sis->codecs_present & SIS_PRIMARY_CODEC_PRESENT)
 		snd_ac97_suspend(sis->ac97[0]);
 	if (sis->codecs_present & SIS_SECONDARY_CODEC_PRESENT)
@@ -1240,9 +1201,6 @@ static int sis_suspend(struct device *dev)
 		ioaddr += 4096;
 	}
 
-	pci_disable_device(pci);
-	pci_save_state(pci);
-	pci_set_power_state(pci, PCI_D3hot);
 	return 0;
 }
 
@@ -1253,14 +1211,6 @@ static int sis_resume(struct device *dev)
 	struct sis7019 *sis = card->private_data;
 	void __iomem *ioaddr = sis->ioaddr;
 	int i;
-
-	pci_set_power_state(pci, PCI_D0);
-	pci_restore_state(pci);
-
-	if (pci_enable_device(pci) < 0) {
-		dev_err(&pci->dev, "unable to re-enable device\n");
-		goto error;
-	}
 
 	if (sis_chip_init(sis)) {
 		dev_err(&pci->dev, "unable to re-init controller\n");
@@ -1284,7 +1234,6 @@ static int sis_resume(struct device *dev)
 	memset(sis->suspend_state[0], 0, 4096);
 
 	sis->irq = pci->irq;
-	pci_set_master(pci);
 
 	if (sis->codecs_present & SIS_PRIMARY_CODEC_PRESENT)
 		snd_ac97_resume(sis->ac97[0]);
@@ -1331,7 +1280,7 @@ static int sis_chip_create(struct snd_card *card,
 {
 	struct sis7019 *sis = card->private_data;
 	struct voice *voice;
-	static struct snd_device_ops ops = {
+	static const struct snd_device_ops ops = {
 		.dev_free = sis_dev_free,
 	};
 	int rc;
@@ -1341,7 +1290,7 @@ static int sis_chip_create(struct snd_card *card,
 	if (rc)
 		goto error_out;
 
-	rc = pci_set_dma_mask(pci, DMA_BIT_MASK(30));
+	rc = dma_set_mask(&pci->dev, DMA_BIT_MASK(30));
 	if (rc < 0) {
 		dev_err(&pci->dev, "architecture does not support 30-bit PCI busmaster DMA");
 		goto error_out_enabled;
@@ -1362,7 +1311,7 @@ static int sis_chip_create(struct snd_card *card,
 	}
 
 	rc = -EIO;
-	sis->ioaddr = ioremap_nocache(pci_resource_start(pci, 1), 0x4000);
+	sis->ioaddr = ioremap(pci_resource_start(pci, 1), 0x4000);
 	if (!sis->ioaddr) {
 		dev_err(&pci->dev, "unable to remap MMIO, aborting\n");
 		goto error_out_cleanup;
@@ -1386,6 +1335,7 @@ static int sis_chip_create(struct snd_card *card,
 	}
 
 	sis->irq = pci->irq;
+	card->sync_irq = sis->irq;
 	pci_set_master(pci);
 
 	for (i = 0; i < 64; i++) {

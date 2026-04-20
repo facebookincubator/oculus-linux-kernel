@@ -1,20 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /******************************************************************************
 
     AudioScience HPI driver
-    Copyright (C) 1997-2011  AudioScience Inc. <support@audioscience.com>
+    Copyright (C) 1997-2014  AudioScience Inc. <support@audioscience.com>
 
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of version 2 of the GNU General Public License as
-    published by the Free Software Foundation;
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 Extended Message Function With Response Caching
 
@@ -28,13 +17,14 @@ Extended Message Function With Response Caching
 #include "hpimsgx.h"
 #include "hpidebug.h"
 
-static struct pci_device_id asihpi_pci_tbl[] = {
+static const struct pci_device_id asihpi_pci_tbl[] = {
 #include "hpipcida.h"
 };
 
 static struct hpios_spinlock msgx_lock;
 
 static hpi_handler_func *hpi_entry_points[HPI_MAX_ADAPTERS];
+static int logging_enabled = 1;
 
 static hpi_handler_func *hpi_lookup_entry_point_function(const struct hpi_pci
 	*pci_info)
@@ -312,7 +302,9 @@ static void instream_message(struct hpi_message *phm,
 void hpi_send_recv_ex(struct hpi_message *phm, struct hpi_response *phr,
 	void *h_owner)
 {
-	HPI_DEBUG_MESSAGE(DEBUG, phm);
+
+	if (logging_enabled)
+		HPI_DEBUG_MESSAGE(DEBUG, phm);
 
 	if (phm->type != HPI_TYPE_REQUEST) {
 		hpi_init_response(phr, phm->object, phm->function,
@@ -352,8 +344,14 @@ void hpi_send_recv_ex(struct hpi_message *phm, struct hpi_response *phr,
 		hw_entry_point(phm, phr);
 		break;
 	}
-	HPI_DEBUG_RESPONSE(phr);
 
+	if (logging_enabled)
+		HPI_DEBUG_RESPONSE(phr);
+
+	if (phr->error >= HPI_ERROR_DSP_COMMUNICATION) {
+		hpi_debug_level_set(HPI_DEBUG_LEVEL_ERROR);
+		logging_enabled = 0;
+	}
 }
 
 static void adapter_open(struct hpi_message *phm, struct hpi_response *phr)

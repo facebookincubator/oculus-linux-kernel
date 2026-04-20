@@ -1,10 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) Sistina Software, Inc.  1997-2003 All rights reserved.
  * Copyright (C) 2004-2006 Red Hat, Inc.  All rights reserved.
- *
- * This copyrighted material is made available to anyone wishing to use,
- * modify, copy, or redistribute it subject to the terms and conditions
- * of the GNU General Public License version 2.
  */
 
 #include <linux/sched.h>
@@ -24,6 +21,8 @@
 #include "glock.h"
 #include "inode.h"
 #include "meta_io.h"
+#include "quota.h"
+#include "rgrp.h"
 #include "trans.h"
 #include "util.h"
 
@@ -31,14 +30,14 @@ static const char *gfs2_acl_name(int type)
 {
 	switch (type) {
 	case ACL_TYPE_ACCESS:
-		return GFS2_POSIX_ACL_ACCESS;
+		return XATTR_POSIX_ACL_ACCESS;
 	case ACL_TYPE_DEFAULT:
-		return GFS2_POSIX_ACL_DEFAULT;
+		return XATTR_POSIX_ACL_DEFAULT;
 	}
 	return NULL;
 }
 
-struct posix_acl *gfs2_get_acl(struct inode *inode, int type)
+static struct posix_acl *__gfs2_get_acl(struct inode *inode, int type)
 {
 	struct gfs2_inode *ip = GFS2_I(inode);
 	struct posix_acl *acl;
@@ -50,49 +49,43 @@ struct posix_acl *gfs2_get_acl(struct inode *inode, int type)
 		return NULL;
 
 	name = gfs2_acl_name(type);
-	if (name == NULL)
-		return ERR_PTR(-EINVAL);
-
 	len = gfs2_xattr_acl_get(ip, name, &data);
-	if (len < 0)
+	if (len <= 0)
 		return ERR_PTR(len);
-	if (len == 0)
-		return NULL;
-
 	acl = posix_acl_from_xattr(&init_user_ns, data, len);
 	kfree(data);
 	return acl;
 }
 
-int gfs2_set_acl(struct inode *inode, struct posix_acl *acl, int type)
+struct posix_acl *gfs2_get_acl(struct inode *inode, int type)
+{
+	struct gfs2_inode *ip = GFS2_I(inode);
+	struct gfs2_holder gh;
+	bool need_unlock = false;
+	struct posix_acl *acl;
+
+	if (!gfs2_glock_is_locked_by_me(ip->i_gl)) {
+		int ret = gfs2_glock_nq_init(ip->i_gl, LM_ST_SHARED,
+					     LM_FLAG_ANY, &gh);
+		if (ret)
+			return ERR_PTR(ret);
+		need_unlock = true;
+	}
+	acl = __gfs2_get_acl(inode, type);
+	if (need_unlock)
+		gfs2_glock_dq_uninit(&gh);
+	return acl;
+}
+
+int __gfs2_set_acl(struct inode *inode, struct posix_acl *acl, int type)
 {
 	int error;
-	int len;
+	size_t len;
 	char *data;
 	const char *name = gfs2_acl_name(type);
 
-	BUG_ON(name == NULL);
-
-	if (acl && acl->a_count > GFS2_ACL_MAX_ENTRIES(GFS2_SB(inode)))
-		return -E2BIG;
-
-	if (type == ACL_TYPE_ACCESS) {
-		umode_t mode = inode->i_mode;
-		struct posix_acl *old_acl = acl;
-		error = posix_acl_update_mode(inode, &inode->i_mode, &acl);
-
-		if (!acl)
-			posix_acl_release(old_acl);
-		if (error)
-			return error;
-		if (mode != inode->i_mode)
-			mark_inode_dirty(inode);
-	}
-
 	if (acl) {
-		len = posix_acl_to_xattr(&init_user_ns, acl, NULL, 0);
-		if (len == 0)
-			return 0;
+		len = posix_acl_xattr_size(acl->a_count);
 		data = kmalloc(len, GFP_NOFS);
 		if (data == NULL)
 			return -ENOMEM;
@@ -107,12 +100,51 @@ int gfs2_set_acl(struct inode *inode, struct posix_acl *acl, int type)
 	error = __gfs2_xattr_set(inode, name, data, len, 0, GFS2_EATYPE_SYS);
 	if (error)
 		goto out;
-
-	if (acl)
-		set_cached_acl(inode, type, acl);
-	else
-		forget_cached_acl(inode, type);
+	set_cached_acl(inode, type, acl);
 out:
 	kfree(data);
 	return error;
+}
+
+int gfs2_set_acl(struct inode *inode, struct posix_acl *acl, int type)
+{
+	struct gfs2_inode *ip = GFS2_I(inode);
+	struct gfs2_holder gh;
+	bool need_unlock = false;
+	int ret;
+	umode_t mode;
+
+	if (acl && acl->a_count > GFS2_ACL_MAX_ENTRIES(GFS2_SB(inode)))
+		return -E2BIG;
+
+	ret = gfs2_qa_get(ip);
+	if (ret)
+		return ret;
+
+	if (!gfs2_glock_is_locked_by_me(ip->i_gl)) {
+		ret = gfs2_glock_nq_init(ip->i_gl, LM_ST_EXCLUSIVE, 0, &gh);
+		if (ret)
+			goto out;
+		need_unlock = true;
+	}
+
+	mode = inode->i_mode;
+	if (type == ACL_TYPE_ACCESS && acl) {
+		ret = posix_acl_update_mode(inode, &mode, &acl);
+		if (ret)
+			goto unlock;
+	}
+
+	ret = __gfs2_set_acl(inode, acl, type);
+	if (!ret && mode != inode->i_mode) {
+		inode->i_ctime = current_time(inode);
+		inode->i_mode = mode;
+		mark_inode_dirty(inode);
+	}
+unlock:
+	if (need_unlock)
+		gfs2_glock_dq_uninit(&gh);
+out:
+	gfs2_qa_put(ip);
+	return ret;
 }

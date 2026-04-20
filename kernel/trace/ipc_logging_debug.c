@@ -1,14 +1,6 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2012-2015, 2017-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -74,23 +66,44 @@ static int debug_log(struct ipc_log_context *ilctxt,
 static ssize_t debug_read_helper(struct file *file, char __user *buff,
 				 size_t count, loff_t *ppos, int cont)
 {
-	struct ipc_log_context *ilctxt = file->private_data;
+	struct ipc_log_context *ilctxt;
+	struct dentry *d = file->f_path.dentry;
 	char *buffer;
 	int bsize;
+	int r;
+
+	r = debugfs_file_get(d);
+	if (r)
+		return r;
+
+	ilctxt = file->private_data;
+	r = kref_get_unless_zero(&ilctxt->refcount) ? 0 : -EIO;
+	if (r) {
+		debugfs_file_put(d);
+		return r;
+	}
 
 	buffer = kmalloc(count, GFP_KERNEL);
-	if (!buffer)
-		return -ENOMEM;
+	if (!buffer) {
+		bsize = -ENOMEM;
+		goto done;
+	}
 
 	bsize = debug_log(ilctxt, buffer, count, cont);
+
 	if (bsize > 0) {
 		if (copy_to_user(buff, buffer, bsize)) {
+			bsize = -EFAULT;
 			kfree(buffer);
-			return -EFAULT;
+			goto done;
 		}
 		*ppos += bsize;
 	}
 	kfree(buffer);
+
+done:
+	ipc_log_context_put(ilctxt);
+	debugfs_file_put(d);
 	return bsize;
 }
 
@@ -106,20 +119,14 @@ static ssize_t debug_read_cont(struct file *file, char __user *buff,
 	return debug_read_helper(file, buff, count, ppos, 1);
 }
 
-static int debug_open(struct inode *inode, struct file *file)
-{
-	file->private_data = inode->i_private;
-	return 0;
-}
-
 static const struct file_operations debug_ops = {
 	.read = debug_read,
-	.open = debug_open,
+	.open = simple_open,
 };
 
 static const struct file_operations debug_ops_cont = {
 	.read = debug_read_cont,
-	.open = debug_open,
+	.open = simple_open,
 };
 
 static void debug_create(const char *name, mode_t mode,
@@ -127,7 +134,7 @@ static void debug_create(const char *name, mode_t mode,
 			 struct ipc_log_context *ilctxt,
 			 const struct file_operations *fops)
 {
-	debugfs_create_file(name, mode, dent, ilctxt, fops);
+	debugfs_create_file_unsafe(name, mode, dent, ilctxt, fops);
 }
 
 static void dfunc_string(struct encode_context *ectxt,

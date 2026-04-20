@@ -1,23 +1,14 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
  */
 
-#include "kgsl.h"
-#include "kgsl_sharedmem.h"
-#include "kgsl_snapshot.h"
+#include <linux/slab.h>
 
 #include "adreno.h"
-#include "adreno_pm4types.h"
-#include "a3xx_reg.h"
 #include "adreno_cp_parser.h"
+#include "adreno_pm4types.h"
+#include "adreno_snapshot.h"
 
 #define MAX_IB_OBJS 1000
 #define NUM_SET_DRAW_GROUPS 32
@@ -53,7 +44,7 @@ static int load_state_unit_sizes[7][2] = {
 static int adreno_ib_find_objs(struct kgsl_device *device,
 				struct kgsl_process_private *process,
 				uint64_t gpuaddr, uint64_t dwords,
-				int obj_type,
+				uint64_t ib2base, int obj_type,
 				struct adreno_ib_object_list *ib_obj_list,
 				int ib_level);
 
@@ -80,6 +71,7 @@ static void adreno_ib_merge_range(struct adreno_ib_object *ib_obj,
 {
 	uint64_t addr_end1 = ib_obj->gpuaddr + ib_obj->size;
 	uint64_t addr_end2 = gpuaddr + size;
+
 	if (gpuaddr < ib_obj->gpuaddr)
 		ib_obj->gpuaddr = gpuaddr;
 	if (addr_end2 > addr_end1)
@@ -137,7 +129,7 @@ static int adreno_ib_add(struct kgsl_process_private *process,
 	struct adreno_ib_object *ib_obj;
 	struct kgsl_mem_entry *entry;
 
-	if (MAX_IB_OBJS <= ib_obj_list->num_objs)
+	if (ib_obj_list->num_objs >= MAX_IB_OBJS)
 		return -E2BIG;
 
 	entry = kgsl_sharedmem_find(process, gpuaddr);
@@ -160,6 +152,8 @@ static int adreno_ib_add(struct kgsl_process_private *process,
 		adreno_ib_init_ib_obj(gpuaddr, size, type, entry,
 			&(ib_obj_list->obj_list[ib_obj_list->num_objs]));
 		ib_obj_list->num_objs++;
+		/* Skip reclaim for the memdesc until it is dumped */
+		entry->memdesc.priv |= KGSL_MEMDESC_SKIP_RECLAIM;
 	}
 	return 0;
 }
@@ -339,16 +333,12 @@ static int ib_add_type0_entries(struct kgsl_device *device,
 	struct adreno_ib_object_list *ib_obj_list,
 	struct ib_parser_variables *ib_parse_vars)
 {
-	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	int ret = 0;
 	int i;
 	int vfd_end;
 	unsigned int mask;
 	/* First up the visiblity stream buffer */
-	if (adreno_is_a4xx(adreno_dev))
-		mask = 0xFFFFFFFC;
-	else
-		mask = 0xFFFFFFFF;
+	mask = 0xFFFFFFFF;
 	for (i = ADRENO_CP_ADDR_VSC_PIPE_DATA_ADDRESS_0;
 		i < ADRENO_CP_ADDR_VSC_PIPE_DATA_LENGTH_7; i++) {
 		if (ib_parse_vars->cp_addr_regs[i]) {
@@ -364,9 +354,7 @@ static int ib_add_type0_entries(struct kgsl_device *device,
 		}
 	}
 
-	vfd_end = adreno_is_a4xx(adreno_dev) ?
-		ADRENO_CP_ADDR_VFD_FETCH_INSTR_1_31 :
-		ADRENO_CP_ADDR_VFD_FETCH_INSTR_1_15;
+	vfd_end = ADRENO_CP_ADDR_VFD_FETCH_INSTR_1_15;
 	for (i = ADRENO_CP_ADDR_VFD_FETCH_INSTR_1_0;
 		i <= vfd_end; i++) {
 		if (ib_parse_vars->cp_addr_regs[i]) {
@@ -483,7 +471,7 @@ static int ib_parse_draw_indx(struct kgsl_device *device, unsigned int *pkt,
 		ret = adreno_ib_find_objs(device, process,
 			ib_parse_vars->set_draw_groups[i].cmd_stream_addr,
 			ib_parse_vars->set_draw_groups[i].cmd_stream_dwords,
-			SNAPSHOT_GPU_OBJECT_DRAW,
+			0, SNAPSHOT_GPU_OBJECT_DRAW,
 			ib_obj_list, 2);
 		if (ret)
 			break;
@@ -637,12 +625,12 @@ static int ib_parse_type0(struct kgsl_device *device, unsigned int *ptr,
 					ADRENO_CP_UCHE_INVALIDATE0)) ||
 				(offset == adreno_cp_parser_getreg(adreno_dev,
 					ADRENO_CP_UCHE_INVALIDATE1))) {
-					ret = adreno_ib_add(process,
-						ptr[i + 1] & 0xFFFFFFC0,
-						SNAPSHOT_GPU_OBJECT_GENERIC,
-						ib_obj_list);
-					if (ret)
-						break;
+				ret = adreno_ib_add(process,
+					ptr[i + 1] & 0xFFFFFFC0,
+					SNAPSHOT_GPU_OBJECT_GENERIC,
+					ib_obj_list);
+				if (ret)
+					break;
 			}
 		}
 	}
@@ -656,7 +644,6 @@ static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 {
 	int size = type7_pkt_size(*ptr);
 	int i;
-	int grp_id;
 	int ret = 0;
 	int flags;
 	uint64_t cmd_stream_dwords;
@@ -670,7 +657,6 @@ static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 	 * loop counter by 3 always
 	 */
 	for (i = 1; i <= size; i += 3) {
-		grp_id = (ptr[i] & 0x1F000000) >> 24;
 		/* take action based on flags */
 		flags = (ptr[i] & 0x000F0000) >> 16;
 
@@ -686,8 +672,8 @@ static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 			if (cmd_stream_dwords)
 				ret = adreno_ib_find_objs(device, process,
 					cmd_stream_addr, cmd_stream_dwords,
-					SNAPSHOT_GPU_OBJECT_DRAW, ib_obj_list,
-					2);
+					0, SNAPSHOT_GPU_OBJECT_DRAW,
+					ib_obj_list, 2);
 			if (ret)
 				break;
 			continue;
@@ -695,10 +681,11 @@ static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 		/* load immediate */
 		if (flags & 0x8) {
 			uint64_t gpuaddr = ptr[i + 2];
+
 			gpuaddr = gpuaddr << 32 | ptr[i + 1];
 			ret = adreno_ib_find_objs(device, process,
 				gpuaddr, (ptr[i] & 0x0000FFFF),
-				SNAPSHOT_GPU_OBJECT_IB,
+				0, SNAPSHOT_GPU_OBJECT_IB,
 				ib_obj_list, 2);
 			if (ret)
 				break;
@@ -718,6 +705,7 @@ static int ib_parse_set_draw_state(struct kgsl_device *device,
 	int grp_id;
 	int ret = 0;
 	int flags;
+	struct set_draw_state *group;
 
 	/*
 	 * size is the size of the packet that does not include the DWORD
@@ -733,15 +721,17 @@ static int ib_parse_set_draw_state(struct kgsl_device *device,
 		/* Disable all groups */
 		if (flags & 0x4) {
 			int j;
-			for (j = 0; j < NUM_SET_DRAW_GROUPS; j++)
-				ib_parse_vars->set_draw_groups[j].
-					cmd_stream_dwords = 0;
+
+			for (j = 0; j < NUM_SET_DRAW_GROUPS; j++) {
+				group = &(ib_parse_vars->set_draw_groups[j]);
+				group->cmd_stream_dwords = 0;
+			}
 			continue;
 		}
 		/* disable flag */
 		if (flags & 0x2) {
-			ib_parse_vars->set_draw_groups[grp_id].
-						cmd_stream_dwords = 0;
+			group = &(ib_parse_vars->set_draw_groups[grp_id]);
+			group->cmd_stream_dwords = 0;
 			continue;
 		}
 		/*
@@ -750,17 +740,16 @@ static int ib_parse_set_draw_state(struct kgsl_device *device,
 		 * or initialized for the first time in the IB
 		 */
 		if (flags & 0x1 || !flags) {
-			ib_parse_vars->set_draw_groups[grp_id].
-				cmd_stream_dwords = ptr[i] & 0x0000FFFF;
-			ib_parse_vars->set_draw_groups[grp_id].
-				cmd_stream_addr = ptr[i + 1];
+			group = &(ib_parse_vars->set_draw_groups[grp_id]);
+			group->cmd_stream_dwords = ptr[i] & 0x0000FFFF;
+			group->cmd_stream_addr =  ptr[i + 1];
 			continue;
 		}
 		/* load immediate */
 		if (flags & 0x8) {
 			ret = adreno_ib_find_objs(device, process,
 				ptr[i + 1], (ptr[i] & 0x0000FFFF),
-				SNAPSHOT_GPU_OBJECT_IB,
+				0, SNAPSHOT_GPU_OBJECT_IB,
 				ib_obj_list, 2);
 			if (ret)
 				break;
@@ -775,6 +764,7 @@ static int ib_parse_set_draw_state(struct kgsl_device *device,
  * @process: Process in which the IB is allocated
  * @gpuaddr: IB2 gpuaddr
  * @dwords: IB2 size in dwords
+ * @ib2base: Base address of active IB2
  * @ib_obj_list: List of objects found in IB
  * @ib_level: The level from which function is called, either from IB1 or IB2
  *
@@ -783,31 +773,37 @@ static int ib_parse_set_draw_state(struct kgsl_device *device,
  */
 static int adreno_cp_parse_ib2(struct kgsl_device *device,
 			struct kgsl_process_private *process,
-			uint64_t gpuaddr, uint64_t dwords,
+			uint64_t gpuaddr, uint64_t dwords, uint64_t ib2base,
 			struct adreno_ib_object_list *ib_obj_list,
 			int ib_level)
 {
 	int i;
+
 	/*
 	 * We can only expect an IB2 in IB1, if we are
 	 * already processing an IB2 then return error
 	 */
-	if (2 == ib_level)
+	if (ib_level == 2)
 		return -EINVAL;
+
+	/* Save current IB2 statically */
+	if (ib2base == gpuaddr)
+		kgsl_snapshot_push_object(device, process, gpuaddr, dwords);
 	/*
 	 * only try to find sub objects iff this IB has
 	 * not been processed already
 	 */
 	for (i = 0; i < ib_obj_list->num_objs; i++) {
 		struct adreno_ib_object *ib_obj = &(ib_obj_list->obj_list[i]);
-		if ((SNAPSHOT_GPU_OBJECT_IB == ib_obj->snapshot_obj_type) &&
+
+		if ((ib_obj->snapshot_obj_type == SNAPSHOT_GPU_OBJECT_IB) &&
 			(gpuaddr >= ib_obj->gpuaddr) &&
 			(gpuaddr + dwords * sizeof(unsigned int) <=
 			ib_obj->gpuaddr + ib_obj->size))
 			return 0;
 	}
 
-	return adreno_ib_find_objs(device, process, gpuaddr, dwords,
+	return adreno_ib_find_objs(device, process, gpuaddr, dwords, ib2base,
 		SNAPSHOT_GPU_OBJECT_IB, ib_obj_list, 2);
 }
 
@@ -816,6 +812,7 @@ static int adreno_cp_parse_ib2(struct kgsl_device *device,
  * @device: The device pointer on which the IB executes
  * @process: The process in which the IB and all contained objects are mapped.
  * @gpuaddr: The gpu address of the IB
+ * @ib2base: IB2 base address
  * @dwords: Size of ib in dwords
  * @obj_type: The object type can be either an IB or a draw state sequence
  * @ib_obj_list: The list in which the IB and the objects in it are added.
@@ -828,7 +825,7 @@ static int adreno_cp_parse_ib2(struct kgsl_device *device,
 static int adreno_ib_find_objs(struct kgsl_device *device,
 				struct kgsl_process_private *process,
 				uint64_t gpuaddr, uint64_t dwords,
-				int obj_type,
+				uint64_t ib2base, int obj_type,
 				struct adreno_ib_object_list *ib_obj_list,
 				int ib_level)
 {
@@ -904,7 +901,7 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 				uint64_t size = src[i + 2];
 
 				ret = adreno_cp_parse_ib2(device, process,
-						gpuaddrib2, size,
+						gpuaddrib2, size, ib2base,
 						ib_obj_list, ib_level);
 				if (ret)
 					goto done;
@@ -927,10 +924,11 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 			if (adreno_cmd_is_ib(adreno_dev, src[i])) {
 				uint64_t size = src[i + 3];
 				uint64_t gpuaddrib2 = src[i + 2];
+
 				gpuaddrib2 = gpuaddrib2 << 32 | src[i + 1];
 
 				ret = adreno_cp_parse_ib2(device, process,
-						gpuaddrib2, size,
+						gpuaddrib2, size, ib2base,
 						ib_obj_list, ib_level);
 				if (ret)
 					goto done;
@@ -982,6 +980,7 @@ done:
  * @process: The process in which the IB and all contained objects are mapped
  * @gpuaddr: The gpu address of the IB
  * @dwords: Size of ib in dwords
+ * @ib2base: Base address of active IB2
  * @ib_obj_list: The list in which the IB and the objects in it are added.
  *
  * Find all the memory objects that an IB needs for execution and place
@@ -993,7 +992,7 @@ done:
  */
 int adreno_ib_create_object_list(struct kgsl_device *device,
 		struct kgsl_process_private *process,
-		uint64_t gpuaddr, uint64_t dwords,
+		uint64_t gpuaddr, uint64_t dwords, uint64_t ib2base,
 		struct adreno_ib_object_list **out_ib_obj_list)
 {
 	int ret = 0;
@@ -1016,7 +1015,7 @@ int adreno_ib_create_object_list(struct kgsl_device *device,
 		return -ENOMEM;
 	}
 
-	ret = adreno_ib_find_objs(device, process, gpuaddr, dwords,
+	ret = adreno_ib_find_objs(device, process, gpuaddr, dwords, ib2base,
 		SNAPSHOT_GPU_OBJECT_IB, ib_obj_list, 1);
 
 	/* Even if there was an error return the remaining objects found */

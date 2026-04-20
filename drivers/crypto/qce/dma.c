@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/dmaengine.h>
@@ -20,11 +12,11 @@ int qce_dma_request(struct device *dev, struct qce_dma_data *dma)
 {
 	int ret;
 
-	dma->txchan = dma_request_slave_channel_reason(dev, "tx");
+	dma->txchan = dma_request_chan(dev, "tx");
 	if (IS_ERR(dma->txchan))
 		return PTR_ERR(dma->txchan);
 
-	dma->rxchan = dma_request_slave_channel_reason(dev, "rx");
+	dma->rxchan = dma_request_chan(dev, "rx");
 	if (IS_ERR(dma->rxchan)) {
 		ret = PTR_ERR(dma->rxchan);
 		goto error_rx;
@@ -54,62 +46,12 @@ void qce_dma_release(struct qce_dma_data *dma)
 	kfree(dma->result_buf);
 }
 
-int qce_mapsg(struct device *dev, struct scatterlist *sg, int nents,
-	      enum dma_data_direction dir, bool chained)
-{
-	int err;
-
-	if (chained) {
-		while (sg) {
-			err = dma_map_sg(dev, sg, 1, dir);
-			if (!err)
-				return -EFAULT;
-			sg = scatterwalk_sg_next(sg);
-		}
-	} else {
-		err = dma_map_sg(dev, sg, nents, dir);
-		if (!err)
-			return -EFAULT;
-	}
-
-	return nents;
-}
-
-void qce_unmapsg(struct device *dev, struct scatterlist *sg, int nents,
-		 enum dma_data_direction dir, bool chained)
-{
-	if (chained)
-		while (sg) {
-			dma_unmap_sg(dev, sg, 1, dir);
-			sg = scatterwalk_sg_next(sg);
-		}
-	else
-		dma_unmap_sg(dev, sg, nents, dir);
-}
-
-int qce_countsg(struct scatterlist *sglist, int nbytes, bool *chained)
-{
-	struct scatterlist *sg = sglist;
-	int nents = 0;
-
-	if (chained)
-		*chained = false;
-
-	while (nbytes > 0 && sg) {
-		nents++;
-		nbytes -= sg->length;
-		if (!sg_is_last(sg) && (sg + 1)->length == 0 && chained)
-			*chained = true;
-		sg = scatterwalk_sg_next(sg);
-	}
-
-	return nents;
-}
-
 struct scatterlist *
-qce_sgtable_add(struct sg_table *sgt, struct scatterlist *new_sgl)
+qce_sgtable_add(struct sg_table *sgt, struct scatterlist *new_sgl,
+		unsigned int max_len)
 {
 	struct scatterlist *sg = sgt->sgl, *sg_last = NULL;
+	unsigned int new_len;
 
 	while (sg) {
 		if (!sg_page(sg))
@@ -120,12 +62,13 @@ qce_sgtable_add(struct sg_table *sgt, struct scatterlist *new_sgl)
 	if (!sg)
 		return ERR_PTR(-EINVAL);
 
-	while (new_sgl && sg) {
-		sg_set_page(sg, sg_page(new_sgl), new_sgl->length,
-			    new_sgl->offset);
+	while (new_sgl && sg && max_len) {
+		new_len = new_sgl->length > max_len ? max_len : new_sgl->length;
+		sg_set_page(sg, sg_page(new_sgl), new_len, new_sgl->offset);
 		sg_last = sg;
 		sg = sg_next(sg);
 		new_sgl = sg_next(new_sgl);
+		max_len -= new_len;
 	}
 
 	return sg_last;

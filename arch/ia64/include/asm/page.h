@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_IA64_PAGE_H
 #define _ASM_IA64_PAGE_H
 /*
@@ -81,16 +82,16 @@ do {						\
 } while (0)
 
 
-#define __alloc_zeroed_user_highpage(movableflags, vma, vaddr)		\
+#define alloc_zeroed_user_highpage_movable(vma, vaddr)			\
 ({									\
 	struct page *page = alloc_page_vma(				\
-		GFP_HIGHUSER | __GFP_ZERO | movableflags, vma, vaddr);	\
+		GFP_HIGHUSER_MOVABLE | __GFP_ZERO, vma, vaddr);		\
 	if (page)							\
  		flush_dcache_page(page);				\
 	page;								\
 })
 
-#define __HAVE_ARCH_ALLOC_ZEROED_USER_HIGHPAGE
+#define __HAVE_ARCH_ALLOC_ZEROED_USER_HIGHPAGE_MOVABLE
 
 #define virt_addr_valid(kaddr)	pfn_valid(__pa(kaddr) >> PAGE_SHIFT)
 
@@ -105,6 +106,7 @@ extern struct page *vmem_map;
 #ifdef CONFIG_DISCONTIGMEM
 # define page_to_pfn(page)	((unsigned long) (page - vmem_map))
 # define pfn_to_page(pfn)	(vmem_map + (pfn))
+# define __pfn_to_phys(pfn)	PFN_PHYS(pfn)
 #else
 # include <asm-generic/memory_model.h>
 #endif
@@ -173,7 +175,7 @@ get_order (unsigned long size)
    */
   typedef struct { unsigned long pte; } pte_t;
   typedef struct { unsigned long pmd; } pmd_t;
-#ifdef CONFIG_PGTABLE_4
+#if CONFIG_PGTABLE_LEVELS == 4
   typedef struct { unsigned long pud; } pud_t;
 #endif
   typedef struct { unsigned long pgd; } pgd_t;
@@ -182,7 +184,7 @@ get_order (unsigned long size)
 
 # define pte_val(x)	((x).pte)
 # define pmd_val(x)	((x).pmd)
-#ifdef CONFIG_PGTABLE_4
+#if CONFIG_PGTABLE_LEVELS == 4
 # define pud_val(x)	((x).pud)
 #endif
 # define pgd_val(x)	((x).pgd)
@@ -216,10 +218,7 @@ get_order (unsigned long size)
 
 #define PAGE_OFFSET			RGN_BASE(RGN_KERNEL)
 
-#define VM_DATA_DEFAULT_FLAGS		(VM_READ | VM_WRITE |					\
-					 VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC |		\
-					 (((current->personality & READ_IMPLIES_EXEC) != 0)	\
-					  ? VM_EXEC : 0))
+#define VM_DATA_DEFAULT_FLAGS	VM_DATA_FLAGS_TSK_EXEC
 
 #define GATE_ADDR		RGN_BASE(RGN_GATE)
 

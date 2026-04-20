@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2014 Florian Vaussard, EPFL Mobots group
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include "omap34xx.dtsi"
@@ -31,8 +28,4 @@
 			OMAP3430_CORE2_IOPAD(0x25e0, PIN_OUTPUT | MUX_MODE4)		/* etk_d2.gpio_16 */
 		>;
 	};
-};
-
-&mcbsp2 {
-	status = "okay";
 };

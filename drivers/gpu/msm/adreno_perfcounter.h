@@ -1,25 +1,14 @@
-/* Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2008-2015,2017,2019-2021 The Linux Foundation. All rights reserved.
  */
 #ifndef __ADRENO_PERFCOUNTER_H
 #define __ADRENO_PERFCOUNTER_H
 
-#include "adreno.h"
-
 struct adreno_device;
 
 /* ADRENO_PERFCOUNTERS - Given an adreno device, return the perfcounters list */
-#define ADRENO_PERFCOUNTERS(_a) \
-	(ADRENO_GPU_DEVICE(_a) ? ADRENO_GPU_DEVICE(_a)->perfcounters : NULL)
+#define ADRENO_PERFCOUNTERS(_a) ((_a)->gpucore->perfcounters)
 
 #define PERFCOUNTER_FLAG_NONE 0x0
 #define PERFCOUNTER_FLAG_KERNEL 0x1
@@ -58,6 +47,14 @@ struct adreno_perfcount_group {
 	unsigned int reg_count;
 	const char *name;
 	unsigned long flags;
+	int (*enable)(struct adreno_device *adreno_dev,
+		const struct adreno_perfcount_group *group,
+		unsigned int counter, unsigned int countable);
+	u64 (*read)(struct adreno_device *adreno_dev,
+		const struct adreno_perfcount_group *group,
+		unsigned int counter);
+	void (*load)(struct adreno_device *adreno_dev,
+		struct adreno_perfcount_register *reg);
 };
 
 /*
@@ -70,40 +67,32 @@ struct adreno_perfcount_group {
 
 #define ADRENO_PERFCOUNTER_GROUP_FIXED BIT(0)
 
+/*
+ * ADRENO_PERFCOUNTER_GROUP_RESTORE indicates CP needs to restore the select
+ * registers of this perfcounter group as part of preemption and IFPC
+ */
+#define ADRENO_PERFCOUNTER_GROUP_RESTORE BIT(1)
+
+
 /**
  * adreno_perfcounts: all available perfcounter groups
  * @groups: available groups for this device
  * @group_count: total groups for this device
  */
 struct adreno_perfcounters {
-	struct adreno_perfcount_group *groups;
+	const struct adreno_perfcount_group *groups;
 	unsigned int group_count;
 };
 
-/**
- * adreno_invalid_countabless: Invalid countables that do not work properly
- * @countables: List of unusable countables
- * @num_countables: Number of unusable countables
- */
-struct adreno_invalid_countables {
-	const unsigned int *countables;
-	int num_countables;
-};
-
-#define ADRENO_PERFCOUNTER_GROUP_FLAGS(core, offset, name, flags) \
+#define ADRENO_PERFCOUNTER_GROUP_FLAGS(core, offset, name, flags, \
+		enable, read, load) \
 	[KGSL_PERFCOUNTER_GROUP_##offset] = { core##_perfcounters_##name, \
-	ARRAY_SIZE(core##_perfcounters_##name), __stringify(name), flags }
+	ARRAY_SIZE(core##_perfcounters_##name), __stringify(name), flags, \
+	enable, read, load }
 
-#define ADRENO_PERFCOUNTER_GROUP(core, offset, name) \
-	ADRENO_PERFCOUNTER_GROUP_FLAGS(core, offset, name, 0)
-
-#define ADRENO_POWER_COUNTER_GROUP(core, offset, name) \
-	[KGSL_PERFCOUNTER_GROUP_##offset##_PWR] = { core##_pwrcounters_##name, \
-	ARRAY_SIZE(core##_pwrcounters_##name), __stringify(name##_pwr), 0}
-
-#define ADRENO_PERFCOUNTER_INVALID_COUNTABLE(name, off) \
-	[KGSL_PERFCOUNTER_GROUP_##off] = { name##_invalid_countables, \
-				ARRAY_SIZE(name##_invalid_countables) }
+#define ADRENO_PERFCOUNTER_GROUP(core, offset, name, enable, read, load) \
+	ADRENO_PERFCOUNTER_GROUP_FLAGS(core, offset, name, 0, enable, read, \
+			load)
 
 int adreno_perfcounter_query_group(struct adreno_device *adreno_dev,
 	unsigned int groupid, unsigned int __user *countables,
@@ -112,15 +101,11 @@ int adreno_perfcounter_query_group(struct adreno_device *adreno_dev,
 int adreno_perfcounter_read_group(struct adreno_device *adreno_dev,
 	struct kgsl_perfcounter_read_group __user *reads, unsigned int count);
 
-void adreno_perfcounter_close(struct adreno_device *adreno_dev);
-
 void adreno_perfcounter_restore(struct adreno_device *adreno_dev);
 
 void adreno_perfcounter_save(struct adreno_device *adreno_dev);
 
 void adreno_perfcounter_start(struct adreno_device *adreno_dev);
-
-void adreno_perfcounter_init(struct adreno_device *adreno_dev);
 
 int adreno_perfcounter_get_groupid(struct adreno_device *adreno_dev,
 					const char *name);
@@ -137,5 +122,16 @@ int adreno_perfcounter_get(struct adreno_device *adreno_dev,
 
 int adreno_perfcounter_put(struct adreno_device *adreno_dev,
 	unsigned int groupid, unsigned int countable, unsigned int flags);
+
+static inline int adreno_perfcounter_kernel_get(
+		struct adreno_device *adreno_dev,
+		int group, int countable, u32 *lo, u32 *hi)
+{
+	if (*lo)
+		return 0;
+
+	return adreno_perfcounter_get(adreno_dev, group, countable, lo, hi,
+		PERFCOUNTER_FLAG_KERNEL);
+}
 
 #endif /* __ADRENO_PERFCOUNTER_H */

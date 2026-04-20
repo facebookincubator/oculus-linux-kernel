@@ -1,6 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2005 Jeff Dike (jdike@karaya.com)
- * Licensed under the GPL
  */
 
 #ifndef __MM_ID_H
@@ -12,6 +12,9 @@ struct mm_id {
 		int pid;
 	} u;
 	unsigned long stack;
+	int kill;
 };
+
+void __switch_mm(struct mm_id *mm_idp);
 
 #endif

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * ioport.h	Definitions of routines for detecting, reserving and
  *		allocating system resources.
@@ -11,6 +12,8 @@
 #ifndef __ASSEMBLY__
 #include <linux/compiler.h>
 #include <linux/types.h>
+#include <linux/bits.h>
+#include <linux/android_kabi.h>
 /*
  * Resources are tree-like, allowing
  * nesting etc..
@@ -20,11 +23,20 @@ struct resource {
 	resource_size_t end;
 	const char *name;
 	unsigned long flags;
+	unsigned long desc;
 	struct resource *parent, *sibling, *child;
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 };
 
 /*
  * IO resources have these defined flags.
+ *
+ * PCI devices expose these flags to userspace in the "resource" sysfs file,
+ * so don't move them.
  */
 #define IORESOURCE_BITS		0x000000ff	/* Bus-specific bits */
 
@@ -49,11 +61,22 @@ struct resource {
 #define IORESOURCE_WINDOW	0x00200000	/* forwarded by bridge */
 #define IORESOURCE_MUXED	0x00400000	/* Resource is software muxed */
 
+#define IORESOURCE_EXT_TYPE_BITS 0x01000000	/* Resource extended types */
+#define IORESOURCE_SYSRAM	0x01000000	/* System RAM (modifier) */
+
+/* IORESOURCE_SYSRAM specific bits. */
+#define IORESOURCE_SYSRAM_DRIVER_MANAGED	0x02000000 /* Always detected via a driver. */
+#define IORESOURCE_SYSRAM_MERGEABLE		0x04000000 /* Resource can be merged. */
+
 #define IORESOURCE_EXCLUSIVE	0x08000000	/* Userland may not map this resource */
+
 #define IORESOURCE_DISABLED	0x10000000
 #define IORESOURCE_UNSET	0x20000000	/* No address assigned yet */
 #define IORESOURCE_AUTO		0x40000000
 #define IORESOURCE_BUSY		0x80000000	/* Driver has marked this resource busy */
+
+/* I/O resource extended types */
+#define IORESOURCE_SYSTEM_RAM		(IORESOURCE_MEM|IORESOURCE_SYSRAM)
 
 /* PnP IRQ specific bits (IORESOURCE_BITS) */
 #define IORESOURCE_IRQ_HIGHEDGE		(1<<0)
@@ -94,16 +117,43 @@ struct resource {
 /* PnP I/O specific bits (IORESOURCE_BITS) */
 #define IORESOURCE_IO_16BIT_ADDR	(1<<0)
 #define IORESOURCE_IO_FIXED		(1<<1)
+#define IORESOURCE_IO_SPARSE		(1<<2)
 
 /* PCI ROM control bits (IORESOURCE_BITS) */
 #define IORESOURCE_ROM_ENABLE		(1<<0)	/* ROM is enabled, same as PCI_ROM_ADDRESS_ENABLE */
-#define IORESOURCE_ROM_SHADOW		(1<<1)	/* ROM is copy at C000:0 */
-#define IORESOURCE_ROM_COPY		(1<<2)	/* ROM is alloc'd copy, resource field overlaid */
-#define IORESOURCE_ROM_BIOS_COPY	(1<<3)	/* ROM is BIOS copy, resource field overlaid */
+#define IORESOURCE_ROM_SHADOW		(1<<1)	/* Use RAM image, not ROM BAR */
 
 /* PCI control bits.  Shares IORESOURCE_BITS with above PCI ROM.  */
 #define IORESOURCE_PCI_FIXED		(1<<4)	/* Do not move resource */
+#define IORESOURCE_PCI_EA_BEI		(1<<5)	/* BAR Equivalent Indicator */
 
+/*
+ * I/O Resource Descriptors
+ *
+ * Descriptors are used by walk_iomem_res_desc() and region_intersects()
+ * for searching a specific resource range in the iomem table.  Assign
+ * a new descriptor when a resource range supports the search interfaces.
+ * Otherwise, resource.desc must be set to IORES_DESC_NONE (0).
+ */
+enum {
+	IORES_DESC_NONE				= 0,
+	IORES_DESC_CRASH_KERNEL			= 1,
+	IORES_DESC_ACPI_TABLES			= 2,
+	IORES_DESC_ACPI_NV_STORAGE		= 3,
+	IORES_DESC_PERSISTENT_MEMORY		= 4,
+	IORES_DESC_PERSISTENT_MEMORY_LEGACY	= 5,
+	IORES_DESC_DEVICE_PRIVATE_MEMORY	= 6,
+	IORES_DESC_RESERVED			= 7,
+	IORES_DESC_SOFT_RESERVED		= 8,
+};
+
+/*
+ * Flags controlling ioremap() behavior.
+ */
+enum {
+	IORES_MAP_SYSTEM_RAM		= BIT(0),
+	IORES_MAP_ENCRYPTED		= BIT(1),
+};
 
 /* helpers to define resources */
 #define DEFINE_RES_NAMED(_start, _size, _name, _flags)			\
@@ -112,6 +162,7 @@ struct resource {
 		.end = (_start) + (_size) - 1,				\
 		.name = (_name),					\
 		.flags = (_flags),					\
+		.desc = IORES_DESC_NONE,				\
 	}
 
 #define DEFINE_RES_IO_NAMED(_start, _size, _name)			\
@@ -148,6 +199,7 @@ extern void reserve_region_with_split(struct resource *root,
 extern struct resource *insert_resource_conflict(struct resource *parent, struct resource *new);
 extern int insert_resource(struct resource *parent, struct resource *new);
 extern void insert_resource_expand_to_fit(struct resource *root, struct resource *new);
+extern int remove_resource(struct resource *old);
 extern void arch_remove_reservations(struct resource *avail);
 extern int allocate_resource(struct resource *root, struct resource *new,
 			     resource_size_t size, resource_size_t min,
@@ -168,6 +220,10 @@ static inline resource_size_t resource_size(const struct resource *res)
 static inline unsigned long resource_type(const struct resource *res)
 {
 	return res->flags & IORESOURCE_TYPE_BITS;
+}
+static inline unsigned long resource_ext_type(const struct resource *res)
+{
+	return res->flags & IORESOURCE_EXT_TYPE_BITS;
 }
 /* True iff r1 completely contains r2 */
 static inline bool resource_contains(struct resource *r1, struct resource *r2)
@@ -196,22 +252,16 @@ extern struct resource * __request_region(struct resource *,
 
 /* Compatibility cruft */
 #define release_region(start,n)	__release_region(&ioport_resource, (start), (n))
-#define check_mem_region(start,n)	__check_region(&iomem_resource, (start), (n))
 #define release_mem_region(start,n)	__release_region(&iomem_resource, (start), (n))
 
-extern int __check_region(struct resource *, resource_size_t, resource_size_t);
 extern void __release_region(struct resource *, resource_size_t,
 				resource_size_t);
 #ifdef CONFIG_MEMORY_HOTREMOVE
-extern int release_mem_region_adjustable(struct resource *, resource_size_t,
-				resource_size_t);
+extern void release_mem_region_adjustable(resource_size_t, resource_size_t);
 #endif
-
-static inline int __deprecated check_region(resource_size_t s,
-						resource_size_t n)
-{
-	return __check_region(&ioport_resource, s, n);
-}
+#ifdef CONFIG_MEMORY_HOTPLUG
+extern void merge_system_ram_resource(struct resource *res);
+#endif
 
 /* Wrappers for managed devices */
 struct device;
@@ -237,17 +287,20 @@ extern struct resource * __devm_request_region(struct device *dev,
 extern void __devm_release_region(struct device *dev, struct resource *parent,
 				  resource_size_t start, resource_size_t n);
 extern int iomem_map_sanity_check(resource_size_t addr, unsigned long size);
-extern int iomem_is_exclusive(u64 addr);
+extern bool iomem_is_exclusive(u64 addr);
 
 extern int
 walk_system_ram_range(unsigned long start_pfn, unsigned long nr_pages,
 		void *arg, int (*func)(unsigned long, unsigned long, void *));
 extern int
-walk_system_ram_res(u64 start, u64 end, void *arg,
-		    int (*func)(u64, u64, void *));
+walk_mem_res(u64 start, u64 end, void *arg,
+	     int (*func)(struct resource *, void *));
 extern int
-walk_iomem_res(char *name, unsigned long flags, u64 start, u64 end, void *arg,
-	       int (*func)(u64, u64, void *));
+walk_system_ram_res(u64 start, u64 end, void *arg,
+		    int (*func)(struct resource *, void *));
+extern int
+walk_iomem_res_desc(unsigned long desc, unsigned long flags, u64 start, u64 end,
+		    void *arg, int (*func)(struct resource *, void *));
 
 /* True if any part of r1 overlaps r2 */
 static inline bool resource_overlaps(struct resource *r1, struct resource *r2)
@@ -255,6 +308,23 @@ static inline bool resource_overlaps(struct resource *r1, struct resource *r2)
        return (r1->start <= r2->end && r1->end >= r2->start);
 }
 
+struct resource *devm_request_free_mem_region(struct device *dev,
+		struct resource *base, unsigned long size);
+struct resource *request_free_mem_region(struct resource *base,
+		unsigned long size, const char *name);
+
+static inline void irqresource_disabled(struct resource *res, u32 irq)
+{
+	res->start = irq;
+	res->end = irq;
+	res->flags = IORESOURCE_IRQ | IORESOURCE_DISABLED | IORESOURCE_UNSET;
+}
+
+#ifdef CONFIG_IO_STRICT_DEVMEM
+void revoke_devmem(struct resource *res);
+#else
+static inline void revoke_devmem(struct resource *res) { };
+#endif
 
 #endif /* __ASSEMBLY__ */
 #endif	/* _LINUX_IOPORT_H */

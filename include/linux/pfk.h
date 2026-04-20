@@ -1,47 +1,44 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef PFK_H_
 #define PFK_H_
 
 #include <linux/bio.h>
+#include <crypto/ice.h>
 
 struct ice_crypto_setting;
 
 #ifdef CONFIG_PFK
 
-#define PFK_AES_256_XTS_KEY_SIZE 64
-#define PFK_MAX_KEY_SIZE 64
+/*
+ * Default key for inline encryption.
+ *
+ * For now only AES-256-XTS is supported, so this is a fixed length.  But if
+ * ever needed, this should be made variable-length with a 'mode' and 'size'.
+ * (Remember to update pfk_allow_merge_bio() when doing so!)
+ */
+#define BLK_ENCRYPTION_KEY_SIZE_AES_256_XTS 64
 
-/* This is passed in from userspace into the kernel keyring */
-struct ext4_encryption_key {
-        __u32 mode;
-        char raw[PFK_MAX_KEY_SIZE];
-        __u32 size;
-} __attribute__((__packed__));
+struct blk_encryption_key {
+	u8 raw[BLK_ENCRYPTION_KEY_SIZE_AES_256_XTS];
+};
 
-bool pfk_is_ready(void);
-int pfk_load_key_start(const struct bio *bio,
-		struct ice_crypto_setting *ice_setting, bool *is_pfe, bool);
-int pfk_load_key_end(const struct bio *bio, bool *is_pfe);
-int pfk_remove_key(const unsigned char *key, size_t key_size);
-bool pfk_allow_merge_bio(struct bio *bio1, struct bio *bio2);
+int pfk_load_key_start(const struct bio *bio, struct ice_device *ice_dev,
+			struct ice_crypto_setting *ice_setting,
+				bool *is_pfe, bool async);
+int pfk_load_key_end(const struct bio *bio, struct ice_device *ice_dev,
+			bool *is_pfe);
+int pfk_fbe_clear_key(const unsigned char *key, size_t key_size,
+		const unsigned char *salt, size_t salt_size);
+bool pfk_allow_merge_bio(const struct bio *bio1, const struct bio *bio2);
+void pfk_clear_on_reset(struct ice_device *ice_dev);
+int pfk_initialize_key_table(struct ice_device *ice_dev);
+int pfk_remove(struct ice_device *ice_dev);
 
 #else
-static inline bool pfk_is_ready(void)
-{
-	return false;
-}
-
 static inline int pfk_load_key_start(const struct bio *bio,
 	struct ice_crypto_setting *ice_setting, bool *is_pfe, bool async)
 {
@@ -53,19 +50,28 @@ static inline int pfk_load_key_end(const struct bio *bio, bool *is_pfe)
 	return -ENODEV;
 }
 
-static inline int pfk_remove_key(const unsigned char *key, size_t key_size)
-{
-	return -ENODEV;
-}
-
 static inline bool pfk_allow_merge_bio(const struct bio *bio1,
 		const struct bio *bio2)
 {
 	return true;
 }
 
-static inline void pfk_remove_all_keys(void)
+static inline int pfk_fbe_clear_key(const unsigned char *key, size_t key_size,
+			const unsigned char *salt, size_t salt_size)
 {
+	return -ENODEV;
+}
+
+static inline void pfk_clear_on_reset(void)
+{}
+
+static inline int pfk_initialize_key_table(struct ice_device *ice_dev)
+{
+	return -ENODEV;
+}
+static inline int pfk_remove(struct ice_device *ice_dev)
+{
+	return -ENODEV;
 }
 
 #endif /* CONFIG_PFK */

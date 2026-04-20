@@ -1,23 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * OSS compatible sequencer driver
  *
  * open/close and reset interface
  *
  * Copyright (C) 1998-1999 Takashi Iwai <tiwai@suse.de>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #include "seq_oss_device.h"
@@ -188,10 +175,8 @@ snd_seq_oss_open(struct file *file, int level)
 	struct seq_oss_devinfo *dp;
 
 	dp = kzalloc(sizeof(*dp), GFP_KERNEL);
-	if (!dp) {
-		pr_err("ALSA: seq_oss: can't malloc device info\n");
+	if (!dp)
 		return -ENOMEM;
-	}
 
 	dp->cseq = system_client;
 	dp->port = -1;
@@ -403,14 +388,11 @@ free_devinfo(void *private)
 {
 	struct seq_oss_devinfo *dp = (struct seq_oss_devinfo *)private;
 
-	if (dp->timer)
-		snd_seq_oss_timer_delete(dp->timer);
+	snd_seq_oss_timer_delete(dp->timer);
 		
-	if (dp->writeq)
-		snd_seq_oss_writeq_delete(dp->writeq);
+	snd_seq_oss_writeq_delete(dp->writeq);
 
-	if (dp->readq)
-		snd_seq_oss_readq_delete(dp->readq);
+	snd_seq_oss_readq_delete(dp->readq);
 	
 	kfree(dp);
 }
@@ -468,8 +450,7 @@ snd_seq_oss_reset(struct seq_oss_devinfo *dp)
 	snd_seq_oss_timer_stop(dp->timer);
 }
 
-
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_SND_PROC_FS
 /*
  * misc. functions for proc interface
  */
@@ -479,10 +460,10 @@ enabled_str(int bool)
 	return bool ? "enabled" : "disabled";
 }
 
-static char *
+static const char *
 filemode_str(int val)
 {
-	static char *str[] = {
+	static const char * const str[] = {
 		"none", "read", "write", "read/write",
 	};
 	return str[val & SNDRV_SEQ_OSS_FILE_ACMODE];
@@ -520,4 +501,4 @@ snd_seq_oss_system_info_read(struct snd_info_buffer *buf)
 			snd_seq_oss_readq_info_read(dp->readq, buf);
 	}
 }
-#endif /* CONFIG_PROC_FS */
+#endif /* CONFIG_SND_PROC_FS */

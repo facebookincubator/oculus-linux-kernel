@@ -1,21 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 1996, 2003 VIA Networking Technologies, Inc.
  * All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
- *
  *
  * File: power.c
  *
@@ -59,10 +45,9 @@ void vnt_enable_power_saving(struct vnt_private *priv, u16 listen_interval)
 	/* set period of power up before TBTT */
 	vnt_mac_write_word(priv, MAC_REG_PWBT, C_PWBT);
 
-	if (priv->op_mode != NL80211_IFTYPE_ADHOC) {
+	if (priv->op_mode != NL80211_IFTYPE_ADHOC)
 		/* set AID */
 		vnt_mac_write_word(priv, MAC_REG_AIDATIM, aid);
-	}
 
 	/* Warren:06-18-2004,the sequence must follow
 	 * PSEN->AUTOSLEEP->GO2DOZE
@@ -78,44 +63,29 @@ void vnt_enable_power_saving(struct vnt_private *priv, u16 listen_interval)
 	 */
 	vnt_mac_reg_bits_on(priv, MAC_REG_PSCTL, PSCTL_GO2DOZE);
 
-	if (listen_interval >= 2) {
-
-		/* clear always listen beacon */
-		vnt_mac_reg_bits_off(priv, MAC_REG_PSCTL, PSCTL_ALBCN);
-
-		/* first time set listen next beacon */
-		vnt_mac_reg_bits_on(priv, MAC_REG_PSCTL, PSCTL_LNBCN);
-	} else {
-
-		/* always listen beacon */
-		vnt_mac_reg_bits_on(priv, MAC_REG_PSCTL, PSCTL_ALBCN);
-	}
+	/* always listen beacon */
+	vnt_mac_reg_bits_on(priv, MAC_REG_PSCTL, PSCTL_ALBCN);
 
 	dev_dbg(&priv->usb->dev,  "PS:Power Saving Mode Enable...\n");
 }
 
-/*
- *
- * Routine Description:
- * Disable hw power saving functions
- *
- * Return Value:
- *    None.
- *
- */
-
-void vnt_disable_power_saving(struct vnt_private *priv)
+int vnt_disable_power_saving(struct vnt_private *priv)
 {
+	int ret;
 
 	/* disable power saving hw function */
-	vnt_control_out(priv, MESSAGE_TYPE_DISABLE_PS, 0,
-						0, 0, NULL);
+	ret = vnt_control_out(priv, MESSAGE_TYPE_DISABLE_PS, 0,
+			      0, 0, NULL);
+	if (ret)
+		return ret;
 
 	/* clear AutoSleep */
 	vnt_mac_reg_bits_off(priv, MAC_REG_PSCFG, PSCFG_AUTOSLEEP);
 
 	/* set always listen beacon */
 	vnt_mac_reg_bits_on(priv, MAC_REG_PSCTL, PSCTL_ALBCN);
+
+	return 0;
 }
 
 /*
@@ -134,7 +104,7 @@ int vnt_next_tbtt_wakeup(struct vnt_private *priv)
 	struct ieee80211_conf *conf = &hw->conf;
 	int wake_up = false;
 
-	if (conf->listen_interval == 1) {
+	if (conf->listen_interval > 1) {
 		/* Turn on wake up to listen next beacon */
 		vnt_mac_reg_bits_on(priv, MAC_REG_PSCTL, PSCTL_LNBCN);
 		wake_up = true;

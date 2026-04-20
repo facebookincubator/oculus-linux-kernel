@@ -70,12 +70,6 @@
 
 #include <asm/io.h>
 #include <asm/irq.h>
-#include <asm/pgtable.h>
-
-#ifdef CONFIG_MTRR
-#include <asm/mtrr.h>
-#endif
-
 #include <video/vga.h>
 #include <video/neomagic.h>
 
@@ -1615,7 +1609,7 @@ neofb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 }
 */
 
-static struct fb_ops neofb_ops = {
+static const struct fb_ops neofb_ops = {
 	.owner		= THIS_MODULE,
 	.fb_open	= neofb_open,
 	.fb_release	= neofb_release,
@@ -1710,6 +1704,7 @@ static int neo_map_video(struct fb_info *info, struct pci_dev *dev,
 			 int video_len)
 {
 	//unsigned long addr;
+	struct neofb_par *par = info->par;
 
 	DBG("neo_map_video");
 
@@ -1723,7 +1718,7 @@ static int neo_map_video(struct fb_info *info, struct pci_dev *dev,
 	}
 
 	info->screen_base =
-	    ioremap(info->fix.smem_start, info->fix.smem_len);
+	    ioremap_wc(info->fix.smem_start, info->fix.smem_len);
 	if (!info->screen_base) {
 		printk("neofb: unable to map screen memory\n");
 		release_mem_region(info->fix.smem_start,
@@ -1733,11 +1728,8 @@ static int neo_map_video(struct fb_info *info, struct pci_dev *dev,
 		printk(KERN_INFO "neofb: mapped framebuffer at %p\n",
 		       info->screen_base);
 
-#ifdef CONFIG_MTRR
-	((struct neofb_par *)(info->par))->mtrr =
-		mtrr_add(info->fix.smem_start, pci_resource_len(dev, 0),
-				MTRR_TYPE_WRCOMB, 1);
-#endif
+	par->wc_cookie = arch_phys_wc_add(info->fix.smem_start,
+					  pci_resource_len(dev, 0));
 
 	/* Clear framebuffer, it's all white in memory after boot */
 	memset_io(info->screen_base, 0, info->fix.smem_len);
@@ -1754,16 +1746,11 @@ static int neo_map_video(struct fb_info *info, struct pci_dev *dev,
 
 static void neo_unmap_video(struct fb_info *info)
 {
+	struct neofb_par *par = info->par;
+
 	DBG("neo_unmap_video");
 
-#ifdef CONFIG_MTRR
-	{
-		struct neofb_par *par = info->par;
-
-		mtrr_del(par->mtrr, info->fix.smem_start,
-			 info->fix.smem_len);
-	}
-#endif
+	arch_phys_wc_del(par->wc_cookie);
 	iounmap(info->screen_base);
 	info->screen_base = NULL;
 
@@ -1832,6 +1819,7 @@ static int neo_scan_monitor(struct fb_info *info)
 #else
 		printk(KERN_ERR
 		       "neofb: Only 640x480, 800x600/480 and 1024x768 panels are currently supported\n");
+		kfree(info->monspecs.modedb);
 		return -1;
 #endif
 	default:
@@ -2134,14 +2122,7 @@ static void neofb_remove(struct pci_dev *dev)
 	DBG("neofb_remove");
 
 	if (info) {
-		/*
-		 * If unregister_framebuffer fails, then
-		 * we will be leaving hooks that could cause
-		 * oopsen laying around.
-		 */
-		if (unregister_framebuffer(info))
-			printk(KERN_WARNING
-			       "neofb: danger danger!  Oopsen imminent!\n");
+		unregister_framebuffer(info);
 
 		neo_unmap_video(info);
 		fb_destroy_modedb(info->monspecs.modedb);
@@ -2150,7 +2131,7 @@ static void neofb_remove(struct pci_dev *dev)
 	}
 }
 
-static struct pci_device_id neofb_devices[] = {
+static const struct pci_device_id neofb_devices[] = {
 	{PCI_VENDOR_ID_NEOMAGIC, PCI_CHIP_NM2070,
 	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, FB_ACCEL_NEOMAGIC_NM2070},
 

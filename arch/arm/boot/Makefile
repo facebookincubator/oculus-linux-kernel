@@ -11,13 +11,9 @@
 # Copyright (C) 1995-2002 Russell King
 #
 
-include $(srctree)/arch/arm/boot/dts/Makefile
+OBJCOPYFLAGS	:=-O binary -R .comment -S
 
 include $(srctree)/arch/arm/boot/dts/Makefile
-ifneq ($(DTSSUBDIR),)
-DTSSUBDIR_INCS=$(foreach DIR, $(DTSSUBDIR), $(addsuffix /Makefile, $(addprefix $(srctree)/arch/arm/boot/dts/, $(DIR))))
-include $(DTSSUBDIR_INCS)
-endif
 
 # Note: the following conditions must always be true:
 #   ZRELADDR == virt_to_phys(PAGE_OFFSET + TEXT_OFFSET)
@@ -37,13 +33,24 @@ DTB_LIST := $(addsuffix .dtb,$(DTB_NAMES))
 else
 DTB_LIST := $(dtb-y)
 endif
-DTB_OBJS := $(addprefix $(obj)/dts/qcom/,$(DTB_LIST))
+DTB_OBJS := $(addprefix $(obj)/dts/,$(DTB_LIST))
 
 ifeq ($(CONFIG_XIP_KERNEL),y)
 
+cmd_deflate_xip_data = $(CONFIG_SHELL) -c \
+	'$(srctree)/$(src)/deflate_xip_data.sh $< $@'
+
+ifeq ($(CONFIG_XIP_DEFLATED_DATA),y)
+quiet_cmd_mkxip = XIPZ    $@
+cmd_mkxip = $(cmd_objcopy) && $(cmd_deflate_xip_data)
+else
+quiet_cmd_mkxip = $(quiet_cmd_objcopy)
+cmd_mkxip = $(cmd_objcopy)
+endif
+
 $(obj)/xipImage: vmlinux FORCE
-	$(call if_changed,objcopy)
-	@$(kecho) '  Kernel: $@ is ready (physical address: $(CONFIG_XIP_PHYS_ADDR))'
+	$(call if_changed,mkxip)
+	@$(kecho) '  Physical Address of xipImage: $(CONFIG_XIP_PHYS_ADDR)'
 
 $(obj)/Image $(obj)/zImage: FORCE
 	@echo 'Kernel configured for XIP (CONFIG_XIP_KERNEL=y)'
@@ -58,18 +65,16 @@ $(obj)/xipImage: FORCE
 
 $(obj)/Image: vmlinux FORCE
 	$(call if_changed,objcopy)
-	@$(kecho) '  Kernel: $@ is ready'
 
 $(obj)/compressed/vmlinux: $(obj)/Image FORCE
 	$(Q)$(MAKE) $(build)=$(obj)/compressed $@
 
 $(obj)/zImage:	$(obj)/compressed/vmlinux FORCE
 	$(call if_changed,objcopy)
-	@$(kecho) '  Kernel: $@ is ready'
 
-$(obj)/zImage-dtb:	$(obj)/zImage $(DTB_OBJS) FORCE
+$(obj)/zImage-dtb: $(obj)/zImage $(DTB_OBJS) FORCE
 	$(call if_changed,cat)
-	@echo '  Kernel: $@ is ready'
+	@echo ' Kernel: $@ is ready'
 
 endif
 
@@ -94,17 +99,14 @@ fi
 $(obj)/uImage:	$(obj)/zImage FORCE
 	@$(check_for_multiple_loadaddr)
 	$(call if_changed,uimage)
-	@$(kecho) '  Image $@ is ready'
 
 $(obj)/bootp/bootp: $(obj)/zImage initrd FORCE
 	$(Q)$(MAKE) $(build)=$(obj)/bootp $@
-	@:
 
 $(obj)/bootpImage: $(obj)/bootp/bootp FORCE
 	$(call if_changed,objcopy)
-	@$(kecho) '  Kernel: $@ is ready'
 
-PHONY += initrd FORCE
+PHONY += initrd install zinstall uinstall
 initrd:
 	@test "$(INITRD_PHYS)" != "" || \
 	(echo This machine does not support INITRD; exit -1)
@@ -122,13 +124,5 @@ zinstall:
 uinstall:
 	$(CONFIG_SHELL) $(srctree)/$(src)/install.sh "$(KERNELRELEASE)" \
 	$(obj)/uImage System.map "$(INSTALL_PATH)"
-
-zi:
-	$(CONFIG_SHELL) $(srctree)/$(src)/install.sh "$(KERNELRELEASE)" \
-	$(obj)/zImage System.map "$(INSTALL_PATH)"
-
-i:
-	$(CONFIG_SHELL) $(srctree)/$(src)/install.sh "$(KERNELRELEASE)" \
-	$(obj)/Image System.map "$(INSTALL_PATH)"
 
 subdir-	    := bootp compressed dts

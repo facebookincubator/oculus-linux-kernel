@@ -1,0 +1,105 @@
+/dts-v1/;
+/plugin/;
+
+#include "greatwhite.dtsi"
+#include "greatwhite-evt1-thermal.dtsi"
+
+/ {
+  model = "Protostar FF3 (RT700)";
+  compatible = "meta,greatwhite", "meta,protostar-ff3";
+  qcom,msm-id = <579 0x10000>;
+  qcom,board-id = <34 0xd1>;
+};
+
+&qupv3_se10_i2c {
+	/**
+	 * This needs to come after the BOB nodes because I2C probe order is
+	 * determined by the order of the device tree nodes and max77132 needs to
+	 * request the BOB regulator during probe.
+	 */
+	#include "meta-neo-max17332-fg.dtsi"
+};
+
+&max17332 {
+	interrupts = <7 IRQ_TYPE_LEVEL_HIGH>;
+	pinctrl-names = "default";
+	max17332,max-bob-voltage-uv = <4550000>;
+	max17332,min-bob-voltage-uv = <4000000>;
+	max17332,bob-voltage-delta-uv = <200000>;
+	max17332,bob-voltage-round-up = <1>;
+	battery {
+		/* disable FG update */
+		fg-config-version   = /bits/ 8 <0>;
+		cap-low-level		= /bits/ 8 <15>;
+	};
+};
+
+&max77813 {
+    status="disabled";
+};
+
+/* Display card (Celeste) I2C bus: */
+
+&qupv3_se4_i2c {
+	status = "ok";
+};
+
+&pmicOP03010 {
+	status="disabled";
+};
+
+&lcosOP03010 {
+	status="disabled";
+};
+
+&leddriver {
+	status="disabled";
+};
+
+&display_virtual_sensor {
+	status="disabled";
+};
+
+#include "gw-mipi-mux.dtsi"
+&tlmm {
+	pinctrl-names = "default";
+	pinctrl-0 = <&vchrg_gpio_pin_default &board_gpio_pin_default>;
+
+	board_gpio_pin_default: board_gpio_pin_default {
+    mux {
+      pins = "gpio103", "gpio105", "gpio106";
+    };
+    config {
+      pins = "gpio103", "gpio105", "gpio106";
+      drive-strength = <2>;
+      bias-disable;
+      input-enable;
+    };
+  };
+};
+
+&vchrg_gpio_pin_default {
+	mux {
+		pins ="gpio6", "gpio11";
+	};
+	config {
+		pins ="gpio6", "gpio11";
+		drive-strength = <2>;
+		bias-pull-up;
+		input-enable;
+	};
+};
+
+#include "meta-rt685-rt700.dtsi"
+#include "gw-p1-power-slider.dtsi"
+
+&rt600_ctrl {
+	meta,rt700-override;
+};
+
+&usb_conn_gpio{
+	vbus-gpio = <&tlmm 6 GPIO_ACTIVE_LOW>;
+	vchrg-debug-detect-gpio = <&tlmm 11 GPIO_ACTIVE_LOW>;
+	meta,enable-vchrg-debug-detect;
+	// meta,enable-vbus-vchrg-override;
+};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/mm/alignment.c
  *
@@ -6,20 +7,17 @@
  *  Thumb alignment fault fixups (c) 2004 MontaVista Software, Inc.
  *  - Adapted from gdb/sim/arm/thumbemu.c -- Thumb instruction emulation.
  *    Copyright (C) 1996, Cygnus Software Technologies Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #include <linux/moduleparam.h>
 #include <linux/compiler.h>
 #include <linux/kernel.h>
+#include <linux/sched/debug.h>
 #include <linux/errno.h>
 #include <linux/string.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/init.h>
-#include <linux/sched.h>
+#include <linux/sched/signal.h>
 #include <linux/uaccess.h>
 
 #include <asm/cp15.h>
@@ -113,7 +111,7 @@ static int safe_usermode(int new_usermode, bool warn)
 		new_usermode |= UM_FIXUP;
 
 		if (warn)
-			printk(KERN_WARNING "alignment: ignoring faults is unsafe on this CPU.  Defaulting to fixup mode.\n");
+			pr_warn("alignment: ignoring faults is unsafe on this CPU.  Defaulting to fixup mode.\n");
 	}
 
 	return new_usermode;
@@ -132,7 +130,7 @@ static const char *usermode_action[] = {
 static int alignment_proc_show(struct seq_file *m, void *v)
 {
 	seq_printf(m, "User:\t\t%lu\n", ai_user);
-	seq_printf(m, "System:\t\t%lu (%pF)\n", ai_sys, ai_sys_last_pc);
+	seq_printf(m, "System:\t\t%lu (%pS)\n", ai_sys, ai_sys_last_pc);
 	seq_printf(m, "Skipped:\t%lu\n", ai_skipped);
 	seq_printf(m, "Half:\t\t%lu\n", ai_half);
 	seq_printf(m, "Word:\t\t%lu\n", ai_word);
@@ -164,12 +162,12 @@ static ssize_t alignment_proc_write(struct file *file, const char __user *buffer
 	return count;
 }
 
-static const struct file_operations alignment_proc_fops = {
-	.open		= alignment_proc_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-	.write		= alignment_proc_write,
+static const struct proc_ops alignment_proc_ops = {
+	.proc_open	= alignment_proc_open,
+	.proc_read	= seq_read,
+	.proc_lseek	= seq_lseek,
+	.proc_release	= single_release,
+	.proc_write	= alignment_proc_write,
 };
 #endif /* CONFIG_PROC_FS */
 
@@ -201,7 +199,7 @@ union offset_union {
  THUMB(	"1:	"ins"	%1, [%2]\n"	)		\
  THUMB(	"	add	%2, %2, #1\n"	)		\
 	"2:\n"						\
-	"	.pushsection .fixup,\"ax\"\n"		\
+	"	.pushsection .text.fixup,\"ax\"\n"	\
 	"	.align	2\n"				\
 	"3:	mov	%0, #1\n"			\
 	"	b	2b\n"				\
@@ -261,7 +259,7 @@ union offset_union {
 		"	mov	%1, %1, "NEXT_BYTE"\n"		\
 		"2:	"ins"	%1, [%2]\n"			\
 		"3:\n"						\
-		"	.pushsection .fixup,\"ax\"\n"		\
+		"	.pushsection .text.fixup,\"ax\"\n"	\
 		"	.align	2\n"				\
 		"4:	mov	%0, #1\n"			\
 		"	b	3b\n"				\
@@ -301,7 +299,7 @@ union offset_union {
 		"	mov	%1, %1, "NEXT_BYTE"\n"		\
 		"4:	"ins"	%1, [%2]\n"			\
 		"5:\n"						\
-		"	.pushsection .fixup,\"ax\"\n"		\
+		"	.pushsection .text.fixup,\"ax\"\n"	\
 		"	.align	2\n"				\
 		"6:	mov	%0, #1\n"			\
 		"	b	5b\n"				\
@@ -326,7 +324,7 @@ union offset_union {
 	__put32_unaligned_check("strbt", val, addr)
 
 static void
-do_alignment_finish_ldst(unsigned long addr, unsigned long instr, struct pt_regs *regs, union offset_union offset)
+do_alignment_finish_ldst(unsigned long addr, u32 instr, struct pt_regs *regs, union offset_union offset)
 {
 	if (!LDST_U_BIT(instr))
 		offset.un = -offset.un;
@@ -339,7 +337,7 @@ do_alignment_finish_ldst(unsigned long addr, unsigned long instr, struct pt_regs
 }
 
 static int
-do_alignment_ldrhstrh(unsigned long addr, unsigned long instr, struct pt_regs *regs)
+do_alignment_ldrhstrh(unsigned long addr, u32 instr, struct pt_regs *regs)
 {
 	unsigned int rd = RD_BITS(instr);
 
@@ -365,15 +363,21 @@ do_alignment_ldrhstrh(unsigned long addr, unsigned long instr, struct pt_regs *r
  user:
 	if (LDST_L_BIT(instr)) {
 		unsigned long val;
+		unsigned int __ua_flags = uaccess_save_and_enable();
+
 		get16t_unaligned_check(val, addr);
+		uaccess_restore(__ua_flags);
 
 		/* signed half-word? */
 		if (instr & 0x40)
 			val = (signed long)((signed short) val);
 
 		regs->uregs[rd] = val;
-	} else
+	} else {
+		unsigned int __ua_flags = uaccess_save_and_enable();
 		put16t_unaligned_check(regs->uregs[rd], addr);
+		uaccess_restore(__ua_flags);
+	}
 
 	return TYPE_LDST;
 
@@ -382,8 +386,7 @@ do_alignment_ldrhstrh(unsigned long addr, unsigned long instr, struct pt_regs *r
 }
 
 static int
-do_alignment_ldrdstrd(unsigned long addr, unsigned long instr,
-		      struct pt_regs *regs)
+do_alignment_ldrdstrd(unsigned long addr, u32 instr, struct pt_regs *regs)
 {
 	unsigned int rd = RD_BITS(instr);
 	unsigned int rd2;
@@ -420,14 +423,21 @@ do_alignment_ldrdstrd(unsigned long addr, unsigned long instr,
 
  user:
 	if (load) {
-		unsigned long val;
+		unsigned long val, val2;
+		unsigned int __ua_flags = uaccess_save_and_enable();
+
 		get32t_unaligned_check(val, addr);
+		get32t_unaligned_check(val2, addr + 4);
+
+		uaccess_restore(__ua_flags);
+
 		regs->uregs[rd] = val;
-		get32t_unaligned_check(val, addr + 4);
-		regs->uregs[rd2] = val;
+		regs->uregs[rd2] = val2;
 	} else {
+		unsigned int __ua_flags = uaccess_save_and_enable();
 		put32t_unaligned_check(regs->uregs[rd], addr);
 		put32t_unaligned_check(regs->uregs[rd2], addr + 4);
+		uaccess_restore(__ua_flags);
 	}
 
 	return TYPE_LDST;
@@ -438,7 +448,7 @@ do_alignment_ldrdstrd(unsigned long addr, unsigned long instr,
 }
 
 static int
-do_alignment_ldrstr(unsigned long addr, unsigned long instr, struct pt_regs *regs)
+do_alignment_ldrstr(unsigned long addr, u32 instr, struct pt_regs *regs)
 {
 	unsigned int rd = RD_BITS(instr);
 
@@ -458,10 +468,15 @@ do_alignment_ldrstr(unsigned long addr, unsigned long instr, struct pt_regs *reg
  trans:
 	if (LDST_L_BIT(instr)) {
 		unsigned int val;
+		unsigned int __ua_flags = uaccess_save_and_enable();
 		get32t_unaligned_check(val, addr);
+		uaccess_restore(__ua_flags);
 		regs->uregs[rd] = val;
-	} else
+	} else {
+		unsigned int __ua_flags = uaccess_save_and_enable();
 		put32t_unaligned_check(regs->uregs[rd], addr);
+		uaccess_restore(__ua_flags);
+	}
 	return TYPE_LDST;
 
  fault:
@@ -482,7 +497,7 @@ do_alignment_ldrstr(unsigned long addr, unsigned long instr, struct pt_regs *reg
  * PU = 10             A                    B
  */
 static int
-do_alignment_ldmstm(unsigned long addr, unsigned long instr, struct pt_regs *regs)
+do_alignment_ldmstm(unsigned long addr, u32 instr, struct pt_regs *regs)
 {
 	unsigned int rd, rn, correction, nr_regs, regbits;
 	unsigned long eaddr, newaddr;
@@ -523,7 +538,7 @@ do_alignment_ldmstm(unsigned long addr, unsigned long instr, struct pt_regs *reg
 	 * processor for us.
 	 */
 	if (addr != eaddr) {
-		printk(KERN_ERR "LDMSTM: PC = %08lx, instr = %08lx, "
+		pr_err("LDMSTM: PC = %08lx, instr = %08x, "
 			"addr = %08lx, eaddr = %08lx\n",
 			 instruction_pointer(regs), instr, addr, eaddr);
 		show_regs(regs);
@@ -531,6 +546,7 @@ do_alignment_ldmstm(unsigned long addr, unsigned long instr, struct pt_regs *reg
 #endif
 
 	if (user_mode(regs)) {
+		unsigned int __ua_flags = uaccess_save_and_enable();
 		for (regbits = REGMASK_BITS(instr), rd = 0; regbits;
 		     regbits >>= 1, rd += 1)
 			if (regbits & 1) {
@@ -542,6 +558,7 @@ do_alignment_ldmstm(unsigned long addr, unsigned long instr, struct pt_regs *reg
 					put32t_unaligned_check(regs->uregs[rd], eaddr);
 				eaddr += 4;
 			}
+		uaccess_restore(__ua_flags);
 	} else {
 		for (regbits = REGMASK_BITS(instr), rd = 0; regbits;
 		     regbits >>= 1, rd += 1)
@@ -567,7 +584,7 @@ fault:
 	return TYPE_FAULT;
 
 bad:
-	printk(KERN_ERR "Alignment trap: not handling ldm with s-bit set\n");
+	pr_err("Alignment trap: not handling ldm with s-bit set\n");
 	return TYPE_ERROR;
 }
 
@@ -677,7 +694,7 @@ thumb2arm(u16 tinstr)
 			return subset[(L<<1) | ((tinstr & (1<<8)) >> 8)] |
 			    (tinstr & 255);		/* register_list */
 		}
-		/* Else fall through for illegal instruction case */
+		fallthrough;	/* for illegal instruction case */
 
 	default:
 		return BAD_INSTR;
@@ -698,10 +715,10 @@ thumb2arm(u16 tinstr)
  * 2. Register name Rt from ARMv7 is same as Rd from ARMv6 (Rd is Rt)
  */
 static void *
-do_alignment_t32_to_handler(unsigned long *pinstr, struct pt_regs *regs,
+do_alignment_t32_to_handler(u32 *pinstr, struct pt_regs *regs,
 			    union offset_union *poffset)
 {
-	unsigned long instr = *pinstr;
+	u32 instr = *pinstr;
 	u16 tinst1 = (instr >> 16) & 0xffff;
 	u16 tinst2 = instr & 0xffff;
 
@@ -733,6 +750,8 @@ do_alignment_t32_to_handler(unsigned long *pinstr, struct pt_regs *regs,
 	case 0xe8e0:
 	case 0xe9e0:
 		poffset->un = (tinst2 & 0xff) << 2;
+		fallthrough;
+
 	case 0xe940:
 	case 0xe9c0:
 		return do_alignment_ldrdstrd;
@@ -747,17 +766,48 @@ do_alignment_t32_to_handler(unsigned long *pinstr, struct pt_regs *regs,
 	return NULL;
 }
 
+static int alignment_get_arm(struct pt_regs *regs, u32 *ip, u32 *inst)
+{
+	u32 instr = 0;
+	int fault;
+
+	if (user_mode(regs))
+		fault = get_user(instr, ip);
+	else
+		fault = get_kernel_nofault(instr, ip);
+
+	*inst = __mem_to_opcode_arm(instr);
+
+	return fault;
+}
+
+static int alignment_get_thumb(struct pt_regs *regs, u16 *ip, u16 *inst)
+{
+	u16 instr = 0;
+	int fault;
+
+	if (user_mode(regs))
+		fault = get_user(instr, ip);
+	else
+		fault = get_kernel_nofault(instr, ip);
+
+	*inst = __mem_to_opcode_thumb16(instr);
+
+	return fault;
+}
+
 static int
 do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 {
-	union offset_union uninitialized_var(offset);
-	unsigned long instr = 0, instrptr;
-	int (*handler)(unsigned long addr, unsigned long instr, struct pt_regs *regs);
+	union offset_union offset;
+	unsigned long instrptr;
+	int (*handler)(unsigned long addr, u32 instr, struct pt_regs *regs);
 	unsigned int type;
-	unsigned int fault;
+	u32 instr = 0;
 	u16 tinstr = 0;
 	int isize = 4;
 	int thumb2_32b = 0;
+	int fault;
 
 	if (interrupts_enabled(regs))
 		local_irq_enable();
@@ -766,15 +816,14 @@ do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 
 	if (thumb_mode(regs)) {
 		u16 *ptr = (u16 *)(instrptr & ~1);
-		fault = probe_kernel_address(ptr, tinstr);
-		tinstr = __mem_to_opcode_thumb16(tinstr);
+
+		fault = alignment_get_thumb(regs, ptr, &tinstr);
 		if (!fault) {
 			if (cpu_architecture() >= CPU_ARCH_ARMv7 &&
 			    IS_T32(tinstr)) {
 				/* Thumb-2 32-bit */
-				u16 tinst2 = 0;
-				fault = probe_kernel_address(ptr + 1, tinst2);
-				tinst2 = __mem_to_opcode_thumb16(tinst2);
+				u16 tinst2;
+				fault = alignment_get_thumb(regs, ptr + 1, &tinst2);
 				instr = __opcode_thumb32_compose(tinstr, tinst2);
 				thumb2_32b = 1;
 			} else {
@@ -783,8 +832,7 @@ do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 			}
 		}
 	} else {
-		fault = probe_kernel_address(instrptr, instr);
-		instr = __mem_to_opcode_arm(instr);
+		fault = alignment_get_arm(regs, (void *)instrptr, &instr);
 	}
 
 	if (fault) {
@@ -887,6 +935,9 @@ do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	if (type == TYPE_LDST)
 		do_alignment_finish_ldst(addr, instr, regs, offset);
 
+	if (thumb_mode(regs))
+		regs->ARM_cpsr = it_advance(regs->ARM_cpsr);
+
 	return 0;
 
  bad_or_fault:
@@ -899,14 +950,14 @@ do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	return 0;
 
  swp:
-	printk(KERN_ERR "Alignment trap: not handling swp instruction\n");
+	pr_err("Alignment trap: not handling swp instruction\n");
 
  bad:
 	/*
 	 * Oops, we didn't handle the instruction.
 	 */
-	printk(KERN_ERR "Alignment trap: not handling instruction "
-		"%0*lx at [<%08lx>]\n",
+	pr_err("Alignment trap: not handling instruction "
+		"%0*x at [<%08lx>]\n",
 		isize << 1,
 		isize == 2 ? tinstr : instr, instrptr);
 	ai_skipped += 1;
@@ -916,7 +967,7 @@ do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	ai_user += 1;
 
 	if (ai_usermode & UM_WARN)
-		printk("Alignment trap: %s (%d) PC=0x%08lx Instr=0x%0*lx "
+		printk("Alignment trap: %s (%d) PC=0x%08lx Instr=0x%0*x "
 		       "Address=0x%08lx FSR 0x%03x\n", current->comm,
 			task_pid_nr(current), instrptr,
 			isize << 1,
@@ -927,14 +978,7 @@ do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 		goto fixup;
 
 	if (ai_usermode & UM_SIGNAL) {
-		siginfo_t si;
-
-		si.si_signo = SIGBUS;
-		si.si_errno = 0;
-		si.si_code = BUS_ADRALN;
-		si.si_addr = (void __user *)addr;
-
-		force_sig_info(si.si_signo, &si, current);
+		force_sig_fault(SIGBUS, BUS_ADRALN, (void __user *)addr);
 	} else {
 		/*
 		 * We're about to disable the alignment trap and return to
@@ -975,7 +1019,7 @@ static int __init alignment_init(void)
 	struct proc_dir_entry *res;
 
 	res = proc_create("cpu/alignment", S_IWUSR | S_IRUGO, NULL,
-			  &alignment_proc_fops);
+			  &alignment_proc_ops);
 	if (!res)
 		return -ENOMEM;
 #endif

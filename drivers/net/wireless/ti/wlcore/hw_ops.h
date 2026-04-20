@@ -1,22 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * This file is part of wlcore
  *
  * Copyright (C) 2011 Texas Instruments Inc.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301 USA
- *
  */
 
 #ifndef __WLCORE_HW_OPS_H__
@@ -211,11 +197,35 @@ wlcore_hw_pre_pkt_send(struct wl1271 *wl, u32 buf_offset, u32 last_len)
 }
 
 static inline void
-wlcore_hw_sta_rc_update(struct wl1271 *wl, struct wl12xx_vif *wlvif,
-			struct ieee80211_sta *sta, u32 changed)
+wlcore_hw_sta_rc_update(struct wl1271 *wl, struct wl12xx_vif *wlvif)
 {
 	if (wl->ops->sta_rc_update)
-		wl->ops->sta_rc_update(wl, wlvif, sta, changed);
+		wl->ops->sta_rc_update(wl, wlvif);
+}
+
+static inline int
+wlcore_hw_interrupt_notify(struct wl1271 *wl, bool action)
+{
+	if (wl->ops->interrupt_notify)
+		return wl->ops->interrupt_notify(wl, action);
+	return 0;
+}
+
+static inline int
+wlcore_hw_rx_ba_filter(struct wl1271 *wl, bool action)
+{
+	if (wl->ops->rx_ba_filter)
+		return wl->ops->rx_ba_filter(wl, action);
+	return 0;
+}
+
+static inline int
+wlcore_hw_ap_sleep(struct wl1271 *wl)
+{
+	if (wl->ops->ap_sleep)
+		return wl->ops->ap_sleep(wl);
+
+	return 0;
 }
 
 static inline int
@@ -286,5 +296,23 @@ wlcore_smart_config_set_group_key(struct wl1271 *wl, u16 group_id,
 		return -EINVAL;
 
 	return wl->ops->smart_config_set_group_key(wl, group_id, key_len, key);
+}
+
+static inline int
+wlcore_hw_set_cac(struct wl1271 *wl, struct wl12xx_vif *wlvif, bool start)
+{
+	if (!wl->ops->set_cac)
+		return -EINVAL;
+
+	return wl->ops->set_cac(wl, wlvif, start);
+}
+
+static inline int
+wlcore_hw_dfs_master_restart(struct wl1271 *wl, struct wl12xx_vif *wlvif)
+{
+	if (!wl->ops->dfs_master_restart)
+		return -EINVAL;
+
+	return wl->ops->dfs_master_restart(wl, wlvif);
 }
 #endif

@@ -1,18 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Sony NFC Port-100 Series driver
  * Copyright (c) 2013, Intel Corporation.
  *
  * Partly based/Inspired by Stephen Tiedemann's nfcpy
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
  */
 
 #include <linux/module.h>
@@ -21,8 +12,9 @@
 
 #define VERSION "0.1"
 
-#define SONY_VENDOR_ID    0x054c
-#define RCS380_PRODUCT_ID 0x06c1
+#define SONY_VENDOR_ID		0x054c
+#define RCS380S_PRODUCT_ID	0x06c1
+#define RCS380P_PRODUCT_ID	0x06c3
 
 #define PORT100_PROTOCOLS (NFC_PROTO_JEWEL_MASK    | \
 			   NFC_PROTO_MIFARE_MASK   | \
@@ -343,7 +335,26 @@ in_protocols[][PORT100_IN_MAX_NUM_PROTOCOLS + 1] = {
 	},
 	[NFC_DIGITAL_FRAMING_NFCF_NFC_DEP] = {
 		/* nfc_digital_framing_nfcf */
-		{ PORT100_IN_PROT_END, 0 },
+		{ PORT100_IN_PROT_INITIAL_GUARD_TIME,     18 },
+		{ PORT100_IN_PROT_ADD_CRC,                 1 },
+		{ PORT100_IN_PROT_CHECK_CRC,               1 },
+		{ PORT100_IN_PROT_MULTI_CARD,              0 },
+		{ PORT100_IN_PROT_ADD_PARITY,              0 },
+		{ PORT100_IN_PROT_CHECK_PARITY,            0 },
+		{ PORT100_IN_PROT_BITWISE_AC_RECV_MODE,    0 },
+		{ PORT100_IN_PROT_VALID_BIT_NUMBER,        8 },
+		{ PORT100_IN_PROT_CRYPTO1,                 0 },
+		{ PORT100_IN_PROT_ADD_SOF,                 0 },
+		{ PORT100_IN_PROT_CHECK_SOF,               0 },
+		{ PORT100_IN_PROT_ADD_EOF,                 0 },
+		{ PORT100_IN_PROT_CHECK_EOF,               0 },
+		{ PORT100_IN_PROT_DEAF_TIME,               4 },
+		{ PORT100_IN_PROT_CRM,                     0 },
+		{ PORT100_IN_PROT_CRM_MIN_LEN,             0 },
+		{ PORT100_IN_PROT_T1_TAG_FRAME,            0 },
+		{ PORT100_IN_PROT_RFCA,                    0 },
+		{ PORT100_IN_PROT_GUARD_TIME_AT_INITIATOR, 6 },
+		{ PORT100_IN_PROT_END,                     0 },
 	},
 	[NFC_DIGITAL_FRAMING_NFC_DEP_ACTIVATED] = {
 		{ PORT100_IN_PROT_END, 0 },
@@ -437,6 +448,12 @@ struct port100 {
 	struct urb *out_urb;
 	struct urb *in_urb;
 
+	/* This mutex protects the out_urb and avoids to submit a new command
+	 * through port100_send_frame_async() while the previous one is being
+	 * canceled through port100_abort_cmd().
+	 */
+	struct mutex out_urb_lock;
+
 	struct work_struct cmd_complete_work;
 
 	u8 cmd_type;
@@ -445,6 +462,9 @@ struct port100 {
 	 * for any queuing/locking mechanism at driver level.
 	 */
 	struct port100_cmd *cmd;
+
+	bool cmd_cancel;
+	struct completion cmd_cancel_done;
 };
 
 struct port100_cmd {
@@ -545,7 +565,7 @@ static void port100_tx_update_payload_len(void *_frame, int len)
 {
 	struct port100_frame *frame = _frame;
 
-	frame->datalen = cpu_to_le16(le16_to_cpu(frame->datalen) + len);
+	le16_add_cpu(&frame->datalen, len);
 }
 
 static bool port100_rx_frame_is_valid(void *_frame)
@@ -604,11 +624,11 @@ static void port100_recv_response(struct urb *urb)
 	case -ECONNRESET:
 	case -ENOENT:
 		nfc_err(&dev->interface->dev,
-			"The urb has been canceled (status %d)", urb->status);
+			"The urb has been canceled (status %d)\n", urb->status);
 		goto sched_wq;
 	case -ESHUTDOWN:
 	default:
-		nfc_err(&dev->interface->dev, "Urb failure (status %d)",
+		nfc_err(&dev->interface->dev, "Urb failure (status %d)\n",
 			urb->status);
 		goto sched_wq;
 	}
@@ -616,7 +636,7 @@ static void port100_recv_response(struct urb *urb)
 	in_frame = dev->in_urb->transfer_buffer;
 
 	if (!port100_rx_frame_is_valid(in_frame)) {
-		nfc_err(&dev->interface->dev, "Received an invalid frame");
+		nfc_err(&dev->interface->dev, "Received an invalid frame\n");
 		cmd->status = -EIO;
 		goto sched_wq;
 	}
@@ -626,7 +646,7 @@ static void port100_recv_response(struct urb *urb)
 
 	if (!port100_rx_frame_is_cmd_response(dev, in_frame)) {
 		nfc_err(&dev->interface->dev,
-			"It's not the response to the last command");
+			"It's not the response to the last command\n");
 		cmd->status = -EIO;
 		goto sched_wq;
 	}
@@ -657,11 +677,11 @@ static void port100_recv_ack(struct urb *urb)
 	case -ECONNRESET:
 	case -ENOENT:
 		nfc_err(&dev->interface->dev,
-			"The urb has been stopped (status %d)", urb->status);
+			"The urb has been stopped (status %d)\n", urb->status);
 		goto sched_wq;
 	case -ESHUTDOWN:
 	default:
-		nfc_err(&dev->interface->dev, "Urb failure (status %d)",
+		nfc_err(&dev->interface->dev, "Urb failure (status %d)\n",
 			urb->status);
 		goto sched_wq;
 	}
@@ -669,7 +689,7 @@ static void port100_recv_ack(struct urb *urb)
 	in_frame = dev->in_urb->transfer_buffer;
 
 	if (!port100_rx_frame_is_ack(in_frame)) {
-		nfc_err(&dev->interface->dev, "Received an invalid ack");
+		nfc_err(&dev->interface->dev, "Received an invalid ack\n");
 		cmd->status = -EIO;
 		goto sched_wq;
 	}
@@ -677,7 +697,7 @@ static void port100_recv_ack(struct urb *urb)
 	rc = port100_submit_urb_for_response(dev, GFP_ATOMIC);
 	if (rc) {
 		nfc_err(&dev->interface->dev,
-			"usb_submit_urb failed with result %d", rc);
+			"usb_submit_urb failed with result %d\n", rc);
 		cmd->status = rc;
 		goto sched_wq;
 	}
@@ -697,11 +717,38 @@ static int port100_submit_urb_for_ack(struct port100 *dev, gfp_t flags)
 
 static int port100_send_ack(struct port100 *dev)
 {
-	int rc;
+	int rc = 0;
 
-	dev->out_urb->transfer_buffer = ack_frame;
-	dev->out_urb->transfer_buffer_length = sizeof(ack_frame);
-	rc = usb_submit_urb(dev->out_urb, GFP_KERNEL);
+	mutex_lock(&dev->out_urb_lock);
+
+	/*
+	 * If prior cancel is in-flight (dev->cmd_cancel == true), we
+	 * can skip to send cancel. Then this will wait the prior
+	 * cancel, or merged into the next cancel rarely if next
+	 * cancel was started before waiting done. In any case, this
+	 * will be waked up soon or later.
+	 */
+	if (!dev->cmd_cancel) {
+		reinit_completion(&dev->cmd_cancel_done);
+
+		usb_kill_urb(dev->out_urb);
+
+		dev->out_urb->transfer_buffer = ack_frame;
+		dev->out_urb->transfer_buffer_length = sizeof(ack_frame);
+		rc = usb_submit_urb(dev->out_urb, GFP_KERNEL);
+
+		/*
+		 * Set the cmd_cancel flag only if the URB has been
+		 * successfully submitted. It will be reset by the out
+		 * URB completion callback port100_send_complete().
+		 */
+		dev->cmd_cancel = !rc;
+	}
+
+	mutex_unlock(&dev->out_urb_lock);
+
+	if (!rc)
+		wait_for_completion(&dev->cmd_cancel_done);
 
 	return rc;
 }
@@ -710,6 +757,16 @@ static int port100_send_frame_async(struct port100 *dev, struct sk_buff *out,
 				    struct sk_buff *in, int in_len)
 {
 	int rc;
+
+	mutex_lock(&dev->out_urb_lock);
+
+	/* A command cancel frame as been sent through dev->out_urb. Don't try
+	 * to submit a new one.
+	 */
+	if (dev->cmd_cancel) {
+		rc = -EAGAIN;
+		goto exit;
+	}
 
 	dev->out_urb->transfer_buffer = out->data;
 	dev->out_urb->transfer_buffer_length = out->len;
@@ -722,16 +779,15 @@ static int port100_send_frame_async(struct port100 *dev, struct sk_buff *out,
 
 	rc = usb_submit_urb(dev->out_urb, GFP_KERNEL);
 	if (rc)
-		return rc;
+		goto exit;
 
 	rc = port100_submit_urb_for_ack(dev, GFP_KERNEL);
 	if (rc)
-		goto error;
+		usb_kill_urb(dev->out_urb);
 
-	return 0;
+exit:
+	mutex_unlock(&dev->out_urb_lock);
 
-error:
-	usb_unlink_urb(dev->out_urb);
 	return rc;
 }
 
@@ -789,6 +845,12 @@ static int port100_send_cmd_async(struct port100 *dev, u8 cmd_code,
 	int  resp_len = PORT100_FRAME_HEADER_LEN +
 			PORT100_FRAME_MAX_PAYLOAD_LEN +
 			PORT100_FRAME_TAIL_LEN;
+
+	if (dev->cmd) {
+		nfc_err(&dev->interface->dev,
+			"A command is still in process\n");
+		return -EBUSY;
+	}
 
 	resp = alloc_skb(resp_len, GFP_KERNEL);
 	if (!resp)
@@ -867,17 +929,22 @@ static void port100_send_complete(struct urb *urb)
 {
 	struct port100 *dev = urb->context;
 
+	if (dev->cmd_cancel) {
+		complete_all(&dev->cmd_cancel_done);
+		dev->cmd_cancel = false;
+	}
+
 	switch (urb->status) {
 	case 0:
 		break; /* success */
 	case -ECONNRESET:
 	case -ENOENT:
 		nfc_err(&dev->interface->dev,
-			"The urb has been stopped (status %d)", urb->status);
+			"The urb has been stopped (status %d)\n", urb->status);
 		break;
 	case -ESHUTDOWN:
 	default:
-		nfc_err(&dev->interface->dev, "Urb failure (status %d)",
+		nfc_err(&dev->interface->dev, "Urb failure (status %d)\n",
 			urb->status);
 	}
 }
@@ -915,7 +982,7 @@ static int port100_set_command_type(struct port100 *dev, u8 command_type)
 	if (!skb)
 		return -ENOMEM;
 
-	*skb_put(skb, sizeof(u8)) = command_type;
+	skb_put_u8(skb, command_type);
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_SET_COMMAND_TYPE, skb);
 	if (IS_ERR(resp))
@@ -936,11 +1003,11 @@ static u64 port100_get_command_type_mask(struct port100 *dev)
 
 	skb = port100_alloc_skb(dev, 0);
 	if (!skb)
-		return -ENOMEM;
+		return 0;
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_GET_COMMAND_TYPE, skb);
 	if (IS_ERR(resp))
-		return PTR_ERR(resp);
+		return 0;
 
 	if (resp->len < 8)
 		mask = 0;
@@ -983,7 +1050,11 @@ static int port100_switch_rf(struct nfc_digital_dev *ddev, bool on)
 	if (!skb)
 		return -ENOMEM;
 
-	*skb_put(skb, 1) = on ? 1 : 0;
+	skb_put_u8(skb, on ? 1 : 0);
+
+	/* Cancel the last command if the device is being switched off */
+	if (!on)
+		port100_abort_cmd(ddev);
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_SWITCH_RF, skb);
 
@@ -1009,9 +1080,8 @@ static int port100_in_set_rf(struct nfc_digital_dev *ddev, u8 rf)
 	if (!skb)
 		return -ENOMEM;
 
-	memcpy(skb_put(skb, sizeof(struct port100_in_rf_setting)),
-	       &in_rf_settings[rf],
-	       sizeof(struct port100_in_rf_setting));
+	skb_put_data(skb, &in_rf_settings[rf],
+		     sizeof(struct port100_in_rf_setting));
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_IN_SET_RF, skb);
 
@@ -1053,7 +1123,7 @@ static int port100_in_set_framing(struct nfc_digital_dev *ddev, int param)
 	if (!skb)
 		return -ENOMEM;
 
-	memcpy(skb_put(skb, size), protocols, size);
+	skb_put_data(skb, protocols, size);
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_IN_SET_PROTOCOL, skb);
 
@@ -1094,7 +1164,7 @@ static void port100_in_comm_rf_complete(struct port100 *dev, void *arg,
 
 	if (resp->len < 4) {
 		nfc_err(&dev->interface->dev,
-			"Invalid packet length received.\n");
+			"Invalid packet length received\n");
 		rc = -EIO;
 		goto error;
 	}
@@ -1167,9 +1237,8 @@ static int port100_tg_set_rf(struct nfc_digital_dev *ddev, u8 rf)
 	if (!skb)
 		return -ENOMEM;
 
-	memcpy(skb_put(skb, sizeof(struct port100_tg_rf_setting)),
-	       &tg_rf_settings[rf],
-	       sizeof(struct port100_tg_rf_setting));
+	skb_put_data(skb, &tg_rf_settings[rf],
+		     sizeof(struct port100_tg_rf_setting));
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_TG_SET_RF, skb);
 
@@ -1211,7 +1280,7 @@ static int port100_tg_set_framing(struct nfc_digital_dev *ddev, int param)
 	if (!skb)
 		return -ENOMEM;
 
-	memcpy(skb_put(skb, size), protocols, size);
+	skb_put_data(skb, protocols, size);
 
 	resp = port100_send_cmd_sync(dev, PORT100_CMD_TG_SET_PROTOCOL, skb);
 
@@ -1250,7 +1319,7 @@ static bool port100_tg_target_activated(struct port100 *dev, u8 tgt_activated)
 		       PORT100_MDAA_TGT_WAS_ACTIVATED_MASK;
 		break;
 	default:
-		nfc_err(&dev->interface->dev, "Unknonwn command type.\n");
+		nfc_err(&dev->interface->dev, "Unknown command type\n");
 		return false;
 	}
 
@@ -1408,7 +1477,8 @@ static struct nfc_digital_ops port100_digital_ops = {
 };
 
 static const struct usb_device_id port100_table[] = {
-	{ USB_DEVICE(SONY_VENDOR_ID, RCS380_PRODUCT_ID), },
+	{ USB_DEVICE(SONY_VENDOR_ID, RCS380S_PRODUCT_ID), },
+	{ USB_DEVICE(SONY_VENDOR_ID, RCS380P_PRODUCT_ID), },
 	{ }
 };
 MODULE_DEVICE_TABLE(usb, port100_table);
@@ -1430,6 +1500,7 @@ static int port100_probe(struct usb_interface *interface,
 	if (!dev)
 		return -ENOMEM;
 
+	mutex_init(&dev->out_urb_lock);
 	dev->udev = usb_get_dev(interface_to_usbdev(interface));
 	dev->interface = interface;
 	usb_set_intfdata(interface, dev);
@@ -1468,11 +1539,13 @@ static int port100_probe(struct usb_interface *interface,
 	usb_fill_bulk_urb(dev->out_urb, dev->udev,
 			  usb_sndbulkpipe(dev->udev, out_endpoint),
 			  NULL, 0, port100_send_complete, dev);
+	dev->out_urb->transfer_flags = URB_ZERO_PACKET;
 
 	dev->skb_headroom = PORT100_FRAME_HEADER_LEN +
 			    PORT100_COMM_RF_HEAD_MAX_LEN;
 	dev->skb_tailroom = PORT100_FRAME_TAIL_LEN;
 
+	init_completion(&dev->cmd_cancel_done);
 	INIT_WORK(&dev->cmd_complete_work, port100_wq_cmd_complete);
 
 	/* The first thing to do with the Port-100 is to set the command type
@@ -1481,7 +1554,7 @@ static int port100_probe(struct usb_interface *interface,
 	cmd_type_mask = port100_get_command_type_mask(dev);
 	if (!cmd_type_mask) {
 		nfc_err(&interface->dev,
-			"Could not get supported command types.\n");
+			"Could not get supported command types\n");
 		rc = -ENODEV;
 		goto error;
 	}
@@ -1494,7 +1567,7 @@ static int port100_probe(struct usb_interface *interface,
 	rc = port100_set_command_type(dev, dev->cmd_type);
 	if (rc) {
 		nfc_err(&interface->dev,
-			"The device does not support command type %u.\n",
+			"The device does not support command type %u\n",
 			dev->cmd_type);
 		goto error;
 	}
@@ -1502,7 +1575,7 @@ static int port100_probe(struct usb_interface *interface,
 	fw_version = port100_get_firmware_version(dev);
 	if (!fw_version)
 		nfc_err(&interface->dev,
-			"Could not get device firmware version.\n");
+			"Could not get device firmware version\n");
 
 	nfc_info(&interface->dev,
 		 "Sony NFC Port-100 Series attached (firmware v%x.%02x)\n",
@@ -1515,7 +1588,7 @@ static int port100_probe(struct usb_interface *interface,
 							   dev->skb_tailroom);
 	if (!dev->nfc_digital_dev) {
 		nfc_err(&interface->dev,
-			"Could not allocate nfc_digital_dev.\n");
+			"Could not allocate nfc_digital_dev\n");
 		rc = -ENOMEM;
 		goto error;
 	}
@@ -1526,7 +1599,7 @@ static int port100_probe(struct usb_interface *interface,
 	rc = nfc_digital_register_device(dev->nfc_digital_dev);
 	if (rc) {
 		nfc_err(&interface->dev,
-			"Could not register digital device.\n");
+			"Could not register digital device\n");
 		goto free_nfc_dev;
 	}
 
@@ -1536,7 +1609,9 @@ free_nfc_dev:
 	nfc_digital_free_device(dev->nfc_digital_dev);
 
 error:
+	usb_kill_urb(dev->in_urb);
 	usb_free_urb(dev->in_urb);
+	usb_kill_urb(dev->out_urb);
 	usb_free_urb(dev->out_urb);
 	usb_put_dev(dev->udev);
 
@@ -1562,7 +1637,7 @@ static void port100_disconnect(struct usb_interface *interface)
 
 	kfree(dev->cmd);
 
-	nfc_info(&interface->dev, "Sony Port-100 NFC device disconnected");
+	nfc_info(&interface->dev, "Sony Port-100 NFC device disconnected\n");
 }
 
 static struct usb_driver port100_driver = {

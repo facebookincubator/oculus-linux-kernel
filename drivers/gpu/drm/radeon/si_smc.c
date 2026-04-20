@@ -23,7 +23,7 @@
  */
 
 #include <linux/firmware.h>
-#include "drmP.h"
+
 #include "radeon.h"
 #include "sid.h"
 #include "ppsmc.h"
@@ -135,7 +135,7 @@ void si_reset_smc(struct radeon_device *rdev)
 
 int si_program_jump_on_start(struct radeon_device *rdev)
 {
-	static u8 data[] = { 0x0E, 0x00, 0x40, 0x40 };
+	static const u8 data[] = { 0x0E, 0x00, 0x40, 0x40 };
 
 	return si_copy_bytes_to_smc(rdev, 0x0, data, 4, sizeof(data)+1);
 }

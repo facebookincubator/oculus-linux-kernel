@@ -22,6 +22,8 @@
 #include <linux/of_address.h>
 #include <linux/clk/ti.h>
 
+#include "clock.h"
+
 #undef pr_fmt
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
@@ -34,18 +36,18 @@
 static void __init of_ti_fixed_factor_clk_setup(struct device_node *node)
 {
 	struct clk *clk;
-	const char *clk_name = node->name;
+	const char *clk_name = ti_dt_clk_name(node);
 	const char *parent_name;
 	u32 div, mult;
 	u32 flags = 0;
 
 	if (of_property_read_u32(node, "ti,clock-div", &div)) {
-		pr_err("%s must have a clock-div property\n", node->name);
+		pr_err("%pOFn must have a clock-div property\n", node);
 		return;
 	}
 
 	if (of_property_read_u32(node, "ti,clock-mult", &mult)) {
-		pr_err("%s must have a clock-mult property\n", node->name);
+		pr_err("%pOFn must have a clock-mult property\n", node);
 		return;
 	}
 
@@ -60,6 +62,7 @@ static void __init of_ti_fixed_factor_clk_setup(struct device_node *node)
 	if (!IS_ERR(clk)) {
 		of_clk_add_provider(node, of_clk_src_simple_get, clk);
 		of_ti_clk_autoidle_setup(node);
+		ti_clk_add_alias(clk, clk_name);
 	}
 }
 CLK_OF_DECLARE(ti_fixed_factor_clk, "ti,fixed-factor-clock",

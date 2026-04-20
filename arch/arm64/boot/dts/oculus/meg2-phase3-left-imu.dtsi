@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0
+
+// Set GPIO88 to Hi-Z to allow CX3 IMU-L to be used with GPIO33 IRQ
+&tlmm {
+	imu_l_irq: imu_l_irq {
+		mux {
+			pins = "gpio88";
+			function = "gpio";
+		};
+
+	    config {
+		  pins = "gpio88";
+		  bias-high-impedance;
+	    };
+	};
+};

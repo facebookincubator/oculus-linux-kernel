@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * tmp006.c - Support for TI TMP006 IR thermopile sensor
  *
  * Copyright (c) 2013 Peter Meerwald <pmeerw@pmeerw.net>
- *
- * This file is subject to the terms and conditions of version 2 of
- * the GNU General Public License.  See the file COPYING in the main
- * directory of this archive for more details.
  *
  * Driver for the Texas Instruments I2C 16-bit IR thermopile sensor
  *
@@ -36,13 +33,13 @@
 #define TMP006_CONFIG_DRDY_EN BIT(8)
 #define TMP006_CONFIG_DRDY BIT(7)
 
-#define TMP006_CONFIG_MOD_MASK 0x7000
+#define TMP006_CONFIG_MOD_MASK GENMASK(14, 12)
 
-#define TMP006_CONFIG_CR_MASK 0x0e00
+#define TMP006_CONFIG_CR_MASK GENMASK(11, 9)
 #define TMP006_CONFIG_CR_SHIFT 9
 
-#define MANUFACTURER_MAGIC 0x5449
-#define DEVICE_MAGIC 0x0067
+#define TMP006_MANUFACTURER_MAGIC 0x5449
+#define TMP006_DEVICE_MAGIC 0x0067
 
 struct tmp006_data {
 	struct i2c_client *client;
@@ -179,7 +176,6 @@ static const struct iio_info tmp006_info = {
 	.read_raw = tmp006_read_raw,
 	.write_raw = tmp006_write_raw,
 	.attrs = &tmp006_attribute_group,
-	.driver_module = THIS_MODULE,
 };
 
 static bool tmp006_check_identification(struct i2c_client *client)
@@ -194,7 +190,7 @@ static bool tmp006_check_identification(struct i2c_client *client)
 	if (did < 0)
 		return false;
 
-	return mid == MANUFACTURER_MAGIC && did == DEVICE_MAGIC;
+	return mid == TMP006_MANUFACTURER_MAGIC && did == TMP006_DEVICE_MAGIC;
 }
 
 static int tmp006_probe(struct i2c_client *client,
@@ -205,7 +201,7 @@ static int tmp006_probe(struct i2c_client *client,
 	int ret;
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_WORD_DATA))
-		return -ENODEV;
+		return -EOPNOTSUPP;
 
 	if (!tmp006_check_identification(client)) {
 		dev_err(&client->dev, "no TMP006 sensor\n");
@@ -220,7 +216,6 @@ static int tmp006_probe(struct i2c_client *client,
 	i2c_set_clientdata(client, indio_dev);
 	data->client = client;
 
-	indio_dev->dev.parent = &client->dev;
 	indio_dev->name = dev_name(&client->dev);
 	indio_dev->modes = INDIO_DIRECT_MODE;
 	indio_dev->info = &tmp006_info;
@@ -280,7 +275,6 @@ static struct i2c_driver tmp006_driver = {
 	.driver = {
 		.name	= "tmp006",
 		.pm	= &tmp006_pm_ops,
-		.owner	= THIS_MODULE,
 	},
 	.probe = tmp006_probe,
 	.remove = tmp006_remove,

@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2008 Sensoray Company Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (Version 2) as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -405,11 +397,19 @@ static int s2250_s_ctrl(struct v4l2_ctrl *ctrl)
 	return 0;
 }
 
-static int s2250_s_mbus_fmt(struct v4l2_subdev *sd,
-			struct v4l2_mbus_framefmt *fmt)
+static int s2250_set_fmt(struct v4l2_subdev *sd,
+		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_format *format)
 {
+	struct v4l2_mbus_framefmt *fmt = &format->format;
 	struct s2250 *state = to_state(sd);
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
+
+	if (format->pad)
+		return -EINVAL;
+
+	if (format->which == V4L2_SUBDEV_FORMAT_TRY)
+		return 0;
 
 	if (fmt->height < 640) {
 		write_reg_fp(client, 0x12b, state->reg12b_val | 0x400);
@@ -479,13 +479,17 @@ static const struct v4l2_subdev_audio_ops s2250_audio_ops = {
 static const struct v4l2_subdev_video_ops s2250_video_ops = {
 	.s_std = s2250_s_std,
 	.s_routing = s2250_s_video_routing,
-	.s_mbus_fmt = s2250_s_mbus_fmt,
+};
+
+static const struct v4l2_subdev_pad_ops s2250_pad_ops = {
+	.set_fmt = s2250_set_fmt,
 };
 
 static const struct v4l2_subdev_ops s2250_ops = {
 	.core = &s2250_core_ops,
 	.audio = &s2250_audio_ops,
 	.video = &s2250_video_ops,
+	.pad = &s2250_pad_ops,
 };
 
 /* --------------------------------------------------------------------------*/
@@ -500,10 +504,11 @@ static int s2250_probe(struct i2c_client *client,
 	u8 *data;
 	struct go7007 *go = i2c_get_adapdata(adapter);
 	struct go7007_usb *usb = go->hpi_context;
+	int err = -EIO;
 
-	audio = i2c_new_dummy(adapter, TLV320_ADDRESS >> 1);
-	if (audio == NULL)
-		return -ENOMEM;
+	audio = i2c_new_dummy_device(adapter, TLV320_ADDRESS >> 1);
+	if (IS_ERR(audio))
+		return PTR_ERR(audio);
 
 	state = kzalloc(sizeof(struct s2250), GFP_KERNEL);
 	if (state == NULL) {
@@ -528,11 +533,8 @@ static int s2250_probe(struct i2c_client *client,
 		V4L2_CID_HUE, -512, 511, 1, 0);
 	sd->ctrl_handler = &state->hdl;
 	if (state->hdl.error) {
-		int err = state->hdl.error;
-
-		v4l2_ctrl_handler_free(&state->hdl);
-		kfree(state);
-		return err;
+		err = state->hdl.error;
+		goto fail;
 	}
 
 	state->std = V4L2_STD_NTSC;
@@ -596,13 +598,14 @@ fail:
 	i2c_unregister_device(audio);
 	v4l2_ctrl_handler_free(&state->hdl);
 	kfree(state);
-	return -EIO;
+	return err;
 }
 
 static int s2250_remove(struct i2c_client *client)
 {
 	struct s2250 *state = to_state(i2c_get_clientdata(client));
 
+	i2c_unregister_device(state->audio);
 	v4l2_device_unregister_subdev(&state->sd);
 	v4l2_ctrl_handler_free(&state->hdl);
 	kfree(state);
@@ -617,7 +620,6 @@ MODULE_DEVICE_TABLE(i2c, s2250_id);
 
 static struct i2c_driver s2250_driver = {
 	.driver = {
-		.owner	= THIS_MODULE,
 		.name	= "s2250",
 	},
 	.probe		= s2250_probe,

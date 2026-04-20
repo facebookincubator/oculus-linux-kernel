@@ -1,17 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
- *
+ * Copyright (c) 2003-2018, Intel Corporation. All rights reserved.
  * Intel Management Engine Interface (Intel MEI) Linux driver
- * Copyright (c) 2003-2012, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
  */
 
 #ifndef _MEI_HBM_H_
@@ -26,17 +16,21 @@ struct mei_cl;
  *
  * @MEI_HBM_IDLE : protocol not started
  * @MEI_HBM_STARTING : start request message was sent
- * @MEI_HBM_STARTED : start reply message was received
+ * @MEI_HBM_CAP_SETUP : capabilities request message was sent
+ * @MEI_HBM_DR_SETUP : dma ring setup request message was sent
  * @MEI_HBM_ENUM_CLIENTS : enumeration request was sent
  * @MEI_HBM_CLIENT_PROPERTIES : acquiring clients properties
+ * @MEI_HBM_STARTED : enumeration was completed
  * @MEI_HBM_STOPPED : stopping exchange
  */
 enum mei_hbm_state {
 	MEI_HBM_IDLE = 0,
 	MEI_HBM_STARTING,
-	MEI_HBM_STARTED,
+	MEI_HBM_CAP_SETUP,
+	MEI_HBM_DR_SETUP,
 	MEI_HBM_ENUM_CLIENTS,
 	MEI_HBM_CLIENT_PROPERTIES,
+	MEI_HBM_STARTED,
 	MEI_HBM_STOPPED,
 };
 
@@ -54,6 +48,9 @@ int mei_hbm_cl_disconnect_rsp(struct mei_device *dev, struct mei_cl *cl);
 int mei_hbm_cl_connect_req(struct mei_device *dev, struct mei_cl *cl);
 bool mei_hbm_version_is_supported(struct mei_device *dev);
 int mei_hbm_pg(struct mei_device *dev, u8 pg_cmd);
+void mei_hbm_pg_resume(struct mei_device *dev);
+int mei_hbm_cl_notify_req(struct mei_device *dev,
+			  struct mei_cl *cl, u8 request);
 
 #endif /* _MEI_HBM_H_ */
 

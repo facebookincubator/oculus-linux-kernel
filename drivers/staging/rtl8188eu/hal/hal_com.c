@@ -1,20 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2011 Realtek Corporation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
- *
  *
  ******************************************************************************/
 #include <osdep_service.h>
@@ -31,57 +18,35 @@ void dump_chip_info(struct HAL_VERSION	chip_vers)
 	uint cnt = 0;
 	char buf[128];
 
-	if (IS_81XXC(chip_vers)) {
-		cnt += sprintf((buf+cnt), "Chip Version Info: %s_",
-			       IS_92C_SERIAL(chip_vers) ?
-			       "CHIP_8192C" : "CHIP_8188C");
-	} else if (IS_92D(chip_vers)) {
-		cnt += sprintf((buf+cnt), "Chip Version Info: CHIP_8192D_");
-	} else if (IS_8723_SERIES(chip_vers)) {
-		cnt += sprintf((buf+cnt), "Chip Version Info: CHIP_8723A_");
-	} else if (IS_8188E(chip_vers)) {
-		cnt += sprintf((buf+cnt), "Chip Version Info: CHIP_8188E_");
-	}
-
-	cnt += sprintf((buf+cnt), "%s_", IS_NORMAL_CHIP(chip_vers) ?
+	cnt += sprintf((buf + cnt), "Chip Version Info: CHIP_8188E_");
+	cnt += sprintf((buf + cnt), "%s_", chip_vers.ChipType == NORMAL_CHIP ?
 		       "Normal_Chip" : "Test_Chip");
-	cnt += sprintf((buf+cnt), "%s_", IS_CHIP_VENDOR_TSMC(chip_vers) ?
+	cnt += sprintf((buf + cnt), "%s_", chip_vers.VendorType == CHIP_VENDOR_TSMC ?
 		       "TSMC" : "UMC");
-	if (IS_A_CUT(chip_vers))
-		cnt += sprintf((buf+cnt), "A_CUT_");
-	else if (IS_B_CUT(chip_vers))
-		cnt += sprintf((buf+cnt), "B_CUT_");
-	else if (IS_C_CUT(chip_vers))
-		cnt += sprintf((buf+cnt), "C_CUT_");
-	else if (IS_D_CUT(chip_vers))
-		cnt += sprintf((buf+cnt), "D_CUT_");
-	else if (IS_E_CUT(chip_vers))
-		cnt += sprintf((buf+cnt), "E_CUT_");
+	if (chip_vers.CUTVersion == A_CUT_VERSION)
+		cnt += sprintf((buf + cnt), "A_CUT_");
+	else if (chip_vers.CUTVersion == B_CUT_VERSION)
+		cnt += sprintf((buf + cnt), "B_CUT_");
+	else if (chip_vers.CUTVersion == C_CUT_VERSION)
+		cnt += sprintf((buf + cnt), "C_CUT_");
+	else if (chip_vers.CUTVersion == D_CUT_VERSION)
+		cnt += sprintf((buf + cnt), "D_CUT_");
+	else if (chip_vers.CUTVersion == E_CUT_VERSION)
+		cnt += sprintf((buf + cnt), "E_CUT_");
 	else
-		cnt += sprintf((buf+cnt), "UNKNOWN_CUT(%d)_",
+		cnt += sprintf((buf + cnt), "UNKNOWN_CUT(%d)_",
 			       chip_vers.CUTVersion);
-
-	if (IS_1T1R(chip_vers))
-		cnt += sprintf((buf+cnt), "1T1R_");
-	else if (IS_1T2R(chip_vers))
-		cnt += sprintf((buf+cnt), "1T2R_");
-	else if (IS_2T2R(chip_vers))
-		cnt += sprintf((buf+cnt), "2T2R_");
-	else
-		cnt += sprintf((buf+cnt), "UNKNOWN_RFTYPE(%d)_",
-			       chip_vers.RFType);
-
-	cnt += sprintf((buf+cnt), "RomVer(%d)\n", chip_vers.ROMVer);
+	cnt += sprintf((buf + cnt), "1T1R_");
+	cnt += sprintf((buf + cnt), "RomVer(0)\n");
 
 	pr_info("%s", buf);
 }
 
 #define	CHAN_PLAN_HW	0x80
 
-u8 /* return the final channel plan decision */
-hal_com_get_channel_plan(struct adapter *padapter, u8 hw_channel_plan,
-			 u8 sw_channel_plan, u8 def_channel_plan,
-			 bool load_fail)
+/* return the final channel plan decision */
+u8 hal_com_get_channel_plan(u8 hw_channel_plan, u8 sw_channel_plan,
+			    u8 def_channel_plan, bool load_fail)
 {
 	u8 sw_cfg;
 	u8 chnlplan;
@@ -153,7 +118,7 @@ u8 MRateToHwRate(u8 rate)
 	return ret;
 }
 
-void HalSetBrateCfg(struct adapter *adapt, u8 *brates, u16 *rate_cfg)
+void hal_set_brate_cfg(u8 *brates, u16 *rate_cfg)
 {
 	u8 i, is_brate, brate;
 
@@ -223,11 +188,13 @@ static void two_out_pipe(struct adapter *adapter, bool wifi_cfg)
 {
 	struct dvobj_priv *pdvobjpriv = adapter_to_dvobj(adapter);
 
-	if (wifi_cfg) { /* WMM */
-		/* BK, BE, VI, VO, BCN,	CMD, MGT, HIGH, HCCA */
-		/*  0,  1,  0,  1,   0,   0,   0,    0,    0}; */
-		/* 0:H, 1:L */
-
+	if (wifi_cfg) {
+		/*
+		 * WMM
+		 * BK, BE, VI, VO, BCN, CMD, MGT, HIGH, HCCA
+		 *  0,  1,  0,  1,   0,   0,   0,    0,    0
+		 * 0:H, 1:L
+		 */
 		pdvobjpriv->Queue2Pipe[0] = pdvobjpriv->RtOutPipe[1];/* VO */
 		pdvobjpriv->Queue2Pipe[1] = pdvobjpriv->RtOutPipe[0];/* VI */
 		pdvobjpriv->Queue2Pipe[2] = pdvobjpriv->RtOutPipe[1];/* BE */
@@ -237,12 +204,13 @@ static void two_out_pipe(struct adapter *adapter, bool wifi_cfg)
 		pdvobjpriv->Queue2Pipe[5] = pdvobjpriv->RtOutPipe[0];/* MGT */
 		pdvobjpriv->Queue2Pipe[6] = pdvobjpriv->RtOutPipe[0];/* HIGH */
 		pdvobjpriv->Queue2Pipe[7] = pdvobjpriv->RtOutPipe[0];/* TXCMD */
-
-	} else {/* typical setting */
-		/* BK, BE, VI, VO, BCN,	CMD, MGT, HIGH, HCCA */
-		/*  1,	1,  0,  0,   0,   0,   0,    0,    0}; */
-		/* 0:H, 1:L */
-
+	} else {
+		/*
+		 * typical setting
+		 * BK, BE, VI, VO, BCN, CMD, MGT, HIGH, HCCA
+		 *  1,  1,  0,  0,   0,   0,   0,    0,    0
+		 * 0:H, 1:L
+		 */
 		pdvobjpriv->Queue2Pipe[0] = pdvobjpriv->RtOutPipe[0];/* VO */
 		pdvobjpriv->Queue2Pipe[1] = pdvobjpriv->RtOutPipe[0];/* VI */
 		pdvobjpriv->Queue2Pipe[2] = pdvobjpriv->RtOutPipe[1];/* BE */
@@ -259,11 +227,13 @@ static void three_out_pipe(struct adapter *adapter, bool wifi_cfg)
 {
 	struct dvobj_priv *pdvobjpriv = adapter_to_dvobj(adapter);
 
-	if (wifi_cfg) {/* for WMM */
-		/* BK, BE, VI, VO, BCN,	CMD, MGT, HIGH, HCCA */
-		/*  1,	2,  1,  0,   0,   0,   0,    0,    0}; */
-		/* 0:H, 1:N, 2:L */
-
+	if (wifi_cfg) {
+		/*
+		 * for WMM
+		 * BK, BE, VI, VO, BCN, CMD, MGT, HIGH, HCCA
+		 *  1,  2,  1,  0,   0,   0,   0,    0,    0
+		 * 0:H, 1:N, 2:L
+		 */
 		pdvobjpriv->Queue2Pipe[0] = pdvobjpriv->RtOutPipe[0];/* VO */
 		pdvobjpriv->Queue2Pipe[1] = pdvobjpriv->RtOutPipe[1];/* VI */
 		pdvobjpriv->Queue2Pipe[2] = pdvobjpriv->RtOutPipe[2];/* BE */
@@ -273,12 +243,13 @@ static void three_out_pipe(struct adapter *adapter, bool wifi_cfg)
 		pdvobjpriv->Queue2Pipe[5] = pdvobjpriv->RtOutPipe[0];/* MGT */
 		pdvobjpriv->Queue2Pipe[6] = pdvobjpriv->RtOutPipe[0];/* HIGH */
 		pdvobjpriv->Queue2Pipe[7] = pdvobjpriv->RtOutPipe[0];/* TXCMD */
-
-	} else {/* typical setting */
-		/* BK, BE, VI, VO, BCN,	CMD, MGT, HIGH, HCCA */
-		/*  2,  2,  1,  0,   0,   0,   0,    0,    0}; */
-		/* 0:H, 1:N, 2:L */
-
+	} else {
+		/*
+		 * typical setting
+		 * BK, BE, VI, VO, BCN, CMD, MGT, HIGH, HCCA
+		 *  2,  2,  1,  0,   0,   0,   0,    0,    0
+		 * 0:H, 1:N, 2:L
+		 */
 		pdvobjpriv->Queue2Pipe[0] = pdvobjpriv->RtOutPipe[0];/* VO */
 		pdvobjpriv->Queue2Pipe[1] = pdvobjpriv->RtOutPipe[1];/* VI */
 		pdvobjpriv->Queue2Pipe[2] = pdvobjpriv->RtOutPipe[2];/* BE */
@@ -291,31 +262,24 @@ static void three_out_pipe(struct adapter *adapter, bool wifi_cfg)
 	}
 }
 
-bool Hal_MappingOutPipe(struct adapter *adapter, u8 numoutpipe)
+bool hal_mapping_out_pipe(struct adapter *adapter, u8 numoutpipe)
 {
 	struct registry_priv *pregistrypriv = &adapter->registrypriv;
-	bool  wifi_cfg = (pregistrypriv->wifi_spec) ? true : false;
+	bool wifi_cfg = (pregistrypriv->wifi_spec) ? true : false;
 	bool result = true;
 
 	switch (numoutpipe) {
+	case 1:
+		one_out_pipe(adapter);
+		break;
 	case 2:
 		two_out_pipe(adapter, wifi_cfg);
 		break;
 	case 3:
 		three_out_pipe(adapter, wifi_cfg);
 		break;
-	case 1:
-		one_out_pipe(adapter);
-		break;
 	default:
 		result = false;
-		break;
 	}
 	return result;
-}
-
-void hal_init_macaddr(struct adapter *adapter)
-{
-	rtw_hal_set_hwreg(adapter, HW_VAR_MAC_ADDR,
-			  adapter->eeprompriv.mac_addr);
 }

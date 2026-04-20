@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Based on arch/arm/mm/ioremap.c
  *
@@ -6,28 +7,16 @@
  * Hacked to allow all architectures to build, and various cleanups
  * by Russell King
  * Copyright (C) 2012 ARM Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/export.h>
 #include <linux/mm.h>
 #include <linux/vmalloc.h>
 #include <linux/io.h>
+#include <linux/memblock.h>
 
 #include <asm/fixmap.h>
 #include <asm/tlbflush.h>
-#include <asm/pgalloc.h>
 
 static void __iomem *__ioremap_caller(phys_addr_t phys_addr, size_t size,
 				      pgprot_t prot, void *caller)
@@ -62,12 +51,8 @@ static void __iomem *__ioremap_caller(phys_addr_t phys_addr, size_t size,
 	if (!area)
 		return NULL;
 	addr = (unsigned long)area->addr;
+	area->phys_addr = phys_addr;
 
-#ifdef CONFIG_ARCH_MSM8953_SOC_SETTINGS
-	if (phys_addr >= MSM8953_TLMM_START_ADDR &&
-	    phys_addr <= MSM8953_TLMM_END_ADDR)
-		prot = __pgprot(PROT_DEVICE_nGnRnE);
-#endif
 	err = ioremap_page_range(addr, addr + size, phys_addr, prot);
 	if (err) {
 		vunmap((void *)addr);
@@ -84,7 +69,7 @@ void __iomem *__ioremap(phys_addr_t phys_addr, size_t size, pgprot_t prot)
 }
 EXPORT_SYMBOL(__ioremap);
 
-void __iounmap(volatile void __iomem *io_addr)
+void iounmap(volatile void __iomem *io_addr)
 {
 	unsigned long addr = (unsigned long)io_addr & PAGE_MASK;
 
@@ -92,10 +77,10 @@ void __iounmap(volatile void __iomem *io_addr)
 	 * We could get an address outside vmalloc range in case
 	 * of ioremap_cache() reusing a RAM mapping.
 	 */
-	if (VMALLOC_START <= addr && addr < VMALLOC_END)
+	if (is_vmalloc_addr((void *)addr))
 		vunmap((void *)addr);
 }
-EXPORT_SYMBOL(__iounmap);
+EXPORT_SYMBOL(iounmap);
 
 void __iomem *ioremap_cache(phys_addr_t phys_addr, size_t size)
 {
@@ -114,4 +99,12 @@ EXPORT_SYMBOL(ioremap_cache);
 void __init early_ioremap_init(void)
 {
 	early_ioremap_setup();
+}
+
+bool arch_memremap_can_ram_remap(resource_size_t offset, size_t size,
+				 unsigned long flags)
+{
+	unsigned long pfn = PHYS_PFN(offset);
+
+	return memblock_is_map_memory(pfn);
 }

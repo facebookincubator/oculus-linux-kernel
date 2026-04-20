@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&tlmm {
+	hw_throttle_defaults: hw_throttle_defaults {
+		mux {
+			pins = "gpio113";
+			function = "gpio";
+		};
+
+	  config {
+		  pins = "gpio113";
+		  drive-strength = <8>;
+		  bias-disable;
+		  output-high;
+		};
+	};
+};
+
+&soc {
+	hw_comparator_sensor: hw-comparator-sensor {
+		compatible = "gpio,low-volt-detect";
+		#thermal-sensor-cells = <0>;
+		low-volt-int-gpios = <&tlmm 115 GPIO_ACTIVE_HIGH>;
+		pinctrl-0 = <&hw_throttle_defaults>;
+		pinctrl-names = "default";
+	};
+};

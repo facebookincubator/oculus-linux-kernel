@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2014, Michael Ellerman, IBM Corp.
- * Licensed under GPLv2.
  */
 
 #define _GNU_SOURCE
@@ -51,7 +51,7 @@ static int do_count_loop(struct event *event, uint64_t instructions,
 		printf("Looped for %lu instructions, overhead %lu\n", instructions, overhead);
 		printf("Expected %lu\n", expected);
 		printf("Actual   %llu\n", event->result.value);
-		printf("Error    %ld, %f%%\n", difference, percentage);
+		printf("Delta    %ld, %f%%\n", difference, percentage);
 		printf("Took %d EBBs\n", ebb_state.stats.ebb_count);
 	}
 
@@ -111,6 +111,8 @@ int instruction_count(void)
 	struct event event;
 	uint64_t overhead;
 
+	SKIP_IF(!ebb_is_supported());
+
 	event_init_named(&event, 0x400FA, "PM_RUN_INST_CMPL");
 	event_leader_ebb_init(&event);
 	event.attr.exclude_kernel = 1;
@@ -160,5 +162,6 @@ int instruction_count(void)
 
 int main(void)
 {
+	test_harness_set_timeout(300);
 	return test_harness(instruction_count, "instruction_count");
 }

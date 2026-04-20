@@ -69,15 +69,28 @@ ENTRY(__sys_vfork)
 	lea     %sp@(24),%sp
 	rts
 
+ENTRY(__sys_clone3)
+	SAVE_SWITCH_STACK
+	pea	%sp@(SWITCH_STACK_SIZE)
+	jbsr	m68k_clone3
+	lea	%sp@(28),%sp
+	rts
+
 ENTRY(sys_sigreturn)
 	SAVE_SWITCH_STACK
+	movel	%sp,%sp@-		  | switch_stack pointer
+	pea	%sp@(SWITCH_STACK_SIZE+4) | pt_regs pointer
 	jbsr	do_sigreturn
+	addql	#8,%sp
 	RESTORE_SWITCH_STACK
 	rts
 
 ENTRY(sys_rt_sigreturn)
 	SAVE_SWITCH_STACK
+	movel	%sp,%sp@-		  | switch_stack pointer
+	pea	%sp@(SWITCH_STACK_SIZE+4) | pt_regs pointer
 	jbsr	do_rt_sigreturn
+	addql	#8,%sp
 	RESTORE_SWITCH_STACK
 	rts
 
@@ -154,9 +167,12 @@ do_trace_entry:
 	jbsr	syscall_trace
 	RESTORE_SWITCH_STACK
 	addql	#4,%sp
+	addql	#1,%d0			| optimization for cmpil #-1,%d0
+	jeq	ret_from_syscall
 	movel	%sp@(PT_OFF_ORIG_D0),%d0
 	cmpl	#NR_syscalls,%d0
 	jcs	syscall
+	jra	ret_from_syscall
 badsys:
 	movel	#-ENOSYS,%sp@(PT_OFF_D0)
 	jra	ret_from_syscall
@@ -416,7 +432,9 @@ resume:
 	movec	%a0,%dfc
 
 	/* restore status register */
-	movew	%a1@(TASK_THREAD+THREAD_SR),%sr
+	movew	%a1@(TASK_THREAD+THREAD_SR),%d0
+	oriw	#0x0700,%d0
+	movew	%d0,%sr
 
 	rts
 

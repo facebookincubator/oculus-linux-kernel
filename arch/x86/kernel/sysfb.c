@@ -1,11 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Generic System Framebuffers on x86
  * Copyright (c) 2012-2013 David Herrmann <dh.herrmann@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 2 of the License, or (at your option)
- * any later version.
  */
 
 /*
@@ -67,7 +63,7 @@ static __init int sysfb_init(void)
 
 	pd = platform_device_register_resndata(NULL, name, 0,
 					       NULL, 0, si, sizeof(*si));
-	return IS_ERR(pd) ? PTR_ERR(pd) : 0;
+	return PTR_ERR_OR_ZERO(pd);
 }
 
 /* must execute after PCI subsystem for EFI quirks */

@@ -1,19 +1,15 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  linux/arch/arm/mm/arm940.S: utility functions for ARM940T
  *
  *  Copyright (C) 2004-2006 Hyok S. Choi (hyok.choi@samsung.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 #include <linux/linkage.h>
 #include <linux/init.h>
+#include <linux/pgtable.h>
 #include <asm/assembler.h>
 #include <asm/hwcap.h>
 #include <asm/pgtable-hwdef.h>
-#include <asm/pgtable.h>
 #include <asm/ptrace.h>
 #include "proc-macros.S"
 
@@ -297,26 +293,16 @@ __arm940_setup:
 	mcr	p15, 0, r0, c6,	c0, 1
 
 	ldr	r0, =(CONFIG_DRAM_BASE & 0xFFFFF000) @ base[31:12] of RAM
-	ldr	r1, =(CONFIG_DRAM_SIZE >> 12)	@ size of RAM (must be >= 4KB)
-	mov	r2, #10				@ 11 is the minimum (4KB)
-1:	add	r2, r2, #1			@ area size *= 2
-	mov	r1, r1, lsr #1
-	bne	1b				@ count not zero r-shift
-	orr	r0, r0, r2, lsl #1		@ the area register value
-	orr	r0, r0, #1			@ set enable bit
-	mcr	p15, 0, r0, c6,	c1, 0		@ set area 1, RAM
-	mcr	p15, 0, r0, c6,	c1, 1
+	ldr	r7, =CONFIG_DRAM_SIZE >> 12	@ size of RAM (must be >= 4KB)
+	pr_val	r3, r0, r7, #1
+	mcr	p15, 0, r3, c6,	c1, 0		@ set area 1, RAM
+	mcr	p15, 0, r3, c6,	c1, 1
 
 	ldr	r0, =(CONFIG_FLASH_MEM_BASE & 0xFFFFF000) @ base[31:12] of FLASH
-	ldr	r1, =(CONFIG_FLASH_SIZE >> 12)	@ size of FLASH (must be >= 4KB)
-	mov	r2, #10				@ 11 is the minimum (4KB)
-1:	add	r2, r2, #1			@ area size *= 2
-	mov	r1, r1, lsr #1
-	bne	1b				@ count not zero r-shift
-	orr	r0, r0, r2, lsl #1		@ the area register value
-	orr	r0, r0, #1			@ set enable bit
-	mcr	p15, 0, r0, c6,	c2, 0		@ set area 2, ROM/FLASH
-	mcr	p15, 0, r0, c6,	c2, 1
+	ldr	r7, =CONFIG_FLASH_SIZE		@ size of FLASH (must be >= 4KB)
+	pr_val	r3, r0, r6, #1
+	mcr	p15, 0, r3, c6,	c2, 0		@ set area 2, ROM/FLASH
+	mcr	p15, 0, r3, c6,	c2, 1
 
 	mov	r0, #0x06
 	mcr	p15, 0, r0, c2, c0, 0		@ Region 1&2 cacheable
@@ -354,14 +340,14 @@ __arm940_setup:
 
 	.align
 
-	.section ".proc.info.init", #alloc, #execinstr
+	.section ".proc.info.init", "a"
 
 	.type	__arm940_proc_info,#object
 __arm940_proc_info:
 	.long	0x41009400
 	.long	0xff00fff0
 	.long	0
-	b	__arm940_setup
+	initfn	__arm940_setup, __arm940_proc_info
 	.long	cpu_arch_name
 	.long	cpu_elf_name
 	.long	HWCAP_SWP | HWCAP_HALF | HWCAP_THUMB

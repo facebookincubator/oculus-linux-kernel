@@ -1,20 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /******************************************************************************
 
     AudioScience HPI driver
     Copyright (C) 1997-2011  AudioScience Inc. <support@audioscience.com>
 
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of version 2 of the GNU General Public License as
-    published by the Free Software Foundation;
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
  Hardware Programming Interface (HPI) for AudioScience ASI6200 series adapters.
  These PCI bus adapters are based on the TI C6711 DSP.
@@ -47,7 +36,7 @@
 
 /* operational/messaging errors */
 #define HPI6000_ERROR_MSG_RESP_IDLE_TIMEOUT             901
-
+#define HPI6000_ERROR_RESP_GET_LEN                      902
 #define HPI6000_ERROR_MSG_RESP_GET_RESP_ACK             903
 #define HPI6000_ERROR_MSG_GET_ADR                       904
 #define HPI6000_ERROR_RESP_GET_ADR                      905
@@ -1365,7 +1354,10 @@ static short hpi6000_message_response_sequence(struct hpi_adapter_obj *pao,
 		length = hpi_read_word(pdo, HPI_HIF_ADDR(length));
 	} while (hpi6000_check_PCI2040_error_flag(pao, H6READ) && --timeout);
 	if (!timeout)
-		length = sizeof(struct hpi_response);
+		return HPI6000_ERROR_RESP_GET_LEN;
+
+	if (length > phr->size)
+		return HPI_ERROR_RESPONSE_BUFFER_TOO_SMALL;
 
 	/* get the response */
 	p_data = (u32 *)phr;

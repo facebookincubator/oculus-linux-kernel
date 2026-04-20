@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright 2013 Freescale Semiconductor, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 
 #ifndef __DTS_VF610_PINFUNC_H
@@ -369,7 +365,7 @@
 #define VF610_PAD_PTC11__MLB_DATA		0x0E0 0x358 ALT6 0x1
 #define VF610_PAD_PTC11__DEBUG_OUT		0x0E0 0x000 ALT7 0x0
 #define VF610_PAD_PTC12__GPIO_57		0x0E4 0x000 ALT0 0x0
-#define VF610_PAD_PTC12__ENET_RMII_RXD1		0x0E4 0x000 ALT1 0x0
+#define VF610_PAD_PTC12__ENET_RMII1_RXD1	0x0E4 0x000 ALT1 0x0
 #define VF610_PAD_PTC12__ESAI_SDO1		0x0E4 0x318 ALT3 0x1
 #define VF610_PAD_PTC12__SAI2_TX_BCLK		0x0E4 0x370 ALT5 0x1
 #define VF610_PAD_PTC12__DEBUG_OUT3		0x0E4 0x000 ALT7 0x0

@@ -1,4 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0
+#include <dirent.h>
 #include <stdlib.h>
+#include <linux/kernel.h>
 #include <linux/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -6,7 +9,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <api/fs/fs.h>
-#include "util.h"
+#include "dso.h"
 #include "machine.h"
 #include "symbol.h"
 #include "tests.h"
@@ -99,7 +102,18 @@ struct test_data_offset offsets[] = {
 	},
 };
 
-int test__dso_data(void)
+/* move it from util/dso.c for compatibility */
+static int dso__data_fd(struct dso *dso, struct machine *machine)
+{
+	int fd = dso__data_get_fd(dso, machine);
+
+	if (fd >= 0)
+		dso__data_put_fd(dso);
+
+	return fd;
+}
+
+int test__dso_data(struct test *test __maybe_unused, int subtest __maybe_unused)
 {
 	struct machine machine;
 	struct dso *dso;
@@ -111,6 +125,9 @@ int test__dso_data(void)
 	memset(&machine, 0, sizeof(machine));
 
 	dso = dso__new((const char *)file);
+
+	TEST_ASSERT_VAL("Failed to access to dso",
+			dso__data_fd(dso, &machine) >= 0);
 
 	/* Basic 10 bytes tests. */
 	for (i = 0; i < ARRAY_SIZE(offsets); i++) {
@@ -152,7 +169,7 @@ int test__dso_data(void)
 		free(buf);
 	}
 
-	dso__delete(dso);
+	dso__put(dso);
 	unlink(file);
 	return 0;
 }
@@ -188,7 +205,7 @@ static int dsos__create(int cnt, int size)
 {
 	int i;
 
-	dsos = malloc(sizeof(dsos) * cnt);
+	dsos = malloc(sizeof(*dsos) * cnt);
 	TEST_ASSERT_VAL("failed to alloc dsos array", dsos);
 
 	for (i = 0; i < cnt; i++) {
@@ -212,7 +229,7 @@ static void dsos__delete(int cnt)
 		struct dso *dso = dsos[i];
 
 		unlink(dso->name);
-		dso__delete(dso);
+		dso__put(dso);
 	}
 
 	free(dsos);
@@ -231,11 +248,14 @@ static int set_fd_limit(int n)
 	return setrlimit(RLIMIT_NOFILE, &rlim);
 }
 
-int test__dso_data_cache(void)
+int test__dso_data_cache(struct test *test __maybe_unused, int subtest __maybe_unused)
 {
 	struct machine machine;
 	long nr_end, nr = open_files_cnt();
 	int dso_cnt, limit, i, fd;
+
+	/* Rest the internal dso open counter limit. */
+	reset_fd_limit();
 
 	memset(&machine, 0, sizeof(machine));
 
@@ -243,8 +263,8 @@ int test__dso_data_cache(void)
 	limit = nr * 4;
 	TEST_ASSERT_VAL("failed to set file limit", !set_fd_limit(limit));
 
-	/* and this is now our dso open FDs limit + 1 extra */
-	dso_cnt = limit / 2 + 1;
+	/* and this is now our dso open FDs limit */
+	dso_cnt = limit / 2;
 	TEST_ASSERT_VAL("failed to create dsos\n",
 		!dsos__create(dso_cnt, TEST_FILE_SIZE));
 
@@ -252,13 +272,13 @@ int test__dso_data_cache(void)
 		struct dso *dso = dsos[i];
 
 		/*
-		 * Open dsos via dso__data_fd or dso__data_read_offset.
-		 * Both opens the data file and keep it open.
+		 * Open dsos via dso__data_fd(), it opens the data
+		 * file and keep it open (unless open file limit).
 		 */
+		fd = dso__data_fd(dso, &machine);
+		TEST_ASSERT_VAL("failed to get fd", fd > 0);
+
 		if (i % 2) {
-			fd = dso__data_fd(dso, &machine);
-			TEST_ASSERT_VAL("failed to get fd", fd > 0);
-		} else {
 			#define BUFSIZE 10
 			u8 buf[BUFSIZE];
 			ssize_t n;
@@ -268,7 +288,10 @@ int test__dso_data_cache(void)
 		}
 	}
 
-	/* open +1 dso over the allowed limit */
+	/* verify the first one is already open */
+	TEST_ASSERT_VAL("dsos[0] is not open", dsos[0]->data.fd != -1);
+
+	/* open +1 dso to reach the allowed limit */
 	fd = dso__data_fd(dsos[i], &machine);
 	TEST_ASSERT_VAL("failed to get fd", fd > 0);
 
@@ -281,11 +304,11 @@ int test__dso_data_cache(void)
 	/* Make sure we did not leak any file descriptor. */
 	nr_end = open_files_cnt();
 	pr_debug("nr start %ld, nr stop %ld\n", nr, nr_end);
-	TEST_ASSERT_VAL("failed leadking files", nr == nr_end);
+	TEST_ASSERT_VAL("failed leaking files", nr == nr_end);
 	return 0;
 }
 
-int test__dso_data_reopen(void)
+int test__dso_data_reopen(struct test *test __maybe_unused, int subtest __maybe_unused)
 {
 	struct machine machine;
 	long nr_end, nr = open_files_cnt();
@@ -294,6 +317,9 @@ int test__dso_data_reopen(void)
 #define dso_0 (dsos[0])
 #define dso_1 (dsos[1])
 #define dso_2 (dsos[2])
+
+	/* Rest the internal dso open counter limit. */
+	reset_fd_limit();
 
 	memset(&machine, 0, sizeof(machine));
 
@@ -354,6 +380,6 @@ int test__dso_data_reopen(void)
 	/* Make sure we did not leak any file descriptor. */
 	nr_end = open_files_cnt();
 	pr_debug("nr start %ld, nr stop %ld\n", nr, nr_end);
-	TEST_ASSERT_VAL("failed leadking files", nr == nr_end);
+	TEST_ASSERT_VAL("failed leaking files", nr == nr_end);
 	return 0;
 }

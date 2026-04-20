@@ -1,14 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <linux/kernel.h>
+#include <linux/string.h>
 
-#include "../../util/debug.h"
 #include "../helpline.h"
 #include "../ui.h"
 #include "../libslang.h"
 
 char ui_helpline__last_msg[1024];
+bool tui_helpline__set;
 
 static void tui_helpline__pop(void)
 {
@@ -22,7 +25,7 @@ static void tui_helpline__push(const char *msg)
 	SLsmg_set_color(0);
 	SLsmg_write_nstring((char *)msg, SLtt_Screen_Cols);
 	SLsmg_refresh();
-	strncpy(ui_helpline__current, msg, sz)[sz - 1] = '\0';
+	strlcpy(ui_helpline__current, msg, sz);
 }
 
 static int tui_helpline__show(const char *format, va_list ap)
@@ -34,6 +37,8 @@ static int tui_helpline__show(const char *format, va_list ap)
 	ret = vscnprintf(ui_helpline__last_msg + backlog,
 			sizeof(ui_helpline__last_msg) - backlog, format, ap);
 	backlog += ret;
+
+	tui_helpline__set = true;
 
 	if (ui_helpline__last_msg[backlog - 1] == '\n') {
 		ui_helpline__puts(ui_helpline__last_msg);

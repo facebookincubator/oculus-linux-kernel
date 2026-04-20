@@ -1,13 +1,6 @@
-/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef IPA_MHI_H_
@@ -27,6 +20,14 @@ enum ipa_mhi_event_type {
 	IPA_MHI_EVENT_READY,
 	IPA_MHI_EVENT_DATA_AVAILABLE,
 	IPA_MHI_EVENT_MAX,
+};
+
+enum ipa_mhi_mstate {
+	IPA_MHI_STATE_M0,
+	IPA_MHI_STATE_M1,
+	IPA_MHI_STATE_M2,
+	IPA_MHI_STATE_M3,
+	IPA_MHI_STATE_M_MAX
 };
 
 typedef void (*mhi_client_cb)(void *priv, enum ipa_mhi_event_type event,
@@ -56,7 +57,7 @@ struct ipa_mhi_msi_info {
  * @mmio_addr: MHI MMIO physical address
  * @first_ch_idx: First channel ID for hardware accelerated channels.
  * @first_er_idx: First event ring ID for hardware accelerated channels.
- * @assert_bit40: should assert bit 40 in order to access hots space.
+ * @assert_bit40: should assert bit 40 in order to access host space.
  *	if PCIe iATU is configured then not need to assert bit40
  * @notify: client callback
  * @priv: client private data to be provided in client callback
@@ -102,7 +103,7 @@ struct ipa_mhi_connect_params {
 /* bit #40 in address should be asserted for MHI transfers over pcie */
 #define IPA_MHI_HOST_ADDR(addr) ((addr) | BIT_ULL(40))
 
-#if defined CONFIG_IPA || defined CONFIG_IPA3
+#if IS_ENABLED(CONFIG_IPA3)
 
 int ipa_mhi_init(struct ipa_mhi_init_params *params);
 
@@ -118,7 +119,9 @@ int ipa_mhi_resume(void);
 
 void ipa_mhi_destroy(void);
 
-#else /* (CONFIG_IPA || CONFIG_IPA3) */
+int ipa_mhi_update_mstate(enum ipa_mhi_mstate mstate_info);
+
+#else /* IS_ENABLED(CONFIG_IPA3) */
 
 static inline int ipa_mhi_init(struct ipa_mhi_init_params *params)
 {
@@ -156,6 +159,12 @@ static inline void ipa_mhi_destroy(void)
 
 }
 
-#endif /* (CONFIG_IPA || CONFIG_IPA3) */
+static inline int ipa_mhi_update_mstate
+			(enum ipa_mhi_mstate mstate_info)
+{
+	return -EPERM;
+}
+
+#endif /* IS_ENABLED(CONFIG_IPA3) */
 
 #endif /* IPA_MHI_H_ */

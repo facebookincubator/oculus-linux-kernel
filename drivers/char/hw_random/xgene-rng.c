@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * APM X-Gene SoC RNG Driver
  *
@@ -5,22 +6,9 @@
  * Author: Rameshwar Prasad Sahu <rsahu@apm.com>
  *	   Shamal Winchurkar <swinchurkar@apm.com>
  *	   Feng Kan <fkan@apm.com>
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
  */
 
+#include <linux/acpi.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/hw_random.h>
@@ -99,9 +87,9 @@ struct xgene_rng_dev {
 	struct clk *clk;
 };
 
-static void xgene_rng_expired_timer(unsigned long arg)
+static void xgene_rng_expired_timer(struct timer_list *t)
 {
-	struct xgene_rng_dev *ctx = (struct xgene_rng_dev *) arg;
+	struct xgene_rng_dev *ctx = from_timer(ctx, t, failure_timer);
 
 	/* Clear failure counter as timer expired */
 	disable_irq(ctx->irq);
@@ -112,8 +100,6 @@ static void xgene_rng_expired_timer(unsigned long arg)
 
 static void xgene_rng_start_timer(struct xgene_rng_dev *ctx)
 {
-	ctx->failure_timer.data = (unsigned long) ctx;
-	ctx->failure_timer.function = xgene_rng_expired_timer;
 	ctx->failure_timer.expires = jiffies + 120 * HZ;
 	add_timer(&ctx->failure_timer);
 }
@@ -291,7 +277,7 @@ static int xgene_rng_init(struct hwrng *rng)
 	struct xgene_rng_dev *ctx = (struct xgene_rng_dev *) rng->priv;
 
 	ctx->failure_cnt = 0;
-	init_timer(&ctx->failure_timer);
+	timer_setup(&ctx->failure_timer, xgene_rng_expired_timer, 0);
 
 	ctx->revision = readl(ctx->csr_base + RNG_EIP_REV);
 
@@ -310,6 +296,14 @@ static int xgene_rng_init(struct hwrng *rng)
 	return 0;
 }
 
+#ifdef CONFIG_ACPI
+static const struct acpi_device_id xgene_rng_acpi_match[] = {
+	{ "APMC0D18", },
+	{ }
+};
+MODULE_DEVICE_TABLE(acpi, xgene_rng_acpi_match);
+#endif
+
 static struct hwrng xgene_rng_func = {
 	.name		= "xgene-rng",
 	.init		= xgene_rng_init,
@@ -319,7 +313,6 @@ static struct hwrng xgene_rng_func = {
 
 static int xgene_rng_probe(struct platform_device *pdev)
 {
-	struct resource *res;
 	struct xgene_rng_dev *ctx;
 	int rc = 0;
 
@@ -330,16 +323,14 @@ static int xgene_rng_probe(struct platform_device *pdev)
 	ctx->dev = &pdev->dev;
 	platform_set_drvdata(pdev, ctx);
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	ctx->csr_base = devm_ioremap_resource(&pdev->dev, res);
+	ctx->csr_base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(ctx->csr_base))
 		return PTR_ERR(ctx->csr_base);
 
-	ctx->irq = platform_get_irq(pdev, 0);
-	if (ctx->irq < 0) {
-		dev_err(&pdev->dev, "No IRQ resource\n");
-		return ctx->irq;
-	}
+	rc = platform_get_irq(pdev, 0);
+	if (rc < 0)
+		return rc;
+	ctx->irq = rc;
 
 	dev_dbg(&pdev->dev, "APM X-Gene RNG BASE %p ALARM IRQ %d",
 		ctx->csr_base, ctx->irq);
@@ -366,7 +357,7 @@ static int xgene_rng_probe(struct platform_device *pdev)
 
 	xgene_rng_func.priv = (unsigned long) ctx;
 
-	rc = hwrng_register(&xgene_rng_func);
+	rc = devm_hwrng_register(&pdev->dev, &xgene_rng_func);
 	if (rc) {
 		dev_err(&pdev->dev, "RNG registering failed error %d\n", rc);
 		if (!IS_ERR(ctx->clk))
@@ -380,7 +371,6 @@ static int xgene_rng_probe(struct platform_device *pdev)
 			rc);
 		if (!IS_ERR(ctx->clk))
 			clk_disable_unprepare(ctx->clk);
-		hwrng_unregister(&xgene_rng_func);
 		return rc;
 	}
 
@@ -397,7 +387,6 @@ static int xgene_rng_remove(struct platform_device *pdev)
 		dev_err(&pdev->dev, "RNG init wakeup failed error %d\n", rc);
 	if (!IS_ERR(ctx->clk))
 		clk_disable_unprepare(ctx->clk);
-	hwrng_unregister(&xgene_rng_func);
 
 	return rc;
 }
@@ -415,6 +404,7 @@ static struct platform_driver xgene_rng_driver = {
 	.driver = {
 		.name		= "xgene-rng",
 		.of_match_table = xgene_rng_of_match,
+		.acpi_match_table = ACPI_PTR(xgene_rng_acpi_match),
 	},
 };
 

@@ -1,9 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /**
  * Copyright (C) 2008, Creative Technology Ltd. All Rights Reserved.
- *
- * This source file is released under GPL v2 license (no other versions).
- * See the COPYING file included in the main directory of this source
- * distribution for the license terms and conditions.
  *
  * @File	ctsrc.h
  *
@@ -13,7 +10,6 @@
  *
  * @Author	Liu Chun
  * @Date 	May 13 2008
- *
  */
 
 #ifndef CTSRC_H
@@ -48,7 +44,7 @@ struct src_rsc_ops;
 struct src {
 	struct rsc rsc; /* Basic resource info */
 	struct src *intlv; /* Pointer to next interleaved SRC in a series */
-	struct src_rsc_ops *ops; /* SRC specific operations */
+	const struct src_rsc_ops *ops; /* SRC specific operations */
 	/* Number of contiguous srcs for interleaved usage */
 	unsigned char multi;
 	unsigned char mode; /* Working mode of this SRC resource */
@@ -110,7 +106,7 @@ struct srcimp {
 	struct imapper *imappers;
 	unsigned int mapped; /* A bit-map indicating which conj rsc is mapped */
 	struct srcimp_mgr *mgr;
-	struct srcimp_rsc_ops *ops;
+	const struct srcimp_rsc_ops *ops;
 };
 
 struct srcimp_rsc_ops {

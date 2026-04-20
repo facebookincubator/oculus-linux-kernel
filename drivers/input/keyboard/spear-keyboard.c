@@ -3,7 +3,7 @@
  * Based on omap-keypad driver
  *
  * Copyright (C) 2010 ST Microelectronics
- * Rajeev Kumar<rajeev-dlh.kumar@st.com>
+ * Rajeev Kumar <rajeevkumar.linux@gmail.com>
  *
  * This file is licensed under the terms of the GNU General Public
  * License version 2. This program is licensed "as is" without any
@@ -191,10 +191,8 @@ static int spear_kbd_probe(struct platform_device *pdev)
 	int error;
 
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0) {
-		dev_err(&pdev->dev, "not able to get irq for the device\n");
+	if (irq < 0)
 		return irq;
-	}
 
 	kbd = devm_kzalloc(&pdev->dev, sizeof(*kbd), GFP_KERNEL);
 	if (!kbd) {
@@ -283,13 +281,10 @@ static int spear_kbd_remove(struct platform_device *pdev)
 	input_unregister_device(kbd->input);
 	clk_unprepare(kbd->clk);
 
-	device_init_wakeup(&pdev->dev, 0);
-
 	return 0;
 }
 
-#ifdef CONFIG_PM
-static int spear_kbd_suspend(struct device *dev)
+static int __maybe_unused spear_kbd_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct spear_kbd *kbd = platform_get_drvdata(pdev);
@@ -342,7 +337,7 @@ static int spear_kbd_suspend(struct device *dev)
 	return 0;
 }
 
-static int spear_kbd_resume(struct device *dev)
+static int __maybe_unused spear_kbd_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct spear_kbd *kbd = platform_get_drvdata(pdev);
@@ -368,7 +363,6 @@ static int spear_kbd_resume(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static SIMPLE_DEV_PM_OPS(spear_kbd_pm_ops, spear_kbd_suspend, spear_kbd_resume);
 
@@ -385,7 +379,6 @@ static struct platform_driver spear_kbd_driver = {
 	.remove		= spear_kbd_remove,
 	.driver		= {
 		.name	= "keyboard",
-		.owner	= THIS_MODULE,
 		.pm	= &spear_kbd_pm_ops,
 		.of_match_table = of_match_ptr(spear_kbd_id_table),
 	},

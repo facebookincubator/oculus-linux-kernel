@@ -1,20 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * ImgTec IR Decoder setup for NEC protocol.
  *
  * Copyright 2010-2014 Imagination Technologies Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
  */
 
 #include "img-ir-hw.h"
 #include <linux/bitrev.h>
+#include <linux/log2.h>
 
 /* Convert NEC data to a scancode */
-static int img_ir_nec_scancode(int len, u64 raw, enum rc_type *protocol,
-			       u32 *scancode, u64 enabled_protocols)
+static int img_ir_nec_scancode(int len, u64 raw, u64 enabled_protocols,
+			       struct img_ir_scancode_req *request)
 {
 	unsigned int addr, addr_inv, data, data_inv;
 	/* a repeat code has no data */
@@ -30,23 +27,25 @@ static int img_ir_nec_scancode(int len, u64 raw, enum rc_type *protocol,
 	if ((data_inv ^ data) != 0xff) {
 		/* 32-bit NEC (used by Apple and TiVo remotes) */
 		/* scan encoding: as transmitted, MSBit = first received bit */
-		*scancode = bitrev8(addr)     << 24 |
-			    bitrev8(addr_inv) << 16 |
-			    bitrev8(data)     <<  8 |
-			    bitrev8(data_inv);
+		request->scancode = bitrev8(addr)     << 24 |
+				bitrev8(addr_inv) << 16 |
+				bitrev8(data)     <<  8 |
+				bitrev8(data_inv);
+		request->protocol = RC_PROTO_NEC32;
 	} else if ((addr_inv ^ addr) != 0xff) {
 		/* Extended NEC */
 		/* scan encoding: AAaaDD */
-		*scancode = addr     << 16 |
-			    addr_inv <<  8 |
-			    data;
+		request->scancode = addr     << 16 |
+				addr_inv <<  8 |
+				data;
+		request->protocol = RC_PROTO_NECX;
 	} else {
 		/* Normal NEC */
 		/* scan encoding: AADD */
-		*scancode = addr << 8 |
-			    data;
+		request->scancode = addr << 8 |
+				data;
+		request->protocol = RC_PROTO_NEC;
 	}
-	*protocol = RC_TYPE_NEC;
 	return IMG_IR_SCANCODE;
 }
 
@@ -60,7 +59,23 @@ static int img_ir_nec_filter(const struct rc_scancode_filter *in,
 	data       = in->data & 0xff;
 	data_m     = in->mask & 0xff;
 
-	if ((in->data | in->mask) & 0xff000000) {
+	protocols &= RC_PROTO_BIT_NEC | RC_PROTO_BIT_NECX | RC_PROTO_BIT_NEC32;
+
+	/*
+	 * If only one bit is set, we were requested to do an exact
+	 * protocol. This should be the case for wakeup filters; for
+	 * normal filters, guess the protocol from the scancode.
+	 */
+	if (!is_power_of_2(protocols)) {
+		if ((in->data | in->mask) & 0xff000000)
+			protocols = RC_PROTO_BIT_NEC32;
+		else if ((in->data | in->mask) & 0x00ff0000)
+			protocols = RC_PROTO_BIT_NECX;
+		else
+			protocols = RC_PROTO_BIT_NEC;
+	}
+
+	if (protocols == RC_PROTO_BIT_NEC32) {
 		/* 32-bit NEC (used by Apple and TiVo remotes) */
 		/* scan encoding: as transmitted, MSBit = first received bit */
 		addr       = bitrev8(in->data >> 24);
@@ -71,7 +86,7 @@ static int img_ir_nec_filter(const struct rc_scancode_filter *in,
 		data_m     = bitrev8(in->mask >>  8);
 		data_inv   = bitrev8(in->data >>  0);
 		data_inv_m = bitrev8(in->mask >>  0);
-	} else if ((in->data | in->mask) & 0x00ff0000) {
+	} else if (protocols == RC_PROTO_BIT_NECX) {
 		/* Extended NEC */
 		/* scan encoding AAaaDD */
 		addr       = (in->data >> 16) & 0xff;
@@ -109,7 +124,7 @@ static int img_ir_nec_filter(const struct rc_scancode_filter *in,
  *        http://wiki.altium.com/display/ADOH/NEC+Infrared+Transmission+Protocol
  */
 struct img_ir_decoder img_ir_nec = {
-	.type = RC_BIT_NEC,
+	.type = RC_PROTO_BIT_NEC | RC_PROTO_BIT_NECX | RC_PROTO_BIT_NEC32,
 	.control = {
 		.decoden = 1,
 		.code_type = IMG_IR_CODETYPE_PULSEDIST,

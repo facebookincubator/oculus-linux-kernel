@@ -1,12 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/kernel/setup.c
  *
  *  Copyright (C) 1995-2001 Russell King
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
+#include <linux/efi.h>
 #include <linux/export.h>
 #include <linux/kernel.h>
 #include <linux/stddef.h>
@@ -15,12 +13,12 @@
 #include <linux/utsname.h>
 #include <linux/initrd.h>
 #include <linux/console.h>
-#include <linux/bootmem.h>
 #include <linux/seq_file.h>
 #include <linux/screen_info.h>
 #include <linux/of_platform.h>
 #include <linux/init.h>
 #include <linux/kexec.h>
+#include <linux/libfdt.h>
 #include <linux/of_fdt.h>
 #include <linux/cpu.h>
 #include <linux/interrupt.h>
@@ -30,13 +28,16 @@
 #include <linux/bug.h>
 #include <linux/compiler.h>
 #include <linux/sort.h>
-#include <linux/dma-mapping.h>
+#include <linux/psci.h>
 
 #include <asm/unified.h>
 #include <asm/cp15.h>
 #include <asm/cpu.h>
 #include <asm/cputype.h>
+#include <asm/efi.h>
 #include <asm/elf.h>
+#include <asm/early_ioremap.h>
+#include <asm/fixmap.h>
 #include <asm/procinfo.h>
 #include <asm/psci.h>
 #include <asm/sections.h>
@@ -46,6 +47,7 @@
 #include <asm/cacheflush.h>
 #include <asm/cachetype.h>
 #include <asm/tlbflush.h>
+#include <asm/xen/hypervisor.h>
 
 #include <asm/prom.h>
 #include <asm/mach/arch.h>
@@ -75,9 +77,8 @@ __setup("fpe=", fpe_setup);
 
 extern void init_default_cache_policy(unsigned long);
 extern void paging_init(const struct machine_desc *desc);
-extern void early_paging_init(const struct machine_desc *,
-			      struct proc_info_list *);
-extern void sanity_check_meminfo(void);
+extern void early_mm_init(const struct machine_desc *);
+extern void adjust_lowmem_bounds(void);
 extern enum reboot_mode reboot_mode;
 extern void setup_dma_zone(const struct machine_desc *desc);
 
@@ -93,6 +94,9 @@ unsigned int __atags_pointer __initdata;
 unsigned int system_rev;
 EXPORT_SYMBOL(system_rev);
 
+const char *system_serial;
+EXPORT_SYMBOL(system_serial);
+
 unsigned int system_serial_low;
 EXPORT_SYMBOL(system_serial_low);
 
@@ -105,29 +109,26 @@ EXPORT_SYMBOL(elf_hwcap);
 unsigned int elf_hwcap2 __read_mostly;
 EXPORT_SYMBOL(elf_hwcap2);
 
-char* (*arch_read_hardware_id)(void);
-EXPORT_SYMBOL(arch_read_hardware_id);
-
-unsigned int boot_reason;
-EXPORT_SYMBOL(boot_reason);
-
-unsigned int cold_boot;
-EXPORT_SYMBOL(cold_boot);
 
 #ifdef MULTI_CPU
-struct processor processor __read_mostly;
+struct processor processor __ro_after_init;
+#if defined(CONFIG_BIG_LITTLE) && defined(CONFIG_HARDEN_BRANCH_PREDICTOR)
+struct processor *cpu_vtable[NR_CPUS] = {
+	[0] = &processor,
+};
+#endif
 #endif
 #ifdef MULTI_TLB
-struct cpu_tlb_fns cpu_tlb __read_mostly;
+struct cpu_tlb_fns cpu_tlb __ro_after_init;
 #endif
 #ifdef MULTI_USER
-struct cpu_user_fns cpu_user __read_mostly;
+struct cpu_user_fns cpu_user __ro_after_init;
 #endif
 #ifdef MULTI_CACHE
-struct cpu_cache_fns cpu_cache __read_mostly;
+struct cpu_cache_fns cpu_cache __ro_after_init;
 #endif
 #ifdef CONFIG_OUTER_CACHE
-struct outer_cache_fns outer_cache __read_mostly;
+struct outer_cache_fns outer_cache __ro_after_init;
 EXPORT_SYMBOL(outer_cache);
 #endif
 
@@ -176,13 +177,13 @@ static struct resource mem_res[] = {
 		.name = "Kernel code",
 		.start = 0,
 		.end = 0,
-		.flags = IORESOURCE_MEM
+		.flags = IORESOURCE_SYSTEM_RAM
 	},
 	{
 		.name = "Kernel data",
 		.start = 0,
 		.end = 0,
-		.flags = IORESOURCE_MEM
+		.flags = IORESOURCE_SYSTEM_RAM
 	}
 };
 
@@ -254,12 +255,9 @@ static int __get_cpu_architecture(void)
 		if (cpu_arch)
 			cpu_arch += CPU_ARCH_ARMv3;
 	} else if ((read_cpuid_id() & 0x000f0000) == 0x000f0000) {
-		unsigned int mmfr0;
-
 		/* Revised CPUID format. Read the Memory Model Feature
 		 * Register 0 and check for VMSAv7 or PMSAv7 */
-		asm("mrc	p15, 0, %0, c0, c1, 4"
-		    : "=r" (mmfr0));
+		unsigned int mmfr0 = read_cpuid_ext(CPUID_EXT_MMFR0);
 		if ((mmfr0 & 0x0000000f) >= 0x00000003 ||
 		    (mmfr0 & 0x000000f0) >= 0x00000030)
 			cpu_arch = CPU_ARCH_ARMv7;
@@ -294,12 +292,9 @@ static int cpu_has_aliasing_icache(unsigned int arch)
 	/* arch specifies the register format */
 	switch (arch) {
 	case CPU_ARCH_ARMv7:
-		asm("mcr	p15, 2, %0, c0, c0, 0 @ set CSSELR"
-		    : /* No output operands */
-		    : "r" (1));
+		set_csselr(CSSELR_ICACHE | CSSELR_L1);
 		isb();
-		asm("mrc	p15, 1, %0, c0, c0, 0 @ read CCSIDR"
-		    : "=r" (id_reg));
+		id_reg = read_ccsidr();
 		line_size = 4 << ((id_reg & 0x7) + 2);
 		num_sets = ((id_reg >> 13) & 0x7fff) + 1;
 		aliasing_icache = (line_size * num_sets) > PAGE_SIZE;
@@ -319,11 +314,12 @@ static void __init cacheid_init(void)
 {
 	unsigned int arch = cpu_architecture();
 
-	if (arch == CPU_ARCH_ARMv7M) {
-		cacheid = 0;
-	} else if (arch >= CPU_ARCH_ARMv6) {
+	if (arch >= CPU_ARCH_ARMv6) {
 		unsigned int cachetype = read_cpuid_cachetype();
-		if ((cachetype & (7 << 29)) == 4 << 29) {
+
+		if ((arch == CPU_ARCH_ARMv7M) && !(cachetype & 0xf000f)) {
+			cacheid = 0;
+		} else if ((cachetype & (7 << 29)) == 4 << 29) {
 			/* ARMv7 register format */
 			arch = CPU_ARCH_ARMv7;
 			cacheid = CACHEID_VIPT_NONALIASING;
@@ -380,6 +376,74 @@ void __init early_print(const char *str, ...)
 #endif
 	printk("%s", buf);
 }
+
+#ifdef CONFIG_ARM_PATCH_IDIV
+
+static inline u32 __attribute_const__ sdiv_instruction(void)
+{
+	if (IS_ENABLED(CONFIG_THUMB2_KERNEL)) {
+		/* "sdiv r0, r0, r1" */
+		u32 insn = __opcode_thumb32_compose(0xfb90, 0xf0f1);
+		return __opcode_to_mem_thumb32(insn);
+	}
+
+	/* "sdiv r0, r0, r1" */
+	return __opcode_to_mem_arm(0xe710f110);
+}
+
+static inline u32 __attribute_const__ udiv_instruction(void)
+{
+	if (IS_ENABLED(CONFIG_THUMB2_KERNEL)) {
+		/* "udiv r0, r0, r1" */
+		u32 insn = __opcode_thumb32_compose(0xfbb0, 0xf0f1);
+		return __opcode_to_mem_thumb32(insn);
+	}
+
+	/* "udiv r0, r0, r1" */
+	return __opcode_to_mem_arm(0xe730f110);
+}
+
+static inline u32 __attribute_const__ bx_lr_instruction(void)
+{
+	if (IS_ENABLED(CONFIG_THUMB2_KERNEL)) {
+		/* "bx lr; nop" */
+		u32 insn = __opcode_thumb32_compose(0x4770, 0x46c0);
+		return __opcode_to_mem_thumb32(insn);
+	}
+
+	/* "bx lr" */
+	return __opcode_to_mem_arm(0xe12fff1e);
+}
+
+static void __init patch_aeabi_idiv(void)
+{
+	extern void __aeabi_uidiv(void);
+	extern void __aeabi_idiv(void);
+	uintptr_t fn_addr;
+	unsigned int mask;
+
+	mask = IS_ENABLED(CONFIG_THUMB2_KERNEL) ? HWCAP_IDIVT : HWCAP_IDIVA;
+	if (!(elf_hwcap & mask))
+		return;
+
+	pr_info("CPU: div instructions available: patching division code\n");
+
+	fn_addr = ((uintptr_t)&__aeabi_uidiv) & ~1;
+	asm ("" : "+g" (fn_addr));
+	((u32 *)fn_addr)[0] = udiv_instruction();
+	((u32 *)fn_addr)[1] = bx_lr_instruction();
+	flush_icache_range(fn_addr, fn_addr + 8);
+
+	fn_addr = ((uintptr_t)&__aeabi_idiv) & ~1;
+	asm ("" : "+g" (fn_addr));
+	((u32 *)fn_addr)[0] = sdiv_instruction();
+	((u32 *)fn_addr)[1] = bx_lr_instruction();
+	flush_icache_range(fn_addr, fn_addr + 8);
+}
+
+#else
+static inline void patch_aeabi_idiv(void) { }
+#endif
 
 static void __init cpuid_init_hwcaps(void)
 {
@@ -480,9 +544,11 @@ void notrace cpu_init(void)
 	 * In Thumb-2, msr with an immediate value is not allowed.
 	 */
 #ifdef CONFIG_THUMB2_KERNEL
-#define PLC	"r"
+#define PLC_l	"l"
+#define PLC_r	"r"
 #else
-#define PLC	"I"
+#define PLC_l	"I"
+#define PLC_r	"I"
 #endif
 
 	/*
@@ -504,15 +570,15 @@ void notrace cpu_init(void)
 	"msr	cpsr_c, %9"
 	    :
 	    : "r" (stk),
-	      PLC (PSR_F_BIT | PSR_I_BIT | IRQ_MODE),
+	      PLC_r (PSR_F_BIT | PSR_I_BIT | IRQ_MODE),
 	      "I" (offsetof(struct stack, irq[0])),
-	      PLC (PSR_F_BIT | PSR_I_BIT | ABT_MODE),
+	      PLC_r (PSR_F_BIT | PSR_I_BIT | ABT_MODE),
 	      "I" (offsetof(struct stack, abt[0])),
-	      PLC (PSR_F_BIT | PSR_I_BIT | UND_MODE),
+	      PLC_r (PSR_F_BIT | PSR_I_BIT | UND_MODE),
 	      "I" (offsetof(struct stack, und[0])),
-	      PLC (PSR_F_BIT | PSR_I_BIT | FIQ_MODE),
+	      PLC_r (PSR_F_BIT | PSR_I_BIT | FIQ_MODE),
 	      "I" (offsetof(struct stack, fiq[0])),
-	      PLC (PSR_F_BIT | PSR_I_BIT | SVC_MODE)
+	      PLC_l (PSR_F_BIT | PSR_I_BIT | SVC_MODE)
 	    : "r14");
 #endif
 }
@@ -605,28 +671,33 @@ static void __init smp_build_mpidr_hash(void)
 }
 #endif
 
+/*
+ * locate processor in the list of supported processor types.  The linker
+ * builds this table for us from the entries in arch/arm/mm/proc-*.S
+ */
+struct proc_info_list *lookup_processor(u32 midr)
+{
+	struct proc_info_list *list = lookup_processor_type(midr);
+
+	if (!list) {
+		pr_err("CPU%u: configuration botched (ID %08x), CPU halted\n",
+		       smp_processor_id(), midr);
+		while (1)
+		/* can't use cpu_relax() here as it may require MMU setup */;
+	}
+
+	return list;
+}
+
 static void __init setup_processor(void)
 {
-	struct proc_info_list *list;
-
-	/*
-	 * locate processor in the list of supported processor
-	 * types.  The linker builds this table for us from the
-	 * entries in arch/arm/mm/proc-*.S
-	 */
-	list = lookup_processor_type(read_cpuid_id());
-	if (!list) {
-		pr_err("CPU configuration botched (ID %08x), unable to continue.\n",
-		       read_cpuid_id());
-		while (1);
-	}
+	unsigned int midr = read_cpuid_id();
+	struct proc_info_list *list = lookup_processor(midr);
 
 	cpu_name = list->cpu_name;
 	__cpu_architecture = __get_cpu_architecture();
 
-#ifdef MULTI_CPU
-	processor = *list->proc;
-#endif
+	init_proc_vtable(list->proc);
 #ifdef MULTI_TLB
 	cpu_tlb = *list->tlb;
 #endif
@@ -638,7 +709,7 @@ static void __init setup_processor(void)
 #endif
 
 	pr_info("CPU: %s [%08x] revision %d (ARMv%s), cr=%08lx\n",
-		cpu_name, read_cpuid_id(), read_cpuid_id() & 15,
+		list->cpu_name, midr, midr & 15,
 		proc_arch[cpu_architecture()], get_cr());
 
 	snprintf(init_utsname()->machine, __NEW_UTS_LEN + 1, "%s%c",
@@ -648,6 +719,7 @@ static void __init setup_processor(void)
 	elf_hwcap = list->elf_hwcap;
 
 	cpuid_init_hwcaps();
+	patch_aeabi_idiv();
 
 #ifndef CONFIG_ARM_THUMB
 	elf_hwcap &= ~(HWCAP_THUMB | HWCAP_IDIVT);
@@ -683,12 +755,15 @@ int __init arm_add_memory(u64 start, u64 size)
 
 	/*
 	 * Ensure that start/size are aligned to a page boundary.
-	 * Size is appropriately rounded down, start is rounded up.
+	 * Size is rounded down, start is rounded up.
 	 */
-	size -= start & ~PAGE_MASK;
 	aligned_start = PAGE_ALIGN(start);
+	if (aligned_start > start + size)
+		size = 0;
+	else
+		size -= aligned_start - start;
 
-#ifndef CONFIG_ARCH_PHYS_ADDR_T_64BIT
+#ifndef CONFIG_PHYS_ADDR_T_64BIT
 	if (aligned_start > ULONG_MAX) {
 		pr_crit("Ignoring memory at 0x%08llx outside 32-bit physical address space\n",
 			(long long)start);
@@ -771,20 +846,51 @@ early_param("mem", early_mem);
 
 static void __init request_standard_resources(const struct machine_desc *mdesc)
 {
-	struct memblock_region *region;
+	phys_addr_t start, end, res_end;
 	struct resource *res;
+	u64 i;
 
 	kernel_code.start   = virt_to_phys(_text);
-	kernel_code.end     = virt_to_phys(_etext - 1);
+	kernel_code.end     = virt_to_phys(__init_begin - 1);
 	kernel_data.start   = virt_to_phys(_sdata);
 	kernel_data.end     = virt_to_phys(_end - 1);
 
-	for_each_memblock(memory, region) {
-		res = memblock_virt_alloc(sizeof(*res), 0);
+	for_each_mem_range(i, &start, &end) {
+		unsigned long boot_alias_start;
+
+		/*
+		 * In memblock, end points to the first byte after the
+		 * range while in resourses, end points to the last byte in
+		 * the range.
+		 */
+		res_end = end - 1;
+
+		/*
+		 * Some systems have a special memory alias which is only
+		 * used for booting.  We need to advertise this region to
+		 * kexec-tools so they know where bootable RAM is located.
+		 */
+		boot_alias_start = phys_to_idmap(start);
+		if (arm_has_idmap_alias() && boot_alias_start != IDMAP_INVALID_ADDR) {
+			res = memblock_alloc(sizeof(*res), SMP_CACHE_BYTES);
+			if (!res)
+				panic("%s: Failed to allocate %zu bytes\n",
+				      __func__, sizeof(*res));
+			res->name = "System RAM (boot alias)";
+			res->start = boot_alias_start;
+			res->end = phys_to_idmap(res_end);
+			res->flags = IORESOURCE_MEM | IORESOURCE_BUSY;
+			request_resource(&iomem_resource, res);
+		}
+
+		res = memblock_alloc(sizeof(*res), SMP_CACHE_BYTES);
+		if (!res)
+			panic("%s: Failed to allocate %zu bytes\n", __func__,
+			      sizeof(*res));
 		res->name  = "System RAM";
-		res->start = __pfn_to_phys(memblock_region_memory_base_pfn(region));
-		res->end = __pfn_to_phys(memblock_region_memory_end_pfn(region)) - 1;
-		res->flags = IORESOURCE_MEM | IORESOURCE_BUSY;
+		res->start = start;
+		res->end = res_end;
+		res->flags = IORESOURCE_SYSTEM_RAM | IORESOURCE_BUSY;
 
 		request_resource(&iomem_resource, res);
 
@@ -814,7 +920,8 @@ static void __init request_standard_resources(const struct machine_desc *mdesc)
 		request_resource(&ioport_resource, &lp2);
 }
 
-#if defined(CONFIG_VGA_CONSOLE) || defined(CONFIG_DUMMY_CONSOLE)
+#if defined(CONFIG_VGA_CONSOLE) || defined(CONFIG_DUMMY_CONSOLE) || \
+    defined(CONFIG_EFI)
 struct screen_info screen_info = {
  .orig_video_lines	= 30,
  .orig_video_cols	= 80,
@@ -835,24 +942,43 @@ static int __init customize_machine(void)
 	 */
 	if (machine_desc->init_machine)
 		machine_desc->init_machine();
-#ifdef CONFIG_OF
-	else
-		of_platform_populate(NULL, of_default_bus_match_table,
-					NULL, NULL);
-#endif
+
 	return 0;
 }
 arch_initcall(customize_machine);
 
 static int __init init_machine_late(void)
 {
+	struct device_node *root;
+	int ret;
+
 	if (machine_desc->init_late)
 		machine_desc->init_late();
+
+	root = of_find_node_by_path("/");
+	if (root) {
+		ret = of_property_read_string(root, "serial-number",
+					      &system_serial);
+		if (ret)
+			system_serial = NULL;
+	}
+
+	if (!system_serial)
+		system_serial = kasprintf(GFP_KERNEL, "%08x%08x",
+					  system_serial_high,
+					  system_serial_low);
+
 	return 0;
 }
 late_initcall(init_machine_late);
 
 #ifdef CONFIG_KEXEC
+/*
+ * The crash region must be aligned to 128MB to avoid
+ * zImage relocating below the reserved region.
+ */
+#define CRASH_ALIGN	(128 << 20)
+
 static inline unsigned long long get_total_mem(void)
 {
 	unsigned long total;
@@ -880,6 +1006,29 @@ static void __init reserve_crashkernel(void)
 	if (ret)
 		return;
 
+	if (crash_base <= 0) {
+		unsigned long long crash_max = idmap_to_phys((u32)~0);
+		unsigned long long lowmem_max = __pa(high_memory - 1) + 1;
+		if (crash_max > lowmem_max)
+			crash_max = lowmem_max;
+		crash_base = memblock_find_in_range(CRASH_ALIGN, crash_max,
+						    crash_size, CRASH_ALIGN);
+		if (!crash_base) {
+			pr_err("crashkernel reservation failed - No suitable area found.\n");
+			return;
+		}
+	} else {
+		unsigned long long start;
+
+		start = memblock_find_in_range(crash_base,
+					       crash_base + crash_size,
+					       crash_size, SECTION_SIZE);
+		if (start != crash_base) {
+			pr_err("crashkernel reservation failed - memory is in use.\n");
+			return;
+		}
+	}
+
 	ret = memblock_reserve(crash_base, crash_size);
 	if (ret < 0) {
 		pr_warn("crashkernel reservation failed - memory is in use (0x%lx)\n",
@@ -892,9 +1041,25 @@ static void __init reserve_crashkernel(void)
 		(unsigned long)(crash_base >> 20),
 		(unsigned long)(total_mem >> 20));
 
+	/* The crashk resource must always be located in normal mem */
 	crashk_res.start = crash_base;
 	crashk_res.end = crash_base + crash_size - 1;
 	insert_resource(&iomem_resource, &crashk_res);
+
+	if (arm_has_idmap_alias()) {
+		/*
+		 * If we have a special RAM alias for use at boot, we
+		 * need to advertise to kexec tools where the alias is.
+		 */
+		static struct resource crashk_boot_res = {
+			.name = "Crash kernel (boot alias)",
+			.flags = IORESOURCE_BUSY | IORESOURCE_MEM,
+		};
+
+		crashk_boot_res.start = phys_to_idmap(crash_base);
+		crashk_boot_res.end = crashk_boot_res.start + crash_size - 1;
+		insert_resource(&iomem_resource, &crashk_boot_res);
+	}
 }
 #else
 static inline void reserve_crashkernel(void) {}
@@ -917,19 +1082,49 @@ void __init hyp_mode_check(void)
 #endif
 }
 
-void __init __weak init_random_pool(void) { }
+static void (*__arm_pm_restart)(enum reboot_mode reboot_mode, const char *cmd);
+
+static int arm_restart(struct notifier_block *nb, unsigned long action,
+		       void *data)
+{
+	__arm_pm_restart(action, data);
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block arm_restart_nb = {
+	.notifier_call = arm_restart,
+	.priority = 128,
+};
 
 void __init setup_arch(char **cmdline_p)
 {
-	const struct machine_desc *mdesc;
+	const struct machine_desc *mdesc = NULL;
+	void *atags_vaddr = NULL;
+
+	if (__atags_pointer)
+		atags_vaddr = FDT_VIRT_BASE(__atags_pointer);
 
 	setup_processor();
-	early_ioremap_init();
-	mdesc = setup_machine_fdt(__atags_pointer);
+	if (atags_vaddr) {
+		mdesc = setup_machine_fdt(atags_vaddr);
+		if (mdesc)
+			memblock_reserve(__atags_pointer,
+					 fdt_totalsize(atags_vaddr));
+	}
 	if (!mdesc)
-		mdesc = setup_machine_tags(__atags_pointer, __machine_arch_type);
+		mdesc = setup_machine_tags(atags_vaddr, __machine_arch_type);
+	if (!mdesc) {
+		early_print("\nError: invalid dtb and unrecognized/unsupported machine ID\n");
+		early_print("  r1=0x%08x, r2=0x%08x\n", __machine_arch_type,
+			    __atags_pointer);
+		if (__atags_pointer)
+			early_print("  r2[]=%*ph\n", 16, atags_vaddr);
+		dump_machine_table();
+	}
+
 	machine_desc = mdesc;
 	machine_name = mdesc->name;
+	dump_stack_set_arch_desc("%s", mdesc->name);
 
 	if (mdesc->reboot_mode != REBOOT_HARD)
 		reboot_mode = mdesc->reboot_mode;
@@ -943,23 +1138,40 @@ void __init setup_arch(char **cmdline_p)
 	strlcpy(cmd_line, boot_command_line, COMMAND_LINE_SIZE);
 	*cmdline_p = cmd_line;
 
+	early_fixmap_init();
+	early_ioremap_init();
+
 	parse_early_param();
 
-	early_paging_init(mdesc, lookup_processor_type(read_cpuid_id()));
+#ifdef CONFIG_MMU
+	early_mm_init(mdesc);
+#endif
 	setup_dma_zone(mdesc);
-	sanity_check_meminfo();
+	xen_early_init();
+	efi_init();
+	/*
+	 * Make sure the calculation for lowmem/highmem is set appropriately
+	 * before reserving/allocating any mmeory
+	 */
+	adjust_lowmem_bounds();
 	arm_memblock_init(mdesc);
+	/* Memory may have been removed so recalculate the bounds. */
+	adjust_lowmem_bounds();
+
+	early_ioremap_reset();
 
 	paging_init(mdesc);
 	request_standard_resources(mdesc);
 
-	if (mdesc->restart)
-		arm_pm_restart = mdesc->restart;
+	if (mdesc->restart) {
+		__arm_pm_restart = mdesc->restart;
+		register_restart_handler(&arm_restart_nb);
+	}
 
 	unflatten_device_tree();
 
 	arm_dt_init_cpu_maps();
-	psci_init();
+	psci_dt_init();
 #ifdef CONFIG_SMP
 	if (is_smp()) {
 		if (!mdesc->smp_init || !mdesc->smp_init()) {
@@ -978,22 +1190,18 @@ void __init setup_arch(char **cmdline_p)
 
 	reserve_crashkernel();
 
-#ifdef CONFIG_MULTI_IRQ_HANDLER
+#ifdef CONFIG_GENERIC_IRQ_MULTI_HANDLER
 	handle_arch_irq = mdesc->handle_irq;
 #endif
 
 #ifdef CONFIG_VT
 #if defined(CONFIG_VGA_CONSOLE)
 	conswitchp = &vga_con;
-#elif defined(CONFIG_DUMMY_CONSOLE)
-	conswitchp = &dummy_con;
 #endif
 #endif
 
 	if (mdesc->init_early)
 		mdesc->init_early();
-
-	init_random_pool();
 }
 
 
@@ -1003,13 +1211,13 @@ static int __init topology_init(void)
 
 	for_each_possible_cpu(cpu) {
 		struct cpuinfo_arm *cpuinfo = &per_cpu(cpu_data, cpu);
-		cpuinfo->cpu.hotpluggable = 1;
+		cpuinfo->cpu.hotpluggable = platform_can_hotplug_cpu(cpu);
 		register_cpu(&cpuinfo->cpu, cpu);
 	}
 
 	return 0;
 }
-postcore_initcall(topology_init);
+subsys_initcall(topology_init);
 
 #ifdef CONFIG_HAVE_PROC_CPU
 static int __init proc_cpu_init(void)
@@ -1064,7 +1272,7 @@ static int c_show(struct seq_file *m, void *v)
 	int i, j;
 	u32 cpuid;
 
-	for_each_present_cpu(i) {
+	for_each_online_cpu(i) {
 		/*
 		 * glibc reads /proc/cpuinfo to determine the number of
 		 * online processors, looking for lines beginning with
@@ -1118,15 +1326,9 @@ static int c_show(struct seq_file *m, void *v)
 		seq_printf(m, "CPU revision\t: %d\n\n", cpuid & 15);
 	}
 
-	if (!arch_read_hardware_id)
-		seq_printf(m, "Hardware\t: %s\n", machine_name);
-	else
-		seq_printf(m, "Hardware\t: %s\n", arch_read_hardware_id());
+	seq_printf(m, "Hardware\t: %s\n", machine_name);
 	seq_printf(m, "Revision\t: %04x\n", system_rev);
-	seq_printf(m, "Serial\t\t: %08x%08x\n",
-		   system_serial_high, system_serial_low);
-	seq_printf(m, "Processor\t: %s rev %d (%s)\n",
-		   cpu_name, read_cpuid_id() & 15, elf_platform);
+	seq_printf(m, "Serial\t\t: %s\n", system_serial);
 
 	return 0;
 }
@@ -1152,9 +1354,3 @@ const struct seq_operations cpuinfo_op = {
 	.stop	= c_stop,
 	.show	= c_show
 };
-
-void arch_setup_pdev_archdata(struct platform_device *pdev)
-{
-	pdev->archdata.dma_mask = DMA_BIT_MASK(32);
-	pdev->dev.dma_mask = &pdev->archdata.dma_mask;
-}

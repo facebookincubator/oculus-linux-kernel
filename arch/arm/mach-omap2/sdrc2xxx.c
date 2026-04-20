@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/mach-omap2/sdrc2xxx.c
  *
@@ -9,10 +10,6 @@
  * Tony Lindgren <tony@atomide.com>
  * Paul Walmsley
  * Richard Woodruff <r-woodruff2@ti.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -164,6 +161,6 @@ void omap2xxx_sdrc_init_params(u32 force_lock_to_unlock_mode)
 	mem_timings.slow_dll_ctrl |=
 		((mem_timings.fast_dll_ctrl & 0xF) | (1 << 2));
 
-	/* 90 degree phase for anything below 133Mhz + disable DLL filter */
+	/* 90 degree phase for anything below 133MHz + disable DLL filter */
 	mem_timings.slow_dll_ctrl |= ((1 << 1) | (3 << 8));
 }

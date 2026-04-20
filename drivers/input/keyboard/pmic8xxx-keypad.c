@@ -1,13 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2009-2011, Code Aurora Forum. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -507,6 +499,7 @@ static void pmic8xxx_kp_close(struct input_dev *dev)
  */
 static int pmic8xxx_kp_probe(struct platform_device *pdev)
 {
+	struct device_node *np = pdev->dev.of_node;
 	unsigned int rows, cols;
 	bool repeat;
 	bool wakeup;
@@ -514,7 +507,7 @@ static int pmic8xxx_kp_probe(struct platform_device *pdev)
 	int rc;
 	unsigned int ctrl_val;
 
-	rc = matrix_keypad_parse_of_params(&pdev->dev, &rows, &cols);
+	rc = matrix_keypad_parse_properties(&pdev->dev, &rows, &cols);
 	if (rc)
 		return rc;
 
@@ -524,10 +517,11 @@ static int pmic8xxx_kp_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	repeat = !of_property_read_bool(pdev->dev.of_node,
-					"linux,input-no-autorepeat");
-	wakeup = of_property_read_bool(pdev->dev.of_node,
-					"linux,keypad-wakeup");
+	repeat = !of_property_read_bool(np, "linux,input-no-autorepeat");
+
+	wakeup = of_property_read_bool(np, "wakeup-source") ||
+		 /* legacy name */
+		 of_property_read_bool(np, "linux,keypad-wakeup");
 
 	kp = devm_kzalloc(&pdev->dev, sizeof(*kp), GFP_KERNEL);
 	if (!kp)
@@ -550,16 +544,12 @@ static int pmic8xxx_kp_probe(struct platform_device *pdev)
 	}
 
 	kp->key_sense_irq = platform_get_irq(pdev, 0);
-	if (kp->key_sense_irq < 0) {
-		dev_err(&pdev->dev, "unable to get keypad sense irq\n");
+	if (kp->key_sense_irq < 0)
 		return kp->key_sense_irq;
-	}
 
 	kp->key_stuck_irq = platform_get_irq(pdev, 1);
-	if (kp->key_stuck_irq < 0) {
-		dev_err(&pdev->dev, "unable to get keypad stuck irq\n");
+	if (kp->key_stuck_irq < 0)
 		return kp->key_stuck_irq;
-	}
 
 	kp->input->name = "PMIC8XXX keypad";
 	kp->input->phys = "pmic8xxx_keypad/input0";
@@ -687,7 +677,6 @@ static struct platform_driver pmic8xxx_kp_driver = {
 	.probe		= pmic8xxx_kp_probe,
 	.driver		= {
 		.name = "pm8xxx-keypad",
-		.owner = THIS_MODULE,
 		.pm = &pm8xxx_kp_pm_ops,
 		.of_match_table = pm8xxx_match_table,
 	},
@@ -696,6 +685,5 @@ module_platform_driver(pmic8xxx_kp_driver);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("PMIC8XXX keypad driver");
-MODULE_VERSION("1.0");
 MODULE_ALIAS("platform:pmic8xxx_keypad");
 MODULE_AUTHOR("Trilok Soni <tsoni@codeaurora.org>");

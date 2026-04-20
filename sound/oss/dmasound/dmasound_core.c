@@ -182,8 +182,9 @@
 #include <linux/soundcard.h>
 #include <linux/poll.h>
 #include <linux/mutex.h>
+#include <linux/sched/signal.h>
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include "dmasound.h"
 
@@ -205,12 +206,10 @@ module_param(writeBufSize, int, 0);
 
 MODULE_LICENSE("GPL");
 
-#ifdef MODULE
 static int sq_unit = -1;
 static int mixer_unit = -1;
 static int state_unit = -1;
 static int irq_installed;
-#endif /* MODULE */
 
 /* control over who can modify resources shared between play/record */
 static fmode_t shared_resource_owner;
@@ -383,15 +382,13 @@ static const struct file_operations mixer_fops =
 	.owner		= THIS_MODULE,
 	.llseek		= no_llseek,
 	.unlocked_ioctl	= mixer_unlocked_ioctl,
+	.compat_ioctl	= compat_ptr_ioctl,
 	.open		= mixer_open,
 	.release	= mixer_release,
 };
 
 static void mixer_init(void)
 {
-#ifndef MODULE
-	int mixer_unit;
-#endif
 	mixer_unit = register_sound_mixer(&mixer_fops, -1);
 	if (mixer_unit < 0)
 		return;
@@ -419,7 +416,7 @@ static int sq_allocate_buffers(struct sound_queue *sq, int num, int size)
 		return 0;
 	sq->numBufs = num;
 	sq->bufSize = size;
-	sq->buffers = kmalloc (num * sizeof(char *), GFP_KERNEL);
+	sq->buffers = kmalloc_array (num, sizeof(char *), GFP_KERNEL);
 	if (!sq->buffers)
 		return -ENOMEM;
 	for (i = 0; i < num; i++) {
@@ -669,9 +666,9 @@ static ssize_t sq_write(struct file *file, const char __user *src, size_t uLeft,
 	return uUsed < 0? uUsed: uWritten;
 }
 
-static unsigned int sq_poll(struct file *file, struct poll_table_struct *wait)
+static __poll_t sq_poll(struct file *file, struct poll_table_struct *wait)
 {
-	unsigned int mask = 0;
+	__poll_t mask = 0;
 	int retVal;
 	
 	if (write_sq.locked == 0) {
@@ -683,7 +680,7 @@ static unsigned int sq_poll(struct file *file, struct poll_table_struct *wait)
 		poll_wait(file, &write_sq.action_queue, wait);
 	if (file->f_mode & FMODE_WRITE)
 		if (write_sq.count < write_sq.max_active || write_sq.block_size - write_sq.rear_size > 0)
-			mask |= POLLOUT | POLLWRNORM;
+			mask |= EPOLLOUT | EPOLLWRNORM;
 	return mask;
 
 }
@@ -1166,6 +1163,7 @@ static const struct file_operations sq_fops =
 	.write		= sq_write,
 	.poll		= sq_poll,
 	.unlocked_ioctl	= sq_unlocked_ioctl,
+	.compat_ioctl	= compat_ptr_ioctl,
 	.open		= sq_open,
 	.release	= sq_release,
 };
@@ -1173,9 +1171,6 @@ static const struct file_operations sq_fops =
 static int sq_init(void)
 {
 	const struct file_operations *fops = &sq_fops;
-#ifndef MODULE
-	int sq_unit;
-#endif
 
 	sq_unit = register_sound_dsp(fops, -1);
 	if (sq_unit < 0) {
@@ -1377,9 +1372,6 @@ static const struct file_operations state_fops = {
 
 static int state_init(void)
 {
-#ifndef MODULE
-	int state_unit;
-#endif
 	state_unit = register_sound_special(&state_fops, SND_DEV_STATUS);
 	if (state_unit < 0)
 		return state_unit ;
@@ -1397,10 +1389,9 @@ static int state_init(void)
 int dmasound_init(void)
 {
 	int res ;
-#ifdef MODULE
+
 	if (irq_installed)
 		return -EBUSY;
-#endif
 
 	/* Set up sound queue, /dev/audio and /dev/dsp. */
 
@@ -1419,9 +1410,7 @@ int dmasound_init(void)
 		printk(KERN_ERR "DMA sound driver: Interrupt initialization failed\n");
 		return -ENODEV;
 	}
-#ifdef MODULE
 	irq_installed = 1;
-#endif
 
 	printk(KERN_INFO "%s DMA sound driver rev %03d installed\n",
 		dmasound.mach.name, (DMASOUND_CORE_REVISION<<4) +
@@ -1434,8 +1423,6 @@ int dmasound_init(void)
 		numWriteBufs, writeBufSize) ;
 	return 0;
 }
-
-#ifdef MODULE
 
 void dmasound_deinit(void)
 {
@@ -1455,9 +1442,7 @@ void dmasound_deinit(void)
 		unregister_sound_dsp(sq_unit);
 }
 
-#else /* !MODULE */
-
-static int dmasound_setup(char *str)
+static int __maybe_unused dmasound_setup(char *str)
 {
 	int ints[6], size;
 
@@ -1475,13 +1460,13 @@ static int dmasound_setup(char *str)
 			printk("dmasound_setup: invalid catch radius, using default = %d\n", catchRadius);
 		else
 			catchRadius = ints[3];
-		/* fall through */
+		fallthrough;
 	case 2:
 		if (ints[1] < MIN_BUFFERS)
 			printk("dmasound_setup: invalid number of buffers, using default = %d\n", numWriteBufs);
 		else
 			numWriteBufs = ints[1];
-		/* fall through */
+		fallthrough;
 	case 1:
 		if ((size = ints[2]) < 256) /* check for small buffer specs */
 			size <<= 10 ;
@@ -1499,8 +1484,6 @@ static int dmasound_setup(char *str)
 }
 
 __setup("dmasound=", dmasound_setup);
-
-#endif /* !MODULE */
 
     /*
      *  Conversion tables
@@ -1588,9 +1571,7 @@ char dmasound_alaw2dma8[] = {
 
 EXPORT_SYMBOL(dmasound);
 EXPORT_SYMBOL(dmasound_init);
-#ifdef MODULE
 EXPORT_SYMBOL(dmasound_deinit);
-#endif
 EXPORT_SYMBOL(dmasound_write_sq);
 EXPORT_SYMBOL(dmasound_catchRadius);
 #ifdef HAS_8BIT_TABLES

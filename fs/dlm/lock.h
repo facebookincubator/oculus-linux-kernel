@@ -1,11 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /******************************************************************************
 *******************************************************************************
 **
 **  Copyright (C) 2005-2007 Red Hat, Inc.  All rights reserved.
 **
-**  This copyrighted material is made available to anyone wishing to use,
-**  modify, copy, or redistribute it subject to the terms and conditions
-**  of the GNU General Public License v.2.
 **
 *******************************************************************************
 ******************************************************************************/
@@ -49,6 +47,9 @@ int dlm_user_request(struct dlm_ls *ls, struct dlm_user_args *ua, int mode,
 int dlm_user_convert(struct dlm_ls *ls, struct dlm_user_args *ua_tmp,
 	int mode, uint32_t flags, uint32_t lkid, char *lvb_in,
 	unsigned long timeout_cs);
+int dlm_user_adopt_orphan(struct dlm_ls *ls, struct dlm_user_args *ua_tmp,
+	int mode, uint32_t flags, void *name, unsigned int namelen,
+	unsigned long timeout_cs, uint32_t *lkid);
 int dlm_user_unlock(struct dlm_ls *ls, struct dlm_user_args *ua_tmp,
 	uint32_t flags, uint32_t lkid, char *lvb_in);
 int dlm_user_cancel(struct dlm_ls *ls,  struct dlm_user_args *ua_tmp,

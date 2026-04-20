@@ -22,14 +22,15 @@
  * Authors: Alex Deucher
  */
 
-#include "drmP.h"
+#include <linux/pci.h>
+#include <linux/seq_file.h>
+
+#include "atom.h"
+#include "r600_dpm.h"
 #include "radeon.h"
 #include "radeon_asic.h"
-#include "rs780d.h"
-#include "r600_dpm.h"
 #include "rs780_dpm.h"
-#include "atom.h"
-#include <linux/seq_file.h>
+#include "rs780d.h"
 
 static struct igp_ps *rs780_get_ps(struct radeon_ps *rps)
 {
@@ -795,7 +796,7 @@ static int rs780_parse_power_table(struct radeon_device *rdev)
 	union pplib_clock_info *clock_info;
 	union power_info *power_info;
 	int index = GetIndexIntoMasterTable(DATA, PowerPlayInfo);
-        u16 data_offset;
+	u16 data_offset;
 	u8 frev, crev;
 	struct igp_ps *ps;
 
@@ -804,8 +805,9 @@ static int rs780_parse_power_table(struct radeon_device *rdev)
 		return -EINVAL;
 	power_info = (union power_info *)(mode_info->atom_context->bios + data_offset);
 
-	rdev->pm.dpm.ps = kzalloc(sizeof(struct radeon_ps) *
-				  power_info->pplib.ucNumStates, GFP_KERNEL);
+	rdev->pm.dpm.ps = kcalloc(power_info->pplib.ucNumStates,
+				  sizeof(struct radeon_ps),
+				  GFP_KERNEL);
 	if (!rdev->pm.dpm.ps)
 		return -ENOMEM;
 
@@ -999,6 +1001,28 @@ void rs780_dpm_debugfs_print_current_performance_level(struct radeon_device *rde
 	else
 		seq_printf(m, "power level 1    sclk: %u vddc_index: %d\n",
 			   ps->sclk_high, ps->max_voltage);
+}
+
+/* get the current sclk in 10 khz units */
+u32 rs780_dpm_get_current_sclk(struct radeon_device *rdev)
+{
+	u32 current_fb_div = RREG32(FVTHROT_STATUS_REG0) & CURRENT_FEEDBACK_DIV_MASK;
+	u32 func_cntl = RREG32(CG_SPLL_FUNC_CNTL);
+	u32 ref_div = ((func_cntl & SPLL_REF_DIV_MASK) >> SPLL_REF_DIV_SHIFT) + 1;
+	u32 post_div = ((func_cntl & SPLL_SW_HILEN_MASK) >> SPLL_SW_HILEN_SHIFT) + 1 +
+		((func_cntl & SPLL_SW_LOLEN_MASK) >> SPLL_SW_LOLEN_SHIFT) + 1;
+	u32 sclk = (rdev->clock.spll.reference_freq * current_fb_div) /
+		(post_div * ref_div);
+
+	return sclk;
+}
+
+/* get the current mclk in 10 khz units */
+u32 rs780_dpm_get_current_mclk(struct radeon_device *rdev)
+{
+	struct igp_power_info *pi = rs780_get_pi(rdev);
+
+	return pi->bootup_uma_clk;
 }
 
 int rs780_dpm_force_performance_level(struct radeon_device *rdev,

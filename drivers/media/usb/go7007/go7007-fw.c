@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2005-2006 Micronas USA Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (Version 2) as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
@@ -379,7 +371,7 @@ static int gen_mjpeghdr_to_package(struct go7007 *go, __le16 *code, int space)
 
 	buf = kzalloc(4096, GFP_KERNEL);
 	if (buf == NULL)
-		return -1;
+		return -ENOMEM;
 
 	for (i = 1; i < 32; ++i) {
 		mjpeg_frame_header(go, buf + size, i);
@@ -646,7 +638,7 @@ static int gen_mpeg1hdr_to_package(struct go7007 *go,
 
 	buf = kzalloc(5120, GFP_KERNEL);
 	if (buf == NULL)
-		return -1;
+		return -ENOMEM;
 
 	framelen[0] = mpeg1_frame_header(go, buf, 0, 1, PFRAME);
 	if (go->interlace_coding)
@@ -832,7 +824,7 @@ static int gen_mpeg4hdr_to_package(struct go7007 *go,
 
 	buf = kzalloc(5120, GFP_KERNEL);
 	if (buf == NULL)
-		return -1;
+		return -ENOMEM;
 
 	framelen[0] = mpeg4_frame_header(go, buf, 0, PFRAME);
 	i = 368;
@@ -1499,8 +1491,8 @@ static int modet_to_package(struct go7007 *go, __le16 *code, int space)
 	return cnt;
 }
 
-static int do_special(struct go7007 *go, u16 type, __le16 *code, int space,
-			int *framelen)
+static noinline_for_stack int do_special(struct go7007 *go, u16 type,
+					 __le16 *code, int space, int *framelen)
 {
 	switch (type) {
 	case SPECIAL_FRM_HEAD:
@@ -1514,7 +1506,10 @@ static int do_special(struct go7007 *go, u16 type, __le16 *code, int space,
 		case V4L2_PIX_FMT_MPEG4:
 			return gen_mpeg4hdr_to_package(go, code, space,
 								framelen);
+		default:
+			break;
 		}
+		break;
 	case SPECIAL_BRC_CTRL:
 		return brctrl_to_package(go, code, space, framelen);
 	case SPECIAL_CONFIG:
@@ -1576,7 +1571,7 @@ int go7007_construct_fw_image(struct go7007 *go, u8 **fw, int *fwlen)
 			GO7007_FW_NAME);
 		return -1;
 	}
-	code = kzalloc(codespace * 2, GFP_KERNEL);
+	code = kcalloc(codespace, 2, GFP_KERNEL);
 	if (code == NULL)
 		goto fw_failed;
 

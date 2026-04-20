@@ -1,12 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * rt286.h  --  RT286 ALSA SoC audio driver
  *
  * Copyright 2011 Realtek Microelectronics
  * Author: Johnny Hsu <johnnyhsu@realtek.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef __RT286_H__
@@ -117,6 +114,12 @@
 	VERB_CMD(AC_VERB_SET_COEF_INDEX, RT286_VENDOR_REGISTERS, 0)
 #define RT286_PROC_COEF\
 	VERB_CMD(AC_VERB_SET_PROC_COEF, RT286_VENDOR_REGISTERS, 0)
+#define RT286_SET_GPIO_MASK\
+	VERB_CMD(AC_VERB_SET_GPIO_MASK, RT286_AUDIO_FUNCTION_GROUP, 0)
+#define RT286_SET_GPIO_DIRECTION\
+	VERB_CMD(AC_VERB_SET_GPIO_DIRECTION, RT286_AUDIO_FUNCTION_GROUP, 0)
+#define RT286_SET_GPIO_DATA\
+	VERB_CMD(AC_VERB_SET_GPIO_DATA, RT286_AUDIO_FUNCTION_GROUP, 0)
 
 /* Index registers */
 #define RT286_A_BIAS_CTRL1	0x01
@@ -131,6 +134,7 @@
 #define RT286_POWER_CTRL3	0x0f
 #define RT286_MIC1_DET_CTRL	0x19
 #define RT286_MISC_CTRL1	0x20
+#define RT286_GPIO_CTRL		0x29
 #define RT286_IRQ_CTRL		0x33
 #define RT286_PLL_CTRL1		0x49
 #define RT286_CBJ_CTRL1		0x4f
@@ -192,7 +196,7 @@ enum {
 	RT286_AIFS,
 };
 
-int rt286_mic_detect(struct snd_soc_codec *codec, struct snd_soc_jack *jack);
+int rt286_mic_detect(struct snd_soc_component *component, struct snd_soc_jack *jack);
 
 #endif /* __RT286_H__ */
 

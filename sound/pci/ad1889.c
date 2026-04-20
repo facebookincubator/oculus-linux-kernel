@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* Analog Devices 1889 audio driver
  *
  * This is a driver for the AD1889 PCI audio chipset found
@@ -6,19 +7,6 @@
  * Copyright (C) 2004-2005, Kyle McMartin <kyle@parisc-linux.org>
  * Copyright (C) 2005, Thibaut Varene <varenet@parisc-linux.org>
  *   Based on the OSS AD1889 driver by Randolph Chung <tausq@debian.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2, as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  * TODO:
  *	Do we need to take care of CCS register?
@@ -40,13 +28,12 @@
 #include <linux/compiler.h>
 #include <linux/delay.h>
 #include <linux/module.h>
+#include <linux/io.h>
 
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/initval.h>
 #include <sound/ac97_codec.h>
-
-#include <asm/io.h>
 
 #include "ad1889.h"
 #include "ac97/ac97_id.h"
@@ -259,7 +246,7 @@ snd_ad1889_ac97_ready(struct snd_ad1889 *chip)
 	
 	while (!(ad1889_readw(chip, AD_AC97_ACIC) & AD_AC97_ACIC_ACRDY) 
 			&& --retry)
-		mdelay(1);
+		usleep_range(1000, 2000);
 	if (!retry) {
 		dev_err(chip->card->dev, "[%s] Link is not ready.\n",
 			__func__);
@@ -270,21 +257,7 @@ snd_ad1889_ac97_ready(struct snd_ad1889 *chip)
 	return 0;
 }
 
-static int 
-snd_ad1889_hw_params(struct snd_pcm_substream *substream,
-			struct snd_pcm_hw_params *hw_params)
-{
-	return snd_pcm_lib_malloc_pages(substream, 
-					params_buffer_bytes(hw_params));
-}
-
-static int
-snd_ad1889_hw_free(struct snd_pcm_substream *substream)
-{
-	return snd_pcm_lib_free_pages(substream);
-}
-
-static struct snd_pcm_hardware snd_ad1889_playback_hw = {
+static const struct snd_pcm_hardware snd_ad1889_playback_hw = {
 	.info = SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 		SNDRV_PCM_INFO_MMAP_VALID | SNDRV_PCM_INFO_BLOCK_TRANSFER,
 	.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -301,7 +274,7 @@ static struct snd_pcm_hardware snd_ad1889_playback_hw = {
 	/*.fifo_size = 0,*/
 };
 
-static struct snd_pcm_hardware snd_ad1889_capture_hw = {
+static const struct snd_pcm_hardware snd_ad1889_capture_hw = {
 	.info = SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
 		SNDRV_PCM_INFO_MMAP_VALID | SNDRV_PCM_INFO_BLOCK_TRANSFER,
 	.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -572,23 +545,17 @@ snd_ad1889_capture_pointer(struct snd_pcm_substream *ss)
 	return bytes_to_frames(ss->runtime, ptr);
 }
 
-static struct snd_pcm_ops snd_ad1889_playback_ops = {
+static const struct snd_pcm_ops snd_ad1889_playback_ops = {
 	.open = snd_ad1889_playback_open,
 	.close = snd_ad1889_playback_close,
-	.ioctl = snd_pcm_lib_ioctl,
-	.hw_params = snd_ad1889_hw_params,
-	.hw_free = snd_ad1889_hw_free,
 	.prepare = snd_ad1889_playback_prepare,
 	.trigger = snd_ad1889_playback_trigger,
 	.pointer = snd_ad1889_playback_pointer, 
 };
 
-static struct snd_pcm_ops snd_ad1889_capture_ops = {
+static const struct snd_pcm_ops snd_ad1889_capture_ops = {
 	.open = snd_ad1889_capture_open,
 	.close = snd_ad1889_capture_close,
-	.ioctl = snd_pcm_lib_ioctl,
-	.hw_params = snd_ad1889_hw_params,
-	.hw_free = snd_ad1889_hw_free,
 	.prepare = snd_ad1889_capture_prepare,
 	.trigger = snd_ad1889_capture_trigger,
 	.pointer = snd_ad1889_capture_pointer, 
@@ -623,13 +590,10 @@ snd_ad1889_interrupt(int irq, void *dev_id)
 }
 
 static int
-snd_ad1889_pcm_init(struct snd_ad1889 *chip, int device, struct snd_pcm **rpcm)
+snd_ad1889_pcm_init(struct snd_ad1889 *chip, int device)
 {
 	int err;
 	struct snd_pcm *pcm;
-
-	if (rpcm)
-		*rpcm = NULL;
 
 	err = snd_pcm_new(chip->card, chip->card->driver, device, 1, 1, &pcm);
 	if (err < 0)
@@ -648,19 +612,9 @@ snd_ad1889_pcm_init(struct snd_ad1889 *chip, int device, struct snd_pcm **rpcm)
 	chip->psubs = NULL;
 	chip->csubs = NULL;
 
-	err = snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-						snd_dma_pci_data(chip->pci),
-						BUFFER_BYTES_MAX / 2,
-						BUFFER_BYTES_MAX);
+	snd_pcm_set_managed_buffer_all(pcm, SNDRV_DMA_TYPE_DEV, &chip->pci->dev,
+				       BUFFER_BYTES_MAX / 2, BUFFER_BYTES_MAX);
 
-	if (err < 0) {
-		dev_err(chip->card->dev, "buffer allocation error: %d\n", err);
-		return err;
-	}
-	
-	if (rpcm)
-		*rpcm = pcm;
-	
 	return 0;
 }
 
@@ -748,13 +702,11 @@ snd_ad1889_proc_read(struct snd_info_entry *entry, struct snd_info_buffer *buffe
 static void
 snd_ad1889_proc_init(struct snd_ad1889 *chip)
 {
-	struct snd_info_entry *entry;
-
-	if (!snd_card_proc_new(chip->card, chip->card->driver, &entry))
-		snd_info_set_text_ops(entry, chip, snd_ad1889_proc_read);
+	snd_card_ro_proc_new(chip->card, chip->card->driver,
+			     chip, snd_ad1889_proc_read);
 }
 
-static struct ac97_quirk ac97_quirks[] = {
+static const struct ac97_quirk ac97_quirks[] = {
 	{
 		.subvendor = 0x11d4,	/* AD */
 		.subdevice = 0x1889,	/* AD1889 */
@@ -808,7 +760,7 @@ snd_ad1889_ac97_init(struct snd_ad1889 *chip, const char *quirk_override)
 {
 	int err;
 	struct snd_ac97_template ac97;
-	static struct snd_ac97_bus_ops ops = {
+	static const struct snd_ac97_bus_ops ops = {
 		.write = snd_ad1889_ac97_write,
 		.read = snd_ad1889_ac97_read,
 	};
@@ -859,12 +811,9 @@ snd_ad1889_free(struct snd_ad1889 *chip)
 		free_irq(chip->irq, chip);
 
 skip_hw:
-	if (chip->iobase)
-		iounmap(chip->iobase);
-
+	iounmap(chip->iobase);
 	pci_release_regions(chip->pci);
 	pci_disable_device(chip->pci);
-
 	kfree(chip);
 	return 0;
 }
@@ -882,7 +831,7 @@ snd_ad1889_init(struct snd_ad1889 *chip)
 	ad1889_writew(chip, AD_DS_CCS, AD_DS_CCS_CLKEN); /* turn on clock */
 	ad1889_readw(chip, AD_DS_CCS);	/* flush posted write */
 
-	mdelay(10);
+	usleep_range(10000, 11000);
 
 	/* enable Master and Target abort interrupts */
 	ad1889_writel(chip, AD_DMA_DISR, AD_DMA_DISR_PMAE | AD_DMA_DISR_PTAE);
@@ -898,7 +847,7 @@ snd_ad1889_create(struct snd_card *card,
 	int err;
 
 	struct snd_ad1889 *chip;
-	static struct snd_device_ops ops = {
+	static const struct snd_device_ops ops = {
 		.dev_free = snd_ad1889_dev_free,
 	};
 
@@ -908,8 +857,8 @@ snd_ad1889_create(struct snd_card *card,
 		return err;
 
 	/* check PCI availability (32bit DMA) */
-	if (pci_set_dma_mask(pci, DMA_BIT_MASK(32)) < 0 ||
-	    pci_set_consistent_dma_mask(pci, DMA_BIT_MASK(32)) < 0) {
+	if (dma_set_mask(&pci->dev, DMA_BIT_MASK(32)) < 0 ||
+	    dma_set_coherent_mask(&pci->dev, DMA_BIT_MASK(32)) < 0) {
 		dev_err(card->dev, "error setting 32-bit DMA mask.\n");
 		pci_disable_device(pci);
 		return -ENXIO;
@@ -950,7 +899,7 @@ snd_ad1889_create(struct snd_card *card,
 	}
 
 	chip->irq = pci->irq;
-	synchronize_irq(chip->irq);
+	card->sync_irq = chip->irq;
 
 	/* (2) initialization of the chip hardware */
 	if ((err = snd_ad1889_init(chip)) < 0) {
@@ -1016,7 +965,7 @@ snd_ad1889_probe(struct pci_dev *pci,
 	if (err < 0)
 		goto free_and_ret;
 	
-	err = snd_ad1889_pcm_init(chip, 0, NULL);
+	err = snd_ad1889_pcm_init(chip, 0);
 	if (err < 0)
 		goto free_and_ret;
 

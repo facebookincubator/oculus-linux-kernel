@@ -1,38 +1,25 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Driver for Digigram VX222 V2/Mic soundcards
  *
  * VX222-specific low-level routines
  *
  * Copyright (c) 2002 by Takashi Iwai <tiwai@suse.de>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/firmware.h>
 #include <linux/mutex.h>
+#include <linux/io.h>
 
 #include <sound/core.h>
 #include <sound/control.h>
 #include <sound/tlv.h>
-#include <asm/io.h>
 #include "vx222.h"
 
 
-static int vx2_reg_offset[VX_REG_MAX] = {
+static const int vx2_reg_offset[VX_REG_MAX] = {
 	[VX_ICR]    = 0x00,
 	[VX_CVR]    = 0x04,
 	[VX_ISR]    = 0x08,
@@ -58,7 +45,7 @@ static int vx2_reg_offset[VX_REG_MAX] = {
 	[VX_GPIOC]  = 0x54,		// VX_GPIOC (new with PLX9030)
 };
 
-static int vx2_reg_index[VX_REG_MAX] = {
+static const int vx2_reg_index[VX_REG_MAX] = {
 	[VX_ICR]	= 1,
 	[VX_CVR]	= 1,
 	[VX_ISR]	= 1,
@@ -86,12 +73,13 @@ static int vx2_reg_index[VX_REG_MAX] = {
 
 static inline unsigned long vx2_reg_addr(struct vx_core *_chip, int reg)
 {
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 	return chip->port[vx2_reg_index[reg]] + vx2_reg_offset[reg];
 }
 
 /**
  * snd_vx_inb - read a byte from the register
+ * @chip: VX core instance
  * @offset: register enum
  */
 static unsigned char vx2_inb(struct vx_core *chip, int offset)
@@ -101,6 +89,7 @@ static unsigned char vx2_inb(struct vx_core *chip, int offset)
 
 /**
  * snd_vx_outb - write a byte on the register
+ * @chip: VX core instance
  * @offset: the register offset
  * @val: the value to write
  */
@@ -114,6 +103,7 @@ static void vx2_outb(struct vx_core *chip, int offset, unsigned char val)
 
 /**
  * snd_vx_inl - read a 32bit word from the register
+ * @chip: VX core instance
  * @offset: register enum
  */
 static unsigned int vx2_inl(struct vx_core *chip, int offset)
@@ -123,6 +113,7 @@ static unsigned int vx2_inl(struct vx_core *chip, int offset)
 
 /**
  * snd_vx_outl - write a 32bit word on the register
+ * @chip: VX core instance
  * @offset: the register enum
  * @val: the value to write
  */
@@ -155,7 +146,7 @@ static void vx2_outl(struct vx_core *chip, int offset, unsigned int val)
 
 static void vx2_reset_dsp(struct vx_core *_chip)
 {
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 
 	/* set the reset dsp bit to 0 */
 	vx_outl(chip, CDSP, chip->regCDSP & ~VX_CDSP_DSP_RESET_MASK);
@@ -170,7 +161,7 @@ static void vx2_reset_dsp(struct vx_core *_chip)
 
 static int vx2_test_xilinx(struct vx_core *_chip)
 {
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 	unsigned int data;
 
 	dev_dbg(_chip->card->dev, "testing xilinx...\n");
@@ -223,6 +214,7 @@ static int vx2_test_xilinx(struct vx_core *_chip)
 
 /**
  * vx_setup_pseudo_dma - set up the pseudo dma read/write mode.
+ * @chip: VX core instance
  * @do_write: 0 = read, 1 = set up for DMA write
  */
 static void vx2_setup_pseudo_dma(struct vx_core *chip, int do_write)
@@ -264,13 +256,13 @@ static void vx2_dma_write(struct vx_core *chip, struct snd_pcm_runtime *runtime,
 
 	/* Transfer using pseudo-dma.
 	 */
-	if (offset + count > pipe->buffer_bytes) {
+	if (offset + count >= pipe->buffer_bytes) {
 		int length = pipe->buffer_bytes - offset;
 		count -= length;
 		length >>= 2; /* in 32bit words */
 		/* Transfer using pseudo-dma. */
-		while (length-- > 0) {
-			outl(cpu_to_le32(*addr), port);
+		for (; length > 0; length--) {
+			outl(*addr, port);
 			addr++;
 		}
 		addr = (u32 *)runtime->dma_area;
@@ -279,8 +271,8 @@ static void vx2_dma_write(struct vx_core *chip, struct snd_pcm_runtime *runtime,
 	pipe->hw_ptr += count;
 	count >>= 2; /* in 32bit words */
 	/* Transfer using pseudo-dma. */
-	while (count-- > 0) {
-		outl(cpu_to_le32(*addr), port);
+	for (; count > 0; count--) {
+		outl(*addr, port);
 		addr++;
 	}
 
@@ -302,21 +294,21 @@ static void vx2_dma_read(struct vx_core *chip, struct snd_pcm_runtime *runtime,
 	vx2_setup_pseudo_dma(chip, 0);
 	/* Transfer using pseudo-dma.
 	 */
-	if (offset + count > pipe->buffer_bytes) {
+	if (offset + count >= pipe->buffer_bytes) {
 		int length = pipe->buffer_bytes - offset;
 		count -= length;
 		length >>= 2; /* in 32bit words */
 		/* Transfer using pseudo-dma. */
-		while (length-- > 0)
-			*addr++ = le32_to_cpu(inl(port));
+		for (; length > 0; length--)
+			*addr++ = inl(port);
 		addr = (u32 *)runtime->dma_area;
 		pipe->hw_ptr = 0;
 	}
 	pipe->hw_ptr += count;
 	count >>= 2; /* in 32bit words */
 	/* Transfer using pseudo-dma. */
-	while (count-- > 0)
-		*addr++ = le32_to_cpu(inl(port));
+	for (; count > 0; count--)
+		*addr++ = inl(port);
 
 	vx2_release_pseudo_dma(chip);
 }
@@ -474,7 +466,7 @@ static int vx2_test_and_ack(struct vx_core *chip)
  */
 static void vx2_validate_irq(struct vx_core *_chip, int enable)
 {
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 
 	/* Set the interrupt enable bit to 1 in CDSP register */
 	if (enable) {
@@ -725,7 +717,7 @@ static void vx2_old_write_codec_bit(struct vx_core *chip, int codec, unsigned in
  */
 static void vx2_reset_codec(struct vx_core *_chip)
 {
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 
 	/* Set the reset CODEC bit to 0. */
 	vx_outl(chip, CDSP, chip->regCDSP &~ VX_CDSP_CODEC_RESET_MASK);
@@ -767,7 +759,7 @@ static void vx2_reset_codec(struct vx_core *_chip)
  */
 static void vx2_change_audio_source(struct vx_core *_chip, int src)
 {
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 
 	switch (src) {
 	case VX_AUDIO_SRC_DIGITAL:
@@ -786,7 +778,7 @@ static void vx2_change_audio_source(struct vx_core *_chip, int src)
  */
 static void vx2_set_clock_source(struct vx_core *_chip, int source)
 {
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 
 	if (source == INTERNAL_QUARTZ)
 		chip->regCFG &= ~VX_CFG_CLOCKIN_SEL_MASK;
@@ -800,7 +792,7 @@ static void vx2_set_clock_source(struct vx_core *_chip, int source)
  */
 static void vx2_reset_board(struct vx_core *_chip, int cold_reset)
 {
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 
 	/* initialize the register values */
 	chip->regCDSP = VX_CDSP_CODEC_RESET_MASK | VX_CDSP_DSP_RESET_MASK ;
@@ -873,7 +865,7 @@ static int vx_input_level_info(struct snd_kcontrol *kcontrol, struct snd_ctl_ele
 static int vx_input_level_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
 {
 	struct vx_core *_chip = snd_kcontrol_chip(kcontrol);
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 	mutex_lock(&_chip->mixer_mutex);
 	ucontrol->value.integer.value[0] = chip->input_level[0];
 	ucontrol->value.integer.value[1] = chip->input_level[1];
@@ -884,7 +876,7 @@ static int vx_input_level_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem
 static int vx_input_level_put(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
 {
 	struct vx_core *_chip = snd_kcontrol_chip(kcontrol);
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 	if (ucontrol->value.integer.value[0] < 0 ||
 	    ucontrol->value.integer.value[0] > MIC_LEVEL_MAX)
 		return -EINVAL;
@@ -917,7 +909,7 @@ static int vx_mic_level_info(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_
 static int vx_mic_level_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
 {
 	struct vx_core *_chip = snd_kcontrol_chip(kcontrol);
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 	ucontrol->value.integer.value[0] = chip->mic_level;
 	return 0;
 }
@@ -925,7 +917,7 @@ static int vx_mic_level_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_v
 static int vx_mic_level_put(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
 {
 	struct vx_core *_chip = snd_kcontrol_chip(kcontrol);
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 	if (ucontrol->value.integer.value[0] < 0 ||
 	    ucontrol->value.integer.value[0] > MIC_LEVEL_MAX)
 		return -EINVAL;
@@ -940,7 +932,7 @@ static int vx_mic_level_put(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_v
 	return 0;
 }
 
-static struct snd_kcontrol_new vx_control_input_level = {
+static const struct snd_kcontrol_new vx_control_input_level = {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.access =	(SNDRV_CTL_ELEM_ACCESS_READWRITE |
 			 SNDRV_CTL_ELEM_ACCESS_TLV_READ),
@@ -951,7 +943,7 @@ static struct snd_kcontrol_new vx_control_input_level = {
 	.tlv = { .p = db_scale_mic },
 };
 
-static struct snd_kcontrol_new vx_control_mic_level = {
+static const struct snd_kcontrol_new vx_control_mic_level = {
 	.iface =	SNDRV_CTL_ELEM_IFACE_MIXER,
 	.access =	(SNDRV_CTL_ELEM_ACCESS_READWRITE |
 			 SNDRV_CTL_ELEM_ACCESS_TLV_READ),
@@ -968,7 +960,7 @@ static struct snd_kcontrol_new vx_control_mic_level = {
 
 static int vx2_add_mic_controls(struct vx_core *_chip)
 {
-	struct snd_vx222 *chip = (struct snd_vx222 *)_chip;
+	struct snd_vx222 *chip = to_vx222(_chip);
 	int err;
 
 	if (_chip->type != VX_TYPE_MIC)
@@ -992,7 +984,7 @@ static int vx2_add_mic_controls(struct vx_core *_chip)
 /*
  * callbacks
  */
-struct snd_vx_ops vx222_ops = {
+const struct snd_vx_ops vx222_ops = {
 	.in8 = vx2_inb,
 	.in32 = vx2_inl,
 	.out8 = vx2_outb,
@@ -1012,7 +1004,7 @@ struct snd_vx_ops vx222_ops = {
 };
 
 /* for old VX222 board */
-struct snd_vx_ops vx222_old_ops = {
+const struct snd_vx_ops vx222_old_ops = {
 	.in8 = vx2_inb,
 	.in32 = vx2_inl,
 	.out8 = vx2_outb,

@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&qupv3_se2_i2c {
+    status = "okay";
+ };

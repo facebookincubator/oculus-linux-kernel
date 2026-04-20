@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _ASM_IA64_CMPXCHG_H
 #define _ASM_IA64_CMPXCHG_H
 
@@ -60,8 +61,6 @@ extern void ia64_xchg_called_with_bad_pointer(void);
  * store NEW in MEM.  Return the initial value in MEM.  Success is
  * indicated by comparing RETURN with OLD.
  */
-
-#define __HAVE_ARCH_CMPXCHG 1
 
 /*
  * This function doesn't exist, so you'll get a linker error

@@ -25,19 +25,25 @@
  *          Alex Deucher
  *          Jerome Glisse
  */
+
+#include <linux/pci.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include <drm/drmP.h>
+
 #include <drm/drm.h>
 #include <drm/drm_crtc_helper.h>
-#include "radeon_reg.h"
+#include <drm/drm_debugfs.h>
+#include <drm/drm_device.h>
+#include <drm/drm_file.h>
+#include <drm/radeon_drm.h>
+
+#include "r100_track.h"
+#include "r300_reg_safe.h"
+#include "r300d.h"
 #include "radeon.h"
 #include "radeon_asic.h"
-#include <drm/radeon_drm.h>
-#include "r100_track.h"
-#include "r300d.h"
+#include "radeon_reg.h"
 #include "rv350d.h"
-#include "r300_reg_safe.h"
 
 /* This files gather functions specifics to: r300,r350,rv350,rv370,rv380
  *
@@ -48,6 +54,31 @@
  *   the CP read collide with the flush somehow, or maybe the MC, hard to
  *   tell. (Jerome Glisse)
  */
+
+/*
+ * Indirect registers accessor
+ */
+uint32_t rv370_pcie_rreg(struct radeon_device *rdev, uint32_t reg)
+{
+	unsigned long flags;
+	uint32_t r;
+
+	spin_lock_irqsave(&rdev->pcie_idx_lock, flags);
+	WREG32(RADEON_PCIE_INDEX, ((reg) & rdev->pcie_reg_mask));
+	r = RREG32(RADEON_PCIE_DATA);
+	spin_unlock_irqrestore(&rdev->pcie_idx_lock, flags);
+	return r;
+}
+
+void rv370_pcie_wreg(struct radeon_device *rdev, uint32_t reg, uint32_t v)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&rdev->pcie_idx_lock, flags);
+	WREG32(RADEON_PCIE_INDEX, ((reg) & rdev->pcie_reg_mask));
+	WREG32(RADEON_PCIE_DATA, (v));
+	spin_unlock_irqrestore(&rdev->pcie_idx_lock, flags);
+}
 
 /*
  * rv370,rv380 PCIE GART
@@ -325,7 +356,7 @@ int r300_mc_wait_for_idle(struct radeon_device *rdev)
 		if (tmp & R300_MC_IDLE) {
 			return 0;
 		}
-		DRM_UDELAY(1);
+		udelay(1);
 	}
 	return -1;
 }
@@ -362,8 +393,7 @@ static void r300_gpu_init(struct radeon_device *rdev)
 	WREG32(R300_GB_TILE_CONFIG, gb_tile_config);
 
 	if (r100_gui_wait_for_idle(rdev)) {
-		printk(KERN_WARNING "Failed to wait GUI idle while "
-		       "programming pipes. Bad things might happen.\n");
+		pr_warn("Failed to wait GUI idle while programming pipes. Bad things might happen.\n");
 	}
 
 	tmp = RREG32(R300_DST_PIPE_CONFIG);
@@ -374,18 +404,16 @@ static void r300_gpu_init(struct radeon_device *rdev)
 	       R300_DC_DC_DISABLE_IGNORE_PE);
 
 	if (r100_gui_wait_for_idle(rdev)) {
-		printk(KERN_WARNING "Failed to wait GUI idle while "
-		       "programming pipes. Bad things might happen.\n");
+		pr_warn("Failed to wait GUI idle while programming pipes. Bad things might happen.\n");
 	}
 	if (r300_mc_wait_for_idle(rdev)) {
-		printk(KERN_WARNING "Failed to wait MC idle while "
-		       "programming pipes. Bad things might happen.\n");
+		pr_warn("Failed to wait MC idle while programming pipes. Bad things might happen.\n");
 	}
-	DRM_INFO("radeon: %d quad pipes, %d Z pipes initialized.\n",
+	DRM_INFO("radeon: %d quad pipes, %d Z pipes initialized\n",
 		 rdev->num_gb_pipes, rdev->num_z_pipes);
 }
 
-int r300_asic_reset(struct radeon_device *rdev)
+int r300_asic_reset(struct radeon_device *rdev, bool hard)
 {
 	struct r100_mc_save save;
 	u32 status, tmp;
@@ -604,7 +632,7 @@ static int r300_packet0_check(struct radeon_cs_parser *p,
 		struct radeon_cs_packet *pkt,
 		unsigned idx, unsigned reg)
 {
-	struct radeon_cs_reloc *reloc;
+	struct radeon_bo_list *reloc;
 	struct r100_cs_track *track;
 	volatile uint32_t *ib;
 	uint32_t tmp, tile_flags = 0;
@@ -792,7 +820,7 @@ static int r300_packet0_check(struct radeon_cs_parser *p,
 					  ((idx_value >> 21) & 0xF));
 				return -EINVAL;
 			}
-			/* Pass through. */
+			fallthrough;
 		case 6:
 			track->cb[i].cpp = 4;
 			break;
@@ -943,7 +971,7 @@ static int r300_packet0_check(struct radeon_cs_parser *p,
 				return -EINVAL;
 			}
 			/* The same rules apply as for DXT3/5. */
-			/* Pass through. */
+			fallthrough;
 		case R300_TX_FORMAT_DXT3:
 		case R300_TX_FORMAT_DXT5:
 			track->textures[i].cpp = 1;
@@ -1140,7 +1168,7 @@ static int r300_packet0_check(struct radeon_cs_parser *p,
 	}
 	return 0;
 fail:
-	printk(KERN_ERR "Forbidden register 0x%04X in cs at %d (val=%08x)\n",
+	pr_err("Forbidden register 0x%04X in cs at %d (val=%08x)\n",
 	       reg, idx, idx_value);
 	return -EINVAL;
 }
@@ -1148,7 +1176,7 @@ fail:
 static int r300_packet3_check(struct radeon_cs_parser *p,
 			      struct radeon_cs_packet *pkt)
 {
-	struct radeon_cs_reloc *reloc;
+	struct radeon_bo_list *reloc;
 	struct r100_cs_track *track;
 	volatile uint32_t *ib;
 	unsigned idx;
@@ -1289,7 +1317,7 @@ int r300_cs_parse(struct radeon_cs_parser *p)
 		if (r) {
 			return r;
 		}
-	} while (p->idx < p->chunks[p->chunk_ib_idx].length_dw);
+	} while (p->idx < p->chunk_ib->length_dw);
 	return 0;
 }
 

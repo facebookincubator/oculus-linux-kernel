@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Wondermedia I2C Master Mode Driver
  *
@@ -5,11 +6,6 @@
  *
  *  Derived from GPLv2+ licensed source:
  *  - Copyright (C) 2008 WonderMedia Technologies, Inc.
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2, or
- *  (at your option) any later version. as published by the Free Software
- *  Foundation
  */
 
 #include <linux/clk.h>
@@ -128,7 +124,8 @@ static int wmt_i2c_write(struct i2c_adapter *adap, struct i2c_msg *pmsg,
 {
 	struct wmt_i2c_dev *i2c_dev = i2c_get_adapdata(adap);
 	u16 val, tcr_val;
-	int ret, wait_result;
+	int ret;
+	unsigned long wait_result;
 	int xfer_len = 0;
 
 	if (!(pmsg->flags & I2C_M_NOSTART)) {
@@ -177,7 +174,7 @@ static int wmt_i2c_write(struct i2c_adapter *adap, struct i2c_msg *pmsg,
 
 	while (xfer_len < pmsg->len) {
 		wait_result = wait_for_completion_timeout(&i2c_dev->complete,
-							  500 * HZ / 1000);
+							msecs_to_jiffies(500));
 
 		if (wait_result == 0)
 			return -ETIMEDOUT;
@@ -218,7 +215,8 @@ static int wmt_i2c_read(struct i2c_adapter *adap, struct i2c_msg *pmsg,
 {
 	struct wmt_i2c_dev *i2c_dev = i2c_get_adapdata(adap);
 	u16 val, tcr_val;
-	int ret, wait_result;
+	int ret;
+	unsigned long wait_result;
 	u32 xfer_len = 0;
 
 	if (!(pmsg->flags & I2C_M_NOSTART)) {
@@ -266,7 +264,7 @@ static int wmt_i2c_read(struct i2c_adapter *adap, struct i2c_msg *pmsg,
 
 	while (xfer_len < pmsg->len) {
 		wait_result = wait_for_completion_timeout(&i2c_dev->complete,
-							  500 * HZ / 1000);
+							msecs_to_jiffies(500));
 
 		if (!wait_result)
 			return -ETIMEDOUT;
@@ -401,7 +399,7 @@ static int wmt_i2c_probe(struct platform_device *pdev)
 
 	i2c_dev->mode = I2C_MODE_STANDARD;
 	err = of_property_read_u32(np, "clock-frequency", &clk_rate);
-	if ((!err) && (clk_rate == 400000))
+	if (!err && (clk_rate == I2C_MAX_FAST_MODE_FREQ))
 		i2c_dev->mode = I2C_MODE_FAST;
 
 	i2c_dev->dev = &pdev->dev;
@@ -430,10 +428,8 @@ static int wmt_i2c_probe(struct platform_device *pdev)
 	}
 
 	err = i2c_add_adapter(adap);
-	if (err) {
-		dev_err(&pdev->dev, "failed to add adapter\n");
+	if (err)
 		return err;
-	}
 
 	platform_set_drvdata(pdev, i2c_dev);
 
@@ -462,7 +458,6 @@ static struct platform_driver wmt_i2c_driver = {
 	.remove		= wmt_i2c_remove,
 	.driver		= {
 		.name	= "wmt-i2c",
-		.owner	= THIS_MODULE,
 		.of_match_table = wmt_i2c_dt_ids,
 	},
 };

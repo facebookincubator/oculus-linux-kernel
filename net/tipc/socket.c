@@ -1,7 +1,7 @@
 /*
  * net/tipc/socket.c: TIPC socket API
  *
- * Copyright (c) 2001-2007, 2012-2014, Ericsson AB
+ * Copyright (c) 2001-2007, 2012-2017, Ericsson AB
  * Copyright (c) 2004-2008, 2010-2013, Wind River Systems
  * All rights reserved.
  *
@@ -34,137 +34,132 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <linux/rhashtable.h>
+#include <linux/sched/signal.h>
+
 #include "core.h"
 #include "name_table.h"
 #include "node.h"
 #include "link.h"
-#include <linux/export.h>
-#include "config.h"
+#include "name_distr.h"
 #include "socket.h"
+#include "bcast.h"
+#include "netlink.h"
+#include "group.h"
+#include "trace.h"
 
-#define SS_LISTENING	-1	/* socket is listening */
-#define SS_READY	-2	/* socket is connectionless */
+#define NAGLE_START_INIT	4
+#define NAGLE_START_MAX		1024
+#define CONN_TIMEOUT_DEFAULT    8000    /* default connect timeout = 8s */
+#define CONN_PROBING_INTV	msecs_to_jiffies(3600000)  /* [ms] => 1 h */
+#define TIPC_MAX_PORT		0xffffffff
+#define TIPC_MIN_PORT		1
+#define TIPC_ACK_RATE		4       /* ACK at 1/4 of rcv window size */
 
-#define CONN_TIMEOUT_DEFAULT  8000	/* default connect timeout = 8s */
-#define CONN_PROBING_INTERVAL 3600000	/* [ms] => 1 h */
-#define TIPC_FWD_MSG	      1
-#define TIPC_CONN_OK          0
-#define TIPC_CONN_PROBING     1
+enum {
+	TIPC_LISTEN = TCP_LISTEN,
+	TIPC_ESTABLISHED = TCP_ESTABLISHED,
+	TIPC_OPEN = TCP_CLOSE,
+	TIPC_DISCONNECTING = TCP_CLOSE_WAIT,
+	TIPC_CONNECTING = TCP_SYN_SENT,
+};
+
+struct sockaddr_pair {
+	struct sockaddr_tipc sock;
+	struct sockaddr_tipc member;
+};
 
 /**
  * struct tipc_sock - TIPC socket structure
  * @sk: socket - interacts with 'port' and with user via the socket API
- * @connected: non-zero if port is currently connected to a peer port
  * @conn_type: TIPC type used when connection was established
  * @conn_instance: TIPC instance used when connection was established
  * @published: non-zero if port has one or more associated names
  * @max_pkt: maximum packet size "hint" used when building messages sent by port
- * @ref: unique reference to port in TIPC object registry
+ * @maxnagle: maximum size of msg which can be subject to nagle
+ * @portid: unique port identity in TIPC socket hash table
  * @phdr: preformatted message header used when sending messages
- * @port_list: adjacent ports in TIPC's global list of ports
+ * #cong_links: list of congested links
  * @publications: list of publications for port
+ * @blocking_link: address of the congested link we are currently sleeping on
  * @pub_count: total # of publications port has made during its lifetime
- * @probing_state:
- * @probing_interval:
- * @timer:
- * @port: port - interacts with 'sk' and with the rest of the TIPC stack
- * @peer_name: the peer of the connection, if any
  * @conn_timeout: the time we can wait for an unresponded setup request
  * @dupl_rcvcnt: number of bytes counted twice, in both backlog and rcv queue
- * @link_cong: non-zero if owner must sleep because of link congestion
- * @sent_unacked: # messages sent by socket, and not yet acked by peer
+ * @cong_link_cnt: number of congested links
+ * @snt_unacked: # messages sent by socket, and not yet acked by peer
  * @rcv_unacked: # messages read by user, but not yet acked back to peer
+ * @peer: 'connected' peer for dgram/rdm
+ * @node: hash table node
+ * @mc_method: cookie for use between socket and broadcast layer
+ * @rcu: rcu struct for tipc_sock
  */
 struct tipc_sock {
 	struct sock sk;
-	int connected;
 	u32 conn_type;
 	u32 conn_instance;
 	int published;
 	u32 max_pkt;
-	u32 ref;
+	u32 maxnagle;
+	u32 portid;
 	struct tipc_msg phdr;
-	struct list_head sock_list;
+	struct list_head cong_links;
 	struct list_head publications;
 	u32 pub_count;
-	u32 probing_state;
-	u32 probing_interval;
-	struct timer_list timer;
-	uint conn_timeout;
 	atomic_t dupl_rcvcnt;
-	bool link_cong;
-	uint sent_unacked;
-	uint rcv_unacked;
+	u16 conn_timeout;
+	bool probe_unacked;
+	u16 cong_link_cnt;
+	u16 snt_unacked;
+	u16 snd_win;
+	u16 peer_caps;
+	u16 rcv_unacked;
+	u16 rcv_win;
+	struct sockaddr_tipc peer;
+	struct rhash_head node;
+	struct tipc_mc_method mc_method;
+	struct rcu_head rcu;
+	struct tipc_group *group;
+	u32 oneway;
+	u32 nagle_start;
+	u16 snd_backlog;
+	u16 msg_acc;
+	u16 pkt_cnt;
+	bool expect_ack;
+	bool nodelay;
+	bool group_is_open;
 };
 
-static int tipc_backlog_rcv(struct sock *sk, struct sk_buff *skb);
+static int tipc_sk_backlog_rcv(struct sock *sk, struct sk_buff *skb);
 static void tipc_data_ready(struct sock *sk);
 static void tipc_write_space(struct sock *sk);
+static void tipc_sock_destruct(struct sock *sk);
 static int tipc_release(struct socket *sock);
-static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags);
-static int tipc_wait_for_sndmsg(struct socket *sock, long *timeo_p);
-static void tipc_sk_timeout(unsigned long ref);
+static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags,
+		       bool kern);
+static void tipc_sk_timeout(struct timer_list *t);
 static int tipc_sk_publish(struct tipc_sock *tsk, uint scope,
 			   struct tipc_name_seq const *seq);
 static int tipc_sk_withdraw(struct tipc_sock *tsk, uint scope,
 			    struct tipc_name_seq const *seq);
-static u32 tipc_sk_ref_acquire(struct tipc_sock *tsk);
-static void tipc_sk_ref_discard(u32 ref);
-static struct tipc_sock *tipc_sk_get(u32 ref);
-static struct tipc_sock *tipc_sk_get_next(u32 *ref);
-static void tipc_sk_put(struct tipc_sock *tsk);
+static int tipc_sk_leave(struct tipc_sock *tsk);
+static struct tipc_sock *tipc_sk_lookup(struct net *net, u32 portid);
+static int tipc_sk_insert(struct tipc_sock *tsk);
+static void tipc_sk_remove(struct tipc_sock *tsk);
+static int __tipc_sendstream(struct socket *sock, struct msghdr *m, size_t dsz);
+static int __tipc_sendmsg(struct socket *sock, struct msghdr *m, size_t dsz);
+static void tipc_sk_push_backlog(struct tipc_sock *tsk, bool nagle_ack);
+static int tipc_wait_for_connect(struct socket *sock, long *timeo_p);
 
 static const struct proto_ops packet_ops;
 static const struct proto_ops stream_ops;
 static const struct proto_ops msg_ops;
-
 static struct proto tipc_proto;
-static struct proto tipc_proto_kern;
+static const struct rhashtable_params tsk_rht_params;
 
-/*
- * Revised TIPC socket locking policy:
- *
- * Most socket operations take the standard socket lock when they start
- * and hold it until they finish (or until they need to sleep).  Acquiring
- * this lock grants the owner exclusive access to the fields of the socket
- * data structures, with the exception of the backlog queue.  A few socket
- * operations can be done without taking the socket lock because they only
- * read socket information that never changes during the life of the socket.
- *
- * Socket operations may acquire the lock for the associated TIPC port if they
- * need to perform an operation on the port.  If any routine needs to acquire
- * both the socket lock and the port lock it must take the socket lock first
- * to avoid the risk of deadlock.
- *
- * The dispatcher handling incoming messages cannot grab the socket lock in
- * the standard fashion, since invoked it runs at the BH level and cannot block.
- * Instead, it checks to see if the socket lock is currently owned by someone,
- * and either handles the message itself or adds it to the socket's backlog
- * queue; in the latter case the queued message is processed once the process
- * owning the socket lock releases it.
- *
- * NOTE: Releasing the socket lock while an operation is sleeping overcomes
- * the problem of a blocked socket operation preventing any other operations
- * from occurring.  However, applications must be careful if they have
- * multiple threads trying to send (or receive) on the same socket, as these
- * operations might interfere with each other.  For example, doing a connect
- * and a receive at the same time might allow the receive to consume the
- * ACK message meant for the connect.  While additional work could be done
- * to try and overcome this, it doesn't seem to be worthwhile at the present.
- *
- * NOTE: Releasing the socket lock while an operation is sleeping also ensures
- * that another operation that must be performed in a non-blocking manner is
- * not delayed for very long because the lock has already been taken.
- *
- * NOTE: This code assumes that certain fields of a port/socket pair are
- * constant over its lifetime; such fields can be examined without taking
- * the socket lock and/or port lock, and do not need to be re-read even
- * after resuming processing after waiting.  These fields include:
- *   - socket type
- *   - pointer to socket sk structure (aka tipc_sock structure)
- *   - pointer to port structure
- *   - port reference
- */
+static u32 tsk_own_node(struct tipc_sock *tsk)
+{
+	return msg_prevnode(&tsk->phdr);
+}
 
 static u32 tsk_peer_node(struct tipc_sock *tsk)
 {
@@ -201,22 +196,67 @@ static int tsk_importance(struct tipc_sock *tsk)
 	return msg_importance(&tsk->phdr);
 }
 
-static int tsk_set_importance(struct tipc_sock *tsk, int imp)
-{
-	if (imp > TIPC_CRITICAL_IMPORTANCE)
-		return -EINVAL;
-	msg_set_importance(&tsk->phdr, (u32)imp);
-	return 0;
-}
-
 static struct tipc_sock *tipc_sk(const struct sock *sk)
 {
 	return container_of(sk, struct tipc_sock, sk);
 }
 
-static int tsk_conn_cong(struct tipc_sock *tsk)
+int tsk_set_importance(struct sock *sk, int imp)
 {
-	return tsk->sent_unacked >= TIPC_FLOWCTRL_WIN;
+	if (imp > TIPC_CRITICAL_IMPORTANCE)
+		return -EINVAL;
+	msg_set_importance(&tipc_sk(sk)->phdr, (u32)imp);
+	return 0;
+}
+
+static bool tsk_conn_cong(struct tipc_sock *tsk)
+{
+	return tsk->snt_unacked > tsk->snd_win;
+}
+
+static u16 tsk_blocks(int len)
+{
+	return ((len / FLOWCTL_BLK_SZ) + 1);
+}
+
+/* tsk_blocks(): translate a buffer size in bytes to number of
+ * advertisable blocks, taking into account the ratio truesize(len)/len
+ * We can trust that this ratio is always < 4 for len >= FLOWCTL_BLK_SZ
+ */
+static u16 tsk_adv_blocks(int len)
+{
+	return len / FLOWCTL_BLK_SZ / 4;
+}
+
+/* tsk_inc(): increment counter for sent or received data
+ * - If block based flow control is not supported by peer we
+ *   fall back to message based ditto, incrementing the counter
+ */
+static u16 tsk_inc(struct tipc_sock *tsk, int msglen)
+{
+	if (likely(tsk->peer_caps & TIPC_BLOCK_FLOWCTL))
+		return ((msglen / FLOWCTL_BLK_SZ) + 1);
+	return 1;
+}
+
+/* tsk_set_nagle - enable/disable nagle property by manipulating maxnagle
+ */
+static void tsk_set_nagle(struct tipc_sock *tsk)
+{
+	struct sock *sk = &tsk->sk;
+
+	tsk->maxnagle = 0;
+	if (sk->sk_type != SOCK_STREAM)
+		return;
+	if (tsk->nodelay)
+		return;
+	if (!(tsk->peer_caps & TIPC_NAGLE))
+		return;
+	/* Limit node local buffer size to avoid receive queue overflow */
+	if (tsk->max_pkt == MAX_MSG_SIZE)
+		tsk->maxnagle = 1500;
+	else
+		tsk->maxnagle = tsk->max_pkt;
 }
 
 /**
@@ -226,7 +266,25 @@ static int tsk_conn_cong(struct tipc_sock *tsk)
  */
 static void tsk_advance_rx_queue(struct sock *sk)
 {
+	trace_tipc_sk_advance_rx(sk, NULL, TIPC_DUMP_SK_RCVQ, " ");
 	kfree_skb(__skb_dequeue(&sk->sk_receive_queue));
+}
+
+/* tipc_sk_respond() : send response message back to sender
+ */
+static void tipc_sk_respond(struct sock *sk, struct sk_buff *skb, int err)
+{
+	u32 selector;
+	u32 dnode;
+	u32 onode = tipc_own_addr(sock_net(sk));
+
+	if (!tipc_msg_reverse(onode, &skb, err))
+		return;
+
+	trace_tipc_sk_rej_msg(sk, skb, TIPC_DUMP_NONE, "@sk_respond!");
+	dnode = msg_destnode(buf_msg(skb));
+	selector = msg_origport(buf_msg(skb));
+	tipc_node_xmit_skb(sock_net(sk), skb, dnode, selector);
 }
 
 /**
@@ -234,15 +292,27 @@ static void tsk_advance_rx_queue(struct sock *sk)
  *
  * Caller must hold socket lock
  */
-static void tsk_rej_rx_queue(struct sock *sk)
+static void tsk_rej_rx_queue(struct sock *sk, int error)
 {
-	struct sk_buff *buf;
-	u32 dnode;
+	struct sk_buff *skb;
 
-	while ((buf = __skb_dequeue(&sk->sk_receive_queue))) {
-		if (tipc_msg_reverse(buf, &dnode, TIPC_ERR_NO_PORT))
-			tipc_link_xmit(buf, dnode, 0);
-	}
+	while ((skb = __skb_dequeue(&sk->sk_receive_queue)))
+		tipc_sk_respond(sk, skb, error);
+}
+
+static bool tipc_sk_connected(const struct sock *sk)
+{
+	return READ_ONCE(sk->sk_state) == TIPC_ESTABLISHED;
+}
+
+/* tipc_sk_type_connectionless - check if the socket is datagram socket
+ * @sk: socket
+ *
+ * Returns true if connection less, false otherwise
+ */
+static bool tipc_sk_type_connectionless(struct sock *sk)
+{
+	return sk->sk_type == SOCK_RDM || sk->sk_type == SOCK_DGRAM;
 }
 
 /* tsk_peer_msg - verify if message was sent by connected port's peer
@@ -252,11 +322,12 @@ static void tsk_rej_rx_queue(struct sock *sk)
  */
 static bool tsk_peer_msg(struct tipc_sock *tsk, struct tipc_msg *msg)
 {
+	struct sock *sk = &tsk->sk;
+	u32 self = tipc_own_addr(sock_net(sk));
 	u32 peer_port = tsk_peer_port(tsk);
-	u32 orig_node;
-	u32 peer_node;
+	u32 orig_node, peer_node;
 
-	if (unlikely(!tsk->connected))
+	if (unlikely(!tipc_sk_connected(sk)))
 		return false;
 
 	if (unlikely(msg_origport(msg) != peer_port))
@@ -268,14 +339,98 @@ static bool tsk_peer_msg(struct tipc_sock *tsk, struct tipc_msg *msg)
 	if (likely(orig_node == peer_node))
 		return true;
 
-	if (!orig_node && (peer_node == tipc_own_addr))
+	if (!orig_node && peer_node == self)
 		return true;
 
-	if (!peer_node && (orig_node == tipc_own_addr))
+	if (!peer_node && orig_node == self)
 		return true;
 
 	return false;
 }
+
+/* tipc_set_sk_state - set the sk_state of the socket
+ * @sk: socket
+ *
+ * Caller must hold socket lock
+ *
+ * Returns 0 on success, errno otherwise
+ */
+static int tipc_set_sk_state(struct sock *sk, int state)
+{
+	int oldsk_state = sk->sk_state;
+	int res = -EINVAL;
+
+	switch (state) {
+	case TIPC_OPEN:
+		res = 0;
+		break;
+	case TIPC_LISTEN:
+	case TIPC_CONNECTING:
+		if (oldsk_state == TIPC_OPEN)
+			res = 0;
+		break;
+	case TIPC_ESTABLISHED:
+		if (oldsk_state == TIPC_CONNECTING ||
+		    oldsk_state == TIPC_OPEN)
+			res = 0;
+		break;
+	case TIPC_DISCONNECTING:
+		if (oldsk_state == TIPC_CONNECTING ||
+		    oldsk_state == TIPC_ESTABLISHED)
+			res = 0;
+		break;
+	}
+
+	if (!res)
+		sk->sk_state = state;
+
+	return res;
+}
+
+static int tipc_sk_sock_err(struct socket *sock, long *timeout)
+{
+	struct sock *sk = sock->sk;
+	int err = sock_error(sk);
+	int typ = sock->type;
+
+	if (err)
+		return err;
+	if (typ == SOCK_STREAM || typ == SOCK_SEQPACKET) {
+		if (sk->sk_state == TIPC_DISCONNECTING)
+			return -EPIPE;
+		else if (!tipc_sk_connected(sk))
+			return -ENOTCONN;
+	}
+	if (!*timeout)
+		return -EAGAIN;
+	if (signal_pending(current))
+		return sock_intr_errno(*timeout);
+
+	return 0;
+}
+
+#define tipc_wait_for_cond(sock_, timeo_, condition_)			       \
+({                                                                             \
+	DEFINE_WAIT_FUNC(wait_, woken_wake_function);                          \
+	struct sock *sk_;						       \
+	int rc_;							       \
+									       \
+	while ((rc_ = !(condition_))) {					       \
+		/* coupled with smp_wmb() in tipc_sk_proto_rcv() */            \
+		smp_rmb();                                                     \
+		sk_ = (sock_)->sk;					       \
+		rc_ = tipc_sk_sock_err((sock_), timeo_);		       \
+		if (rc_)						       \
+			break;						       \
+		add_wait_queue(sk_sleep(sk_), &wait_);                         \
+		release_sock(sk_);					       \
+		*(timeo_) = wait_woken(&wait_, TASK_INTERRUPTIBLE, *(timeo_)); \
+		sched_annotate_sleep();				               \
+		lock_sock(sk_);						       \
+		remove_wait_queue(sk_sleep(sk_), &wait_);		       \
+	}								       \
+	rc_;								       \
+})
 
 /**
  * tipc_sk_create - create a TIPC socket
@@ -293,11 +448,9 @@ static int tipc_sk_create(struct net *net, struct socket *sock,
 			  int protocol, int kern)
 {
 	const struct proto_ops *ops;
-	socket_state state;
 	struct sock *sk;
 	struct tipc_sock *tsk;
 	struct tipc_msg *msg;
-	u32 ref;
 
 	/* Validate arguments */
 	if (unlikely(protocol != 0))
@@ -306,132 +459,139 @@ static int tipc_sk_create(struct net *net, struct socket *sock,
 	switch (sock->type) {
 	case SOCK_STREAM:
 		ops = &stream_ops;
-		state = SS_UNCONNECTED;
 		break;
 	case SOCK_SEQPACKET:
 		ops = &packet_ops;
-		state = SS_UNCONNECTED;
 		break;
 	case SOCK_DGRAM:
 	case SOCK_RDM:
 		ops = &msg_ops;
-		state = SS_READY;
 		break;
 	default:
 		return -EPROTOTYPE;
 	}
 
 	/* Allocate socket's protocol area */
-	if (!kern)
-		sk = sk_alloc(net, AF_TIPC, GFP_KERNEL, &tipc_proto);
-	else
-		sk = sk_alloc(net, AF_TIPC, GFP_KERNEL, &tipc_proto_kern);
-
+	sk = sk_alloc(net, AF_TIPC, GFP_KERNEL, &tipc_proto, kern);
 	if (sk == NULL)
 		return -ENOMEM;
 
 	tsk = tipc_sk(sk);
-	ref = tipc_sk_ref_acquire(tsk);
-	if (!ref) {
-		pr_warn("Socket create failed; reference table exhausted\n");
-		return -ENOMEM;
-	}
 	tsk->max_pkt = MAX_PKT_DEFAULT;
-	tsk->ref = ref;
+	tsk->maxnagle = 0;
+	tsk->nagle_start = NAGLE_START_INIT;
 	INIT_LIST_HEAD(&tsk->publications);
+	INIT_LIST_HEAD(&tsk->cong_links);
 	msg = &tsk->phdr;
-	tipc_msg_init(msg, TIPC_LOW_IMPORTANCE, TIPC_NAMED_MSG,
-		      NAMED_H_SIZE, 0);
-	msg_set_origport(msg, ref);
 
 	/* Finish initializing socket data structures */
 	sock->ops = ops;
-	sock->state = state;
 	sock_init_data(sock, sk);
-	k_init_timer(&tsk->timer, (Handler)tipc_sk_timeout, ref);
-	sk->sk_backlog_rcv = tipc_backlog_rcv;
-	sk->sk_rcvbuf = sysctl_tipc_rmem[1];
+	tipc_set_sk_state(sk, TIPC_OPEN);
+	if (tipc_sk_insert(tsk)) {
+		sk_free(sk);
+		pr_warn("Socket create failed; port number exhausted\n");
+		return -EINVAL;
+	}
+
+	/* Ensure tsk is visible before we read own_addr. */
+	smp_mb();
+
+	tipc_msg_init(tipc_own_addr(net), msg, TIPC_LOW_IMPORTANCE,
+		      TIPC_NAMED_MSG, NAMED_H_SIZE, 0);
+
+	msg_set_origport(msg, tsk->portid);
+	timer_setup(&sk->sk_timer, tipc_sk_timeout, 0);
+	sk->sk_shutdown = 0;
+	sk->sk_backlog_rcv = tipc_sk_backlog_rcv;
+	sk->sk_rcvbuf = READ_ONCE(sysctl_tipc_rmem[1]);
 	sk->sk_data_ready = tipc_data_ready;
 	sk->sk_write_space = tipc_write_space;
+	sk->sk_destruct = tipc_sock_destruct;
 	tsk->conn_timeout = CONN_TIMEOUT_DEFAULT;
-	tsk->sent_unacked = 0;
+	tsk->group_is_open = true;
 	atomic_set(&tsk->dupl_rcvcnt, 0);
 
-	if (sock->state == SS_READY) {
+	/* Start out with safe limits until we receive an advertised window */
+	tsk->snd_win = tsk_adv_blocks(RCVBUF_MIN);
+	tsk->rcv_win = tsk->snd_win;
+
+	if (tipc_sk_type_connectionless(sk)) {
 		tsk_set_unreturnable(tsk, true);
 		if (sock->type == SOCK_DGRAM)
 			tsk_set_unreliable(tsk, true);
 	}
+	__skb_queue_head_init(&tsk->mc_method.deferredq);
+	trace_tipc_sk_create(sk, NULL, TIPC_DUMP_NONE, " ");
 	return 0;
 }
 
-/**
- * tipc_sock_create_local - create TIPC socket from inside TIPC module
- * @type: socket type - SOCK_RDM or SOCK_SEQPACKET
- *
- * We cannot use sock_creat_kern here because it bumps module user count.
- * Since socket owner and creator is the same module we must make sure
- * that module count remains zero for module local sockets, otherwise
- * we cannot do rmmod.
- *
- * Returns 0 on success, errno otherwise
- */
-int tipc_sock_create_local(int type, struct socket **res)
+static void tipc_sk_callback(struct rcu_head *head)
 {
-	int rc;
+	struct tipc_sock *tsk = container_of(head, struct tipc_sock, rcu);
 
-	rc = sock_create_lite(AF_TIPC, type, 0, res);
-	if (rc < 0) {
-		pr_err("Failed to create kernel socket\n");
-		return rc;
-	}
-	tipc_sk_create(&init_net, *res, 0, 1);
-
-	return 0;
+	sock_put(&tsk->sk);
 }
 
-/**
- * tipc_sock_release_local - release socket created by tipc_sock_create_local
- * @sock: the socket to be released.
- *
- * Module reference count is not incremented when such sockets are created,
- * so we must keep it from being decremented when they are released.
- */
-void tipc_sock_release_local(struct socket *sock)
-{
-	tipc_release(sock);
-	sock->ops = NULL;
-	sock_release(sock);
-}
-
-/**
- * tipc_sock_accept_local - accept a connection on a socket created
- * with tipc_sock_create_local. Use this function to avoid that
- * module reference count is inadvertently incremented.
- *
- * @sock:    the accepting socket
- * @newsock: reference to the new socket to be created
- * @flags:   socket flags
- */
-
-int tipc_sock_accept_local(struct socket *sock, struct socket **newsock,
-			   int flags)
+/* Caller should hold socket lock for the socket. */
+static void __tipc_shutdown(struct socket *sock, int error)
 {
 	struct sock *sk = sock->sk;
-	int ret;
+	struct tipc_sock *tsk = tipc_sk(sk);
+	struct net *net = sock_net(sk);
+	long timeout = msecs_to_jiffies(CONN_TIMEOUT_DEFAULT);
+	u32 dnode = tsk_peer_node(tsk);
+	struct sk_buff *skb;
 
-	ret = sock_create_lite(sk->sk_family, sk->sk_type,
-			       sk->sk_protocol, newsock);
-	if (ret < 0)
-		return ret;
+	/* Avoid that hi-prio shutdown msgs bypass msgs in link wakeup queue */
+	tipc_wait_for_cond(sock, &timeout, (!tsk->cong_link_cnt &&
+					    !tsk_conn_cong(tsk)));
 
-	ret = tipc_accept(sock, *newsock, flags);
-	if (ret < 0) {
-		sock_release(*newsock);
-		return ret;
+	/* Push out delayed messages if in Nagle mode */
+	tipc_sk_push_backlog(tsk, false);
+	/* Remove pending SYN */
+	__skb_queue_purge(&sk->sk_write_queue);
+
+	/* Remove partially received buffer if any */
+	skb = skb_peek(&sk->sk_receive_queue);
+	if (skb && TIPC_SKB_CB(skb)->bytes_read) {
+		__skb_unlink(skb, &sk->sk_receive_queue);
+		kfree_skb(skb);
 	}
-	(*newsock)->ops = sock->ops;
-	return ret;
+
+	/* Reject all unreceived messages if connectionless */
+	if (tipc_sk_type_connectionless(sk)) {
+		tsk_rej_rx_queue(sk, error);
+		return;
+	}
+
+	switch (sk->sk_state) {
+	case TIPC_CONNECTING:
+	case TIPC_ESTABLISHED:
+		tipc_set_sk_state(sk, TIPC_DISCONNECTING);
+		tipc_node_remove_conn(net, dnode, tsk->portid);
+		/* Send a FIN+/- to its peer */
+		skb = __skb_dequeue(&sk->sk_receive_queue);
+		if (skb) {
+			__skb_queue_purge(&sk->sk_receive_queue);
+			tipc_sk_respond(sk, skb, error);
+			break;
+		}
+		skb = tipc_msg_create(TIPC_CRITICAL_IMPORTANCE,
+				      TIPC_CONN_MSG, SHORT_H_SIZE, 0, dnode,
+				      tsk_own_node(tsk), tsk_peer_port(tsk),
+				      tsk->portid, error);
+		if (skb)
+			tipc_node_xmit_skb(net, skb, dnode, tsk->portid);
+		break;
+	case TIPC_LISTEN:
+		/* Reject all SYN messages */
+		tsk_rej_rx_queue(sk, error);
+		break;
+	default:
+		__skb_queue_purge(&sk->sk_receive_queue);
+		break;
+	}
 }
 
 /**
@@ -454,8 +614,6 @@ static int tipc_release(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
 	struct tipc_sock *tsk;
-	struct sk_buff *buf;
-	u32 dnode;
 
 	/*
 	 * Exit if socket isn't fully initialized (occurs when a failed accept()
@@ -467,50 +625,21 @@ static int tipc_release(struct socket *sock)
 	tsk = tipc_sk(sk);
 	lock_sock(sk);
 
-	/*
-	 * Reject all unreceived messages, except on an active connection
-	 * (which disconnects locally & sends a 'FIN+' to peer)
-	 */
-	dnode = tsk_peer_node(tsk);
-	while (sock->state != SS_DISCONNECTING) {
-		buf = __skb_dequeue(&sk->sk_receive_queue);
-		if (buf == NULL)
-			break;
-		if (TIPC_SKB_CB(buf)->handle != NULL)
-			kfree_skb(buf);
-		else {
-			if ((sock->state == SS_CONNECTING) ||
-			    (sock->state == SS_CONNECTED)) {
-				sock->state = SS_DISCONNECTING;
-				tsk->connected = 0;
-				tipc_node_remove_conn(dnode, tsk->ref);
-			}
-			if (tipc_msg_reverse(buf, &dnode, TIPC_ERR_NO_PORT))
-				tipc_link_xmit(buf, dnode, 0);
-		}
-	}
-
+	trace_tipc_sk_release(sk, NULL, TIPC_DUMP_ALL, " ");
+	__tipc_shutdown(sock, TIPC_ERR_NO_PORT);
+	sk->sk_shutdown = SHUTDOWN_MASK;
+	tipc_sk_leave(tsk);
 	tipc_sk_withdraw(tsk, 0, NULL);
-	tipc_sk_ref_discard(tsk->ref);
-	k_cancel_timer(&tsk->timer);
-	if (tsk->connected) {
-		buf = tipc_msg_create(TIPC_CRITICAL_IMPORTANCE, TIPC_CONN_MSG,
-				      SHORT_H_SIZE, 0, dnode, tipc_own_addr,
-				      tsk_peer_port(tsk),
-				      tsk->ref, TIPC_ERR_NO_PORT);
-		if (buf)
-			tipc_link_xmit(buf, dnode, tsk->ref);
-		tipc_node_remove_conn(dnode, tsk->ref);
-	}
-	k_term_timer(&tsk->timer);
+	__skb_queue_purge(&tsk->mc_method.deferredq);
+	sk_stop_timer(sk, &sk->sk_timer);
+	tipc_sk_remove(tsk);
 
-	/* Discard any remaining (connection-based) messages in receive queue */
-	__skb_queue_purge(&sk->sk_receive_queue);
-
+	sock_orphan(sk);
 	/* Reject any messages that accumulated in backlog queue */
-	sock->state = SS_DISCONNECTING;
 	release_sock(sk);
-	sock_put(sk);
+	tipc_dest_list_purge(&tsk->cong_links);
+	tsk->cong_link_cnt = 0;
+	call_rcu(&tsk->rcu, tipc_sk_callback);
 	sock->sk = NULL;
 
 	return 0;
@@ -544,7 +673,10 @@ static int tipc_bind(struct socket *sock, struct sockaddr *uaddr,
 		res = tipc_sk_withdraw(tsk, 0, NULL);
 		goto exit;
 	}
-
+	if (tsk->group) {
+		res = -EACCES;
+		goto exit;
+	}
 	if (uaddr_len < sizeof(struct sockaddr_tipc)) {
 		res = -EINVAL;
 		goto exit;
@@ -568,7 +700,7 @@ static int tipc_bind(struct socket *sock, struct sockaddr *uaddr,
 		goto exit;
 	}
 
-	res = (addr->scope > 0) ?
+	res = (addr->scope >= 0) ?
 		tipc_sk_publish(tsk, addr->scope, &addr->addr.nameseq) :
 		tipc_sk_withdraw(tsk, -addr->scope, &addr->addr.nameseq);
 exit:
@@ -580,7 +712,6 @@ exit:
  * tipc_getname - get port ID of socket or peer socket
  * @sock: socket structure
  * @uaddr: area for returned socket address
- * @uaddr_len: area for returned length of socket address
  * @peer: 0 = own ID, 1 = current peer ID, 2 = current/former peer ID
  *
  * Returns 0 on success, errno otherwise
@@ -590,30 +721,30 @@ exit:
  *       a completely predictable manner).
  */
 static int tipc_getname(struct socket *sock, struct sockaddr *uaddr,
-			int *uaddr_len, int peer)
+			int peer)
 {
 	struct sockaddr_tipc *addr = (struct sockaddr_tipc *)uaddr;
-	struct tipc_sock *tsk = tipc_sk(sock->sk);
+	struct sock *sk = sock->sk;
+	struct tipc_sock *tsk = tipc_sk(sk);
 
 	memset(addr, 0, sizeof(*addr));
 	if (peer) {
-		if ((sock->state != SS_CONNECTED) &&
-			((peer != 2) || (sock->state != SS_DISCONNECTING)))
+		if ((!tipc_sk_connected(sk)) &&
+		    ((peer != 2) || (sk->sk_state != TIPC_DISCONNECTING)))
 			return -ENOTCONN;
 		addr->addr.id.ref = tsk_peer_port(tsk);
 		addr->addr.id.node = tsk_peer_node(tsk);
 	} else {
-		addr->addr.id.ref = tsk->ref;
-		addr->addr.id.node = tipc_own_addr;
+		addr->addr.id.ref = tsk->portid;
+		addr->addr.id.node = tipc_own_addr(sock_net(sk));
 	}
 
-	*uaddr_len = sizeof(*addr);
 	addr->addrtype = TIPC_ADDR_ID;
 	addr->family = AF_TIPC;
 	addr->scope = 0;
 	addr->addr.name.domain = 0;
 
-	return 0;
+	return sizeof(*addr);
 }
 
 /**
@@ -630,255 +761,615 @@ static int tipc_getname(struct socket *sock, struct sockaddr *uaddr,
  * exits.  TCP and other protocols seem to rely on higher level poll routines
  * to handle any preventable race conditions, so TIPC will do the same ...
  *
- * TIPC sets the returned events as follows:
- *
- * socket state		flags set
- * ------------		---------
- * unconnected		no read flags
- *			POLLOUT if port is not congested
- *
- * connecting		POLLIN/POLLRDNORM if ACK/NACK in rx queue
- *			no write flags
- *
- * connected		POLLIN/POLLRDNORM if data in rx queue
- *			POLLOUT if port is not congested
- *
- * disconnecting	POLLIN/POLLRDNORM/POLLHUP
- *			no write flags
- *
- * listening		POLLIN if SYN in rx queue
- *			no write flags
- *
- * ready		POLLIN/POLLRDNORM if data in rx queue
- * [connectionless]	POLLOUT (since port cannot be congested)
- *
  * IMPORTANT: The fact that a read or write operation is indicated does NOT
  * imply that the operation will succeed, merely that it should be performed
  * and will not block.
  */
-static unsigned int tipc_poll(struct file *file, struct socket *sock,
+static __poll_t tipc_poll(struct file *file, struct socket *sock,
 			      poll_table *wait)
 {
 	struct sock *sk = sock->sk;
 	struct tipc_sock *tsk = tipc_sk(sk);
-	u32 mask = 0;
+	__poll_t revents = 0;
 
-	sock_poll_wait(file, sk_sleep(sk), wait);
+	sock_poll_wait(file, sock, wait);
+	trace_tipc_sk_poll(sk, NULL, TIPC_DUMP_ALL, " ");
 
-	switch ((int)sock->state) {
-	case SS_UNCONNECTED:
-		if (!tsk->link_cong)
-			mask |= POLLOUT;
+	if (sk->sk_shutdown & RCV_SHUTDOWN)
+		revents |= EPOLLRDHUP | EPOLLIN | EPOLLRDNORM;
+	if (sk->sk_shutdown == SHUTDOWN_MASK)
+		revents |= EPOLLHUP;
+
+	switch (sk->sk_state) {
+	case TIPC_ESTABLISHED:
+		if (!tsk->cong_link_cnt && !tsk_conn_cong(tsk))
+			revents |= EPOLLOUT;
+		fallthrough;
+	case TIPC_LISTEN:
+	case TIPC_CONNECTING:
+		if (!skb_queue_empty_lockless(&sk->sk_receive_queue))
+			revents |= EPOLLIN | EPOLLRDNORM;
 		break;
-	case SS_READY:
-	case SS_CONNECTED:
-		if (!tsk->link_cong && !tsk_conn_cong(tsk))
-			mask |= POLLOUT;
-		/* fall thru' */
-	case SS_CONNECTING:
-	case SS_LISTENING:
-		if (!skb_queue_empty(&sk->sk_receive_queue))
-			mask |= (POLLIN | POLLRDNORM);
+	case TIPC_OPEN:
+		if (tsk->group_is_open && !tsk->cong_link_cnt)
+			revents |= EPOLLOUT;
+		if (!tipc_sk_type_connectionless(sk))
+			break;
+		if (skb_queue_empty_lockless(&sk->sk_receive_queue))
+			break;
+		revents |= EPOLLIN | EPOLLRDNORM;
 		break;
-	case SS_DISCONNECTING:
-		mask = (POLLIN | POLLRDNORM | POLLHUP);
+	case TIPC_DISCONNECTING:
+		revents = EPOLLIN | EPOLLRDNORM | EPOLLHUP;
 		break;
 	}
-
-	return mask;
+	return revents;
 }
 
 /**
  * tipc_sendmcast - send multicast message
  * @sock: socket structure
  * @seq: destination address
- * @iov: message data to send
- * @dsz: total length of message data
- * @timeo: timeout to wait for wakeup
+ * @msg: message to send
+ * @dlen: length of data to send
+ * @timeout: timeout to wait for wakeup
  *
  * Called from function tipc_sendmsg(), which has done all sanity checks
  * Returns the number of bytes sent on success, or errno
  */
 static int tipc_sendmcast(struct  socket *sock, struct tipc_name_seq *seq,
-			  struct iovec *iov, size_t dsz, long timeo)
-{
-	struct sock *sk = sock->sk;
-	struct tipc_msg *mhdr = &tipc_sk(sk)->phdr;
-	struct sk_buff *buf;
-	uint mtu;
-	int rc;
-
-	msg_set_type(mhdr, TIPC_MCAST_MSG);
-	msg_set_lookup_scope(mhdr, TIPC_CLUSTER_SCOPE);
-	msg_set_destport(mhdr, 0);
-	msg_set_destnode(mhdr, 0);
-	msg_set_nametype(mhdr, seq->type);
-	msg_set_namelower(mhdr, seq->lower);
-	msg_set_nameupper(mhdr, seq->upper);
-	msg_set_hdr_sz(mhdr, MCAST_H_SIZE);
-
-new_mtu:
-	mtu = tipc_bclink_get_mtu();
-	rc = tipc_msg_build(mhdr, iov, 0, dsz, mtu, &buf);
-	if (unlikely(rc < 0))
-		return rc;
-
-	do {
-		rc = tipc_bclink_xmit(buf);
-		if (likely(rc >= 0)) {
-			rc = dsz;
-			break;
-		}
-		if (rc == -EMSGSIZE)
-			goto new_mtu;
-		if (rc != -ELINKCONG)
-			break;
-		tipc_sk(sk)->link_cong = 1;
-		rc = tipc_wait_for_sndmsg(sock, &timeo);
-		if (rc)
-			kfree_skb_list(buf);
-	} while (!rc);
-	return rc;
-}
-
-/* tipc_sk_mcast_rcv - Deliver multicast message to all destination sockets
- */
-void tipc_sk_mcast_rcv(struct sk_buff *buf)
-{
-	struct tipc_msg *msg = buf_msg(buf);
-	struct tipc_port_list dports = {0, NULL, };
-	struct tipc_port_list *item;
-	struct sk_buff *b;
-	uint i, last, dst = 0;
-	u32 scope = TIPC_CLUSTER_SCOPE;
-
-	if (in_own_node(msg_orignode(msg)))
-		scope = TIPC_NODE_SCOPE;
-
-	/* Create destination port list: */
-	tipc_nametbl_mc_translate(msg_nametype(msg),
-				  msg_namelower(msg),
-				  msg_nameupper(msg),
-				  scope,
-				  &dports);
-	last = dports.count;
-	if (!last) {
-		kfree_skb(buf);
-		return;
-	}
-
-	for (item = &dports; item; item = item->next) {
-		for (i = 0; i < PLSIZE && ++dst <= last; i++) {
-			b = (dst != last) ? skb_clone(buf, GFP_ATOMIC) : buf;
-			if (!b) {
-				pr_warn("Failed do clone mcast rcv buffer\n");
-				continue;
-			}
-			msg_set_destport(msg, item->ports[i]);
-			tipc_sk_rcv(b);
-		}
-	}
-	tipc_port_list_free(&dports);
-}
-
-/**
- * tipc_sk_proto_rcv - receive a connection mng protocol message
- * @tsk: receiving socket
- * @dnode: node to send response message to, if any
- * @buf: buffer containing protocol message
- * Returns 0 (TIPC_OK) if message was consumed, 1 (TIPC_FWD_MSG) if
- * (CONN_PROBE_REPLY) message should be forwarded.
- */
-static int tipc_sk_proto_rcv(struct tipc_sock *tsk, u32 *dnode,
-			     struct sk_buff *buf)
-{
-	struct tipc_msg *msg = buf_msg(buf);
-	int conn_cong;
-
-	/* Ignore if connection cannot be validated: */
-	if (!tsk_peer_msg(tsk, msg))
-		goto exit;
-
-	tsk->probing_state = TIPC_CONN_OK;
-
-	if (msg_type(msg) == CONN_ACK) {
-		conn_cong = tsk_conn_cong(tsk);
-		tsk->sent_unacked -= msg_msgcnt(msg);
-		if (conn_cong)
-			tsk->sk.sk_write_space(&tsk->sk);
-	} else if (msg_type(msg) == CONN_PROBE) {
-		if (!tipc_msg_reverse(buf, dnode, TIPC_OK))
-			return TIPC_OK;
-		msg_set_type(msg, CONN_PROBE_REPLY);
-		return TIPC_FWD_MSG;
-	}
-	/* Do nothing if msg_type() == CONN_PROBE_REPLY */
-exit:
-	kfree_skb(buf);
-	return TIPC_OK;
-}
-
-/**
- * dest_name_check - verify user is permitted to send to specified port name
- * @dest: destination address
- * @m: descriptor for message to be sent
- *
- * Prevents restricted configuration commands from being issued by
- * unauthorized users.
- *
- * Returns 0 if permission is granted, otherwise errno
- */
-static int dest_name_check(struct sockaddr_tipc *dest, struct msghdr *m)
-{
-	struct tipc_cfg_msg_hdr hdr;
-
-	if (unlikely(dest->addrtype == TIPC_ADDR_ID))
-		return 0;
-	if (likely(dest->addr.name.name.type >= TIPC_RESERVED_TYPES))
-		return 0;
-	if (likely(dest->addr.name.name.type == TIPC_TOP_SRV))
-		return 0;
-	if (likely(dest->addr.name.name.type != TIPC_CFG_SRV))
-		return -EACCES;
-
-	if (!m->msg_iovlen || (m->msg_iov[0].iov_len < sizeof(hdr)))
-		return -EMSGSIZE;
-	if (copy_from_user(&hdr, m->msg_iov[0].iov_base, sizeof(hdr)))
-		return -EFAULT;
-	if ((ntohs(hdr.tcm_type) & 0xC000) && (!capable(CAP_NET_ADMIN)))
-		return -EACCES;
-
-	return 0;
-}
-
-static int tipc_wait_for_sndmsg(struct socket *sock, long *timeo_p)
+			  struct msghdr *msg, size_t dlen, long timeout)
 {
 	struct sock *sk = sock->sk;
 	struct tipc_sock *tsk = tipc_sk(sk);
-	DEFINE_WAIT(wait);
-	int done;
+	struct tipc_msg *hdr = &tsk->phdr;
+	struct net *net = sock_net(sk);
+	int mtu = tipc_bcast_get_mtu(net);
+	struct tipc_mc_method *method = &tsk->mc_method;
+	struct sk_buff_head pkts;
+	struct tipc_nlist dsts;
+	int rc;
 
-	do {
-		int err = sock_error(sk);
-		if (err)
-			return err;
-		if (sock->state == SS_DISCONNECTING)
-			return -EPIPE;
-		if (!*timeo_p)
-			return -EAGAIN;
-		if (signal_pending(current))
-			return sock_intr_errno(*timeo_p);
+	if (tsk->group)
+		return -EACCES;
 
-		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
-		done = sk_wait_event(sk, timeo_p, !tsk->link_cong);
-		finish_wait(sk_sleep(sk), &wait);
-	} while (!done);
-	return 0;
+	/* Block or return if any destination link is congested */
+	rc = tipc_wait_for_cond(sock, &timeout, !tsk->cong_link_cnt);
+	if (unlikely(rc))
+		return rc;
+
+	/* Lookup destination nodes */
+	tipc_nlist_init(&dsts, tipc_own_addr(net));
+	tipc_nametbl_lookup_dst_nodes(net, seq->type, seq->lower,
+				      seq->upper, &dsts);
+	if (!dsts.local && !dsts.remote)
+		return -EHOSTUNREACH;
+
+	/* Build message header */
+	msg_set_type(hdr, TIPC_MCAST_MSG);
+	msg_set_hdr_sz(hdr, MCAST_H_SIZE);
+	msg_set_lookup_scope(hdr, TIPC_CLUSTER_SCOPE);
+	msg_set_destport(hdr, 0);
+	msg_set_destnode(hdr, 0);
+	msg_set_nametype(hdr, seq->type);
+	msg_set_namelower(hdr, seq->lower);
+	msg_set_nameupper(hdr, seq->upper);
+
+	/* Build message as chain of buffers */
+	__skb_queue_head_init(&pkts);
+	rc = tipc_msg_build(hdr, msg, 0, dlen, mtu, &pkts);
+
+	/* Send message if build was successful */
+	if (unlikely(rc == dlen)) {
+		trace_tipc_sk_sendmcast(sk, skb_peek(&pkts),
+					TIPC_DUMP_SK_SNDQ, " ");
+		rc = tipc_mcast_xmit(net, &pkts, method, &dsts,
+				     &tsk->cong_link_cnt);
+	}
+
+	tipc_nlist_purge(&dsts);
+
+	return rc ? rc : dlen;
+}
+
+/**
+ * tipc_send_group_msg - send a message to a member in the group
+ * @net: network namespace
+ * @m: message to send
+ * @mb: group member
+ * @dnode: destination node
+ * @dport: destination port
+ * @dlen: total length of message data
+ */
+static int tipc_send_group_msg(struct net *net, struct tipc_sock *tsk,
+			       struct msghdr *m, struct tipc_member *mb,
+			       u32 dnode, u32 dport, int dlen)
+{
+	u16 bc_snd_nxt = tipc_group_bc_snd_nxt(tsk->group);
+	struct tipc_mc_method *method = &tsk->mc_method;
+	int blks = tsk_blocks(GROUP_H_SIZE + dlen);
+	struct tipc_msg *hdr = &tsk->phdr;
+	struct sk_buff_head pkts;
+	int mtu, rc;
+
+	/* Complete message header */
+	msg_set_type(hdr, TIPC_GRP_UCAST_MSG);
+	msg_set_hdr_sz(hdr, GROUP_H_SIZE);
+	msg_set_destport(hdr, dport);
+	msg_set_destnode(hdr, dnode);
+	msg_set_grp_bc_seqno(hdr, bc_snd_nxt);
+
+	/* Build message as chain of buffers */
+	__skb_queue_head_init(&pkts);
+	mtu = tipc_node_get_mtu(net, dnode, tsk->portid, false);
+	rc = tipc_msg_build(hdr, m, 0, dlen, mtu, &pkts);
+	if (unlikely(rc != dlen))
+		return rc;
+
+	/* Send message */
+	rc = tipc_node_xmit(net, &pkts, dnode, tsk->portid);
+	if (unlikely(rc == -ELINKCONG)) {
+		tipc_dest_push(&tsk->cong_links, dnode, 0);
+		tsk->cong_link_cnt++;
+	}
+
+	/* Update send window */
+	tipc_group_update_member(mb, blks);
+
+	/* A broadcast sent within next EXPIRE period must follow same path */
+	method->rcast = true;
+	method->mandatory = true;
+	return dlen;
+}
+
+/**
+ * tipc_send_group_unicast - send message to a member in the group
+ * @sock: socket structure
+ * @m: message to send
+ * @dlen: total length of message data
+ * @timeout: timeout to wait for wakeup
+ *
+ * Called from function tipc_sendmsg(), which has done all sanity checks
+ * Returns the number of bytes sent on success, or errno
+ */
+static int tipc_send_group_unicast(struct socket *sock, struct msghdr *m,
+				   int dlen, long timeout)
+{
+	struct sock *sk = sock->sk;
+	DECLARE_SOCKADDR(struct sockaddr_tipc *, dest, m->msg_name);
+	int blks = tsk_blocks(GROUP_H_SIZE + dlen);
+	struct tipc_sock *tsk = tipc_sk(sk);
+	struct net *net = sock_net(sk);
+	struct tipc_member *mb = NULL;
+	u32 node, port;
+	int rc;
+
+	node = dest->addr.id.node;
+	port = dest->addr.id.ref;
+	if (!port && !node)
+		return -EHOSTUNREACH;
+
+	/* Block or return if destination link or member is congested */
+	rc = tipc_wait_for_cond(sock, &timeout,
+				!tipc_dest_find(&tsk->cong_links, node, 0) &&
+				tsk->group &&
+				!tipc_group_cong(tsk->group, node, port, blks,
+						 &mb));
+	if (unlikely(rc))
+		return rc;
+
+	if (unlikely(!mb))
+		return -EHOSTUNREACH;
+
+	rc = tipc_send_group_msg(net, tsk, m, mb, node, port, dlen);
+
+	return rc ? rc : dlen;
+}
+
+/**
+ * tipc_send_group_anycast - send message to any member with given identity
+ * @sock: socket structure
+ * @m: message to send
+ * @dlen: total length of message data
+ * @timeout: timeout to wait for wakeup
+ *
+ * Called from function tipc_sendmsg(), which has done all sanity checks
+ * Returns the number of bytes sent on success, or errno
+ */
+static int tipc_send_group_anycast(struct socket *sock, struct msghdr *m,
+				   int dlen, long timeout)
+{
+	DECLARE_SOCKADDR(struct sockaddr_tipc *, dest, m->msg_name);
+	struct sock *sk = sock->sk;
+	struct tipc_sock *tsk = tipc_sk(sk);
+	struct list_head *cong_links = &tsk->cong_links;
+	int blks = tsk_blocks(GROUP_H_SIZE + dlen);
+	struct tipc_msg *hdr = &tsk->phdr;
+	struct tipc_member *first = NULL;
+	struct tipc_member *mbr = NULL;
+	struct net *net = sock_net(sk);
+	u32 node, port, exclude;
+	struct list_head dsts;
+	u32 type, inst, scope;
+	int lookups = 0;
+	int dstcnt, rc;
+	bool cong;
+
+	INIT_LIST_HEAD(&dsts);
+
+	type = msg_nametype(hdr);
+	inst = dest->addr.name.name.instance;
+	scope = msg_lookup_scope(hdr);
+
+	while (++lookups < 4) {
+		exclude = tipc_group_exclude(tsk->group);
+
+		first = NULL;
+
+		/* Look for a non-congested destination member, if any */
+		while (1) {
+			if (!tipc_nametbl_lookup(net, type, inst, scope, &dsts,
+						 &dstcnt, exclude, false))
+				return -EHOSTUNREACH;
+			tipc_dest_pop(&dsts, &node, &port);
+			cong = tipc_group_cong(tsk->group, node, port, blks,
+					       &mbr);
+			if (!cong)
+				break;
+			if (mbr == first)
+				break;
+			if (!first)
+				first = mbr;
+		}
+
+		/* Start over if destination was not in member list */
+		if (unlikely(!mbr))
+			continue;
+
+		if (likely(!cong && !tipc_dest_find(cong_links, node, 0)))
+			break;
+
+		/* Block or return if destination link or member is congested */
+		rc = tipc_wait_for_cond(sock, &timeout,
+					!tipc_dest_find(cong_links, node, 0) &&
+					tsk->group &&
+					!tipc_group_cong(tsk->group, node, port,
+							 blks, &mbr));
+		if (unlikely(rc))
+			return rc;
+
+		/* Send, unless destination disappeared while waiting */
+		if (likely(mbr))
+			break;
+	}
+
+	if (unlikely(lookups >= 4))
+		return -EHOSTUNREACH;
+
+	rc = tipc_send_group_msg(net, tsk, m, mbr, node, port, dlen);
+
+	return rc ? rc : dlen;
+}
+
+/**
+ * tipc_send_group_bcast - send message to all members in communication group
+ * @sock: socket structure
+ * @m: message to send
+ * @dlen: total length of message data
+ * @timeout: timeout to wait for wakeup
+ *
+ * Called from function tipc_sendmsg(), which has done all sanity checks
+ * Returns the number of bytes sent on success, or errno
+ */
+static int tipc_send_group_bcast(struct socket *sock, struct msghdr *m,
+				 int dlen, long timeout)
+{
+	DECLARE_SOCKADDR(struct sockaddr_tipc *, dest, m->msg_name);
+	struct sock *sk = sock->sk;
+	struct net *net = sock_net(sk);
+	struct tipc_sock *tsk = tipc_sk(sk);
+	struct tipc_nlist *dsts;
+	struct tipc_mc_method *method = &tsk->mc_method;
+	bool ack = method->mandatory && method->rcast;
+	int blks = tsk_blocks(MCAST_H_SIZE + dlen);
+	struct tipc_msg *hdr = &tsk->phdr;
+	int mtu = tipc_bcast_get_mtu(net);
+	struct sk_buff_head pkts;
+	int rc = -EHOSTUNREACH;
+
+	/* Block or return if any destination link or member is congested */
+	rc = tipc_wait_for_cond(sock, &timeout,
+				!tsk->cong_link_cnt && tsk->group &&
+				!tipc_group_bc_cong(tsk->group, blks));
+	if (unlikely(rc))
+		return rc;
+
+	dsts = tipc_group_dests(tsk->group);
+	if (!dsts->local && !dsts->remote)
+		return -EHOSTUNREACH;
+
+	/* Complete message header */
+	if (dest) {
+		msg_set_type(hdr, TIPC_GRP_MCAST_MSG);
+		msg_set_nameinst(hdr, dest->addr.name.name.instance);
+	} else {
+		msg_set_type(hdr, TIPC_GRP_BCAST_MSG);
+		msg_set_nameinst(hdr, 0);
+	}
+	msg_set_hdr_sz(hdr, GROUP_H_SIZE);
+	msg_set_destport(hdr, 0);
+	msg_set_destnode(hdr, 0);
+	msg_set_grp_bc_seqno(hdr, tipc_group_bc_snd_nxt(tsk->group));
+
+	/* Avoid getting stuck with repeated forced replicasts */
+	msg_set_grp_bc_ack_req(hdr, ack);
+
+	/* Build message as chain of buffers */
+	__skb_queue_head_init(&pkts);
+	rc = tipc_msg_build(hdr, m, 0, dlen, mtu, &pkts);
+	if (unlikely(rc != dlen))
+		return rc;
+
+	/* Send message */
+	rc = tipc_mcast_xmit(net, &pkts, method, dsts, &tsk->cong_link_cnt);
+	if (unlikely(rc))
+		return rc;
+
+	/* Update broadcast sequence number and send windows */
+	tipc_group_update_bc_members(tsk->group, blks, ack);
+
+	/* Broadcast link is now free to choose method for next broadcast */
+	method->mandatory = false;
+	method->expires = jiffies;
+
+	return dlen;
+}
+
+/**
+ * tipc_send_group_mcast - send message to all members with given identity
+ * @sock: socket structure
+ * @m: message to send
+ * @dlen: total length of message data
+ * @timeout: timeout to wait for wakeup
+ *
+ * Called from function tipc_sendmsg(), which has done all sanity checks
+ * Returns the number of bytes sent on success, or errno
+ */
+static int tipc_send_group_mcast(struct socket *sock, struct msghdr *m,
+				 int dlen, long timeout)
+{
+	struct sock *sk = sock->sk;
+	DECLARE_SOCKADDR(struct sockaddr_tipc *, dest, m->msg_name);
+	struct tipc_sock *tsk = tipc_sk(sk);
+	struct tipc_group *grp = tsk->group;
+	struct tipc_msg *hdr = &tsk->phdr;
+	struct net *net = sock_net(sk);
+	u32 type, inst, scope, exclude;
+	struct list_head dsts;
+	u32 dstcnt;
+
+	INIT_LIST_HEAD(&dsts);
+
+	type = msg_nametype(hdr);
+	inst = dest->addr.name.name.instance;
+	scope = msg_lookup_scope(hdr);
+	exclude = tipc_group_exclude(grp);
+
+	if (!tipc_nametbl_lookup(net, type, inst, scope, &dsts,
+				 &dstcnt, exclude, true))
+		return -EHOSTUNREACH;
+
+	if (dstcnt == 1) {
+		tipc_dest_pop(&dsts, &dest->addr.id.node, &dest->addr.id.ref);
+		return tipc_send_group_unicast(sock, m, dlen, timeout);
+	}
+
+	tipc_dest_list_purge(&dsts);
+	return tipc_send_group_bcast(sock, m, dlen, timeout);
+}
+
+/**
+ * tipc_sk_mcast_rcv - Deliver multicast messages to all destination sockets
+ * @arrvq: queue with arriving messages, to be cloned after destination lookup
+ * @inputq: queue with cloned messages, delivered to socket after dest lookup
+ *
+ * Multi-threaded: parallel calls with reference to same queues may occur
+ */
+void tipc_sk_mcast_rcv(struct net *net, struct sk_buff_head *arrvq,
+		       struct sk_buff_head *inputq)
+{
+	u32 self = tipc_own_addr(net);
+	u32 type, lower, upper, scope;
+	struct sk_buff *skb, *_skb;
+	u32 portid, onode;
+	struct sk_buff_head tmpq;
+	struct list_head dports;
+	struct tipc_msg *hdr;
+	int user, mtyp, hlen;
+	bool exact;
+
+	__skb_queue_head_init(&tmpq);
+	INIT_LIST_HEAD(&dports);
+
+	skb = tipc_skb_peek(arrvq, &inputq->lock);
+	for (; skb; skb = tipc_skb_peek(arrvq, &inputq->lock)) {
+		hdr = buf_msg(skb);
+		user = msg_user(hdr);
+		mtyp = msg_type(hdr);
+		hlen = skb_headroom(skb) + msg_hdr_sz(hdr);
+		onode = msg_orignode(hdr);
+		type = msg_nametype(hdr);
+
+		if (mtyp == TIPC_GRP_UCAST_MSG || user == GROUP_PROTOCOL) {
+			spin_lock_bh(&inputq->lock);
+			if (skb_peek(arrvq) == skb) {
+				__skb_dequeue(arrvq);
+				__skb_queue_tail(inputq, skb);
+			}
+			kfree_skb(skb);
+			spin_unlock_bh(&inputq->lock);
+			continue;
+		}
+
+		/* Group messages require exact scope match */
+		if (msg_in_group(hdr)) {
+			lower = 0;
+			upper = ~0;
+			scope = msg_lookup_scope(hdr);
+			exact = true;
+		} else {
+			/* TIPC_NODE_SCOPE means "any scope" in this context */
+			if (onode == self)
+				scope = TIPC_NODE_SCOPE;
+			else
+				scope = TIPC_CLUSTER_SCOPE;
+			exact = false;
+			lower = msg_namelower(hdr);
+			upper = msg_nameupper(hdr);
+		}
+
+		/* Create destination port list: */
+		tipc_nametbl_mc_lookup(net, type, lower, upper,
+				       scope, exact, &dports);
+
+		/* Clone message per destination */
+		while (tipc_dest_pop(&dports, NULL, &portid)) {
+			_skb = __pskb_copy(skb, hlen, GFP_ATOMIC);
+			if (_skb) {
+				msg_set_destport(buf_msg(_skb), portid);
+				__skb_queue_tail(&tmpq, _skb);
+				continue;
+			}
+			pr_warn("Failed to clone mcast rcv buffer\n");
+		}
+		/* Append to inputq if not already done by other thread */
+		spin_lock_bh(&inputq->lock);
+		if (skb_peek(arrvq) == skb) {
+			skb_queue_splice_tail_init(&tmpq, inputq);
+			/* Decrease the skb's refcnt as increasing in the
+			 * function tipc_skb_peek
+			 */
+			kfree_skb(__skb_dequeue(arrvq));
+		}
+		spin_unlock_bh(&inputq->lock);
+		__skb_queue_purge(&tmpq);
+		kfree_skb(skb);
+	}
+	tipc_sk_rcv(net, inputq);
+}
+
+/* tipc_sk_push_backlog(): send accumulated buffers in socket write queue
+ *                         when socket is in Nagle mode
+ */
+static void tipc_sk_push_backlog(struct tipc_sock *tsk, bool nagle_ack)
+{
+	struct sk_buff_head *txq = &tsk->sk.sk_write_queue;
+	struct sk_buff *skb = skb_peek_tail(txq);
+	struct net *net = sock_net(&tsk->sk);
+	u32 dnode = tsk_peer_node(tsk);
+	int rc;
+
+	if (nagle_ack) {
+		tsk->pkt_cnt += skb_queue_len(txq);
+		if (!tsk->pkt_cnt || tsk->msg_acc / tsk->pkt_cnt < 2) {
+			tsk->oneway = 0;
+			if (tsk->nagle_start < NAGLE_START_MAX)
+				tsk->nagle_start *= 2;
+			tsk->expect_ack = false;
+			pr_debug("tsk %10u: bad nagle %u -> %u, next start %u!\n",
+				 tsk->portid, tsk->msg_acc, tsk->pkt_cnt,
+				 tsk->nagle_start);
+		} else {
+			tsk->nagle_start = NAGLE_START_INIT;
+			if (skb) {
+				msg_set_ack_required(buf_msg(skb));
+				tsk->expect_ack = true;
+			} else {
+				tsk->expect_ack = false;
+			}
+		}
+		tsk->msg_acc = 0;
+		tsk->pkt_cnt = 0;
+	}
+
+	if (!skb || tsk->cong_link_cnt)
+		return;
+
+	/* Do not send SYN again after congestion */
+	if (msg_is_syn(buf_msg(skb)))
+		return;
+
+	if (tsk->msg_acc)
+		tsk->pkt_cnt += skb_queue_len(txq);
+	tsk->snt_unacked += tsk->snd_backlog;
+	tsk->snd_backlog = 0;
+	rc = tipc_node_xmit(net, txq, dnode, tsk->portid);
+	if (rc == -ELINKCONG)
+		tsk->cong_link_cnt = 1;
+}
+
+/**
+ * tipc_sk_conn_proto_rcv - receive a connection mng protocol message
+ * @tsk: receiving socket
+ * @skb: pointer to message buffer.
+ */
+static void tipc_sk_conn_proto_rcv(struct tipc_sock *tsk, struct sk_buff *skb,
+				   struct sk_buff_head *inputq,
+				   struct sk_buff_head *xmitq)
+{
+	struct tipc_msg *hdr = buf_msg(skb);
+	u32 onode = tsk_own_node(tsk);
+	struct sock *sk = &tsk->sk;
+	int mtyp = msg_type(hdr);
+	bool was_cong;
+
+	/* Ignore if connection cannot be validated: */
+	if (!tsk_peer_msg(tsk, hdr)) {
+		trace_tipc_sk_drop_msg(sk, skb, TIPC_DUMP_NONE, "@proto_rcv!");
+		goto exit;
+	}
+
+	if (unlikely(msg_errcode(hdr))) {
+		tipc_set_sk_state(sk, TIPC_DISCONNECTING);
+		tipc_node_remove_conn(sock_net(sk), tsk_peer_node(tsk),
+				      tsk_peer_port(tsk));
+		sk->sk_state_change(sk);
+
+		/* State change is ignored if socket already awake,
+		 * - convert msg to abort msg and add to inqueue
+		 */
+		msg_set_user(hdr, TIPC_CRITICAL_IMPORTANCE);
+		msg_set_type(hdr, TIPC_CONN_MSG);
+		msg_set_size(hdr, BASIC_H_SIZE);
+		msg_set_hdr_sz(hdr, BASIC_H_SIZE);
+		__skb_queue_tail(inputq, skb);
+		return;
+	}
+
+	tsk->probe_unacked = false;
+
+	if (mtyp == CONN_PROBE) {
+		msg_set_type(hdr, CONN_PROBE_REPLY);
+		if (tipc_msg_reverse(onode, &skb, TIPC_OK))
+			__skb_queue_tail(xmitq, skb);
+		return;
+	} else if (mtyp == CONN_ACK) {
+		was_cong = tsk_conn_cong(tsk);
+		tipc_sk_push_backlog(tsk, msg_nagle_ack(hdr));
+		tsk->snt_unacked -= msg_conn_ack(hdr);
+		if (tsk->peer_caps & TIPC_BLOCK_FLOWCTL)
+			tsk->snd_win = msg_adv_win(hdr);
+		if (was_cong && !tsk_conn_cong(tsk))
+			sk->sk_write_space(sk);
+	} else if (mtyp != CONN_PROBE_REPLY) {
+		pr_warn("Received unknown CONN_PROTO msg\n");
+	}
+exit:
+	kfree_skb(skb);
 }
 
 /**
  * tipc_sendmsg - send message in connectionless manner
- * @iocb: if NULL, indicates that socket lock is already held
  * @sock: socket structure
  * @m: message to send
  * @dsz: amount of user data to be sent
@@ -890,152 +1381,148 @@ static int tipc_wait_for_sndmsg(struct socket *sock, long *timeo_p)
  *
  * Returns the number of bytes sent on success, or errno otherwise
  */
-static int tipc_sendmsg(struct kiocb *iocb, struct socket *sock,
+static int tipc_sendmsg(struct socket *sock,
 			struct msghdr *m, size_t dsz)
 {
-	DECLARE_SOCKADDR(struct sockaddr_tipc *, dest, m->msg_name);
 	struct sock *sk = sock->sk;
+	int ret;
+
+	lock_sock(sk);
+	ret = __tipc_sendmsg(sock, m, dsz);
+	release_sock(sk);
+
+	return ret;
+}
+
+static int __tipc_sendmsg(struct socket *sock, struct msghdr *m, size_t dlen)
+{
+	struct sock *sk = sock->sk;
+	struct net *net = sock_net(sk);
 	struct tipc_sock *tsk = tipc_sk(sk);
-	struct tipc_msg *mhdr = &tsk->phdr;
-	struct iovec *iov = m->msg_iov;
-	u32 dnode, dport;
-	struct sk_buff *buf;
-	struct tipc_name_seq *seq = &dest->addr.nameseq;
-	u32 mtu;
-	long timeo;
-	int rc = -EINVAL;
+	DECLARE_SOCKADDR(struct sockaddr_tipc *, dest, m->msg_name);
+	long timeout = sock_sndtimeo(sk, m->msg_flags & MSG_DONTWAIT);
+	struct list_head *clinks = &tsk->cong_links;
+	bool syn = !tipc_sk_type_connectionless(sk);
+	struct tipc_group *grp = tsk->group;
+	struct tipc_msg *hdr = &tsk->phdr;
+	struct tipc_name_seq *seq;
+	struct sk_buff_head pkts;
+	u32 dport = 0, dnode = 0;
+	u32 type = 0, inst = 0;
+	int mtu, rc;
 
-	if (unlikely(!dest))
-		return -EDESTADDRREQ;
-
-	if (unlikely((m->msg_namelen < sizeof(*dest)) ||
-		     (dest->family != AF_TIPC)))
-		return -EINVAL;
-
-	if (dsz > TIPC_MAX_USER_MSG_SIZE)
+	if (unlikely(dlen > TIPC_MAX_USER_MSG_SIZE))
 		return -EMSGSIZE;
 
-	if (iocb)
-		lock_sock(sk);
+	if (likely(dest)) {
+		if (unlikely(m->msg_namelen < sizeof(*dest)))
+			return -EINVAL;
+		if (unlikely(dest->family != AF_TIPC))
+			return -EINVAL;
+	}
 
-	if (unlikely(sock->state != SS_READY)) {
-		if (sock->state == SS_LISTENING) {
-			rc = -EPIPE;
-			goto exit;
-		}
-		if (sock->state != SS_UNCONNECTED) {
-			rc = -EISCONN;
-			goto exit;
-		}
-		if (tsk->published) {
-			rc = -EOPNOTSUPP;
-			goto exit;
-		}
+	if (grp) {
+		if (!dest)
+			return tipc_send_group_bcast(sock, m, dlen, timeout);
+		if (dest->addrtype == TIPC_ADDR_NAME)
+			return tipc_send_group_anycast(sock, m, dlen, timeout);
+		if (dest->addrtype == TIPC_ADDR_ID)
+			return tipc_send_group_unicast(sock, m, dlen, timeout);
+		if (dest->addrtype == TIPC_ADDR_MCAST)
+			return tipc_send_group_mcast(sock, m, dlen, timeout);
+		return -EINVAL;
+	}
+
+	if (unlikely(!dest)) {
+		dest = &tsk->peer;
+		if (!syn && dest->family != AF_TIPC)
+			return -EDESTADDRREQ;
+	}
+
+	if (unlikely(syn)) {
+		if (sk->sk_state == TIPC_LISTEN)
+			return -EPIPE;
+		if (sk->sk_state != TIPC_OPEN)
+			return -EISCONN;
+		if (tsk->published)
+			return -EOPNOTSUPP;
 		if (dest->addrtype == TIPC_ADDR_NAME) {
 			tsk->conn_type = dest->addr.name.name.type;
 			tsk->conn_instance = dest->addr.name.name.instance;
 		}
+		msg_set_syn(hdr, 1);
 	}
-	rc = dest_name_check(dest, m);
-	if (rc)
-		goto exit;
 
-	timeo = sock_sndtimeo(sk, m->msg_flags & MSG_DONTWAIT);
+	seq = &dest->addr.nameseq;
+	if (dest->addrtype == TIPC_ADDR_MCAST)
+		return tipc_sendmcast(sock, seq, m, dlen, timeout);
 
-	if (dest->addrtype == TIPC_ADDR_MCAST) {
-		rc = tipc_sendmcast(sock, seq, iov, dsz, timeo);
-		goto exit;
-	} else if (dest->addrtype == TIPC_ADDR_NAME) {
-		u32 type = dest->addr.name.name.type;
-		u32 inst = dest->addr.name.name.instance;
-		u32 domain = dest->addr.name.domain;
-
-		dnode = domain;
-		msg_set_type(mhdr, TIPC_NAMED_MSG);
-		msg_set_hdr_sz(mhdr, NAMED_H_SIZE);
-		msg_set_nametype(mhdr, type);
-		msg_set_nameinst(mhdr, inst);
-		msg_set_lookup_scope(mhdr, tipc_addr_scope(domain));
-		dport = tipc_nametbl_translate(type, inst, &dnode);
-		msg_set_destnode(mhdr, dnode);
-		msg_set_destport(mhdr, dport);
-		if (unlikely(!dport && !dnode)) {
-			rc = -EHOSTUNREACH;
-			goto exit;
-		}
+	if (dest->addrtype == TIPC_ADDR_NAME) {
+		type = dest->addr.name.name.type;
+		inst = dest->addr.name.name.instance;
+		dnode = dest->addr.name.domain;
+		dport = tipc_nametbl_translate(net, type, inst, &dnode);
+		if (unlikely(!dport && !dnode))
+			return -EHOSTUNREACH;
 	} else if (dest->addrtype == TIPC_ADDR_ID) {
 		dnode = dest->addr.id.node;
-		msg_set_type(mhdr, TIPC_DIRECT_MSG);
-		msg_set_lookup_scope(mhdr, 0);
-		msg_set_destnode(mhdr, dnode);
-		msg_set_destport(mhdr, dest->addr.id.ref);
-		msg_set_hdr_sz(mhdr, BASIC_H_SIZE);
+	} else {
+		return -EINVAL;
 	}
 
-new_mtu:
-	mtu = tipc_node_get_mtu(dnode, tsk->ref);
-	rc = tipc_msg_build(mhdr, iov, 0, dsz, mtu, &buf);
-	if (rc < 0)
-		goto exit;
+	/* Block or return if destination link is congested */
+	rc = tipc_wait_for_cond(sock, &timeout,
+				!tipc_dest_find(clinks, dnode, 0));
+	if (unlikely(rc))
+		return rc;
 
-	do {
-		TIPC_SKB_CB(buf)->wakeup_pending = tsk->link_cong;
-		rc = tipc_link_xmit(buf, dnode, tsk->ref);
-		if (likely(rc >= 0)) {
-			if (sock->state != SS_READY)
-				sock->state = SS_CONNECTING;
-			rc = dsz;
-			break;
+	if (dest->addrtype == TIPC_ADDR_NAME) {
+		msg_set_type(hdr, TIPC_NAMED_MSG);
+		msg_set_hdr_sz(hdr, NAMED_H_SIZE);
+		msg_set_nametype(hdr, type);
+		msg_set_nameinst(hdr, inst);
+		msg_set_lookup_scope(hdr, tipc_node2scope(dnode));
+		msg_set_destnode(hdr, dnode);
+		msg_set_destport(hdr, dport);
+	} else { /* TIPC_ADDR_ID */
+		msg_set_type(hdr, TIPC_DIRECT_MSG);
+		msg_set_lookup_scope(hdr, 0);
+		msg_set_destnode(hdr, dnode);
+		msg_set_destport(hdr, dest->addr.id.ref);
+		msg_set_hdr_sz(hdr, BASIC_H_SIZE);
+	}
+
+	__skb_queue_head_init(&pkts);
+	mtu = tipc_node_get_mtu(net, dnode, tsk->portid, true);
+	rc = tipc_msg_build(hdr, m, 0, dlen, mtu, &pkts);
+	if (unlikely(rc != dlen))
+		return rc;
+	if (unlikely(syn && !tipc_msg_skb_clone(&pkts, &sk->sk_write_queue))) {
+		__skb_queue_purge(&pkts);
+		return -ENOMEM;
+	}
+
+	trace_tipc_sk_sendmsg(sk, skb_peek(&pkts), TIPC_DUMP_SK_SNDQ, " ");
+	rc = tipc_node_xmit(net, &pkts, dnode, tsk->portid);
+	if (unlikely(rc == -ELINKCONG)) {
+		tipc_dest_push(clinks, dnode, 0);
+		tsk->cong_link_cnt++;
+		rc = 0;
+	}
+
+	if (unlikely(syn && !rc)) {
+		tipc_set_sk_state(sk, TIPC_CONNECTING);
+		if (dlen && timeout) {
+			timeout = msecs_to_jiffies(timeout);
+			tipc_wait_for_connect(sock, &timeout);
 		}
-		if (rc == -EMSGSIZE)
-			goto new_mtu;
-		if (rc != -ELINKCONG)
-			break;
-		tsk->link_cong = 1;
-		rc = tipc_wait_for_sndmsg(sock, &timeo);
-		if (rc)
-			kfree_skb_list(buf);
-	} while (!rc);
-exit:
-	if (iocb)
-		release_sock(sk);
+	}
 
-	return rc;
-}
-
-static int tipc_wait_for_sndpkt(struct socket *sock, long *timeo_p)
-{
-	struct sock *sk = sock->sk;
-	struct tipc_sock *tsk = tipc_sk(sk);
-	DEFINE_WAIT(wait);
-	int done;
-
-	do {
-		int err = sock_error(sk);
-		if (err)
-			return err;
-		if (sock->state == SS_DISCONNECTING)
-			return -EPIPE;
-		else if (sock->state != SS_CONNECTED)
-			return -ENOTCONN;
-		if (!*timeo_p)
-			return -EAGAIN;
-		if (signal_pending(current))
-			return sock_intr_errno(*timeo_p);
-
-		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
-		done = sk_wait_event(sk, timeo_p,
-				     (!tsk->link_cong &&
-				      !tsk_conn_cong(tsk)) ||
-				     !tsk->connected);
-		finish_wait(sk_sleep(sk), &wait);
-	} while (!done);
-	return 0;
+	return rc ? rc : dlen;
 }
 
 /**
- * tipc_send_stream - send stream-oriented data
- * @iocb: (unused)
+ * tipc_sendstream - send stream-oriented data
  * @sock: socket structure
  * @m: data to send
  * @dsz: total length of data to be transmitted
@@ -1045,81 +1532,105 @@ static int tipc_wait_for_sndpkt(struct socket *sock, long *timeo_p)
  * Returns the number of bytes sent on success (or partial success),
  * or errno if no data sent
  */
-static int tipc_send_stream(struct kiocb *iocb, struct socket *sock,
-			    struct msghdr *m, size_t dsz)
+static int tipc_sendstream(struct socket *sock, struct msghdr *m, size_t dsz)
 {
 	struct sock *sk = sock->sk;
-	struct tipc_sock *tsk = tipc_sk(sk);
-	struct tipc_msg *mhdr = &tsk->phdr;
-	struct sk_buff *buf;
-	DECLARE_SOCKADDR(struct sockaddr_tipc *, dest, m->msg_name);
-	u32 ref = tsk->ref;
-	int rc = -EINVAL;
-	long timeo;
-	u32 dnode;
-	uint mtu, send, sent = 0;
+	int ret;
 
-	/* Handle implied connection establishment */
-	if (unlikely(dest)) {
-		rc = tipc_sendmsg(iocb, sock, m, dsz);
-		if (dsz && (dsz == rc))
-			tsk->sent_unacked = 1;
-		return rc;
-	}
-	if (dsz > (uint)INT_MAX)
+	lock_sock(sk);
+	ret = __tipc_sendstream(sock, m, dsz);
+	release_sock(sk);
+
+	return ret;
+}
+
+static int __tipc_sendstream(struct socket *sock, struct msghdr *m, size_t dlen)
+{
+	struct sock *sk = sock->sk;
+	DECLARE_SOCKADDR(struct sockaddr_tipc *, dest, m->msg_name);
+	long timeout = sock_sndtimeo(sk, m->msg_flags & MSG_DONTWAIT);
+	struct sk_buff_head *txq = &sk->sk_write_queue;
+	struct tipc_sock *tsk = tipc_sk(sk);
+	struct tipc_msg *hdr = &tsk->phdr;
+	struct net *net = sock_net(sk);
+	struct sk_buff *skb;
+	u32 dnode = tsk_peer_node(tsk);
+	int maxnagle = tsk->maxnagle;
+	int maxpkt = tsk->max_pkt;
+	int send, sent = 0;
+	int blocks, rc = 0;
+
+	if (unlikely(dlen > INT_MAX))
 		return -EMSGSIZE;
 
-	if (iocb)
-		lock_sock(sk);
-
-	if (unlikely(sock->state != SS_CONNECTED)) {
-		if (sock->state == SS_DISCONNECTING)
-			rc = -EPIPE;
-		else
-			rc = -ENOTCONN;
-		goto exit;
+	/* Handle implicit connection setup */
+	if (unlikely(dest && sk->sk_state == TIPC_OPEN)) {
+		rc = __tipc_sendmsg(sock, m, dlen);
+		if (dlen && dlen == rc) {
+			tsk->peer_caps = tipc_node_get_capabilities(net, dnode);
+			tsk->snt_unacked = tsk_inc(tsk, dlen + msg_hdr_sz(hdr));
+		}
+		return rc;
 	}
 
-	timeo = sock_sndtimeo(sk, m->msg_flags & MSG_DONTWAIT);
-	dnode = tsk_peer_node(tsk);
-
-next:
-	mtu = tsk->max_pkt;
-	send = min_t(uint, dsz - sent, TIPC_MAX_USER_MSG_SIZE);
-	rc = tipc_msg_build(mhdr, m->msg_iov, sent, send, mtu, &buf);
-	if (unlikely(rc < 0))
-		goto exit;
 	do {
-		if (likely(!tsk_conn_cong(tsk))) {
-			rc = tipc_link_xmit(buf, dnode, ref);
-			if (likely(!rc)) {
-				tsk->sent_unacked++;
-				sent += send;
-				if (sent == dsz)
-					break;
-				goto next;
-			}
-			if (rc == -EMSGSIZE) {
-				tsk->max_pkt = tipc_node_get_mtu(dnode, ref);
-				goto next;
-			}
-			if (rc != -ELINKCONG)
+		rc = tipc_wait_for_cond(sock, &timeout,
+					(!tsk->cong_link_cnt &&
+					 !tsk_conn_cong(tsk) &&
+					 tipc_sk_connected(sk)));
+		if (unlikely(rc))
+			break;
+		send = min_t(size_t, dlen - sent, TIPC_MAX_USER_MSG_SIZE);
+		blocks = tsk->snd_backlog;
+		if (tsk->oneway++ >= tsk->nagle_start && maxnagle &&
+		    send <= maxnagle) {
+			rc = tipc_msg_append(hdr, m, send, maxnagle, txq);
+			if (unlikely(rc < 0))
 				break;
-			tsk->link_cong = 1;
+			blocks += rc;
+			tsk->msg_acc++;
+			if (blocks <= 64 && tsk->expect_ack) {
+				tsk->snd_backlog = blocks;
+				sent += send;
+				break;
+			} else if (blocks > 64) {
+				tsk->pkt_cnt += skb_queue_len(txq);
+			} else {
+				skb = skb_peek_tail(txq);
+				if (skb) {
+					msg_set_ack_required(buf_msg(skb));
+					tsk->expect_ack = true;
+				} else {
+					tsk->expect_ack = false;
+				}
+				tsk->msg_acc = 0;
+				tsk->pkt_cnt = 0;
+			}
+		} else {
+			rc = tipc_msg_build(hdr, m, sent, send, maxpkt, txq);
+			if (unlikely(rc != send))
+				break;
+			blocks += tsk_inc(tsk, send + MIN_H_SIZE);
 		}
-		rc = tipc_wait_for_sndpkt(sock, &timeo);
-		if (rc)
-			kfree_skb_list(buf);
-	} while (!rc);
-exit:
-	if (iocb)
-		release_sock(sk);
+		trace_tipc_sk_sendstream(sk, skb_peek(txq),
+					 TIPC_DUMP_SK_SNDQ, " ");
+		rc = tipc_node_xmit(net, txq, dnode, tsk->portid);
+		if (unlikely(rc == -ELINKCONG)) {
+			tsk->cong_link_cnt = 1;
+			rc = 0;
+		}
+		if (likely(!rc)) {
+			tsk->snt_unacked += blocks;
+			tsk->snd_backlog = 0;
+			sent += send;
+		}
+	} while (sent < dlen && !rc);
+
 	return sent ? sent : rc;
 }
 
 /**
  * tipc_send_packet - send a connection-oriented message
- * @iocb: if NULL, indicates that socket lock is already held
  * @sock: socket structure
  * @m: message to send
  * @dsz: length of data to be transmitted
@@ -1128,13 +1639,12 @@ exit:
  *
  * Returns the number of bytes sent on success, or errno otherwise
  */
-static int tipc_send_packet(struct kiocb *iocb, struct socket *sock,
-			    struct msghdr *m, size_t dsz)
+static int tipc_send_packet(struct socket *sock, struct msghdr *m, size_t dsz)
 {
 	if (dsz > TIPC_MAX_USER_MSG_SIZE)
 		return -EMSGSIZE;
 
-	return tipc_send_stream(iocb, sock, m, dsz);
+	return tipc_sendstream(sock, m, dsz);
 }
 
 /* tipc_sk_finish_conn - complete the setup of a connection
@@ -1142,58 +1652,82 @@ static int tipc_send_packet(struct kiocb *iocb, struct socket *sock,
 static void tipc_sk_finish_conn(struct tipc_sock *tsk, u32 peer_port,
 				u32 peer_node)
 {
+	struct sock *sk = &tsk->sk;
+	struct net *net = sock_net(sk);
 	struct tipc_msg *msg = &tsk->phdr;
 
+	msg_set_syn(msg, 0);
 	msg_set_destnode(msg, peer_node);
 	msg_set_destport(msg, peer_port);
 	msg_set_type(msg, TIPC_CONN_MSG);
 	msg_set_lookup_scope(msg, 0);
 	msg_set_hdr_sz(msg, SHORT_H_SIZE);
 
-	tsk->probing_interval = CONN_PROBING_INTERVAL;
-	tsk->probing_state = TIPC_CONN_OK;
-	tsk->connected = 1;
-	k_start_timer(&tsk->timer, tsk->probing_interval);
-	tipc_node_add_conn(peer_node, tsk->ref, peer_port);
-	tsk->max_pkt = tipc_node_get_mtu(peer_node, tsk->ref);
+	sk_reset_timer(sk, &sk->sk_timer, jiffies + CONN_PROBING_INTV);
+	tipc_set_sk_state(sk, TIPC_ESTABLISHED);
+	tipc_node_add_conn(net, peer_node, tsk->portid, peer_port);
+	tsk->max_pkt = tipc_node_get_mtu(net, peer_node, tsk->portid, true);
+	tsk->peer_caps = tipc_node_get_capabilities(net, peer_node);
+	tsk_set_nagle(tsk);
+	__skb_queue_purge(&sk->sk_write_queue);
+	if (tsk->peer_caps & TIPC_BLOCK_FLOWCTL)
+		return;
+
+	/* Fall back to message based flow control */
+	tsk->rcv_win = FLOWCTL_MSG_WIN;
+	tsk->snd_win = FLOWCTL_MSG_WIN;
 }
 
 /**
- * set_orig_addr - capture sender's address for received message
+ * tipc_sk_set_orig_addr - capture sender's address for received message
  * @m: descriptor for message info
- * @msg: received message header
+ * @skb: received message
  *
  * Note: Address is not captured if not requested by receiver.
  */
-static void set_orig_addr(struct msghdr *m, struct tipc_msg *msg)
+static void tipc_sk_set_orig_addr(struct msghdr *m, struct sk_buff *skb)
 {
-	DECLARE_SOCKADDR(struct sockaddr_tipc *, addr, m->msg_name);
+	DECLARE_SOCKADDR(struct sockaddr_pair *, srcaddr, m->msg_name);
+	struct tipc_msg *hdr = buf_msg(skb);
 
-	if (addr) {
-		addr->family = AF_TIPC;
-		addr->addrtype = TIPC_ADDR_ID;
-		memset(&addr->addr, 0, sizeof(addr->addr));
-		addr->addr.id.ref = msg_origport(msg);
-		addr->addr.id.node = msg_orignode(msg);
-		addr->addr.name.domain = 0;	/* could leave uninitialized */
-		addr->scope = 0;		/* could leave uninitialized */
-		m->msg_namelen = sizeof(struct sockaddr_tipc);
-	}
+	if (!srcaddr)
+		return;
+
+	srcaddr->sock.family = AF_TIPC;
+	srcaddr->sock.addrtype = TIPC_ADDR_ID;
+	srcaddr->sock.scope = 0;
+	srcaddr->sock.addr.id.ref = msg_origport(hdr);
+	srcaddr->sock.addr.id.node = msg_orignode(hdr);
+	srcaddr->sock.addr.name.domain = 0;
+	m->msg_namelen = sizeof(struct sockaddr_tipc);
+
+	if (!msg_in_group(hdr))
+		return;
+
+	/* Group message users may also want to know sending member's id */
+	srcaddr->member.family = AF_TIPC;
+	srcaddr->member.addrtype = TIPC_ADDR_NAME;
+	srcaddr->member.scope = 0;
+	srcaddr->member.addr.name.name.type = msg_nametype(hdr);
+	srcaddr->member.addr.name.name.instance = TIPC_SKB_CB(skb)->orig_member;
+	srcaddr->member.addr.name.domain = 0;
+	m->msg_namelen = sizeof(*srcaddr);
 }
 
 /**
  * tipc_sk_anc_data_recv - optionally capture ancillary data for received message
  * @m: descriptor for message info
- * @msg: received message header
+ * @skb: received message buffer
  * @tsk: TIPC port associated with message
  *
  * Note: Ancillary data is not captured if not requested by receiver.
  *
  * Returns 0 if successful, otherwise errno
  */
-static int tipc_sk_anc_data_recv(struct msghdr *m, struct tipc_msg *msg,
+static int tipc_sk_anc_data_recv(struct msghdr *m, struct sk_buff *skb,
 				 struct tipc_sock *tsk)
 {
+	struct tipc_msg *msg;
 	u32 anc_data[3];
 	u32 err;
 	u32 dest_type;
@@ -1202,6 +1736,7 @@ static int tipc_sk_anc_data_recv(struct msghdr *m, struct tipc_msg *msg,
 
 	if (likely(m->msg_controllen == 0))
 		return 0;
+	msg = buf_msg(skb);
 
 	/* Optionally capture errored message object(s) */
 	err = msg ? msg_errcode(msg) : 0;
@@ -1212,6 +1747,9 @@ static int tipc_sk_anc_data_recv(struct msghdr *m, struct tipc_msg *msg,
 		if (res)
 			return res;
 		if (anc_data[1]) {
+			if (skb_linearize(skb))
+				return -ENOMEM;
+			msg = buf_msg(skb);
 			res = put_cmsg(m, SOL_TIPC, TIPC_RETDATA, anc_data[1],
 				       msg_data(msg));
 			if (res)
@@ -1252,62 +1790,90 @@ static int tipc_sk_anc_data_recv(struct msghdr *m, struct tipc_msg *msg,
 	return 0;
 }
 
-static void tipc_sk_send_ack(struct tipc_sock *tsk, uint ack)
+static struct sk_buff *tipc_sk_build_ack(struct tipc_sock *tsk)
 {
-	struct sk_buff *buf = NULL;
+	struct sock *sk = &tsk->sk;
+	struct sk_buff *skb = NULL;
 	struct tipc_msg *msg;
 	u32 peer_port = tsk_peer_port(tsk);
 	u32 dnode = tsk_peer_node(tsk);
 
-	if (!tsk->connected)
+	if (!tipc_sk_connected(sk))
+		return NULL;
+	skb = tipc_msg_create(CONN_MANAGER, CONN_ACK, INT_H_SIZE, 0,
+			      dnode, tsk_own_node(tsk), peer_port,
+			      tsk->portid, TIPC_OK);
+	if (!skb)
+		return NULL;
+	msg = buf_msg(skb);
+	msg_set_conn_ack(msg, tsk->rcv_unacked);
+	tsk->rcv_unacked = 0;
+
+	/* Adjust to and advertize the correct window limit */
+	if (tsk->peer_caps & TIPC_BLOCK_FLOWCTL) {
+		tsk->rcv_win = tsk_adv_blocks(tsk->sk.sk_rcvbuf);
+		msg_set_adv_win(msg, tsk->rcv_win);
+	}
+	return skb;
+}
+
+static void tipc_sk_send_ack(struct tipc_sock *tsk)
+{
+	struct sk_buff *skb;
+
+	skb = tipc_sk_build_ack(tsk);
+	if (!skb)
 		return;
-	buf = tipc_msg_create(CONN_MANAGER, CONN_ACK, INT_H_SIZE, 0, dnode,
-			      tipc_own_addr, peer_port, tsk->ref, TIPC_OK);
-	if (!buf)
-		return;
-	msg = buf_msg(buf);
-	msg_set_msgcnt(msg, ack);
-	tipc_link_xmit(buf, dnode, msg_link_selector(msg));
+
+	tipc_node_xmit_skb(sock_net(&tsk->sk), skb, tsk_peer_node(tsk),
+			   msg_link_selector(buf_msg(skb)));
 }
 
 static int tipc_wait_for_rcvmsg(struct socket *sock, long *timeop)
 {
 	struct sock *sk = sock->sk;
-	DEFINE_WAIT(wait);
+	DEFINE_WAIT_FUNC(wait, woken_wake_function);
 	long timeo = *timeop;
-	int err;
+	int err = sock_error(sk);
+
+	if (err)
+		return err;
 
 	for (;;) {
-		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 		if (timeo && skb_queue_empty(&sk->sk_receive_queue)) {
-			if (sock->state == SS_DISCONNECTING) {
+			if (sk->sk_shutdown & RCV_SHUTDOWN) {
 				err = -ENOTCONN;
 				break;
 			}
+			add_wait_queue(sk_sleep(sk), &wait);
 			release_sock(sk);
-			timeo = schedule_timeout(timeo);
+			timeo = wait_woken(&wait, TASK_INTERRUPTIBLE, timeo);
+			sched_annotate_sleep();
 			lock_sock(sk);
+			remove_wait_queue(sk_sleep(sk), &wait);
 		}
 		err = 0;
 		if (!skb_queue_empty(&sk->sk_receive_queue))
 			break;
-		err = sock_intr_errno(timeo);
-		if (signal_pending(current))
-			break;
 		err = -EAGAIN;
 		if (!timeo)
 			break;
+		err = sock_intr_errno(timeo);
+		if (signal_pending(current))
+			break;
+
+		err = sock_error(sk);
+		if (err)
+			break;
 	}
-	finish_wait(sk_sleep(sk), &wait);
 	*timeop = timeo;
 	return err;
 }
 
 /**
  * tipc_recvmsg - receive packet-oriented message
- * @iocb: (unused)
  * @m: descriptor for message info
- * @buf_len: total size of user buffer area
+ * @buflen: length of user buffer area
  * @flags: receive flags
  *
  * Used for SOCK_DGRAM, SOCK_RDM, and SOCK_SEQPACKET messages.
@@ -1315,95 +1881,127 @@ static int tipc_wait_for_rcvmsg(struct socket *sock, long *timeop)
  *
  * Returns size of returned message data, errno otherwise
  */
-static int tipc_recvmsg(struct kiocb *iocb, struct socket *sock,
-			struct msghdr *m, size_t buf_len, int flags)
+static int tipc_recvmsg(struct socket *sock, struct msghdr *m,
+			size_t buflen,	int flags)
 {
 	struct sock *sk = sock->sk;
+	bool connected = !tipc_sk_type_connectionless(sk);
 	struct tipc_sock *tsk = tipc_sk(sk);
-	struct sk_buff *buf;
-	struct tipc_msg *msg;
-	long timeo;
-	unsigned int sz;
-	u32 err;
-	int res;
+	int rc, err, hlen, dlen, copy;
+	struct tipc_skb_cb *skb_cb;
+	struct sk_buff_head xmitq;
+	struct tipc_msg *hdr;
+	struct sk_buff *skb;
+	bool grp_evt;
+	long timeout;
 
 	/* Catch invalid receive requests */
-	if (unlikely(!buf_len))
+	if (unlikely(!buflen))
 		return -EINVAL;
 
 	lock_sock(sk);
-
-	if (unlikely(sock->state == SS_UNCONNECTED)) {
-		res = -ENOTCONN;
+	if (unlikely(connected && sk->sk_state == TIPC_OPEN)) {
+		rc = -ENOTCONN;
 		goto exit;
 	}
+	timeout = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
 
-	timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
-restart:
-
-	/* Look for a message in receive queue; wait if necessary */
-	res = tipc_wait_for_rcvmsg(sock, &timeo);
-	if (res)
-		goto exit;
-
-	/* Look at first message in receive queue */
-	buf = skb_peek(&sk->sk_receive_queue);
-	msg = buf_msg(buf);
-	sz = msg_data_sz(msg);
-	err = msg_errcode(msg);
-
-	/* Discard an empty non-errored message & try again */
-	if ((!sz) && (!err)) {
-		tsk_advance_rx_queue(sk);
-		goto restart;
-	}
-
-	/* Capture sender's address (optional) */
-	set_orig_addr(m, msg);
-
-	/* Capture ancillary data (optional) */
-	res = tipc_sk_anc_data_recv(m, msg, tsk);
-	if (res)
-		goto exit;
-
-	/* Capture message data (if valid) & compute return value (always) */
-	if (!err) {
-		if (unlikely(buf_len < sz)) {
-			sz = buf_len;
-			m->msg_flags |= MSG_TRUNC;
-		}
-		res = skb_copy_datagram_iovec(buf, msg_hdr_sz(msg),
-					      m->msg_iov, sz);
-		if (res)
+	/* Step rcv queue to first msg with data or error; wait if necessary */
+	do {
+		rc = tipc_wait_for_rcvmsg(sock, &timeout);
+		if (unlikely(rc))
 			goto exit;
-		res = sz;
+		skb = skb_peek(&sk->sk_receive_queue);
+		skb_cb = TIPC_SKB_CB(skb);
+		hdr = buf_msg(skb);
+		dlen = msg_data_sz(hdr);
+		hlen = msg_hdr_sz(hdr);
+		err = msg_errcode(hdr);
+		grp_evt = msg_is_grp_evt(hdr);
+		if (likely(dlen || err))
+			break;
+		tsk_advance_rx_queue(sk);
+	} while (1);
+
+	/* Collect msg meta data, including error code and rejected data */
+	tipc_sk_set_orig_addr(m, skb);
+	rc = tipc_sk_anc_data_recv(m, skb, tsk);
+	if (unlikely(rc))
+		goto exit;
+	hdr = buf_msg(skb);
+
+	/* Capture data if non-error msg, otherwise just set return value */
+	if (likely(!err)) {
+		int offset = skb_cb->bytes_read;
+
+		copy = min_t(int, dlen - offset, buflen);
+		rc = skb_copy_datagram_msg(skb, hlen + offset, m, copy);
+		if (unlikely(rc))
+			goto exit;
+		if (unlikely(offset + copy < dlen)) {
+			if (flags & MSG_EOR) {
+				if (!(flags & MSG_PEEK))
+					skb_cb->bytes_read = offset + copy;
+			} else {
+				m->msg_flags |= MSG_TRUNC;
+				skb_cb->bytes_read = 0;
+			}
+		} else {
+			if (flags & MSG_EOR)
+				m->msg_flags |= MSG_EOR;
+			skb_cb->bytes_read = 0;
+		}
 	} else {
-		if ((sock->state == SS_READY) ||
-		    ((err == TIPC_CONN_SHUTDOWN) || m->msg_control))
-			res = 0;
-		else
-			res = -ECONNRESET;
+		copy = 0;
+		rc = 0;
+		if (err != TIPC_CONN_SHUTDOWN && connected && !m->msg_control) {
+			rc = -ECONNRESET;
+			goto exit;
+		}
 	}
 
-	/* Consume received message (optional) */
-	if (likely(!(flags & MSG_PEEK))) {
-		if ((sock->state != SS_READY) &&
-		    (++tsk->rcv_unacked >= TIPC_CONNACK_INTV)) {
-			tipc_sk_send_ack(tsk, tsk->rcv_unacked);
-			tsk->rcv_unacked = 0;
-		}
-		tsk_advance_rx_queue(sk);
+	/* Mark message as group event if applicable */
+	if (unlikely(grp_evt)) {
+		if (msg_grp_evt(hdr) == TIPC_WITHDRAWN)
+			m->msg_flags |= MSG_EOR;
+		m->msg_flags |= MSG_OOB;
+		copy = 0;
 	}
+
+	/* Caption of data or error code/rejected data was successful */
+	if (unlikely(flags & MSG_PEEK))
+		goto exit;
+
+	/* Send group flow control advertisement when applicable */
+	if (tsk->group && msg_in_group(hdr) && !grp_evt) {
+		__skb_queue_head_init(&xmitq);
+		tipc_group_update_rcv_win(tsk->group, tsk_blocks(hlen + dlen),
+					  msg_orignode(hdr), msg_origport(hdr),
+					  &xmitq);
+		tipc_node_distr_xmit(sock_net(sk), &xmitq);
+	}
+
+	if (skb_cb->bytes_read)
+		goto exit;
+
+	tsk_advance_rx_queue(sk);
+
+	if (likely(!connected))
+		goto exit;
+
+	/* Send connection flow control advertisement when applicable */
+	tsk->rcv_unacked += tsk_inc(tsk, hlen + dlen);
+	if (tsk->rcv_unacked >= tsk->rcv_win / TIPC_ACK_RATE)
+		tipc_sk_send_ack(tsk);
 exit:
 	release_sock(sk);
-	return res;
+	return rc ? rc : copy;
 }
 
 /**
- * tipc_recv_stream - receive stream-oriented data
- * @iocb: (unused)
+ * tipc_recvstream - receive stream-oriented data
  * @m: descriptor for message info
- * @buf_len: total size of user buffer area
+ * @buflen: total size of user buffer area
  * @flags: receive flags
  *
  * Used for SOCK_STREAM messages only.  If not enough data is available
@@ -1411,111 +2009,99 @@ exit:
  *
  * Returns size of returned message data, errno otherwise
  */
-static int tipc_recv_stream(struct kiocb *iocb, struct socket *sock,
-			    struct msghdr *m, size_t buf_len, int flags)
+static int tipc_recvstream(struct socket *sock, struct msghdr *m,
+			   size_t buflen, int flags)
 {
 	struct sock *sk = sock->sk;
 	struct tipc_sock *tsk = tipc_sk(sk);
-	struct sk_buff *buf;
-	struct tipc_msg *msg;
-	long timeo;
-	unsigned int sz;
-	int sz_to_copy, target, needed;
-	int sz_copied = 0;
-	u32 err;
-	int res = 0;
+	struct sk_buff *skb;
+	struct tipc_msg *hdr;
+	struct tipc_skb_cb *skb_cb;
+	bool peek = flags & MSG_PEEK;
+	int offset, required, copy, copied = 0;
+	int hlen, dlen, err, rc;
+	long timeout;
 
 	/* Catch invalid receive attempts */
-	if (unlikely(!buf_len))
+	if (unlikely(!buflen))
 		return -EINVAL;
 
 	lock_sock(sk);
 
-	if (unlikely(sock->state == SS_UNCONNECTED)) {
-		res = -ENOTCONN;
+	if (unlikely(sk->sk_state == TIPC_OPEN)) {
+		rc = -ENOTCONN;
 		goto exit;
 	}
+	required = sock_rcvlowat(sk, flags & MSG_WAITALL, buflen);
+	timeout = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
 
-	target = sock_rcvlowat(sk, flags & MSG_WAITALL, buf_len);
-	timeo = sock_rcvtimeo(sk, flags & MSG_DONTWAIT);
+	do {
+		/* Look at first msg in receive queue; wait if necessary */
+		rc = tipc_wait_for_rcvmsg(sock, &timeout);
+		if (unlikely(rc))
+			break;
+		skb = skb_peek(&sk->sk_receive_queue);
+		skb_cb = TIPC_SKB_CB(skb);
+		hdr = buf_msg(skb);
+		dlen = msg_data_sz(hdr);
+		hlen = msg_hdr_sz(hdr);
+		err = msg_errcode(hdr);
 
-restart:
-	/* Look for a message in receive queue; wait if necessary */
-	res = tipc_wait_for_rcvmsg(sock, &timeo);
-	if (res)
-		goto exit;
-
-	/* Look at first message in receive queue */
-	buf = skb_peek(&sk->sk_receive_queue);
-	msg = buf_msg(buf);
-	sz = msg_data_sz(msg);
-	err = msg_errcode(msg);
-
-	/* Discard an empty non-errored message & try again */
-	if ((!sz) && (!err)) {
-		tsk_advance_rx_queue(sk);
-		goto restart;
-	}
-
-	/* Optionally capture sender's address & ancillary data of first msg */
-	if (sz_copied == 0) {
-		set_orig_addr(m, msg);
-		res = tipc_sk_anc_data_recv(m, msg, tsk);
-		if (res)
-			goto exit;
-	}
-
-	/* Capture message data (if valid) & compute return value (always) */
-	if (!err) {
-		u32 offset = (u32)(unsigned long)(TIPC_SKB_CB(buf)->handle);
-
-		sz -= offset;
-		needed = (buf_len - sz_copied);
-		sz_to_copy = (sz <= needed) ? sz : needed;
-
-		res = skb_copy_datagram_iovec(buf, msg_hdr_sz(msg) + offset,
-					      m->msg_iov, sz_to_copy);
-		if (res)
-			goto exit;
-
-		sz_copied += sz_to_copy;
-
-		if (sz_to_copy < sz) {
-			if (!(flags & MSG_PEEK))
-				TIPC_SKB_CB(buf)->handle =
-				(void *)(unsigned long)(offset + sz_to_copy);
-			goto exit;
+		/* Discard any empty non-errored (SYN-) message */
+		if (unlikely(!dlen && !err)) {
+			tsk_advance_rx_queue(sk);
+			continue;
 		}
-	} else {
-		if (sz_copied != 0)
-			goto exit; /* can't add error msg to valid data */
 
-		if ((err == TIPC_CONN_SHUTDOWN) || m->msg_control)
-			res = 0;
-		else
-			res = -ECONNRESET;
-	}
-
-	/* Consume received message (optional) */
-	if (likely(!(flags & MSG_PEEK))) {
-		if (unlikely(++tsk->rcv_unacked >= TIPC_CONNACK_INTV)) {
-			tipc_sk_send_ack(tsk, tsk->rcv_unacked);
-			tsk->rcv_unacked = 0;
+		/* Collect msg meta data, incl. error code and rejected data */
+		if (!copied) {
+			tipc_sk_set_orig_addr(m, skb);
+			rc = tipc_sk_anc_data_recv(m, skb, tsk);
+			if (rc)
+				break;
+			hdr = buf_msg(skb);
 		}
+
+		/* Copy data if msg ok, otherwise return error/partial data */
+		if (likely(!err)) {
+			offset = skb_cb->bytes_read;
+			copy = min_t(int, dlen - offset, buflen - copied);
+			rc = skb_copy_datagram_msg(skb, hlen + offset, m, copy);
+			if (unlikely(rc))
+				break;
+			copied += copy;
+			offset += copy;
+			if (unlikely(offset < dlen)) {
+				if (!peek)
+					skb_cb->bytes_read = offset;
+				break;
+			}
+		} else {
+			rc = 0;
+			if ((err != TIPC_CONN_SHUTDOWN) && !m->msg_control)
+				rc = -ECONNRESET;
+			if (copied || rc)
+				break;
+		}
+
+		if (unlikely(peek))
+			break;
+
 		tsk_advance_rx_queue(sk);
-	}
 
-	/* Loop around if more data is required */
-	if ((sz_copied < buf_len) &&	/* didn't get all requested data */
-	    (!skb_queue_empty(&sk->sk_receive_queue) ||
-	    (sz_copied < target)) &&	/* and more is ready or required */
-	    (!(flags & MSG_PEEK)) &&	/* and aren't just peeking at data */
-	    (!err))			/* and haven't reached a FIN */
-		goto restart;
+		/* Send connection flow control advertisement when applicable */
+		tsk->rcv_unacked += tsk_inc(tsk, hlen + dlen);
+		if (tsk->rcv_unacked >= tsk->rcv_win / TIPC_ACK_RATE)
+			tipc_sk_send_ack(tsk);
 
+		/* Exit if all requested data or FIN/error received */
+		if (copied == buflen || err)
+			break;
+
+	} while (!skb_queue_empty(&sk->sk_receive_queue) || copied < required);
 exit:
 	release_sock(sk);
-	return sz_copied ? sz_copied : res;
+	return copied ? copied : rc;
 }
 
 /**
@@ -1528,16 +2114,15 @@ static void tipc_write_space(struct sock *sk)
 
 	rcu_read_lock();
 	wq = rcu_dereference(sk->sk_wq);
-	if (wq_has_sleeper(wq))
-		wake_up_interruptible_sync_poll(&wq->wait, POLLOUT |
-						POLLWRNORM | POLLWRBAND);
+	if (skwq_has_sleeper(wq))
+		wake_up_interruptible_sync_poll(&wq->wait, EPOLLOUT |
+						EPOLLWRNORM | EPOLLWRBAND);
 	rcu_read_unlock();
 }
 
 /**
  * tipc_data_ready - wake up threads to indicate messages have been received
  * @sk: socket
- * @len: the length of messages
  */
 static void tipc_data_ready(struct sock *sk)
 {
@@ -1545,264 +2130,399 @@ static void tipc_data_ready(struct sock *sk)
 
 	rcu_read_lock();
 	wq = rcu_dereference(sk->sk_wq);
-	if (wq_has_sleeper(wq))
-		wake_up_interruptible_sync_poll(&wq->wait, POLLIN |
-						POLLRDNORM | POLLRDBAND);
+	if (skwq_has_sleeper(wq))
+		wake_up_interruptible_sync_poll(&wq->wait, EPOLLIN |
+						EPOLLRDNORM | EPOLLRDBAND);
 	rcu_read_unlock();
 }
 
-/**
- * filter_connect - Handle all incoming messages for a connection-based socket
- * @tsk: TIPC socket
- * @msg: message
- *
- * Returns 0 (TIPC_OK) if everyting ok, -TIPC_ERR_NO_PORT otherwise
- */
-static int filter_connect(struct tipc_sock *tsk, struct sk_buff **buf)
+static void tipc_sock_destruct(struct sock *sk)
 {
-	struct sock *sk = &tsk->sk;
-	struct socket *sock = sk->sk_socket;
-	struct tipc_msg *msg = buf_msg(*buf);
-	int retval = -TIPC_ERR_NO_PORT;
+	__skb_queue_purge(&sk->sk_receive_queue);
+}
 
-	if (msg_mcast(msg))
-		return retval;
+static void tipc_sk_proto_rcv(struct sock *sk,
+			      struct sk_buff_head *inputq,
+			      struct sk_buff_head *xmitq)
+{
+	struct sk_buff *skb = __skb_dequeue(inputq);
+	struct tipc_sock *tsk = tipc_sk(sk);
+	struct tipc_msg *hdr = buf_msg(skb);
+	struct tipc_group *grp = tsk->group;
+	bool wakeup = false;
 
-	switch ((int)sock->state) {
-	case SS_CONNECTED:
-		/* Accept only connection-based messages sent by peer */
-		if (tsk_peer_msg(tsk, msg)) {
-			if (unlikely(msg_errcode(msg))) {
-				sock->state = SS_DISCONNECTING;
-				tsk->connected = 0;
-				/* let timer expire on it's own */
-				tipc_node_remove_conn(tsk_peer_node(tsk),
-						      tsk->ref);
-			}
-			retval = TIPC_OK;
-		}
+	switch (msg_user(hdr)) {
+	case CONN_MANAGER:
+		tipc_sk_conn_proto_rcv(tsk, skb, inputq, xmitq);
+		return;
+	case SOCK_WAKEUP:
+		tipc_dest_del(&tsk->cong_links, msg_orignode(hdr), 0);
+		/* coupled with smp_rmb() in tipc_wait_for_cond() */
+		smp_wmb();
+		tsk->cong_link_cnt--;
+		wakeup = true;
+		tipc_sk_push_backlog(tsk, false);
 		break;
-	case SS_CONNECTING:
-		/* Accept only ACK or NACK message */
-
-		if (unlikely(!msg_connected(msg)))
-			break;
-
-		if (unlikely(msg_errcode(msg))) {
-			sock->state = SS_DISCONNECTING;
-			sk->sk_err = ECONNREFUSED;
-			retval = TIPC_OK;
-			break;
-		}
-
-		if (unlikely(msg_importance(msg) > TIPC_CRITICAL_IMPORTANCE)) {
-			sock->state = SS_DISCONNECTING;
-			sk->sk_err = EINVAL;
-			retval = TIPC_OK;
-			break;
-		}
-
-		tipc_sk_finish_conn(tsk, msg_origport(msg), msg_orignode(msg));
-		msg_set_importance(&tsk->phdr, msg_importance(msg));
-		sock->state = SS_CONNECTED;
-
-		/* If an incoming message is an 'ACK-', it should be
-		 * discarded here because it doesn't contain useful
-		 * data. In addition, we should try to wake up
-		 * connect() routine if sleeping.
-		 */
-		if (msg_data_sz(msg) == 0) {
-			kfree_skb(*buf);
-			*buf = NULL;
-			if (waitqueue_active(sk_sleep(sk)))
-				wake_up_interruptible(sk_sleep(sk));
-		}
-		retval = TIPC_OK;
+	case GROUP_PROTOCOL:
+		tipc_group_proto_rcv(grp, &wakeup, hdr, inputq, xmitq);
 		break;
-	case SS_LISTENING:
-	case SS_UNCONNECTED:
-		/* Accept only SYN message */
-		if (!msg_connected(msg) && !(msg_errcode(msg)))
-			retval = TIPC_OK;
-		break;
-	case SS_DISCONNECTING:
+	case TOP_SRV:
+		tipc_group_member_evt(tsk->group, &wakeup, &sk->sk_rcvbuf,
+				      hdr, inputq, xmitq);
 		break;
 	default:
-		pr_err("Unknown socket state %u\n", sock->state);
+		break;
 	}
-	return retval;
+
+	if (wakeup)
+		sk->sk_write_space(sk);
+
+	kfree_skb(skb);
+}
+
+/**
+ * tipc_sk_filter_connect - check incoming message for a connection-based socket
+ * @tsk: TIPC socket
+ * @skb: pointer to message buffer.
+ * @xmitq: for Nagle ACK if any
+ * Returns true if message should be added to receive queue, false otherwise
+ */
+static bool tipc_sk_filter_connect(struct tipc_sock *tsk, struct sk_buff *skb,
+				   struct sk_buff_head *xmitq)
+{
+	struct sock *sk = &tsk->sk;
+	struct net *net = sock_net(sk);
+	struct tipc_msg *hdr = buf_msg(skb);
+	bool con_msg = msg_connected(hdr);
+	u32 pport = tsk_peer_port(tsk);
+	u32 pnode = tsk_peer_node(tsk);
+	u32 oport = msg_origport(hdr);
+	u32 onode = msg_orignode(hdr);
+	int err = msg_errcode(hdr);
+	unsigned long delay;
+
+	if (unlikely(msg_mcast(hdr)))
+		return false;
+	tsk->oneway = 0;
+
+	switch (sk->sk_state) {
+	case TIPC_CONNECTING:
+		/* Setup ACK */
+		if (likely(con_msg)) {
+			if (err)
+				break;
+			tipc_sk_finish_conn(tsk, oport, onode);
+			msg_set_importance(&tsk->phdr, msg_importance(hdr));
+			/* ACK+ message with data is added to receive queue */
+			if (msg_data_sz(hdr))
+				return true;
+			/* Empty ACK-, - wake up sleeping connect() and drop */
+			sk->sk_state_change(sk);
+			msg_set_dest_droppable(hdr, 1);
+			return false;
+		}
+		/* Ignore connectionless message if not from listening socket */
+		if (oport != pport || onode != pnode)
+			return false;
+
+		/* Rejected SYN */
+		if (err != TIPC_ERR_OVERLOAD)
+			break;
+
+		/* Prepare for new setup attempt if we have a SYN clone */
+		if (skb_queue_empty(&sk->sk_write_queue))
+			break;
+		get_random_bytes(&delay, 2);
+		delay %= (tsk->conn_timeout / 4);
+		delay = msecs_to_jiffies(delay + 100);
+		sk_reset_timer(sk, &sk->sk_timer, jiffies + delay);
+		return false;
+	case TIPC_OPEN:
+	case TIPC_DISCONNECTING:
+		return false;
+	case TIPC_LISTEN:
+		/* Accept only SYN message */
+		if (!msg_is_syn(hdr) &&
+		    tipc_node_get_capabilities(net, onode) & TIPC_SYN_BIT)
+			return false;
+		if (!con_msg && !err)
+			return true;
+		return false;
+	case TIPC_ESTABLISHED:
+		if (!skb_queue_empty(&sk->sk_write_queue))
+			tipc_sk_push_backlog(tsk, false);
+		/* Accept only connection-based messages sent by peer */
+		if (likely(con_msg && !err && pport == oport &&
+			   pnode == onode)) {
+			if (msg_ack_required(hdr)) {
+				struct sk_buff *skb;
+
+				skb = tipc_sk_build_ack(tsk);
+				if (skb) {
+					msg_set_nagle_ack(buf_msg(skb));
+					__skb_queue_tail(xmitq, skb);
+				}
+			}
+			return true;
+		}
+		if (!tsk_peer_msg(tsk, hdr))
+			return false;
+		if (!err)
+			return true;
+		tipc_set_sk_state(sk, TIPC_DISCONNECTING);
+		tipc_node_remove_conn(net, pnode, tsk->portid);
+		sk->sk_state_change(sk);
+		return true;
+	default:
+		pr_err("Unknown sk_state %u\n", sk->sk_state);
+	}
+	/* Abort connection setup attempt */
+	tipc_set_sk_state(sk, TIPC_DISCONNECTING);
+	sk->sk_err = ECONNREFUSED;
+	sk->sk_state_change(sk);
+	return true;
 }
 
 /**
  * rcvbuf_limit - get proper overload limit of socket receive queue
  * @sk: socket
- * @buf: message
+ * @skb: message
  *
- * For all connection oriented messages, irrespective of importance,
- * the default overload value (i.e. 67MB) is set as limit.
+ * For connection oriented messages, irrespective of importance,
+ * default queue limit is 2 MB.
  *
- * For all connectionless messages, by default new queue limits are
- * as belows:
+ * For connectionless messages, queue limits are based on message
+ * importance as follows:
  *
- * TIPC_LOW_IMPORTANCE       (4 MB)
- * TIPC_MEDIUM_IMPORTANCE    (8 MB)
- * TIPC_HIGH_IMPORTANCE      (16 MB)
- * TIPC_CRITICAL_IMPORTANCE  (32 MB)
+ * TIPC_LOW_IMPORTANCE       (2 MB)
+ * TIPC_MEDIUM_IMPORTANCE    (4 MB)
+ * TIPC_HIGH_IMPORTANCE      (8 MB)
+ * TIPC_CRITICAL_IMPORTANCE  (16 MB)
  *
  * Returns overload limit according to corresponding message importance
  */
-static unsigned int rcvbuf_limit(struct sock *sk, struct sk_buff *buf)
+static unsigned int rcvbuf_limit(struct sock *sk, struct sk_buff *skb)
 {
-	struct tipc_msg *msg = buf_msg(buf);
+	struct tipc_sock *tsk = tipc_sk(sk);
+	struct tipc_msg *hdr = buf_msg(skb);
 
-	if (msg_connected(msg))
-		return sysctl_tipc_rmem[2];
+	if (unlikely(msg_in_group(hdr)))
+		return READ_ONCE(sk->sk_rcvbuf);
 
-	return sk->sk_rcvbuf >> TIPC_CRITICAL_IMPORTANCE <<
-		msg_importance(msg);
+	if (unlikely(!msg_connected(hdr)))
+		return READ_ONCE(sk->sk_rcvbuf) << msg_importance(hdr);
+
+	if (likely(tsk->peer_caps & TIPC_BLOCK_FLOWCTL))
+		return READ_ONCE(sk->sk_rcvbuf);
+
+	return FLOWCTL_MSG_LIM;
 }
 
 /**
- * filter_rcv - validate incoming message
+ * tipc_sk_filter_rcv - validate incoming message
  * @sk: socket
- * @buf: message
+ * @skb: pointer to message.
  *
  * Enqueues message on receive queue if acceptable; optionally handles
  * disconnect indication for a connected socket.
  *
- * Called with socket lock already taken; port lock may also be taken.
+ * Called with socket lock already taken
  *
- * Returns 0 (TIPC_OK) if message was consumed, -TIPC error code if message
- * to be rejected, 1 (TIPC_FWD_MSG) if (CONN_MANAGER) message to be forwarded
  */
-static int filter_rcv(struct sock *sk, struct sk_buff *buf)
+static void tipc_sk_filter_rcv(struct sock *sk, struct sk_buff *skb,
+			       struct sk_buff_head *xmitq)
 {
-	struct socket *sock = sk->sk_socket;
+	bool sk_conn = !tipc_sk_type_connectionless(sk);
 	struct tipc_sock *tsk = tipc_sk(sk);
-	struct tipc_msg *msg = buf_msg(buf);
-	unsigned int limit = rcvbuf_limit(sk, buf);
-	u32 onode;
-	int rc = TIPC_OK;
+	struct tipc_group *grp = tsk->group;
+	struct tipc_msg *hdr = buf_msg(skb);
+	struct net *net = sock_net(sk);
+	struct sk_buff_head inputq;
+	int mtyp = msg_type(hdr);
+	int limit, err = TIPC_OK;
 
-	if (unlikely(msg_user(msg) == CONN_MANAGER))
-		return tipc_sk_proto_rcv(tsk, &onode, buf);
+	trace_tipc_sk_filter_rcv(sk, skb, TIPC_DUMP_ALL, " ");
+	TIPC_SKB_CB(skb)->bytes_read = 0;
+	__skb_queue_head_init(&inputq);
+	__skb_queue_tail(&inputq, skb);
 
-	if (unlikely(msg_user(msg) == SOCK_WAKEUP)) {
-		kfree_skb(buf);
-		tsk->link_cong = 0;
-		sk->sk_write_space(sk);
-		return TIPC_OK;
+	if (unlikely(!msg_isdata(hdr)))
+		tipc_sk_proto_rcv(sk, &inputq, xmitq);
+
+	if (unlikely(grp))
+		tipc_group_filter_msg(grp, &inputq, xmitq);
+
+	if (unlikely(!grp) && mtyp == TIPC_MCAST_MSG)
+		tipc_mcast_filter_msg(net, &tsk->mc_method.deferredq, &inputq);
+
+	/* Validate and add to receive buffer if there is space */
+	while ((skb = __skb_dequeue(&inputq))) {
+		hdr = buf_msg(skb);
+		limit = rcvbuf_limit(sk, skb);
+		if ((sk_conn && !tipc_sk_filter_connect(tsk, skb, xmitq)) ||
+		    (!sk_conn && msg_connected(hdr)) ||
+		    (!grp && msg_in_group(hdr)))
+			err = TIPC_ERR_NO_PORT;
+		else if (sk_rmem_alloc_get(sk) + skb->truesize >= limit) {
+			trace_tipc_sk_dump(sk, skb, TIPC_DUMP_ALL,
+					   "err_overload2!");
+			atomic_inc(&sk->sk_drops);
+			err = TIPC_ERR_OVERLOAD;
+		}
+
+		if (unlikely(err)) {
+			if (tipc_msg_reverse(tipc_own_addr(net), &skb, err)) {
+				trace_tipc_sk_rej_msg(sk, skb, TIPC_DUMP_NONE,
+						      "@filter_rcv!");
+				__skb_queue_tail(xmitq, skb);
+			}
+			err = TIPC_OK;
+			continue;
+		}
+		__skb_queue_tail(&sk->sk_receive_queue, skb);
+		skb_set_owner_r(skb, sk);
+		trace_tipc_sk_overlimit2(sk, skb, TIPC_DUMP_ALL,
+					 "rcvq >90% allocated!");
+		sk->sk_data_ready(sk);
 	}
-
-	/* Reject message if it is wrong sort of message for socket */
-	if (msg_type(msg) > TIPC_DIRECT_MSG)
-		return -TIPC_ERR_NO_PORT;
-
-	if (sock->state == SS_READY) {
-		if (msg_connected(msg))
-			return -TIPC_ERR_NO_PORT;
-	} else {
-		rc = filter_connect(tsk, &buf);
-		if (rc != TIPC_OK || buf == NULL)
-			return rc;
-	}
-
-	/* Reject message if there isn't room to queue it */
-	if (sk_rmem_alloc_get(sk) + buf->truesize >= limit)
-		return -TIPC_ERR_OVERLOAD;
-
-	/* Enqueue message */
-	TIPC_SKB_CB(buf)->handle = NULL;
-	__skb_queue_tail(&sk->sk_receive_queue, buf);
-	skb_set_owner_r(buf, sk);
-
-	sk->sk_data_ready(sk);
-	return TIPC_OK;
 }
 
 /**
- * tipc_backlog_rcv - handle incoming message from backlog queue
+ * tipc_sk_backlog_rcv - handle incoming message from backlog queue
  * @sk: socket
- * @buf: message
+ * @skb: message
  *
- * Caller must hold socket lock, but not port lock.
- *
- * Returns 0
+ * Caller must hold socket lock
  */
-static int tipc_backlog_rcv(struct sock *sk, struct sk_buff *buf)
+static int tipc_sk_backlog_rcv(struct sock *sk, struct sk_buff *skb)
 {
-	int rc;
-	u32 onode;
-	struct tipc_sock *tsk = tipc_sk(sk);
-	uint truesize = buf->truesize;
+	unsigned int before = sk_rmem_alloc_get(sk);
+	struct sk_buff_head xmitq;
+	unsigned int added;
 
-	rc = filter_rcv(sk, buf);
+	__skb_queue_head_init(&xmitq);
 
-	if (likely(!rc)) {
-		if (atomic_read(&tsk->dupl_rcvcnt) < TIPC_CONN_OVERLOAD_LIMIT)
-			atomic_add(truesize, &tsk->dupl_rcvcnt);
-		return 0;
-	}
+	tipc_sk_filter_rcv(sk, skb, &xmitq);
+	added = sk_rmem_alloc_get(sk) - before;
+	atomic_add(added, &tipc_sk(sk)->dupl_rcvcnt);
 
-	if ((rc < 0) && !tipc_msg_reverse(buf, &onode, -rc))
-		return 0;
-
-	tipc_link_xmit(buf, onode, 0);
-
+	/* Send pending response/rejected messages, if any */
+	tipc_node_distr_xmit(sock_net(sk), &xmitq);
 	return 0;
 }
 
 /**
- * tipc_sk_rcv - handle incoming message
- * @buf: buffer containing arriving message
- * Consumes buffer
- * Returns 0 if success, or errno: -EHOSTUNREACH
+ * tipc_sk_enqueue - extract all buffers with destination 'dport' from
+ *                   inputq and try adding them to socket or backlog queue
+ * @inputq: list of incoming buffers with potentially different destinations
+ * @sk: socket where the buffers should be enqueued
+ * @dport: port number for the socket
+ *
+ * Caller must hold socket lock
  */
-int tipc_sk_rcv(struct sk_buff *buf)
+static void tipc_sk_enqueue(struct sk_buff_head *inputq, struct sock *sk,
+			    u32 dport, struct sk_buff_head *xmitq)
 {
+	unsigned long time_limit = jiffies + usecs_to_jiffies(20000);
+	struct sk_buff *skb;
+	unsigned int lim;
+	atomic_t *dcnt;
+	u32 onode;
+
+	while (skb_queue_len(inputq)) {
+		if (unlikely(time_after_eq(jiffies, time_limit)))
+			return;
+
+		skb = tipc_skb_dequeue(inputq, dport);
+		if (unlikely(!skb))
+			return;
+
+		/* Add message directly to receive queue if possible */
+		if (!sock_owned_by_user(sk)) {
+			tipc_sk_filter_rcv(sk, skb, xmitq);
+			continue;
+		}
+
+		/* Try backlog, compensating for double-counted bytes */
+		dcnt = &tipc_sk(sk)->dupl_rcvcnt;
+		if (!sk->sk_backlog.len)
+			atomic_set(dcnt, 0);
+		lim = rcvbuf_limit(sk, skb) + atomic_read(dcnt);
+		if (likely(!sk_add_backlog(sk, skb, lim))) {
+			trace_tipc_sk_overlimit1(sk, skb, TIPC_DUMP_ALL,
+						 "bklg & rcvq >90% allocated!");
+			continue;
+		}
+
+		trace_tipc_sk_dump(sk, skb, TIPC_DUMP_ALL, "err_overload!");
+		/* Overload => reject message back to sender */
+		onode = tipc_own_addr(sock_net(sk));
+		atomic_inc(&sk->sk_drops);
+		if (tipc_msg_reverse(onode, &skb, TIPC_ERR_OVERLOAD)) {
+			trace_tipc_sk_rej_msg(sk, skb, TIPC_DUMP_ALL,
+					      "@sk_enqueue!");
+			__skb_queue_tail(xmitq, skb);
+		}
+		break;
+	}
+}
+
+/**
+ * tipc_sk_rcv - handle a chain of incoming buffers
+ * @inputq: buffer list containing the buffers
+ * Consumes all buffers in list until inputq is empty
+ * Note: may be called in multiple threads referring to the same queue
+ */
+void tipc_sk_rcv(struct net *net, struct sk_buff_head *inputq)
+{
+	struct sk_buff_head xmitq;
+	u32 dnode, dport = 0;
+	int err;
 	struct tipc_sock *tsk;
 	struct sock *sk;
-	u32 dport = msg_destport(buf_msg(buf));
-	int rc = TIPC_OK;
-	uint limit;
-	u32 dnode;
+	struct sk_buff *skb;
 
-	/* Validate destination and message */
-	tsk = tipc_sk_get(dport);
-	if (unlikely(!tsk)) {
-		rc = tipc_msg_eval(buf, &dnode);
-		goto exit;
+	__skb_queue_head_init(&xmitq);
+	while (skb_queue_len(inputq)) {
+		dport = tipc_skb_peek_port(inputq, dport);
+		tsk = tipc_sk_lookup(net, dport);
+
+		if (likely(tsk)) {
+			sk = &tsk->sk;
+			if (likely(spin_trylock_bh(&sk->sk_lock.slock))) {
+				tipc_sk_enqueue(inputq, sk, dport, &xmitq);
+				spin_unlock_bh(&sk->sk_lock.slock);
+			}
+			/* Send pending response/rejected messages, if any */
+			tipc_node_distr_xmit(sock_net(sk), &xmitq);
+			sock_put(sk);
+			continue;
+		}
+		/* No destination socket => dequeue skb if still there */
+		skb = tipc_skb_dequeue(inputq, dport);
+		if (!skb)
+			return;
+
+		/* Try secondary lookup if unresolved named message */
+		err = TIPC_ERR_NO_PORT;
+		if (tipc_msg_lookup_dest(net, skb, &err))
+			goto xmit;
+
+		/* Prepare for message rejection */
+		if (!tipc_msg_reverse(tipc_own_addr(net), &skb, err))
+			continue;
+
+		trace_tipc_sk_rej_msg(NULL, skb, TIPC_DUMP_NONE, "@sk_rcv!");
+xmit:
+		dnode = msg_destnode(buf_msg(skb));
+		tipc_node_xmit_skb(net, skb, dnode, dport);
 	}
-	sk = &tsk->sk;
-
-	/* Queue message */
-	spin_lock_bh(&sk->sk_lock.slock);
-
-	if (!sock_owned_by_user(sk)) {
-		rc = filter_rcv(sk, buf);
-	} else {
-		if (sk->sk_backlog.len == 0)
-			atomic_set(&tsk->dupl_rcvcnt, 0);
-		limit = rcvbuf_limit(sk, buf) + atomic_read(&tsk->dupl_rcvcnt);
-		if (sk_add_backlog(sk, buf, limit))
-			rc = -TIPC_ERR_OVERLOAD;
-	}
-	spin_unlock_bh(&sk->sk_lock.slock);
-	tipc_sk_put(tsk);
-	if (likely(!rc))
-		return 0;
-exit:
-	if ((rc < 0) && !tipc_msg_reverse(buf, &dnode, -rc))
-		return -EHOSTUNREACH;
-
-	tipc_link_xmit(buf, dnode, 0);
-	return (rc < 0) ? -EHOSTUNREACH : 0;
 }
 
 static int tipc_wait_for_connect(struct socket *sock, long *timeo_p)
 {
+	DEFINE_WAIT_FUNC(wait, woken_wake_function);
 	struct sock *sk = sock->sk;
-	DEFINE_WAIT(wait);
 	int done;
 
 	do {
@@ -1813,12 +2533,25 @@ static int tipc_wait_for_connect(struct socket *sock, long *timeo_p)
 			return -ETIMEDOUT;
 		if (signal_pending(current))
 			return sock_intr_errno(*timeo_p);
+		if (sk->sk_state == TIPC_DISCONNECTING)
+			break;
 
-		prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
-		done = sk_wait_event(sk, timeo_p, sock->state != SS_CONNECTING);
-		finish_wait(sk_sleep(sk), &wait);
+		add_wait_queue(sk_sleep(sk), &wait);
+		done = sk_wait_event(sk, timeo_p, tipc_sk_connected(sk),
+				     &wait);
+		remove_wait_queue(sk_sleep(sk), &wait);
 	} while (!done);
 	return 0;
+}
+
+static bool tipc_sockaddr_is_sane(struct sockaddr_tipc *addr)
+{
+	if (addr->family != AF_TIPC)
+		return false;
+	if (addr->addrtype == TIPC_SERVICE_RANGE)
+		return (addr->addr.nameseq.lower <= addr->addr.nameseq.upper);
+	return (addr->addrtype == TIPC_SERVICE_ADDR ||
+		addr->addrtype == TIPC_SOCKET_ADDR);
 }
 
 /**
@@ -1834,34 +2567,46 @@ static int tipc_connect(struct socket *sock, struct sockaddr *dest,
 			int destlen, int flags)
 {
 	struct sock *sk = sock->sk;
+	struct tipc_sock *tsk = tipc_sk(sk);
 	struct sockaddr_tipc *dst = (struct sockaddr_tipc *)dest;
 	struct msghdr m = {NULL,};
-	long timeout = (flags & O_NONBLOCK) ? 0 : tipc_sk(sk)->conn_timeout;
-	socket_state previous;
-	int res;
+	long timeout = (flags & O_NONBLOCK) ? 0 : tsk->conn_timeout;
+	int previous;
+	int res = 0;
+
+	if (destlen != sizeof(struct sockaddr_tipc))
+		return -EINVAL;
 
 	lock_sock(sk);
 
-	/* For now, TIPC does not allow use of connect() with DGRAM/RDM types */
-	if (sock->state == SS_READY) {
-		res = -EOPNOTSUPP;
-		goto exit;
-	}
-
-	/*
-	 * Reject connection attempt using multicast address
-	 *
-	 * Note: send_msg() validates the rest of the address fields,
-	 *       so there's no need to do it here
-	 */
-	if (dst->addrtype == TIPC_ADDR_MCAST) {
+	if (tsk->group) {
 		res = -EINVAL;
 		goto exit;
 	}
 
-	previous = sock->state;
-	switch (sock->state) {
-	case SS_UNCONNECTED:
+	if (dst->family == AF_UNSPEC) {
+		memset(&tsk->peer, 0, sizeof(struct sockaddr_tipc));
+		if (!tipc_sk_type_connectionless(sk))
+			res = -EINVAL;
+		goto exit;
+	}
+	if (!tipc_sockaddr_is_sane(dst)) {
+		res = -EINVAL;
+		goto exit;
+	}
+	/* DGRAM/RDM connect(), just save the destaddr */
+	if (tipc_sk_type_connectionless(sk)) {
+		memcpy(&tsk->peer, dest, destlen);
+		goto exit;
+	} else if (dst->addrtype == TIPC_SERVICE_RANGE) {
+		res = -EINVAL;
+		goto exit;
+	}
+
+	previous = sk->sk_state;
+
+	switch (sk->sk_state) {
+	case TIPC_OPEN:
 		/* Send a 'SYN-' to destination */
 		m.msg_name = dest;
 		m.msg_namelen = destlen;
@@ -1872,31 +2617,33 @@ static int tipc_connect(struct socket *sock, struct sockaddr *dest,
 		if (!timeout)
 			m.msg_flags = MSG_DONTWAIT;
 
-		res = tipc_sendmsg(NULL, sock, &m, 0);
+		res = __tipc_sendmsg(sock, &m, 0);
 		if ((res < 0) && (res != -EWOULDBLOCK))
 			goto exit;
 
-		/* Just entered SS_CONNECTING state; the only
+		/* Just entered TIPC_CONNECTING state; the only
 		 * difference is that return value in non-blocking
 		 * case is EINPROGRESS, rather than EALREADY.
 		 */
 		res = -EINPROGRESS;
-	case SS_CONNECTING:
-		if (previous == SS_CONNECTING)
-			res = -EALREADY;
-		if (!timeout)
+		fallthrough;
+	case TIPC_CONNECTING:
+		if (!timeout) {
+			if (previous == TIPC_CONNECTING)
+				res = -EALREADY;
 			goto exit;
+		}
 		timeout = msecs_to_jiffies(timeout);
 		/* Wait until an 'ACK' or 'RST' arrives, or a timeout occurs */
 		res = tipc_wait_for_connect(sock, &timeout);
 		break;
-	case SS_CONNECTED:
+	case TIPC_ESTABLISHED:
 		res = -EISCONN;
 		break;
 	default:
 		res = -EINVAL;
-		break;
 	}
+
 exit:
 	release_sock(sk);
 	return res;
@@ -1915,22 +2662,16 @@ static int tipc_listen(struct socket *sock, int len)
 	int res;
 
 	lock_sock(sk);
-
-	if (sock->state != SS_UNCONNECTED)
-		res = -EINVAL;
-	else {
-		sock->state = SS_LISTENING;
-		res = 0;
-	}
-
+	res = tipc_set_sk_state(sk, TIPC_LISTEN);
 	release_sock(sk);
+
 	return res;
 }
 
 static int tipc_wait_for_accept(struct socket *sock, long timeo)
 {
 	struct sock *sk = sock->sk;
-	DEFINE_WAIT(wait);
+	DEFINE_WAIT_FUNC(wait, woken_wake_function);
 	int err;
 
 	/* True wake-one mechanism for incoming connections: only
@@ -1939,50 +2680,48 @@ static int tipc_wait_for_accept(struct socket *sock, long timeo)
 	 * anymore, the common case will execute the loop only once.
 	*/
 	for (;;) {
-		prepare_to_wait_exclusive(sk_sleep(sk), &wait,
-					  TASK_INTERRUPTIBLE);
 		if (timeo && skb_queue_empty(&sk->sk_receive_queue)) {
+			add_wait_queue(sk_sleep(sk), &wait);
 			release_sock(sk);
-			timeo = schedule_timeout(timeo);
+			timeo = wait_woken(&wait, TASK_INTERRUPTIBLE, timeo);
 			lock_sock(sk);
+			remove_wait_queue(sk_sleep(sk), &wait);
 		}
 		err = 0;
 		if (!skb_queue_empty(&sk->sk_receive_queue))
 			break;
-		err = -EINVAL;
-		if (sock->state != SS_LISTENING)
+		err = -EAGAIN;
+		if (!timeo)
 			break;
 		err = sock_intr_errno(timeo);
 		if (signal_pending(current))
 			break;
-		err = -EAGAIN;
-		if (!timeo)
-			break;
 	}
-	finish_wait(sk_sleep(sk), &wait);
 	return err;
 }
 
 /**
  * tipc_accept - wait for connection request
  * @sock: listening socket
- * @newsock: new socket that is to be connected
+ * @new_sock: new socket that is to be connected
  * @flags: file-related flags associated with socket
  *
  * Returns 0 on success, errno otherwise
  */
-static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags)
+static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags,
+		       bool kern)
 {
 	struct sock *new_sk, *sk = sock->sk;
-	struct sk_buff *buf;
 	struct tipc_sock *new_tsock;
+	struct msghdr m = {NULL,};
 	struct tipc_msg *msg;
+	struct sk_buff *buf;
 	long timeo;
 	int res;
 
 	lock_sock(sk);
 
-	if (sock->state != SS_LISTENING) {
+	if (sk->sk_state != TIPC_LISTEN) {
 		res = -EINVAL;
 		goto exit;
 	}
@@ -1993,7 +2732,7 @@ static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags)
 
 	buf = skb_peek(&sk->sk_receive_queue);
 
-	res = tipc_sk_create(sock_net(sock->sk), new_sock, 0, 1);
+	res = tipc_sk_create(sock_net(sock->sk), new_sock, 0, kern);
 	if (res)
 		goto exit;
 	security_sk_clone(sock->sk, new_sock->sk);
@@ -2009,32 +2748,29 @@ static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags)
 	 * Reject any stray messages received by new socket
 	 * before the socket lock was taken (very, very unlikely)
 	 */
-	tsk_rej_rx_queue(new_sk);
+	tsk_rej_rx_queue(new_sk, TIPC_ERR_NO_PORT);
 
 	/* Connect new socket to it's peer */
 	tipc_sk_finish_conn(new_tsock, msg_origport(msg), msg_orignode(msg));
-	new_sock->state = SS_CONNECTED;
 
-	tsk_set_importance(new_tsock, msg_importance(msg));
+	tsk_set_importance(new_sk, msg_importance(msg));
 	if (msg_named(msg)) {
 		new_tsock->conn_type = msg_nametype(msg);
 		new_tsock->conn_instance = msg_nameinst(msg);
 	}
 
 	/*
-	 * Respond to 'SYN-' by discarding it & returning 'ACK'-.
-	 * Respond to 'SYN+' by queuing it on new socket.
+	 * Respond to 'SYN-' by discarding it & returning 'ACK'.
+	 * Respond to 'SYN+' by queuing it on new socket & returning 'ACK'.
 	 */
 	if (!msg_data_sz(msg)) {
-		struct msghdr m = {NULL,};
-
 		tsk_advance_rx_queue(sk);
-		tipc_send_packet(NULL, new_sock, &m, 0);
 	} else {
 		__skb_dequeue(&sk->sk_receive_queue);
 		__skb_queue_head(&new_sk->sk_receive_queue, buf);
 		skb_set_owner_r(buf, new_sk);
 	}
+	__tipc_sendstream(new_sock, &m, 0);
 	release_sock(new_sk);
 exit:
 	release_sock(sk);
@@ -2053,9 +2789,6 @@ exit:
 static int tipc_shutdown(struct socket *sock, int how)
 {
 	struct sock *sk = sock->sk;
-	struct tipc_sock *tsk = tipc_sk(sk);
-	struct sk_buff *buf;
-	u32 dnode;
 	int res;
 
 	if (how != SHUT_RDWR)
@@ -2063,111 +2796,125 @@ static int tipc_shutdown(struct socket *sock, int how)
 
 	lock_sock(sk);
 
-	switch (sock->state) {
-	case SS_CONNECTING:
-	case SS_CONNECTED:
+	trace_tipc_sk_shutdown(sk, NULL, TIPC_DUMP_ALL, " ");
+	__tipc_shutdown(sock, TIPC_CONN_SHUTDOWN);
+	sk->sk_shutdown = SHUTDOWN_MASK;
 
-restart:
-		/* Disconnect and send a 'FIN+' or 'FIN-' message to peer */
-		buf = __skb_dequeue(&sk->sk_receive_queue);
-		if (buf) {
-			if (TIPC_SKB_CB(buf)->handle != NULL) {
-				kfree_skb(buf);
-				goto restart;
-			}
-			if (tipc_msg_reverse(buf, &dnode, TIPC_CONN_SHUTDOWN))
-				tipc_link_xmit(buf, dnode, tsk->ref);
-			tipc_node_remove_conn(dnode, tsk->ref);
-		} else {
-			dnode = tsk_peer_node(tsk);
-			buf = tipc_msg_create(TIPC_CRITICAL_IMPORTANCE,
-					      TIPC_CONN_MSG, SHORT_H_SIZE,
-					      0, dnode, tipc_own_addr,
-					      tsk_peer_port(tsk),
-					      tsk->ref, TIPC_CONN_SHUTDOWN);
-			tipc_link_xmit(buf, dnode, tsk->ref);
-		}
-		tsk->connected = 0;
-		sock->state = SS_DISCONNECTING;
-		tipc_node_remove_conn(dnode, tsk->ref);
-		/* fall through */
-
-	case SS_DISCONNECTING:
-
+	if (sk->sk_state == TIPC_DISCONNECTING) {
 		/* Discard any unreceived messages */
 		__skb_queue_purge(&sk->sk_receive_queue);
 
-		/* Wake up anyone sleeping in poll */
-		sk->sk_state_change(sk);
 		res = 0;
-		break;
-
-	default:
+	} else {
 		res = -ENOTCONN;
 	}
+	/* Wake up anyone sleeping in poll. */
+	sk->sk_state_change(sk);
 
 	release_sock(sk);
 	return res;
 }
 
-static void tipc_sk_timeout(unsigned long ref)
+static void tipc_sk_check_probing_state(struct sock *sk,
+					struct sk_buff_head *list)
 {
-	struct tipc_sock *tsk;
-	struct sock *sk;
-	struct sk_buff *buf = NULL;
-	u32 peer_port, peer_node;
+	struct tipc_sock *tsk = tipc_sk(sk);
+	u32 pnode = tsk_peer_node(tsk);
+	u32 pport = tsk_peer_port(tsk);
+	u32 self = tsk_own_node(tsk);
+	u32 oport = tsk->portid;
+	struct sk_buff *skb;
 
-	tsk = tipc_sk_get(ref);
-	if (!tsk)
+	if (tsk->probe_unacked) {
+		tipc_set_sk_state(sk, TIPC_DISCONNECTING);
+		sk->sk_err = ECONNABORTED;
+		tipc_node_remove_conn(sock_net(sk), pnode, pport);
+		sk->sk_state_change(sk);
 		return;
+	}
+	/* Prepare new probe */
+	skb = tipc_msg_create(CONN_MANAGER, CONN_PROBE, INT_H_SIZE, 0,
+			      pnode, self, pport, oport, TIPC_OK);
+	if (skb)
+		__skb_queue_tail(list, skb);
+	tsk->probe_unacked = true;
+	sk_reset_timer(sk, &sk->sk_timer, jiffies + CONN_PROBING_INTV);
+}
 
-	sk = &tsk->sk;
+static void tipc_sk_retry_connect(struct sock *sk, struct sk_buff_head *list)
+{
+	struct tipc_sock *tsk = tipc_sk(sk);
+
+	/* Try again later if dest link is congested */
+	if (tsk->cong_link_cnt) {
+		sk_reset_timer(sk, &sk->sk_timer,
+			       jiffies + msecs_to_jiffies(100));
+		return;
+	}
+	/* Prepare SYN for retransmit */
+	tipc_msg_skb_clone(&sk->sk_write_queue, list);
+}
+
+static void tipc_sk_timeout(struct timer_list *t)
+{
+	struct sock *sk = from_timer(sk, t, sk_timer);
+	struct tipc_sock *tsk = tipc_sk(sk);
+	u32 pnode = tsk_peer_node(tsk);
+	struct sk_buff_head list;
+	int rc = 0;
+
+	__skb_queue_head_init(&list);
 	bh_lock_sock(sk);
-	if (!tsk->connected) {
-		bh_unlock_sock(sk);
-		goto exit;
-	}
-	peer_port = tsk_peer_port(tsk);
-	peer_node = tsk_peer_node(tsk);
 
-	if (tsk->probing_state == TIPC_CONN_PROBING) {
-		/* Previous probe not answered -> self abort */
-		buf = tipc_msg_create(TIPC_CRITICAL_IMPORTANCE, TIPC_CONN_MSG,
-				      SHORT_H_SIZE, 0, tipc_own_addr,
-				      peer_node, ref, peer_port,
-				      TIPC_ERR_NO_PORT);
-	} else {
-		buf = tipc_msg_create(CONN_MANAGER, CONN_PROBE, INT_H_SIZE,
-				      0, peer_node, tipc_own_addr,
-				      peer_port, ref, TIPC_OK);
-		tsk->probing_state = TIPC_CONN_PROBING;
-		k_start_timer(&tsk->timer, tsk->probing_interval);
+	/* Try again later if socket is busy */
+	if (sock_owned_by_user(sk)) {
+		sk_reset_timer(sk, &sk->sk_timer, jiffies + HZ / 20);
+		bh_unlock_sock(sk);
+		sock_put(sk);
+		return;
 	}
+
+	if (sk->sk_state == TIPC_ESTABLISHED)
+		tipc_sk_check_probing_state(sk, &list);
+	else if (sk->sk_state == TIPC_CONNECTING)
+		tipc_sk_retry_connect(sk, &list);
+
 	bh_unlock_sock(sk);
-	if (buf)
-		tipc_link_xmit(buf, peer_node, ref);
-exit:
-	tipc_sk_put(tsk);
+
+	if (!skb_queue_empty(&list))
+		rc = tipc_node_xmit(sock_net(sk), &list, pnode, tsk->portid);
+
+	/* SYN messages may cause link congestion */
+	if (rc == -ELINKCONG) {
+		tipc_dest_push(&tsk->cong_links, pnode, 0);
+		tsk->cong_link_cnt = 1;
+	}
+	sock_put(sk);
 }
 
 static int tipc_sk_publish(struct tipc_sock *tsk, uint scope,
 			   struct tipc_name_seq const *seq)
 {
+	struct sock *sk = &tsk->sk;
+	struct net *net = sock_net(sk);
 	struct publication *publ;
 	u32 key;
 
-	if (tsk->connected)
+	if (scope != TIPC_NODE_SCOPE)
+		scope = TIPC_CLUSTER_SCOPE;
+
+	if (tipc_sk_connected(sk))
 		return -EINVAL;
-	key = tsk->ref + tsk->pub_count + 1;
-	if (key == tsk->ref)
+	key = tsk->portid + tsk->pub_count + 1;
+	if (key == tsk->portid)
 		return -EADDRINUSE;
 
-	publ = tipc_nametbl_publish(seq->type, seq->lower, seq->upper,
-				    scope, tsk->ref, key);
+	publ = tipc_nametbl_publish(net, seq->type, seq->lower, seq->upper,
+				    scope, tsk->portid, key);
 	if (unlikely(!publ))
 		return -EINVAL;
 
-	list_add(&publ->pport_list, &tsk->publications);
+	list_add(&publ->binding_sock, &tsk->publications);
 	tsk->pub_count++;
 	tsk->published = 1;
 	return 0;
@@ -2176,11 +2923,15 @@ static int tipc_sk_publish(struct tipc_sock *tsk, uint scope,
 static int tipc_sk_withdraw(struct tipc_sock *tsk, uint scope,
 			    struct tipc_name_seq const *seq)
 {
+	struct net *net = sock_net(&tsk->sk);
 	struct publication *publ;
 	struct publication *safe;
 	int rc = -EINVAL;
 
-	list_for_each_entry_safe(publ, safe, &tsk->publications, pport_list) {
+	if (scope != TIPC_NODE_SCOPE)
+		scope = TIPC_CLUSTER_SCOPE;
+
+	list_for_each_entry_safe(publ, safe, &tsk->publications, binding_sock) {
 		if (seq) {
 			if (publ->scope != scope)
 				continue;
@@ -2190,13 +2941,13 @@ static int tipc_sk_withdraw(struct tipc_sock *tsk, uint scope,
 				continue;
 			if (publ->upper != seq->upper)
 				break;
-			tipc_nametbl_withdraw(publ->type, publ->lower,
-					      publ->ref, publ->key);
+			tipc_nametbl_withdraw(net, publ->type, publ->lower,
+					      publ->upper, publ->key);
 			rc = 0;
 			break;
 		}
-		tipc_nametbl_withdraw(publ->type, publ->lower,
-				      publ->ref, publ->key);
+		tipc_nametbl_withdraw(net, publ->type, publ->lower,
+				      publ->upper, publ->key);
 		rc = 0;
 	}
 	if (list_empty(&tsk->publications))
@@ -2204,336 +2955,166 @@ static int tipc_sk_withdraw(struct tipc_sock *tsk, uint scope,
 	return rc;
 }
 
-static int tipc_sk_show(struct tipc_sock *tsk, char *buf,
-			int len, int full_id)
-{
-	struct publication *publ;
-	int ret;
-
-	if (full_id)
-		ret = tipc_snprintf(buf, len, "<%u.%u.%u:%u>:",
-				    tipc_zone(tipc_own_addr),
-				    tipc_cluster(tipc_own_addr),
-				    tipc_node(tipc_own_addr), tsk->ref);
-	else
-		ret = tipc_snprintf(buf, len, "%-10u:", tsk->ref);
-
-	if (tsk->connected) {
-		u32 dport = tsk_peer_port(tsk);
-		u32 destnode = tsk_peer_node(tsk);
-
-		ret += tipc_snprintf(buf + ret, len - ret,
-				     " connected to <%u.%u.%u:%u>",
-				     tipc_zone(destnode),
-				     tipc_cluster(destnode),
-				     tipc_node(destnode), dport);
-		if (tsk->conn_type != 0)
-			ret += tipc_snprintf(buf + ret, len - ret,
-					     " via {%u,%u}", tsk->conn_type,
-					     tsk->conn_instance);
-	} else if (tsk->published) {
-		ret += tipc_snprintf(buf + ret, len - ret, " bound to");
-		list_for_each_entry(publ, &tsk->publications, pport_list) {
-			if (publ->lower == publ->upper)
-				ret += tipc_snprintf(buf + ret, len - ret,
-						     " {%u,%u}", publ->type,
-						     publ->lower);
-			else
-				ret += tipc_snprintf(buf + ret, len - ret,
-						     " {%u,%u,%u}", publ->type,
-						     publ->lower, publ->upper);
-		}
-	}
-	ret += tipc_snprintf(buf + ret, len - ret, "\n");
-	return ret;
-}
-
-struct sk_buff *tipc_sk_socks_show(void)
-{
-	struct sk_buff *buf;
-	struct tlv_desc *rep_tlv;
-	char *pb;
-	int pb_len;
-	struct tipc_sock *tsk;
-	int str_len = 0;
-	u32 ref = 0;
-
-	buf = tipc_cfg_reply_alloc(TLV_SPACE(ULTRA_STRING_MAX_LEN));
-	if (!buf)
-		return NULL;
-	rep_tlv = (struct tlv_desc *)buf->data;
-	pb = TLV_DATA(rep_tlv);
-	pb_len = ULTRA_STRING_MAX_LEN;
-
-	tsk = tipc_sk_get_next(&ref);
-	for (; tsk; tsk = tipc_sk_get_next(&ref)) {
-		lock_sock(&tsk->sk);
-		str_len += tipc_sk_show(tsk, pb + str_len,
-					pb_len - str_len, 0);
-		release_sock(&tsk->sk);
-		tipc_sk_put(tsk);
-	}
-	str_len += 1;	/* for "\0" */
-	skb_put(buf, TLV_SPACE(str_len));
-	TLV_SET(rep_tlv, TIPC_TLV_ULTRA_STRING, NULL, str_len);
-
-	return buf;
-}
-
 /* tipc_sk_reinit: set non-zero address in all existing sockets
  *                 when we go from standalone to network mode.
  */
-void tipc_sk_reinit(void)
+void tipc_sk_reinit(struct net *net)
 {
+	struct tipc_net *tn = net_generic(net, tipc_net_id);
+	struct rhashtable_iter iter;
+	struct tipc_sock *tsk;
 	struct tipc_msg *msg;
-	u32 ref = 0;
-	struct tipc_sock *tsk = tipc_sk_get_next(&ref);
 
-	for (; tsk; tsk = tipc_sk_get_next(&ref)) {
-		lock_sock(&tsk->sk);
-		msg = &tsk->phdr;
-		msg_set_prevnode(msg, tipc_own_addr);
-		msg_set_orignode(msg, tipc_own_addr);
-		release_sock(&tsk->sk);
-		tipc_sk_put(tsk);
+	rhashtable_walk_enter(&tn->sk_rht, &iter);
+
+	do {
+		rhashtable_walk_start(&iter);
+
+		while ((tsk = rhashtable_walk_next(&iter)) && !IS_ERR(tsk)) {
+			sock_hold(&tsk->sk);
+			rhashtable_walk_stop(&iter);
+			lock_sock(&tsk->sk);
+			msg = &tsk->phdr;
+			msg_set_prevnode(msg, tipc_own_addr(net));
+			msg_set_orignode(msg, tipc_own_addr(net));
+			release_sock(&tsk->sk);
+			rhashtable_walk_start(&iter);
+			sock_put(&tsk->sk);
+		}
+
+		rhashtable_walk_stop(&iter);
+	} while (tsk == ERR_PTR(-EAGAIN));
+
+	rhashtable_walk_exit(&iter);
+}
+
+static struct tipc_sock *tipc_sk_lookup(struct net *net, u32 portid)
+{
+	struct tipc_net *tn = net_generic(net, tipc_net_id);
+	struct tipc_sock *tsk;
+
+	rcu_read_lock();
+	tsk = rhashtable_lookup(&tn->sk_rht, &portid, tsk_rht_params);
+	if (tsk)
+		sock_hold(&tsk->sk);
+	rcu_read_unlock();
+
+	return tsk;
+}
+
+static int tipc_sk_insert(struct tipc_sock *tsk)
+{
+	struct sock *sk = &tsk->sk;
+	struct net *net = sock_net(sk);
+	struct tipc_net *tn = net_generic(net, tipc_net_id);
+	u32 remaining = (TIPC_MAX_PORT - TIPC_MIN_PORT) + 1;
+	u32 portid = prandom_u32() % remaining + TIPC_MIN_PORT;
+
+	while (remaining--) {
+		portid++;
+		if ((portid < TIPC_MIN_PORT) || (portid > TIPC_MAX_PORT))
+			portid = TIPC_MIN_PORT;
+		tsk->portid = portid;
+		sock_hold(&tsk->sk);
+		if (!rhashtable_lookup_insert_fast(&tn->sk_rht, &tsk->node,
+						   tsk_rht_params))
+			return 0;
+		sock_put(&tsk->sk);
+	}
+
+	return -1;
+}
+
+static void tipc_sk_remove(struct tipc_sock *tsk)
+{
+	struct sock *sk = &tsk->sk;
+	struct tipc_net *tn = net_generic(sock_net(sk), tipc_net_id);
+
+	if (!rhashtable_remove_fast(&tn->sk_rht, &tsk->node, tsk_rht_params)) {
+		WARN_ON(refcount_read(&sk->sk_refcnt) == 1);
+		__sock_put(sk);
 	}
 }
 
-/**
- * struct reference - TIPC socket reference entry
- * @tsk: pointer to socket associated with reference entry
- * @ref: reference value for socket (combines instance & array index info)
- */
-struct reference {
-	struct tipc_sock *tsk;
-	u32 ref;
+static const struct rhashtable_params tsk_rht_params = {
+	.nelem_hint = 192,
+	.head_offset = offsetof(struct tipc_sock, node),
+	.key_offset = offsetof(struct tipc_sock, portid),
+	.key_len = sizeof(u32), /* portid */
+	.max_size = 1048576,
+	.min_size = 256,
+	.automatic_shrinking = true,
 };
 
-/**
- * struct tipc_ref_table - table of TIPC socket reference entries
- * @entries: pointer to array of reference entries
- * @capacity: array index of first unusable entry
- * @init_point: array index of first uninitialized entry
- * @first_free: array index of first unused socket reference entry
- * @last_free: array index of last unused socket reference entry
- * @index_mask: bitmask for array index portion of reference values
- * @start_mask: initial value for instance value portion of reference values
- */
-struct ref_table {
-	struct reference *entries;
-	u32 capacity;
-	u32 init_point;
-	u32 first_free;
-	u32 last_free;
-	u32 index_mask;
-	u32 start_mask;
-};
-
-/* Socket reference table consists of 2**N entries.
- *
- * State	Socket ptr	Reference
- * -----        ----------      ---------
- * In use        non-NULL       XXXX|own index
- *				(XXXX changes each time entry is acquired)
- * Free            NULL         YYYY|next free index
- *				(YYYY is one more than last used XXXX)
- * Uninitialized   NULL         0
- *
- * Entry 0 is not used; this allows index 0 to denote the end of the free list.
- *
- * Note that a reference value of 0 does not necessarily indicate that an
- * entry is uninitialized, since the last entry in the free list could also
- * have a reference value of 0 (although this is unlikely).
- */
-
-static struct ref_table tipc_ref_table;
-
-static DEFINE_RWLOCK(ref_table_lock);
-
-/**
- * tipc_ref_table_init - create reference table for sockets
- */
-int tipc_sk_ref_table_init(u32 req_sz, u32 start)
+int tipc_sk_rht_init(struct net *net)
 {
-	struct reference *table;
-	u32 actual_sz;
+	struct tipc_net *tn = net_generic(net, tipc_net_id);
 
-	/* account for unused entry, then round up size to a power of 2 */
+	return rhashtable_init(&tn->sk_rht, &tsk_rht_params);
+}
 
-	req_sz++;
-	for (actual_sz = 16; actual_sz < req_sz; actual_sz <<= 1) {
-		/* do nothing */
-	};
+void tipc_sk_rht_destroy(struct net *net)
+{
+	struct tipc_net *tn = net_generic(net, tipc_net_id);
 
-	/* allocate table & mark all entries as uninitialized */
-	table = vzalloc(actual_sz * sizeof(struct reference));
-	if (table == NULL)
+	/* Wait for socket readers to complete */
+	synchronize_net();
+
+	rhashtable_destroy(&tn->sk_rht);
+}
+
+static int tipc_sk_join(struct tipc_sock *tsk, struct tipc_group_req *mreq)
+{
+	struct net *net = sock_net(&tsk->sk);
+	struct tipc_group *grp = tsk->group;
+	struct tipc_msg *hdr = &tsk->phdr;
+	struct tipc_name_seq seq;
+	int rc;
+
+	if (mreq->type < TIPC_RESERVED_TYPES)
+		return -EACCES;
+	if (mreq->scope > TIPC_NODE_SCOPE)
+		return -EINVAL;
+	if (grp)
+		return -EACCES;
+	grp = tipc_group_create(net, tsk->portid, mreq, &tsk->group_is_open);
+	if (!grp)
 		return -ENOMEM;
+	tsk->group = grp;
+	msg_set_lookup_scope(hdr, mreq->scope);
+	msg_set_nametype(hdr, mreq->type);
+	msg_set_dest_droppable(hdr, true);
+	seq.type = mreq->type;
+	seq.lower = mreq->instance;
+	seq.upper = seq.lower;
+	tipc_nametbl_build_group(net, grp, mreq->type, mreq->scope);
+	rc = tipc_sk_publish(tsk, mreq->scope, &seq);
+	if (rc) {
+		tipc_group_delete(net, grp);
+		tsk->group = NULL;
+		return rc;
+	}
+	/* Eliminate any risk that a broadcast overtakes sent JOINs */
+	tsk->mc_method.rcast = true;
+	tsk->mc_method.mandatory = true;
+	tipc_group_join(net, grp, &tsk->sk.sk_rcvbuf);
+	return rc;
+}
 
-	tipc_ref_table.entries = table;
-	tipc_ref_table.capacity = req_sz;
-	tipc_ref_table.init_point = 1;
-	tipc_ref_table.first_free = 0;
-	tipc_ref_table.last_free = 0;
-	tipc_ref_table.index_mask = actual_sz - 1;
-	tipc_ref_table.start_mask = start & ~tipc_ref_table.index_mask;
+static int tipc_sk_leave(struct tipc_sock *tsk)
+{
+	struct net *net = sock_net(&tsk->sk);
+	struct tipc_group *grp = tsk->group;
+	struct tipc_name_seq seq;
+	int scope;
 
+	if (!grp)
+		return -EINVAL;
+	tipc_group_self(grp, &seq, &scope);
+	tipc_group_delete(net, grp);
+	tsk->group = NULL;
+	tipc_sk_withdraw(tsk, scope, &seq);
 	return 0;
-}
-
-/**
- * tipc_ref_table_stop - destroy reference table for sockets
- */
-void tipc_sk_ref_table_stop(void)
-{
-	if (!tipc_ref_table.entries)
-		return;
-	vfree(tipc_ref_table.entries);
-	tipc_ref_table.entries = NULL;
-}
-
-/* tipc_ref_acquire - create reference to a socket
- *
- * Register an socket pointer in the reference table.
- * Returns a unique reference value that is used from then on to retrieve the
- * socket pointer, or to determine if the socket has been deregistered.
- */
-u32 tipc_sk_ref_acquire(struct tipc_sock *tsk)
-{
-	u32 index;
-	u32 index_mask;
-	u32 next_plus_upper;
-	u32 ref = 0;
-	struct reference *entry;
-
-	if (unlikely(!tsk)) {
-		pr_err("Attempt to acquire ref. to non-existent obj\n");
-		return 0;
-	}
-	if (unlikely(!tipc_ref_table.entries)) {
-		pr_err("Ref. table not found in acquisition attempt\n");
-		return 0;
-	}
-
-	/* Take a free entry, if available; otherwise initialize a new one */
-	write_lock_bh(&ref_table_lock);
-	index = tipc_ref_table.first_free;
-	entry = &tipc_ref_table.entries[index];
-
-	if (likely(index)) {
-		index = tipc_ref_table.first_free;
-		entry = &tipc_ref_table.entries[index];
-		index_mask = tipc_ref_table.index_mask;
-		next_plus_upper = entry->ref;
-		tipc_ref_table.first_free = next_plus_upper & index_mask;
-		ref = (next_plus_upper & ~index_mask) + index;
-		entry->tsk = tsk;
-	} else if (tipc_ref_table.init_point < tipc_ref_table.capacity) {
-		index = tipc_ref_table.init_point++;
-		entry = &tipc_ref_table.entries[index];
-		ref = tipc_ref_table.start_mask + index;
-	}
-
-	if (ref) {
-		entry->ref = ref;
-		entry->tsk = tsk;
-	}
-	write_unlock_bh(&ref_table_lock);
-	return ref;
-}
-
-/* tipc_sk_ref_discard - invalidate reference to an socket
- *
- * Disallow future references to an socket and free up the entry for re-use.
- */
-void tipc_sk_ref_discard(u32 ref)
-{
-	struct reference *entry;
-	u32 index;
-	u32 index_mask;
-
-	if (unlikely(!tipc_ref_table.entries)) {
-		pr_err("Ref. table not found during discard attempt\n");
-		return;
-	}
-
-	index_mask = tipc_ref_table.index_mask;
-	index = ref & index_mask;
-	entry = &tipc_ref_table.entries[index];
-
-	write_lock_bh(&ref_table_lock);
-
-	if (unlikely(!entry->tsk)) {
-		pr_err("Attempt to discard ref. to non-existent socket\n");
-		goto exit;
-	}
-	if (unlikely(entry->ref != ref)) {
-		pr_err("Attempt to discard non-existent reference\n");
-		goto exit;
-	}
-
-	/* Mark entry as unused; increment instance part of entry's
-	 *   reference to invalidate any subsequent references
-	 */
-
-	entry->tsk = NULL;
-	entry->ref = (ref & ~index_mask) + (index_mask + 1);
-
-	/* Append entry to free entry list */
-	if (unlikely(tipc_ref_table.first_free == 0))
-		tipc_ref_table.first_free = index;
-	else
-		tipc_ref_table.entries[tipc_ref_table.last_free].ref |= index;
-	tipc_ref_table.last_free = index;
-exit:
-	write_unlock_bh(&ref_table_lock);
-}
-
-/* tipc_sk_get - find referenced socket and return pointer to it
- */
-struct tipc_sock *tipc_sk_get(u32 ref)
-{
-	struct reference *entry;
-	struct tipc_sock *tsk;
-
-	if (unlikely(!tipc_ref_table.entries))
-		return NULL;
-	read_lock_bh(&ref_table_lock);
-	entry = &tipc_ref_table.entries[ref & tipc_ref_table.index_mask];
-	tsk = entry->tsk;
-	if (likely(tsk && (entry->ref == ref)))
-		sock_hold(&tsk->sk);
-	else
-		tsk = NULL;
-	read_unlock_bh(&ref_table_lock);
-	return tsk;
-}
-
-/* tipc_sk_get_next - lock & return next socket after referenced one
-*/
-struct tipc_sock *tipc_sk_get_next(u32 *ref)
-{
-	struct reference *entry;
-	struct tipc_sock *tsk = NULL;
-	uint index = *ref & tipc_ref_table.index_mask;
-
-	read_lock_bh(&ref_table_lock);
-	while (++index < tipc_ref_table.capacity) {
-		entry = &tipc_ref_table.entries[index];
-		if (!entry->tsk)
-			continue;
-		tsk = entry->tsk;
-		sock_hold(&tsk->sk);
-		*ref = entry->ref;
-		break;
-	}
-	read_unlock_bh(&ref_table_lock);
-	return tsk;
-}
-
-static void tipc_sk_put(struct tipc_sock *tsk)
-{
-	sock_put(&tsk->sk);
 }
 
 /**
@@ -2550,28 +3131,46 @@ static void tipc_sk_put(struct tipc_sock *tsk)
  * Returns 0 on success, errno otherwise
  */
 static int tipc_setsockopt(struct socket *sock, int lvl, int opt,
-			   char __user *ov, unsigned int ol)
+			   sockptr_t ov, unsigned int ol)
 {
 	struct sock *sk = sock->sk;
 	struct tipc_sock *tsk = tipc_sk(sk);
-	u32 value;
-	int res;
+	struct tipc_group_req mreq;
+	u32 value = 0;
+	int res = 0;
 
 	if ((lvl == IPPROTO_TCP) && (sock->type == SOCK_STREAM))
 		return 0;
 	if (lvl != SOL_TIPC)
 		return -ENOPROTOOPT;
-	if (ol < sizeof(value))
-		return -EINVAL;
-	res = get_user(value, (u32 __user *)ov);
-	if (res)
-		return res;
+
+	switch (opt) {
+	case TIPC_IMPORTANCE:
+	case TIPC_SRC_DROPPABLE:
+	case TIPC_DEST_DROPPABLE:
+	case TIPC_CONN_TIMEOUT:
+	case TIPC_NODELAY:
+		if (ol < sizeof(value))
+			return -EINVAL;
+		if (copy_from_sockptr(&value, ov, sizeof(u32)))
+			return -EFAULT;
+		break;
+	case TIPC_GROUP_JOIN:
+		if (ol < sizeof(mreq))
+			return -EINVAL;
+		if (copy_from_sockptr(&mreq, ov, sizeof(mreq)))
+			return -EFAULT;
+		break;
+	default:
+		if (!sockptr_is_null(ov) || ol)
+			return -EINVAL;
+	}
 
 	lock_sock(sk);
 
 	switch (opt) {
 	case TIPC_IMPORTANCE:
-		res = tsk_set_importance(tsk, value);
+		res = tsk_set_importance(sk, value);
 		break;
 	case TIPC_SRC_DROPPABLE:
 		if (sock->type != SOCK_STREAM)
@@ -2584,7 +3183,24 @@ static int tipc_setsockopt(struct socket *sock, int lvl, int opt,
 		break;
 	case TIPC_CONN_TIMEOUT:
 		tipc_sk(sk)->conn_timeout = value;
-		/* no need to set "res", since already 0 at this point */
+		break;
+	case TIPC_MCAST_BROADCAST:
+		tsk->mc_method.rcast = false;
+		tsk->mc_method.mandatory = true;
+		break;
+	case TIPC_MCAST_REPLICAST:
+		tsk->mc_method.rcast = true;
+		tsk->mc_method.mandatory = true;
+		break;
+	case TIPC_GROUP_JOIN:
+		res = tipc_sk_join(tsk, &mreq);
+		break;
+	case TIPC_GROUP_LEAVE:
+		res = tipc_sk_leave(tsk);
+		break;
+	case TIPC_NODELAY:
+		tsk->nodelay = !!value;
+		tsk_set_nagle(tsk);
 		break;
 	default:
 		res = -EINVAL;
@@ -2613,7 +3229,8 @@ static int tipc_getsockopt(struct socket *sock, int lvl, int opt,
 {
 	struct sock *sk = sock->sk;
 	struct tipc_sock *tsk = tipc_sk(sk);
-	int len;
+	struct tipc_name_seq seq;
+	int len, scope;
 	u32 value;
 	int res;
 
@@ -2647,6 +3264,15 @@ static int tipc_getsockopt(struct socket *sock, int lvl, int opt,
 	case TIPC_SOCK_RECVQ_DEPTH:
 		value = skb_queue_len(&sk->sk_receive_queue);
 		break;
+	case TIPC_SOCK_RECVQ_USED:
+		value = sk_rmem_alloc_get(sk);
+		break;
+	case TIPC_GROUP_JOIN:
+		seq.type = 0;
+		if (tsk->group)
+			tipc_group_self(tsk->group, &seq, &scope);
+		value = seq.type;
+		break;
 	default:
 		res = -EINVAL;
 	}
@@ -2665,8 +3291,10 @@ static int tipc_getsockopt(struct socket *sock, int lvl, int opt,
 	return put_user(sizeof(value), ol);
 }
 
-static int tipc_ioctl(struct socket *sk, unsigned int cmd, unsigned long arg)
+static int tipc_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 {
+	struct net *net = sock_net(sock->sk);
+	struct tipc_sioc_nodeid_req nr = {0};
 	struct tipc_sioc_ln_req lnr;
 	void __user *argp = (void __user *)arg;
 
@@ -2674,16 +3302,47 @@ static int tipc_ioctl(struct socket *sk, unsigned int cmd, unsigned long arg)
 	case SIOCGETLINKNAME:
 		if (copy_from_user(&lnr, argp, sizeof(lnr)))
 			return -EFAULT;
-		if (!tipc_node_get_linkname(lnr.bearer_id & 0xffff, lnr.peer,
+		if (!tipc_node_get_linkname(net,
+					    lnr.bearer_id & 0xffff, lnr.peer,
 					    lnr.linkname, TIPC_MAX_LINK_NAME)) {
 			if (copy_to_user(argp, &lnr, sizeof(lnr)))
 				return -EFAULT;
 			return 0;
 		}
 		return -EADDRNOTAVAIL;
+	case SIOCGETNODEID:
+		if (copy_from_user(&nr, argp, sizeof(nr)))
+			return -EFAULT;
+		if (!tipc_node_get_id(net, nr.peer, nr.node_id))
+			return -EADDRNOTAVAIL;
+		if (copy_to_user(argp, &nr, sizeof(nr)))
+			return -EFAULT;
+		return 0;
 	default:
 		return -ENOIOCTLCMD;
 	}
+}
+
+static int tipc_socketpair(struct socket *sock1, struct socket *sock2)
+{
+	struct tipc_sock *tsk2 = tipc_sk(sock2->sk);
+	struct tipc_sock *tsk1 = tipc_sk(sock1->sk);
+	u32 onode = tipc_own_addr(sock_net(sock1->sk));
+
+	tsk1->peer.family = AF_TIPC;
+	tsk1->peer.addrtype = TIPC_ADDR_ID;
+	tsk1->peer.scope = TIPC_NODE_SCOPE;
+	tsk1->peer.addr.id.ref = tsk2->portid;
+	tsk1->peer.addr.id.node = onode;
+	tsk2->peer.family = AF_TIPC;
+	tsk2->peer.addrtype = TIPC_ADDR_ID;
+	tsk2->peer.scope = TIPC_NODE_SCOPE;
+	tsk2->peer.addr.id.ref = tsk1->portid;
+	tsk2->peer.addr.id.node = onode;
+
+	tipc_sk_finish_conn(tsk1, tsk2->portid, onode);
+	tipc_sk_finish_conn(tsk2, tsk1->portid, onode);
+	return 0;
 }
 
 /* Protocol switches for the various types of TIPC sockets */
@@ -2694,7 +3353,7 @@ static const struct proto_ops msg_ops = {
 	.release	= tipc_release,
 	.bind		= tipc_bind,
 	.connect	= tipc_connect,
-	.socketpair	= sock_no_socketpair,
+	.socketpair	= tipc_socketpair,
 	.accept		= sock_no_accept,
 	.getname	= tipc_getname,
 	.poll		= tipc_poll,
@@ -2715,7 +3374,7 @@ static const struct proto_ops packet_ops = {
 	.release	= tipc_release,
 	.bind		= tipc_bind,
 	.connect	= tipc_connect,
-	.socketpair	= sock_no_socketpair,
+	.socketpair	= tipc_socketpair,
 	.accept		= tipc_accept,
 	.getname	= tipc_getname,
 	.poll		= tipc_poll,
@@ -2736,7 +3395,7 @@ static const struct proto_ops stream_ops = {
 	.release	= tipc_release,
 	.bind		= tipc_bind,
 	.connect	= tipc_connect,
-	.socketpair	= sock_no_socketpair,
+	.socketpair	= tipc_socketpair,
 	.accept		= tipc_accept,
 	.getname	= tipc_getname,
 	.poll		= tipc_poll,
@@ -2745,8 +3404,8 @@ static const struct proto_ops stream_ops = {
 	.shutdown	= tipc_shutdown,
 	.setsockopt	= tipc_setsockopt,
 	.getsockopt	= tipc_getsockopt,
-	.sendmsg	= tipc_send_stream,
-	.recvmsg	= tipc_recv_stream,
+	.sendmsg	= tipc_sendstream,
+	.recvmsg	= tipc_recvstream,
 	.mmap		= sock_no_mmap,
 	.sendpage	= sock_no_sendpage
 };
@@ -2760,12 +3419,6 @@ static const struct net_proto_family tipc_family_ops = {
 static struct proto tipc_proto = {
 	.name		= "TIPC",
 	.owner		= THIS_MODULE,
-	.obj_size	= sizeof(struct tipc_sock),
-	.sysctl_rmem	= sysctl_tipc_rmem
-};
-
-static struct proto tipc_proto_kern = {
-	.name		= "TIPC",
 	.obj_size	= sizeof(struct tipc_sock),
 	.sysctl_rmem	= sysctl_tipc_rmem
 };
@@ -2802,4 +3455,553 @@ void tipc_socket_stop(void)
 {
 	sock_unregister(tipc_family_ops.family);
 	proto_unregister(&tipc_proto);
+}
+
+/* Caller should hold socket lock for the passed tipc socket. */
+static int __tipc_nl_add_sk_con(struct sk_buff *skb, struct tipc_sock *tsk)
+{
+	u32 peer_node;
+	u32 peer_port;
+	struct nlattr *nest;
+
+	peer_node = tsk_peer_node(tsk);
+	peer_port = tsk_peer_port(tsk);
+
+	nest = nla_nest_start_noflag(skb, TIPC_NLA_SOCK_CON);
+	if (!nest)
+		return -EMSGSIZE;
+
+	if (nla_put_u32(skb, TIPC_NLA_CON_NODE, peer_node))
+		goto msg_full;
+	if (nla_put_u32(skb, TIPC_NLA_CON_SOCK, peer_port))
+		goto msg_full;
+
+	if (tsk->conn_type != 0) {
+		if (nla_put_flag(skb, TIPC_NLA_CON_FLAG))
+			goto msg_full;
+		if (nla_put_u32(skb, TIPC_NLA_CON_TYPE, tsk->conn_type))
+			goto msg_full;
+		if (nla_put_u32(skb, TIPC_NLA_CON_INST, tsk->conn_instance))
+			goto msg_full;
+	}
+	nla_nest_end(skb, nest);
+
+	return 0;
+
+msg_full:
+	nla_nest_cancel(skb, nest);
+
+	return -EMSGSIZE;
+}
+
+static int __tipc_nl_add_sk_info(struct sk_buff *skb, struct tipc_sock
+			  *tsk)
+{
+	struct net *net = sock_net(skb->sk);
+	struct sock *sk = &tsk->sk;
+
+	if (nla_put_u32(skb, TIPC_NLA_SOCK_REF, tsk->portid) ||
+	    nla_put_u32(skb, TIPC_NLA_SOCK_ADDR, tipc_own_addr(net)))
+		return -EMSGSIZE;
+
+	if (tipc_sk_connected(sk)) {
+		if (__tipc_nl_add_sk_con(skb, tsk))
+			return -EMSGSIZE;
+	} else if (!list_empty(&tsk->publications)) {
+		if (nla_put_flag(skb, TIPC_NLA_SOCK_HAS_PUBL))
+			return -EMSGSIZE;
+	}
+	return 0;
+}
+
+/* Caller should hold socket lock for the passed tipc socket. */
+static int __tipc_nl_add_sk(struct sk_buff *skb, struct netlink_callback *cb,
+			    struct tipc_sock *tsk)
+{
+	struct nlattr *attrs;
+	void *hdr;
+
+	hdr = genlmsg_put(skb, NETLINK_CB(cb->skb).portid, cb->nlh->nlmsg_seq,
+			  &tipc_genl_family, NLM_F_MULTI, TIPC_NL_SOCK_GET);
+	if (!hdr)
+		goto msg_cancel;
+
+	attrs = nla_nest_start_noflag(skb, TIPC_NLA_SOCK);
+	if (!attrs)
+		goto genlmsg_cancel;
+
+	if (__tipc_nl_add_sk_info(skb, tsk))
+		goto attr_msg_cancel;
+
+	nla_nest_end(skb, attrs);
+	genlmsg_end(skb, hdr);
+
+	return 0;
+
+attr_msg_cancel:
+	nla_nest_cancel(skb, attrs);
+genlmsg_cancel:
+	genlmsg_cancel(skb, hdr);
+msg_cancel:
+	return -EMSGSIZE;
+}
+
+int tipc_nl_sk_walk(struct sk_buff *skb, struct netlink_callback *cb,
+		    int (*skb_handler)(struct sk_buff *skb,
+				       struct netlink_callback *cb,
+				       struct tipc_sock *tsk))
+{
+	struct rhashtable_iter *iter = (void *)cb->args[4];
+	struct tipc_sock *tsk;
+	int err;
+
+	rhashtable_walk_start(iter);
+	while ((tsk = rhashtable_walk_next(iter)) != NULL) {
+		if (IS_ERR(tsk)) {
+			err = PTR_ERR(tsk);
+			if (err == -EAGAIN) {
+				err = 0;
+				continue;
+			}
+			break;
+		}
+
+		sock_hold(&tsk->sk);
+		rhashtable_walk_stop(iter);
+		lock_sock(&tsk->sk);
+		err = skb_handler(skb, cb, tsk);
+		if (err) {
+			release_sock(&tsk->sk);
+			sock_put(&tsk->sk);
+			goto out;
+		}
+		release_sock(&tsk->sk);
+		rhashtable_walk_start(iter);
+		sock_put(&tsk->sk);
+	}
+	rhashtable_walk_stop(iter);
+out:
+	return skb->len;
+}
+EXPORT_SYMBOL(tipc_nl_sk_walk);
+
+int tipc_dump_start(struct netlink_callback *cb)
+{
+	return __tipc_dump_start(cb, sock_net(cb->skb->sk));
+}
+EXPORT_SYMBOL(tipc_dump_start);
+
+int __tipc_dump_start(struct netlink_callback *cb, struct net *net)
+{
+	/* tipc_nl_name_table_dump() uses cb->args[0...3]. */
+	struct rhashtable_iter *iter = (void *)cb->args[4];
+	struct tipc_net *tn = tipc_net(net);
+
+	if (!iter) {
+		iter = kmalloc(sizeof(*iter), GFP_KERNEL);
+		if (!iter)
+			return -ENOMEM;
+
+		cb->args[4] = (long)iter;
+	}
+
+	rhashtable_walk_enter(&tn->sk_rht, iter);
+	return 0;
+}
+
+int tipc_dump_done(struct netlink_callback *cb)
+{
+	struct rhashtable_iter *hti = (void *)cb->args[4];
+
+	rhashtable_walk_exit(hti);
+	kfree(hti);
+	return 0;
+}
+EXPORT_SYMBOL(tipc_dump_done);
+
+int tipc_sk_fill_sock_diag(struct sk_buff *skb, struct netlink_callback *cb,
+			   struct tipc_sock *tsk, u32 sk_filter_state,
+			   u64 (*tipc_diag_gen_cookie)(struct sock *sk))
+{
+	struct sock *sk = &tsk->sk;
+	struct nlattr *attrs;
+	struct nlattr *stat;
+
+	/*filter response w.r.t sk_state*/
+	if (!(sk_filter_state & (1 << sk->sk_state)))
+		return 0;
+
+	attrs = nla_nest_start_noflag(skb, TIPC_NLA_SOCK);
+	if (!attrs)
+		goto msg_cancel;
+
+	if (__tipc_nl_add_sk_info(skb, tsk))
+		goto attr_msg_cancel;
+
+	if (nla_put_u32(skb, TIPC_NLA_SOCK_TYPE, (u32)sk->sk_type) ||
+	    nla_put_u32(skb, TIPC_NLA_SOCK_TIPC_STATE, (u32)sk->sk_state) ||
+	    nla_put_u32(skb, TIPC_NLA_SOCK_INO, sock_i_ino(sk)) ||
+	    nla_put_u32(skb, TIPC_NLA_SOCK_UID,
+			from_kuid_munged(sk_user_ns(NETLINK_CB(cb->skb).sk),
+					 sock_i_uid(sk))) ||
+	    nla_put_u64_64bit(skb, TIPC_NLA_SOCK_COOKIE,
+			      tipc_diag_gen_cookie(sk),
+			      TIPC_NLA_SOCK_PAD))
+		goto attr_msg_cancel;
+
+	stat = nla_nest_start_noflag(skb, TIPC_NLA_SOCK_STAT);
+	if (!stat)
+		goto attr_msg_cancel;
+
+	if (nla_put_u32(skb, TIPC_NLA_SOCK_STAT_RCVQ,
+			skb_queue_len(&sk->sk_receive_queue)) ||
+	    nla_put_u32(skb, TIPC_NLA_SOCK_STAT_SENDQ,
+			skb_queue_len(&sk->sk_write_queue)) ||
+	    nla_put_u32(skb, TIPC_NLA_SOCK_STAT_DROP,
+			atomic_read(&sk->sk_drops)))
+		goto stat_msg_cancel;
+
+	if (tsk->cong_link_cnt &&
+	    nla_put_flag(skb, TIPC_NLA_SOCK_STAT_LINK_CONG))
+		goto stat_msg_cancel;
+
+	if (tsk_conn_cong(tsk) &&
+	    nla_put_flag(skb, TIPC_NLA_SOCK_STAT_CONN_CONG))
+		goto stat_msg_cancel;
+
+	nla_nest_end(skb, stat);
+
+	if (tsk->group)
+		if (tipc_group_fill_sock_diag(tsk->group, skb))
+			goto stat_msg_cancel;
+
+	nla_nest_end(skb, attrs);
+
+	return 0;
+
+stat_msg_cancel:
+	nla_nest_cancel(skb, stat);
+attr_msg_cancel:
+	nla_nest_cancel(skb, attrs);
+msg_cancel:
+	return -EMSGSIZE;
+}
+EXPORT_SYMBOL(tipc_sk_fill_sock_diag);
+
+int tipc_nl_sk_dump(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	return tipc_nl_sk_walk(skb, cb, __tipc_nl_add_sk);
+}
+
+/* Caller should hold socket lock for the passed tipc socket. */
+static int __tipc_nl_add_sk_publ(struct sk_buff *skb,
+				 struct netlink_callback *cb,
+				 struct publication *publ)
+{
+	void *hdr;
+	struct nlattr *attrs;
+
+	hdr = genlmsg_put(skb, NETLINK_CB(cb->skb).portid, cb->nlh->nlmsg_seq,
+			  &tipc_genl_family, NLM_F_MULTI, TIPC_NL_PUBL_GET);
+	if (!hdr)
+		goto msg_cancel;
+
+	attrs = nla_nest_start_noflag(skb, TIPC_NLA_PUBL);
+	if (!attrs)
+		goto genlmsg_cancel;
+
+	if (nla_put_u32(skb, TIPC_NLA_PUBL_KEY, publ->key))
+		goto attr_msg_cancel;
+	if (nla_put_u32(skb, TIPC_NLA_PUBL_TYPE, publ->type))
+		goto attr_msg_cancel;
+	if (nla_put_u32(skb, TIPC_NLA_PUBL_LOWER, publ->lower))
+		goto attr_msg_cancel;
+	if (nla_put_u32(skb, TIPC_NLA_PUBL_UPPER, publ->upper))
+		goto attr_msg_cancel;
+
+	nla_nest_end(skb, attrs);
+	genlmsg_end(skb, hdr);
+
+	return 0;
+
+attr_msg_cancel:
+	nla_nest_cancel(skb, attrs);
+genlmsg_cancel:
+	genlmsg_cancel(skb, hdr);
+msg_cancel:
+	return -EMSGSIZE;
+}
+
+/* Caller should hold socket lock for the passed tipc socket. */
+static int __tipc_nl_list_sk_publ(struct sk_buff *skb,
+				  struct netlink_callback *cb,
+				  struct tipc_sock *tsk, u32 *last_publ)
+{
+	int err;
+	struct publication *p;
+
+	if (*last_publ) {
+		list_for_each_entry(p, &tsk->publications, binding_sock) {
+			if (p->key == *last_publ)
+				break;
+		}
+		if (list_entry_is_head(p, &tsk->publications, binding_sock)) {
+			/* We never set seq or call nl_dump_check_consistent()
+			 * this means that setting prev_seq here will cause the
+			 * consistence check to fail in the netlink callback
+			 * handler. Resulting in the last NLMSG_DONE message
+			 * having the NLM_F_DUMP_INTR flag set.
+			 */
+			cb->prev_seq = 1;
+			*last_publ = 0;
+			return -EPIPE;
+		}
+	} else {
+		p = list_first_entry(&tsk->publications, struct publication,
+				     binding_sock);
+	}
+
+	list_for_each_entry_from(p, &tsk->publications, binding_sock) {
+		err = __tipc_nl_add_sk_publ(skb, cb, p);
+		if (err) {
+			*last_publ = p->key;
+			return err;
+		}
+	}
+	*last_publ = 0;
+
+	return 0;
+}
+
+int tipc_nl_publ_dump(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	int err;
+	u32 tsk_portid = cb->args[0];
+	u32 last_publ = cb->args[1];
+	u32 done = cb->args[2];
+	struct net *net = sock_net(skb->sk);
+	struct tipc_sock *tsk;
+
+	if (!tsk_portid) {
+		struct nlattr **attrs = genl_dumpit_info(cb)->attrs;
+		struct nlattr *sock[TIPC_NLA_SOCK_MAX + 1];
+
+		if (!attrs[TIPC_NLA_SOCK])
+			return -EINVAL;
+
+		err = nla_parse_nested_deprecated(sock, TIPC_NLA_SOCK_MAX,
+						  attrs[TIPC_NLA_SOCK],
+						  tipc_nl_sock_policy, NULL);
+		if (err)
+			return err;
+
+		if (!sock[TIPC_NLA_SOCK_REF])
+			return -EINVAL;
+
+		tsk_portid = nla_get_u32(sock[TIPC_NLA_SOCK_REF]);
+	}
+
+	if (done)
+		return 0;
+
+	tsk = tipc_sk_lookup(net, tsk_portid);
+	if (!tsk)
+		return -EINVAL;
+
+	lock_sock(&tsk->sk);
+	err = __tipc_nl_list_sk_publ(skb, cb, tsk, &last_publ);
+	if (!err)
+		done = 1;
+	release_sock(&tsk->sk);
+	sock_put(&tsk->sk);
+
+	cb->args[0] = tsk_portid;
+	cb->args[1] = last_publ;
+	cb->args[2] = done;
+
+	return skb->len;
+}
+
+/**
+ * tipc_sk_filtering - check if a socket should be traced
+ * @sk: the socket to be examined
+ * @sysctl_tipc_sk_filter[]: the socket tuple for filtering,
+ *  (portid, sock type, name type, name lower, name upper)
+ *
+ * Returns true if the socket meets the socket tuple data
+ * (value 0 = 'any') or when there is no tuple set (all = 0),
+ * otherwise false
+ */
+bool tipc_sk_filtering(struct sock *sk)
+{
+	struct tipc_sock *tsk;
+	struct publication *p;
+	u32 _port, _sktype, _type, _lower, _upper;
+	u32 type = 0, lower = 0, upper = 0;
+
+	if (!sk)
+		return true;
+
+	tsk = tipc_sk(sk);
+
+	_port = sysctl_tipc_sk_filter[0];
+	_sktype = sysctl_tipc_sk_filter[1];
+	_type = sysctl_tipc_sk_filter[2];
+	_lower = sysctl_tipc_sk_filter[3];
+	_upper = sysctl_tipc_sk_filter[4];
+
+	if (!_port && !_sktype && !_type && !_lower && !_upper)
+		return true;
+
+	if (_port)
+		return (_port == tsk->portid);
+
+	if (_sktype && _sktype != sk->sk_type)
+		return false;
+
+	if (tsk->published) {
+		p = list_first_entry_or_null(&tsk->publications,
+					     struct publication, binding_sock);
+		if (p) {
+			type = p->type;
+			lower = p->lower;
+			upper = p->upper;
+		}
+	}
+
+	if (!tipc_sk_type_connectionless(sk)) {
+		type = tsk->conn_type;
+		lower = tsk->conn_instance;
+		upper = tsk->conn_instance;
+	}
+
+	if ((_type && _type != type) || (_lower && _lower != lower) ||
+	    (_upper && _upper != upper))
+		return false;
+
+	return true;
+}
+
+u32 tipc_sock_get_portid(struct sock *sk)
+{
+	return (sk) ? (tipc_sk(sk))->portid : 0;
+}
+
+/**
+ * tipc_sk_overlimit1 - check if socket rx queue is about to be overloaded,
+ *			both the rcv and backlog queues are considered
+ * @sk: tipc sk to be checked
+ * @skb: tipc msg to be checked
+ *
+ * Returns true if the socket rx queue allocation is > 90%, otherwise false
+ */
+
+bool tipc_sk_overlimit1(struct sock *sk, struct sk_buff *skb)
+{
+	atomic_t *dcnt = &tipc_sk(sk)->dupl_rcvcnt;
+	unsigned int lim = rcvbuf_limit(sk, skb) + atomic_read(dcnt);
+	unsigned int qsize = sk->sk_backlog.len + sk_rmem_alloc_get(sk);
+
+	return (qsize > lim * 90 / 100);
+}
+
+/**
+ * tipc_sk_overlimit2 - check if socket rx queue is about to be overloaded,
+ *			only the rcv queue is considered
+ * @sk: tipc sk to be checked
+ * @skb: tipc msg to be checked
+ *
+ * Returns true if the socket rx queue allocation is > 90%, otherwise false
+ */
+
+bool tipc_sk_overlimit2(struct sock *sk, struct sk_buff *skb)
+{
+	unsigned int lim = rcvbuf_limit(sk, skb);
+	unsigned int qsize = sk_rmem_alloc_get(sk);
+
+	return (qsize > lim * 90 / 100);
+}
+
+/**
+ * tipc_sk_dump - dump TIPC socket
+ * @sk: tipc sk to be dumped
+ * @dqueues: bitmask to decide if any socket queue to be dumped?
+ *           - TIPC_DUMP_NONE: don't dump socket queues
+ *           - TIPC_DUMP_SK_SNDQ: dump socket send queue
+ *           - TIPC_DUMP_SK_RCVQ: dump socket rcv queue
+ *           - TIPC_DUMP_SK_BKLGQ: dump socket backlog queue
+ *           - TIPC_DUMP_ALL: dump all the socket queues above
+ * @buf: returned buffer of dump data in format
+ */
+int tipc_sk_dump(struct sock *sk, u16 dqueues, char *buf)
+{
+	int i = 0;
+	size_t sz = (dqueues) ? SK_LMAX : SK_LMIN;
+	struct tipc_sock *tsk;
+	struct publication *p;
+	bool tsk_connected;
+
+	if (!sk) {
+		i += scnprintf(buf, sz, "sk data: (null)\n");
+		return i;
+	}
+
+	tsk = tipc_sk(sk);
+	tsk_connected = !tipc_sk_type_connectionless(sk);
+
+	i += scnprintf(buf, sz, "sk data: %u", sk->sk_type);
+	i += scnprintf(buf + i, sz - i, " %d", sk->sk_state);
+	i += scnprintf(buf + i, sz - i, " %x", tsk_own_node(tsk));
+	i += scnprintf(buf + i, sz - i, " %u", tsk->portid);
+	i += scnprintf(buf + i, sz - i, " | %u", tsk_connected);
+	if (tsk_connected) {
+		i += scnprintf(buf + i, sz - i, " %x", tsk_peer_node(tsk));
+		i += scnprintf(buf + i, sz - i, " %u", tsk_peer_port(tsk));
+		i += scnprintf(buf + i, sz - i, " %u", tsk->conn_type);
+		i += scnprintf(buf + i, sz - i, " %u", tsk->conn_instance);
+	}
+	i += scnprintf(buf + i, sz - i, " | %u", tsk->published);
+	if (tsk->published) {
+		p = list_first_entry_or_null(&tsk->publications,
+					     struct publication, binding_sock);
+		i += scnprintf(buf + i, sz - i, " %u", (p) ? p->type : 0);
+		i += scnprintf(buf + i, sz - i, " %u", (p) ? p->lower : 0);
+		i += scnprintf(buf + i, sz - i, " %u", (p) ? p->upper : 0);
+	}
+	i += scnprintf(buf + i, sz - i, " | %u", tsk->snd_win);
+	i += scnprintf(buf + i, sz - i, " %u", tsk->rcv_win);
+	i += scnprintf(buf + i, sz - i, " %u", tsk->max_pkt);
+	i += scnprintf(buf + i, sz - i, " %x", tsk->peer_caps);
+	i += scnprintf(buf + i, sz - i, " %u", tsk->cong_link_cnt);
+	i += scnprintf(buf + i, sz - i, " %u", tsk->snt_unacked);
+	i += scnprintf(buf + i, sz - i, " %u", tsk->rcv_unacked);
+	i += scnprintf(buf + i, sz - i, " %u", atomic_read(&tsk->dupl_rcvcnt));
+	i += scnprintf(buf + i, sz - i, " %u", sk->sk_shutdown);
+	i += scnprintf(buf + i, sz - i, " | %d", sk_wmem_alloc_get(sk));
+	i += scnprintf(buf + i, sz - i, " %d", sk->sk_sndbuf);
+	i += scnprintf(buf + i, sz - i, " | %d", sk_rmem_alloc_get(sk));
+	i += scnprintf(buf + i, sz - i, " %d", sk->sk_rcvbuf);
+	i += scnprintf(buf + i, sz - i, " | %d\n", READ_ONCE(sk->sk_backlog.len));
+
+	if (dqueues & TIPC_DUMP_SK_SNDQ) {
+		i += scnprintf(buf + i, sz - i, "sk_write_queue: ");
+		i += tipc_list_dump(&sk->sk_write_queue, false, buf + i);
+	}
+
+	if (dqueues & TIPC_DUMP_SK_RCVQ) {
+		i += scnprintf(buf + i, sz - i, "sk_receive_queue: ");
+		i += tipc_list_dump(&sk->sk_receive_queue, false, buf + i);
+	}
+
+	if (dqueues & TIPC_DUMP_SK_BKLGQ) {
+		i += scnprintf(buf + i, sz - i, "sk_backlog:\n  head ");
+		i += tipc_skb_dump(sk->sk_backlog.head, false, buf + i);
+		if (sk->sk_backlog.tail != sk->sk_backlog.head) {
+			i += scnprintf(buf + i, sz - i, "  tail ");
+			i += tipc_skb_dump(sk->sk_backlog.tail, false,
+					   buf + i);
+		}
+	}
+
+	return i;
 }

@@ -1,0 +1,47 @@
+&generic_virtual_sensor {
+	offset = <6172>;
+	zones {
+		zone0 {
+			type = "therm-rf-usr";
+			// 32 bit 2's complement -690
+			coefficient = <4294966606>;
+		};
+		zone1 {
+			type = "therm-in-temp-usr";
+			coefficient = <1522>;
+		};
+		zone2 {
+			type = "therm-soc-usr";
+			// 32 bit 2's complement -113
+			coefficient = <4294967183>;
+		};
+		zone3 {
+			type = "therm-quiet-usr";
+			coefficient = <75>;
+		};
+	};
+};
+
+&outdoor_virtual_sensor {
+	offset = <6172>;
+	zones {
+		zone0 {
+			type = "therm-rf-usr";
+			// 32 bit 2's complement -690
+			coefficient = <4294966606>;
+		};
+		zone1 {
+			type = "therm-in-temp-usr";
+			coefficient = <1522>;
+		};
+		zone2 {
+			type = "therm-soc-usr";
+			// 32 bit 2's complement -113
+			coefficient = <4294967183>;
+		};
+		zone3 {
+			type = "therm-quiet-usr";
+			coefficient = <75>;
+		};
+	};
+};

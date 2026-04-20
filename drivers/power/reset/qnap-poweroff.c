@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * QNAP Turbo NAS Board power off. Can also be used on Synology devices.
  *
@@ -7,11 +8,6 @@
  *
  * Copyright (C) 2009  Martin Michlmayr <tbm@cyrius.com>
  * Copyright (C) 2008  Byron Bradley <byron.bbradley@gmail.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -129,7 +125,6 @@ static struct platform_driver qnap_power_off_driver = {
 	.probe	= qnap_power_off_probe,
 	.remove	= qnap_power_off_remove,
 	.driver	= {
-		.owner	= THIS_MODULE,
 		.name	= "qnap_power_off",
 		.of_match_table = of_match_ptr(qnap_power_off_of_match_table),
 	},

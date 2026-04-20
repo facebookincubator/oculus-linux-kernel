@@ -1,10 +1,13 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef LINUX_EXPORTFS_H
 #define LINUX_EXPORTFS_H 1
 
 #include <linux/types.h>
 
 struct dentry;
+struct iattr;
 struct inode;
+struct iomap;
 struct super_block;
 struct vfsmount;
 
@@ -96,6 +99,17 @@ enum fid_type {
 	FILEID_FAT_WITH_PARENT = 0x72,
 
 	/*
+	 * 128 bit child FID (struct lu_fid)
+	 * 128 bit parent FID (struct lu_fid)
+	 */
+	FILEID_LUSTRE = 0x97,
+
+	/*
+	 * 64 bit unique kernfs id
+	 */
+	FILEID_KERNFS = 0xfe,
+
+	/*
 	 * Filesystems must not use 0xff file ID.
 	 */
 	FILEID_INVALID = 0xff,
@@ -130,7 +144,7 @@ struct fid {
  * @get_parent:     find the parent of a given directory
  * @commit_metadata: commit metadata changes to stable storage
  *
- * See Documentation/filesystems/nfs/Exporting for details on how to use
+ * See Documentation/filesystems/nfs/exporting.rst for details on how to use
  * this interface correctly.
  *
  * encode_fh:
@@ -149,12 +163,13 @@ struct fid {
  *    @fh_to_dentry is given a &struct super_block (@sb) and a file handle
  *    fragment (@fh, @fh_len). It should return a &struct dentry which refers
  *    to the same file that the file handle fragment refers to.  If it cannot,
- *    it should return a %NULL pointer if the file was found but no acceptable
- *    &dentries were available, or an %ERR_PTR error code indicating why it
- *    couldn't be found (e.g. %ENOENT or %ENOMEM).  Any suitable dentry can be
- *    returned including, if necessary, a new dentry created with d_alloc_root.
- *    The caller can then find any other extant dentries by following the
- *    d_alias links.
+ *    it should return a %NULL pointer if the file cannot be found, or an
+ *    %ERR_PTR error code of %ENOMEM if a memory allocation failure occurred.
+ *    Any other error code is treated like %NULL, and will cause an %ESTALE error
+ *    for callers of exportfs_decode_fh().
+ *    Any suitable dentry can be returned including, if necessary, a new dentry
+ *    created with d_alloc_root.  The caller can then find any other extant
+ *    dentries by following the d_alias links.
  *
  * fh_to_parent:
  *    Same as @fh_to_dentry, except that it returns a pointer to the parent
@@ -163,7 +178,7 @@ struct fid {
  * get_name:
  *    @get_name should find a name for the given @child in the given @parent
  *    directory.  The name should be stored in the @name (with the
- *    understanding that it is already pointing to a a %NAME_MAX+1 sized
+ *    understanding that it is already pointing to a %NAME_MAX+1 sized
  *    buffer.   get_name() should return %0 on success, a negative error code
  *    or error.  @get_name will be called without @parent->i_mutex held.
  *
@@ -191,6 +206,13 @@ struct export_operations {
 			struct dentry *child);
 	struct dentry * (*get_parent)(struct dentry *child);
 	int (*commit_metadata)(struct inode *inode);
+
+	int (*get_uuid)(struct super_block *sb, u8 *buf, u32 *len, u64 *offset);
+	int (*map_blocks)(struct inode *inode, loff_t offset,
+			  u64 len, struct iomap *iomap,
+			  bool write, u32 *device_generation);
+	int (*commit_blocks)(struct inode *inode, struct iomap *iomaps,
+			     int nr_iomaps, struct iattr *iattr);
 };
 
 extern int exportfs_encode_inode_fh(struct inode *inode, struct fid *fid,

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /******************************************************************************
 *******************************************************************************
 **
@@ -114,7 +115,7 @@
  *
  * DLM_LKF_ORPHAN
  *
- * not yet implemented
+ * Acquire an orphan lock.
  *
  * DLM_LKF_ALTPR
  *

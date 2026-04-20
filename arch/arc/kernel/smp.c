@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2004, 2007-2010, 2011-2012 Synopsys, Inc. (www.synopsys.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * RajeshwarR: Dec 11, 2007
  *   -- Added support for Inter Processor Interrupts
@@ -13,7 +10,7 @@
  */
 
 #include <linux/spinlock.h>
-#include <linux/sched.h>
+#include <linux/sched/mm.h>
 #include <linux/interrupt.h>
 #include <linux/profile.h>
 #include <linux/mm.h>
@@ -22,14 +19,23 @@
 #include <linux/atomic.h>
 #include <linux/cpumask.h>
 #include <linux/reboot.h>
+#include <linux/irqdomain.h>
+#include <linux/export.h>
+#include <linux/of_fdt.h>
+
 #include <asm/processor.h>
 #include <asm/setup.h>
 #include <asm/mach_desc.h>
 
+#ifndef CONFIG_ARC_HAS_LLSC
 arch_spinlock_t smp_atomic_ops_lock = __ARCH_SPIN_LOCK_UNLOCKED;
 arch_spinlock_t smp_bitops_lock = __ARCH_SPIN_LOCK_UNLOCKED;
 
-struct plat_smp_ops  plat_smp_ops;
+EXPORT_SYMBOL_GPL(smp_atomic_ops_lock);
+EXPORT_SYMBOL_GPL(smp_bitops_lock);
+#endif
+
+struct plat_smp_ops  __weak plat_smp_ops;
 
 /* XXX: per cpu ? Only needed once in early seconday boot */
 struct task_struct *secondary_idle_tsk;
@@ -39,29 +45,68 @@ void __init smp_prepare_boot_cpu(void)
 {
 }
 
+static int __init arc_get_cpu_map(const char *name, struct cpumask *cpumask)
+{
+	unsigned long dt_root = of_get_flat_dt_root();
+	const char *buf;
+
+	buf = of_get_flat_dt_prop(dt_root, name, NULL);
+	if (!buf)
+		return -EINVAL;
+
+	if (cpulist_parse(buf, cpumask))
+		return -EINVAL;
+
+	return 0;
+}
+
 /*
- * Initialise the CPU possible map early - this describes the CPUs
- * which may be present or become present in the system.
+ * Read from DeviceTree and setup cpu possible mask. If there is no
+ * "possible-cpus" property in DeviceTree pretend all [0..NR_CPUS-1] exist.
+ */
+static void __init arc_init_cpu_possible(void)
+{
+	struct cpumask cpumask;
+
+	if (arc_get_cpu_map("possible-cpus", &cpumask)) {
+		pr_warn("Failed to get possible-cpus from dtb, pretending all %u cpus exist\n",
+			NR_CPUS);
+
+		cpumask_setall(&cpumask);
+	}
+
+	if (!cpumask_test_cpu(0, &cpumask))
+		panic("Master cpu (cpu[0]) is missed in cpu possible mask!");
+
+	init_cpu_possible(&cpumask);
+}
+
+/*
+ * Called from setup_arch() before calling setup_processor()
+ *
+ * - Initialise the CPU possible map early - this describes the CPUs
+ *   which may be present or become present in the system.
+ * - Call early smp init hook. This can initialize a specific multi-core
+ *   IP which is say common to several platforms (hence not part of
+ *   platform specific int_early() hook)
  */
 void __init smp_init_cpus(void)
 {
-	unsigned int i;
+	arc_init_cpu_possible();
 
-	for (i = 0; i < NR_CPUS; i++)
-		set_cpu_possible(i, true);
+	if (plat_smp_ops.init_early_smp)
+		plat_smp_ops.init_early_smp();
 }
 
 /* called from init ( ) =>  process 1 */
 void __init smp_prepare_cpus(unsigned int max_cpus)
 {
-	int i;
-
 	/*
-	 * Initialise the present map, which describes the set of CPUs
-	 * actually populated at the present time.
+	 * if platform didn't set the present map already, do it now
+	 * boot cpu is set to present already by init/main.c
 	 */
-	for (i = 0; i < max_cpus; i++)
-		set_cpu_present(i, true);
+	if (num_present_cpus() <= 1)
+		init_cpu_present(cpu_possible_mask);
 }
 
 void __init smp_cpus_done(unsigned int max_cpus)
@@ -70,33 +115,42 @@ void __init smp_cpus_done(unsigned int max_cpus)
 }
 
 /*
- * After power-up, a non Master CPU needs to wait for Master to kick start it
- *
- * The default implementation halts
- *
- * This relies on platform specific support allowing Master to directly set
- * this CPU's PC (to be @first_lines_of_secondary() and kick start it.
- *
- * In lack of such h/w assist, platforms can override this function
- *   - make this function busy-spin on a token, eventually set by Master
- *     (from arc_platform_smp_wakeup_cpu())
- *   - Once token is available, jump to @first_lines_of_secondary
- *     (using inline asm).
- *
- * Alert: can NOT use stack here as it has not been determined/setup for CPU.
- *        If it turns out to be elaborate, it's better to code it in assembly
- *
+ * Default smp boot helper for Run-on-reset case where all cores start off
+ * together. Non-masters need to wait for Master to start running.
+ * This is implemented using a flag in memory, which Non-masters spin-wait on.
+ * Master sets it to cpu-id of core to "ungate" it.
  */
-void __weak arc_platform_smp_wait_to_boot(int cpu)
+static volatile int wake_flag;
+
+#ifdef CONFIG_ISA_ARCOMPACT
+
+#define __boot_read(f)		f
+#define __boot_write(f, v)	f = v
+
+#else
+
+#define __boot_read(f)		arc_read_uncached_32(&f)
+#define __boot_write(f, v)	arc_write_uncached_32(&f, v)
+
+#endif
+
+static void arc_default_smp_cpu_kick(int cpu, unsigned long pc)
 {
-	/*
-	 * As a hack for debugging - since debugger will single-step over the
-	 * FLAG insn - wrap the halt itself it in a self loop
-	 */
-	__asm__ __volatile__(
-	"1:		\n"
-	"	flag 1	\n"
-	"	b 1b	\n");
+	BUG_ON(cpu == 0);
+
+	__boot_write(wake_flag, cpu);
+}
+
+void arc_platform_smp_wait_to_boot(int cpu)
+{
+	/* for halt-on-reset, we've waited already */
+	if (IS_ENABLED(CONFIG_ARC_SMP_HALT_ON_RESET))
+		return;
+
+	while (__boot_read(wake_flag) != cpu)
+		;
+
+	__boot_write(wake_flag, 0);
 }
 
 const char *arc_platform_smp_cpuinfo(void)
@@ -117,24 +171,25 @@ void start_kernel_secondary(void)
 	/* MMU, Caches, Vector Table, Interrupts etc */
 	setup_processor();
 
-	atomic_inc(&mm->mm_users);
-	atomic_inc(&mm->mm_count);
+	mmget(mm);
+	mmgrab(mm);
 	current->active_mm = mm;
 	cpumask_set_cpu(cpu, mm_cpumask(mm));
+
+	/* Some SMP H/w setup - for each cpu */
+	if (plat_smp_ops.init_per_cpu)
+		plat_smp_ops.init_per_cpu(cpu);
+
+	if (machine_desc->init_per_cpu)
+		machine_desc->init_per_cpu(cpu);
 
 	notify_cpu_starting(cpu);
 	set_cpu_online(cpu, true);
 
 	pr_info("## CPU%u LIVE ##: Executing Code...\n", cpu);
 
-	if (machine_desc->init_smp)
-		machine_desc->init_smp(cpu);
-
-	arc_local_timer_setup();
-
 	local_irq_enable();
-	preempt_disable();
-	cpu_startup_entry(CPUHP_ONLINE);
+	cpu_startup_entry(CPUHP_AP_ONLINE_IDLE);
 }
 
 /*
@@ -159,6 +214,8 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 	if (plat_smp_ops.cpu_kick)
 		plat_smp_ops.cpu_kick(cpu,
 				(unsigned long)first_lines_of_secondary);
+	else
+		arc_default_smp_cpu_kick(cpu, (unsigned long)NULL);
 
 	/* wait for 1 sec after kicking the secondary */
 	wait_till = jiffies + HZ;
@@ -168,7 +225,7 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 	}
 
 	if (!cpu_online(cpu)) {
-		pr_info("Timeout: CPU%u FAILED to comeup !!!\n", cpu);
+		pr_info("Timeout: CPU%u FAILED to come up !!!\n", cpu);
 		return -1;
 	}
 
@@ -180,7 +237,7 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 /*
  * not supported here
  */
-int __init setup_profiling_timer(unsigned int multiplier)
+int setup_profiling_timer(unsigned int multiplier)
 {
 	return -EINVAL;
 }
@@ -219,7 +276,7 @@ static void ipi_send_msg_one(int cpu, enum ipi_msg_type msg)
 	 * and read back old value
 	 */
 	do {
-		new = old = *ipi_data_ptr;
+		new = old = READ_ONCE(*ipi_data_ptr);
 		new |= 1U << msg;
 	} while (cmpxchg(ipi_data_ptr, old, new) != old);
 
@@ -276,8 +333,10 @@ static void ipi_cpu_stop(void)
 	machine_halt();
 }
 
-static inline void __do_IPI(unsigned long msg)
+static inline int __do_IPI(unsigned long msg)
 {
+	int rc = 0;
+
 	switch (msg) {
 	case IPI_RESCHEDULE:
 		scheduler_ipi();
@@ -292,8 +351,10 @@ static inline void __do_IPI(unsigned long msg)
 		break;
 
 	default:
-		pr_warn("IPI with unexpected msg %ld\n", msg);
+		rc = 1;
 	}
+
+	return rc;
 }
 
 /*
@@ -303,6 +364,7 @@ static inline void __do_IPI(unsigned long msg)
 irqreturn_t do_IPI(int irq, void *dev_id)
 {
 	unsigned long pending;
+	unsigned long __maybe_unused copy;
 
 	pr_debug("IPI [%ld] received on cpu %d\n",
 		 *this_cpu_ptr(&ipi_data), smp_processor_id());
@@ -314,11 +376,15 @@ irqreturn_t do_IPI(int irq, void *dev_id)
 	 * "dequeue" the msg corresponding to this IPI (and possibly other
 	 * piggybacked msg from elided IPIs: see ipi_send_msg_one() above)
 	 */
-	pending = xchg(this_cpu_ptr(&ipi_data), 0);
+	copy = pending = xchg(this_cpu_ptr(&ipi_data), 0);
 
 	do {
 		unsigned long msg = __ffs(pending);
-		__do_IPI(msg);
+		int rc;
+
+		rc = __do_IPI(msg);
+		if (rc)
+			pr_info("IPI with bogus msg %ld in %ld\n", msg, copy);
 		pending &= ~(1U << msg);
 	} while (pending);
 
@@ -327,14 +393,31 @@ irqreturn_t do_IPI(int irq, void *dev_id)
 
 /*
  * API called by platform code to hookup arch-common ISR to their IPI IRQ
+ *
+ * Note: If IPI is provided by platform (vs. say ARC MCIP), their intc setup/map
+ * function needs to call call irq_set_percpu_devid() for IPI IRQ, otherwise
+ * request_percpu_irq() below will fail
  */
 static DEFINE_PER_CPU(int, ipi_dev);
 
-int smp_ipi_irq_setup(int cpu, int irq)
+int smp_ipi_irq_setup(int cpu, irq_hw_number_t hwirq)
 {
 	int *dev = per_cpu_ptr(&ipi_dev, cpu);
+	unsigned int virq = irq_find_mapping(NULL, hwirq);
 
-	arc_request_percpu_irq(irq, cpu, do_IPI, "IPI Interrupt", dev);
+	if (!virq)
+		panic("Cannot find virq for root domain and hwirq=%lu", hwirq);
+
+	/* Boot cpu calls request, all call enable */
+	if (!cpu) {
+		int rc;
+
+		rc = request_percpu_irq(virq, do_IPI, "IPI Interrupt", dev);
+		if (rc)
+			panic("Percpu IRQ request failed for %u\n", virq);
+	}
+
+	enable_percpu_irq(virq, 0);
 
 	return 0;
 }

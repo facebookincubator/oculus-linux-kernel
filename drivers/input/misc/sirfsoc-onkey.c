@@ -1,10 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Power key driver for SiRF PrimaII
  *
  * Copyright (c) 2013 - 2014 Cambridge Silicon Radio Limited, a CSR plc group
  * company.
- *
- * Licensed under GPLv2 or later.
  */
 
 #include <linux/module.h>
@@ -101,7 +100,7 @@ static void sirfsoc_pwrc_close(struct input_dev *input)
 static const struct of_device_id sirfsoc_pwrc_of_match[] = {
 	{ .compatible = "sirf,prima2-pwrc" },
 	{},
-}
+};
 MODULE_DEVICE_TABLE(of, sirfsoc_pwrc_of_match);
 
 static int sirfsoc_pwrc_probe(struct platform_device *pdev)
@@ -172,15 +171,7 @@ static int sirfsoc_pwrc_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int sirfsoc_pwrc_remove(struct platform_device *pdev)
-{
-	device_init_wakeup(&pdev->dev, 0);
-
-	return 0;
-}
-
-#ifdef CONFIG_PM_SLEEP
-static int sirfsoc_pwrc_resume(struct device *dev)
+static int __maybe_unused sirfsoc_pwrc_resume(struct device *dev)
 {
 	struct sirfsoc_pwrc_drvdata *pwrcdrv = dev_get_drvdata(dev);
 	struct input_dev *input = pwrcdrv->input;
@@ -196,16 +187,13 @@ static int sirfsoc_pwrc_resume(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static SIMPLE_DEV_PM_OPS(sirfsoc_pwrc_pm_ops, NULL, sirfsoc_pwrc_resume);
 
 static struct platform_driver sirfsoc_pwrc_driver = {
 	.probe		= sirfsoc_pwrc_probe,
-	.remove		= sirfsoc_pwrc_remove,
 	.driver		= {
 		.name	= "sirfsoc-pwrc",
-		.owner	= THIS_MODULE,
 		.pm	= &sirfsoc_pwrc_pm_ops,
 		.of_match_table = sirfsoc_pwrc_of_match,
 	}

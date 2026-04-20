@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * linux/arch/arm/mach-omap1/mux.c
  *
@@ -6,21 +7,6 @@
  * Copyright (C) 2003 - 2008 Nokia Corporation
  *
  * Written by Tony Lindgren
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
- *
  */
 #include <linux/module.h>
 #include <linux/init.h>
@@ -36,7 +22,7 @@
 static struct omap_mux_cfg arch_mux_cfg;
 
 #if defined(CONFIG_ARCH_OMAP730) || defined(CONFIG_ARCH_OMAP850)
-static struct pin_config __initdata_or_module omap7xx_pins[] = {
+static struct pin_config omap7xx_pins[] = {
 MUX_CFG_7XX("E2_7XX_KBR0",        12,   21,    0,   20,   1, 0)
 MUX_CFG_7XX("J7_7XX_KBR1",        12,   25,    0,   24,   1, 0)
 MUX_CFG_7XX("E1_7XX_KBR2",        12,   29,    0,   28,   1, 0)
@@ -82,7 +68,7 @@ MUX_CFG_7XX("UART_7XX_2",          8,    1,    6,    0,   0, 0)
 #endif	/* CONFIG_ARCH_OMAP730 || CONFIG_ARCH_OMAP850 */
 
 #if defined(CONFIG_ARCH_OMAP15XX) || defined(CONFIG_ARCH_OMAP16XX)
-static struct pin_config __initdata_or_module omap1xxx_pins[] = {
+static struct pin_config omap1xxx_pins[] = {
 /*
  *	 description		mux  mode   mux	 pull pull  pull  pu_pd	 pu  dbg
  *				reg  offset mode reg  bit   ena	  reg
@@ -343,7 +329,7 @@ MUX_CFG("Y14_1610_CCP_DATAM",	 9,   21,    6,   2,   3,   1,    2,     0,  0)
 #define OMAP1XXX_PINS_SZ	0
 #endif	/* CONFIG_ARCH_OMAP15XX || CONFIG_ARCH_OMAP16XX */
 
-static int __init_or_module omap1_cfg_reg(const struct pin_config *cfg)
+static int omap1_cfg_reg(const struct pin_config *cfg)
 {
 	static DEFINE_SPINLOCK(mux_spin_lock);
 	unsigned long flags;
@@ -469,7 +455,7 @@ int __init omap_mux_register(struct omap_mux_cfg *arch_mux_cfg)
 /*
  * Sets the Omap MUX and PULL_DWN registers based on the table
  */
-int __init_or_module omap_cfg_reg(const unsigned long index)
+int omap_cfg_reg(const unsigned long index)
 {
 	struct pin_config *reg;
 

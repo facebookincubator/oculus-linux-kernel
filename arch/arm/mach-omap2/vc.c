@@ -26,6 +26,31 @@
 #include "scrm44xx.h"
 #include "control.h"
 
+#define OMAP4430_VDD_IVA_I2C_DISABLE		BIT(14)
+#define OMAP4430_VDD_MPU_I2C_DISABLE		BIT(13)
+#define OMAP4430_VDD_CORE_I2C_DISABLE		BIT(12)
+#define OMAP4430_VDD_IVA_PRESENCE		BIT(9)
+#define OMAP4430_VDD_MPU_PRESENCE		BIT(8)
+#define OMAP4430_AUTO_CTRL_VDD_IVA(x)		((x) << 4)
+#define OMAP4430_AUTO_CTRL_VDD_MPU(x)		((x) << 2)
+#define OMAP4430_AUTO_CTRL_VDD_CORE(x)		((x) << 0)
+#define OMAP4430_AUTO_CTRL_VDD_RET		2
+
+#define OMAP4430_VDD_I2C_DISABLE_MASK	\
+	(OMAP4430_VDD_IVA_I2C_DISABLE | \
+	 OMAP4430_VDD_MPU_I2C_DISABLE | \
+	 OMAP4430_VDD_CORE_I2C_DISABLE)
+
+#define OMAP4_VDD_DEFAULT_VAL	\
+	(OMAP4430_VDD_I2C_DISABLE_MASK | \
+	 OMAP4430_VDD_IVA_PRESENCE | OMAP4430_VDD_MPU_PRESENCE | \
+	 OMAP4430_AUTO_CTRL_VDD_IVA(OMAP4430_AUTO_CTRL_VDD_RET) | \
+	 OMAP4430_AUTO_CTRL_VDD_MPU(OMAP4430_AUTO_CTRL_VDD_RET) | \
+	 OMAP4430_AUTO_CTRL_VDD_CORE(OMAP4430_AUTO_CTRL_VDD_RET))
+
+#define OMAP4_VDD_RET_VAL	\
+	(OMAP4_VDD_DEFAULT_VAL & ~OMAP4430_VDD_I2C_DISABLE_MASK)
+
 /**
  * struct omap_vc_channel_cfg - describe the cfg_channel bitfield
  * @sa: bit for slave address
@@ -280,9 +305,25 @@ void omap3_vc_set_pmic_signaling(int core_next_state)
 	}
 }
 
-#define PRM_POLCTRL_TWL_MASK	(OMAP3430_PRM_POLCTRL_CLKREQ_POL | \
-					OMAP3430_PRM_POLCTRL_CLKREQ_POL)
-#define PRM_POLCTRL_TWL_VAL	OMAP3430_PRM_POLCTRL_CLKREQ_POL
+void omap4_vc_set_pmic_signaling(int core_next_state)
+{
+	struct voltagedomain *vd = vc.vd;
+	u32 val;
+
+	if (!vd)
+		return;
+
+	switch (core_next_state) {
+	case PWRDM_POWER_RET:
+		val = OMAP4_VDD_RET_VAL;
+		break;
+	default:
+		val = OMAP4_VDD_DEFAULT_VAL;
+		break;
+	}
+
+	vd->write(val, OMAP4_PRM_VOLTCTRL_OFFSET);
+}
 
 /*
  * Configure signal polarity for sys_clkreq and sys_off_mode pins
@@ -300,7 +341,7 @@ static void __init omap3_vc_init_pmic_signaling(struct voltagedomain *voltdm)
 
 	val = voltdm->read(OMAP3_PRM_POLCTRL_OFFSET);
 	if (!(val & OMAP3430_PRM_POLCTRL_CLKREQ_POL) ||
-	    (val & OMAP3430_PRM_POLCTRL_CLKREQ_POL)) {
+	    (val & OMAP3430_PRM_POLCTRL_OFFMODE_POL)) {
 		val |= OMAP3430_PRM_POLCTRL_CLKREQ_POL;
 		val &= ~OMAP3430_PRM_POLCTRL_OFFMODE_POL;
 		pr_debug("PM: fixing sys_clkreq and sys_off_mode polarity to 0x%x\n",
@@ -546,9 +587,19 @@ static void omap4_set_timings(struct voltagedomain *voltdm, bool off_mode)
 	writel_relaxed(val, OMAP4_SCRM_CLKSETUPTIME);
 }
 
+static void __init omap4_vc_init_pmic_signaling(struct voltagedomain *voltdm)
+{
+	if (vc.vd)
+		return;
+
+	vc.vd = voltdm;
+	voltdm->write(OMAP4_VDD_DEFAULT_VAL, OMAP4_PRM_VOLTCTRL_OFFSET);
+}
+
 /* OMAP4 specific voltage init functions */
 static void __init omap4_vc_init_channel(struct voltagedomain *voltdm)
 {
+	omap4_vc_init_pmic_signaling(voltdm);
 	omap4_set_timings(voltdm, true);
 	omap4_set_timings(voltdm, false);
 }
@@ -563,7 +614,7 @@ struct i2c_init_data {
 	u8 hsscll_12;
 };
 
-static const __initdata struct i2c_init_data omap4_i2c_timing_data[] = {
+static const struct i2c_init_data omap4_i2c_timing_data[] __initconst = {
 	{
 		.load = 50,
 		.loadbits = 0x3,
@@ -619,7 +670,7 @@ static void __init omap4_vc_i2c_timing_init(struct voltagedomain *voltdm)
 	const struct i2c_init_data *i2c_data;
 
 	if (!voltdm->pmic->i2c_high_speed) {
-		pr_warn("%s: only high speed supported!\n", __func__);
+		pr_info("%s: using bootloader low-speed timings\n", __func__);
 		return;
 	}
 

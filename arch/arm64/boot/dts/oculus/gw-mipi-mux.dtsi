@@ -1,0 +1,14 @@
+// MIPI Mux GPIOs
+
+&tlmm {
+  soc_mipi_mux0_oe: soc_mipi_mux0_oe {
+    gpio-hog;
+    gpios = <68 GPIO_ACTIVE_HIGH>;
+    output-high;
+  };
+  soc_mipi_mux0_sel: soc_mipi_mux0_sel {
+    gpio-hog;
+    gpios = <73 GPIO_ACTIVE_HIGH>;
+    output-low;
+  };
+};

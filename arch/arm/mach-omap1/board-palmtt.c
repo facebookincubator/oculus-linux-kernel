@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/mach-omap1/board-palmtt.c
  *
@@ -5,10 +6,6 @@
  *
  * Modified and amended for Palm Tungsten|T
  * by Marek Vasut <marek.vasut@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/delay.h>
@@ -34,7 +31,7 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include <mach/flash.h>
+#include "flash.h"
 #include <mach/mux.h>
 #include <linux/omap-dma.h>
 #include <mach/tc.h>
@@ -241,7 +238,7 @@ static struct omap_usb_config palmtt_usb_config __initdata = {
 	.pins[0]	= 2,
 };
 
-static struct omap_lcd_config palmtt_lcd_config __initdata = {
+static const struct omap_lcd_config palmtt_lcd_config __initconst = {
 	.ctrl_name	= "internal",
 };
 
@@ -282,6 +279,7 @@ MACHINE_START(OMAP_PALMTT, "OMAP1510 based Palm Tungsten|T")
 	.map_io		= omap15xx_map_io,
 	.init_early     = omap1_init_early,
 	.init_irq	= omap1_init_irq,
+	.handle_irq	= omap1_handle_irq,
 	.init_machine	= omap_palmtt_init,
 	.init_late	= omap1_init_late,
 	.init_time	= omap1_timer_init,

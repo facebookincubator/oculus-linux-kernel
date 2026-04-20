@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * u_fs.h
  *
@@ -6,11 +7,7 @@
  * Copyright (c) 2013 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
- * Author: Andrzej Pietrasiewicz <andrzej.p@samsung.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Author: Andrzej Pietrasiewicz <andrzejtp2010@gmail.com>
  */
 
 #ifndef U_FFS_H
@@ -19,6 +16,8 @@
 #include <linux/usb/composite.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
+#include <linux/workqueue.h>
+#include <linux/refcount.h>
 
 #ifdef VERBOSE_DEBUG
 #ifndef pr_vdebug
@@ -38,14 +37,15 @@
 struct f_fs_opts;
 
 struct ffs_dev {
-	const char *name;
-	bool name_allocated;
-	bool mounted;
-	bool desc_ready;
-	bool single;
 	struct ffs_data *ffs_data;
 	struct f_fs_opts *opts;
 	struct list_head entry;
+
+	char name[41];
+
+	bool mounted;
+	bool desc_ready;
+	bool single;
 
 	int (*ffs_ready_callback)(struct ffs_data *ffs);
 	void (*ffs_closed_callback)(struct ffs_data *ffs);
@@ -91,6 +91,26 @@ enum ffs_state {
 	 * succeed.
 	 */
 	FFS_ACTIVE,
+
+	/*
+	 * Function is visible to host, but it's not functional. All
+	 * setup requests are stalled and transfers on another endpoints
+	 * are refused. All epfiles, except ep0, are deleted so there
+	 * is no way to perform any operations on them.
+	 *
+	 * This state is set after closing all functionfs files, when
+	 * mount parameter "no_disconnect=1" has been set. Function will
+	 * remain in deactivated state until filesystem is umounted or
+	 * ep0 is opened again. In the second case functionfs state will
+	 * be reset, and it will be ready for descriptors and strings
+	 * writing.
+	 *
+	 * This is useful only when functionfs is composed to gadget
+	 * with another function which can perform some critical
+	 * operations, and it's strongly desired to have this operations
+	 * completed, even after functionfs files closure.
+	 */
+	FFS_DEACTIVATED,
 
 	/*
 	 * All endpoints have been closed.  This state is also set if
@@ -154,11 +174,9 @@ struct ffs_data {
 	 */
 	struct usb_request		*ep0req;		/* P: mutex */
 	struct completion		ep0req_completion;	/* P: mutex */
-	struct completion               epin_completion;
-	struct completion               epout_completion;
 
 	/* reference counter */
-	atomic_t			ref;
+	refcount_t			ref;
 	/* how many files are opened (EP0 and others) */
 	atomic_t			opened;
 
@@ -195,6 +213,9 @@ struct ffs_data {
 #define FFS_FL_CALL_CLOSED_CALLBACK 0
 #define FFS_FL_BOUND                1
 
+	/* For waking up blocked threads when function is enabled. */
+	wait_queue_head_t		wait;
+
 	/* Active function */
 	struct ffs_function		*func;
 
@@ -228,15 +249,13 @@ struct ffs_data {
 
 	unsigned			user_flags;
 
-	u8				eps_addrmap[15];
+#define FFS_MAX_EPS_COUNT 31
+	u8				eps_addrmap[FFS_MAX_EPS_COUNT];
 
 	unsigned short			strings_count;
 	unsigned short			interfaces_count;
 	unsigned short			eps_count;
 	unsigned short			_pad1;
-
-	int                             first_id;
-	int                             old_strings_count;
 
 	/* filled by __ffs_data_got_strings() */
 	/* ids in stringtabs are set in functionfs_bind() */
@@ -255,6 +274,11 @@ struct ffs_data {
 		kuid_t				uid;
 		kgid_t				gid;
 	}				file_perms;
+
+	struct eventfd_ctx *ffs_eventfd;
+	struct workqueue_struct *io_completion_wq;
+	bool no_disconnect;
+	struct work_struct reset_work;
 
 	/*
 	 * The endpoint files, filled by ffs_epfiles_create(),

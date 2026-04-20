@@ -1,10 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * LM8333 keypad driver
- * Copyright (C) 2012 Wolfram Sang, Pengutronix <w.sang@pengutronix.de>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License.
+ * Copyright (C) 2012 Wolfram Sang, Pengutronix <kernel@pengutronix.de>
  */
 
 #include <linux/module.h>
@@ -223,7 +220,6 @@ MODULE_DEVICE_TABLE(i2c, lm8333_id);
 static struct i2c_driver lm8333_driver = {
 	.driver = {
 		.name		= "lm8333",
-		.owner		= THIS_MODULE,
 	},
 	.probe		= lm8333_probe,
 	.remove		= lm8333_remove,
@@ -231,6 +227,6 @@ static struct i2c_driver lm8333_driver = {
 };
 module_i2c_driver(lm8333_driver);
 
-MODULE_AUTHOR("Wolfram Sang <w.sang@pengutronix.de>");
+MODULE_AUTHOR("Wolfram Sang <kernel@pengutronix.de>");
 MODULE_DESCRIPTION("LM8333 keyboard driver");
 MODULE_LICENSE("GPL v2");

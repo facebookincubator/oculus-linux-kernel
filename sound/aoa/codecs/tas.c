@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Apple Onboard Audio driver for tas codec
  *
  * Copyright 2006 Johannes Berg <johannes@sipsolutions.net>
- *
- * GPL v2, can be found in COPYING.
  *
  * Open questions:
  *  - How to distinguish between 3004 and versions?
@@ -218,7 +217,7 @@ static int tas_dev_register(struct snd_device *dev)
 	return 0;
 }
 
-static struct snd_device_ops ops = {
+static const struct snd_device_ops ops = {
 	.dev_register = tas_dev_register,
 };
 
@@ -271,7 +270,7 @@ static int tas_snd_vol_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static struct snd_kcontrol_new volume_control = {
+static const struct snd_kcontrol_new volume_control = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "Master Playback Volume",
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,
@@ -314,7 +313,7 @@ static int tas_snd_mute_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static struct snd_kcontrol_new mute_control = {
+static const struct snd_kcontrol_new mute_control = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "Master Playback Switch",
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,
@@ -370,7 +369,7 @@ static int tas_snd_mixer_put(struct snd_kcontrol *kcontrol,
 }
 
 #define MIXER_CONTROL(n,descr,idx)			\
-static struct snd_kcontrol_new n##_control = {		\
+static const struct snd_kcontrol_new n##_control = {	\
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,		\
 	.name = descr " Playback Volume",		\
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,	\
@@ -426,7 +425,7 @@ static int tas_snd_drc_range_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static struct snd_kcontrol_new drc_range_control = {
+static const struct snd_kcontrol_new drc_range_control = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "DRC Range",
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,
@@ -466,7 +465,7 @@ static int tas_snd_drc_switch_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static struct snd_kcontrol_new drc_switch_control = {
+static const struct snd_kcontrol_new drc_switch_control = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "DRC Range Switch",
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,
@@ -478,15 +477,9 @@ static struct snd_kcontrol_new drc_switch_control = {
 static int tas_snd_capture_source_info(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_info *uinfo)
 {
-	static char *texts[] = { "Line-In", "Microphone" };
+	static const char * const texts[] = { "Line-In", "Microphone" };
 
-	uinfo->type = SNDRV_CTL_ELEM_TYPE_ENUMERATED;
-	uinfo->count = 1;
-	uinfo->value.enumerated.items = 2;
-	if (uinfo->value.enumerated.item > 1)
-		uinfo->value.enumerated.item = 1;
-	strcpy(uinfo->value.enumerated.name, texts[uinfo->value.enumerated.item]);
-	return 0;
+	return snd_ctl_enum_info(uinfo, 1, 2, texts);
 }
 
 static int tas_snd_capture_source_get(struct snd_kcontrol *kcontrol,
@@ -530,7 +523,7 @@ static int tas_snd_capture_source_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static struct snd_kcontrol_new capture_source_control = {
+static const struct snd_kcontrol_new capture_source_control = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	/* If we name this 'Input Source', it properly shows up in
 	 * alsamixer as a selection, * but it's shown under the
@@ -592,7 +585,7 @@ static int tas_snd_treble_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static struct snd_kcontrol_new treble_control = {
+static const struct snd_kcontrol_new treble_control = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "Treble",
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,
@@ -643,7 +636,7 @@ static int tas_snd_bass_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static struct snd_kcontrol_new bass_control = {
+static const struct snd_kcontrol_new bass_control = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "Bass",
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,
@@ -911,8 +904,8 @@ static int tas_i2c_probe(struct i2c_client *client,
 		goto fail;
 	}
 	printk(KERN_DEBUG
-	       "snd-aoa-codec-tas: tas found, addr 0x%02x on %s\n",
-	       (unsigned int)client->addr, node->full_name);
+	       "snd-aoa-codec-tas: tas found, addr 0x%02x on %pOF\n",
+	       (unsigned int)client->addr, node);
 	return 0;
  fail:
 	mutex_destroy(&tas->mtx);
@@ -945,7 +938,6 @@ MODULE_DEVICE_TABLE(i2c,tas_i2c_id);
 static struct i2c_driver tas_driver = {
 	.driver = {
 		.name = "aoa_codec_tas",
-		.owner = THIS_MODULE,
 	},
 	.probe = tas_i2c_probe,
 	.remove = tas_i2c_remove,

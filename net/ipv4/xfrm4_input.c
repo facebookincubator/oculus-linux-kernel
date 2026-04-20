@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * xfrm4_input.c
  *
@@ -17,21 +18,27 @@
 #include <net/ip.h>
 #include <net/xfrm.h>
 
-int xfrm4_extract_input(struct xfrm_state *x, struct sk_buff *skb)
+static int xfrm4_rcv_encap_finish2(struct net *net, struct sock *sk,
+				   struct sk_buff *skb)
 {
-	return xfrm4_extract_header(skb);
+	return dst_input(skb);
 }
 
-static inline int xfrm4_rcv_encap_finish(struct sk_buff *skb)
+static inline int xfrm4_rcv_encap_finish(struct net *net, struct sock *sk,
+					 struct sk_buff *skb)
 {
-	if (skb_dst(skb) == NULL) {
+	if (!skb_dst(skb)) {
 		const struct iphdr *iph = ip_hdr(skb);
 
 		if (ip_route_input_noref(skb, iph->daddr, iph->saddr,
 					 iph->tos, skb->dev))
 			goto drop;
 	}
-	return dst_input(skb);
+
+	if (xfrm_trans_queue(skb, xfrm4_rcv_encap_finish2))
+		goto drop;
+
+	return 0;
 drop:
 	kfree_skb(skb);
 	return NET_RX_DROP;
@@ -39,6 +46,7 @@ drop:
 
 int xfrm4_transport_finish(struct sk_buff *skb, int async)
 {
+	struct xfrm_offload *xo = xfrm_offload(skb);
 	struct iphdr *iph = ip_hdr(skb);
 
 	iph->protocol = XFRM_MODE_SKB_CB(skb)->protocol;
@@ -52,7 +60,18 @@ int xfrm4_transport_finish(struct sk_buff *skb, int async)
 	iph->tot_len = htons(skb->len);
 	ip_send_check(iph);
 
-	NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING, skb, skb->dev, NULL,
+	if (xo && (xo->flags & XFRM_GRO)) {
+		/* The full l2 header needs to be preserved so that re-injecting the packet at l2
+		 * works correctly in the presence of vlan tags.
+		 */
+		skb_mac_header_rebuild_full(skb, xo->orig_mac_len);
+		skb_reset_network_header(skb);
+		skb_reset_transport_header(skb);
+		return 0;
+	}
+
+	NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING,
+		dev_net(skb->dev), NULL, skb, skb->dev, NULL,
 		xfrm4_rcv_encap_finish);
 	return 0;
 }
@@ -149,6 +168,7 @@ drop:
 	kfree_skb(skb);
 	return 0;
 }
+EXPORT_SYMBOL(xfrm4_udp_encap_rcv);
 
 int xfrm4_rcv(struct sk_buff *skb)
 {

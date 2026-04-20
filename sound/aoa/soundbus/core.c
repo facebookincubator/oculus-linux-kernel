@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * soundbus
  *
  * Copyright 2006 Johannes Berg <johannes@sipsolutions.net>
- *
- * GPL v2, can be found in COPYING.
  */
 
 #include <linux/module.h>
@@ -74,11 +73,11 @@ static int soundbus_uevent(struct device *dev, struct kobj_uevent_env *env)
 	of = &soundbus_dev->ofdev;
 
 	/* stuff we want to pass to /sbin/hotplug */
-	retval = add_uevent_var(env, "OF_NAME=%s", of->dev.of_node->name);
+	retval = add_uevent_var(env, "OF_NAME=%pOFn", of->dev.of_node);
 	if (retval)
 		return retval;
 
-	retval = add_uevent_var(env, "OF_TYPE=%s", of->dev.of_node->type);
+	retval = add_uevent_var(env, "OF_TYPE=%s", of_node_get_device_type(of->dev.of_node));
 	if (retval)
 		return retval;
 
@@ -126,41 +125,15 @@ static void soundbus_device_shutdown(struct device *dev)
 		drv->shutdown(soundbus_dev);
 }
 
-#ifdef CONFIG_PM
-
-static int soundbus_device_suspend(struct device *dev, pm_message_t state)
-{
-	struct soundbus_dev * soundbus_dev = to_soundbus_device(dev);
-	struct soundbus_driver * drv = to_soundbus_driver(dev->driver);
-
-	if (dev->driver && drv->suspend)
-		return drv->suspend(soundbus_dev, state);
-	return 0;
-}
-
-static int soundbus_device_resume(struct device * dev)
-{
-	struct soundbus_dev * soundbus_dev = to_soundbus_device(dev);
-	struct soundbus_driver * drv = to_soundbus_driver(dev->driver);
-
-	if (dev->driver && drv->resume)
-		return drv->resume(soundbus_dev);
-	return 0;
-}
-
-#endif /* CONFIG_PM */
-
+/* soundbus_dev_attrs is declared in sysfs.c */
+ATTRIBUTE_GROUPS(soundbus_dev);
 static struct bus_type soundbus_bus_type = {
 	.name		= "aoa-soundbus",
 	.probe		= soundbus_probe,
 	.uevent		= soundbus_uevent,
 	.remove		= soundbus_device_remove,
 	.shutdown	= soundbus_device_shutdown,
-#ifdef CONFIG_PM
-	.suspend	= soundbus_device_suspend,
-	.resume		= soundbus_device_resume,
-#endif
-	.dev_attrs	= soundbus_dev_attrs,
+	.dev_groups	= soundbus_dev_groups,
 };
 
 int soundbus_add_one(struct soundbus_dev *dev)

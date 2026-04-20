@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 # trace-cmd version
 EP_VERSION = 1
 EP_PATCHLEVEL = 1
@@ -23,6 +24,8 @@ endef
 # Allow setting CC and AR, or setting CROSS_COMPILE as a prefix.
 $(call allow-override,CC,$(CROSS_COMPILE)gcc)
 $(call allow-override,AR,$(CROSS_COMPILE)ar)
+$(call allow-override,NM,$(CROSS_COMPILE)nm)
+$(call allow-override,PKG_CONFIG,pkg-config)
 
 EXT = -std=gnu99
 INSTALL = install
@@ -34,40 +37,29 @@ INSTALL = install
 DESTDIR ?=
 DESTDIR_SQ = '$(subst ','\'',$(DESTDIR))'
 
+LP64 := $(shell echo __LP64__ | ${CC} ${CFLAGS} -E -x c - | tail -n 1)
+ifeq ($(LP64), 1)
+  libdir_relative_temp = lib64
+else
+  libdir_relative_temp = lib
+endif
+
+libdir_relative ?= $(libdir_relative_temp)
 prefix ?= /usr/local
-bindir_relative = bin
-bindir = $(prefix)/$(bindir_relative)
+libdir = $(prefix)/$(libdir_relative)
 man_dir = $(prefix)/share/man
 man_dir_SQ = '$(subst ','\'',$(man_dir))'
+pkgconfig_dir ?= $(word 1,$(shell $(PKG_CONFIG) 		\
+			--variable pc_path pkg-config | tr ":" " "))
+includedir_relative = traceevent
+includedir = $(prefix)/include/$(includedir_relative)
+includedir_SQ = '$(subst ','\'',$(includedir))'
 
 export man_dir man_dir_SQ INSTALL
 export DESTDIR DESTDIR_SQ
+export EVENT_PARSE_VERSION
 
-set_plugin_dir := 1
-
-# Set plugin_dir to preffered global plugin location
-# If we install under $HOME directory we go under
-# $(HOME)/.traceevent/plugins
-#
-# We dont set PLUGIN_DIR in case we install under $HOME
-# directory, because by default the code looks under:
-# $(HOME)/.traceevent/plugins by default.
-#
-ifeq ($(plugin_dir),)
-ifeq ($(prefix),$(HOME))
-override plugin_dir = $(HOME)/.traceevent/plugins
-set_plugin_dir := 0
-else
-override plugin_dir = $(prefix)/lib/traceevent/plugins
-endif
-endif
-
-ifeq ($(set_plugin_dir),1)
-PLUGIN_DIR = -DPLUGIN_DIR="$(plugin_dir)"
-PLUGIN_DIR_SQ = '$(subst ','\'',$(PLUGIN_DIR))'
-endif
-
-include $(if $(BUILD_SRC),$(BUILD_SRC)/)../../scripts/Makefile.include
+include ../../scripts/Makefile.include
 
 # copy a bit from Linux kbuild
 
@@ -78,48 +70,18 @@ ifndef VERBOSE
   VERBOSE = 0
 endif
 
-ifeq ("$(origin O)", "command line")
-  BUILD_OUTPUT := $(O)
+ifeq ($(srctree),)
+srctree := $(patsubst %/,%,$(dir $(CURDIR)))
+srctree := $(patsubst %/,%,$(dir $(srctree)))
+srctree := $(patsubst %/,%,$(dir $(srctree)))
+#$(info Determined 'srctree' to be $(srctree))
 endif
 
-ifeq ($(BUILD_SRC),)
-ifneq ($(OUTPUT),)
-
-define build_output
-  $(if $(VERBOSE:1=),@)+$(MAKE) -C $(OUTPUT) \
-  BUILD_SRC=$(CURDIR)/ -f $(CURDIR)/Makefile $1
-endef
-
-all: sub-make
-
-$(MAKECMDGOALS): sub-make
-
-sub-make: force
-	$(call build_output, $(MAKECMDGOALS))
-
-
-# Leave processing to above invocation of make
-skip-makefile := 1
-
-endif # OUTPUT
-endif # BUILD_SRC
-
-# We process the rest of the Makefile if this is the final invocation of make
-ifeq ($(skip-makefile),)
-
-srctree		:= $(if $(BUILD_SRC),$(BUILD_SRC),$(CURDIR))
-objtree		:= $(CURDIR)
-src		:= $(srctree)
-obj		:= $(objtree)
-
-export prefix bindir src obj
+export prefix libdir src obj
 
 # Shell quotes
-bindir_SQ = $(subst ','\'',$(bindir))
-bindir_relative_SQ = $(subst ','\'',$(bindir_relative))
-plugin_dir_SQ = $(subst ','\'',$(plugin_dir))
-
-LIB_FILE = libtraceevent.a libtraceevent.so
+libdir_SQ = $(subst ','\'',$(libdir))
+libdir_relative_SQ = $(subst ','\'',$(libdir_relative))
 
 CONFIG_INCLUDES = 
 CONFIG_LIBS	=
@@ -132,16 +94,23 @@ EXTRAVERSION	= $(EP_EXTRAVERSION)
 OBJ		= $@
 N		=
 
-export Q VERBOSE
-
 EVENT_PARSE_VERSION = $(EP_VERSION).$(EP_PATCHLEVEL).$(EP_EXTRAVERSION)
 
-INCLUDES = -I. -I $(srctree)/../../include $(CONFIG_INCLUDES)
+LIB_TARGET  = libtraceevent.a libtraceevent.so.$(EVENT_PARSE_VERSION)
+LIB_INSTALL = libtraceevent.a libtraceevent.so*
+LIB_INSTALL := $(addprefix $(OUTPUT),$(LIB_INSTALL))
 
-# Set compile option CFLAGS if not set elsewhere
-CFLAGS ?= -g -Wall
+INCLUDES = -I. -I $(srctree)/tools/include $(CONFIG_INCLUDES)
+
+# Set compile option CFLAGS
+ifdef EXTRA_CFLAGS
+  CFLAGS := $(EXTRA_CFLAGS)
+else
+  CFLAGS := -g -Wall
+endif
 
 # Append required CFLAGS
+override CFLAGS += -fPIC
 override CFLAGS += $(CONFIG_FLAGS) $(INCLUDES) $(PLUGIN_DIR_SQ)
 override CFLAGS += $(udis86-flags) -D_GNU_SOURCE
 
@@ -151,74 +120,38 @@ else
   Q = @
 endif
 
-do_compile_shared_library =			\
-	($(print_shared_lib_compile)		\
-	$(CC) --shared $^ -o $@)
+# Disable command line variables (CFLAGS) override from top
+# level Makefile (perf), otherwise build Makefile will get
+# the same command line setup.
+MAKEOVERRIDES=
 
-do_plugin_build =				\
-	($(print_plugin_build)			\
-	$(CC) $(CFLAGS) -shared -nostartfiles -o $@ $<)
+export srctree OUTPUT CC LD CFLAGS V
+build := -f $(srctree)/tools/build/Makefile.build dir=. obj
 
-do_build_static_lib =				\
-	($(print_static_lib_build)		\
-	$(RM) $@;  $(AR) rcs $@ $^)
+TE_IN      := $(OUTPUT)libtraceevent-in.o
+LIB_TARGET := $(addprefix $(OUTPUT),$(LIB_TARGET))
 
-
-do_compile = $(QUIET_CC)$(CC) -c $(CFLAGS) $(EXT) $< -o $(obj)/$@;
-
-$(obj)/%.o: $(src)/%.c
-	$(call do_compile)
-
-%.o: $(src)/%.c
-	$(call do_compile)
-
-PEVENT_LIB_OBJS  = event-parse.o
-PEVENT_LIB_OBJS += event-plugin.o
-PEVENT_LIB_OBJS += trace-seq.o
-PEVENT_LIB_OBJS += parse-filter.o
-PEVENT_LIB_OBJS += parse-utils.o
-PEVENT_LIB_OBJS += kbuffer-parse.o
-
-PLUGIN_OBJS  = plugin_jbd2.o
-PLUGIN_OBJS += plugin_hrtimer.o
-PLUGIN_OBJS += plugin_kmem.o
-PLUGIN_OBJS += plugin_kvm.o
-PLUGIN_OBJS += plugin_mac80211.o
-PLUGIN_OBJS += plugin_sched_switch.o
-PLUGIN_OBJS += plugin_function.o
-PLUGIN_OBJS += plugin_xen.o
-PLUGIN_OBJS += plugin_scsi.o
-PLUGIN_OBJS += plugin_cfg80211.o
-
-PLUGINS := $(PLUGIN_OBJS:.o=.so)
-
-ALL_OBJS = $(PEVENT_LIB_OBJS) $(PLUGIN_OBJS)
-
-CMD_TARGETS = $(LIB_FILE) $(PLUGINS)
+CMD_TARGETS = $(LIB_TARGET)
 
 TARGETS = $(CMD_TARGETS)
 
-
-all: all_cmd
+all: all_cmd plugins
 
 all_cmd: $(CMD_TARGETS)
 
-libtraceevent.so: $(PEVENT_LIB_OBJS)
-	$(QUIET_LINK)$(CC) --shared $^ -o $@
+$(TE_IN): force
+	$(Q)$(MAKE) $(build)=libtraceevent
 
-libtraceevent.a: $(PEVENT_LIB_OBJS)
+$(OUTPUT)libtraceevent.so.$(EVENT_PARSE_VERSION): $(TE_IN)
+	$(QUIET_LINK)$(CC) --shared $(LDFLAGS) $^ -Wl,-soname,libtraceevent.so.$(EP_VERSION) -o $@
+	@ln -sf $(@F) $(OUTPUT)libtraceevent.so
+	@ln -sf $(@F) $(OUTPUT)libtraceevent.so.$(EP_VERSION)
+
+$(OUTPUT)libtraceevent.a: $(TE_IN)
 	$(QUIET_LINK)$(RM) $@; $(AR) rcs $@ $^
 
-plugins: $(PLUGINS)
-
-$(PEVENT_LIB_OBJS): %.o: $(src)/%.c TRACEEVENT-CFLAGS
-	$(QUIET_CC_FPIC)$(CC) -c $(CFLAGS) $(EXT) -fPIC $< -o $@
-
-$(PLUGIN_OBJS): %.o : $(src)/%.c
-	$(QUIET_CC_FPIC)$(CC) -c $(CFLAGS) -fPIC -o $@ $<
-
-$(PLUGINS): %.so: %.o
-	$(QUIET_LINK)$(CC) $(CFLAGS) -shared -nostartfiles -o $@ $<
+$(OUTPUT)%.so: $(OUTPUT)%-in.o
+	$(QUIET_LINK)$(CC) $(CFLAGS) -shared $(LDFLAGS) -nostartfiles -o $@ $^
 
 define make_version.h
   (echo '/* This file is automatically generated. Do not modify. */';		\
@@ -255,85 +188,112 @@ define update_dir
    fi);
 endef
 
-## make deps
-
-all_objs := $(sort $(ALL_OBJS))
-all_deps := $(all_objs:%.o=.%.d)
-
-# let .d file also depends on the source and header files
-define check_deps
-  @set -e; $(RM) $@; \
-  $(CC) -MM $(CFLAGS) $< > $@.$$$$; \
-  sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
-  $(RM) $@.$$$$
-endef
-
-$(all_deps): .%.d: $(src)/%.c
-	$(Q)$(call check_deps)
-
-$(all_objs) : %.o : .%.d
-
-dep_includes := $(wildcard $(all_deps))
-
-ifneq ($(dep_includes),)
- include $(dep_includes)
-endif
-
-### Detect environment changes
-TRACK_CFLAGS = $(subst ','\'',$(CFLAGS)):$(ARCH):$(CROSS_COMPILE)
-
-TRACEEVENT-CFLAGS: force
-	@FLAGS='$(TRACK_CFLAGS)'; \
-	    if test x"$$FLAGS" != x"`cat TRACEEVENT-CFLAGS 2>/dev/null`" ; then \
-		echo 1>&2 "  FLAGS:   * new build flags or cross compiler"; \
-		echo "$$FLAGS" >TRACEEVENT-CFLAGS; \
-            fi
-
 tags:	force
 	$(RM) tags
 	find . -name '*.[ch]' | xargs ctags --extra=+f --c-kinds=+px \
-	--regex-c++='/_PE\(([^,)]*).*/PEVENT_ERRNO__\1/'
+	--regex-c++='/_PE\(([^,)]*).*/TEP_ERRNO__\1/'
 
 TAGS:	force
 	$(RM) TAGS
 	find . -name '*.[ch]' | xargs etags \
-	--regex='/_PE(\([^,)]*\).*/PEVENT_ERRNO__\1/'
+	--regex='/_PE(\([^,)]*\).*/TEP_ERRNO__\1/'
+
+define do_install_mkdir
+	if [ ! -d '$(DESTDIR_SQ)$1' ]; then		\
+		$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$1';	\
+	fi
+endef
 
 define do_install
-	if [ ! -d '$(DESTDIR_SQ)$2' ]; then		\
-		$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$2';	\
-	fi;						\
-	$(INSTALL) $1 '$(DESTDIR_SQ)$2'
+	$(call do_install_mkdir,$2);			\
+	$(INSTALL) $(if $3,-m $3,) $1 '$(DESTDIR_SQ)$2'
 endef
 
-define do_install_plugins
-	for plugin in $1; do				\
-	  $(call do_install,$$plugin,$(plugin_dir_SQ));	\
-	done
+PKG_CONFIG_SOURCE_FILE = libtraceevent.pc
+PKG_CONFIG_FILE := $(addprefix $(OUTPUT),$(PKG_CONFIG_SOURCE_FILE))
+define do_install_pkgconfig_file
+	if [ -n "${pkgconfig_dir}" ]; then 					\
+		cp -f ${PKG_CONFIG_SOURCE_FILE}.template ${PKG_CONFIG_FILE};	\
+		sed -i "s|INSTALL_PREFIX|${1}|g" ${PKG_CONFIG_FILE}; 		\
+		sed -i "s|LIB_VERSION|${EVENT_PARSE_VERSION}|g" ${PKG_CONFIG_FILE}; \
+		sed -i "s|LIB_DIR|${libdir}|g" ${PKG_CONFIG_FILE}; \
+		sed -i "s|HEADER_DIR|$(includedir)|g" ${PKG_CONFIG_FILE}; \
+		$(call do_install,$(PKG_CONFIG_FILE),$(pkgconfig_dir),644); 	\
+	else 									\
+		(echo Failed to locate pkg-config directory) 1>&2;		\
+	fi
 endef
 
-install_lib: all_cmd install_plugins
-	$(call QUIET_INSTALL, $(LIB_FILE)) \
-		$(call do_install,$(LIB_FILE),$(bindir_SQ))
+install_lib: all_cmd install_plugins install_headers install_pkgconfig
+	$(call QUIET_INSTALL, $(LIB_TARGET)) \
+		$(call do_install_mkdir,$(libdir_SQ)); \
+		cp -fpR $(LIB_INSTALL) $(DESTDIR)$(libdir_SQ)
 
-install_plugins: $(PLUGINS)
-	$(call QUIET_INSTALL, trace_plugins) \
-		$(call do_install_plugins, $(PLUGINS))
+install_pkgconfig:
+	$(call QUIET_INSTALL, $(PKG_CONFIG_FILE)) \
+		$(call do_install_pkgconfig_file,$(prefix))
+
+install_headers:
+	$(call QUIET_INSTALL, headers) \
+		$(call do_install,event-parse.h,$(includedir_SQ),644); \
+		$(call do_install,event-utils.h,$(includedir_SQ),644); \
+		$(call do_install,trace-seq.h,$(includedir_SQ),644); \
+		$(call do_install,kbuffer.h,$(includedir_SQ),644)
 
 install: install_lib
 
-clean:
+clean: clean_plugins
 	$(call QUIET_CLEAN, libtraceevent) \
-		$(RM) *.o *~ $(TARGETS) *.a *.so $(VERSION_FILES) .*.d \
-		$(RM) TRACEEVENT-CFLAGS tags TAGS
+		$(RM) *.o *~ $(TARGETS) *.a *.so $(VERSION_FILES) .*.d .*.cmd; \
+		$(RM) TRACEEVENT-CFLAGS tags TAGS; \
+		$(RM) $(PKG_CONFIG_FILE)
 
-endif # skip-makefile
+PHONY += doc
+doc:
+	$(call descend,Documentation)
 
-PHONY += force plugins
-force:
+PHONY += doc-clean
+doc-clean:
+	$(call descend,Documentation,clean)
 
+PHONY += doc-install
+doc-install:
+	$(call descend,Documentation,install)
+
+PHONY += doc-uninstall
+doc-uninstall:
+	$(call descend,Documentation,uninstall)
+
+PHONY += help
+help:
+	@echo 'Possible targets:'
+	@echo''
+	@echo '  all                 - default, compile the library and the'\
+				      'plugins'
+	@echo '  plugins             - compile the plugins'
+	@echo '  install             - install the library, the plugins,'\
+					'the header and pkgconfig files'
+	@echo '  clean               - clean the library and the plugins object files'
+	@echo '  doc                 - compile the documentation files - man'\
+					'and html pages, in the Documentation directory'
+	@echo '  doc-clean           - clean the documentation files'
+	@echo '  doc-install         - install the man pages'
+	@echo '  doc-uninstall       - uninstall the man pages'
+	@echo''
+
+PHONY += plugins
 plugins:
-	@echo > /dev/null
+	$(call descend,plugins)
+
+PHONY += install_plugins
+install_plugins:
+	$(call descend,plugins,install)
+
+PHONY += clean_plugins
+clean_plugins:
+	$(call descend,plugins,clean)
+
+force:
 
 # Declare the contents of the .PHONY variable as phony.  We keep that
 # information in a variable so we can use it in if_changed and friends.

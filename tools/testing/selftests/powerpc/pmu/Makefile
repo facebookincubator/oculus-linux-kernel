@@ -1,38 +1,50 @@
+# SPDX-License-Identifier: GPL-2.0
 noarg:
 	$(MAKE) -C ../
 
-PROGS := count_instructions l3_bank_test per_event_excludes
-EXTRA_SOURCES := ../harness.c event.c lib.c
+TEST_GEN_PROGS := count_instructions count_stcx_fail l3_bank_test per_event_excludes
+EXTRA_SOURCES := ../harness.c event.c lib.c ../utils.c
 
-SUB_TARGETS = ebb
+top_srcdir = ../../../../..
+include ../../lib.mk
 
-all: $(PROGS) $(SUB_TARGETS)
+all: $(TEST_GEN_PROGS) ebb
 
-$(PROGS): $(EXTRA_SOURCES)
+$(TEST_GEN_PROGS): $(EXTRA_SOURCES)
 
 # loop.S can only be built 64-bit
-count_instructions: loop.S count_instructions.c $(EXTRA_SOURCES)
-	$(CC) $(CFLAGS) -m64 -o $@ $^
+$(OUTPUT)/count_instructions: CFLAGS += -m64
+$(OUTPUT)/count_instructions: loop.S count_instructions.c $(EXTRA_SOURCES)
 
-run_tests: all sub_run_tests
-	@-for PROG in $(PROGS); do \
-		./$$PROG; \
-	done;
+$(OUTPUT)/count_stcx_fail: CFLAGS += -m64
+$(OUTPUT)/count_stcx_fail: loop.S $(EXTRA_SOURCES)
 
-clean: sub_clean
-	rm -f $(PROGS) loop.o
 
-$(SUB_TARGETS):
-	$(MAKE) -k -C $@ all
+$(OUTPUT)/per_event_excludes: ../utils.c
 
-sub_run_tests: all
-	@for TARGET in $(SUB_TARGETS); do \
-		$(MAKE) -C $$TARGET run_tests; \
-	done;
+DEFAULT_RUN_TESTS := $(RUN_TESTS)
+override define RUN_TESTS
+	$(DEFAULT_RUN_TESTS)
+	TARGET=ebb; BUILD_TARGET=$$OUTPUT/$$TARGET; $(MAKE) OUTPUT=$$BUILD_TARGET -C $$TARGET run_tests
+endef
 
-sub_clean:
-	@for TARGET in $(SUB_TARGETS); do \
-		$(MAKE) -C $$TARGET clean; \
-	done;
+DEFAULT_EMIT_TESTS := $(EMIT_TESTS)
+override define EMIT_TESTS
+	$(DEFAULT_EMIT_TESTS)
+	TARGET=ebb; BUILD_TARGET=$$OUTPUT/$$TARGET; $(MAKE) OUTPUT=$$BUILD_TARGET -s -C $$TARGET emit_tests
+endef
 
-.PHONY: all run_tests clean sub_run_tests sub_clean $(SUB_TARGETS)
+DEFAULT_INSTALL_RULE := $(INSTALL_RULE)
+override define INSTALL_RULE
+	$(DEFAULT_INSTALL_RULE)
+	TARGET=ebb; BUILD_TARGET=$$OUTPUT/$$TARGET; $(MAKE) OUTPUT=$$BUILD_TARGET -C $$TARGET install
+endef
+
+clean:
+	$(RM) $(TEST_GEN_PROGS) $(OUTPUT)/loop.o
+	TARGET=ebb; BUILD_TARGET=$$OUTPUT/$$TARGET; $(MAKE) OUTPUT=$$BUILD_TARGET -C $$TARGET clean
+
+ebb:
+	TARGET=$@; BUILD_TARGET=$$OUTPUT/$$TARGET; mkdir -p $$BUILD_TARGET; $(MAKE) OUTPUT=$$BUILD_TARGET -k -C $$TARGET all
+
+.PHONY: all run_tests clean ebb

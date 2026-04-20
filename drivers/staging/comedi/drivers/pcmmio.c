@@ -1,25 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * pcmmio.c
  * Driver for Winsystems PC-104 based multifunction IO board.
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 2007 Calin A. Culianu <calin@ajvar.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
  * Driver: pcmmio
  * Description: A driver for the PCM-MIO multifunction board
- * Devices: (Winsystems) PCM-MIO [pcmmio]
+ * Devices: [Winsystems] PCM-MIO (pcmmio)
  * Author: Calin Culianu <calin@ajvar.org>
  * Updated: Wed, May 16 2007 16:21:10 -0500
  * Status: works
@@ -78,33 +69,31 @@
 
 #include "../comedidev.h"
 
-#include "comedi_fc.h"
-
 /*
  * Register I/O map
  */
 #define PCMMIO_AI_LSB_REG			0x00
 #define PCMMIO_AI_MSB_REG			0x01
 #define PCMMIO_AI_CMD_REG			0x02
-#define PCMMIO_AI_CMD_SE			(1 << 7)
-#define PCMMIO_AI_CMD_ODD_CHAN			(1 << 6)
+#define PCMMIO_AI_CMD_SE			BIT(7)
+#define PCMMIO_AI_CMD_ODD_CHAN			BIT(6)
 #define PCMMIO_AI_CMD_CHAN_SEL(x)		(((x) & 0x3) << 4)
 #define PCMMIO_AI_CMD_RANGE(x)			(((x) & 0x3) << 2)
 #define PCMMIO_RESOURCE_REG			0x02
 #define PCMMIO_RESOURCE_IRQ(x)			(((x) & 0xf) << 0)
 #define PCMMIO_AI_STATUS_REG			0x03
-#define PCMMIO_AI_STATUS_DATA_READY		(1 << 7)
-#define PCMMIO_AI_STATUS_DATA_DMA_PEND		(1 << 6)
-#define PCMMIO_AI_STATUS_CMD_DMA_PEND		(1 << 5)
-#define PCMMIO_AI_STATUS_IRQ_PEND		(1 << 4)
-#define PCMMIO_AI_STATUS_DATA_DRQ_ENA		(1 << 2)
-#define PCMMIO_AI_STATUS_REG_SEL		(1 << 3)
-#define PCMMIO_AI_STATUS_CMD_DRQ_ENA		(1 << 1)
-#define PCMMIO_AI_STATUS_IRQ_ENA		(1 << 0)
+#define PCMMIO_AI_STATUS_DATA_READY		BIT(7)
+#define PCMMIO_AI_STATUS_DATA_DMA_PEND		BIT(6)
+#define PCMMIO_AI_STATUS_CMD_DMA_PEND		BIT(5)
+#define PCMMIO_AI_STATUS_IRQ_PEND		BIT(4)
+#define PCMMIO_AI_STATUS_DATA_DRQ_ENA		BIT(2)
+#define PCMMIO_AI_STATUS_REG_SEL		BIT(3)
+#define PCMMIO_AI_STATUS_CMD_DRQ_ENA		BIT(1)
+#define PCMMIO_AI_STATUS_IRQ_ENA		BIT(0)
 #define PCMMIO_AI_RES_ENA_REG			0x03
 #define PCMMIO_AI_RES_ENA_CMD_REG_ACCESS	(0 << 3)
-#define PCMMIO_AI_RES_ENA_AI_RES_ACCESS		(1 << 3)
-#define PCMMIO_AI_RES_ENA_DIO_RES_ACCESS	(1 << 4)
+#define PCMMIO_AI_RES_ENA_AI_RES_ACCESS		BIT(3)
+#define PCMMIO_AI_RES_ENA_DIO_RES_ACCESS	BIT(4)
 #define PCMMIO_AI_2ND_ADC_OFFSET		0x04
 
 #define PCMMIO_AO_LSB_REG			0x08
@@ -127,14 +116,14 @@
 #define PCMMIO_AO_CMD_CHAN_SEL(x)		(((x) & 0x03) << 1)
 #define PCMMIO_AO_CMD_CHAN_SEL_ALL		(0x0f << 0)
 #define PCMMIO_AO_STATUS_REG			0x0b
-#define PCMMIO_AO_STATUS_DATA_READY		(1 << 7)
-#define PCMMIO_AO_STATUS_DATA_DMA_PEND		(1 << 6)
-#define PCMMIO_AO_STATUS_CMD_DMA_PEND		(1 << 5)
-#define PCMMIO_AO_STATUS_IRQ_PEND		(1 << 4)
-#define PCMMIO_AO_STATUS_DATA_DRQ_ENA		(1 << 2)
-#define PCMMIO_AO_STATUS_REG_SEL		(1 << 3)
-#define PCMMIO_AO_STATUS_CMD_DRQ_ENA		(1 << 1)
-#define PCMMIO_AO_STATUS_IRQ_ENA		(1 << 0)
+#define PCMMIO_AO_STATUS_DATA_READY		BIT(7)
+#define PCMMIO_AO_STATUS_DATA_DMA_PEND		BIT(6)
+#define PCMMIO_AO_STATUS_CMD_DMA_PEND		BIT(5)
+#define PCMMIO_AO_STATUS_IRQ_PEND		BIT(4)
+#define PCMMIO_AO_STATUS_DATA_DRQ_ENA		BIT(2)
+#define PCMMIO_AO_STATUS_REG_SEL		BIT(3)
+#define PCMMIO_AO_STATUS_CMD_DRQ_ENA		BIT(1)
+#define PCMMIO_AO_STATUS_IRQ_ENA		BIT(0)
 #define PCMMIO_AO_RESOURCE_ENA_REG		0x0b
 #define PCMMIO_AO_2ND_DAC_OFFSET		0x04
 
@@ -190,7 +179,6 @@ struct pcmmio_private {
 	spinlock_t pagelock;	/* protects the page registers */
 	spinlock_t spinlock;	/* protects the member variables */
 	unsigned int enabled_mask;
-	unsigned int stop_count;
 	unsigned int active:1;
 };
 
@@ -337,7 +325,6 @@ static void pcmmio_handle_dio_intr(struct comedi_device *dev,
 {
 	struct pcmmio_private *devpriv = dev->private;
 	struct comedi_cmd *cmd = &s->async->cmd;
-	unsigned int oldevents = s->async->events;
 	unsigned int val = 0;
 	unsigned long flags;
 	int i;
@@ -357,31 +344,16 @@ static void pcmmio_handle_dio_intr(struct comedi_device *dev,
 			val |= (1 << i);
 	}
 
-	/* Write the scan to the buffer. */
-	if (comedi_buf_put(s, val) &&
-	    comedi_buf_put(s, val >> 16)) {
-		s->async->events |= (COMEDI_CB_BLOCK | COMEDI_CB_EOS);
-	} else {
-		/* Overflow! Stop acquisition!! */
-		/* TODO: STOP_ACQUISITION_CALL_HERE!! */
-		pcmmio_stop_intr(dev, s);
-	}
+	comedi_buf_write_samples(s, &val, 1);
 
-	/* Check for end of acquisition. */
-	if (cmd->stop_src == TRIG_COUNT && devpriv->stop_count > 0) {
-		devpriv->stop_count--;
-		if (devpriv->stop_count == 0) {
-			s->async->events |= COMEDI_CB_EOA;
-			/* TODO: STOP_ACQUISITION_CALL_HERE!! */
-			pcmmio_stop_intr(dev, s);
-		}
-	}
+	if (cmd->stop_src == TRIG_COUNT &&
+	    s->async->scans_done >= cmd->stop_arg)
+		s->async->events |= COMEDI_CB_EOA;
 
 done:
 	spin_unlock_irqrestore(&devpriv->spinlock, flags);
 
-	if (oldevents != s->async->events)
-		comedi_event(dev, s);
+	comedi_handle_events(dev, s);
 }
 
 static irqreturn_t interrupt_pcmmio(int irq, void *d)
@@ -481,8 +453,6 @@ static int pcmmio_cmd(struct comedi_device *dev, struct comedi_subdevice *s)
 	spin_lock_irqsave(&devpriv->spinlock, flags);
 	devpriv->active = 1;
 
-	devpriv->stop_count = cmd->stop_arg;
-
 	/* Set up start of acquisition. */
 	if (cmd->start_src == TRIG_INT)
 		s->async->inttrig = pcmmio_inttrig_start_intr;
@@ -502,19 +472,19 @@ static int pcmmio_cmdtest(struct comedi_device *dev,
 
 	/* Step 1 : check if triggers are trivially valid */
 
-	err |= cfc_check_trigger_src(&cmd->start_src, TRIG_NOW | TRIG_INT);
-	err |= cfc_check_trigger_src(&cmd->scan_begin_src, TRIG_EXT);
-	err |= cfc_check_trigger_src(&cmd->convert_src, TRIG_NOW);
-	err |= cfc_check_trigger_src(&cmd->scan_end_src, TRIG_COUNT);
-	err |= cfc_check_trigger_src(&cmd->stop_src, TRIG_COUNT | TRIG_NONE);
+	err |= comedi_check_trigger_src(&cmd->start_src, TRIG_NOW | TRIG_INT);
+	err |= comedi_check_trigger_src(&cmd->scan_begin_src, TRIG_EXT);
+	err |= comedi_check_trigger_src(&cmd->convert_src, TRIG_NOW);
+	err |= comedi_check_trigger_src(&cmd->scan_end_src, TRIG_COUNT);
+	err |= comedi_check_trigger_src(&cmd->stop_src, TRIG_COUNT | TRIG_NONE);
 
 	if (err)
 		return 1;
 
 	/* Step 2a : make sure trigger sources are unique */
 
-	err |= cfc_check_trigger_is_unique(cmd->start_src);
-	err |= cfc_check_trigger_is_unique(cmd->stop_src);
+	err |= comedi_check_trigger_is_unique(cmd->start_src);
+	err |= comedi_check_trigger_is_unique(cmd->stop_src);
 
 	/* Step 2b : and mutually compatible */
 
@@ -523,15 +493,16 @@ static int pcmmio_cmdtest(struct comedi_device *dev,
 
 	/* Step 3: check if arguments are trivially valid */
 
-	err |= cfc_check_trigger_arg_is(&cmd->start_arg, 0);
-	err |= cfc_check_trigger_arg_is(&cmd->scan_begin_arg, 0);
-	err |= cfc_check_trigger_arg_is(&cmd->convert_arg, 0);
-	err |= cfc_check_trigger_arg_is(&cmd->scan_end_arg, cmd->chanlist_len);
+	err |= comedi_check_trigger_arg_is(&cmd->start_arg, 0);
+	err |= comedi_check_trigger_arg_is(&cmd->scan_begin_arg, 0);
+	err |= comedi_check_trigger_arg_is(&cmd->convert_arg, 0);
+	err |= comedi_check_trigger_arg_is(&cmd->scan_end_arg,
+					   cmd->chanlist_len);
 
 	if (cmd->stop_src == TRIG_COUNT)
-		err |= cfc_check_trigger_arg_min(&cmd->stop_arg, 1);
+		err |= comedi_check_trigger_arg_min(&cmd->stop_arg, 1);
 	else	/* TRIG_NONE */
-		err |= cfc_check_trigger_arg_is(&cmd->stop_arg, 0);
+		err |= comedi_check_trigger_arg_is(&cmd->stop_arg, 0);
 
 	if (err)
 		return 3;
@@ -751,7 +722,6 @@ static int pcmmio_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	s->maxdata	= 0xffff;
 	s->range_table	= &pcmmio_ao_ranges;
 	s->insn_write	= pcmmio_ao_insn_write;
-	s->insn_read	= comedi_readback_insn_read;
 
 	ret = comedi_alloc_subdev_readback(s);
 	if (ret)
@@ -774,7 +744,7 @@ static int pcmmio_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	s->insn_config	= pcmmio_dio_insn_config;
 	if (dev->irq) {
 		dev->read_subdev = s;
-		s->subdev_flags	|= SDF_CMD_READ;
+		s->subdev_flags	|= SDF_CMD_READ | SDF_LSAMPL | SDF_PACKED;
 		s->len_chanlist	= s->n_chan;
 		s->cancel	= pcmmio_cancel;
 		s->do_cmd	= pcmmio_cmd;
@@ -802,6 +772,6 @@ static struct comedi_driver pcmmio_driver = {
 };
 module_comedi_driver(pcmmio_driver);
 
-MODULE_AUTHOR("Comedi http://www.comedi.org");
+MODULE_AUTHOR("Comedi https://www.comedi.org");
 MODULE_DESCRIPTION("Comedi driver for Winsystems PCM-MIO PC/104 board");
 MODULE_LICENSE("GPL");

@@ -1,10 +1,12 @@
-/include/ "skeleton.dtsi"
+// SPDX-License-Identifier: GPL-2.0
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/gpio/gpio.h>
 
 #define MBUS_ID(target,attributes) (((target) << 24) | ((attributes) << 16))
 
 / {
+	#address-cells = <1>;
+	#size-cells = <1>;
 	compatible = "marvell,kirkwood";
 	interrupt-parent = <&intc>;
 
@@ -27,7 +29,7 @@
 	       i2c0 = &i2c0;
 	};
 
-	mbus {
+	mbus@f1000000 {
 		compatible = "marvell,kirkwood-mbus", "simple-bus";
 		#address-cells = <2>;
 		#size-cells = <1>;
@@ -40,17 +42,7 @@
 		pcie-mem-aperture = <0xe0000000 0x10000000>; /* 256 MiB memory space */
 		pcie-io-aperture  = <0xf2000000 0x100000>;   /*   1 MiB    I/O space */
 
-		cesa: crypto@0301 {
-			compatible = "marvell,orion-crypto";
-			reg = <MBUS_ID(0xf0, 0x01) 0x30000 0x10000>,
-			      <MBUS_ID(0x03, 0x01) 0 0x800>;
-			reg-names = "regs", "sram";
-			interrupts = <22>;
-			clocks = <&gate_clk 17>;
-			status = "okay";
-		};
-
-		nand: nand@012f {
+		nand: nand@12f {
 			#address-cells = <1>;
 			#size-cells = <1>;
 			cle = <0>;
@@ -64,6 +56,14 @@
 			pinctrl-0 = <&pmx_nand>;
 			pinctrl-names = "default";
 			status = "disabled";
+		};
+
+		crypto_sram: sa-sram@301 {
+			compatible = "mmio-sram";
+			reg = <MBUS_ID(0x03, 0x01) 0x0 0x800>;
+			clocks = <&gate_clk 17>;
+			#address-cells = <1>;
+			#size-cells = <1>;
 		};
 	};
 
@@ -228,7 +228,7 @@
 			reg = <0x20128 0x4>;
 		};
 
-		intc: main-interrupt-ctrl@20200 {
+		intc: interrupt-controller@20200 {
 			compatible = "marvell,orion-intc";
 			interrupt-controller;
 			#interrupt-cells = <1>;
@@ -249,6 +249,17 @@
 			interrupt-parent = <&bridge_intc>;
 			interrupts = <3>;
 			clocks = <&gate_clk 7>;
+			status = "okay";
+		};
+
+		cesa: crypto@30000 {
+			compatible = "marvell,kirkwood-crypto";
+			reg = <0x30000 0x10000>;
+			reg-names = "regs";
+			interrupts = <22>;
+			clocks = <&gate_clk 17>;
+			marvell,crypto-srams = <&crypto_sram>;
+			marvell,crypto-sram-size = <0x800>;
 			status = "okay";
 		};
 

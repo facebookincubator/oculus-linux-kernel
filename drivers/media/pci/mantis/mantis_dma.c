@@ -1,21 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
 	Mantis PCI bridge driver
 
 	Copyright (C) Manu Abraham (abraham.manu@gmail.com)
 
-	This program is free software; you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation; either version 2 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program; if not, write to the Free Software
-	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
 #include <linux/kernel.h>
@@ -28,11 +16,11 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 
-#include "dmxdev.h"
-#include "dvbdev.h"
-#include "dvb_demux.h"
-#include "dvb_frontend.h"
-#include "dvb_net.h"
+#include <media/dmxdev.h>
+#include <media/dvbdev.h>
+#include <media/dvb_demux.h>
+#include <media/dvb_frontend.h>
+#include <media/dvb_net.h>
 
 #include "mantis_common.h"
 #include "mantis_reg.h"
@@ -130,21 +118,20 @@ err:
 
 int mantis_dma_init(struct mantis_pci *mantis)
 {
-	int err = 0;
+	int err;
 
 	dprintk(MANTIS_DEBUG, 1, "Mantis DMA init");
-	if (mantis_alloc_buffers(mantis) < 0) {
+	err = mantis_alloc_buffers(mantis);
+	if (err < 0) {
 		dprintk(MANTIS_ERROR, 1, "Error allocating DMA buffer");
 
 		/* Stop RISC Engine */
 		mmwrite(0, MANTIS_DMA_CTL);
 
-		goto err;
+		return err;
 	}
 
 	return 0;
-err:
-	return err;
 }
 EXPORT_SYMBOL_GPL(mantis_dma_init);
 
@@ -190,7 +177,7 @@ void mantis_dma_start(struct mantis_pci *mantis)
 	mmwrite(0, MANTIS_DMA_CTL);
 	mantis->last_block = mantis->busy_block = 0;
 
-	mmwrite(mmread(MANTIS_INT_MASK) | MANTIS_INT_RISCI, MANTIS_INT_MASK);
+	mantis_unmask_ints(mantis, MANTIS_INT_RISCI);
 
 	mmwrite(MANTIS_FIFO_EN | MANTIS_DCAP_EN
 			       | MANTIS_RISC_EN, MANTIS_DMA_CTL);
@@ -209,14 +196,13 @@ void mantis_dma_stop(struct mantis_pci *mantis)
 
 	mmwrite(mmread(MANTIS_INT_STAT), MANTIS_INT_STAT);
 
-	mmwrite(mmread(MANTIS_INT_MASK) & ~(MANTIS_INT_RISCI |
-					    MANTIS_INT_RISCEN), MANTIS_INT_MASK);
+	mantis_mask_ints(mantis, MANTIS_INT_RISCI | MANTIS_INT_RISCEN);
 }
 
 
-void mantis_dma_xfer(unsigned long data)
+void mantis_dma_xfer(struct tasklet_struct *t)
 {
-	struct mantis_pci *mantis = (struct mantis_pci *) data;
+	struct mantis_pci *mantis = from_tasklet(mantis, t, tasklet);
 	struct mantis_hwconfig *config = mantis->hwconfig;
 
 	while (mantis->last_block != mantis->busy_block) {

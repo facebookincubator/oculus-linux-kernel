@@ -1,5 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- *    pata_ns87415.c - NS87415 (non PARISC) PATA
+ *    pata_ns87415.c - NS87415 (and PARISC SUPERIO 87560) PATA
  *
  *	(C) 2005 Red Hat <alan@lxorguk.ukuu.org.uk>
  *
@@ -15,7 +16,6 @@
  *    systems. This has its own special mountain of errata.
  *
  *    TODO:
- *	Test PARISC SuperIO
  *	Get someone to test on SPARC
  *	Implement lazy pio/dma switching for better performance
  *	8bit shared timing.
@@ -260,7 +260,7 @@ static u8 ns87560_check_status(struct ata_port *ap)
  *	LOCKING:
  *	Inherited from caller.
  */
-void ns87560_tf_read(struct ata_port *ap, struct ata_taskfile *tf)
+static void ns87560_tf_read(struct ata_port *ap, struct ata_taskfile *tf)
 {
 	struct ata_ioports *ioaddr = &ap->ioaddr;
 

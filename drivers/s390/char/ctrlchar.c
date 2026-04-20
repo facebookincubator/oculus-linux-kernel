@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  Unified handling of special chars.
  *
@@ -14,15 +15,21 @@
 #include "ctrlchar.h"
 
 #ifdef CONFIG_MAGIC_SYSRQ
-static int ctrlchar_sysrq_key;
+static struct sysrq_work ctrlchar_sysrq;
 
 static void
 ctrlchar_handle_sysrq(struct work_struct *work)
 {
-	handle_sysrq(ctrlchar_sysrq_key);
+	struct sysrq_work *sysrq = container_of(work, struct sysrq_work, work);
+
+	handle_sysrq(sysrq->key);
 }
 
-static DECLARE_WORK(ctrlchar_work, ctrlchar_handle_sysrq);
+void schedule_sysrq_work(struct sysrq_work *sw)
+{
+	INIT_WORK(&sw->work, ctrlchar_handle_sysrq);
+	schedule_work(&sw->work);
+}
 #endif
 
 
@@ -51,8 +58,8 @@ ctrlchar_handle(const unsigned char *buf, int len, struct tty_struct *tty)
 #ifdef CONFIG_MAGIC_SYSRQ
 	/* racy */
 	if (len == 3 && buf[1] == '-') {
-		ctrlchar_sysrq_key = buf[2];
-		schedule_work(&ctrlchar_work);
+		ctrlchar_sysrq.key = buf[2];
+		schedule_sysrq_work(&ctrlchar_sysrq);
 		return CTRLCHAR_SYSRQ;
 	}
 #endif

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  Copyright (C) 1991, 1992  Linus Torvalds
  */
@@ -69,7 +70,8 @@
 #include <linux/errno.h>
 #include <linux/signal.h>
 #include <linux/fcntl.h>
-#include <linux/sched.h>
+#include <linux/sched/signal.h>
+#include <linux/sched/task.h>
 #include <linux/interrupt.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
@@ -85,6 +87,7 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/poll.h>
+#include <linux/ppp-ioctl.h>
 #include <linux/proc_fs.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -95,6 +98,7 @@
 #include <linux/seq_file.h>
 #include <linux/serial.h>
 #include <linux/ratelimit.h>
+#include <linux/compat.h>
 
 #include <linux/uaccess.h>
 
@@ -104,8 +108,14 @@
 
 #include <linux/kmod.h>
 #include <linux/nsproxy.h>
+#include "tty.h"
 
 #undef TTY_DEBUG_HANGUP
+#ifdef TTY_DEBUG_HANGUP
+# define tty_debug_hangup(tty, f, args...)	tty_debug(tty, f, ##args)
+#else
+# define tty_debug_hangup(tty, f, args...)	do { } while (0)
+#endif
 
 #define TTY_PARANOIA_CHECK 1
 #define CHECK_TTY_COUNT 1
@@ -118,7 +128,8 @@ struct ktermios tty_std_termios = {	/* for the benefit of tty drivers  */
 		   ECHOCTL | ECHOKE | IEXTEN,
 	.c_cc = INIT_C_CC,
 	.c_ispeed = 38400,
-	.c_ospeed = 38400
+	.c_ospeed = 38400,
+	/* .c_line = N_TTY, */
 };
 
 EXPORT_SYMBOL(tty_std_termios);
@@ -129,21 +140,13 @@ EXPORT_SYMBOL(tty_std_termios);
 
 LIST_HEAD(tty_drivers);			/* linked list of tty drivers */
 
-/* Mutex to protect creating and releasing a tty. This is shared with
-   vt.c for deeply disgusting hack reasons */
+/* Mutex to protect creating and releasing a tty */
 DEFINE_MUTEX(tty_mutex);
-EXPORT_SYMBOL(tty_mutex);
 
-/* Spinlock to protect the tty->tty_files list */
-DEFINE_SPINLOCK(tty_files_lock);
-
-static ssize_t tty_read(struct file *, char __user *, size_t, loff_t *);
-static ssize_t tty_write(struct file *, const char __user *, size_t, loff_t *);
-ssize_t redirected_tty_write(struct file *, const char __user *,
-							size_t, loff_t *);
-static unsigned int tty_poll(struct file *, poll_table *);
+static ssize_t tty_read(struct kiocb *, struct iov_iter *);
+static ssize_t tty_write(struct kiocb *, struct iov_iter *);
+static __poll_t tty_poll(struct file *, poll_table *);
 static int tty_open(struct inode *, struct file *);
-long tty_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 #ifdef CONFIG_COMPAT
 static long tty_compat_ioctl(struct file *file, unsigned int cmd,
 				unsigned long arg);
@@ -153,8 +156,6 @@ static long tty_compat_ioctl(struct file *file, unsigned int cmd,
 static int __tty_fasync(int fd, struct file *filp, int on);
 static int tty_fasync(int fd, struct file *filp, int on);
 static void release_tty(struct tty_struct *tty, int idx);
-static void __proc_set_tty(struct task_struct *tsk, struct tty_struct *tty);
-static void proc_set_tty(struct task_struct *tsk, struct tty_struct *tty);
 
 /**
  *	free_tty_struct		-	free a disused tty
@@ -165,12 +166,10 @@ static void proc_set_tty(struct task_struct *tsk, struct tty_struct *tty);
  *	Locking: none. Must be called after tty is definitely unused
  */
 
-void free_tty_struct(struct tty_struct *tty)
+static void free_tty_struct(struct tty_struct *tty)
 {
-	if (!tty)
-		return;
-	if (tty->dev)
-		put_device(tty->dev);
+	tty_ldisc_deinit(tty);
+	put_device(tty->dev);
 	kfree(tty->write_buf);
 	tty->magic = 0xDEADDEAD;
 	kfree(tty);
@@ -202,9 +201,9 @@ void tty_add_file(struct tty_struct *tty, struct file *file)
 	priv->tty = tty;
 	priv->file = file;
 
-	spin_lock(&tty_files_lock);
+	spin_lock(&tty->files_lock);
 	list_add(&priv->list, &tty->tty_files);
-	spin_unlock(&tty_files_lock);
+	spin_unlock(&tty->files_lock);
 }
 
 /**
@@ -225,20 +224,17 @@ void tty_free_file(struct file *file)
 static void tty_del_file(struct file *file)
 {
 	struct tty_file_private *priv = file->private_data;
+	struct tty_struct *tty = priv->tty;
 
-	spin_lock(&tty_files_lock);
+	spin_lock(&tty->files_lock);
 	list_del(&priv->list);
-	spin_unlock(&tty_files_lock);
+	spin_unlock(&tty->files_lock);
 	tty_free_file(file);
 }
-
-
-#define TTY_NUMBER(tty) ((tty)->index + (tty)->driver->name_base)
 
 /**
  *	tty_name	-	return tty naming
  *	@tty: tty structure
- *	@buf: buffer for output
  *
  *	Convert a tty structure into a name. The name reflects the kernel
  *	naming policy and if udev is in use may not reflect user space
@@ -246,30 +242,33 @@ static void tty_del_file(struct file *file)
  *	Locking: none
  */
 
-char *tty_name(struct tty_struct *tty, char *buf)
+const char *tty_name(const struct tty_struct *tty)
 {
 	if (!tty) /* Hmm.  NULL pointer.  That's fun. */
-		strcpy(buf, "NULL tty");
-	else
-		strcpy(buf, tty->name);
-	return buf;
+		return "NULL tty";
+	return tty->name;
 }
 
 EXPORT_SYMBOL(tty_name);
 
-int tty_paranoia_check(struct tty_struct *tty, struct inode *inode,
+const char *tty_driver_name(const struct tty_struct *tty)
+{
+	if (!tty || !tty->driver)
+		return "";
+	return tty->driver->name;
+}
+
+static int tty_paranoia_check(struct tty_struct *tty, struct inode *inode,
 			      const char *routine)
 {
 #ifdef TTY_PARANOIA_CHECK
 	if (!tty) {
-		printk(KERN_WARNING
-			"null TTY for (%d:%d) in %s\n",
+		pr_warn("(%d:%d): %s: NULL tty\n",
 			imajor(inode), iminor(inode), routine);
 		return 1;
 	}
 	if (tty->magic != TTY_MAGIC) {
-		printk(KERN_WARNING
-			"bad magic number for tty struct (%d:%d) in %s\n",
+		pr_warn("(%d:%d): %s: bad magic number\n",
 			imajor(inode), iminor(inode), routine);
 		return 1;
 	}
@@ -277,26 +276,28 @@ int tty_paranoia_check(struct tty_struct *tty, struct inode *inode,
 	return 0;
 }
 
+/* Caller must hold tty_lock */
 static int check_tty_count(struct tty_struct *tty, const char *routine)
 {
 #ifdef CHECK_TTY_COUNT
 	struct list_head *p;
-	int count = 0;
+	int count = 0, kopen_count = 0;
 
-	spin_lock(&tty_files_lock);
+	spin_lock(&tty->files_lock);
 	list_for_each(p, &tty->tty_files) {
 		count++;
 	}
-	spin_unlock(&tty_files_lock);
+	spin_unlock(&tty->files_lock);
 	if (tty->driver->type == TTY_DRIVER_TYPE_PTY &&
 	    tty->driver->subtype == PTY_TYPE_SLAVE &&
 	    tty->link && tty->link->count)
 		count++;
-	if (tty->count != count) {
-		printk(KERN_WARNING "Warning: dev (%s) tty->count(%d) "
-				    "!= #fd's(%d) in %s\n",
-		       tty->name, tty->count, count, routine);
-		return count;
+	if (tty_port_kopened(tty->port))
+		kopen_count++;
+	if (tty->count != (count + kopen_count)) {
+		tty_warn(tty, "%s: tty->count(%d) != (#fd's(%d) + #kopen's(%d))\n",
+			 routine, tty->count, count, kopen_count);
+		return (count + kopen_count);
 	}
 #endif
 	return 0;
@@ -304,7 +305,7 @@ static int check_tty_count(struct tty_struct *tty, const char *routine)
 
 /**
  *	get_tty_driver		-	find device of a tty
- *	@dev_t: device identifier
+ *	@device: device identifier
  *	@index: returns the index of the tty
  *
  *	This routine returns a tty driver structure, given a device number
@@ -326,6 +327,56 @@ static struct tty_driver *get_tty_driver(dev_t device, int *index)
 	}
 	return NULL;
 }
+
+/**
+ *	tty_dev_name_to_number	-	return dev_t for device name
+ *	@name: user space name of device under /dev
+ *	@number: pointer to dev_t that this function will populate
+ *
+ *	This function converts device names like ttyS0 or ttyUSB1 into dev_t
+ *	like (4, 64) or (188, 1). If no corresponding driver is registered then
+ *	the function returns -ENODEV.
+ *
+ *	Locking: this acquires tty_mutex to protect the tty_drivers list from
+ *		being modified while we are traversing it, and makes sure to
+ *		release it before exiting.
+ */
+int tty_dev_name_to_number(const char *name, dev_t *number)
+{
+	struct tty_driver *p;
+	int ret;
+	int index, prefix_length = 0;
+	const char *str;
+
+	for (str = name; *str && !isdigit(*str); str++)
+		;
+
+	if (!*str)
+		return -EINVAL;
+
+	ret = kstrtoint(str, 10, &index);
+	if (ret)
+		return ret;
+
+	prefix_length = str - name;
+	mutex_lock(&tty_mutex);
+
+	list_for_each_entry(p, &tty_drivers, tty_drivers)
+		if (prefix_length == strlen(p->name) && strncmp(name,
+					p->name, prefix_length) == 0) {
+			if (index < p->num) {
+				*number = MKDEV(p->major, p->minor_start + index);
+				goto out;
+			}
+		}
+
+	/* if here then driver wasn't found */
+	ret = -ENODEV;
+out:
+	mutex_unlock(&tty_mutex);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(tty_dev_name_to_number);
 
 #ifdef CONFIG_CONSOLE_POLL
 
@@ -357,7 +408,7 @@ struct tty_driver *tty_find_polling_driver(char *name, int *line)
 	mutex_lock(&tty_mutex);
 	/* Search through the tty devices to look for a match */
 	list_for_each_entry(p, &tty_drivers, tty_drivers) {
-		if (strncmp(name, p->name, len) != 0)
+		if (!len || strncmp(name, p->name, len) != 0)
 			continue;
 		stp = str;
 		if (*stp == ',')
@@ -379,68 +430,20 @@ struct tty_driver *tty_find_polling_driver(char *name, int *line)
 EXPORT_SYMBOL_GPL(tty_find_polling_driver);
 #endif
 
-/**
- *	tty_check_change	-	check for POSIX terminal changes
- *	@tty: tty to check
- *
- *	If we try to write to, or set the state of, a terminal and we're
- *	not in the foreground, send a SIGTTOU.  If the signal is blocked or
- *	ignored, go ahead and perform the operation.  (POSIX 7.2)
- *
- *	Locking: ctrl_lock
- */
-
-int tty_check_change(struct tty_struct *tty)
-{
-	unsigned long flags;
-	int ret = 0;
-
-	if (current->signal->tty != tty)
-		return 0;
-
-	spin_lock_irqsave(&tty->ctrl_lock, flags);
-
-	if (!tty->pgrp) {
-		printk(KERN_WARNING "tty_check_change: tty->pgrp == NULL!\n");
-		goto out_unlock;
-	}
-	if (task_pgrp(current) == tty->pgrp)
-		goto out_unlock;
-	spin_unlock_irqrestore(&tty->ctrl_lock, flags);
-	if (is_ignored(SIGTTOU))
-		goto out;
-	if (is_current_pgrp_orphaned()) {
-		ret = -EIO;
-		goto out;
-	}
-	kill_pgrp(task_pgrp(current), SIGTTOU, 1);
-	set_thread_flag(TIF_SIGPENDING);
-	ret = -ERESTARTSYS;
-out:
-	return ret;
-out_unlock:
-	spin_unlock_irqrestore(&tty->ctrl_lock, flags);
-	return ret;
-}
-
-EXPORT_SYMBOL(tty_check_change);
-
-static ssize_t hung_up_tty_read(struct file *file, char __user *buf,
-				size_t count, loff_t *ppos)
+static ssize_t hung_up_tty_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	return 0;
 }
 
-static ssize_t hung_up_tty_write(struct file *file, const char __user *buf,
-				 size_t count, loff_t *ppos)
+static ssize_t hung_up_tty_write(struct kiocb *iocb, struct iov_iter *from)
 {
 	return -EIO;
 }
 
 /* No kernel lock held - none needed ;) */
-static unsigned int hung_up_tty_poll(struct file *filp, poll_table *wait)
+static __poll_t hung_up_tty_poll(struct file *filp, poll_table *wait)
 {
-	return POLLIN | POLLOUT | POLLERR | POLLHUP | POLLRDNORM | POLLWRNORM;
+	return EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDNORM | EPOLLWRNORM;
 }
 
 static long hung_up_tty_ioctl(struct file *file, unsigned int cmd,
@@ -455,22 +458,40 @@ static long hung_up_tty_compat_ioctl(struct file *file,
 	return cmd == TIOCSPGRP ? -ENOTTY : -EIO;
 }
 
+static int hung_up_tty_fasync(int fd, struct file *file, int on)
+{
+	return -ENOTTY;
+}
+
+static void tty_show_fdinfo(struct seq_file *m, struct file *file)
+{
+	struct tty_struct *tty = file_tty(file);
+
+	if (tty && tty->ops && tty->ops->show_fdinfo)
+		tty->ops->show_fdinfo(tty, m);
+}
+
 static const struct file_operations tty_fops = {
 	.llseek		= no_llseek,
-	.read		= tty_read,
-	.write		= tty_write,
+	.read_iter	= tty_read,
+	.write_iter	= tty_write,
+	.splice_read	= generic_file_splice_read,
+	.splice_write	= iter_file_splice_write,
 	.poll		= tty_poll,
 	.unlocked_ioctl	= tty_ioctl,
 	.compat_ioctl	= tty_compat_ioctl,
 	.open		= tty_open,
 	.release	= tty_release,
 	.fasync		= tty_fasync,
+	.show_fdinfo	= tty_show_fdinfo,
 };
 
 static const struct file_operations console_fops = {
 	.llseek		= no_llseek,
-	.read		= tty_read,
-	.write		= redirected_tty_write,
+	.read_iter	= tty_read,
+	.write_iter	= redirected_tty_write,
+	.splice_read	= generic_file_splice_read,
+	.splice_write	= iter_file_splice_write,
 	.poll		= tty_poll,
 	.unlocked_ioctl	= tty_ioctl,
 	.compat_ioctl	= tty_compat_ioctl,
@@ -481,16 +502,19 @@ static const struct file_operations console_fops = {
 
 static const struct file_operations hung_up_tty_fops = {
 	.llseek		= no_llseek,
-	.read		= hung_up_tty_read,
-	.write		= hung_up_tty_write,
+	.read_iter	= hung_up_tty_read,
+	.write_iter	= hung_up_tty_write,
 	.poll		= hung_up_tty_poll,
 	.unlocked_ioctl	= hung_up_tty_ioctl,
 	.compat_ioctl	= hung_up_tty_compat_ioctl,
 	.release	= tty_release,
+	.fasync		= hung_up_tty_fasync,
 };
 
 static DEFINE_SPINLOCK(redirect_lock);
 static struct file *redirect;
+
+extern void tty_sysctl_init(void);
 
 /**
  *	tty_wakeup	-	request more data
@@ -513,68 +537,14 @@ void tty_wakeup(struct tty_struct *tty)
 			tty_ldisc_deref(ld);
 		}
 	}
-	wake_up_interruptible_poll(&tty->write_wait, POLLOUT);
+	wake_up_interruptible_poll(&tty->write_wait, EPOLLOUT);
 }
 
 EXPORT_SYMBOL_GPL(tty_wakeup);
 
 /**
- *	tty_signal_session_leader	- sends SIGHUP to session leader
- *	@tty		controlling tty
- *	@exit_session	if non-zero, signal all foreground group processes
- *
- *	Send SIGHUP and SIGCONT to the session leader and its process group.
- *	Optionally, signal all processes in the foreground process group.
- *
- *	Returns the number of processes in the session with this tty
- *	as their controlling terminal. This value is used to drop
- *	tty references for those processes.
- */
-static int tty_signal_session_leader(struct tty_struct *tty, int exit_session)
-{
-	struct task_struct *p;
-	int refs = 0;
-	struct pid *tty_pgrp = NULL;
-
-	read_lock(&tasklist_lock);
-	if (tty->session) {
-		do_each_pid_task(tty->session, PIDTYPE_SID, p) {
-			spin_lock_irq(&p->sighand->siglock);
-			if (p->signal->tty == tty) {
-				p->signal->tty = NULL;
-				/* We defer the dereferences outside fo
-				   the tasklist lock */
-				refs++;
-			}
-			if (!p->signal->leader) {
-				spin_unlock_irq(&p->sighand->siglock);
-				continue;
-			}
-			__group_send_sig_info(SIGHUP, SEND_SIG_PRIV, p);
-			__group_send_sig_info(SIGCONT, SEND_SIG_PRIV, p);
-			put_pid(p->signal->tty_old_pgrp);  /* A noop */
-			spin_lock(&tty->ctrl_lock);
-			tty_pgrp = get_pid(tty->pgrp);
-			if (tty->pgrp)
-				p->signal->tty_old_pgrp = get_pid(tty->pgrp);
-			spin_unlock(&tty->ctrl_lock);
-			spin_unlock_irq(&p->sighand->siglock);
-		} while_each_pid_task(tty->session, PIDTYPE_SID, p);
-	}
-	read_unlock(&tasklist_lock);
-
-	if (tty_pgrp) {
-		if (exit_session)
-			kill_pgrp(tty_pgrp, SIGHUP, exit_session);
-		put_pid(tty_pgrp);
-	}
-
-	return refs;
-}
-
-/**
  *	__tty_hangup		-	actual handler for hangup events
- *	@work: tty device
+ *	@tty: tty device
  *
  *	This can be called by a "kworker" kernel thread.  That is process
  *	synchronous but doesn't hold any locks, so we need to make sure we
@@ -620,7 +590,12 @@ static void __tty_hangup(struct tty_struct *tty, int exit_session)
 		return;
 	}
 
-	/* some functions below drop BTM, so we need this bit */
+	/*
+	 * Some console devices aren't actually hung up for technical and
+	 * historical reasons, which can lead to indefinite interruptible
+	 * sleep in n_tty_read().  The following explicitly tells
+	 * n_tty_read() to abort readers.
+	 */
 	set_bit(TTY_HUPPING, &tty->flags);
 
 	/* inuse_filps is protected by the single tty lock,
@@ -628,30 +603,26 @@ static void __tty_hangup(struct tty_struct *tty, int exit_session)
 	   workqueue with the lock held */
 	check_tty_count(tty, "tty_hangup");
 
-	spin_lock(&tty_files_lock);
+	spin_lock(&tty->files_lock);
 	/* This breaks for file handles being sent over AF_UNIX sockets ? */
 	list_for_each_entry(priv, &tty->tty_files, list) {
 		filp = priv->file;
-		if (filp->f_op->write == redirected_tty_write)
+		if (filp->f_op->write_iter == redirected_tty_write)
 			cons_filp = filp;
-		if (filp->f_op->write != tty_write)
+		if (filp->f_op->write_iter != tty_write)
 			continue;
 		closecount++;
 		__tty_fasync(-1, filp, 0);	/* can't block */
 		filp->f_op = &hung_up_tty_fops;
 	}
-	spin_unlock(&tty_files_lock);
+	spin_unlock(&tty->files_lock);
 
 	refs = tty_signal_session_leader(tty, exit_session);
 	/* Account for the p->signal references we killed */
 	while (refs--)
 		tty_kref_put(tty);
 
-	/*
-	 * it drops BTM and thus races with reopen
-	 * we protect the race by TTY_HUPPING
-	 */
-	tty_ldisc_hangup(tty);
+	tty_ldisc_hangup(tty, cons_filp != NULL);
 
 	spin_lock_irq(&tty->ctrl_lock);
 	clear_bit(TTY_THROTTLED, &tty->flags);
@@ -676,14 +647,12 @@ static void __tty_hangup(struct tty_struct *tty, int exit_session)
 	} else if (tty->ops->hangup)
 		tty->ops->hangup(tty);
 	/*
-	 * We don't want to have driver/ldisc interactions beyond
-	 * the ones we did here. The driver layer expects no
-	 * calls after ->hangup() from the ldisc side. However we
-	 * can't yet guarantee all that.
+	 * We don't want to have driver/ldisc interactions beyond the ones
+	 * we did here. The driver layer expects no calls after ->hangup()
+	 * from the ldisc side, which is now guaranteed.
 	 */
 	set_bit(TTY_HUPPED, &tty->flags);
 	clear_bit(TTY_HUPPING, &tty->flags);
-
 	tty_unlock(tty);
 
 	if (f)
@@ -708,10 +677,7 @@ static void do_tty_hangup(struct work_struct *work)
 
 void tty_hangup(struct tty_struct *tty)
 {
-#ifdef TTY_DEBUG_HANGUP
-	char	buf[64];
-	printk(KERN_DEBUG "%s hangup...\n", tty_name(tty, buf));
-#endif
+	tty_debug_hangup(tty, "hangup\n");
 	schedule_work(&tty->hangup_work);
 }
 
@@ -728,11 +694,7 @@ EXPORT_SYMBOL(tty_hangup);
 
 void tty_vhangup(struct tty_struct *tty)
 {
-#ifdef TTY_DEBUG_HANGUP
-	char	buf[64];
-
-	printk(KERN_DEBUG "%s vhangup...\n", tty_name(tty, buf));
-#endif
+	tty_debug_hangup(tty, "vhangup\n");
 	__tty_hangup(tty, 0);
 }
 
@@ -767,13 +729,9 @@ void tty_vhangup_self(void)
  *	is complete. That guarantee is necessary for security reasons.
  */
 
-static void tty_vhangup_session(struct tty_struct *tty)
+void tty_vhangup_session(struct tty_struct *tty)
 {
-#ifdef TTY_DEBUG_HANGUP
-	char	buf[64];
-
-	printk(KERN_DEBUG "%s vhangup session...\n", tty_name(tty, buf));
-#endif
+	tty_debug_hangup(tty, "session hangup\n");
 	__tty_hangup(tty, 1);
 }
 
@@ -787,125 +745,10 @@ static void tty_vhangup_session(struct tty_struct *tty)
 
 int tty_hung_up_p(struct file *filp)
 {
-	return (filp->f_op == &hung_up_tty_fops);
+	return (filp && filp->f_op == &hung_up_tty_fops);
 }
 
 EXPORT_SYMBOL(tty_hung_up_p);
-
-static void session_clear_tty(struct pid *session)
-{
-	struct task_struct *p;
-	do_each_pid_task(session, PIDTYPE_SID, p) {
-		proc_clear_tty(p);
-	} while_each_pid_task(session, PIDTYPE_SID, p);
-}
-
-/**
- *	disassociate_ctty	-	disconnect controlling tty
- *	@on_exit: true if exiting so need to "hang up" the session
- *
- *	This function is typically called only by the session leader, when
- *	it wants to disassociate itself from its controlling tty.
- *
- *	It performs the following functions:
- * 	(1)  Sends a SIGHUP and SIGCONT to the foreground process group
- * 	(2)  Clears the tty from being controlling the session
- * 	(3)  Clears the controlling tty for all processes in the
- * 		session group.
- *
- *	The argument on_exit is set to 1 if called when a process is
- *	exiting; it is 0 if called by the ioctl TIOCNOTTY.
- *
- *	Locking:
- *		BTM is taken for hysterical raisins, and held when
- *		  called from no_tty().
- *		  tty_mutex is taken to protect tty
- *		  ->siglock is taken to protect ->signal/->sighand
- *		  tasklist_lock is taken to walk process list for sessions
- *		    ->siglock is taken to protect ->signal/->sighand
- */
-
-void disassociate_ctty(int on_exit)
-{
-	struct tty_struct *tty;
-
-	if (!current->signal->leader)
-		return;
-
-	tty = get_current_tty();
-	if (tty) {
-		if (on_exit && tty->driver->type != TTY_DRIVER_TYPE_PTY) {
-			tty_vhangup_session(tty);
-		} else {
-			struct pid *tty_pgrp = tty_get_pgrp(tty);
-			if (tty_pgrp) {
-				kill_pgrp(tty_pgrp, SIGHUP, on_exit);
-				if (!on_exit)
-					kill_pgrp(tty_pgrp, SIGCONT, on_exit);
-				put_pid(tty_pgrp);
-			}
-		}
-		tty_kref_put(tty);
-
-	} else if (on_exit) {
-		struct pid *old_pgrp;
-		spin_lock_irq(&current->sighand->siglock);
-		old_pgrp = current->signal->tty_old_pgrp;
-		current->signal->tty_old_pgrp = NULL;
-		spin_unlock_irq(&current->sighand->siglock);
-		if (old_pgrp) {
-			kill_pgrp(old_pgrp, SIGHUP, on_exit);
-			kill_pgrp(old_pgrp, SIGCONT, on_exit);
-			put_pid(old_pgrp);
-		}
-		return;
-	}
-
-	spin_lock_irq(&current->sighand->siglock);
-	put_pid(current->signal->tty_old_pgrp);
-	current->signal->tty_old_pgrp = NULL;
-	tty = tty_kref_get(current->signal->tty);
-	spin_unlock_irq(&current->sighand->siglock);
-
-	if (tty) {
-		unsigned long flags;
-
-		tty_lock(tty);
-		spin_lock_irqsave(&tty->ctrl_lock, flags);
-		put_pid(tty->session);
-		put_pid(tty->pgrp);
-		tty->session = NULL;
-		tty->pgrp = NULL;
-		spin_unlock_irqrestore(&tty->ctrl_lock, flags);
-		tty_unlock(tty);
-		tty_kref_put(tty);
-	} else {
-#ifdef TTY_DEBUG_HANGUP
-		printk(KERN_DEBUG "error attempted to write to tty [0x%p]"
-		       " = NULL", tty);
-#endif
-	}
-
-	/* Now clear signal->tty under the lock */
-	read_lock(&tasklist_lock);
-	session_clear_tty(task_session(current));
-	read_unlock(&tasklist_lock);
-}
-
-/**
- *
- *	no_tty	- Ensure the current process does not have a controlling tty
- */
-void no_tty(void)
-{
-	/* FIXME: Review locking here. The tty_lock never covered any race
-	   between a new association and proc_clear_tty but possible we need
-	   to protect against this anyway */
-	struct task_struct *tsk = current;
-	disassociate_ctty(0);
-	proc_clear_tty(tsk);
-}
-
 
 /**
  *	stop_tty	-	propagate flow control
@@ -930,7 +773,7 @@ void __stop_tty(struct tty_struct *tty)
 		return;
 	tty->stopped = 1;
 	if (tty->ops->stop)
-		(tty->ops->stop)(tty);
+		tty->ops->stop(tty);
 }
 
 void stop_tty(struct tty_struct *tty)
@@ -961,7 +804,7 @@ void __start_tty(struct tty_struct *tty)
 		return;
 	tty->stopped = 0;
 	if (tty->ops->start)
-		(tty->ops->start)(tty);
+		tty->ops->start(tty);
 	tty_wakeup(tty);
 }
 
@@ -975,13 +818,85 @@ void start_tty(struct tty_struct *tty)
 }
 EXPORT_SYMBOL(start_tty);
 
-/* We limit tty time update visibility to every 8 seconds or so. */
-static void tty_update_time(struct timespec *time)
+static void tty_update_time(struct timespec64 *time)
 {
-	unsigned long sec = get_seconds();
-	if (abs(sec - time->tv_sec) & ~7)
+	time64_t sec = ktime_get_real_seconds();
+
+	/*
+	 * We only care if the two values differ in anything other than the
+	 * lower three bits (i.e every 8 seconds).  If so, then we can update
+	 * the time of the tty device, otherwise it could be construded as a
+	 * security leak to let userspace know the exact timing of the tty.
+	 */
+	if ((sec ^ time->tv_sec) & ~7)
 		time->tv_sec = sec;
 }
+
+/*
+ * Iterate on the ldisc ->read() function until we've gotten all
+ * the data the ldisc has for us.
+ *
+ * The "cookie" is something that the ldisc read function can fill
+ * in to let us know that there is more data to be had.
+ *
+ * We promise to continue to call the ldisc until it stops returning
+ * data or clears the cookie. The cookie may be something that the
+ * ldisc maintains state for and needs to free.
+ */
+static int iterate_tty_read(struct tty_ldisc *ld, struct tty_struct *tty,
+		struct file *file, struct iov_iter *to)
+{
+	int retval = 0;
+	void *cookie = NULL;
+	unsigned long offset = 0;
+	char kernel_buf[64];
+	size_t count = iov_iter_count(to);
+
+	do {
+		int size, copied;
+
+		size = count > sizeof(kernel_buf) ? sizeof(kernel_buf) : count;
+		size = ld->ops->read(tty, file, kernel_buf, size, &cookie, offset);
+		if (!size)
+			break;
+
+		if (size < 0) {
+			/* Did we have an earlier error (ie -EFAULT)? */
+			if (retval)
+				break;
+			retval = size;
+
+			/*
+			 * -EOVERFLOW means we didn't have enough space
+			 * for a whole packet, and we shouldn't return
+			 * a partial result.
+			 */
+			if (retval == -EOVERFLOW)
+				offset = 0;
+			break;
+		}
+
+		copied = copy_to_iter(kernel_buf, size, to);
+		offset += copied;
+		count -= copied;
+
+		/*
+		 * If the user copy failed, we still need to do another ->read()
+		 * call if we had a cookie to let the ldisc clear up.
+		 *
+		 * But make sure size is zeroed.
+		 */
+		if (unlikely(copied != size)) {
+			count = 0;
+			retval = -EFAULT;
+		}
+	} while (cookie);
+
+	/* We always clear tty buffer in case they contained passwords */
+	memzero_explicit(kernel_buf, sizeof(kernel_buf));
+	return offset ? offset : retval;
+}
+
 
 /**
  *	tty_read	-	read method for tty device files
@@ -998,26 +913,27 @@ static void tty_update_time(struct timespec *time)
  *	read calls may be outstanding in parallel.
  */
 
-static ssize_t tty_read(struct file *file, char __user *buf, size_t count,
-			loff_t *ppos)
+static ssize_t tty_read(struct kiocb *iocb, struct iov_iter *to)
 {
 	int i;
+	struct file *file = iocb->ki_filp;
 	struct inode *inode = file_inode(file);
 	struct tty_struct *tty = file_tty(file);
 	struct tty_ldisc *ld;
 
 	if (tty_paranoia_check(tty, inode, "tty_read"))
 		return -EIO;
-	if (!tty || (test_bit(TTY_IO_ERROR, &tty->flags)))
+	if (!tty || tty_io_error(tty))
 		return -EIO;
 
 	/* We want to wait for the line discipline to sort out in this
 	   situation */
 	ld = tty_ldisc_ref_wait(tty);
+	if (!ld)
+		return hung_up_tty_read(iocb, to);
+	i = -EIO;
 	if (ld->ops->read)
-		i = (ld->ops->read)(tty, file, buf, count);
-	else
-		i = -EIO;
+		i = iterate_tty_read(ld, tty, file, to);
 	tty_ldisc_deref(ld);
 
 	if (i > 0)
@@ -1026,15 +942,13 @@ static ssize_t tty_read(struct file *file, char __user *buf, size_t count,
 	return i;
 }
 
-static void tty_write_unlock(struct tty_struct *tty)
-	__releases(&tty->atomic_write_lock)
+void tty_write_unlock(struct tty_struct *tty)
 {
 	mutex_unlock(&tty->atomic_write_lock);
-	wake_up_interruptible_poll(&tty->write_wait, POLLOUT);
+	wake_up_interruptible_poll(&tty->write_wait, EPOLLOUT);
 }
 
-static int tty_write_lock(struct tty_struct *tty, int ndelay)
-	__acquires(&tty->atomic_write_lock)
+int tty_write_lock(struct tty_struct *tty, bool ndelay)
 {
 	if (!mutex_trylock(&tty->atomic_write_lock)) {
 		if (ndelay)
@@ -1053,9 +967,9 @@ static inline ssize_t do_tty_write(
 	ssize_t (*write)(struct tty_struct *, struct file *, const unsigned char *, size_t),
 	struct tty_struct *tty,
 	struct file *file,
-	const char __user *buf,
-	size_t count)
+	struct iov_iter *from)
 {
+	size_t count = iov_iter_count(from);
 	ssize_t ret, written = 0;
 	unsigned int chunk;
 
@@ -1107,14 +1021,23 @@ static inline ssize_t do_tty_write(
 		size_t size = count;
 		if (size > chunk)
 			size = chunk;
+
 		ret = -EFAULT;
-		if (copy_from_user(tty->write_buf, buf, size))
+		if (copy_from_iter(tty->write_buf, size, from) != size)
 			break;
+
 		ret = write(tty, file, tty->write_buf, size);
 		if (ret <= 0)
 			break;
+
 		written += ret;
-		buf += ret;
+		if (ret > size)
+			break;
+
+		/* FIXME! Have Al check this! */
+		if (ret != size)
+			iov_iter_revert(from, size-ret);
+
 		count -= ret;
 		if (!count)
 			break;
@@ -1149,11 +1072,9 @@ void tty_write_message(struct tty_struct *tty, char *msg)
 	if (tty) {
 		mutex_lock(&tty->atomic_write_lock);
 		tty_lock(tty);
-		if (tty->ops->write && !test_bit(TTY_CLOSING, &tty->flags)) {
-			tty_unlock(tty);
+		if (tty->ops->write && tty->count > 0)
 			tty->ops->write(tty, msg, strlen(msg));
-		} else
-			tty_unlock(tty);
+		tty_unlock(tty);
 		tty_write_unlock(tty);
 	}
 	return;
@@ -1176,8 +1097,7 @@ void tty_write_message(struct tty_struct *tty, char *msg)
  *	write method will not be invoked in parallel for each device.
  */
 
-static ssize_t tty_write(struct file *file, const char __user *buf,
-						size_t count, loff_t *ppos)
+static ssize_t file_tty_write(struct file *file, struct kiocb *iocb, struct iov_iter *from)
 {
 	struct tty_struct *tty = file_tty(file);
  	struct tty_ldisc *ld;
@@ -1185,24 +1105,28 @@ static ssize_t tty_write(struct file *file, const char __user *buf,
 
 	if (tty_paranoia_check(tty, file_inode(file), "tty_write"))
 		return -EIO;
-	if (!tty || !tty->ops->write ||
-		(test_bit(TTY_IO_ERROR, &tty->flags)))
+	if (!tty || !tty->ops->write ||	tty_io_error(tty))
 			return -EIO;
 	/* Short term debug to catch buggy drivers */
 	if (tty->ops->write_room == NULL)
-		printk(KERN_ERR "tty driver %s lacks a write_room method.\n",
-			tty->driver->name);
+		tty_err(tty, "missing write_room method\n");
 	ld = tty_ldisc_ref_wait(tty);
+	if (!ld)
+		return hung_up_tty_write(iocb, from);
 	if (!ld->ops->write)
 		ret = -EIO;
 	else
-		ret = do_tty_write(ld->ops->write, tty, file, buf, count);
+		ret = do_tty_write(ld->ops->write, tty, file, from);
 	tty_ldisc_deref(ld);
 	return ret;
 }
 
-ssize_t redirected_tty_write(struct file *file, const char __user *buf,
-						size_t count, loff_t *ppos)
+static ssize_t tty_write(struct kiocb *iocb, struct iov_iter *from)
+{
+	return file_tty_write(iocb->ki_filp, iocb, from);
+}
+
+ssize_t redirected_tty_write(struct kiocb *iocb, struct iov_iter *iter)
 {
 	struct file *p = NULL;
 
@@ -1211,13 +1135,17 @@ ssize_t redirected_tty_write(struct file *file, const char __user *buf,
 		p = get_file(redirect);
 	spin_unlock(&redirect_lock);
 
+	/*
+	 * We know the redirected tty is just another tty, we can can
+	 * call file_tty_write() directly with that file pointer.
+	 */
 	if (p) {
 		ssize_t res;
-		res = vfs_write(p, buf, count, &p->f_pos);
+		res = file_tty_write(p, iocb, iter);
 		fput(p);
 		return res;
 	}
-	return tty_write(file, buf, count, ppos);
+	return tty_write(iocb, iter);
 }
 
 /**
@@ -1233,18 +1161,22 @@ int tty_send_xchar(struct tty_struct *tty, char ch)
 	int	was_stopped = tty->stopped;
 
 	if (tty->ops->send_xchar) {
+		down_read(&tty->termios_rwsem);
 		tty->ops->send_xchar(tty, ch);
+		up_read(&tty->termios_rwsem);
 		return 0;
 	}
 
-	if (tty_write_lock(tty, 0) < 0)
+	if (tty_write_lock(tty, false) < 0)
 		return -ERESTARTSYS;
 
+	down_read(&tty->termios_rwsem);
 	if (was_stopped)
 		start_tty(tty);
 	tty->ops->write(tty, &ch, 1);
 	if (was_stopped)
 		stop_tty(tty);
+	up_read(&tty->termios_rwsem);
 	tty_write_unlock(tty);
 	return 0;
 }
@@ -1296,30 +1228,40 @@ static ssize_t tty_line_name(struct tty_driver *driver, int index, char *p)
  *	@driver: the driver for the tty
  *	@idx:	 the minor number
  *
- *	Return the tty, if found or ERR_PTR() otherwise.
+ *	Return the tty, if found. If not found, return NULL or ERR_PTR() if the
+ *	driver lookup() method returns an error.
  *
- *	Locking: tty_mutex must be held. If tty is found, the mutex must
- *	be held until the 'fast-open' is also done. Will change once we
- *	have refcounting in the driver and per driver locking
+ *	Locking: tty_mutex must be held. If the tty is found, bump the tty kref.
  */
 static struct tty_struct *tty_driver_lookup_tty(struct tty_driver *driver,
-		struct inode *inode, int idx)
+		struct file *file, int idx)
 {
-	if (driver->ops->lookup)
-		return driver->ops->lookup(driver, inode, idx);
+	struct tty_struct *tty;
 
-	return driver->ttys[idx];
+	if (driver->ops->lookup) {
+		if (!file)
+			tty = ERR_PTR(-EIO);
+		else
+			tty = driver->ops->lookup(driver, file, idx);
+	} else {
+		if (idx >= driver->num)
+			return ERR_PTR(-EINVAL);
+		tty = driver->ttys[idx];
+	}
+	if (!IS_ERR(tty))
+		tty_kref_get(tty);
+	return tty;
 }
 
 /**
  *	tty_init_termios	-  helper for termios setup
  *	@tty: the tty to set up
  *
- *	Initialise the termios structures for this tty. Thus runs under
+ *	Initialise the termios structure for this tty. This runs under
  *	the tty_mutex currently so we can be relaxed about ordering.
  */
 
-int tty_init_termios(struct tty_struct *tty)
+void tty_init_termios(struct tty_struct *tty)
 {
 	struct ktermios *tp;
 	int idx = tty->index;
@@ -1329,24 +1271,21 @@ int tty_init_termios(struct tty_struct *tty)
 	else {
 		/* Check for lazy saved data */
 		tp = tty->driver->termios[idx];
-		if (tp != NULL)
+		if (tp != NULL) {
 			tty->termios = *tp;
-		else
+			tty->termios.c_line  = tty->driver->init_termios.c_line;
+		} else
 			tty->termios = tty->driver->init_termios;
 	}
 	/* Compatibility until drivers always set this */
 	tty->termios.c_ispeed = tty_termios_input_baud_rate(&tty->termios);
 	tty->termios.c_ospeed = tty_termios_baud_rate(&tty->termios);
-	return 0;
 }
 EXPORT_SYMBOL_GPL(tty_init_termios);
 
 int tty_standard_install(struct tty_driver *driver, struct tty_struct *tty)
 {
-	int ret = tty_init_termios(tty);
-	if (ret)
-		return ret;
-
+	tty_init_termios(tty);
 	tty_driver_kref_get(driver);
 	tty->count++;
 	driver->ttys[tty->index] = tty;
@@ -1376,14 +1315,14 @@ static int tty_driver_install_tty(struct tty_driver *driver,
 /**
  *	tty_driver_remove_tty() - remove a tty from the driver tables
  *	@driver: the driver for the tty
- *	@idx:	 the minor number
+ *	@tty: tty to remove
  *
  *	Remvoe a tty object from the driver tables. The tty->index field
  *	will be set by the time this is called.
  *
  *	Locking: tty_mutex for now
  */
-void tty_driver_remove_tty(struct tty_driver *driver, struct tty_struct *tty)
+static void tty_driver_remove_tty(struct tty_driver *driver, struct tty_struct *tty)
 {
 	if (driver->ops->remove)
 		driver->ops->remove(driver, tty);
@@ -1391,46 +1330,54 @@ void tty_driver_remove_tty(struct tty_driver *driver, struct tty_struct *tty)
 		driver->ttys[tty->index] = NULL;
 }
 
-/*
- * 	tty_reopen()	- fast re-open of an open tty
- * 	@tty	- the tty to open
+/**
+ *	tty_reopen()	- fast re-open of an open tty
+ *	@tty: the tty to open
  *
  *	Return 0 on success, -errno on error.
+ *	Re-opens on master ptys are not allowed and return -EIO.
  *
- *	Locking: tty_mutex must be held from the time the tty was found
- *		 till this open completes.
+ *	Locking: Caller must hold tty_lock
  */
 static int tty_reopen(struct tty_struct *tty)
 {
 	struct tty_driver *driver = tty->driver;
-
-	if (test_bit(TTY_CLOSING, &tty->flags) ||
-			test_bit(TTY_HUPPING, &tty->flags))
-		return -EIO;
+	struct tty_ldisc *ld;
+	int retval = 0;
 
 	if (driver->type == TTY_DRIVER_TYPE_PTY &&
-	    driver->subtype == PTY_TYPE_MASTER) {
-		/*
-		 * special case for PTY masters: only one open permitted,
-		 * and the slave side open count is incremented as well.
-		 */
-		if (tty->count)
-			return -EIO;
+	    driver->subtype == PTY_TYPE_MASTER)
+		return -EIO;
 
-		tty->link->count++;
+	if (!tty->count)
+		return -EAGAIN;
+
+	if (test_bit(TTY_EXCLUSIVE, &tty->flags) && !capable(CAP_SYS_ADMIN))
+		return -EBUSY;
+
+	ld = tty_ldisc_ref_wait(tty);
+	if (ld) {
+		tty_ldisc_deref(ld);
+	} else {
+		retval = tty_ldisc_lock(tty, 5 * HZ);
+		if (retval)
+			return retval;
+
+		if (!tty->ldisc)
+			retval = tty_ldisc_reinit(tty, tty->termios.c_line);
+		tty_ldisc_unlock(tty);
 	}
-	tty->count++;
 
-	WARN_ON(!tty->ldisc);
+	if (retval == 0)
+		tty->count++;
 
-	return 0;
+	return retval;
 }
 
 /**
  *	tty_init_dev		-	initialise a tty device
  *	@driver: tty driver we are opening a device on
  *	@idx: device index
- *	@ret_tty: returned tty structure
  *
  *	Prepare a tty device. This may not be a "new" clean device but
  *	could also be an active device. The pty drivers require special
@@ -1448,6 +1395,8 @@ static int tty_reopen(struct tty_struct *tty)
  * failed open.  The new code protects the open with a mutex, so it's
  * really quite straightforward.  The mutex locking can probably be
  * relaxed for the (most common) case of reopening a tty.
+ *
+ *	Return: returned tty structure
  */
 
 struct tty_struct *tty_init_dev(struct tty_driver *driver, int idx)
@@ -1460,7 +1409,7 @@ struct tty_struct *tty_init_dev(struct tty_driver *driver, int idx)
 	 * This code guarantees that either everything succeeds and the
 	 * TTY is ready for operation, or else the table slots are vacated
 	 * and the allocated memory released.  (Except that the termios
-	 * and locked termios may be retained.)
+	 * may be retained.)
 	 */
 
 	if (!try_module_get(driver->owner))
@@ -1475,15 +1424,21 @@ struct tty_struct *tty_init_dev(struct tty_driver *driver, int idx)
 	tty_lock(tty);
 	retval = tty_driver_install_tty(driver, tty);
 	if (retval < 0)
-		goto err_deinit_tty;
+		goto err_free_tty;
 
 	if (!tty->port)
 		tty->port = driver->ports[idx];
 
-	WARN_RATELIMIT(!tty->port,
-			"%s: %s driver does not set tty->port. This will crash the kernel later. Fix the driver!\n",
-			__func__, tty->driver->name);
+	if (WARN_RATELIMIT(!tty->port,
+			"%s: %s driver does not set tty->port. This would crash the kernel. Fix the driver!\n",
+			__func__, tty->driver->name)) {
+		retval = -EINVAL;
+		goto err_release_lock;
+	}
 
+	retval = tty_ldisc_lock(tty, 5 * HZ);
+	if (retval)
+		goto err_release_lock;
 	tty->port->itty = tty;
 
 	/*
@@ -1494,12 +1449,12 @@ struct tty_struct *tty_init_dev(struct tty_driver *driver, int idx)
 	retval = tty_ldisc_setup(tty, tty->link);
 	if (retval)
 		goto err_release_tty;
+	tty_ldisc_unlock(tty);
 	/* Return the tty locked so that it cannot vanish under the caller */
 	return tty;
 
-err_deinit_tty:
+err_free_tty:
 	tty_unlock(tty);
-	deinitialize_tty_struct(tty);
 	free_tty_struct(tty);
 err_module_put:
 	module_put(driver->owner);
@@ -1507,14 +1462,22 @@ err_module_put:
 
 	/* call the tty release_tty routine to clean out this slot */
 err_release_tty:
+	tty_ldisc_unlock(tty);
+	tty_info_ratelimited(tty, "ldisc open failed (%d), clearing slot %d\n",
+			     retval, idx);
+err_release_lock:
 	tty_unlock(tty);
-	printk_ratelimited(KERN_INFO "tty_init_dev: ldisc open failed, "
-				 "clearing slot %d\n", idx);
 	release_tty(tty, idx);
 	return ERR_PTR(retval);
 }
 
-void tty_free_termios(struct tty_struct *tty)
+/**
+ * tty_save_termios() - save tty termios data in driver table
+ * @tty: tty whose termios data to save
+ *
+ * Locking: Caller guarantees serialisation with tty_init_termios().
+ */
+void tty_save_termios(struct tty_struct *tty)
 {
 	struct ktermios *tp;
 	int idx = tty->index;
@@ -1526,32 +1489,34 @@ void tty_free_termios(struct tty_struct *tty)
 	/* Stash the termios data */
 	tp = tty->driver->termios[idx];
 	if (tp == NULL) {
-		tp = kmalloc(sizeof(struct ktermios), GFP_KERNEL);
-		if (tp == NULL) {
-			pr_warn("tty: no memory to save termios state.\n");
+		tp = kmalloc(sizeof(*tp), GFP_KERNEL);
+		if (tp == NULL)
 			return;
-		}
 		tty->driver->termios[idx] = tp;
 	}
 	*tp = tty->termios;
 }
-EXPORT_SYMBOL(tty_free_termios);
+EXPORT_SYMBOL_GPL(tty_save_termios);
 
 /**
- *	tty_flush_works		-	flush all works of a tty
- *	@tty: tty device to flush works for
+ *	tty_flush_works		-	flush all works of a tty/pty pair
+ *	@tty: tty device to flush works for (or either end of a pty pair)
  *
- *	Sync flush all works belonging to @tty.
+ *	Sync flush all works belonging to @tty (and the 'other' tty).
  */
 static void tty_flush_works(struct tty_struct *tty)
 {
 	flush_work(&tty->SAK_work);
 	flush_work(&tty->hangup_work);
+	if (tty->link) {
+		flush_work(&tty->link->SAK_work);
+		flush_work(&tty->link->hangup_work);
+	}
 }
 
 /**
  *	release_one_tty		-	release tty structure memory
- *	@kref: kref of tty we are obliterating
+ *	@work: work of tty we are obliterating
  *
  *	Releases memory associated with a tty structure, and clears out the
  *	driver table slots. This function is called when a device is no longer
@@ -1578,9 +1543,9 @@ static void release_one_tty(struct work_struct *work)
 	tty_driver_kref_put(driver);
 	module_put(owner);
 
-	spin_lock(&tty_files_lock);
+	spin_lock(&tty->files_lock);
 	list_del_init(&tty->tty_files);
-	spin_unlock(&tty_files_lock);
+	spin_unlock(&tty->files_lock);
 
 	put_pid(tty->pgrp);
 	put_pid(tty->session);
@@ -1631,34 +1596,34 @@ static void release_tty(struct tty_struct *tty, int idx)
 	WARN_ON(!mutex_is_locked(&tty_mutex));
 	if (tty->ops->shutdown)
 		tty->ops->shutdown(tty);
-	tty_free_termios(tty);
+	tty_save_termios(tty);
 	tty_driver_remove_tty(tty->driver, tty);
-	tty->port->itty = NULL;
+	if (tty->port)
+		tty->port->itty = NULL;
 	if (tty->link)
 		tty->link->port->itty = NULL;
-	cancel_work_sync(&tty->port->buf.work);
-
+	if (tty->port)
+		tty_buffer_cancel_work(tty->port);
 	if (tty->link)
-		tty_kref_put(tty->link);
+		tty_buffer_cancel_work(tty->link->port);
+
+	tty_kref_put(tty->link);
 	tty_kref_put(tty);
 }
 
 /**
  *	tty_release_checks - check a tty before real release
  *	@tty: tty to check
- *	@o_tty: link of @tty (if any)
  *	@idx: index of the tty
  *
  *	Performs some paranoid checking before true release of the @tty.
  *	This is a no-op unless TTY_PARANOIA_CHECK is defined.
  */
-static int tty_release_checks(struct tty_struct *tty, struct tty_struct *o_tty,
-		int idx)
+static int tty_release_checks(struct tty_struct *tty, int idx)
 {
 #ifdef TTY_PARANOIA_CHECK
 	if (idx < 0 || idx >= tty->driver->num) {
-		printk(KERN_DEBUG "%s: bad idx when trying to free (%s)\n",
-				__func__, tty->name);
+		tty_debug(tty, "bad idx %d\n", idx);
 		return -1;
 	}
 
@@ -1667,24 +1632,85 @@ static int tty_release_checks(struct tty_struct *tty, struct tty_struct *o_tty,
 		return 0;
 
 	if (tty != tty->driver->ttys[idx]) {
-		printk(KERN_DEBUG "%s: driver.table[%d] not tty for (%s)\n",
-				__func__, idx, tty->name);
+		tty_debug(tty, "bad driver table[%d] = %p\n",
+			  idx, tty->driver->ttys[idx]);
 		return -1;
 	}
 	if (tty->driver->other) {
+		struct tty_struct *o_tty = tty->link;
+
 		if (o_tty != tty->driver->other->ttys[idx]) {
-			printk(KERN_DEBUG "%s: other->table[%d] not o_tty for (%s)\n",
-					__func__, idx, tty->name);
+			tty_debug(tty, "bad other table[%d] = %p\n",
+				  idx, tty->driver->other->ttys[idx]);
 			return -1;
 		}
 		if (o_tty->link != tty) {
-			printk(KERN_DEBUG "%s: bad pty pointers\n", __func__);
+			tty_debug(tty, "bad link = %p\n", o_tty->link);
 			return -1;
 		}
 	}
 #endif
 	return 0;
 }
+
+/**
+ *      tty_kclose      -       closes tty opened by tty_kopen
+ *      @tty: tty device
+ *
+ *      Performs the final steps to release and free a tty device. It is the
+ *      same as tty_release_struct except that it also resets TTY_PORT_KOPENED
+ *      flag on tty->port.
+ */
+void tty_kclose(struct tty_struct *tty)
+{
+	/*
+	 * Ask the line discipline code to release its structures
+	 */
+	tty_ldisc_release(tty);
+
+	/* Wait for pending work before tty destruction commmences */
+	tty_flush_works(tty);
+
+	tty_debug_hangup(tty, "freeing structure\n");
+	/*
+	 * The release_tty function takes care of the details of clearing
+	 * the slots and preserving the termios structure.
+	 */
+	mutex_lock(&tty_mutex);
+	tty_port_set_kopened(tty->port, 0);
+	release_tty(tty, tty->index);
+	mutex_unlock(&tty_mutex);
+}
+EXPORT_SYMBOL_GPL(tty_kclose);
+
+/**
+ *	tty_release_struct	-	release a tty struct
+ *	@tty: tty device
+ *	@idx: index of the tty
+ *
+ *	Performs the final steps to release and free a tty device. It is
+ *	roughly the reverse of tty_init_dev.
+ */
+void tty_release_struct(struct tty_struct *tty, int idx)
+{
+	/*
+	 * Ask the line discipline code to release its structures
+	 */
+	tty_ldisc_release(tty);
+
+	/* Wait for pending work before tty destruction commmences */
+	tty_flush_works(tty);
+
+	tty_debug_hangup(tty, "freeing structure\n");
+	/*
+	 * The release_tty function takes care of the details of clearing
+	 * the slots and preserving the termios structure.
+	 */
+	mutex_lock(&tty_mutex);
+	release_tty(tty, idx);
+	mutex_unlock(&tty_mutex);
+}
+EXPORT_SYMBOL_GPL(tty_release_struct);
 
 /**
  *	tty_release		-	vfs callback for close
@@ -1708,10 +1734,9 @@ static int tty_release_checks(struct tty_struct *tty, struct tty_struct *o_tty,
 int tty_release(struct inode *inode, struct file *filp)
 {
 	struct tty_struct *tty = file_tty(filp);
-	struct tty_struct *o_tty;
-	int	pty_master, tty_closing, o_tty_closing, do_sleep;
+	struct tty_struct *o_tty = NULL;
+	int	do_sleep, final;
 	int	idx;
-	char	buf[64];
 	long	timeout = 0;
 	int	once = 1;
 
@@ -1724,25 +1749,23 @@ int tty_release(struct inode *inode, struct file *filp)
 	__tty_fasync(-1, filp, 0);
 
 	idx = tty->index;
-	pty_master = (tty->driver->type == TTY_DRIVER_TYPE_PTY &&
-		      tty->driver->subtype == PTY_TYPE_MASTER);
-	/* Review: parallel close */
-	o_tty = tty->link;
+	if (tty->driver->type == TTY_DRIVER_TYPE_PTY &&
+	    tty->driver->subtype == PTY_TYPE_MASTER)
+		o_tty = tty->link;
 
-	if (tty_release_checks(tty, o_tty, idx)) {
+	if (tty_release_checks(tty, idx)) {
 		tty_unlock(tty);
 		return 0;
 	}
 
-#ifdef TTY_DEBUG_HANGUP
-	printk(KERN_DEBUG "%s: %s (tty count=%d)...\n", __func__,
-			tty_name(tty, buf), tty->count);
-#endif
+	tty_debug_hangup(tty, "releasing (count=%d)\n", tty->count);
 
 	if (tty->ops->close)
 		tty->ops->close(tty, filp);
 
-	tty_unlock(tty);
+	/* If tty is pty master, lock the slave pty (stable lock order) */
+	tty_lock_slave(o_tty);
+
 	/*
 	 * Sanity check: if tty->count is going to zero, there shouldn't be
 	 * any waiters on tty->read_wait or tty->write_wait.  We test the
@@ -1753,41 +1776,29 @@ int tty_release(struct inode *inode, struct file *filp)
 	 * The test for the o_tty closing is necessary, since the master and
 	 * slave sides may close in any order.  If the slave side closes out
 	 * first, its count will be one, since the master side holds an open.
-	 * Thus this test wouldn't be triggered at the time the slave closes,
+	 * Thus this test wouldn't be triggered at the time the slave closed,
 	 * so we do it now.
-	 *
-	 * Note that it's possible for the tty to be opened again while we're
-	 * flushing out waiters.  By recalculating the closing flags before
-	 * each iteration we avoid any problems.
 	 */
 	while (1) {
-		/* Guard against races with tty->count changes elsewhere and
-		   opens on /dev/tty */
-
-		mutex_lock(&tty_mutex);
-		tty_lock_pair(tty, o_tty);
-		tty_closing = tty->count <= 1;
-		o_tty_closing = o_tty &&
-			(o_tty->count <= (pty_master ? 1 : 0));
 		do_sleep = 0;
 
-		if (tty_closing) {
+		if (tty->count <= 1) {
 			if (waitqueue_active(&tty->read_wait)) {
-				wake_up_poll(&tty->read_wait, POLLIN);
+				wake_up_poll(&tty->read_wait, EPOLLIN);
 				do_sleep++;
 			}
 			if (waitqueue_active(&tty->write_wait)) {
-				wake_up_poll(&tty->write_wait, POLLOUT);
+				wake_up_poll(&tty->write_wait, EPOLLOUT);
 				do_sleep++;
 			}
 		}
-		if (o_tty_closing) {
+		if (o_tty && o_tty->count <= 1) {
 			if (waitqueue_active(&o_tty->read_wait)) {
-				wake_up_poll(&o_tty->read_wait, POLLIN);
+				wake_up_poll(&o_tty->read_wait, EPOLLIN);
 				do_sleep++;
 			}
 			if (waitqueue_active(&o_tty->write_wait)) {
-				wake_up_poll(&o_tty->write_wait, POLLOUT);
+				wake_up_poll(&o_tty->write_wait, EPOLLOUT);
 				do_sleep++;
 			}
 		}
@@ -1796,11 +1807,8 @@ int tty_release(struct inode *inode, struct file *filp)
 
 		if (once) {
 			once = 0;
-			printk(KERN_WARNING "%s: %s: read/write wait queue active!\n",
-			       __func__, tty_name(tty, buf));
+			tty_warn(tty, "read/write wait queue active!\n");
 		}
-		tty_unlock_pair(tty, o_tty);
-		mutex_unlock(&tty_mutex);
 		schedule_timeout_killable(timeout);
 		if (timeout < 120 * HZ)
 			timeout = 2 * timeout + 1;
@@ -1808,24 +1816,14 @@ int tty_release(struct inode *inode, struct file *filp)
 			timeout = MAX_SCHEDULE_TIMEOUT;
 	}
 
-	/*
-	 * The closing flags are now consistent with the open counts on
-	 * both sides, and we've completed the last operation that could
-	 * block, so it's safe to proceed with closing.
-	 *
-	 * We must *not* drop the tty_mutex until we ensure that a further
-	 * entry into tty_open can not pick up this tty.
-	 */
-	if (pty_master) {
+	if (o_tty) {
 		if (--o_tty->count < 0) {
-			printk(KERN_WARNING "%s: bad pty slave count (%d) for %s\n",
-				__func__, o_tty->count, tty_name(o_tty, buf));
+			tty_warn(tty, "bad slave count (%d)\n", o_tty->count);
 			o_tty->count = 0;
 		}
 	}
 	if (--tty->count < 0) {
-		printk(KERN_WARNING "%s: bad tty->count (%d) for %s\n",
-				__func__, tty->count, tty_name(tty, buf));
+		tty_warn(tty, "bad tty->count (%d)\n", tty->count);
 		tty->count = 0;
 	}
 
@@ -1843,21 +1841,11 @@ int tty_release(struct inode *inode, struct file *filp)
 	/*
 	 * Perform some housekeeping before deciding whether to return.
 	 *
-	 * Set the TTY_CLOSING flag if this was the last open.  In the
-	 * case of a pty we may have to wait around for the other side
-	 * to close, and TTY_CLOSING makes sure we can't be reopened.
-	 */
-	if (tty_closing)
-		set_bit(TTY_CLOSING, &tty->flags);
-	if (o_tty_closing)
-		set_bit(TTY_CLOSING, &o_tty->flags);
-
-	/*
 	 * If _either_ side is closing, make sure there aren't any
 	 * processes that still think tty or o_tty is their controlling
 	 * tty.
 	 */
-	if (tty_closing || o_tty_closing) {
+	if (!tty->count) {
 		read_lock(&tasklist_lock);
 		session_clear_tty(tty->session);
 		if (o_tty)
@@ -1865,59 +1853,39 @@ int tty_release(struct inode *inode, struct file *filp)
 		read_unlock(&tasklist_lock);
 	}
 
-	mutex_unlock(&tty_mutex);
-	tty_unlock_pair(tty, o_tty);
-	/* At this point the TTY_CLOSING flag should ensure a dead tty
+	/* check whether both sides are closing ... */
+	final = !tty->count && !(o_tty && o_tty->count);
+
+	tty_unlock_slave(o_tty);
+	tty_unlock(tty);
+
+	/* At this point, the tty->count == 0 should ensure a dead tty
 	   cannot be re-opened by a racing opener */
 
-	/* check whether both sides are closing ... */
-	if (!tty_closing || (o_tty && !o_tty_closing))
+	if (!final)
 		return 0;
 
-#ifdef TTY_DEBUG_HANGUP
-	printk(KERN_DEBUG "%s: %s: final close\n", __func__, tty_name(tty, buf));
-#endif
-	/*
-	 * Ask the line discipline code to release its structures
-	 */
-	tty_ldisc_release(tty, o_tty);
+	tty_debug_hangup(tty, "final close\n");
 
-	/* Wait for pending work before tty destruction commmences */
-	tty_flush_works(tty);
-	if (o_tty)
-		tty_flush_works(o_tty);
-
-#ifdef TTY_DEBUG_HANGUP
-	printk(KERN_DEBUG "%s: %s: freeing structure...\n", __func__, tty_name(tty, buf));
-#endif
-	/*
-	 * The release_tty function takes care of the details of clearing
-	 * the slots and preserving the termios structure. The tty_unlock_pair
-	 * should be safe as we keep a kref while the tty is locked (so the
-	 * unlock never unlocks a freed tty).
-	 */
-	mutex_lock(&tty_mutex);
-	release_tty(tty, idx);
-	mutex_unlock(&tty_mutex);
-
+	tty_release_struct(tty, idx);
 	return 0;
 }
 
 /**
- *	tty_open_current_tty - get tty of current task for open
+ *	tty_open_current_tty - get locked tty of current task
  *	@device: device number
  *	@filp: file pointer to tty
- *	@return: tty of the current task iff @device is /dev/tty
+ *	@return: locked tty of the current task iff @device is /dev/tty
+ *
+ *	Performs a re-open of the current task's controlling tty.
  *
  *	We cannot return driver and index like for the other nodes because
  *	devpts will not work then. It expects inodes to be from devpts FS.
- *
- *	We need to move to returning a refcounted object from all the lookup
- *	paths including this one.
  */
 static struct tty_struct *tty_open_current_tty(dev_t device, struct file *filp)
 {
 	struct tty_struct *tty;
+	int retval;
 
 	if (device != MKDEV(TTYAUX_MAJOR, 0))
 		return NULL;
@@ -1928,9 +1896,14 @@ static struct tty_struct *tty_open_current_tty(dev_t device, struct file *filp)
 
 	filp->f_flags |= O_NONBLOCK; /* Don't let /dev/tty block */
 	/* noctty = 1; */
-	tty_kref_put(tty);
-	/* FIXME: we put a reference and return a TTY! */
-	/* This is only safe because the caller holds tty_mutex */
+	tty_lock(tty);
+	tty_kref_put(tty);	/* safe to drop the kref now */
+
+	retval = tty_reopen(tty);
+	if (retval < 0) {
+		tty_unlock(tty);
+		tty = ERR_PTR(retval);
+	}
 	return tty;
 }
 
@@ -1938,7 +1911,6 @@ static struct tty_struct *tty_open_current_tty(dev_t device, struct file *filp)
  *	tty_lookup_driver - lookup a tty driver for a given device file
  *	@device: device number
  *	@filp: file pointer to tty
- *	@noctty: set if the device should not become a controlling tty
  *	@index: index for the device in the @return driver
  *	@return: driver for this inode (with increased refcount)
  *
@@ -1948,9 +1920,9 @@ static struct tty_struct *tty_open_current_tty(dev_t device, struct file *filp)
  *	Locking: tty_mutex protects get_tty_driver
  */
 static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
-		int *noctty, int *index)
+		int *index)
 {
-	struct tty_driver *driver;
+	struct tty_driver *driver = NULL;
 
 	switch (device) {
 #ifdef CONFIG_VT
@@ -1958,7 +1930,6 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 		extern struct tty_driver *console_driver;
 		driver = tty_driver_kref_get(console_driver);
 		*index = fg_console;
-		*noctty = 1;
 		break;
 	}
 #endif
@@ -1966,13 +1937,14 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 		struct tty_driver *console_driver = console_device(index);
 		if (console_driver) {
 			driver = tty_driver_kref_get(console_driver);
-			if (driver) {
+			if (driver && filp) {
 				/* Don't let /dev/console block */
 				filp->f_flags |= O_NONBLOCK;
-				*noctty = 1;
 				break;
 			}
 		}
+		if (driver)
+			tty_driver_kref_put(driver);
 		return ERR_PTR(-ENODEV);
 	}
 	default:
@@ -1982,6 +1954,123 @@ static struct tty_driver *tty_lookup_driver(dev_t device, struct file *filp,
 		break;
 	}
 	return driver;
+}
+
+/**
+ *	tty_kopen	-	open a tty device for kernel
+ *	@device: dev_t of device to open
+ *
+ *	Opens tty exclusively for kernel. Performs the driver lookup,
+ *	makes sure it's not already opened and performs the first-time
+ *	tty initialization.
+ *
+ *	Returns the locked initialized &tty_struct
+ *
+ *	Claims the global tty_mutex to serialize:
+ *	  - concurrent first-time tty initialization
+ *	  - concurrent tty driver removal w/ lookup
+ *	  - concurrent tty removal from driver table
+ */
+struct tty_struct *tty_kopen(dev_t device)
+{
+	struct tty_struct *tty;
+	struct tty_driver *driver;
+	int index = -1;
+
+	mutex_lock(&tty_mutex);
+	driver = tty_lookup_driver(device, NULL, &index);
+	if (IS_ERR(driver)) {
+		mutex_unlock(&tty_mutex);
+		return ERR_CAST(driver);
+	}
+
+	/* check whether we're reopening an existing tty */
+	tty = tty_driver_lookup_tty(driver, NULL, index);
+	if (IS_ERR(tty))
+		goto out;
+
+	if (tty) {
+		/* drop kref from tty_driver_lookup_tty() */
+		tty_kref_put(tty);
+		tty = ERR_PTR(-EBUSY);
+	} else { /* tty_init_dev returns tty with the tty_lock held */
+		tty = tty_init_dev(driver, index);
+		if (IS_ERR(tty))
+			goto out;
+		tty_port_set_kopened(tty->port, 1);
+	}
+out:
+	mutex_unlock(&tty_mutex);
+	tty_driver_kref_put(driver);
+	return tty;
+}
+EXPORT_SYMBOL_GPL(tty_kopen);
+
+/**
+ *	tty_open_by_driver	-	open a tty device
+ *	@device: dev_t of device to open
+ *	@filp: file pointer to tty
+ *
+ *	Performs the driver lookup, checks for a reopen, or otherwise
+ *	performs the first-time tty initialization.
+ *
+ *	Returns the locked initialized or re-opened &tty_struct
+ *
+ *	Claims the global tty_mutex to serialize:
+ *	  - concurrent first-time tty initialization
+ *	  - concurrent tty driver removal w/ lookup
+ *	  - concurrent tty removal from driver table
+ */
+static struct tty_struct *tty_open_by_driver(dev_t device,
+					     struct file *filp)
+{
+	struct tty_struct *tty;
+	struct tty_driver *driver = NULL;
+	int index = -1;
+	int retval;
+
+	mutex_lock(&tty_mutex);
+	driver = tty_lookup_driver(device, filp, &index);
+	if (IS_ERR(driver)) {
+		mutex_unlock(&tty_mutex);
+		return ERR_CAST(driver);
+	}
+
+	/* check whether we're reopening an existing tty */
+	tty = tty_driver_lookup_tty(driver, filp, index);
+	if (IS_ERR(tty)) {
+		mutex_unlock(&tty_mutex);
+		goto out;
+	}
+
+	if (tty) {
+		if (tty_port_kopened(tty->port)) {
+			tty_kref_put(tty);
+			mutex_unlock(&tty_mutex);
+			tty = ERR_PTR(-EBUSY);
+			goto out;
+		}
+		mutex_unlock(&tty_mutex);
+		retval = tty_lock_interruptible(tty);
+		tty_kref_put(tty);  /* drop kref from tty_driver_lookup_tty() */
+		if (retval) {
+			if (retval == -EINTR)
+				retval = -ERESTARTSYS;
+			tty = ERR_PTR(retval);
+			goto out;
+		}
+		retval = tty_reopen(tty);
+		if (retval < 0) {
+			tty_unlock(tty);
+			tty = ERR_PTR(retval);
+		}
+	} else { /* Returns with the tty_lock held for now */
+		tty = tty_init_dev(driver, index);
+		mutex_unlock(&tty_mutex);
+	}
+out:
+	tty_driver_kref_put(driver);
+	return tty;
 }
 
 /**
@@ -2012,8 +2101,6 @@ static int tty_open(struct inode *inode, struct file *filp)
 {
 	struct tty_struct *tty;
 	int noctty, retval;
-	struct tty_driver *driver = NULL;
-	int index;
 	dev_t device = inode->i_rdev;
 	unsigned saved_flags = filp->f_flags;
 
@@ -2024,73 +2111,33 @@ retry_open:
 	if (retval)
 		return -ENOMEM;
 
-	noctty = filp->f_flags & O_NOCTTY;
-	index  = -1;
-	retval = 0;
-
-	mutex_lock(&tty_mutex);
-	/* This is protected by the tty_mutex */
 	tty = tty_open_current_tty(device, filp);
+	if (!tty)
+		tty = tty_open_by_driver(device, filp);
+
 	if (IS_ERR(tty)) {
+		tty_free_file(filp);
 		retval = PTR_ERR(tty);
-		goto err_unlock;
-	} else if (!tty) {
-		driver = tty_lookup_driver(device, filp, &noctty, &index);
-		if (IS_ERR(driver)) {
-			retval = PTR_ERR(driver);
-			goto err_unlock;
-		}
-
-		/* check whether we're reopening an existing tty */
-		tty = tty_driver_lookup_tty(driver, inode, index);
-		if (IS_ERR(tty)) {
-			retval = PTR_ERR(tty);
-			goto err_unlock;
-		}
-	}
-
-	if (tty) {
-		tty_lock(tty);
-		retval = tty_reopen(tty);
-		if (retval < 0) {
-			tty_unlock(tty);
-			tty = ERR_PTR(retval);
-		}
-	} else	/* Returns with the tty_lock held for now */
-		tty = tty_init_dev(driver, index);
-
-	mutex_unlock(&tty_mutex);
-	if (driver)
-		tty_driver_kref_put(driver);
-	if (IS_ERR(tty)) {
-		retval = PTR_ERR(tty);
-		goto err_file;
+		if (retval != -EAGAIN || signal_pending(current))
+			return retval;
+		schedule();
+		goto retry_open;
 	}
 
 	tty_add_file(tty, filp);
 
 	check_tty_count(tty, __func__);
-	if (tty->driver->type == TTY_DRIVER_TYPE_PTY &&
-	    tty->driver->subtype == PTY_TYPE_MASTER)
-		noctty = 1;
-#ifdef TTY_DEBUG_HANGUP
-	printk(KERN_DEBUG "%s: opening %s...\n", __func__, tty->name);
-#endif
+	tty_debug_hangup(tty, "opening (count=%d)\n", tty->count);
+
 	if (tty->ops->open)
 		retval = tty->ops->open(tty, filp);
 	else
 		retval = -ENODEV;
 	filp->f_flags = saved_flags;
 
-	if (!retval && test_bit(TTY_EXCLUSIVE, &tty->flags) &&
-						!capable(CAP_SYS_ADMIN))
-		retval = -EBUSY;
-
 	if (retval) {
-#ifdef TTY_DEBUG_HANGUP
-		printk(KERN_DEBUG "%s: error %d in opening %s...\n", __func__,
-				retval, tty->name);
-#endif
+		tty_debug_hangup(tty, "open error %d, releasing\n", retval);
+
 		tty_unlock(tty); /* need to call tty_release without BTM */
 		tty_release(inode, filp);
 		if (retval != -ERESTARTSYS)
@@ -2103,34 +2150,21 @@ retry_open:
 		/*
 		 * Need to reset f_op in case a hangup happened.
 		 */
-		if (filp->f_op == &hung_up_tty_fops)
+		if (tty_hung_up_p(filp))
 			filp->f_op = &tty_fops;
 		goto retry_open;
 	}
 	clear_bit(TTY_HUPPED, &tty->flags);
-	tty_unlock(tty);
 
-
-	mutex_lock(&tty_mutex);
-	tty_lock(tty);
-	spin_lock_irq(&current->sighand->siglock);
-	if (!noctty &&
-	    current->signal->leader &&
-	    !current->signal->tty &&
-	    tty->session == NULL)
-		__proc_set_tty(current, tty);
-	spin_unlock_irq(&current->sighand->siglock);
+	noctty = (filp->f_flags & O_NOCTTY) ||
+		 (IS_ENABLED(CONFIG_VT) && device == MKDEV(TTY_MAJOR, 0)) ||
+		 device == MKDEV(TTYAUX_MAJOR, 1) ||
+		 (tty->driver->type == TTY_DRIVER_TYPE_PTY &&
+		  tty->driver->subtype == PTY_TYPE_MASTER);
+	if (!noctty)
+		tty_open_proc_set_tty(filp, tty);
 	tty_unlock(tty);
-	mutex_unlock(&tty_mutex);
 	return 0;
-err_unlock:
-	mutex_unlock(&tty_mutex);
-	/* after locks to avoid deadlock */
-	if (!IS_ERR_OR_NULL(driver))
-		tty_driver_kref_put(driver);
-err_file:
-	tty_free_file(filp);
-	return retval;
 }
 
 
@@ -2147,18 +2181,20 @@ err_file:
  *	may be re-entered freely by other callers.
  */
 
-static unsigned int tty_poll(struct file *filp, poll_table *wait)
+static __poll_t tty_poll(struct file *filp, poll_table *wait)
 {
 	struct tty_struct *tty = file_tty(filp);
 	struct tty_ldisc *ld;
-	int ret = 0;
+	__poll_t ret = 0;
 
 	if (tty_paranoia_check(tty, file_inode(filp), "tty_poll"))
 		return 0;
 
 	ld = tty_ldisc_ref_wait(tty);
+	if (!ld)
+		return hung_up_tty_poll(filp, wait);
 	if (ld->ops->poll)
-		ret = (ld->ops->poll)(tty, filp, wait);
+		ret = ld->ops->poll(tty, filp, wait);
 	tty_ldisc_deref(ld);
 	return ret;
 }
@@ -2166,7 +2202,6 @@ static unsigned int tty_poll(struct file *filp, poll_table *wait)
 static int __tty_fasync(int fd, struct file *filp, int on)
 {
 	struct tty_struct *tty = file_tty(filp);
-	struct tty_ldisc *ldisc;
 	unsigned long flags;
 	int retval = 0;
 
@@ -2176,13 +2211,6 @@ static int __tty_fasync(int fd, struct file *filp, int on)
 	retval = fasync_helper(fd, filp, on, &tty->fasync);
 	if (retval <= 0)
 		goto out;
-
-	ldisc = tty_ldisc_ref(tty);
-	if (ldisc) {
-		if (ldisc->ops->fasync)
-			ldisc->ops->fasync(tty, on);
-		tty_ldisc_deref(ldisc);
-	}
 
 	if (on) {
 		enum pid_type type;
@@ -2194,7 +2222,7 @@ static int __tty_fasync(int fd, struct file *filp, int on)
 			type = PIDTYPE_PGID;
 		} else {
 			pid = task_pid(current);
-			type = PIDTYPE_PID;
+			type = PIDTYPE_TGID;
 		}
 		get_pid(pid);
 		spin_unlock_irqrestore(&tty->ctrl_lock, flags);
@@ -2209,10 +2237,11 @@ out:
 static int tty_fasync(int fd, struct file *filp, int on)
 {
 	struct tty_struct *tty = file_tty(filp);
-	int retval;
+	int retval = -ENOTTY;
 
 	tty_lock(tty);
-	retval = __tty_fasync(fd, filp, on);
+	if (!tty_hung_up_p(filp))
+		retval = __tty_fasync(fd, filp, on);
 	tty_unlock(tty);
 
 	return retval;
@@ -2231,8 +2260,6 @@ static int tty_fasync(int fd, struct file *filp, int on)
  *	Locking:
  *		Called functions take tty_ldiscs_lock
  *		current->signal->tty check is safe without locks
- *
- *	FIXME: may race normal receive processing
  */
 
 static int tiocsti(struct tty_struct *tty, char __user *p)
@@ -2246,14 +2273,19 @@ static int tiocsti(struct tty_struct *tty, char __user *p)
 		return -EFAULT;
 	tty_audit_tiocsti(tty, ch);
 	ld = tty_ldisc_ref_wait(tty);
-	ld->ops->receive_buf(tty, &ch, &mbz, 1);
+	if (!ld)
+		return -EIO;
+	tty_buffer_lock_exclusive(tty->port);
+	if (ld->ops->receive_buf)
+		ld->ops->receive_buf(tty, &ch, &mbz, 1);
+	tty_buffer_unlock_exclusive(tty->port);
 	tty_ldisc_deref(ld);
 	return 0;
 }
 
 /**
  *	tiocgwinsz		-	implement window query ioctl
- *	@tty; tty
+ *	@tty: tty
  *	@arg: user buffer for result
  *
  *	Copies the kernel idea of the window size into the user buffer.
@@ -2276,8 +2308,7 @@ static int tiocgwinsz(struct tty_struct *tty, struct winsize __user *arg)
 /**
  *	tty_do_resize		-	resize event
  *	@tty: tty being resized
- *	@rows: rows (character)
- *	@cols: cols (character)
+ *	@ws: new dimensions
  *
  *	Update the termios variables and send the necessary signals to
  *	peform a terminal resize correctly
@@ -2286,18 +2317,14 @@ static int tiocgwinsz(struct tty_struct *tty, struct winsize __user *arg)
 int tty_do_resize(struct tty_struct *tty, struct winsize *ws)
 {
 	struct pid *pgrp;
-	unsigned long flags;
 
 	/* Lock the tty */
 	mutex_lock(&tty->winsize_mutex);
 	if (!memcmp(ws, &tty->winsize, sizeof(*ws)))
 		goto done;
-	/* Get the PID values and reference them so we can
-	   avoid holding the tty ctrl lock while sending signals */
-	spin_lock_irqsave(&tty->ctrl_lock, flags);
-	pgrp = get_pid(tty->pgrp);
-	spin_unlock_irqrestore(&tty->ctrl_lock, flags);
 
+	/* Signal the foreground process group */
+	pgrp = tty_get_pgrp(tty);
 	if (pgrp)
 		kill_pgrp(pgrp, SIGWINCH, 1);
 	put_pid(pgrp);
@@ -2311,7 +2338,7 @@ EXPORT_SYMBOL(tty_do_resize);
 
 /**
  *	tiocswinsz		-	implement window size set ioctl
- *	@tty; tty side of tty
+ *	@tty: tty side of tty
  *	@arg: user buffer for result
  *
  *	Copies the user idea of the window size to the kernel. Traditionally
@@ -2349,7 +2376,7 @@ static int tioccons(struct file *file)
 {
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
-	if (file->f_op->write == redirected_tty_write) {
+	if (file->f_op->write_iter == redirected_tty_write) {
 		struct file *f;
 		spin_lock(&redirect_lock);
 		f = redirect;
@@ -2359,6 +2386,12 @@ static int tioccons(struct file *file)
 			fput(f);
 		return 0;
 	}
+	if (file->f_op->write_iter != tty_write)
+		return -ENOTTY;
+	if (!(file->f_mode & FMODE_WRITE))
+		return -EBADF;
+	if (!(file->f_mode & FMODE_CAN_WRITE))
+		return -EINVAL;
 	spin_lock(&redirect_lock);
 	if (redirect) {
 		spin_unlock(&redirect_lock);
@@ -2367,225 +2400,6 @@ static int tioccons(struct file *file)
 	redirect = get_file(file);
 	spin_unlock(&redirect_lock);
 	return 0;
-}
-
-/**
- *	fionbio		-	non blocking ioctl
- *	@file: file to set blocking value
- *	@p: user parameter
- *
- *	Historical tty interfaces had a blocking control ioctl before
- *	the generic functionality existed. This piece of history is preserved
- *	in the expected tty API of posix OS's.
- *
- *	Locking: none, the open file handle ensures it won't go away.
- */
-
-static int fionbio(struct file *file, int __user *p)
-{
-	int nonblock;
-
-	if (get_user(nonblock, p))
-		return -EFAULT;
-
-	spin_lock(&file->f_lock);
-	if (nonblock)
-		file->f_flags |= O_NONBLOCK;
-	else
-		file->f_flags &= ~O_NONBLOCK;
-	spin_unlock(&file->f_lock);
-	return 0;
-}
-
-/**
- *	tiocsctty	-	set controlling tty
- *	@tty: tty structure
- *	@arg: user argument
- *
- *	This ioctl is used to manage job control. It permits a session
- *	leader to set this tty as the controlling tty for the session.
- *
- *	Locking:
- *		Takes tty_mutex() to protect tty instance
- *		Takes tasklist_lock internally to walk sessions
- *		Takes ->siglock() when updating signal->tty
- */
-
-static int tiocsctty(struct tty_struct *tty, int arg)
-{
-	int ret = 0;
-	if (current->signal->leader && (task_session(current) == tty->session))
-		return ret;
-
-	mutex_lock(&tty_mutex);
-	/*
-	 * The process must be a session leader and
-	 * not have a controlling tty already.
-	 */
-	if (!current->signal->leader || current->signal->tty) {
-		ret = -EPERM;
-		goto unlock;
-	}
-
-	if (tty->session) {
-		/*
-		 * This tty is already the controlling
-		 * tty for another session group!
-		 */
-		if (arg == 1 && capable(CAP_SYS_ADMIN)) {
-			/*
-			 * Steal it away
-			 */
-			read_lock(&tasklist_lock);
-			session_clear_tty(tty->session);
-			read_unlock(&tasklist_lock);
-		} else {
-			ret = -EPERM;
-			goto unlock;
-		}
-	}
-	proc_set_tty(current, tty);
-unlock:
-	mutex_unlock(&tty_mutex);
-	return ret;
-}
-
-/**
- *	tty_get_pgrp	-	return a ref counted pgrp pid
- *	@tty: tty to read
- *
- *	Returns a refcounted instance of the pid struct for the process
- *	group controlling the tty.
- */
-
-struct pid *tty_get_pgrp(struct tty_struct *tty)
-{
-	unsigned long flags;
-	struct pid *pgrp;
-
-	spin_lock_irqsave(&tty->ctrl_lock, flags);
-	pgrp = get_pid(tty->pgrp);
-	spin_unlock_irqrestore(&tty->ctrl_lock, flags);
-
-	return pgrp;
-}
-EXPORT_SYMBOL_GPL(tty_get_pgrp);
-
-/**
- *	tiocgpgrp		-	get process group
- *	@tty: tty passed by user
- *	@real_tty: tty side of the tty passed by the user if a pty else the tty
- *	@p: returned pid
- *
- *	Obtain the process group of the tty. If there is no process group
- *	return an error.
- *
- *	Locking: none. Reference to current->signal->tty is safe.
- */
-
-static int tiocgpgrp(struct tty_struct *tty, struct tty_struct *real_tty, pid_t __user *p)
-{
-	struct pid *pid;
-	int ret;
-	/*
-	 * (tty == real_tty) is a cheap way of
-	 * testing if the tty is NOT a master pty.
-	 */
-	if (tty == real_tty && current->signal->tty != real_tty)
-		return -ENOTTY;
-	pid = tty_get_pgrp(real_tty);
-	ret =  put_user(pid_vnr(pid), p);
-	put_pid(pid);
-	return ret;
-}
-
-/**
- *	tiocspgrp		-	attempt to set process group
- *	@tty: tty passed by user
- *	@real_tty: tty side device matching tty passed by user
- *	@p: pid pointer
- *
- *	Set the process group of the tty to the session passed. Only
- *	permitted where the tty session is our session.
- *
- *	Locking: RCU, ctrl lock
- */
-
-static int tiocspgrp(struct tty_struct *tty, struct tty_struct *real_tty, pid_t __user *p)
-{
-	struct pid *pgrp;
-	pid_t pgrp_nr;
-	int retval = tty_check_change(real_tty);
-	unsigned long flags;
-
-	if (retval == -EIO)
-		return -ENOTTY;
-	if (retval)
-		return retval;
-
-	if (get_user(pgrp_nr, p))
-		return -EFAULT;
-	if (pgrp_nr < 0)
-		return -EINVAL;
-
-	spin_lock_irq(&real_tty->ctrl_lock);
-	if (!current->signal->tty ||
-		(current->signal->tty != real_tty) ||
-		(real_tty->session != task_session(current))) {
-			retval = -ENOTTY;
-			goto out_unlock_ctrl;
-	}
-	rcu_read_lock();
-	pgrp = find_vpid(pgrp_nr);
-	retval = -ESRCH;
-	if (!pgrp)
-		goto out_unlock;
-	retval = -EPERM;
-	if (session_of_pgrp(pgrp) != task_session(current))
-		goto out_unlock;
-	retval = 0;
-	put_pid(real_tty->pgrp);
-	real_tty->pgrp = get_pid(pgrp);
-out_unlock:
-	rcu_read_unlock();
-out_unlock_ctrl:
-	spin_unlock_irq(&real_tty->ctrl_lock);
-	return retval;
-}
-
-/**
- *	tiocgsid		-	get session id
- *	@tty: tty passed by user
- *	@real_tty: tty side of the tty passed by the user if a pty else the tty
- *	@p: pointer to returned session id
- *
- *	Obtain the session id of the tty. If there is no session
- *	return an error.
- */
-
-static int tiocgsid(struct tty_struct *tty, struct tty_struct *real_tty, pid_t __user *p)
-{
-	unsigned long flags;
-	pid_t sid;
-
-	/*
-	 * (tty == real_tty) is a cheap way of
-	 * testing if the tty is NOT a master pty.
-	*/
-	if (tty == real_tty && current->signal->tty != real_tty)
-		return -ENOTTY;
-
-	spin_lock_irqsave(&real_tty->ctrl_lock, flags);
-	if (!real_tty->session)
-		goto err;
-	sid = pid_vnr(real_tty->session);
-	spin_unlock_irqrestore(&real_tty->ctrl_lock, flags);
-
-	return put_user(sid, p);
-
-err:
-	spin_unlock_irqrestore(&real_tty->ctrl_lock, flags);
-	return -ENOTTY;
 }
 
 /**
@@ -2600,13 +2414,13 @@ err:
 
 static int tiocsetd(struct tty_struct *tty, int __user *p)
 {
-	int ldisc;
+	int disc;
 	int ret;
 
-	if (get_user(ldisc, p))
+	if (get_user(disc, p))
 		return -EFAULT;
 
-	ret = tty_set_ldisc(tty, ldisc);
+	ret = tty_set_ldisc(tty, disc);
 
 	return ret;
 }
@@ -2628,6 +2442,8 @@ static int tiocgetd(struct tty_struct *tty, int __user *p)
 	int ret;
 
 	ld = tty_ldisc_ref_wait(tty);
+	if (!ld)
+		return -EIO;
 	ret = put_user(ld->ops->num, p);
 	tty_ldisc_deref(ld);
 	return ret;
@@ -2654,40 +2470,42 @@ static int send_break(struct tty_struct *tty, unsigned int duration)
 		return 0;
 
 	if (tty->driver->flags & TTY_DRIVER_HARDWARE_BREAK)
-		retval = tty->ops->break_ctl(tty, duration);
-	else {
-		/* Do the work ourselves */
-		if (tty_write_lock(tty, 0) < 0)
-			return -EINTR;
-		retval = tty->ops->break_ctl(tty, -1);
-		if (retval)
-			goto out;
-		if (!signal_pending(current))
-			msleep_interruptible(duration);
+		return tty->ops->break_ctl(tty, duration);
+
+	/* Do the work ourselves */
+	if (tty_write_lock(tty, false) < 0)
+		return -EINTR;
+
+	retval = tty->ops->break_ctl(tty, -1);
+	if (!retval) {
+		msleep_interruptible(duration);
 		retval = tty->ops->break_ctl(tty, 0);
-out:
-		tty_write_unlock(tty);
-		if (signal_pending(current))
-			retval = -EINTR;
+	} else if (retval == -EOPNOTSUPP) {
+		/* some drivers can tell only dynamically */
+		retval = 0;
 	}
+	tty_write_unlock(tty);
+
+	if (signal_pending(current))
+		retval = -EINTR;
+
 	return retval;
 }
 
 /**
  *	tty_tiocmget		-	get modem status
  *	@tty: tty device
- *	@file: user file pointer
  *	@p: pointer to result
  *
  *	Obtain the modem status bits from the tty driver if the feature
- *	is supported. Return -EINVAL if it is not available.
+ *	is supported. Return -ENOTTY if it is not available.
  *
  *	Locking: none (up to the driver)
  */
 
 static int tty_tiocmget(struct tty_struct *tty, int __user *p)
 {
-	int retval = -EINVAL;
+	int retval = -ENOTTY;
 
 	if (tty->ops->tiocmget) {
 		retval = tty->ops->tiocmget(tty);
@@ -2705,7 +2523,7 @@ static int tty_tiocmget(struct tty_struct *tty, int __user *p)
  *	@p: pointer to desired bits
  *
  *	Set the modem status bits from the tty driver if the feature
- *	is supported. Return -EINVAL if it is not available.
+ *	is supported. Return -ENOTTY if it is not available.
  *
  *	Locking: none (up to the driver)
  */
@@ -2717,7 +2535,7 @@ static int tty_tiocmset(struct tty_struct *tty, unsigned int cmd,
 	unsigned int set, clear, val;
 
 	if (tty->ops->tiocmset == NULL)
-		return -EINVAL;
+		return -ENOTTY;
 
 	retval = get_user(val, p);
 	if (retval)
@@ -2754,23 +2572,53 @@ static int tty_tiocgicount(struct tty_struct *tty, void __user *arg)
 	return 0;
 }
 
-struct tty_struct *tty_pair_get_tty(struct tty_struct *tty)
+static int tty_tiocsserial(struct tty_struct *tty, struct serial_struct __user *ss)
+{
+	static DEFINE_RATELIMIT_STATE(depr_flags,
+			DEFAULT_RATELIMIT_INTERVAL,
+			DEFAULT_RATELIMIT_BURST);
+	char comm[TASK_COMM_LEN];
+	struct serial_struct v;
+	int flags;
+
+	if (copy_from_user(&v, ss, sizeof(*ss)))
+		return -EFAULT;
+
+	flags = v.flags & ASYNC_DEPRECATED;
+
+	if (flags && __ratelimit(&depr_flags))
+		pr_warn("%s: '%s' is using deprecated serial flags (with no effect): %.8x\n",
+			__func__, get_task_comm(comm, current), flags);
+	if (!tty->ops->set_serial)
+		return -ENOTTY;
+	return tty->ops->set_serial(tty, &v);
+}
+
+static int tty_tiocgserial(struct tty_struct *tty, struct serial_struct __user *ss)
+{
+	struct serial_struct v;
+	int err;
+
+	memset(&v, 0, sizeof(v));
+	if (!tty->ops->get_serial)
+		return -ENOTTY;
+	err = tty->ops->get_serial(tty, &v);
+	if (!err && copy_to_user(ss, &v, sizeof(v)))
+		err = -EFAULT;
+	return err;
+}
+
+/*
+ * if pty, return the slave side (real_tty)
+ * otherwise, return self
+ */
+static struct tty_struct *tty_pair_get_tty(struct tty_struct *tty)
 {
 	if (tty->driver->type == TTY_DRIVER_TYPE_PTY &&
 	    tty->driver->subtype == PTY_TYPE_MASTER)
 		tty = tty->link;
 	return tty;
 }
-EXPORT_SYMBOL(tty_pair_get_tty);
-
-struct tty_struct *tty_pair_get_pty(struct tty_struct *tty)
-{
-	if (tty->driver->type == TTY_DRIVER_TYPE_PTY &&
-	    tty->driver->subtype == PTY_TYPE_MASTER)
-	    return tty;
-	return tty->link;
-}
-EXPORT_SYMBOL(tty_pair_get_pty);
 
 /*
  * Split this up, as gcc can choke on it otherwise..
@@ -2820,8 +2668,6 @@ long tty_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		return tiocswinsz(real_tty, p);
 	case TIOCCONS:
 		return real_tty != tty ? -EINVAL : tioccons(file);
-	case FIONBIO:
-		return fionbio(file, p);
 	case TIOCEXCL:
 		set_bit(TTY_EXCLUSIVE, &tty->flags);
 		return 0;
@@ -2833,19 +2679,6 @@ long tty_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		int excl = test_bit(TTY_EXCLUSIVE, &tty->flags);
 		return put_user(excl, (int __user *)p);
 	}
-	case TIOCNOTTY:
-		if (current->signal->tty != tty)
-			return -ENOTTY;
-		no_tty();
-		return 0;
-	case TIOCSCTTY:
-		return tiocsctty(tty, arg);
-	case TIOCGPGRP:
-		return tiocgpgrp(tty, real_tty, p);
-	case TIOCSPGRP:
-		return tiocspgrp(tty, real_tty, p);
-	case TIOCGSID:
-		return tiocgsid(tty, real_tty, p);
 	case TIOCGETD:
 		return tiocgetd(tty, p);
 	case TIOCSETD:
@@ -2889,27 +2722,36 @@ long tty_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case TIOCMBIS:
 		return tty_tiocmset(tty, cmd, p);
 	case TIOCGICOUNT:
-		retval = tty_tiocgicount(tty, p);
-		/* For the moment allow fall through to the old method */
-        	if (retval != -EINVAL)
-			return retval;
-		break;
+		return tty_tiocgicount(tty, p);
 	case TCFLSH:
 		switch (arg) {
 		case TCIFLUSH:
 		case TCIOFLUSH:
 		/* flush tty buffer and allow ldisc to process ioctl */
-			tty_buffer_flush(tty);
+			tty_buffer_flush(tty, NULL);
 			break;
 		}
 		break;
+	case TIOCSSERIAL:
+		return tty_tiocsserial(tty, p);
+	case TIOCGSERIAL:
+		return tty_tiocgserial(tty, p);
+	case TIOCGPTPEER:
+		/* Special because the struct file is needed */
+		return ptm_open_peer(file, tty, (int)arg);
+	default:
+		retval = tty_jobctrl_ioctl(tty, real_tty, file, cmd, arg);
+		if (retval != -ENOIOCTLCMD)
+			return retval;
 	}
 	if (tty->ops->ioctl) {
-		retval = (tty->ops->ioctl)(tty, cmd, arg);
+		retval = tty->ops->ioctl(tty, cmd, arg);
 		if (retval != -ENOIOCTLCMD)
 			return retval;
 	}
 	ld = tty_ldisc_ref_wait(tty);
+	if (!ld)
+		return hung_up_tty_ioctl(file, cmd, arg);
 	retval = -EINVAL;
 	if (ld->ops->ioctl) {
 		retval = ld->ops->ioctl(tty, file, cmd, arg);
@@ -2921,6 +2763,83 @@ long tty_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 }
 
 #ifdef CONFIG_COMPAT
+
+struct serial_struct32 {
+	compat_int_t    type;
+	compat_int_t    line;
+	compat_uint_t   port;
+	compat_int_t    irq;
+	compat_int_t    flags;
+	compat_int_t    xmit_fifo_size;
+	compat_int_t    custom_divisor;
+	compat_int_t    baud_base;
+	unsigned short  close_delay;
+	char    io_type;
+	char    reserved_char;
+	compat_int_t    hub6;
+	unsigned short  closing_wait; /* time to wait before closing */
+	unsigned short  closing_wait2; /* no longer used... */
+	compat_uint_t   iomem_base;
+	unsigned short  iomem_reg_shift;
+	unsigned int    port_high;
+	/* compat_ulong_t  iomap_base FIXME */
+	compat_int_t    reserved;
+};
+
+static int compat_tty_tiocsserial(struct tty_struct *tty,
+		struct serial_struct32 __user *ss)
+{
+	static DEFINE_RATELIMIT_STATE(depr_flags,
+			DEFAULT_RATELIMIT_INTERVAL,
+			DEFAULT_RATELIMIT_BURST);
+	char comm[TASK_COMM_LEN];
+	struct serial_struct32 v32;
+	struct serial_struct v;
+	int flags;
+
+	if (copy_from_user(&v32, ss, sizeof(*ss)))
+		return -EFAULT;
+
+	memcpy(&v, &v32, offsetof(struct serial_struct32, iomem_base));
+	v.iomem_base = compat_ptr(v32.iomem_base);
+	v.iomem_reg_shift = v32.iomem_reg_shift;
+	v.port_high = v32.port_high;
+	v.iomap_base = 0;
+
+	flags = v.flags & ASYNC_DEPRECATED;
+
+	if (flags && __ratelimit(&depr_flags))
+		pr_warn("%s: '%s' is using deprecated serial flags (with no effect): %.8x\n",
+			__func__, get_task_comm(comm, current), flags);
+	if (!tty->ops->set_serial)
+		return -ENOTTY;
+	return tty->ops->set_serial(tty, &v);
+}
+
+static int compat_tty_tiocgserial(struct tty_struct *tty,
+			struct serial_struct32 __user *ss)
+{
+	struct serial_struct32 v32;
+	struct serial_struct v;
+	int err;
+
+	memset(&v, 0, sizeof(v));
+	memset(&v32, 0, sizeof(v32));
+
+	if (!tty->ops->get_serial)
+		return -ENOTTY;
+	err = tty->ops->get_serial(tty, &v);
+	if (!err) {
+		memcpy(&v32, &v, offsetof(struct serial_struct32, iomem_base));
+		v32.iomem_base = (unsigned long)v.iomem_base >> 32 ?
+			0xfffffff : ptr_to_compat(v.iomem_base);
+		v32.iomem_reg_shift = v.iomem_reg_shift;
+		v32.port_high = v.port_high;
+		if (copy_to_user(ss, &v32, sizeof(v32)))
+			err = -EFAULT;
+	}
+	return err;
+}
 static long tty_compat_ioctl(struct file *file, unsigned int cmd,
 				unsigned long arg)
 {
@@ -2928,20 +2847,108 @@ static long tty_compat_ioctl(struct file *file, unsigned int cmd,
 	struct tty_ldisc *ld;
 	int retval = -ENOIOCTLCMD;
 
+	switch (cmd) {
+	case TIOCOUTQ:
+	case TIOCSTI:
+	case TIOCGWINSZ:
+	case TIOCSWINSZ:
+	case TIOCGEXCL:
+	case TIOCGETD:
+	case TIOCSETD:
+	case TIOCGDEV:
+	case TIOCMGET:
+	case TIOCMSET:
+	case TIOCMBIC:
+	case TIOCMBIS:
+	case TIOCGICOUNT:
+	case TIOCGPGRP:
+	case TIOCSPGRP:
+	case TIOCGSID:
+	case TIOCSERGETLSR:
+	case TIOCGRS485:
+	case TIOCSRS485:
+#ifdef TIOCGETP
+	case TIOCGETP:
+	case TIOCSETP:
+	case TIOCSETN:
+#endif
+#ifdef TIOCGETC
+	case TIOCGETC:
+	case TIOCSETC:
+#endif
+#ifdef TIOCGLTC
+	case TIOCGLTC:
+	case TIOCSLTC:
+#endif
+	case TCSETSF:
+	case TCSETSW:
+	case TCSETS:
+	case TCGETS:
+#ifdef TCGETS2
+	case TCGETS2:
+	case TCSETSF2:
+	case TCSETSW2:
+	case TCSETS2:
+#endif
+	case TCGETA:
+	case TCSETAF:
+	case TCSETAW:
+	case TCSETA:
+	case TIOCGLCKTRMIOS:
+	case TIOCSLCKTRMIOS:
+#ifdef TCGETX
+	case TCGETX:
+	case TCSETX:
+	case TCSETXW:
+	case TCSETXF:
+#endif
+	case TIOCGSOFTCAR:
+	case TIOCSSOFTCAR:
+
+	case PPPIOCGCHAN:
+	case PPPIOCGUNIT:
+		return tty_ioctl(file, cmd, (unsigned long)compat_ptr(arg));
+	case TIOCCONS:
+	case TIOCEXCL:
+	case TIOCNXCL:
+	case TIOCVHANGUP:
+	case TIOCSBRK:
+	case TIOCCBRK:
+	case TCSBRK:
+	case TCSBRKP:
+	case TCFLSH:
+	case TIOCGPTPEER:
+	case TIOCNOTTY:
+	case TIOCSCTTY:
+	case TCXONC:
+	case TIOCMIWAIT:
+	case TIOCSERCONFIG:
+		return tty_ioctl(file, cmd, arg);
+	}
+
 	if (tty_paranoia_check(tty, file_inode(file), "tty_ioctl"))
 		return -EINVAL;
 
+	switch (cmd) {
+	case TIOCSSERIAL:
+		return compat_tty_tiocsserial(tty, compat_ptr(arg));
+	case TIOCGSERIAL:
+		return compat_tty_tiocgserial(tty, compat_ptr(arg));
+	}
 	if (tty->ops->compat_ioctl) {
-		retval = (tty->ops->compat_ioctl)(tty, cmd, arg);
+		retval = tty->ops->compat_ioctl(tty, cmd, arg);
 		if (retval != -ENOIOCTLCMD)
 			return retval;
 	}
 
 	ld = tty_ldisc_ref_wait(tty);
+	if (!ld)
+		return hung_up_tty_compat_ioctl(file, cmd, arg);
 	if (ld->ops->compat_ioctl)
 		retval = ld->ops->compat_ioctl(tty, file, cmd, arg);
-	else
-		retval = n_tty_compat_ioctl_helper(tty, file, cmd, arg);
+	if (retval == -ENOIOCTLCMD && ld->ops->ioctl)
+		retval = ld->ops->ioctl(tty, file,
+				(unsigned long)compat_ptr(cmd), arg);
 	tty_ldisc_deref(ld);
 
 	return retval;
@@ -2950,7 +2957,7 @@ static long tty_compat_ioctl(struct file *file, unsigned int cmd,
 
 static int this_tty(const void *t, struct file *file, unsigned fd)
 {
-	if (likely(file->f_op->read != tty_read))
+	if (likely(file->f_op->read_iter != tty_read))
 		return 0;
 	return file_tty(file) != t ? 0 : fd + 1;
 }
@@ -2998,29 +3005,25 @@ void __do_SAK(struct tty_struct *tty)
 	read_lock(&tasklist_lock);
 	/* Kill the entire session */
 	do_each_pid_task(session, PIDTYPE_SID, p) {
-		printk(KERN_NOTICE "SAK: killed process %d"
-			" (%s): task_session(p)==tty->session\n",
-			task_pid_nr(p), p->comm);
-		send_sig(SIGKILL, p, 1);
+		tty_notice(tty, "SAK: killed process %d (%s): by session\n",
+			   task_pid_nr(p), p->comm);
+		group_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_SID);
 	} while_each_pid_task(session, PIDTYPE_SID, p);
-	/* Now kill any processes that happen to have the
-	 * tty open.
-	 */
+
+	/* Now kill any processes that happen to have the tty open */
 	do_each_thread(g, p) {
 		if (p->signal->tty == tty) {
-			printk(KERN_NOTICE "SAK: killed process %d"
-			    " (%s): task_session(p)==tty->session\n",
-			    task_pid_nr(p), p->comm);
-			send_sig(SIGKILL, p, 1);
+			tty_notice(tty, "SAK: killed process %d (%s): by controlling tty\n",
+				   task_pid_nr(p), p->comm);
+			group_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_SID);
 			continue;
 		}
 		task_lock(p);
 		i = iterate_fd(p->files, 0, this_tty, tty);
 		if (i != 0) {
-			printk(KERN_NOTICE "SAK: killed process %d"
-			    " (%s): fd#%d opened to the tty\n",
-				    task_pid_nr(p), p->comm, i - 1);
-			force_sig(SIGKILL, p);
+			tty_notice(tty, "SAK: killed process %d (%s): by fd#%d\n",
+				   task_pid_nr(p), p->comm, i - 1);
+			group_send_sig_info(SIGKILL, SEND_SIG_PRIV, p, PIDTYPE_SID);
 		}
 		task_unlock(p);
 	} while_each_thread(g, p);
@@ -3051,17 +3054,11 @@ void do_SAK(struct tty_struct *tty)
 
 EXPORT_SYMBOL(do_SAK);
 
-static int dev_match_devt(struct device *dev, const void *data)
-{
-	const dev_t *devt = data;
-	return dev->devt == *devt;
-}
-
 /* Must put_device() after it's unused! */
 static struct device *tty_get_device(struct tty_struct *tty)
 {
 	dev_t devt = tty_devnum(tty);
-	return class_find_device(tty_class, NULL, &devt, dev_match_devt);
+	return class_find_device_by_devt(tty_class, devt);
 }
 
 
@@ -3083,7 +3080,10 @@ struct tty_struct *alloc_tty_struct(struct tty_driver *driver, int idx)
 
 	kref_init(&tty->kref);
 	tty->magic = TTY_MAGIC;
-	tty_ldisc_init(tty);
+	if (tty_ldisc_init(tty)) {
+		kfree(tty);
+		return NULL;
+	}
 	tty->session = NULL;
 	tty->pgrp = NULL;
 	mutex_init(&tty->legacy_mutex);
@@ -3097,6 +3097,7 @@ struct tty_struct *alloc_tty_struct(struct tty_driver *driver, int idx)
 	mutex_init(&tty->atomic_write_lock);
 	spin_lock_init(&tty->ctrl_lock);
 	spin_lock_init(&tty->flow_lock);
+	spin_lock_init(&tty->files_lock);
 	INIT_LIST_HEAD(&tty->tty_files);
 	INIT_WORK(&tty->SAK_work, do_SAK_work);
 
@@ -3107,20 +3108,6 @@ struct tty_struct *alloc_tty_struct(struct tty_driver *driver, int idx)
 	tty->dev = tty_get_device(tty);
 
 	return tty;
-}
-
-/**
- *	deinitialize_tty_struct
- *	@tty: tty to deinitialize
- *
- *	This subroutine deinitializes a tty structure that has been newly
- *	allocated but tty_release cannot be called on that yet.
- *
- *	Locking: none - tty in question must not be exposed at this point
- */
-void deinitialize_tty_struct(struct tty_struct *tty)
-{
-	tty_ldisc_deinit(tty);
 }
 
 /**
@@ -3148,10 +3135,18 @@ struct class *tty_class;
 static int tty_cdev_add(struct tty_driver *driver, dev_t dev,
 		unsigned int index, unsigned int count)
 {
+	int err;
+
 	/* init here, since reused cdevs cause crashes */
-	cdev_init(&driver->cdevs[index], &tty_fops);
-	driver->cdevs[index].owner = driver->owner;
-	return cdev_add(&driver->cdevs[index], dev, count);
+	driver->cdevs[index] = cdev_alloc();
+	if (!driver->cdevs[index])
+		return -ENOMEM;
+	driver->cdevs[index]->ops = &tty_fops;
+	driver->cdevs[index]->owner = driver->owner;
+	err = cdev_add(driver->cdevs[index], dev, count);
+	if (err)
+		kobject_put(&driver->cdevs[index]->kobj);
+	return err;
 }
 
 /**
@@ -3182,7 +3177,7 @@ EXPORT_SYMBOL(tty_register_device);
 
 static void tty_device_create_release(struct device *dev)
 {
-	pr_debug("device: '%s': %s\n", dev_name(dev), __func__);
+	dev_dbg(dev, "releasing...\n");
 	kfree(dev);
 }
 
@@ -3213,13 +3208,13 @@ struct device *tty_register_device_attr(struct tty_driver *driver,
 {
 	char name[64];
 	dev_t devt = MKDEV(driver->major, driver->minor_start) + index;
-	struct device *dev = NULL;
-	int retval = -ENODEV;
-	bool cdev = false;
+	struct ktermios *tp;
+	struct device *dev;
+	int retval;
 
 	if (index >= driver->num) {
-		printk(KERN_ERR "Attempt to register invalid tty line number "
-		       " (%d).\n", index);
+		pr_err("%s: Attempt to register invalid tty line number (%d)\n",
+		       driver->name, index);
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -3228,18 +3223,9 @@ struct device *tty_register_device_attr(struct tty_driver *driver,
 	else
 		tty_line_name(driver, index, name);
 
-	if (!(driver->flags & TTY_DRIVER_DYNAMIC_ALLOC)) {
-		retval = tty_cdev_add(driver, devt, index, 1);
-		if (retval)
-			goto error;
-		cdev = true;
-	}
-
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
-	if (!dev) {
-		retval = -ENOMEM;
-		goto error;
-	}
+	if (!dev)
+		return ERR_PTR(-ENOMEM);
 
 	dev->devt = devt;
 	dev->class = tty_class;
@@ -3249,16 +3235,38 @@ struct device *tty_register_device_attr(struct tty_driver *driver,
 	dev->groups = attr_grp;
 	dev_set_drvdata(dev, drvdata);
 
+	dev_set_uevent_suppress(dev, 1);
+
 	retval = device_register(dev);
 	if (retval)
-		goto error;
+		goto err_put;
+
+	if (!(driver->flags & TTY_DRIVER_DYNAMIC_ALLOC)) {
+		/*
+		 * Free any saved termios data so that the termios state is
+		 * reset when reusing a minor number.
+		 */
+		tp = driver->termios[index];
+		if (tp) {
+			driver->termios[index] = NULL;
+			kfree(tp);
+		}
+
+		retval = tty_cdev_add(driver, devt, index, 1);
+		if (retval)
+			goto err_del;
+	}
+
+	dev_set_uevent_suppress(dev, 0);
+	kobject_uevent(&dev->kobj, KOBJ_ADD);
 
 	return dev;
 
-error:
+err_del:
+	device_del(dev);
+err_put:
 	put_device(dev);
-	if (cdev)
-		cdev_del(&driver->cdevs[index]);
+
 	return ERR_PTR(retval);
 }
 EXPORT_SYMBOL_GPL(tty_register_device_attr);
@@ -3278,15 +3286,17 @@ void tty_unregister_device(struct tty_driver *driver, unsigned index)
 {
 	device_destroy(tty_class,
 		MKDEV(driver->major, driver->minor_start) + index);
-	if (!(driver->flags & TTY_DRIVER_DYNAMIC_ALLOC))
-		cdev_del(&driver->cdevs[index]);
+	if (!(driver->flags & TTY_DRIVER_DYNAMIC_ALLOC)) {
+		cdev_del(driver->cdevs[index]);
+		driver->cdevs[index] = NULL;
+	}
 }
 EXPORT_SYMBOL(tty_unregister_device);
 
 /**
  * __tty_alloc_driver -- allocate tty driver
  * @lines: count of lines this driver can handle at most
- * @owner: module which is repsonsible for this driver
+ * @owner: module which is responsible for this driver
  * @flags: some of TTY_DRIVER_* flags, will be set in driver->flags
  *
  * This should not be called directly, some of the provided macros should be
@@ -3302,7 +3312,7 @@ struct tty_driver *__tty_alloc_driver(unsigned int lines, struct module *owner,
 	if (!lines || (flags & TTY_DRIVER_UNNUMBERED_NODE && lines > 1))
 		return ERR_PTR(-EINVAL);
 
-	driver = kzalloc(sizeof(struct tty_driver), GFP_KERNEL);
+	driver = kzalloc(sizeof(*driver), GFP_KERNEL);
 	if (!driver)
 		return ERR_PTR(-ENOMEM);
 
@@ -3344,6 +3354,7 @@ err_free_all:
 	kfree(driver->ports);
 	kfree(driver->ttys);
 	kfree(driver->termios);
+	kfree(driver->cdevs);
 	kfree(driver);
 	return ERR_PTR(err);
 }
@@ -3356,11 +3367,6 @@ static void destruct_tty_driver(struct kref *kref)
 	struct ktermios *tp;
 
 	if (driver->flags & TTY_DRIVER_INSTALLED) {
-		/*
-		 * Free the termios and termios_locked structures because
-		 * we don't want to get memory leaks when modular tty
-		 * drivers are removed from the kernel.
-		 */
 		for (i = 0; i < driver->num; i++) {
 			tp = driver->termios[i];
 			if (tp) {
@@ -3372,7 +3378,7 @@ static void destruct_tty_driver(struct kref *kref)
 		}
 		proc_tty_unregister_driver(driver);
 		if (driver->flags & TTY_DRIVER_DYNAMIC_ALLOC)
-			cdev_del(&driver->cdevs[0]);
+			cdev_del(driver->cdevs[0]);
 	}
 	kfree(driver->cdevs);
 	kfree(driver->ports);
@@ -3488,86 +3494,9 @@ dev_t tty_devnum(struct tty_struct *tty)
 }
 EXPORT_SYMBOL(tty_devnum);
 
-void proc_clear_tty(struct task_struct *p)
-{
-	unsigned long flags;
-	struct tty_struct *tty;
-	spin_lock_irqsave(&p->sighand->siglock, flags);
-	tty = p->signal->tty;
-	p->signal->tty = NULL;
-	spin_unlock_irqrestore(&p->sighand->siglock, flags);
-	tty_kref_put(tty);
-}
-
-/* Called under the sighand lock */
-
-static void __proc_set_tty(struct task_struct *tsk, struct tty_struct *tty)
-{
-	if (tty) {
-		unsigned long flags;
-		/* We should not have a session or pgrp to put here but.... */
-		spin_lock_irqsave(&tty->ctrl_lock, flags);
-		put_pid(tty->session);
-		put_pid(tty->pgrp);
-		tty->pgrp = get_pid(task_pgrp(tsk));
-		tty->session = get_pid(task_session(tsk));
-		spin_unlock_irqrestore(&tty->ctrl_lock, flags);
-		if (tsk->signal->tty) {
-			printk(KERN_DEBUG "tty not NULL!!\n");
-			tty_kref_put(tsk->signal->tty);
-		}
-	}
-	put_pid(tsk->signal->tty_old_pgrp);
-	tsk->signal->tty = tty_kref_get(tty);
-	tsk->signal->tty_old_pgrp = NULL;
-}
-
-static void proc_set_tty(struct task_struct *tsk, struct tty_struct *tty)
-{
-	spin_lock_irq(&tsk->sighand->siglock);
-	__proc_set_tty(tsk, tty);
-	spin_unlock_irq(&tsk->sighand->siglock);
-}
-
-struct tty_struct *get_current_tty(void)
-{
-	struct tty_struct *tty;
-	unsigned long flags;
-
-	spin_lock_irqsave(&current->sighand->siglock, flags);
-	tty = tty_kref_get(current->signal->tty);
-	spin_unlock_irqrestore(&current->sighand->siglock, flags);
-	return tty;
-}
-EXPORT_SYMBOL_GPL(get_current_tty);
-
 void tty_default_fops(struct file_operations *fops)
 {
 	*fops = tty_fops;
-}
-
-/*
- * Initialize the console device. This is called *early*, so
- * we can't necessarily depend on lots of kernel help here.
- * Just do some early initializations, and do the complex setup
- * later.
- */
-void __init console_init(void)
-{
-	initcall_t *call;
-
-	/* Setup the default TTY line discipline. */
-	tty_ldisc_begin();
-
-	/*
-	 * set up the console device so that later boot sequences can
-	 * inform about problems etc..
-	 */
-	call = __con_initcall_start;
-	while (call < __con_initcall_end) {
-		(*call)();
-		call++;
-	}
 }
 
 static char *tty_devnode(struct device *dev, umode_t *mode)
@@ -3633,6 +3562,13 @@ static ssize_t show_cons_active(struct device *dev,
 }
 static DEVICE_ATTR(active, S_IRUGO, show_cons_active, NULL);
 
+static struct attribute *cons_dev_attrs[] = {
+	&dev_attr_active.attr,
+	NULL
+};
+
+ATTRIBUTE_GROUPS(cons_dev);
+
 static struct device *consdev;
 
 void console_sysfs_notify(void)
@@ -3647,6 +3583,7 @@ void console_sysfs_notify(void)
  */
 int __init tty_init(void)
 {
+	tty_sysctl_init();
 	cdev_init(&tty_cdev, &tty_fops);
 	if (cdev_add(&tty_cdev, MKDEV(TTYAUX_MAJOR, 0), 1) ||
 	    register_chrdev_region(MKDEV(TTYAUX_MAJOR, 0), 1, "/dev/tty") < 0)
@@ -3657,12 +3594,11 @@ int __init tty_init(void)
 	if (cdev_add(&console_cdev, MKDEV(TTYAUX_MAJOR, 1), 1) ||
 	    register_chrdev_region(MKDEV(TTYAUX_MAJOR, 1), 1, "/dev/console") < 0)
 		panic("Couldn't register /dev/console driver\n");
-	consdev = device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 1), NULL,
-			      "console");
+	consdev = device_create_with_groups(tty_class, NULL,
+					    MKDEV(TTYAUX_MAJOR, 1), NULL,
+					    cons_dev_groups, "console");
 	if (IS_ERR(consdev))
 		consdev = NULL;
-	else
-		WARN_ON(device_create_file(consdev, &dev_attr_active) < 0);
 
 #ifdef CONFIG_VT
 	vty_init(&console_fops);

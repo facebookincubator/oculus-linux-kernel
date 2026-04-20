@@ -1,12 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * OMAP2/3 Power Management Routines
  *
  * Copyright (C) 2008 Nokia Corporation
  * Jouni Hogander
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #ifndef __ARCH_ARM_MACH_OMAP2_PM_H
 #define __ARCH_ARM_MACH_OMAP2_PM_H
@@ -52,11 +49,7 @@ static inline int omap4_opp_init(void)
 extern int omap3_pm_get_suspend_state(struct powerdomain *pwrdm);
 extern int omap3_pm_set_suspend_state(struct powerdomain *pwrdm, int state);
 
-#ifdef CONFIG_PM_DEBUG
 extern u32 enable_off_mode;
-#else
-#define enable_off_mode 0
-#endif
 
 #if defined(CONFIG_PM_DEBUG) && defined(CONFIG_DEBUG_FS)
 extern void pm_dbg_update_time(struct powerdomain *pwrdm, int prev);
@@ -81,9 +74,8 @@ extern unsigned int omap3_do_wfi_sz;
 /* ... and its pointer from SRAM after copy */
 extern void (*omap3_do_wfi_sram)(void);
 
-/* save_secure_ram_context function pointer and size, for copy to SRAM */
-extern int save_secure_ram_context(u32 *addr);
-extern unsigned int save_secure_ram_context_sz;
+extern struct am33xx_pm_sram_addr am33xx_pm_sram;
+extern struct am33xx_pm_sram_addr am43xx_pm_sram;
 
 extern void omap3_save_scratchpad_contents(void);
 
@@ -103,12 +95,18 @@ static inline void enable_omap3630_toggle_l2_on_restore(void) { }
 #define PM_OMAP4_ROM_SMP_BOOT_ERRATUM_GICD	(1 << 0)
 #define PM_OMAP4_CPU_OSWR_DISABLE		(1 << 1)
 
-#if defined(CONFIG_PM) && defined(CONFIG_ARCH_OMAP4)
+#if defined(CONFIG_PM) && (defined(CONFIG_ARCH_OMAP4) ||\
+	   defined(CONFIG_SOC_OMAP5) || defined(CONFIG_SOC_DRA7XX))
 extern u16 pm44xx_errata;
 #define IS_PM44XX_ERRATUM(id)		(pm44xx_errata & (id))
 #else
 #define IS_PM44XX_ERRATUM(id)		0
 #endif
+
+#define OMAP4_VP_CONFIG_ERROROFFSET	0x00
+#define OMAP4_VP_VSTEPMIN_VSTEPMIN	0x01
+#define OMAP4_VP_VSTEPMAX_VSTEPMAX	0x04
+#define OMAP4_VP_VLIMITTO_TIMEOUT_US	200
 
 #ifdef CONFIG_POWER_AVS_OMAP
 extern int omap_devinit_smartreflex(void);
@@ -132,6 +130,15 @@ static inline int omap3_twl_init(void)
 	return -EINVAL;
 }
 static inline int omap4_twl_init(void)
+{
+	return -EINVAL;
+}
+#endif
+
+#if IS_ENABLED(CONFIG_MFD_CPCAP)
+extern int omap4_cpcap_init(void);
+#else
+static inline int omap4_cpcap_init(void)
 {
 	return -EINVAL;
 }

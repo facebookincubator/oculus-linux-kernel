@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * I2C driver for Marvell 88PM80x
  *
@@ -5,10 +6,6 @@
  * Haojian Zhuang <haojian.zhuang@marvell.com>
  * Joseph(Yossi) Hanin <yhanin@marvell.com>
  * Qiao Zhou <zhouqiao@marvell.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -33,6 +30,8 @@ static struct pm80x_chip_mapping chip_mapping[] = {
 	{0x3,	CHIP_PM800},
 	/* 88PM805 chip id number */
 	{0x0,	CHIP_PM805},
+	/* 88PM860 chip id number */
+	{0x4,	CHIP_PM860},
 };
 
 /*
@@ -133,7 +132,7 @@ EXPORT_SYMBOL_GPL(pm80x_deinit);
 #ifdef CONFIG_PM_SLEEP
 static int pm80x_suspend(struct device *dev)
 {
-	struct i2c_client *client = container_of(dev, struct i2c_client, dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct pm80x_chip *chip = i2c_get_clientdata(client);
 
 	if (chip && chip->wu_flag)
@@ -145,7 +144,7 @@ static int pm80x_suspend(struct device *dev)
 
 static int pm80x_resume(struct device *dev)
 {
-	struct i2c_client *client = container_of(dev, struct i2c_client, dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct pm80x_chip *chip = i2c_get_clientdata(client);
 
 	if (chip && chip->wu_flag)

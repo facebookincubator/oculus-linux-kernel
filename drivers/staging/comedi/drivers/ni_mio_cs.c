@@ -1,51 +1,37 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
-    comedi/drivers/ni_mio_cs.c
-    Hardware driver for NI PCMCIA MIO E series cards
+ * Comedi driver for NI PCMCIA MIO E series cards
+ *
+ * COMEDI - Linux Control and Measurement Device Interface
+ * Copyright (C) 1997-2000 David A. Schleef <ds@schleef.org>
+ */
 
-    COMEDI - Linux Control and Measurement Device Interface
-    Copyright (C) 1997-2000 David A. Schleef <ds@schleef.org>
-
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-*/
 /*
-Driver: ni_mio_cs
-Description: National Instruments DAQCard E series
-Author: ds
-Status: works
-Devices: [National Instruments] DAQCard-AI-16XE-50 (ni_mio_cs),
-  DAQCard-AI-16E-4, DAQCard-6062E, DAQCard-6024E, DAQCard-6036E
-Updated: Thu Oct 23 19:43:17 CDT 2003
+ * Driver: ni_mio_cs
+ * Description: National Instruments DAQCard E series
+ * Author: ds
+ * Status: works
+ * Devices: [National Instruments] DAQCard-AI-16XE-50 (ni_mio_cs),
+ *   DAQCard-AI-16E-4, DAQCard-6062E, DAQCard-6024E, DAQCard-6036E
+ * Updated: Thu Oct 23 19:43:17 CDT 2003
+ *
+ * See the notes in the ni_atmio.o driver.
+ */
 
-See the notes in the ni_atmio.o driver.
-*/
 /*
-	The real guts of the driver is in ni_mio_common.c, which is
-	included by all the E series drivers.
-
-	References for specifications:
-
-	   341080a.pdf  DAQCard E Series Register Level Programmer Manual
-
-*/
+ * The real guts of the driver is in ni_mio_common.c, which is
+ * included by all the E series drivers.
+ *
+ * References for specifications:
+ *	341080a.pdf  DAQCard E Series Register Level Programmer Manual
+ */
 
 #include <linux/module.h>
-#include "../comedidev.h"
-
 #include <linux/delay.h>
 
+#include "../comedi_pcmcia.h"
 #include "ni_stc.h"
 #include "8255.h"
-
-#include <pcmcia/cistpl.h>
-#include <pcmcia/ds.h>
 
 /*
  *  AT specific setup
@@ -163,7 +149,6 @@ static int mio_cs_auto_attach(struct comedi_device *dev,
 {
 	struct pcmcia_device *link = comedi_to_pcmcia_dev(dev);
 	static const struct ni_board_struct *board;
-	struct ni_private *devpriv;
 	int ret;
 
 	board = ni_getboardtype(dev, link);
@@ -187,8 +172,6 @@ static int mio_cs_auto_attach(struct comedi_device *dev,
 	ret = ni_alloc_private(dev);
 	if (ret)
 		return ret;
-
-	devpriv = dev->private;
 
 	return ni_E_init(dev, 0, 1);
 }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /* 
  * Generate definitions needed by assembly language modules.
  * This code generates raw asm output which is post-processed to extract
@@ -11,20 +12,6 @@
  *    Copyright (C) 2001 Richard Hirst <rhirst at parisc-linux.org>
  *    Copyright (C) 2002 Randolph Chung <tausq with parisc-linux.org>
  *    Copyright (C) 2003 James Bottomley <jejb at parisc-linux.org>
- *
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License as published by
- *    the Free Software Foundation; either version 2 of the License, or
- *    (at your option) any later version.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
- *
- *    You should have received a copy of the GNU General Public License
- *    along with this program; if not, write to the Free Software
- *    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/types.h>
@@ -33,12 +20,12 @@
 #include <linux/ptrace.h>
 #include <linux/hardirq.h>
 #include <linux/kbuild.h>
+#include <linux/pgtable.h>
 
-#include <asm/pgtable.h>
 #include <asm/ptrace.h>
 #include <asm/processor.h>
 #include <asm/pdc.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #ifdef CONFIG_64BIT
 #define FRAME_SIZE	128
@@ -242,7 +229,6 @@ int main(void)
 	DEFINE(PT_SZ_ALGN, align_frame(sizeof(struct pt_regs), FRAME_ALIGN));
 	BLANK();
 	DEFINE(TI_TASK, offsetof(struct thread_info, task));
-	DEFINE(TI_EXEC_DOMAIN, offsetof(struct thread_info, exec_domain));
 	DEFINE(TI_FLAGS, offsetof(struct thread_info, flags));
 	DEFINE(TI_CPU, offsetof(struct thread_info, cpu));
 	DEFINE(TI_SEGMENT, offsetof(struct thread_info, addr_limit));
@@ -282,7 +268,6 @@ int main(void)
 	DEFINE(ASM_BITS_PER_PGD, BITS_PER_PGD);
 	DEFINE(ASM_BITS_PER_PMD, BITS_PER_PMD);
 	DEFINE(ASM_BITS_PER_PTE, BITS_PER_PTE);
-	DEFINE(ASM_PGD_PMD_OFFSET, -(PAGE_SIZE << PGD_ORDER));
 	DEFINE(ASM_PMD_ENTRY, ((PAGE_OFFSET & PMD_MASK) >> PMD_SHIFT));
 	DEFINE(ASM_PGD_ENTRY, PAGE_OFFSET >> PGDIR_SHIFT);
 	DEFINE(ASM_PGD_ENTRY_SIZE, PGD_ENTRY_SIZE);
@@ -291,9 +276,13 @@ int main(void)
 	DEFINE(ASM_PFN_PTE_SHIFT, PFN_PTE_SHIFT);
 	DEFINE(ASM_PT_INITIAL, PT_INITIAL);
 	BLANK();
-	DEFINE(EXCDATA_IP, offsetof(struct exception_data, fault_ip));
-	DEFINE(EXCDATA_SPACE, offsetof(struct exception_data, fault_space));
-	DEFINE(EXCDATA_ADDR, offsetof(struct exception_data, fault_addr));
+	/* HUGEPAGE_SIZE is only used in vmlinux.lds.S to align kernel text
+	 * and kernel data on physical huge pages */
+#ifdef CONFIG_HUGETLB_PAGE
+	DEFINE(HUGEPAGE_SIZE, 1UL << REAL_HPAGE_SHIFT);
+#else
+	DEFINE(HUGEPAGE_SIZE, PAGE_SIZE);
+#endif
 	BLANK();
 	DEFINE(ASM_PDC_RESULT_SIZE, NUM_PDC_RESULT * sizeof(unsigned long));
 	BLANK();

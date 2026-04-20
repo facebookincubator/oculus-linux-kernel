@@ -1,18 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/mm/copypage-v6.c
  *
  *  Copyright (C) 2002 Deep Blue Solutions Ltd, All Rights Reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #include <linux/init.h>
 #include <linux/spinlock.h>
 #include <linux/mm.h>
 #include <linux/highmem.h>
 
-#include <asm/pgtable.h>
 #include <asm/shmparam.h>
 #include <asm/tlbflush.h>
 #include <asm/cacheflush.h>
@@ -62,7 +58,7 @@ static void discard_old_kernel_data(void *kto)
 	__asm__("mcrr	p15, 0, %1, %0, c6	@ 0xec401f06"
 	   :
 	   : "r" (kto),
-	     "r" ((unsigned long)kto + PAGE_SIZE - L1_CACHE_BYTES)
+	     "r" ((unsigned long)kto + PAGE_SIZE - 1)
 	   : "cc");
 }
 
@@ -76,7 +72,7 @@ static void v6_copy_user_highpage_aliasing(struct page *to,
 	unsigned long kfrom, kto;
 
 	if (!test_and_set_bit(PG_dcache_clean, &from->flags))
-		__flush_dcache_page(page_mapping(from), from);
+		__flush_dcache_page(page_mapping_file(from), from);
 
 	/* FIXME: not highmem safe */
 	discard_old_kernel_data(page_address(to));

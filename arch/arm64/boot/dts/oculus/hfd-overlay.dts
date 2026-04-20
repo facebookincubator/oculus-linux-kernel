@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "greatwhite.dtsi"
+
+/ {
+	model = "HyperFrankenDragon - GW + AvoB0";
+	compatible = "meta,hfd";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xb3>;
+};
+
+&max17332 {
+	interrupts = <7 IRQ_TYPE_EDGE_FALLING>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&fg_mux_defaults>;
+	status = "disabled";
+};
+
+/delete-node/ &max77813;
+
+&usb_conn_gpio {
+	meta,suspend-disable;
+};
+
+&tlmm {
+	soc_mipi_mux0_oe: soc_mipi_mux0_oe {
+		gpio-hog;
+		gpios = <68 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+	soc_mipi_mux0_sel: soc_mipi_mux0_sel {
+		gpio-hog;
+		gpios = <73 GPIO_ACTIVE_HIGH>;
+		output-low;
+	};
+};
+
+&pcie1 {
+		status = "ok";
+		// Auto enumerate Avo device.
+		qcom,boot-option = <0x0>;
+		qcom,no-l1ss-supported; // l1ss is still buggy
+		qcom,no-l1-supported; // l1ss is still buggy
+
+		// note: this is defined in the vendor supplied dts, so
+		// disabling it here by itself wont help, you need to
+		// also disable it in kona-pcie.dtsi.
+		qcom,no-l0s-supported; // l0s is potentially buggy
+
+		// Default to no preshoot or deemphasis.
+		// This is the seed value for link training and lowers
+		// the default starting drive strength. On HFD, enumeration
+		// fails without this configuration.
+		qcom,core-preset = <0x44444444>;
+
+		// Avo requires 20ms between PERST deassertion and link training
+		qcom,perst-delay-us-min = <20000>;
+		qcom,perst-delay-us-max = <20050>;
+};
+
+&rt600_ctrl {
+	status = "disabled";
+};
+
+
+&qupv3_se0_spi {
+	status = "disabled";
+	spi-stp@0 {
+		status = "disabled";
+	};
+};
+
+#include "meta-neo-action-button.dtsi"

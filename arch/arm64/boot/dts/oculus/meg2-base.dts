@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+
+#include "vendor-base/qcom/neo_luna-v2.dtsi"
+#include "vendor-base/qcom/neo_luna-v2-sg-idp.dtsi"
+#include "meta-neo-base.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO-LA";
+	compatible = "qcom,neo";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <0 0>;
+};
+
+&aliases {
+	/* Avo FWR uart port */
+	hsuart1 = &qupv3_se6_2uart;
+
+	/* Debug UART for NSYNC PPS stream */
+	hsuart2 = &qupv3_se11_2uart;
+};
+
+&chosen {
+	bootargs = "loglevel=6 log_buf_len=256K kernel.panic_on_rcu_stall=1 loop.max_part=7 pcie_ports=compat service_locator.enable=1 msm_rtb.filter=0x237 allow_mismatched_32bit_el0 kasan=off rcupdate.rcu_expedited=1 rcu_nocbs=0-7 pstore.compress=none kpti=off swiotlb=noforce cgroup.memory=nokmem,nosocket allow_file_spec_access cpufreq.default_governor=performance disable_dma32=on ftrace_dump_on_oops";
+};
+
+&qupv3_se6_2uart {
+	status = "ok";
+};
+
+&qupv3_se11_2uart {
+    meta,fallback_hs;
+};

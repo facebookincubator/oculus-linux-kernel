@@ -1,11 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2011 IBM Corporation.
- *
- *  This program is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU General Public License
- *  as published by the Free Software Foundation; either version
- *  2 of the License, or (at your option) any later version.
- *
  */
 #include <linux/types.h>
 #include <linux/threads.h>
@@ -20,6 +15,7 @@
 #include <linux/of.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/delay.h>
 
 #include <asm/prom.h>
 #include <asm/io.h>
@@ -131,7 +127,7 @@ static void xics_request_ipi(void)
 	unsigned int ipi;
 
 	ipi = irq_create_mapping(xics_host, XICS_IPI);
-	BUG_ON(ipi == NO_IRQ);
+	BUG_ON(!ipi);
 
 	/*
 	 * IPIs are marked IRQF_PERCPU. The handler was set in map.
@@ -140,22 +136,20 @@ static void xics_request_ipi(void)
 			   IRQF_PERCPU | IRQF_NO_THREAD, "IPI", NULL));
 }
 
-int __init xics_smp_probe(void)
+void __init xics_smp_probe(void)
 {
-	/* Setup cause_ipi callback  based on which ICP is used */
-	smp_ops->cause_ipi = icp_ops->cause_ipi;
-
 	/* Register all the IPIs */
 	xics_request_ipi();
 
-	return cpumask_weight(cpu_possible_mask);
+	/* Setup cause_ipi callback based on which ICP is used */
+	smp_ops->cause_ipi = icp_ops->cause_ipi;
 }
 
 #endif /* CONFIG_SMP */
 
 void xics_teardown_cpu(void)
 {
-	struct xics_cppr *os_cppr = &__get_cpu_var(xics_cppr);
+	struct xics_cppr *os_cppr = this_cpu_ptr(&xics_cppr);
 
 	/*
 	 * we have to reset the cppr index to 0 because we're
@@ -200,9 +194,6 @@ void xics_migrate_irqs_away(void)
 	/* Remove ourselves from the global interrupt queue */
 	xics_set_cpu_giq(xics_default_distrib_server, 0);
 
-	/* Allow IPIs again... */
-	icp_ops->set_priority(DEFAULT_PRIORITY);
-
 	for_each_irq_desc(virq, desc) {
 		struct irq_chip *chip;
 		long server;
@@ -229,7 +220,7 @@ void xics_migrate_irqs_away(void)
 
 		/* Locate interrupt server */
 		server = -1;
-		ics = irq_get_chip_data(virq);
+		ics = irq_desc_get_chip_data(desc);
 		if (ics)
 			server = ics->get_server(ics, irq);
 		if (server < 0) {
@@ -247,8 +238,8 @@ void xics_migrate_irqs_away(void)
 
 		/* This is expected during cpu offline. */
 		if (cpu_online(cpu))
-			pr_warning("IRQ %u affinity broken off cpu %u\n",
-			       virq, cpu);
+			pr_warn("IRQ %u affinity broken off cpu %u\n",
+				virq, cpu);
 
 		/* Reset affinity to all cpus */
 		raw_spin_unlock_irqrestore(&desc->lock, flags);
@@ -257,6 +248,19 @@ void xics_migrate_irqs_away(void)
 unlock:
 		raw_spin_unlock_irqrestore(&desc->lock, flags);
 	}
+
+	/* Allow "sufficient" time to drop any inflight IRQ's */
+	mdelay(5);
+
+	/*
+	 * Allow IPIs again. This is done at the very end, after migrating all
+	 * interrupts, the expectation is that we'll only get woken up by an IPI
+	 * interrupt beyond this point, but leave externals masked just to be
+	 * safe. If we're using icp-opal this may actually allow all
+	 * interrupts anyway, but that should be OK.
+	 */
+	icp_ops->set_priority(DEFAULT_PRIORITY);
+
 }
 #endif /* CONFIG_HOTPLUG_CPU */
 
@@ -330,8 +334,12 @@ static int xics_host_map(struct irq_domain *h, unsigned int virq,
 
 	pr_devel("xics: map virq %d, hwirq 0x%lx\n", virq, hw);
 
-	/* They aren't all level sensitive but we just don't really know */
-	irq_set_status_flags(virq, IRQ_LEVEL);
+	/*
+	 * Mark interrupts as edge sensitive by default so that resend
+	 * actually works. The device-tree parsing will turn the LSIs
+	 * back to level.
+	 */
+	irq_clear_status_flags(virq, IRQ_LEVEL);
 
 	/* Don't call into ICS for IPIs */
 	if (hw == XICS_IPI) {
@@ -353,17 +361,58 @@ static int xics_host_xlate(struct irq_domain *h, struct device_node *ct,
 			   irq_hw_number_t *out_hwirq, unsigned int *out_flags)
 
 {
-	/* Current xics implementation translates everything
-	 * to level. It is not technically right for MSIs but this
-	 * is irrelevant at this point. We might get smarter in the future
-	 */
 	*out_hwirq = intspec[0];
-	*out_flags = IRQ_TYPE_LEVEL_LOW;
+
+	/*
+	 * If intsize is at least 2, we look for the type in the second cell,
+	 * we assume the LSB indicates a level interrupt.
+	 */
+	if (intsize > 1) {
+		if (intspec[1] & 1)
+			*out_flags = IRQ_TYPE_LEVEL_LOW;
+		else
+			*out_flags = IRQ_TYPE_EDGE_RISING;
+	} else
+		*out_flags = IRQ_TYPE_LEVEL_LOW;
 
 	return 0;
 }
 
-static struct irq_domain_ops xics_host_ops = {
+int xics_set_irq_type(struct irq_data *d, unsigned int flow_type)
+{
+	/*
+	 * We only support these. This has really no effect other than setting
+	 * the corresponding descriptor bits mind you but those will in turn
+	 * affect the resend function when re-enabling an edge interrupt.
+	 *
+	 * Set set the default to edge as explained in map().
+	 */
+	if (flow_type == IRQ_TYPE_DEFAULT || flow_type == IRQ_TYPE_NONE)
+		flow_type = IRQ_TYPE_EDGE_RISING;
+
+	if (flow_type != IRQ_TYPE_EDGE_RISING &&
+	    flow_type != IRQ_TYPE_LEVEL_LOW)
+		return -EINVAL;
+
+	irqd_set_trigger_type(d, flow_type);
+
+	return IRQ_SET_MASK_OK_NOCOPY;
+}
+
+int xics_retrigger(struct irq_data *data)
+{
+	/*
+	 * We need to push a dummy CPPR when retriggering, since the subsequent
+	 * EOI will try to pop it. Passing 0 works, as the function hard codes
+	 * the priority value anyway.
+	 */
+	xics_push_cppr(0);
+
+	/* Tell the core to do a soft retrigger */
+	return 0;
+}
+
+static const struct irq_domain_ops xics_host_ops = {
 	.match = xics_host_match,
 	.map = xics_host_map,
 	.xlate = xics_host_xlate,
@@ -392,10 +441,11 @@ static void __init xics_get_server_size(void)
 	np = of_find_compatible_node(NULL, NULL, "ibm,ppc-xics");
 	if (!np)
 		return;
+
 	isize = of_get_property(np, "ibm,interrupt-server#-size", NULL);
-	if (!isize)
-		return;
-	xics_interrupt_server_size = be32_to_cpu(*isize);
+	if (isize)
+		xics_interrupt_server_size = be32_to_cpu(*isize);
+
 	of_node_put(np);
 }
 
@@ -406,10 +456,13 @@ void __init xics_init(void)
 	/* Fist locate ICP */
 	if (firmware_has_feature(FW_FEATURE_LPAR))
 		rc = icp_hv_init();
-	if (rc < 0)
-		rc = icp_native_init();
 	if (rc < 0) {
-		pr_warning("XICS: Cannot find a Presentation Controller !\n");
+		rc = icp_native_init();
+		if (rc == -ENODEV)
+		    rc = icp_opal_init();
+	}
+	if (rc < 0) {
+		pr_warn("XICS: Cannot find a Presentation Controller !\n");
 		return;
 	}
 
@@ -424,7 +477,7 @@ void __init xics_init(void)
 	if (rc < 0)
 		rc = ics_opal_init();
 	if (rc < 0)
-		pr_warning("XICS: Cannot find a Source Controller !\n");
+		pr_warn("XICS: Cannot find a Source Controller !\n");
 
 	/* Initialize common bits */
 	xics_get_server_size();

@@ -1,8 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * QLogic qlcnic NIC Driver
  * Copyright (c) 2009-2013 QLogic Corporation
- *
- * See LICENSE.qlcnic for copyright and licensing details.
  */
 
 #include "qlcnic_sriov.h"
@@ -269,7 +268,7 @@ static int qlcnic_83xx_idc_clear_registers(struct qlcnic_adapter *adapter,
 	}
 
 	QLCWRX(adapter->ahw, QLC_83XX_IDC_DRV_ACK, 0);
-	/* Clear gracefull reset bit */
+	/* Clear graceful reset bit */
 	val = QLCRDX(adapter->ahw, QLC_83XX_IDC_CTRL);
 	val &= ~QLC_83XX_IDC_GRACEFULL_RESET;
 	QLCWRX(adapter->ahw, QLC_83XX_IDC_CTRL, val);
@@ -889,7 +888,7 @@ static int qlcnic_83xx_idc_ready_state(struct qlcnic_adapter *adapter)
  * @adapter: adapter structure
  *
  * Device will remain in this state until:
- *	Reset request ACK's are recieved from all the functions
+ *	Reset request ACK's are received from all the functions
  *	Wait time exceeds max time limit
  *
  * Returns: Error code or Success(0)
@@ -1020,7 +1019,6 @@ static int qlcnic_83xx_idc_check_state_validity(struct qlcnic_adapter *adapter,
 	return 0;
 }
 
-#ifdef CONFIG_QLCNIC_VXLAN
 #define QLC_83XX_ENCAP_TYPE_VXLAN	BIT_1
 #define QLC_83XX_MATCH_ENCAP_ID		BIT_2
 #define QLC_83XX_SET_VXLAN_UDP_DPORT	BIT_3
@@ -1029,9 +1027,8 @@ static int qlcnic_83xx_idc_check_state_validity(struct qlcnic_adapter *adapter,
 #define QLCNIC_ENABLE_INGRESS_ENCAP_PARSING 1
 #define QLCNIC_DISABLE_INGRESS_ENCAP_PARSING 0
 
-static int qlcnic_set_vxlan_port(struct qlcnic_adapter *adapter)
+int qlcnic_set_vxlan_port(struct qlcnic_adapter *adapter, u16 port)
 {
-	u16 port = adapter->ahw->vxlan_port;
 	struct qlcnic_cmd_args cmd;
 	int ret = 0;
 
@@ -1058,10 +1055,8 @@ static int qlcnic_set_vxlan_port(struct qlcnic_adapter *adapter)
 	return ret;
 }
 
-static int qlcnic_set_vxlan_parsing(struct qlcnic_adapter *adapter,
-				    bool state)
+int qlcnic_set_vxlan_parsing(struct qlcnic_adapter *adapter, u16 port)
 {
-	u16 vxlan_port = adapter->ahw->vxlan_port;
 	struct qlcnic_cmd_args cmd;
 	int ret = 0;
 
@@ -1072,47 +1067,28 @@ static int qlcnic_set_vxlan_parsing(struct qlcnic_adapter *adapter,
 	if (ret)
 		return ret;
 
-	cmd.req.arg[1] = state ? QLCNIC_ENABLE_INGRESS_ENCAP_PARSING :
-				 QLCNIC_DISABLE_INGRESS_ENCAP_PARSING;
+	cmd.req.arg[1] = port ? QLCNIC_ENABLE_INGRESS_ENCAP_PARSING :
+				QLCNIC_DISABLE_INGRESS_ENCAP_PARSING;
 
 	ret = qlcnic_issue_cmd(adapter, &cmd);
 	if (ret)
 		netdev_err(adapter->netdev,
 			   "Failed to %s VXLAN parsing for port %d\n",
-			   state ? "enable" : "disable", vxlan_port);
+			   port ? "enable" : "disable", port);
 	else
 		netdev_info(adapter->netdev,
 			    "%s VXLAN parsing for port %d\n",
-			    state ? "Enabled" : "Disabled", vxlan_port);
+			    port ? "Enabled" : "Disabled", port);
 
 	qlcnic_free_mbx_args(&cmd);
 
 	return ret;
 }
-#endif
 
 static void qlcnic_83xx_periodic_tasks(struct qlcnic_adapter *adapter)
 {
 	if (adapter->fhash.fnum)
 		qlcnic_prune_lb_filters(adapter);
-
-#ifdef CONFIG_QLCNIC_VXLAN
-	if (adapter->flags & QLCNIC_ADD_VXLAN_PORT) {
-		if (qlcnic_set_vxlan_port(adapter))
-			return;
-
-		if (qlcnic_set_vxlan_parsing(adapter, true))
-			return;
-
-		adapter->flags &= ~QLCNIC_ADD_VXLAN_PORT;
-	} else if (adapter->flags & QLCNIC_DEL_VXLAN_PORT) {
-		if (qlcnic_set_vxlan_parsing(adapter, false))
-			return;
-
-		adapter->ahw->vxlan_port = 0;
-		adapter->flags &= ~QLCNIC_DEL_VXLAN_PORT;
-	}
-#endif
 }
 
 /**
@@ -1384,7 +1360,7 @@ static int qlcnic_83xx_copy_fw_file(struct qlcnic_adapter *adapter)
 	size_t size;
 	u64 addr;
 
-	temp = kzalloc(fw->size, GFP_KERNEL);
+	temp = vzalloc(fw->size);
 	if (!temp) {
 		release_firmware(fw);
 		fw_info->fw = NULL;
@@ -1415,7 +1391,7 @@ static int qlcnic_83xx_copy_fw_file(struct qlcnic_adapter *adapter)
 	if (fw->size & 0xF) {
 		addr = dest + size;
 		for (i = 0; i < (fw->size & 0xF); i++)
-			data[i] = temp[size + i];
+			data[i] = ((u8 *)temp)[size + i];
 		for (; i < 16; i++)
 			data[i] = 0;
 		ret = qlcnic_ms_mem_write128(adapter, addr,
@@ -1430,7 +1406,7 @@ static int qlcnic_83xx_copy_fw_file(struct qlcnic_adapter *adapter)
 exit:
 	release_firmware(fw);
 	fw_info->fw = NULL;
-	kfree(temp);
+	vfree(temp);
 
 	return ret;
 }
@@ -1724,7 +1700,7 @@ static int qlcnic_83xx_get_reset_instruction_template(struct qlcnic_adapter *p_d
 
 	ahw->reset.seq_error = 0;
 	ahw->reset.buff = kzalloc(QLC_83XX_RESTART_TEMPLATE_SIZE, GFP_KERNEL);
-	if (p_dev->ahw->reset.buff == NULL)
+	if (ahw->reset.buff == NULL)
 		return -ENOMEM;
 
 	p_buff = p_dev->ahw->reset.buff;
@@ -2047,6 +2023,7 @@ static void qlcnic_83xx_exec_template_cmd(struct qlcnic_adapter *p_dev,
 			break;
 		}
 		entry += p_hdr->size;
+		cond_resched();
 	}
 	p_dev->ahw->reset.seq_index = index;
 }
@@ -2254,7 +2231,8 @@ static int qlcnic_83xx_restart_hw(struct qlcnic_adapter *adapter)
 
 	/* Boot either flash image or firmware image from host file system */
 	if (qlcnic_load_fw_file == 1) {
-		if (qlcnic_83xx_load_fw_image_from_host(adapter))
+		err = qlcnic_83xx_load_fw_image_from_host(adapter);
+		if (err)
 			return err;
 	} else {
 		QLC_SHARED_REG_WR32(adapter, QLCNIC_FW_IMG_VALID,
@@ -2527,7 +2505,13 @@ int qlcnic_83xx_init(struct qlcnic_adapter *adapter, int pci_using_dac)
 		goto disable_mbx_intr;
 
 	qlcnic_83xx_clear_function_resources(adapter);
-	qlcnic_dcb_enable(adapter->dcb);
+
+	err = qlcnic_dcb_enable(adapter->dcb);
+	if (err) {
+		qlcnic_dcb_free(adapter->dcb);
+		goto disable_mbx_intr;
+	}
+
 	qlcnic_83xx_initialize_nic(adapter, 1);
 	qlcnic_dcb_get_info(adapter->dcb);
 

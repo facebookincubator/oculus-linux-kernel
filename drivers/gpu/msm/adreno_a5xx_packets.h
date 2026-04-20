@@ -1,28 +1,12 @@
-/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2016,2019, The Linux Foundation. All rights reserved.
  */
-
-enum adreno_critical_fixup_buffers {
-	CRITICAL_PACKET0 = 0,
-	CRITICAL_PACKET1,
-	CRITICAL_PACKET2,
-	CRITICAL_PACKET3,
-	CRITICAL_PACKET_MAX,
-};
 
 struct adreno_critical_fixup {
 	unsigned int lo_offset;
 	unsigned int hi_offset;
-	enum adreno_critical_fixup_buffers buffer;
+	int buffer;
 	uint64_t mem_offset;
 };
 
@@ -215,7 +199,9 @@ static unsigned int _a5xx_critical_pkts[] = {
 	0xFFC00010, /* [0x00B9] A5X_GRAS_SU_POINT_MINMAX_CTX_0 (0xE091)*/
 	0x00000008, /* [0x00BA] A5X_GRAS_SU_POINT_SIZE_CTX_0 (0xE092)*/
 	0x40E09901, /* [0x00BB] == TYPE4 == */
-	0x00000000, /* [0x00BC] A5X_GRAS_SU_CONSERVATIVE_RAS_CNTL_CTX_0 (0xE099)*/
+	0x00000000, /* [0x00BC] A5X_GRAS_SU_CONSERVATIVE_RAS_CNTL_CTX_0
+		     * (0xE099)
+		     */
 	0x48E0A401, /* [0x00BD] == TYPE4 == */
 	0x00000000, /* [0x00BE] A5X_GRAS_SC_SCREEN_SCISSOR_CNTL_CTX_0 (0xE0A4)*/
 	0x48E58A01, /* [0x00BF] == TYPE4 == */
@@ -344,8 +330,12 @@ static unsigned int _a5xx_critical_pkts[] = {
 	0x48E09801, /* [0x013A] == TYPE4 == */
 	0x00000001, /* [0x013B] A5X_GRAS_SU_DEPTH_BUFFER_INFO_CTX_0 (0xE098)*/
 	0x40E24083, /* [0x013C] == TYPE4 == */
-	0x00000000, /* [0x013D] A5X_RB_DEPTH_FLAG_BUFFER_BASE_LO_CTX_0 (0xE240)*/
-	0x00000000, /* [0x013E] A5X_RB_DEPTH_FLAG_BUFFER_BASE_HI_CTX_0 (0xE241)*/
+	0x00000000, /* [0x013D] A5X_RB_DEPTH_FLAG_BUFFER_BASE_LO_CTX_0
+		     * (0xE240)
+		     */
+	0x00000000, /* [0x013E] A5X_RB_DEPTH_FLAG_BUFFER_BASE_HI_CTX_0
+		     * (0xE241)
+		     */
 	0x00000000, /* [0x013F] A5X_RB_DEPTH_FLAG_BUFFER_PITCH_CTX_0 (0xE242)*/
 	0x40E15285, /* [0x0140] == TYPE4 == */
 	0x00001230, /* [0x0141] A5X_RB_MRT_BUFFER_INFO_0_CTX_0 (0xE152)*/
@@ -411,8 +401,12 @@ static unsigned int _a5xx_critical_pkts[] = {
 	0x00000000, /* [0x017D] A5X_GRAS_LRZ_BUFFER_BASE_LO_CTX_0 (0xE101)*/
 	0x00000000, /* [0x017E] A5X_GRAS_LRZ_BUFFER_BASE_HI_CTX_0 (0xE102)*/
 	0x00000001, /* [0x017F] A5X_GRAS_LRZ_BUFFER_PITCH_CTX_0 (0xE103)*/
-	0x00000000, /* [0x0180] A5X_GRAS_LRZ_FAST_CLEAR_BUFFER_BASE_LO_CTX_0 (0xE104)*/
-	0x00000000, /* [0x0181] A5X_GRAS_LRZ_FAST_CLEAR_BUFFER_BASE_HI_CTX_0 (0xE105)*/
+	0x00000000, /* [0x0180] A5X_GRAS_LRZ_FAST_CLEAR_BUFFER_BASE_LO_CTX_0
+		     * (0xE104)
+		     */
+	0x00000000, /* [0x0181] A5X_GRAS_LRZ_FAST_CLEAR_BUFFER_BASE_HI_CTX_0
+		     * (0xE105)
+		     */
 	0x70460001, /* [0x0182] == TYPE7: EVENT_WRITE (46) == */
 	0x00000025, /* [0x0183] */
 	0x70460001, /* [0x0184] == TYPE7: EVENT_WRITE (46) == */
@@ -609,50 +603,50 @@ static unsigned int _a5xx_critical_pkts[] = {
  * in said buffer.
  */
 static const struct adreno_critical_fixup critical_pkt_fixups[] = {
-	{ 132, 133, CRITICAL_PACKET2, 0x0000 },
-	{ 136, 137, CRITICAL_PACKET2, 0x0001 },
-	{ 154, 155, CRITICAL_PACKET2, 0x0100 },
-	{ 159, 160, CRITICAL_PACKET2, 0x0104 },
-	{ 173, 174, CRITICAL_PACKET2, 0x0200 },
-	{ 177, 178, CRITICAL_PACKET2, 0x0300 },
-	{ 236, 237, CRITICAL_PACKET0, 0x0000 },
-	{ 244, 245, CRITICAL_PACKET0, 0x0040 },
-	{ 259, 260, CRITICAL_PACKET3, 0x0000 },
-	{ 266, 267, CRITICAL_PACKET2, 0x0108 },
-	{ 298, 299, CRITICAL_PACKET0, 0x0040 },
-	{ 300, 301, CRITICAL_PACKET2, 0x0080 },
-	{ 331, 332, CRITICAL_PACKET3, 0x02A0 },
-	{ 337, 338, CRITICAL_PACKET3, 0x0700 },
-	{ 348, 349, CRITICAL_PACKET3, 0x0920 },
-	{ 356, 357, CRITICAL_PACKET1, 0x008C },
-	{ 360, 361, CRITICAL_PACKET1, 0x0080 },
-	{ 363, 364, CRITICAL_PACKET1, 0x008C },
-	{ 366, 367, CRITICAL_PACKET0, 0x0100 },
-	{ 370, 371, CRITICAL_PACKET0, 0x0120 },
-	{ 381, 382, CRITICAL_PACKET1, 0x0480 },
-	{ 384, 385, CRITICAL_PACKET1, 0x0400 },
-	{ 398, 399, CRITICAL_PACKET3, 0x0920 },
-	{ 413, 414, CRITICAL_PACKET1, 0x0080 },
-	{ 417, 418, CRITICAL_PACKET1, 0x0300 },
-	{ 424, 425, CRITICAL_PACKET3, 0x0880 },
-	{ 428, 429, CRITICAL_PACKET1, 0x0300 },
-	{ 430, 431, CRITICAL_PACKET1, 0x0300 },
-	{ 438, 439, CRITICAL_PACKET1, 0x0300 },
-	{ 446, 447, CRITICAL_PACKET1, 0x0300 },
-	{ 453, 454, CRITICAL_PACKET1, 0x0320 },
-	{ 455, 456, CRITICAL_PACKET1, 0x0300 },
-	{ 457, 458, CRITICAL_PACKET1, 0x0304 },
-	{ 459, 460, CRITICAL_PACKET1, 0x0308 },
-	{ 463, 464, CRITICAL_PACKET1, 0x0320 },
-	{ 465, 466, CRITICAL_PACKET1, 0x0300 },
-	{ 467, 468, CRITICAL_PACKET1, 0x0304 },
-	{ 469, 470, CRITICAL_PACKET1, 0x0308 },
-	{ 525, 526, CRITICAL_PACKET1, 0x0160 },
-	{ 529, 530, CRITICAL_PACKET1, 0x0101 },
-	{ 535, 536, CRITICAL_PACKET1, 0x0140 },
-	{ 539, 540, CRITICAL_PACKET0, 0x0800 },
-	{ 555, 556, CRITICAL_PACKET1, 0x0140 },
-	{ 557, 558, CRITICAL_PACKET0, 0x0800 },
+	{ 132, 133, 2, 0x0000 },
+	{ 136, 137, 2, 0x0001 },
+	{ 154, 155, 2, 0x0100 },
+	{ 159, 160, 2, 0x0104 },
+	{ 173, 174, 2, 0x0200 },
+	{ 177, 178, 2, 0x0300 },
+	{ 236, 237, 0, 0x0000 },
+	{ 244, 245, 0, 0x0040 },
+	{ 259, 260, 3, 0x0000 },
+	{ 266, 267, 2, 0x0108 },
+	{ 298, 299, 0, 0x0040 },
+	{ 300, 301, 2, 0x0080 },
+	{ 331, 332, 3, 0x02A0 },
+	{ 337, 338, 3, 0x0700 },
+	{ 348, 349, 3, 0x0920 },
+	{ 356, 357, 1, 0x008C },
+	{ 360, 361, 1, 0x0080 },
+	{ 363, 364, 1, 0x008C },
+	{ 366, 367, 0, 0x0100 },
+	{ 370, 371, 0, 0x0120 },
+	{ 381, 382, 1, 0x0480 },
+	{ 384, 385, 1, 0x0400 },
+	{ 398, 399, 3, 0x0920 },
+	{ 413, 414, 1, 0x0080 },
+	{ 417, 418, 1, 0x0300 },
+	{ 424, 425, 3, 0x0880 },
+	{ 428, 429, 1, 0x0300 },
+	{ 430, 431, 1, 0x0300 },
+	{ 438, 439, 1, 0x0300 },
+	{ 446, 447, 1, 0x0300 },
+	{ 453, 454, 1, 0x0320 },
+	{ 455, 456, 1, 0x0300 },
+	{ 457, 458, 1, 0x0304 },
+	{ 459, 460, 1, 0x0308 },
+	{ 463, 464, 1, 0x0320 },
+	{ 465, 466, 1, 0x0300 },
+	{ 467, 468, 1, 0x0304 },
+	{ 469, 470, 1, 0x0308 },
+	{ 525, 526, 1, 0x0160 },
+	{ 529, 530, 1, 0x0101 },
+	{ 535, 536, 1, 0x0140 },
+	{ 539, 540, 0, 0x0800 },
+	{ 555, 556, 1, 0x0140 },
+	{ 557, 558, 0, 0x0800 },
 };
 
 static unsigned int _a5xx_critical_pkts_mem01[] = {
@@ -723,7 +717,9 @@ static unsigned int _a5xx_critical_pkts_mem03[] = {
 	0x40E09583, /* [0x0018] == TYPE4 == */
 	0x00000000, /* [0x0019] A5X_GRAS_SU_POLY_OFFSET_SCALE_CTX_0 (0xE095)*/
 	0x00000000, /* [0x001A] A5X_GRAS_SU_POLY_OFFSET_OFFSET_CTX_0 (0xE096)*/
-	0x00000000, /* [0x001B] A5X_GRAS_SU_POLY_OFFSET_OFFSET_CLAMP_CTX_0 (0xE097)*/
+	0x00000000, /* [0x001B] A5X_GRAS_SU_POLY_OFFSET_OFFSET_CLAMP_CTX_0
+		     * (0xE097)
+		     */
 	0x40E09001, /* [0x001C] == TYPE4 == */
 	0x00000010, /* [0x001D] A5X_GRAS_SU_CNTL_CTX_0 (0xE090)*/
 	0x40E0AA02, /* [0x001E] == TYPE4 == */
@@ -737,8 +733,12 @@ static unsigned int _a5xx_critical_pkts_mem03[] = {
 	0x3EFFFEE0, /* [0x0026] A5X_GRAS_CL_VIEWPORT_ZOFFSET_0_CTX_0 (0xE014)*/
 	0x3EFFFEE0, /* [0x0027] A5X_GRAS_CL_VIEWPORT_ZSCALE_0_CTX_0 (0xE015)*/
 	0x40E0CA02, /* [0x0028] == TYPE4 == */
-	0x00000000, /* [0x0029] A5X_GRAS_SC_VIEWPORT_SCISSOR_TL_0_CTX_0 (0xE0CA)*/
-	0x001F0073, /* [0x002A] A5X_GRAS_SC_VIEWPORT_SCISSOR_BR_0_CTX_0 (0xE0CB)*/
+	0x00000000, /* [0x0029] A5X_GRAS_SC_VIEWPORT_SCISSOR_TL_0_CTX_0
+		     * (0xE0CA)
+		     */
+	0x001F0073, /* [0x002A] A5X_GRAS_SC_VIEWPORT_SCISSOR_BR_0_CTX_0
+		     * (0xE0CB)
+		     */
 	0x40E00601, /* [0x002B] == TYPE4 == */
 	0x0007FDFF, /* [0x002C] A5X_GRAS_CL_GUARDBAND_CLIP_ADJ_CTX_0 (0xE006)*/
 	0x40E70401, /* [0x002D] == TYPE4 == */
@@ -811,8 +811,12 @@ static unsigned int _a5xx_critical_pkts_mem03[] = {
 	0x00000000, /* [0x0070] A5X_GRAS_LRZ_BUFFER_BASE_LO_CTX_0 (0xE101)*/
 	0x00000000, /* [0x0071] A5X_GRAS_LRZ_BUFFER_BASE_HI_CTX_0 (0xE102)*/
 	0x00000001, /* [0x0072] A5X_GRAS_LRZ_BUFFER_PITCH_CTX_0 (0xE103)*/
-	0x00000000, /* [0x0073] A5X_GRAS_LRZ_FAST_CLEAR_BUFFER_BASE_LO_CTX_0 (0xE104)*/
-	0x00000000, /* [0x0074] A5X_GRAS_LRZ_FAST_CLEAR_BUFFER_BASE_HI_CTX_0 (0xE105)*/
+	0x00000000, /* [0x0073] A5X_GRAS_LRZ_FAST_CLEAR_BUFFER_BASE_LO_CTX_0
+		     * (0xE104)
+		     */
+	0x00000000, /* [0x0074] A5X_GRAS_LRZ_FAST_CLEAR_BUFFER_BASE_HI_CTX_0
+		     * (0xE105)
+		     */
 	0x70388003, /* [0x0075] == TYPE7: DRAW_INDX_OFFSET (38) == */
 	0x00200884, /* [0x0076] */
 	0x00000001, /* [0x0077] */
@@ -1373,30 +1377,30 @@ static unsigned int _a5xx_critical_pkts_mem03[] = {
 
 /* Fixups for the IBs in _a5xx_critical_pkts_mem03 */
 static const struct adreno_critical_fixup critical_pkt_mem03_fixups[] = {
-	{ 2, 3, CRITICAL_PACKET3, 0x0780 },
-	{ 6, 7, CRITICAL_PACKET2, 0x0000 },
-	{ 98, 99, CRITICAL_PACKET1, 0x0000 },
-	{ 112, 113, CRITICAL_PACKET1, 0x0480 },
-	{ 115, 116, CRITICAL_PACKET1, 0x0400 },
-	{ 126, 127, CRITICAL_PACKET1, 0x0080 },
-	{ 131, 132, CRITICAL_PACKET2, 0x0108 },
-	{ 137, 138, CRITICAL_PACKET1, 0x00A0 },
-	{ 141, 142, CRITICAL_PACKET2, 0x0108 },
-	{ 147, 148, CRITICAL_PACKET1, 0x0080 },
-	{ 150, 151, CRITICAL_PACKET1, 0x00C0 },
-	{ 174, 175, CRITICAL_PACKET3, 0x0780 },
-	{ 378, 379, CRITICAL_PACKET1, 0x0000 },
-	{ 392, 393, CRITICAL_PACKET1, 0x0480 },
-	{ 395, 396, CRITICAL_PACKET1, 0x0400 },
-	{ 408, 409, CRITICAL_PACKET1, 0x0080 },
-	{ 413, 414, CRITICAL_PACKET2, 0x0108 },
-	{ 419, 420, CRITICAL_PACKET1, 0x00A0 },
-	{ 423, 424, CRITICAL_PACKET2, 0x0108 },
-	{ 429, 430, CRITICAL_PACKET1, 0x0080 },
-	{ 432, 433, CRITICAL_PACKET1, 0x00C0 },
-	{ 462, 463, CRITICAL_PACKET0, 0x0700 },
-	{ 472, 473, CRITICAL_PACKET2, 0x0110 },
-	{ 550, 551, CRITICAL_PACKET1, 0x0500 },
-	{ 561, 562, CRITICAL_PACKET1, 0x0600 },
-	{ 566, 567, CRITICAL_PACKET1, 0x0700 },
+	{ 2, 3, 3, 0x0780 },
+	{ 6, 7, 2, 0x0000 },
+	{ 98, 99, 1, 0x0000 },
+	{ 112, 113, 1, 0x0480 },
+	{ 115, 116, 1, 0x0400 },
+	{ 126, 127, 1, 0x0080 },
+	{ 131, 132, 2, 0x0108 },
+	{ 137, 138, 1, 0x00A0 },
+	{ 141, 142, 2, 0x0108 },
+	{ 147, 148, 1, 0x0080 },
+	{ 150, 151, 1, 0x00C0 },
+	{ 174, 175, 3, 0x0780 },
+	{ 378, 379, 1, 0x0000 },
+	{ 392, 393, 1, 0x0480 },
+	{ 395, 396, 1, 0x0400 },
+	{ 408, 409, 1, 0x0080 },
+	{ 413, 414, 2, 0x0108 },
+	{ 419, 420, 1, 0x00A0 },
+	{ 423, 424, 2, 0x0108 },
+	{ 429, 430, 1, 0x0080 },
+	{ 432, 433, 1, 0x00C0 },
+	{ 462, 463, 0, 0x0700 },
+	{ 472, 473, 2, 0x0110 },
+	{ 550, 551, 1, 0x0500 },
+	{ 561, 562, 1, 0x0600 },
+	{ 566, 567, 1, 0x0700 },
 };

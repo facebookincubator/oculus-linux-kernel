@@ -30,7 +30,7 @@
 #define DRIVER_NAME "bestcomm-core"
 
 /* MPC5200 device tree match tables */
-static struct of_device_id mpc52xx_sram_ids[] = {
+static const struct of_device_id mpc52xx_sram_ids[] = {
 	{ .compatible = "fsl,mpc5200-sram", },
 	{ .compatible = "mpc5200-sram", },
 	{}
@@ -82,19 +82,20 @@ bcom_task_alloc(int bd_count, int bd_size, int priv_size)
 
 	/* Get IRQ of that task */
 	tsk->irq = irq_of_parse_and_map(bcom_eng->ofnode, tsk->tasknum);
-	if (tsk->irq == NO_IRQ)
+	if (!tsk->irq)
 		goto error;
 
 	/* Init the BDs, if needed */
 	if (bd_count) {
-		tsk->cookie = kmalloc(sizeof(void*) * bd_count, GFP_KERNEL);
+		tsk->cookie = kmalloc_array(bd_count, sizeof(void *),
+					    GFP_KERNEL);
 		if (!tsk->cookie)
 			goto error;
 
 		tsk->bd = bcom_sram_alloc(bd_count * bd_size, 4, &tsk->bd_pa);
 		if (!tsk->bd)
 			goto error;
-		memset(tsk->bd, 0x00, bd_count * bd_size);
+		memset_io(tsk->bd, 0x00, bd_count * bd_size);
 
 		tsk->num_bd = bd_count;
 		tsk->bd_size = bd_size;
@@ -104,7 +105,7 @@ bcom_task_alloc(int bd_count, int bd_size, int priv_size)
 
 error:
 	if (tsk) {
-		if (tsk->irq != NO_IRQ)
+		if (tsk->irq)
 			irq_dispose_mapping(tsk->irq);
 		bcom_sram_free(tsk->bd);
 		kfree(tsk->cookie);
@@ -185,16 +186,16 @@ bcom_load_image(int task, u32 *task_image)
 	inc = bcom_task_inc(task);
 
 	/* Clear & copy */
-	memset(var, 0x00, BCOM_VAR_SIZE);
-	memset(inc, 0x00, BCOM_INC_SIZE);
+	memset_io(var, 0x00, BCOM_VAR_SIZE);
+	memset_io(inc, 0x00, BCOM_INC_SIZE);
 
 	desc_src = (u32 *)(hdr + 1);
 	var_src = desc_src + hdr->desc_size;
 	inc_src = var_src + hdr->var_size;
 
-	memcpy(desc, desc_src, hdr->desc_size * sizeof(u32));
-	memcpy(var + hdr->first_var, var_src, hdr->var_size * sizeof(u32));
-	memcpy(inc, inc_src, hdr->inc_size * sizeof(u32));
+	memcpy_toio(desc, desc_src, hdr->desc_size * sizeof(u32));
+	memcpy_toio(var + hdr->first_var, var_src, hdr->var_size * sizeof(u32));
+	memcpy_toio(inc, inc_src, hdr->inc_size * sizeof(u32));
 
 	return 0;
 }
@@ -301,13 +302,13 @@ static int bcom_engine_init(void)
 		return -ENOMEM;
 	}
 
-	memset(bcom_eng->tdt, 0x00, tdt_size);
-	memset(bcom_eng->ctx, 0x00, ctx_size);
-	memset(bcom_eng->var, 0x00, var_size);
-	memset(bcom_eng->fdt, 0x00, fdt_size);
+	memset_io(bcom_eng->tdt, 0x00, tdt_size);
+	memset_io(bcom_eng->ctx, 0x00, ctx_size);
+	memset_io(bcom_eng->var, 0x00, var_size);
+	memset_io(bcom_eng->fdt, 0x00, fdt_size);
 
 	/* Copy the FDT for the EU#3 */
-	memcpy(&bcom_eng->fdt[48], fdt_ops, sizeof(fdt_ops));
+	memcpy_toio(&bcom_eng->fdt[48], fdt_ops, sizeof(fdt_ops));
 
 	/* Initialize Task base structure */
 	for (task=0; task<BCOM_MAX_TASKS; task++)
@@ -397,8 +398,6 @@ static int mpc52xx_bcom_probe(struct platform_device *op)
 	/* Get a clean struct */
 	bcom_eng = kzalloc(sizeof(struct bcom_engine), GFP_KERNEL);
 	if (!bcom_eng) {
-		printk(KERN_ERR DRIVER_NAME ": "
-			"Can't allocate state structure\n");
 		rv = -ENOMEM;
 		goto error_sramclean;
 	}
@@ -481,7 +480,7 @@ static int mpc52xx_bcom_remove(struct platform_device *op)
 	return 0;
 }
 
-static struct of_device_id mpc52xx_bcom_of_match[] = {
+static const struct of_device_id mpc52xx_bcom_of_match[] = {
 	{ .compatible = "fsl,mpc5200-bestcomm", },
 	{ .compatible = "mpc5200-bestcomm", },
 	{},
@@ -495,7 +494,6 @@ static struct platform_driver mpc52xx_bcom_of_platform_driver = {
 	.remove		= mpc52xx_bcom_remove,
 	.driver = {
 		.name = DRIVER_NAME,
-		.owner = THIS_MODULE,
 		.of_match_table = mpc52xx_bcom_of_match,
 	},
 };

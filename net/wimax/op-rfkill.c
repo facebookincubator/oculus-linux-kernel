@@ -1,25 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Linux WiMAX
  * RF-kill framework integration
  *
- *
  * Copyright (C) 2008 Intel Corporation <linux-wimax@intel.com>
  * Inaky Perez-Gonzalez <inaky.perez-gonzalez@intel.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version
- * 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
- *
  *
  * This integrates into the Linux Kernel rfkill susbystem so that the
  * drivers just have to do the bare minimal work, which is providing a
@@ -135,8 +120,7 @@ EXPORT_SYMBOL_GPL(wimax_report_rfkill_hw);
  * @state: New state of the RF kill switch. %WIMAX_RF_ON radio on,
  *     %WIMAX_RF_OFF radio off.
  *
- * Reports changes in the software RF switch state to the the WiMAX
- * stack.
+ * Reports changes in the software RF switch state to the WiMAX stack.
  *
  * The main use is during initialization, so the driver can query the
  * device for its current software radio kill switch state and feed it

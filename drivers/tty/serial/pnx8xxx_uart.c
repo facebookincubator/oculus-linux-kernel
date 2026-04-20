@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * UART driver for PNX8XXX SoCs
  *
@@ -7,16 +8,7 @@
  *
  * Based on drivers/char/serial.c, by Linus Torvalds, Theodore Ts'o.
  * Copyright (C) 2000 Deep Blue Solutions Ltd.
- *
- * This file is licensed under the terms of the GNU General Public License
- * version 2. This program is licensed "as is" without any warranty of
- * any kind, whether express or implied.
- *
  */
-
-#if defined(CONFIG_SERIAL_PNX8XXX_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ)
-#define SUPPORT_SYSRQ
-#endif
 
 #include <linux/module.h>
 #include <linux/ioport.h>
@@ -107,9 +99,9 @@ static void pnx8xxx_mctrl_check(struct pnx8xxx_port *sport)
  * This is our per-port timeout handler, for checking the
  * modem status signals.
  */
-static void pnx8xxx_timeout(unsigned long data)
+static void pnx8xxx_timeout(struct timer_list *t)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)data;
+	struct pnx8xxx_port *sport = from_timer(sport, t, timer);
 	unsigned long flags;
 
 	if (sport->port.state) {
@@ -126,7 +118,8 @@ static void pnx8xxx_timeout(unsigned long data)
  */
 static void pnx8xxx_stop_tx(struct uart_port *port)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 	u32 ien;
 
 	/* Disable TX intr */
@@ -142,7 +135,8 @@ static void pnx8xxx_stop_tx(struct uart_port *port)
  */
 static void pnx8xxx_start_tx(struct uart_port *port)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 	u32 ien;
 
 	/* Clear all pending TX intr */
@@ -158,7 +152,8 @@ static void pnx8xxx_start_tx(struct uart_port *port)
  */
 static void pnx8xxx_stop_rx(struct uart_port *port)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 	u32 ien;
 
 	/* Disable RX intr */
@@ -174,7 +169,8 @@ static void pnx8xxx_stop_rx(struct uart_port *port)
  */
 static void pnx8xxx_enable_ms(struct uart_port *port)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 
 	mod_timer(&sport->timer, jiffies);
 }
@@ -220,9 +216,7 @@ static void pnx8xxx_rx_chars(struct pnx8xxx_port *sport)
 			else if (status & FIFO_TO_SM(PNX8XXX_UART_FIFO_RXFE))
 				flg = TTY_FRAME;
 
-#ifdef SUPPORT_SYSRQ
 			sport->port.sysrq = 0;
-#endif
 		}
 
 		if (uart_handle_sysrq_char(&sport->port, ch))
@@ -313,14 +307,16 @@ static irqreturn_t pnx8xxx_int(int irq, void *dev_id)
  */
 static unsigned int pnx8xxx_tx_empty(struct uart_port *port)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 
 	return serial_in(sport, PNX8XXX_FIFO) & PNX8XXX_UART_FIFO_TXFIFO_STA ? 0 : TIOCSER_TEMT;
 }
 
 static unsigned int pnx8xxx_get_mctrl(struct uart_port *port)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 	unsigned int mctrl = TIOCM_DSR;
 	unsigned int msr;
 
@@ -347,7 +343,8 @@ static void pnx8xxx_set_mctrl(struct uart_port *port, unsigned int mctrl)
  */
 static void pnx8xxx_break_ctl(struct uart_port *port, int break_state)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 	unsigned long flags;
 	unsigned int lcr;
 
@@ -363,7 +360,8 @@ static void pnx8xxx_break_ctl(struct uart_port *port, int break_state)
 
 static int pnx8xxx_startup(struct uart_port *port)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 	int retval;
 
 	/*
@@ -397,7 +395,8 @@ static int pnx8xxx_startup(struct uart_port *port)
 
 static void pnx8xxx_shutdown(struct uart_port *port)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 	int lcr;
 
 	/*
@@ -434,7 +433,8 @@ static void
 pnx8xxx_set_termios(struct uart_port *port, struct ktermios *termios,
 		   struct ktermios *old)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 	unsigned long flags;
 	unsigned int lcr_fcr, old_ien, baud, quot;
 	unsigned int old_csize = old ? old->c_cflag & CSIZE : CS8;
@@ -551,7 +551,8 @@ pnx8xxx_set_termios(struct uart_port *port, struct ktermios *termios,
 
 static const char *pnx8xxx_type(struct uart_port *port)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 
 	return sport->port.type == PORT_PNX8XXX ? "PNX8XXX" : NULL;
 }
@@ -561,7 +562,8 @@ static const char *pnx8xxx_type(struct uart_port *port)
  */
 static void pnx8xxx_release_port(struct uart_port *port)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 
 	release_mem_region(sport->port.mapbase, UART_PORT_SIZE);
 }
@@ -571,7 +573,8 @@ static void pnx8xxx_release_port(struct uart_port *port)
  */
 static int pnx8xxx_request_port(struct uart_port *port)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 	return request_mem_region(sport->port.mapbase, UART_PORT_SIZE,
 			"pnx8xxx-uart") != NULL ? 0 : -EBUSY;
 }
@@ -581,7 +584,8 @@ static int pnx8xxx_request_port(struct uart_port *port)
  */
 static void pnx8xxx_config_port(struct uart_port *port, int flags)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 
 	if (flags & UART_CONFIG_TYPE &&
 	    pnx8xxx_request_port(&sport->port) == 0)
@@ -596,7 +600,8 @@ static void pnx8xxx_config_port(struct uart_port *port, int flags)
 static int
 pnx8xxx_verify_port(struct uart_port *port, struct serial_struct *ser)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port,	port);
 	int ret = 0;
 
 	if (ser->type != PORT_UNKNOWN && ser->type != PORT_PNX8XXX)
@@ -616,7 +621,7 @@ pnx8xxx_verify_port(struct uart_port *port, struct serial_struct *ser)
 	return ret;
 }
 
-static struct uart_ops pnx8xxx_pops = {
+static const struct uart_ops pnx8xxx_pops = {
 	.tx_empty	= pnx8xxx_tx_empty,
 	.set_mctrl	= pnx8xxx_set_mctrl,
 	.get_mctrl	= pnx8xxx_get_mctrl,
@@ -651,9 +656,7 @@ static void __init pnx8xxx_init_ports(void)
 	first = 0;
 
 	for (i = 0; i < NR_PORTS; i++) {
-		init_timer(&pnx8xxx_ports[i].timer);
-		pnx8xxx_ports[i].timer.function = pnx8xxx_timeout;
-		pnx8xxx_ports[i].timer.data     = (unsigned long)&pnx8xxx_ports[i];
+		timer_setup(&pnx8xxx_ports[i].timer, pnx8xxx_timeout, 0);
 		pnx8xxx_ports[i].port.ops = &pnx8xxx_pops;
 	}
 }
@@ -662,7 +665,8 @@ static void __init pnx8xxx_init_ports(void)
 
 static void pnx8xxx_console_putchar(struct uart_port *port, int ch)
 {
-	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	struct pnx8xxx_port *sport =
+		container_of(port, struct pnx8xxx_port, port);
 	int status;
 
 	do {
@@ -790,6 +794,7 @@ static int pnx8xxx_serial_probe(struct platform_device *pdev)
 			if (pnx8xxx_ports[i].port.mapbase != res->start)
 				continue;
 
+			pnx8xxx_ports[i].port.has_sysrq = IS_ENABLED(CONFIG_SERIAL_PNX8XXX_CONSOLE);
 			pnx8xxx_ports[i].port.dev = &pdev->dev;
 			uart_add_one_port(&pnx8xxx_reg, &pnx8xxx_ports[i].port);
 			platform_set_drvdata(pdev, &pnx8xxx_ports[i]);
@@ -813,7 +818,6 @@ static int pnx8xxx_serial_remove(struct platform_device *pdev)
 static struct platform_driver pnx8xxx_serial_driver = {
 	.driver		= {
 		.name	= "pnx8xxx-uart",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= pnx8xxx_serial_probe,
 	.remove		= pnx8xxx_serial_remove,

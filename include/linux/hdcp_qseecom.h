@@ -1,125 +1,153 @@
-/* Copyright (c) 2015, 2016, The Linux Foundation. All rights reserved.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 and
-* only version 2 as published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
-*/
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
+ */
 
 #ifndef __HDCP_QSEECOM_H
 #define __HDCP_QSEECOM_H
 #include <linux/types.h>
 
-enum hdcp_lib_wakeup_cmd {
-	HDCP_LIB_WKUP_CMD_INVALID,
-	HDCP_LIB_WKUP_CMD_START,
-	HDCP_LIB_WKUP_CMD_STOP,
-	HDCP_LIB_WKUP_CMD_MSG_SEND_SUCCESS,
-	HDCP_LIB_WKUP_CMD_MSG_SEND_FAILED,
-	HDCP_LIB_WKUP_CMD_MSG_RECV_SUCCESS,
-	HDCP_LIB_WKUP_CMD_MSG_RECV_FAILED,
-	HDCP_LIB_WKUP_CMD_MSG_RECV_TIMEOUT,
-	HDCP_LIB_WKUP_CMD_QUERY_STREAM_TYPE,
+#define HDCP_QSEECOM_ENUM_STR(x)	#x
+
+enum hdcp2_app_cmd {
+	HDCP2_CMD_START,
+	HDCP2_CMD_START_AUTH,
+	HDCP2_CMD_STOP,
+	HDCP2_CMD_PROCESS_MSG,
+	HDCP2_CMD_TIMEOUT,
+	HDCP2_CMD_EN_ENCRYPTION,
+	HDCP2_CMD_QUERY_STREAM,
 };
 
-enum hdmi_hdcp_wakeup_cmd {
-	HDMI_HDCP_WKUP_CMD_INVALID,
-	HDMI_HDCP_WKUP_CMD_SEND_MESSAGE,
-	HDMI_HDCP_WKUP_CMD_RECV_MESSAGE,
-	HDMI_HDCP_WKUP_CMD_STATUS_SUCCESS,
-	HDMI_HDCP_WKUP_CMD_STATUS_FAILED,
-	HDMI_HDCP_WKUP_CMD_LINK_POLL,
-	HDMI_HDCP_WKUP_CMD_AUTHENTICATE
+struct hdcp2_buffer {
+	unsigned char *data;
+	u32 length;
 };
 
-struct hdcp_lib_wakeup_data {
-	enum hdcp_lib_wakeup_cmd cmd;
-	void *context;
-	char *recvd_msg_buf;
-	uint32_t recvd_msg_len;
-	uint32_t timeout;
+struct hdcp2_app_data {
+	u32 timeout;
+	bool repeater_flag;
+	struct hdcp2_buffer request;	// requests to TA, sent from sink
+	struct hdcp2_buffer response;	// responses from TA, sent to sink
 };
 
-struct hdmi_hdcp_wakeup_data {
-	enum hdmi_hdcp_wakeup_cmd cmd;
-	void *context;
-	char *send_msg_buf;
-	uint32_t send_msg_len;
-	uint32_t timeout;
+struct hdcp1_topology {
+	uint32_t depth;
+	uint32_t device_count;
+	uint32_t max_devices_exceeded;
+	uint32_t max_cascade_exceeded;
+	uint32_t hdcp2LegacyDeviceDownstream;
+	uint32_t hdcp1DeviceDownstream;
 };
 
-static inline char *hdmi_hdcp_cmd_to_str(uint32_t cmd)
+static inline const char *hdcp2_app_cmd_str(enum hdcp2_app_cmd cmd)
 {
 	switch (cmd) {
-	case HDMI_HDCP_WKUP_CMD_SEND_MESSAGE:
-		return "HDMI_HDCP_WKUP_CMD_SEND_MESSAGE";
-	case HDMI_HDCP_WKUP_CMD_RECV_MESSAGE:
-		return "HDMI_HDCP_WKUP_CMD_RECV_MESSAGE";
-	case HDMI_HDCP_WKUP_CMD_STATUS_SUCCESS:
-		return "HDMI_HDCP_WKUP_CMD_STATUS_SUCCESS";
-	case HDMI_HDCP_WKUP_CMD_STATUS_FAILED:
-		return "HDMI_HDCP_WKUP_CMD_STATUS_FAIL";
-	case HDMI_HDCP_WKUP_CMD_LINK_POLL:
-		return "HDMI_HDCP_WKUP_CMD_LINK_POLL";
-	case HDMI_HDCP_WKUP_CMD_AUTHENTICATE:
-		return "HDMI_HDCP_WKUP_CMD_AUTHENTICATE";
-	default:
-		return "???";
+	case HDCP2_CMD_START:
+		return HDCP_QSEECOM_ENUM_STR(HDCP2_CMD_START);
+	case HDCP2_CMD_START_AUTH:
+		return HDCP_QSEECOM_ENUM_STR(HDCP2_CMD_START_AUTH);
+	case HDCP2_CMD_STOP:
+		return HDCP_QSEECOM_ENUM_STR(HDCP2_CMD_STOP);
+	case HDCP2_CMD_PROCESS_MSG:
+		return HDCP_QSEECOM_ENUM_STR(HDCP2_CMD_PROCESS_MSG);
+	case HDCP2_CMD_TIMEOUT:
+		return HDCP_QSEECOM_ENUM_STR(HDCP2_CMD_TIMEOUT);
+	case HDCP2_CMD_EN_ENCRYPTION:
+		return HDCP_QSEECOM_ENUM_STR(HDCP2_CMD_EN_ENCRYPTION);
+	case HDCP2_CMD_QUERY_STREAM:
+		return HDCP_QSEECOM_ENUM_STR(HDCP2_CMD_QUERY_STREAM);
+	default:			return "???";
 	}
 }
 
-static inline char *hdcp_lib_cmd_to_str(uint32_t cmd)
+#if IS_ENABLED(CONFIG_HDCP_QSEECOM)
+void *hdcp1_init(void);
+void hdcp1_deinit(void *data);
+bool hdcp1_feature_supported(void *data);
+int hdcp1_start(void *data, u32 *aksv_msb, u32 *aksv_lsb);
+int hdcp1_set_enc(void *data, bool enable);
+int hdcp1_ops_notify(void *data, void *topology, bool is_authenticated);
+void hdcp1_stop(void *data);
+
+void *hdcp2_init(u32 device_type);
+void hdcp2_deinit(void *ctx);
+bool hdcp2_feature_supported(void *ctx);
+int hdcp2_app_comm(void *ctx, enum hdcp2_app_cmd cmd,
+		struct hdcp2_app_data *app_data);
+int hdcp2_open_stream(void *ctx, uint8_t vc_payload_id,
+		uint8_t stream_number, uint32_t *stream_id);
+int hdcp2_close_stream(void *ctx, uint32_t stream_id);
+int hdcp2_force_encryption(void *ctx, uint32_t enable);
+#else
+static inline void *hdcp1_init(void)
 {
-	switch (cmd) {
-	case HDCP_LIB_WKUP_CMD_START:
-		return "HDCP_LIB_WKUP_CMD_START";
-	case HDCP_LIB_WKUP_CMD_STOP:
-		return "HDCP_LIB_WKUP_CMD_STOP";
-	case HDCP_LIB_WKUP_CMD_MSG_SEND_SUCCESS:
-		return "HDCP_LIB_WKUP_CMD_MSG_SEND_SUCCESS";
-	case HDCP_LIB_WKUP_CMD_MSG_SEND_FAILED:
-		return "HDCP_LIB_WKUP_CMD_MSG_SEND_FAILED";
-	case HDCP_LIB_WKUP_CMD_MSG_RECV_SUCCESS:
-		return "HDCP_LIB_WKUP_CMD_MSG_RECV_SUCCESS";
-	case HDCP_LIB_WKUP_CMD_MSG_RECV_FAILED:
-		return "HDCP_LIB_WKUP_CMD_MSG_RECV_FAILED";
-	case HDCP_LIB_WKUP_CMD_MSG_RECV_TIMEOUT:
-		return "HDCP_LIB_WKUP_CMD_MSG_RECV_TIMEOUT";
-	case HDCP_LIB_WKUP_CMD_QUERY_STREAM_TYPE:
-		return "HDCP_LIB_WKUP_CMD_QUERY_STREAM_TYPE";
-	default:
-		return "???";
-	}
+	return NULL;
 }
 
-struct hdcp_txmtr_ops {
-	int (*wakeup)(struct hdcp_lib_wakeup_data *data);
-	bool (*feature_supported)(void *phdcpcontext);
-	void (*update_exec_type)(void *ctx, bool tethered);
-	int (*hdcp_txmtr_get_state)(void *phdcpcontext,
-		uint32_t *state);
-};
+static inline void hdcp1_deinit(void *data)
+{
+}
 
-struct hdcp_client_ops {
-	int (*wakeup)(struct hdmi_hdcp_wakeup_data *data);
-};
+static inline bool hdcp1_feature_supported(void *data)
+{
+	return false;
+}
 
-struct hdcp_register_data {
-	struct hdcp_client_ops *client_ops;
-	struct hdcp_txmtr_ops *txmtr_ops;
-	void *client_ctx;
-	void **hdcp_ctx;
-	bool tethered;
-};
+static inline int hdcp1_start(void *data, u32 *aksv_msb, u32 *aksv_lsb)
+{
+	return 0;
+}
 
-int hdcp_library_register(struct hdcp_register_data *data);
-void hdcp_library_deregister(void *phdcpcontext);
-bool hdcp1_check_if_supported_load_app(void);
-int hdcp1_set_keys(uint32_t *aksv_msb, uint32_t *aksv_lsb);
-int hdcp1_set_enc(bool enable);
+static inline int hdcp1_ops_notify(void *data, void *topology, bool is_authenticated)
+{
+	return 0;
+}
+
+static inline int hdcp1_set_enc(void *data, bool enable)
+{
+	return 0;
+}
+
+static inline void hdcp1_stop(void *data)
+{
+}
+
+static inline void *hdcp2_init(u32 device_type)
+{
+	return NULL;
+}
+
+static inline void hdcp2_deinit(void *ctx)
+{
+}
+
+static inline bool hdcp2_feature_supported(void *ctx)
+{
+	return false;
+}
+
+static inline int hdcp2_app_comm(void *ctx, enum hdcp2_app_cmd cmd,
+		struct hdcp2_app_data *app_data)
+{
+	return 0;
+}
+
+static inline int hdcp2_open_stream(void *ctx, uint8_t vc_payload_id,
+		uint8_t stream_number, uint32_t *stream_id)
+{
+	return 0;
+}
+
+static inline int hdcp2_close_stream(void *ctx, uint32_t stream_id)
+{
+	return 0;
+}
+
+static inline int hdcp2_force_encryption(void *ctx, uint32_t enable)
+{
+	return 0;
+}
+#endif /* CONFIG_HDCP_QSEECOM */
 
 #endif /* __HDCP_QSEECOM_H */

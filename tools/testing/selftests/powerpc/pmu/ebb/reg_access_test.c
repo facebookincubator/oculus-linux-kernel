@@ -1,13 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2014, Michael Ellerman, IBM Corp.
- * Licensed under GPLv2.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "ebb.h"
-#include "reg.h"
 
 
 /*
@@ -17,6 +16,8 @@
 int reg_access(void)
 {
 	uint64_t val, expected;
+
+	SKIP_IF(!ebb_is_supported());
 
 	expected = 0x8000000100000000ull;
 	mtspr(SPRN_BESCR, expected);

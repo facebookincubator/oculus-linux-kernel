@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Character device driver for reading z/VM *MONITOR service records.
  *
@@ -23,7 +24,7 @@
 #include <linux/device.h>
 #include <linux/slab.h>
 #include <net/iucv/iucv.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/ebcdic.h>
 #include <asm/extmem.h>
 
@@ -95,7 +96,7 @@ static void dcss_mkname(char *ascii_name, char *ebcdic_name)
 		if (ascii_name[i] == '\0')
 			break;
 		ebcdic_name[i] = toupper(ascii_name[i]);
-	};
+	}
 	for (; i < 8; i++)
 		ebcdic_name[i] = ' ';
 	ASCEBC(ebcdic_name, 8);
@@ -229,7 +230,7 @@ static struct mon_msg *mon_next_message(struct mon_private *monpriv)
 /******************************************************************************
  *                               IUCV handler                                 *
  *****************************************************************************/
-static void mon_iucv_path_complete(struct iucv_path *path, u8 ipuser[16])
+static void mon_iucv_path_complete(struct iucv_path *path, u8 *ipuser)
 {
 	struct mon_private *monpriv = path->private;
 
@@ -237,7 +238,7 @@ static void mon_iucv_path_complete(struct iucv_path *path, u8 ipuser[16])
 	wake_up(&mon_conn_wait_queue);
 }
 
-static void mon_iucv_path_severed(struct iucv_path *path, u8 ipuser[16])
+static void mon_iucv_path_severed(struct iucv_path *path, u8 *ipuser)
 {
 	struct mon_private *monpriv = path->private;
 
@@ -257,7 +258,7 @@ static void mon_iucv_message_pending(struct iucv_path *path,
 	memcpy(&monpriv->msg_array[monpriv->write_index]->msg,
 	       msg, sizeof(*msg));
 	if (atomic_inc_return(&monpriv->msglim_count) == MON_MSGLIM) {
-		pr_warning("The read queue for monitor data is full\n");
+		pr_warn("The read queue for monitor data is full\n");
 		monpriv->msg_array[monpriv->write_index]->msglim_reached = 1;
 	}
 	monpriv->write_index = (monpriv->write_index + 1) % MON_MSGLIM;
@@ -342,8 +343,8 @@ static int mon_close(struct inode *inode, struct file *filp)
 	if (monpriv->path) {
 		rc = iucv_path_sever(monpriv->path, user_data_sever);
 		if (rc)
-			pr_warning("Disconnecting the z/VM *MONITOR system "
-				   "service failed with rc=%i\n", rc);
+			pr_warn("Disconnecting the z/VM *MONITOR system service failed with rc=%i\n",
+				rc);
 		iucv_path_free(monpriv->path);
 	}
 
@@ -428,15 +429,15 @@ out_copy:
 	return count;
 }
 
-static unsigned int mon_poll(struct file *filp, struct poll_table_struct *p)
+static __poll_t mon_poll(struct file *filp, struct poll_table_struct *p)
 {
 	struct mon_private *monpriv = filp->private_data;
 
 	poll_wait(filp, &mon_read_wait_queue, p);
 	if (unlikely(atomic_read(&monpriv->iucv_severed)))
-		return POLLERR;
+		return EPOLLERR;
 	if (atomic_read(&monpriv->read_ready))
-		return POLLIN | POLLRDNORM;
+		return EPOLLIN | EPOLLRDNORM;
 	return 0;
 }
 
@@ -469,8 +470,8 @@ static int monreader_freeze(struct device *dev)
 	if (monpriv->path) {
 		rc = iucv_path_sever(monpriv->path, user_data_sever);
 		if (rc)
-			pr_warning("Disconnecting the z/VM *MONITOR system "
-				   "service failed with rc=%i\n", rc);
+			pr_warn("Disconnecting the z/VM *MONITOR system service failed with rc=%i\n",
+				rc);
 		iucv_path_free(monpriv->path);
 	}
 	atomic_set(&monpriv->iucv_severed, 0);

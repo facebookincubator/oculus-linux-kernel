@@ -41,6 +41,7 @@
 #include <linux/resource.h>
 #include <linux/unistd.h>
 #include <linux/console.h>
+#include <linux/io.h>
 
 #include <asm/io.h>
 #include <asm/div64.h>
@@ -80,7 +81,7 @@ static u32 voffset;
 static int i810fb_cursor(struct fb_info *info, struct fb_cursor *cursor);
 static int i810fb_init_pci(struct pci_dev *dev,
 			   const struct pci_device_id *entry);
-static void __exit i810fb_remove_pci(struct pci_dev *dev);
+static void i810fb_remove_pci(struct pci_dev *dev);
 static int i810fb_resume(struct pci_dev *dev);
 static int i810fb_suspend(struct pci_dev *dev, pm_message_t state);
 
@@ -106,7 +107,7 @@ static const char * const i810_pci_list[] = {
 	"Intel(R) 815 (Internal Graphics with AGP) Framebuffer Device"
 };
 
-static struct pci_device_id i810fb_pci_tbl[] = {
+static const struct pci_device_id i810fb_pci_tbl[] = {
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82810_IG1,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82810_IG3,
@@ -127,7 +128,7 @@ static struct pci_driver i810fb_driver = {
 	.name     =	"i810fb",
 	.id_table =	i810fb_pci_tbl,
 	.probe    =	i810fb_init_pci,
-	.remove   =	__exit_p(i810fb_remove_pci),
+	.remove   =	i810fb_remove_pci,
 	.suspend  =     i810fb_suspend,
 	.resume   =     i810fb_resume,
 };
@@ -1541,7 +1542,7 @@ static int i810fb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 	return 0;
 }
 
-static struct fb_ops i810fb_ops = {
+static const struct fb_ops i810fb_ops = {
 	.owner =             THIS_MODULE,
 	.fb_open =           i810fb_open,
 	.fb_release =        i810fb_release,
@@ -1690,7 +1691,7 @@ static int i810_alloc_agp_mem(struct fb_info *info)
 	if (!(par->i810_gtt.i810_cursor_memory = 
 	      agp_allocate_memory(bridge, par->cursor_heap.size >> 12,
 				  AGP_PHYSICAL_MEMORY))) {
-		printk("i810fb_alloc_cursormem:  can't allocate" 
+		printk("i810fb_alloc_cursormem:  can't allocate "
 		       "cursor memory\n");
 		agp_backend_release(bridge);
 		return -ENOMEM;
@@ -1816,7 +1817,9 @@ static void i810_init_device(struct i810fb_par *par)
 	u8 reg;
 	u8 __iomem *mmio = par->mmio_start_virtual;
 
-	if (mtrr) set_mtrr(par);
+	if (mtrr)
+		par->wc_cookie= arch_phys_wc_add((u32) par->aperture.physical,
+						 par->aperture.size);
 
 	i810_init_cursor(par);
 
@@ -1865,8 +1868,8 @@ static int i810_allocate_pci_resource(struct i810fb_par *par,
 	}
 	par->res_flags |= FRAMEBUFFER_REQ;
 
-	par->aperture.virtual = ioremap_nocache(par->aperture.physical, 
-					par->aperture.size);
+	par->aperture.virtual = ioremap_wc(par->aperture.physical,
+					   par->aperture.size);
 	if (!par->aperture.virtual) {
 		printk("i810fb_init: cannot remap framebuffer region\n");
 		return -ENODEV;
@@ -1880,7 +1883,7 @@ static int i810_allocate_pci_resource(struct i810fb_par *par,
 	}
 	par->res_flags |= MMIO_REQ;
 
-	par->mmio_start_virtual = ioremap_nocache(par->mmio_start_phys, 
+	par->mmio_start_virtual = ioremap(par->mmio_start_phys, 
 						  MMIO_SIZE);
 	if (!par->mmio_start_virtual) {
 		printk("i810fb_init: cannot remap mmio region\n");
@@ -1963,13 +1966,13 @@ static int i810fb_setup(char *options)
 	
 	while ((this_opt = strsep(&options, ",")) != NULL) {
 		if (!strncmp(this_opt, "mtrr", 4))
-			mtrr = 1;
+			mtrr = true;
 		else if (!strncmp(this_opt, "accel", 5))
-			accel = 1;
+			accel = true;
 		else if (!strncmp(this_opt, "extvga", 6))
-			extvga = 1;
+			extvga = true;
 		else if (!strncmp(this_opt, "sync", 4))
-			sync = 1;
+			sync = true;
 		else if (!strncmp(this_opt, "vram:", 5))
 			vram = (simple_strtoul(this_opt+5, NULL, 0));
 		else if (!strncmp(this_opt, "voffset:", 8))
@@ -1995,7 +1998,7 @@ static int i810fb_setup(char *options)
 		else if (!strncmp(this_opt, "vsync2:", 7))
 			vsync2 = simple_strtoul(this_opt+7, NULL, 0);
 		else if (!strncmp(this_opt, "dcolor", 6))
-			dcolor = 1;
+			dcolor = true;
 		else if (!strncmp(this_opt, "ddc3", 4))
 			ddc3 = true;
 		else
@@ -2096,7 +2099,7 @@ static void i810fb_release_resource(struct fb_info *info,
 				    struct i810fb_par *par)
 {
 	struct gtt_data *gtt = &par->i810_gtt;
-	unset_mtrr(par);
+	arch_phys_wc_del(par->wc_cookie);
 
 	i810_delete_i2c_busses(par);
 
@@ -2120,7 +2123,7 @@ static void i810fb_release_resource(struct fb_info *info,
 
 }
 
-static void __exit i810fb_remove_pci(struct pci_dev *dev)
+static void i810fb_remove_pci(struct pci_dev *dev)
 {
 	struct fb_info *info = pci_get_drvdata(dev);
 	struct i810fb_par *par = info->par;

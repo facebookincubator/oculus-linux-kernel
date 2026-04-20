@@ -190,8 +190,8 @@ Kernel-Space Interface APIs
  *
  * returns reference to context on success, NULL on failure
  */
-void * ipc_log_context_create(int max_num_pages,
-			      const char *mod_name);
+void *ipc_log_context_create(int max_num_pages, const char *mod_name,
+			     uint16_t user_version);
 
 /*
  * msg_encode_start: Start encoding a log message

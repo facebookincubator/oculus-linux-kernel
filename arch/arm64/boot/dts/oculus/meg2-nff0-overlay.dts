@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "meg2.dtsi"
+#include "meg2-phase3-left-imu.dtsi"
+#include "meta-neo-camera-ov05c.dtsi"
+#include "meg2-coleman.dtsi"
+
+/ {
+	model = "Artemis Glasses NFF0";
+	compatible = "meta,diamond_nff0";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xE7>;
+};
+
+&pcie1 {
+	// Coleman requires 1000ms between PERST deassertion and link training
+	qcom,perst-delay-us-min = <1000000>;
+	qcom,perst-delay-us-max = <1000050>;
+};

@@ -1,16 +1,15 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
-    comedi/drivers/amcc_s5933.h
-
-    Stuff for AMCC S5933 PCI Controller
-
-    Author: Michal Dobes <dobes@tesnet.cz>
-
-    Inspirated from general-purpose AMCC S5933 PCI Matchmaker driver
-    made by Andrea Cisternino  <acister@pcape1.pi.infn.it>
-    and as result of espionage from MITE code made by David A. Schleef.
-    Thanks to AMCC for their on-line documentation and bus master DMA
-    example.
-*/
+ * Stuff for AMCC S5933 PCI Controller
+ *
+ * Author: Michal Dobes <dobes@tesnet.cz>
+ *
+ * Inspirated from general-purpose AMCC S5933 PCI Matchmaker driver
+ * made by Andrea Cisternino  <acister@pcape1.pi.infn.it>
+ * and as result of espionage from MITE code made by David A. Schleef.
+ * Thanks to AMCC for their on-line documentation and bus master DMA
+ * example.
+ */
 
 #ifndef _AMCC_S5933_H_
 #define _AMCC_S5933_H_
@@ -58,7 +57,7 @@
 #define INTCSR_INTR_ASSERTED	0x800000
 
 /****************************************************************************/
-/* AMCC - PCI non-volatile ram command register (byte 3 of master control/status register) */
+/* AMCC - PCI non-volatile ram command register (byte 3 of AMCC_OP_REG_MCSR) */
 /****************************************************************************/
 #define MCSR_NV_LOAD_LOW_ADDR	0x0
 #define MCSR_NV_LOAD_HIGH_ADDR	0x20
@@ -109,6 +108,8 @@
 #define AGCSTS_STATUS_MASK	0x000000ff
 #define  AGCSTS_TCZERO_MASK	0x000000c0
 #define  AGCSTS_FIFO_ST_MASK	0x0000003f
+
+#define AGCSTS_TC_ENABLE	0x10000000
 
 #define AGCSTS_RESET_MBFLAGS	0x08000000
 #define AGCSTS_RESET_P2A_FIFO	0x04000000

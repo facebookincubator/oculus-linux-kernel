@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * OMAP44xx PRM instance offset macros
  *
@@ -14,10 +15,6 @@
  * authors above to ensure that the autogeneration scripts are kept
  * up-to-date with the file contents.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  * XXX This file needs to be updated to align on one of "OMAP4", "OMAP44XX",
  *     or "OMAP4430".
  */
@@ -26,7 +23,6 @@
 #define __ARCH_ARM_MACH_OMAP2_PRM44XX_H
 
 #include "prm44xx_54xx.h"
-#include "prcm-common.h"
 #include "prm.h"
 
 #define OMAP4430_PRM_BASE		0x4a306000

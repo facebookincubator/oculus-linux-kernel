@@ -1,18 +1,13 @@
-/*
- *  Copyright (C) 2013 Google, Inc
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- * Expose an I2C passthrough to the ChromeOS EC.
- */
+// SPDX-License-Identifier: GPL-2.0+
+// Expose an I2C passthrough to the ChromeOS EC.
+//
+// Copyright (C) 2013 Google, Inc.
 
+#include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/i2c.h>
-#include <linux/mfd/cros_ec.h>
-#include <linux/mfd/cros_ec_commands.h>
+#include <linux/platform_data/cros_ec_commands.h>
+#include <linux/platform_data/cros_ec_proto.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 
@@ -154,8 +149,10 @@ static int ec_i2c_parse_response(const u8 *buf, struct i2c_msg i2c_msgs[],
 	resp = (const struct ec_response_i2c_passthru *)buf;
 	if (resp->i2c_status & EC_I2C_STATUS_TIMEOUT)
 		return -ETIMEDOUT;
+	else if (resp->i2c_status & EC_I2C_STATUS_NAK)
+		return -ENXIO;
 	else if (resp->i2c_status & EC_I2C_STATUS_ERROR)
-		return -EREMOTEIO;
+		return -EIO;
 
 	/* Other side could send us back fewer messages, but not more */
 	if (resp->num_msgs > *num)
@@ -182,71 +179,53 @@ static int ec_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg i2c_msgs[],
 	const u16 bus_num = bus->remote_bus;
 	int request_len;
 	int response_len;
-	u8 *request = NULL;
-	u8 *response = NULL;
+	int alloc_size;
 	int result;
-	struct cros_ec_command msg;
+	struct cros_ec_command *msg;
 
 	request_len = ec_i2c_count_message(i2c_msgs, num);
 	if (request_len < 0) {
 		dev_warn(dev, "Error constructing message %d\n", request_len);
-		result = request_len;
-		goto exit;
+		return request_len;
 	}
+
 	response_len = ec_i2c_count_response(i2c_msgs, num);
 	if (response_len < 0) {
 		/* Unexpected; no errors should come when NULL response */
 		dev_warn(dev, "Error preparing response %d\n", response_len);
-		result = response_len;
+		return response_len;
+	}
+
+	alloc_size = max(request_len, response_len);
+	msg = kmalloc(sizeof(*msg) + alloc_size, GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	result = ec_i2c_construct_message(msg->data, i2c_msgs, num, bus_num);
+	if (result) {
+		dev_err(dev, "Error constructing EC i2c message %d\n", result);
 		goto exit;
 	}
 
-	if (request_len <= ARRAY_SIZE(bus->request_buf)) {
-		request = bus->request_buf;
-	} else {
-		request = kzalloc(request_len, GFP_KERNEL);
-		if (request == NULL) {
-			result = -ENOMEM;
-			goto exit;
-		}
-	}
-	if (response_len <= ARRAY_SIZE(bus->response_buf)) {
-		response = bus->response_buf;
-	} else {
-		response = kzalloc(response_len, GFP_KERNEL);
-		if (response == NULL) {
-			result = -ENOMEM;
-			goto exit;
-		}
+	msg->version = 0;
+	msg->command = EC_CMD_I2C_PASSTHRU;
+	msg->outsize = request_len;
+	msg->insize = response_len;
+
+	result = cros_ec_cmd_xfer_status(bus->ec, msg);
+	if (result < 0) {
+		dev_err(dev, "Error transferring EC i2c message %d\n", result);
+		goto exit;
 	}
 
-	result = ec_i2c_construct_message(request, i2c_msgs, num, bus_num);
-	if (result)
-		goto exit;
-
-	msg.version = 0;
-	msg.command = EC_CMD_I2C_PASSTHRU;
-	msg.outdata = request;
-	msg.outsize = request_len;
-	msg.indata = response;
-	msg.insize = response_len;
-
-	result = cros_ec_cmd_xfer(bus->ec, &msg);
-	if (result < 0)
-		goto exit;
-
-	result = ec_i2c_parse_response(response, i2c_msgs, &num);
+	result = ec_i2c_parse_response(msg->data, i2c_msgs, &num);
 	if (result < 0)
 		goto exit;
 
 	/* Indicate success by saying how many messages were sent */
 	result = num;
 exit:
-	if (request != bus->request_buf)
-		kfree(request);
-	if (response != bus->response_buf)
-		kfree(response);
-
+	kfree(msg);
 	return result;
 }
 
@@ -262,7 +241,6 @@ static const struct i2c_algorithm ec_i2c_algorithm = {
 
 static int ec_i2c_probe(struct platform_device *pdev)
 {
-	struct device_node *np = pdev->dev.of_node;
 	struct cros_ec_device *ec = dev_get_drvdata(pdev->dev.parent);
 	struct device *dev = &pdev->dev;
 	struct ec_i2c_device *bus = NULL;
@@ -278,7 +256,7 @@ static int ec_i2c_probe(struct platform_device *pdev)
 	if (bus == NULL)
 		return -ENOMEM;
 
-	err = of_property_read_u32(np, "google,remote-bus", &remote_bus);
+	err = device_property_read_u32(dev, "google,remote-bus", &remote_bus);
 	if (err) {
 		dev_err(dev, "Couldn't read remote-bus property\n");
 		return err;
@@ -293,14 +271,13 @@ static int ec_i2c_probe(struct platform_device *pdev)
 	bus->adap.algo = &ec_i2c_algorithm;
 	bus->adap.algo_data = bus;
 	bus->adap.dev.parent = &pdev->dev;
-	bus->adap.dev.of_node = np;
+	bus->adap.dev.of_node = pdev->dev.of_node;
 	bus->adap.retries = I2C_MAX_RETRIES;
+	ACPI_COMPANION_SET(&bus->adap.dev, ACPI_COMPANION(&pdev->dev));
 
 	err = i2c_add_adapter(&bus->adap);
-	if (err) {
-		dev_err(dev, "cannot register i2c adapter\n");
+	if (err)
 		return err;
-	}
 	platform_set_drvdata(pdev, bus);
 
 	return err;
@@ -315,19 +292,24 @@ static int ec_i2c_remove(struct platform_device *dev)
 	return 0;
 }
 
-#ifdef CONFIG_OF
 static const struct of_device_id cros_ec_i2c_of_match[] = {
 	{ .compatible = "google,cros-ec-i2c-tunnel" },
 	{},
 };
 MODULE_DEVICE_TABLE(of, cros_ec_i2c_of_match);
-#endif
+
+static const struct acpi_device_id cros_ec_i2c_tunnel_acpi_id[] = {
+	{ "GOOG0012", 0 },
+	{ }
+};
+MODULE_DEVICE_TABLE(acpi, cros_ec_i2c_tunnel_acpi_id);
 
 static struct platform_driver ec_i2c_tunnel_driver = {
 	.probe = ec_i2c_probe,
 	.remove = ec_i2c_remove,
 	.driver = {
 		.name = "cros-ec-i2c-tunnel",
+		.acpi_match_table = ACPI_PTR(cros_ec_i2c_tunnel_acpi_id),
 		.of_match_table = of_match_ptr(cros_ec_i2c_of_match),
 	},
 };

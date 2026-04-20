@@ -234,9 +234,9 @@ static irqreturn_t pd6729_interrupt(int irq, void *dev)
 
 /* socket functions */
 
-static void pd6729_interrupt_wrapper(unsigned long data)
+static void pd6729_interrupt_wrapper(struct timer_list *t)
 {
-	struct pd6729_socket *socket = (struct pd6729_socket *) data;
+	struct pd6729_socket *socket = from_timer(socket, t, poll_timer);
 
 	pd6729_interrupt(0, (void *)socket);
 	mod_timer(&socket->poll_timer, jiffies + HZ);
@@ -628,7 +628,7 @@ static int pd6729_pci_probe(struct pci_dev *dev,
 	char configbyte;
 	struct pd6729_socket *socket;
 
-	socket = kzalloc(sizeof(struct pd6729_socket) * MAX_SOCKETS,
+	socket = kcalloc(MAX_SOCKETS, sizeof(struct pd6729_socket),
 			 GFP_KERNEL);
 	if (!socket) {
 		dev_warn(&dev->dev, "failed to kzalloc socket.\n");
@@ -707,11 +707,8 @@ static int pd6729_pci_probe(struct pci_dev *dev,
 		}
 	} else {
 		/* poll Card status change */
-		init_timer(&socket->poll_timer);
-		socket->poll_timer.function = pd6729_interrupt_wrapper;
-		socket->poll_timer.data = (unsigned long)socket;
-		socket->poll_timer.expires = jiffies + HZ;
-		add_timer(&socket->poll_timer);
+		timer_setup(&socket->poll_timer, pd6729_interrupt_wrapper, 0);
+		mod_timer(&socket->poll_timer, jiffies + HZ);
 	}
 
 	for (i = 0; i < MAX_SOCKETS; i++) {

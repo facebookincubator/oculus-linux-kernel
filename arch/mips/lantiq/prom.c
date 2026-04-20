@@ -1,15 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- *  This program is free software; you can redistribute it and/or modify it
- *  under the terms of the GNU General Public License version 2 as published
- *  by the Free Software Foundation.
  *
- * Copyright (C) 2010 John Crispin <blogic@openwrt.org>
+ * Copyright (C) 2010 John Crispin <john@phrozen.org>
  */
 
 #include <linux/export.h>
 #include <linux/clk.h>
-#include <linux/bootmem.h>
-#include <linux/of_platform.h>
+#include <linux/memblock.h>
 #include <linux/of_fdt.h>
 
 #include <asm/bootinfo.h>
@@ -36,7 +33,12 @@ const char *get_system_type(void)
 	return soc_info.sys_type;
 }
 
-void prom_free_prom_memory(void)
+int ltq_soc_type(void)
+{
+	return soc_info.type;
+}
+
+void __init prom_free_prom_memory(void)
 {
 }
 
@@ -60,6 +62,8 @@ static void __init prom_init_cmdline(void)
 
 void __init plat_mem_setup(void)
 {
+	void *dtb;
+
 	ioport_resource.start = IOPORT_RESOURCE_START;
 	ioport_resource.end = IOPORT_RESOURCE_END;
 	iomem_resource.start = IOMEM_RESOURCE_START;
@@ -67,11 +71,18 @@ void __init plat_mem_setup(void)
 
 	set_io_port_base((unsigned long) KSEG1);
 
+	if (fw_passed_dtb) /* UHI interface */
+		dtb = (void *)fw_passed_dtb;
+	else if (&__dtb_start != &__dtb_end)
+		dtb = (void *)__dtb_start;
+	else
+		panic("no dtb found");
+
 	/*
-	 * Load the builtin devicetree. This causes the chosen node to be
+	 * Load the devicetree. This causes the chosen node to be
 	 * parsed resulting in our memory appearing
 	 */
-	__dt_setup_arch(__dtb_start);
+	__dt_setup_arch(dtb);
 }
 
 void __init device_tree_init(void)
@@ -94,19 +105,3 @@ void __init prom_init(void)
 		panic("failed to register_vsmp_smp_ops()");
 #endif
 }
-
-int __init plat_of_setup(void)
-{
-	static struct of_device_id of_ids[3];
-
-	if (!of_have_populated_dt())
-		panic("device tree not present");
-
-	strlcpy(of_ids[0].compatible, soc_info.compatible,
-		sizeof(of_ids[0].compatible));
-	strncpy(of_ids[1].compatible, "simple-bus",
-		sizeof(of_ids[1].compatible));
-	return of_platform_populate(NULL, of_ids, NULL, NULL);
-}
-
-arch_initcall(plat_of_setup);

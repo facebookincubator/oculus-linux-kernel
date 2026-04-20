@@ -1,21 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright (C) 2010-2013 Bluecherry, LLC <http://www.bluecherrydvr.com>
+ * Copyright (C) 2010-2013 Bluecherry, LLC <https://www.bluecherrydvr.com>
  *
  * Original author:
  * Ben Collins <bcollins@ubuntu.com>
  *
  * Additional work by:
  * John Brooks <john.brooks@bluecherry.net>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -47,18 +38,19 @@ MODULE_PARM_DESC(full_eeprom, "Allow access to full 128B EEPROM (dangerous)");
 
 static void solo_set_time(struct solo_dev *solo_dev)
 {
-	struct timespec ts;
+	struct timespec64 ts;
 
-	ktime_get_ts(&ts);
+	ktime_get_ts64(&ts);
 
-	solo_reg_write(solo_dev, SOLO_TIMER_SEC, ts.tv_sec);
-	solo_reg_write(solo_dev, SOLO_TIMER_USEC, ts.tv_nsec / NSEC_PER_USEC);
+	/* no overflow because we use monotonic timestamps */
+	solo_reg_write(solo_dev, SOLO_TIMER_SEC, (u32)ts.tv_sec);
+	solo_reg_write(solo_dev, SOLO_TIMER_USEC, (u32)ts.tv_nsec / NSEC_PER_USEC);
 }
 
 static void solo_timer_sync(struct solo_dev *solo_dev)
 {
 	u32 sec, usec;
-	struct timespec ts;
+	struct timespec64 ts;
 	long diff;
 
 	if (solo_dev->type != SOLO_DEV_6110)
@@ -72,11 +64,11 @@ static void solo_timer_sync(struct solo_dev *solo_dev)
 	sec = solo_reg_read(solo_dev, SOLO_TIMER_SEC);
 	usec = solo_reg_read(solo_dev, SOLO_TIMER_USEC);
 
-	ktime_get_ts(&ts);
+	ktime_get_ts64(&ts);
 
-	diff = (long)ts.tv_sec - (long)sec;
+	diff = (s32)ts.tv_sec - (s32)sec;
 	diff = (diff * 1000000)
-		+ ((long)(ts.tv_nsec / NSEC_PER_USEC) - (long)usec);
+		+ ((s32)(ts.tv_nsec / NSEC_PER_USEC) - (s32)usec);
 
 	if (diff > 1000 || diff < -1000) {
 		solo_set_time(solo_dev);
@@ -134,22 +126,10 @@ static irqreturn_t solo_isr(int irq, void *data)
 
 static void free_solo_dev(struct solo_dev *solo_dev)
 {
-	struct pci_dev *pdev;
-
-	if (!solo_dev)
-		return;
+	struct pci_dev *pdev = solo_dev->pdev;
 
 	if (solo_dev->dev.parent)
 		device_unregister(&solo_dev->dev);
-
-	pdev = solo_dev->pdev;
-
-	/* If we never initialized the PCI device, then nothing else
-	 * below here needs cleanup */
-	if (!pdev) {
-		kfree(solo_dev);
-		return;
-	}
 
 	if (solo_dev->reg_base) {
 		/* Bring down the sub-devices first */
@@ -164,9 +144,8 @@ static void free_solo_dev(struct solo_dev *solo_dev)
 
 		/* Now cleanup the PCI device */
 		solo_irq_off(solo_dev, ~0);
+		free_irq(pdev->irq, solo_dev);
 		pci_iounmap(pdev, solo_dev->reg_base);
-		if (pdev->irq)
-			free_irq(pdev->irq, solo_dev);
 	}
 
 	pci_release_regions(pdev);
@@ -182,7 +161,7 @@ static ssize_t eeprom_store(struct device *dev, struct device_attribute *attr,
 {
 	struct solo_dev *solo_dev =
 		container_of(dev, struct solo_dev, dev);
-	unsigned short *p = (unsigned short *)buf;
+	u16 *p = (u16 *)buf;
 	int i;
 
 	if (count & 0x1)
@@ -212,7 +191,7 @@ static ssize_t eeprom_show(struct device *dev, struct device_attribute *attr,
 {
 	struct solo_dev *solo_dev =
 		container_of(dev, struct solo_dev, dev);
-	unsigned short *p = (unsigned short *)buf;
+	u16 *p = (u16 *)buf;
 	int count = (full_eeprom ? 128 : 64);
 	int i;
 
@@ -441,6 +420,7 @@ static int solo_sysfs_init(struct solo_dev *solo_dev)
 		     solo_dev->nr_chans);
 
 	if (device_register(dev)) {
+		put_device(dev);
 		dev->parent = NULL;
 		return -ENOMEM;
 	}
@@ -483,7 +463,6 @@ static int solo_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	solo_dev->type = id->driver_data;
 	solo_dev->pdev = pdev;
-	spin_lock_init(&solo_dev->reg_io_lock);
 	ret = v4l2_device_register(&pdev->dev, &solo_dev->v4l2_dev);
 	if (ret)
 		goto fail_probe;
@@ -525,6 +504,7 @@ static int solo_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	default:
 		dev_warn(&pdev->dev, "Invalid chip_id 0x%02x, assuming 4 ch\n",
 			 chip_id);
+		fallthrough;
 	case 5:
 		solo_dev->nr_chans = 4;
 		solo_dev->nr_ext = 1;

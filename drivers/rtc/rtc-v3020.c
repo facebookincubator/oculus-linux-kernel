@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* drivers/rtc/rtc-v3020.c
  *
  * Copyright (C) 2006 8D Technologies inc.
  * Copyright (C) 2004 Compulab Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * Driver for the V3020 RTC
  *
@@ -17,7 +14,6 @@
  *
  *  ??-???-2004: Someone at Compulab
  *			- Initial driver creation.
- *
  */
 #include <linux/platform_device.h>
 #include <linux/module.h>
@@ -25,7 +21,7 @@
 #include <linux/rtc.h>
 #include <linux/types.h>
 #include <linux/bcd.h>
-#include <linux/rtc-v3020.h>
+#include <linux/platform_data/rtc-v3020.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/slab.h>
@@ -49,20 +45,15 @@ struct v3020_chip_ops {
 #define V3020_RD	2
 #define V3020_IO	3
 
-struct v3020_gpio {
-	const char *name;
-	unsigned int gpio;
-};
-
 struct v3020 {
 	/* MMIO access */
 	void __iomem *ioaddress;
 	int leftshift;
 
 	/* GPIO access */
-	struct v3020_gpio *gpio;
+	struct gpio *gpio;
 
-	struct v3020_chip_ops *ops;
+	const struct v3020_chip_ops *ops;
 
 	struct rtc_device *rtc;
 };
@@ -100,55 +91,41 @@ static unsigned char v3020_mmio_read_bit(struct v3020 *chip)
 	return !!(readl(chip->ioaddress) & (1 << chip->leftshift));
 }
 
-static struct v3020_chip_ops v3020_mmio_ops = {
+static const struct v3020_chip_ops v3020_mmio_ops = {
 	.map_io		= v3020_mmio_map,
 	.unmap_io	= v3020_mmio_unmap,
 	.read_bit	= v3020_mmio_read_bit,
 	.write_bit	= v3020_mmio_write_bit,
 };
 
-static struct v3020_gpio v3020_gpio[] = {
-	{ "RTC CS", 0 },
-	{ "RTC WR", 0 },
-	{ "RTC RD", 0 },
-	{ "RTC IO", 0 },
+static struct gpio v3020_gpio[] = {
+	{ 0, GPIOF_OUT_INIT_HIGH, "RTC CS"},
+	{ 0, GPIOF_OUT_INIT_HIGH, "RTC WR"},
+	{ 0, GPIOF_OUT_INIT_HIGH, "RTC RD"},
+	{ 0, GPIOF_OUT_INIT_HIGH, "RTC IO"},
 };
 
 static int v3020_gpio_map(struct v3020 *chip, struct platform_device *pdev,
 			  struct v3020_platform_data *pdata)
 {
-	int i, err;
+	int err;
 
 	v3020_gpio[V3020_CS].gpio = pdata->gpio_cs;
 	v3020_gpio[V3020_WR].gpio = pdata->gpio_wr;
 	v3020_gpio[V3020_RD].gpio = pdata->gpio_rd;
 	v3020_gpio[V3020_IO].gpio = pdata->gpio_io;
 
-	for (i = 0; i < ARRAY_SIZE(v3020_gpio); i++) {
-		err = gpio_request(v3020_gpio[i].gpio, v3020_gpio[i].name);
-		if (err)
-			goto err_request;
+	err = gpio_request_array(v3020_gpio, ARRAY_SIZE(v3020_gpio));
 
-		gpio_direction_output(v3020_gpio[i].gpio, 1);
-	}
-
-	chip->gpio = v3020_gpio;
-
-	return 0;
-
-err_request:
-	while (--i >= 0)
-		gpio_free(v3020_gpio[i].gpio);
+	if (!err)
+		chip->gpio = v3020_gpio;
 
 	return err;
 }
 
 static void v3020_gpio_unmap(struct v3020 *chip)
 {
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(v3020_gpio); i++)
-		gpio_free(v3020_gpio[i].gpio);
+	gpio_free_array(v3020_gpio, ARRAY_SIZE(v3020_gpio));
 }
 
 static void v3020_gpio_write_bit(struct v3020 *chip, unsigned char bit)
@@ -177,7 +154,7 @@ static unsigned char v3020_gpio_read_bit(struct v3020 *chip)
 	return bit;
 }
 
-static struct v3020_chip_ops v3020_gpio_ops = {
+static const struct v3020_chip_ops v3020_gpio_ops = {
 	.map_io		= v3020_gpio_map,
 	.unmap_io	= v3020_gpio_unmap,
 	.read_bit	= v3020_gpio_read_bit,
@@ -307,7 +284,6 @@ static int rtc_probe(struct platform_device *pdev)
 	struct v3020 *chip;
 	int retval = -EBUSY;
 	int i;
-	int temp;
 
 	chip = devm_kzalloc(&pdev->dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip)
@@ -325,7 +301,7 @@ static int rtc_probe(struct platform_device *pdev)
 	/* Make sure the v3020 expects a communication cycle
 	 * by reading 8 times */
 	for (i = 0; i < 8; i++)
-		temp = chip->ops->read_bit(chip);
+		chip->ops->read_bit(chip);
 
 	/* Test chip by doing a write/read sequence
 	 * to the chip ram */
@@ -382,7 +358,6 @@ static struct platform_driver rtc_device_driver = {
 	.remove = rtc_remove,
 	.driver = {
 		.name	= "v3020",
-		.owner	= THIS_MODULE,
 	},
 };
 

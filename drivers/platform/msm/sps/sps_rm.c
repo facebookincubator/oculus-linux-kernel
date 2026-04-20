@@ -1,16 +1,7 @@
-/* Copyright (c) 2011-2015, 2017, 2019, The Linux Foundation.
- * All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2011-2015, 2017-2019, 2021, The Linux Foundation. All rights reserved.
  */
-
 /* Resource management for the SPS device driver. */
 
 #include <linux/types.h>	/* u32 */
@@ -70,7 +61,7 @@ static void sps_rm_remove_ref(struct sps_connection *map)
 	if (map->refs <= 0) {
 		if (map->client_src != NULL || map->client_dest != NULL)
 			SPS_ERR(sps,
-				"sps:%s:Failed to allocate connection struct",
+				"sps:%s:Failed to allocate connection struct\n",
 				__func__);
 
 		list_del(&map->list);
@@ -177,12 +168,14 @@ static int sps_rm_assign(struct sps_pipe *pipe,
 			 struct sps_connection *map)
 {
 	struct sps_connect *cfg = &pipe->connect;
+	unsigned long desc_iova = 0;
+	unsigned long data_iova = 0;
 
 	/* Check ownership and BAM */
 	if ((cfg->mode == SPS_MODE_SRC && map->client_src != NULL) ||
 	    (cfg->mode != SPS_MODE_SRC && map->client_dest != NULL)) {
 		SPS_ERR(sps,
-			"sps:%s:The end point is already connected.\n",
+			"sps:%s:The end point is already connected\n",
 			__func__);
 		return SPS_ERROR;
 	}
@@ -190,7 +183,7 @@ static int sps_rm_assign(struct sps_pipe *pipe,
 	/* Check whether this end point is a BAM (not memory) */
 	if ((cfg->mode == SPS_MODE_SRC && map->src.bam == NULL) ||
 	    (cfg->mode != SPS_MODE_SRC && map->dest.bam == NULL)) {
-		SPS_ERR(sps, "sps:%s:The end point is empty.\n", __func__);
+		SPS_ERR(sps, "sps:%s:The end point is empty\n", __func__);
 		return SPS_ERROR;
 	}
 
@@ -215,14 +208,30 @@ static int sps_rm_assign(struct sps_pipe *pipe,
 	}
 	pipe->map = map;
 
-	SPS_DBG(pipe->bam, "sps:sps_rm_assign.bam %pa.pipe_index=%d\n",
-			BAM_ID(pipe->bam), pipe->pipe_index);
+	SPS_DBG(pipe->bam, "sps:%s.bam %pa.pipe_index=%d\n",
+			__func__, BAM_ID(pipe->bam), pipe->pipe_index);
 
 	/* Copy parameters to client connect state */
 	pipe->connect.src_pipe_index = map->src.pipe_index;
 	pipe->connect.dest_pipe_index = map->dest.pipe_index;
+
+	/*
+	 * The below assignment to connect.desc and connect.data will
+	 * overwrite the previous values given by the first client
+	 * in a BAM-to-BAM connection. Prevent that since the IOVAs
+	 * may be different for the same physical buffers if the
+	 * BAMs use different SMMUs.
+	 */
+	if (pipe->bam->props.options & SPS_BAM_SMMU_EN) {
+		desc_iova = pipe->connect.desc.iova;
+		data_iova = pipe->connect.data.iova;
+	}
 	pipe->connect.desc = map->desc;
 	pipe->connect.data = map->data;
+	if (pipe->bam->props.options & SPS_BAM_SMMU_EN) {
+		pipe->connect.desc.iova = desc_iova;
+		pipe->connect.data.iova = data_iova;
+	}
 
 	pipe->client_state = SPS_STATE_ALLOCATE;
 
@@ -366,7 +375,7 @@ static struct sps_connection *sps_rm_create(struct sps_pipe *pipe)
 	map = kzalloc(sizeof(*map), GFP_KERNEL);
 	if (map == NULL) {
 		SPS_ERR(sps,
-			"sps:%s:Failed to allocate connection struct",
+			"sps:%s:Failed to allocate connection struct\n",
 			__func__);
 		return NULL;
 	}
@@ -381,26 +390,30 @@ static struct sps_connection *sps_rm_create(struct sps_pipe *pipe)
 	map->src.bam = sps_h2bam(map->src.dev);
 	if (map->src.bam == NULL) {
 		if (map->src.dev != SPS_DEV_HANDLE_MEM) {
-			SPS_ERR(sps, "sps:Invalid BAM handle: %pK",
+			SPS_ERR(sps, "sps:Invalid BAM handle: %pK\n",
 					(void *)(&map->src.dev));
 			goto exit_err;
 		}
 		map->src.pipe_index = SPS_BAM_PIPE_INVALID;
 	}
-	map->dest.bam = sps_h2bam(map->dest.dev);
-	if (map->dest.bam == NULL) {
-		if (map->dest.dev != SPS_DEV_HANDLE_MEM) {
-			SPS_ERR(sps, "sps:Invalid BAM handle: %pK",
-					(void *)(&map->dest.dev));
-			goto exit_err;
+
+	if (!(pipe->connect.options & SPS_O_DUMMY_PEER)) {
+		map->dest.bam = sps_h2bam(map->dest.dev);
+		if (map->dest.bam == NULL) {
+			if (map->dest.dev != SPS_DEV_HANDLE_MEM) {
+				SPS_ERR(sps,
+				"sps:Invalid BAM handle: %pK",
+				(void *)(&map->dest.dev));
+				goto exit_err;
+			}
+			map->dest.pipe_index = SPS_BAM_PIPE_INVALID;
 		}
-		map->dest.pipe_index = SPS_BAM_PIPE_INVALID;
 	}
 
 	/* Check the BAM device for the pipe */
 	if ((dir == SPS_MODE_SRC && map->src.bam == NULL) ||
 	    (dir != SPS_MODE_SRC && map->dest.bam == NULL)) {
-		SPS_ERR(sps, "sps:Invalid BAM endpt: dir %d src %pK dest %pK",
+		SPS_ERR(sps, "sps:Invalid BAM endpt: dir %d src %pK dest %pK\n",
 			dir, (void *)(&map->src.dev), (void *)(&map->dest.dev));
 		goto exit_err;
 	}
@@ -424,7 +437,7 @@ static struct sps_connection *sps_rm_create(struct sps_pipe *pipe)
 						 SPS_MODE_SRC);
 			if (rc) {
 				SPS_ERR(bam,
-					"sps:Failed to alloc BAM-DMA pipe: %d",
+					"sps:Failed to alloc BAM-DMA pipe: %d\n",
 					map->src.pipe_index);
 				goto exit_err;
 			}
@@ -452,7 +465,7 @@ static struct sps_connection *sps_rm_create(struct sps_pipe *pipe)
 					       SPS_MODE_DEST);
 			if (rc) {
 				SPS_ERR(bam,
-					"sps:Failed to alloc BAM-DMA pipe: %d",
+					"sps:Failed to alloc BAM-DMA pipe: %d\n",
 					map->dest.pipe_index);
 				goto exit_err;
 			}
@@ -487,16 +500,17 @@ static struct sps_connection *sps_rm_create(struct sps_pipe *pipe)
 		if (map->data.size == SPSRM_CLEAR)
 			map->data.size = data_size;
 	} else {
-		map->data.size = 0;
+		if (!(pipe->connect.options & SPS_O_DUMMY_PEER))
+			map->data.size = 0;
 	}
 	if (map->desc.size > SPSRM_MAX_DESC_FIFO_SIZE) {
-		SPS_ERR(sps, "sps:Invalid desc FIFO size: 0x%x",
+		SPS_ERR(sps, "sps:Invalid desc FIFO size: 0x%x\n",
 						map->desc.size);
 		goto exit_err;
 	}
 	if (map->src.bam != NULL && map->dest.bam != NULL &&
 	    map->data.size > SPSRM_MAX_DATA_FIFO_SIZE) {
-		SPS_ERR(sps, "sps:Invalid data FIFO size: 0x%x",
+		SPS_ERR(sps, "sps:Invalid data FIFO size: 0x%x\n",
 						map->data.size);
 		goto exit_err;
 	}
@@ -505,7 +519,7 @@ static struct sps_connection *sps_rm_create(struct sps_pipe *pipe)
 	if (map->desc.size && map->desc.phys_base == SPS_ADDR_INVALID) {
 		map->alloc_desc_base = sps_mem_alloc_io(map->desc.size);
 		if (map->alloc_desc_base == SPS_ADDR_INVALID) {
-			SPS_ERR(sps, "sps:I/O memory allocation failure:0x%x",
+			SPS_ERR(sps, "sps:I/O memory allocation failure:0x%x\n",
 				map->desc.size);
 			goto exit_err;
 		}
@@ -513,7 +527,7 @@ static struct sps_connection *sps_rm_create(struct sps_pipe *pipe)
 		map->desc.base = spsi_get_mem_ptr(map->desc.phys_base);
 		if (map->desc.base == NULL) {
 			SPS_ERR(sps,
-				"sps:Cannot get virt addr for I/O buffer:%pa",
+				"sps:Cannot get virt addr for I/O buffer:%pa\n",
 				&map->desc.phys_base);
 			goto exit_err;
 		}
@@ -523,7 +537,7 @@ static struct sps_connection *sps_rm_create(struct sps_pipe *pipe)
 	if (map->data.size && map->data.phys_base == SPS_ADDR_INVALID) {
 		map->alloc_data_base = sps_mem_alloc_io(map->data.size);
 		if (map->alloc_data_base == SPS_ADDR_INVALID) {
-			SPS_ERR(sps, "sps:I/O memory allocation failure:0x%x",
+			SPS_ERR(sps, "sps:I/O memory allocation failure:0x%x\n",
 				map->data.size);
 			goto exit_err;
 		}
@@ -531,7 +545,7 @@ static struct sps_connection *sps_rm_create(struct sps_pipe *pipe)
 		map->data.base = spsi_get_mem_ptr(map->data.phys_base);
 		if (map->data.base == NULL) {
 			SPS_ERR(sps,
-				"sps:Cannot get virt addr for I/O buffer:%pa",
+				"sps:Cannot get virt addr for I/O buffer:%pa\n",
 				&map->data.phys_base);
 			goto exit_err;
 		}
@@ -540,7 +554,7 @@ static struct sps_connection *sps_rm_create(struct sps_pipe *pipe)
 	/* Attempt to assign this connection to the client */
 	if (sps_rm_assign(pipe, map)) {
 		SPS_ERR(sps,
-		"sps:%s:failed to assign a connection to the client.\n",
+		"sps:%s:failed to assign a connection to the client\n",
 			__func__);
 		goto exit_err;
 	}
@@ -617,6 +631,7 @@ static int sps_rm_alloc(struct sps_pipe *pipe)
 		unsigned long destination = pipe->connect.destination;
 		enum sps_mode mode = pipe->connect.mode;
 		u32 config = pipe->connect.config;
+
 		memset(&pipe->connect, SPSRM_CLEAR,
 			      sizeof(pipe->connect));
 		pipe->connect.source = source;
@@ -636,7 +651,7 @@ static int sps_rm_alloc(struct sps_pipe *pipe)
 	if (pipe->connect.config != SPS_CONFIG_DEFAULT) {
 		if (sps_map_find(&pipe->connect)) {
 			SPS_ERR(sps,
-				"sps:%s:Failed to find connection mapping",
+				"sps:%s:Failed to find connection mapping\n",
 								__func__);
 			return SPS_ERROR;
 		}
@@ -646,7 +661,7 @@ static int sps_rm_alloc(struct sps_pipe *pipe)
 	/* Check client state */
 	if (IS_SPS_STATE_OK(pipe)) {
 		SPS_ERR(sps,
-			"sps:%s:Client connection already allocated",
+			"sps:%s:Client connection already allocated\n",
 							__func__);
 		goto exit_err;
 	}
@@ -665,7 +680,7 @@ static int sps_rm_alloc(struct sps_pipe *pipe)
 		map = sps_rm_create(pipe);
 		if (map == NULL) {
 			SPS_ERR(sps,
-				"sps:%s:Failed to allocate connection",
+				"sps:%s:Failed to allocate connection\n",
 							__func__);
 			goto exit_err;
 		}
@@ -724,7 +739,7 @@ int sps_rm_state_change(struct sps_pipe *pipe, u32 state)
 	    state == SPS_STATE_ALLOCATE) {
 		if (sps_rm_alloc(pipe)) {
 			SPS_ERR(pipe->bam,
-				"sps:Fail to allocate resource for BAM 0x%pK pipe %d.\n",
+				"sps:Fail to allocate resource for BAM 0x%pK pipe %d\n",
 					pipe->bam, pipe->pipe_index);
 			return SPS_ERROR;
 		}
@@ -735,6 +750,7 @@ int sps_rm_state_change(struct sps_pipe *pipe, u32 state)
 	    state == SPS_STATE_CONNECT) {
 		/* Connect the BAM pipe */
 		struct sps_bam_connect_param params;
+
 		memset(&params, 0, sizeof(params));
 		params.mode = pipe->connect.mode;
 		if (pipe->connect.options != SPSRM_CLEAR) {
@@ -745,7 +761,7 @@ int sps_rm_state_change(struct sps_pipe *pipe, u32 state)
 		result = sps_bam_pipe_connect(pipe, &params);
 		if (result) {
 			SPS_ERR(pipe->bam,
-				"sps:Failed to connect BAM 0x%pK pipe %d",
+				"sps:Failed to connect BAM 0x%pK pipe %d\n",
 					pipe->bam, pipe->pipe_index);
 			return SPS_ERROR;
 		}
@@ -769,7 +785,7 @@ int sps_rm_state_change(struct sps_pipe *pipe, u32 state)
 		result = sps_bam_pipe_enable(pipe->bam, pipe->pipe_index);
 		if (result) {
 			SPS_ERR(pipe->bam,
-				"sps:Failed to set BAM %pa pipe %d flow on",
+				"sps:Failed to set BAM %pa pipe %d flow on\n",
 				&pipe->bam->props.phys_addr,
 				pipe->pipe_index);
 			return SPS_ERROR;
@@ -783,8 +799,8 @@ int sps_rm_state_change(struct sps_pipe *pipe, u32 state)
 						     pipe->pipe_index);
 			if (result) {
 				SPS_ERR(pipe->bam,
-					"sps:Failed to activate BAM-DMA"
-					" pipe: %d", pipe->pipe_index);
+					"sps:Failed to activate BAM-DMA pipe: %d\n",
+					pipe->pipe_index);
 				return SPS_ERROR;
 			}
 		}
@@ -798,7 +814,7 @@ int sps_rm_state_change(struct sps_pipe *pipe, u32 state)
 		result = sps_bam_pipe_disable(pipe->bam, pipe->pipe_index);
 		if (result) {
 			SPS_ERR(pipe->bam,
-				"sps:Failed to set BAM %pa pipe %d flow off",
+				"sps:Failed to set BAM %pa pipe %d flow off\n",
 				&pipe->bam->props.phys_addr,
 				pipe->pipe_index);
 			return SPS_ERROR;
@@ -828,7 +844,7 @@ int sps_rm_state_change(struct sps_pipe *pipe, u32 state)
 		result = sps_bam_pipe_disconnect(pipe->bam, pipe_index);
 		if (result) {
 			SPS_ERR(pipe->bam,
-				"sps:Failed to disconnect BAM %pa pipe %d",
+				"sps:Failed to disconnect BAM %pa pipe %d\n",
 				&pipe->bam->props.phys_addr,
 				pipe->pipe_index);
 			return SPS_ERROR;

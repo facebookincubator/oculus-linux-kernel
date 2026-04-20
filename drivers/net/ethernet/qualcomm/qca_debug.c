@@ -30,6 +30,8 @@
 
 #define QCASPI_MAX_REGS 0x20
 
+#define QCASPI_RX_MAX_FRAMES 4
+
 static const u16 qcaspi_spi_regs[] = {
 	SPI_REG_BFR_SIZE,
 	SPI_REG_WRBUF_SPC_AVA,
@@ -60,6 +62,8 @@ static const char qcaspi_gstrings_stats[][ETH_GSTRING_LEN] = {
 	"Write buffer misses",
 	"Transmit ring full",
 	"SPI errors",
+	"Write verify errors",
+	"Buffer available errors",
 };
 
 #ifdef CONFIG_DEBUG_FS
@@ -106,10 +110,8 @@ qcaspi_info_show(struct seq_file *s, void *what)
 
 	seq_printf(s, "IRQ              : %d\n",
 		   qca->spi_dev->irq);
-	seq_printf(s, "INTR REQ         : %u\n",
-		   qca->intr_req);
-	seq_printf(s, "INTR SVC         : %u\n",
-		   qca->intr_svc);
+	seq_printf(s, "INTR             : %lx\n",
+		   qca->intr);
 
 	seq_printf(s, "SPI max speed    : %lu\n",
 		   (unsigned long)qca->spi_dev->max_speed_hz);
@@ -124,35 +126,16 @@ qcaspi_info_show(struct seq_file *s, void *what)
 
 	return 0;
 }
-
-static int
-qcaspi_info_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, qcaspi_info_show, inode->i_private);
-}
-
-static const struct file_operations qcaspi_info_ops = {
-	.open = qcaspi_info_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
+DEFINE_SHOW_ATTRIBUTE(qcaspi_info);
 
 void
 qcaspi_init_device_debugfs(struct qcaspi *qca)
 {
-	struct dentry *device_root;
+	qca->device_root = debugfs_create_dir(dev_name(&qca->net_dev->dev),
+					      NULL);
 
-	device_root = debugfs_create_dir(dev_name(&qca->net_dev->dev), NULL);
-	qca->device_root = device_root;
-
-	if (IS_ERR(device_root) || !device_root) {
-		pr_warn("failed to create debugfs directory for %s\n",
-			dev_name(&qca->net_dev->dev));
-		return;
-	}
-	debugfs_create_file("info", S_IFREG | S_IRUGO, device_root, qca,
-			    &qcaspi_info_ops);
+	debugfs_create_file("info", S_IFREG | 0444, qca->device_root, qca,
+			    &qcaspi_info_fops);
 }
 
 void
@@ -188,14 +171,16 @@ qcaspi_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *p)
 }
 
 static int
-qcaspi_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
+qcaspi_get_link_ksettings(struct net_device *dev,
+			  struct ethtool_link_ksettings *cmd)
 {
-	cmd->transceiver = XCVR_INTERNAL;
-	cmd->supported = SUPPORTED_10baseT_Half;
-	ethtool_cmd_speed_set(cmd,  SPEED_10);
-	cmd->duplex = DUPLEX_HALF;
-	cmd->port = PORT_OTHER;
-	cmd->autoneg = AUTONEG_DISABLE;
+	ethtool_link_ksettings_zero_link_mode(cmd, supported);
+	ethtool_link_ksettings_add_link_mode(cmd, supported, 10baseT_Half);
+
+	cmd->base.speed = SPEED_10;
+	cmd->base.duplex = DUPLEX_HALF;
+	cmd->base.port = PORT_OTHER;
+	cmd->base.autoneg = AUTONEG_DISABLE;
 
 	return 0;
 }
@@ -264,9 +249,9 @@ qcaspi_get_ringparam(struct net_device *dev, struct ethtool_ringparam *ring)
 {
 	struct qcaspi *qca = netdev_priv(dev);
 
-	ring->rx_max_pending = 4;
+	ring->rx_max_pending = QCASPI_RX_MAX_FRAMES;
 	ring->tx_max_pending = TX_RING_MAX_LEN;
-	ring->rx_pending = 4;
+	ring->rx_pending = QCASPI_RX_MAX_FRAMES;
 	ring->tx_pending = qca->txr.count;
 }
 
@@ -275,19 +260,19 @@ qcaspi_set_ringparam(struct net_device *dev, struct ethtool_ringparam *ring)
 {
 	struct qcaspi *qca = netdev_priv(dev);
 
-	if ((ring->rx_pending) ||
+	if (ring->rx_pending != QCASPI_RX_MAX_FRAMES ||
 	    (ring->rx_mini_pending) ||
 	    (ring->rx_jumbo_pending))
 		return -EINVAL;
 
-	if (netif_running(dev))
-		qcaspi_netdev_close(dev);
+	if (qca->spi_thread)
+		kthread_park(qca->spi_thread);
 
 	qca->txr.count = max_t(u32, ring->tx_pending, TX_RING_MIN_LEN);
 	qca->txr.count = min_t(u16, qca->txr.count, TX_RING_MAX_LEN);
 
-	if (netif_running(dev))
-		qcaspi_netdev_open(dev);
+	if (qca->spi_thread)
+		kthread_unpark(qca->spi_thread);
 
 	return 0;
 }
@@ -295,7 +280,6 @@ qcaspi_set_ringparam(struct net_device *dev, struct ethtool_ringparam *ring)
 static const struct ethtool_ops qcaspi_ethtool_ops = {
 	.get_drvinfo = qcaspi_get_drvinfo,
 	.get_link = ethtool_op_get_link,
-	.get_settings = qcaspi_get_settings,
 	.get_ethtool_stats = qcaspi_get_ethtool_stats,
 	.get_strings = qcaspi_get_strings,
 	.get_sset_count = qcaspi_get_sset_count,
@@ -303,6 +287,7 @@ static const struct ethtool_ops qcaspi_ethtool_ops = {
 	.get_regs = qcaspi_get_regs,
 	.get_ringparam = qcaspi_get_ringparam,
 	.set_ringparam = qcaspi_set_ringparam,
+	.get_link_ksettings = qcaspi_get_link_ksettings,
 };
 
 void qcaspi_set_ethtool_ops(struct net_device *dev)

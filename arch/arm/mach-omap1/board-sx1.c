@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
 * linux/arch/arm/mach-omap1/board-sx1.c
 *
@@ -9,10 +10,6 @@
 *
 * Maintainters : Vladimir Ananiev (aka Vovan888), Sergge
 *		oslik.ru
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
 */
 #include <linux/gpio.h>
 #include <linux/kernel.h>
@@ -34,11 +31,11 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include <mach/flash.h>
+#include "flash.h"
 #include <mach/mux.h>
 #include <linux/omap-dma.h>
 #include <mach/tc.h>
-#include <mach/board-sx1.h>
+#include "board-sx1.h"
 
 #include <mach/hardware.h>
 #include <mach/usb.h>
@@ -297,7 +294,7 @@ static struct omap_usb_config sx1_usb_config __initdata = {
 
 /*----------- LCD -------------------------*/
 
-static struct omap_lcd_config sx1_lcd_config __initdata = {
+static const struct omap_lcd_config sx1_lcd_config __initconst = {
 	.ctrl_name	= "internal",
 };
 
@@ -343,6 +340,7 @@ MACHINE_START(SX1, "OMAP310 based Siemens SX1")
 	.map_io		= omap15xx_map_io,
 	.init_early     = omap1_init_early,
 	.init_irq	= omap1_init_irq,
+	.handle_irq	= omap1_handle_irq,
 	.init_machine	= omap_sx1_init,
 	.init_late	= omap1_init_late,
 	.init_time	= omap1_timer_init,

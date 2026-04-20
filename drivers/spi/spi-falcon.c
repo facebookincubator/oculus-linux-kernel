@@ -1,7 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- *  This program is free software; you can redistribute it and/or modify it
- *  under the terms of the GNU General Public License version 2 as published
- *  by the Free Software Foundation.
  *
  *  Copyright (C) 2012 Thomas Langer <thomas.langer@lantiq.com>
  */
@@ -353,16 +351,6 @@ static int falcon_sflash_setup(struct spi_device *spi)
 	return 0;
 }
 
-static int falcon_sflash_prepare_xfer(struct spi_master *master)
-{
-	return 0;
-}
-
-static int falcon_sflash_unprepare_xfer(struct spi_master *master)
-{
-	return 0;
-}
-
 static int falcon_sflash_xfer_one(struct spi_master *master,
 					struct spi_message *m)
 {
@@ -389,7 +377,7 @@ static int falcon_sflash_xfer_one(struct spi_master *master,
 
 		m->actual_length += t->len;
 
-		WARN_ON(t->delay_usecs || t->cs_change);
+		WARN_ON(t->delay_usecs || t->delay.value || t->cs_change);
 		spi_flags = 0;
 	}
 
@@ -405,11 +393,6 @@ static int falcon_sflash_probe(struct platform_device *pdev)
 	struct spi_master *master;
 	int ret;
 
-	if (ltq_boot_select() != BS_SPI) {
-		dev_err(&pdev->dev, "invalid bootstrap options\n");
-		return -ENODEV;
-	}
-
 	master = spi_alloc_master(&pdev->dev, sizeof(*priv));
 	if (!master)
 		return -ENOMEM;
@@ -420,9 +403,7 @@ static int falcon_sflash_probe(struct platform_device *pdev)
 	master->mode_bits = SPI_MODE_3;
 	master->flags = SPI_MASTER_HALF_DUPLEX;
 	master->setup = falcon_sflash_setup;
-	master->prepare_transfer_hardware = falcon_sflash_prepare_xfer;
 	master->transfer_one_message = falcon_sflash_xfer_one;
-	master->unprepare_transfer_hardware = falcon_sflash_unprepare_xfer;
 	master->dev.of_node = pdev->dev.of_node;
 
 	ret = devm_spi_register_master(&pdev->dev, master);
@@ -441,7 +422,6 @@ static struct platform_driver falcon_sflash_driver = {
 	.probe	= falcon_sflash_probe,
 	.driver = {
 		.name	= DRV_NAME,
-		.owner	= THIS_MODULE,
 		.of_match_table = falcon_sflash_match,
 	}
 };

@@ -1,14 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * phy-core.c  --  Generic Phy framework.
  *
  * Copyright (C) 2013 Texas Instruments Incorporated - http://www.ti.com
  *
  * Author: Kishon Vijay Abraham I <kishon@ti.com>
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -26,13 +22,14 @@
 static struct class *phy_class;
 static DEFINE_MUTEX(phy_provider_mutex);
 static LIST_HEAD(phy_provider_list);
+static LIST_HEAD(phys);
 static DEFINE_IDA(phy_ida);
 
 static void devm_phy_release(struct device *dev, void *res)
 {
 	struct phy *phy = *(struct phy **)res;
 
-	phy_put(phy);
+	phy_put(dev, phy);
 }
 
 static void devm_phy_provider_release(struct device *dev, void *res)
@@ -56,34 +53,79 @@ static int devm_phy_match(struct device *dev, void *res, void *match_data)
 	return *phy == match_data;
 }
 
-static struct phy *phy_lookup(struct device *device, const char *port)
+/**
+ * phy_create_lookup() - allocate and register PHY/device association
+ * @phy: the phy of the association
+ * @con_id: connection ID string on device
+ * @dev_id: the device of the association
+ *
+ * Creates and registers phy_lookup entry.
+ */
+int phy_create_lookup(struct phy *phy, const char *con_id, const char *dev_id)
 {
-	unsigned int count;
-	struct phy *phy;
-	struct device *dev;
-	struct phy_consumer *consumers;
-	struct class_dev_iter iter;
+	struct phy_lookup *pl;
 
-	class_dev_iter_init(&iter, phy_class, NULL, NULL);
-	while ((dev = class_dev_iter_next(&iter))) {
-		phy = to_phy(dev);
+	if (!phy || !dev_id || !con_id)
+		return -EINVAL;
 
-		if (!phy->init_data)
-			continue;
-		count = phy->init_data->num_consumers;
-		consumers = phy->init_data->consumers;
-		while (count--) {
-			if (!strcmp(consumers->dev_name, dev_name(device)) &&
-					!strcmp(consumers->port, port)) {
-				class_dev_iter_exit(&iter);
-				return phy;
-			}
-			consumers++;
+	pl = kzalloc(sizeof(*pl), GFP_KERNEL);
+	if (!pl)
+		return -ENOMEM;
+
+	pl->dev_id = dev_id;
+	pl->con_id = con_id;
+	pl->phy = phy;
+
+	mutex_lock(&phy_provider_mutex);
+	list_add_tail(&pl->node, &phys);
+	mutex_unlock(&phy_provider_mutex);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(phy_create_lookup);
+
+/**
+ * phy_remove_lookup() - find and remove PHY/device association
+ * @phy: the phy of the association
+ * @con_id: connection ID string on device
+ * @dev_id: the device of the association
+ *
+ * Finds and unregisters phy_lookup entry that was created with
+ * phy_create_lookup().
+ */
+void phy_remove_lookup(struct phy *phy, const char *con_id, const char *dev_id)
+{
+	struct phy_lookup *pl;
+
+	if (!phy || !dev_id || !con_id)
+		return;
+
+	mutex_lock(&phy_provider_mutex);
+	list_for_each_entry(pl, &phys, node)
+		if (pl->phy == phy && !strcmp(pl->dev_id, dev_id) &&
+		    !strcmp(pl->con_id, con_id)) {
+			list_del(&pl->node);
+			kfree(pl);
+			break;
 		}
-	}
+	mutex_unlock(&phy_provider_mutex);
+}
+EXPORT_SYMBOL_GPL(phy_remove_lookup);
 
-	class_dev_iter_exit(&iter);
-	return ERR_PTR(-ENODEV);
+static struct phy *phy_find(struct device *dev, const char *con_id)
+{
+	const char *dev_id = dev_name(dev);
+	struct phy_lookup *p, *pl = NULL;
+
+	mutex_lock(&phy_provider_mutex);
+	list_for_each_entry(p, &phys, node)
+		if (!strcmp(p->dev_id, dev_id) && !strcmp(p->con_id, con_id)) {
+			pl = p;
+			break;
+		}
+	mutex_unlock(&phy_provider_mutex);
+
+	return pl ? pl->phy : ERR_PTR(-ENODEV);
 }
 
 static struct phy_provider *of_phy_provider_lookup(struct device_node *node)
@@ -95,7 +137,7 @@ static struct phy_provider *of_phy_provider_lookup(struct device_node *node)
 		if (phy_provider->dev->of_node == node)
 			return phy_provider;
 
-		for_each_child_of_node(phy_provider->dev->of_node, child)
+		for_each_child_of_node(phy_provider->children, child)
 			if (child == node)
 				return phy_provider;
 	}
@@ -106,6 +148,9 @@ static struct phy_provider *of_phy_provider_lookup(struct device_node *node)
 int phy_pm_runtime_get(struct phy *phy)
 {
 	int ret;
+
+	if (!phy)
+		return 0;
 
 	if (!pm_runtime_enabled(&phy->dev))
 		return -ENOTSUPP;
@@ -122,6 +167,9 @@ int phy_pm_runtime_get_sync(struct phy *phy)
 {
 	int ret;
 
+	if (!phy)
+		return 0;
+
 	if (!pm_runtime_enabled(&phy->dev))
 		return -ENOTSUPP;
 
@@ -135,6 +183,9 @@ EXPORT_SYMBOL_GPL(phy_pm_runtime_get_sync);
 
 int phy_pm_runtime_put(struct phy *phy)
 {
+	if (!phy)
+		return 0;
+
 	if (!pm_runtime_enabled(&phy->dev))
 		return -ENOTSUPP;
 
@@ -144,6 +195,9 @@ EXPORT_SYMBOL_GPL(phy_pm_runtime_put);
 
 int phy_pm_runtime_put_sync(struct phy *phy)
 {
+	if (!phy)
+		return 0;
+
 	if (!pm_runtime_enabled(&phy->dev))
 		return -ENOTSUPP;
 
@@ -153,6 +207,9 @@ EXPORT_SYMBOL_GPL(phy_pm_runtime_put_sync);
 
 void phy_pm_runtime_allow(struct phy *phy)
 {
+	if (!phy)
+		return;
+
 	if (!pm_runtime_enabled(&phy->dev))
 		return;
 
@@ -162,6 +219,9 @@ EXPORT_SYMBOL_GPL(phy_pm_runtime_allow);
 
 void phy_pm_runtime_forbid(struct phy *phy)
 {
+	if (!phy)
+		return;
+
 	if (!pm_runtime_enabled(&phy->dev))
 		return;
 
@@ -296,6 +356,133 @@ int phy_power_off(struct phy *phy)
 }
 EXPORT_SYMBOL_GPL(phy_power_off);
 
+int phy_set_mode_ext(struct phy *phy, enum phy_mode mode, int submode)
+{
+	int ret;
+
+	if (!phy || !phy->ops->set_mode)
+		return 0;
+
+	mutex_lock(&phy->mutex);
+	ret = phy->ops->set_mode(phy, mode, submode);
+	if (!ret)
+		phy->attrs.mode = mode;
+	mutex_unlock(&phy->mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(phy_set_mode_ext);
+
+int phy_reset(struct phy *phy)
+{
+	int ret;
+
+	if (!phy || !phy->ops->reset)
+		return 0;
+
+	ret = phy_pm_runtime_get_sync(phy);
+	if (ret < 0 && ret != -ENOTSUPP)
+		return ret;
+
+	mutex_lock(&phy->mutex);
+	ret = phy->ops->reset(phy);
+	mutex_unlock(&phy->mutex);
+
+	phy_pm_runtime_put(phy);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(phy_reset);
+
+/**
+ * phy_calibrate() - Tunes the phy hw parameters for current configuration
+ * @phy: the phy returned by phy_get()
+ *
+ * Used to calibrate phy hardware, typically by adjusting some parameters in
+ * runtime, which are otherwise lost after host controller reset and cannot
+ * be applied in phy_init() or phy_power_on().
+ *
+ * Returns: 0 if successful, an negative error code otherwise
+ */
+int phy_calibrate(struct phy *phy)
+{
+	int ret;
+
+	if (!phy || !phy->ops->calibrate)
+		return 0;
+
+	mutex_lock(&phy->mutex);
+	ret = phy->ops->calibrate(phy);
+	mutex_unlock(&phy->mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(phy_calibrate);
+
+/**
+ * phy_configure() - Changes the phy parameters
+ * @phy: the phy returned by phy_get()
+ * @opts: New configuration to apply
+ *
+ * Used to change the PHY parameters. phy_init() must have been called
+ * on the phy. The configuration will be applied on the current phy
+ * mode, that can be changed using phy_set_mode().
+ *
+ * Returns: 0 if successful, an negative error code otherwise
+ */
+int phy_configure(struct phy *phy, union phy_configure_opts *opts)
+{
+	int ret;
+
+	if (!phy)
+		return -EINVAL;
+
+	if (!phy->ops->configure)
+		return -EOPNOTSUPP;
+
+	mutex_lock(&phy->mutex);
+	ret = phy->ops->configure(phy, opts);
+	mutex_unlock(&phy->mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(phy_configure);
+
+/**
+ * phy_validate() - Checks the phy parameters
+ * @phy: the phy returned by phy_get()
+ * @mode: phy_mode the configuration is applicable to.
+ * @submode: PHY submode the configuration is applicable to.
+ * @opts: Configuration to check
+ *
+ * Used to check that the current set of parameters can be handled by
+ * the phy. Implementations are free to tune the parameters passed as
+ * arguments if needed by some implementation detail or
+ * constraints. It will not change any actual configuration of the
+ * PHY, so calling it as many times as deemed fit will have no side
+ * effect.
+ *
+ * Returns: 0 if successful, an negative error code otherwise
+ */
+int phy_validate(struct phy *phy, enum phy_mode mode, int submode,
+		 union phy_configure_opts *opts)
+{
+	int ret;
+
+	if (!phy)
+		return -EINVAL;
+
+	if (!phy->ops->validate)
+		return -EOPNOTSUPP;
+
+	mutex_lock(&phy->mutex);
+	ret = phy->ops->validate(phy, mode, submode, opts);
+	mutex_unlock(&phy->mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(phy_validate);
+
 /**
  * _of_phy_get() - lookup and obtain a reference to a phy by phandle
  * @np: device_node for which to get the phy
@@ -319,17 +506,29 @@ static struct phy *_of_phy_get(struct device_node *np, int index)
 	if (ret)
 		return ERR_PTR(-ENODEV);
 
+	/* This phy type handled by the usb-phy subsystem for now */
+	if (of_device_is_compatible(args.np, "usb-nop-xceiv"))
+		return ERR_PTR(-ENODEV);
+
 	mutex_lock(&phy_provider_mutex);
 	phy_provider = of_phy_provider_lookup(args.np);
 	if (IS_ERR(phy_provider) || !try_module_get(phy_provider->owner)) {
 		phy = ERR_PTR(-EPROBE_DEFER);
-		goto err0;
+		goto out_unlock;
+	}
+
+	if (!of_device_is_available(args.np)) {
+		dev_warn(phy_provider->dev, "Requested PHY is disabled\n");
+		phy = ERR_PTR(-ENODEV);
+		goto out_put_module;
 	}
 
 	phy = phy_provider->of_xlate(phy_provider->dev, &args);
+
+out_put_module:
 	module_put(phy_provider->owner);
 
-err0:
+out_unlock:
 	mutex_unlock(&phy_provider_mutex);
 	of_node_put(args.np);
 
@@ -367,18 +566,37 @@ struct phy *of_phy_get(struct device_node *np, const char *con_id)
 EXPORT_SYMBOL_GPL(of_phy_get);
 
 /**
- * phy_put() - release the PHY
- * @phy: the phy returned by phy_get()
+ * of_phy_put() - release the PHY
+ * @phy: the phy returned by of_phy_get()
  *
- * Releases a refcount the caller received from phy_get().
+ * Releases a refcount the caller received from of_phy_get().
  */
-void phy_put(struct phy *phy)
+void of_phy_put(struct phy *phy)
 {
 	if (!phy || IS_ERR(phy))
 		return;
 
+	mutex_lock(&phy->mutex);
+	if (phy->ops->release)
+		phy->ops->release(phy);
+	mutex_unlock(&phy->mutex);
+
 	module_put(phy->ops->owner);
 	put_device(&phy->dev);
+}
+EXPORT_SYMBOL_GPL(of_phy_put);
+
+/**
+ * phy_put() - release the PHY
+ * @dev: device that wants to release this phy
+ * @phy: the phy returned by phy_get()
+ *
+ * Releases a refcount the caller received from phy_get().
+ */
+void phy_put(struct device *dev, struct phy *phy)
+{
+	device_link_remove(dev, &phy->dev);
+	of_phy_put(phy);
 }
 EXPORT_SYMBOL_GPL(phy_put);
 
@@ -417,21 +635,13 @@ struct phy *of_phy_simple_xlate(struct device *dev, struct of_phandle_args
 {
 	struct phy *phy;
 	struct class_dev_iter iter;
-	struct device_node *node = dev->of_node;
-	struct device_node *child;
 
 	class_dev_iter_init(&iter, phy_class, NULL, NULL);
 	while ((dev = class_dev_iter_next(&iter))) {
 		phy = to_phy(dev);
-		if (node != phy->dev.of_node) {
-			for_each_child_of_node(node, child) {
-				if (child == phy->dev.of_node)
-					goto phy_found;
-			}
+		if (args->np != phy->dev.of_node)
 			continue;
-		}
 
-phy_found:
 		class_dev_iter_exit(&iter);
 		return phy;
 	}
@@ -455,6 +665,7 @@ struct phy *phy_get(struct device *dev, const char *string)
 {
 	int index = 0;
 	struct phy *phy;
+	struct device_link *link;
 
 	if (string == NULL) {
 		dev_WARN(dev, "missing string\n");
@@ -466,7 +677,7 @@ struct phy *phy_get(struct device *dev, const char *string)
 			string);
 		phy = _of_phy_get(dev->of_node, index);
 	} else {
-		phy = phy_lookup(dev, string);
+		phy = phy_find(dev, string);
 	}
 	if (IS_ERR(phy))
 		return phy;
@@ -475,6 +686,11 @@ struct phy *phy_get(struct device *dev, const char *string)
 		return ERR_PTR(-EPROBE_DEFER);
 
 	get_device(&phy->dev);
+
+	link = device_link_add(dev, &phy->dev, DL_FLAG_STATELESS);
+	if (!link)
+		dev_dbg(dev, "failed to create device link to %s\n",
+			dev_name(phy->dev.parent));
 
 	return phy;
 }
@@ -569,6 +785,7 @@ struct phy *devm_of_phy_get(struct device *dev, struct device_node *np,
 			    const char *con_id)
 {
 	struct phy **ptr, *phy;
+	struct device_link *link;
 
 	ptr = devres_alloc(devm_phy_release, sizeof(*ptr), GFP_KERNEL);
 	if (!ptr)
@@ -580,24 +797,75 @@ struct phy *devm_of_phy_get(struct device *dev, struct device_node *np,
 		devres_add(dev, ptr);
 	} else {
 		devres_free(ptr);
+		return phy;
 	}
+
+	link = device_link_add(dev, &phy->dev, DL_FLAG_STATELESS);
+	if (!link)
+		dev_dbg(dev, "failed to create device link to %s\n",
+			dev_name(phy->dev.parent));
 
 	return phy;
 }
 EXPORT_SYMBOL_GPL(devm_of_phy_get);
 
 /**
+ * devm_of_phy_get_by_index() - lookup and obtain a reference to a phy by index.
+ * @dev: device that requests this phy
+ * @np: node containing the phy
+ * @index: index of the phy
+ *
+ * Gets the phy using _of_phy_get(), then gets a refcount to it,
+ * and associates a device with it using devres. On driver detach,
+ * release function is invoked on the devres data,
+ * then, devres data is freed.
+ *
+ */
+struct phy *devm_of_phy_get_by_index(struct device *dev, struct device_node *np,
+				     int index)
+{
+	struct phy **ptr, *phy;
+	struct device_link *link;
+
+	ptr = devres_alloc(devm_phy_release, sizeof(*ptr), GFP_KERNEL);
+	if (!ptr)
+		return ERR_PTR(-ENOMEM);
+
+	phy = _of_phy_get(np, index);
+	if (IS_ERR(phy)) {
+		devres_free(ptr);
+		return phy;
+	}
+
+	if (!try_module_get(phy->ops->owner)) {
+		devres_free(ptr);
+		return ERR_PTR(-EPROBE_DEFER);
+	}
+
+	get_device(&phy->dev);
+
+	*ptr = phy;
+	devres_add(dev, ptr);
+
+	link = device_link_add(dev, &phy->dev, DL_FLAG_STATELESS);
+	if (!link)
+		dev_dbg(dev, "failed to create device link to %s\n",
+			dev_name(phy->dev.parent));
+
+	return phy;
+}
+EXPORT_SYMBOL_GPL(devm_of_phy_get_by_index);
+
+/**
  * phy_create() - create a new phy
  * @dev: device that is creating the new phy
  * @node: device node of the phy
  * @ops: function pointers for performing phy operations
- * @init_data: contains the list of PHY consumers or NULL
  *
  * Called to create a phy using phy framework.
  */
 struct phy *phy_create(struct device *dev, struct device_node *node,
-		       const struct phy_ops *ops,
-		       struct phy_init_data *init_data)
+		       const struct phy_ops *ops)
 {
 	int ret;
 	int id;
@@ -617,16 +885,6 @@ struct phy *phy_create(struct device *dev, struct device_node *node,
 		goto free_phy;
 	}
 
-	/* phy-supply */
-	phy->pwr = regulator_get_optional(dev, "phy");
-	if (IS_ERR(phy->pwr)) {
-		if (PTR_ERR(phy->pwr) == -EPROBE_DEFER) {
-			ret = -EPROBE_DEFER;
-			goto free_ida;
-		}
-		phy->pwr = NULL;
-	}
-
 	device_initialize(&phy->dev);
 	mutex_init(&phy->mutex);
 
@@ -635,11 +893,20 @@ struct phy *phy_create(struct device *dev, struct device_node *node,
 	phy->dev.of_node = node ?: dev->of_node;
 	phy->id = id;
 	phy->ops = ops;
-	phy->init_data = init_data;
 
 	ret = dev_set_name(&phy->dev, "phy-%s.%d", dev_name(dev), id);
 	if (ret)
 		goto put_dev;
+
+	/* phy-supply */
+	phy->pwr = regulator_get_optional(&phy->dev, "phy");
+	if (IS_ERR(phy->pwr)) {
+		ret = PTR_ERR(phy->pwr);
+		if (ret == -EPROBE_DEFER)
+			goto put_dev;
+
+		phy->pwr = NULL;
+	}
 
 	ret = device_add(&phy->dev);
 	if (ret)
@@ -656,9 +923,6 @@ put_dev:
 	put_device(&phy->dev);  /* calls phy_release() which frees resources */
 	return ERR_PTR(ret);
 
-free_ida:
-	ida_simple_remove(&phy_ida, phy->id);
-
 free_phy:
 	kfree(phy);
 	return ERR_PTR(ret);
@@ -670,7 +934,6 @@ EXPORT_SYMBOL_GPL(phy_create);
  * @dev: device that is creating the new phy
  * @node: device node of the phy
  * @ops: function pointers for performing phy operations
- * @init_data: contains the list of PHY consumers or NULL
  *
  * Creates a new PHY device adding it to the PHY class.
  * While at that, it also associates the device with the phy using devres.
@@ -678,8 +941,7 @@ EXPORT_SYMBOL_GPL(phy_create);
  * then, devres data is freed.
  */
 struct phy *devm_phy_create(struct device *dev, struct device_node *node,
-			    const struct phy_ops *ops,
-			    struct phy_init_data *init_data)
+			    const struct phy_ops *ops)
 {
 	struct phy **ptr, *phy;
 
@@ -687,7 +949,7 @@ struct phy *devm_phy_create(struct device *dev, struct device_node *node,
 	if (!ptr)
 		return ERR_PTR(-ENOMEM);
 
-	phy = phy_create(dev, node, ops, init_data);
+	phy = phy_create(dev, node, ops);
 	if (!IS_ERR(phy)) {
 		*ptr = phy;
 		devres_add(dev, ptr);
@@ -732,24 +994,59 @@ EXPORT_SYMBOL_GPL(devm_phy_destroy);
 /**
  * __of_phy_provider_register() - create/register phy provider with the framework
  * @dev: struct device of the phy provider
+ * @children: device node containing children (if different from dev->of_node)
  * @owner: the module owner containing of_xlate
  * @of_xlate: function pointer to obtain phy instance from phy provider
  *
  * Creates struct phy_provider from dev and of_xlate function pointer.
  * This is used in the case of dt boot for finding the phy instance from
  * phy provider.
+ *
+ * If the PHY provider doesn't nest children directly but uses a separate
+ * child node to contain the individual children, the @children parameter
+ * can be used to override the default. If NULL, the default (dev->of_node)
+ * will be used. If non-NULL, the device node must be a child (or further
+ * descendant) of dev->of_node. Otherwise an ERR_PTR()-encoded -EINVAL
+ * error code is returned.
  */
 struct phy_provider *__of_phy_provider_register(struct device *dev,
-	struct module *owner, struct phy * (*of_xlate)(struct device *dev,
-	struct of_phandle_args *args))
+	struct device_node *children, struct module *owner,
+	struct phy * (*of_xlate)(struct device *dev,
+				 struct of_phandle_args *args))
 {
 	struct phy_provider *phy_provider;
+
+	/*
+	 * If specified, the device node containing the children must itself
+	 * be the provider's device node or a child (or further descendant)
+	 * thereof.
+	 */
+	if (children) {
+		struct device_node *parent = of_node_get(children), *next;
+
+		while (parent) {
+			if (parent == dev->of_node)
+				break;
+
+			next = of_get_parent(parent);
+			of_node_put(parent);
+			parent = next;
+		}
+
+		if (!parent)
+			return ERR_PTR(-EINVAL);
+
+		of_node_put(parent);
+	} else {
+		children = dev->of_node;
+	}
 
 	phy_provider = kzalloc(sizeof(*phy_provider), GFP_KERNEL);
 	if (!phy_provider)
 		return ERR_PTR(-ENOMEM);
 
 	phy_provider->dev = dev;
+	phy_provider->children = of_node_get(children);
 	phy_provider->owner = owner;
 	phy_provider->of_xlate = of_xlate;
 
@@ -765,6 +1062,7 @@ EXPORT_SYMBOL_GPL(__of_phy_provider_register);
  * __devm_of_phy_provider_register() - create/register phy provider with the
  * framework
  * @dev: struct device of the phy provider
+ * @children: device node containing children (if different from dev->of_node)
  * @owner: the module owner containing of_xlate
  * @of_xlate: function pointer to obtain phy instance from phy provider
  *
@@ -775,8 +1073,9 @@ EXPORT_SYMBOL_GPL(__of_phy_provider_register);
  * on the devres data, then, devres data is freed.
  */
 struct phy_provider *__devm_of_phy_provider_register(struct device *dev,
-	struct module *owner, struct phy * (*of_xlate)(struct device *dev,
-	struct of_phandle_args *args))
+	struct device_node *children, struct module *owner,
+	struct phy * (*of_xlate)(struct device *dev,
+				 struct of_phandle_args *args))
 {
 	struct phy_provider **ptr, *phy_provider;
 
@@ -784,7 +1083,8 @@ struct phy_provider *__devm_of_phy_provider_register(struct device *dev,
 	if (!ptr)
 		return ERR_PTR(-ENOMEM);
 
-	phy_provider = __of_phy_provider_register(dev, owner, of_xlate);
+	phy_provider = __of_phy_provider_register(dev, children, owner,
+						  of_xlate);
 	if (!IS_ERR(phy_provider)) {
 		*ptr = phy_provider;
 		devres_add(dev, ptr);
@@ -809,6 +1109,7 @@ void of_phy_provider_unregister(struct phy_provider *phy_provider)
 
 	mutex_lock(&phy_provider_mutex);
 	list_del(&phy_provider->list);
+	of_node_put(phy_provider->children);
 	kfree(phy_provider);
 	mutex_unlock(&phy_provider_mutex);
 }
@@ -817,12 +1118,14 @@ EXPORT_SYMBOL_GPL(of_phy_provider_unregister);
 /**
  * devm_of_phy_provider_unregister() - remove phy provider from the framework
  * @dev: struct device of the phy provider
+ * @phy_provider: phy provider returned by of_phy_provider_register()
  *
  * destroys the devres associated with this phy provider and invokes
  * of_phy_provider_unregister to unregister the phy provider.
  */
 void devm_of_phy_provider_unregister(struct device *dev,
-	struct phy_provider *phy_provider) {
+	struct phy_provider *phy_provider)
+{
 	int r;
 
 	r = devres_destroy(dev, devm_phy_provider_release, devm_phy_match,
@@ -862,14 +1165,4 @@ static int __init phy_core_init(void)
 
 	return 0;
 }
-module_init(phy_core_init);
-
-static void __exit phy_core_exit(void)
-{
-	class_destroy(phy_class);
-}
-module_exit(phy_core_exit);
-
-MODULE_DESCRIPTION("Generic PHY Framework");
-MODULE_AUTHOR("Kishon Vijay Abraham I <kishon@ti.com>");
-MODULE_LICENSE("GPL v2");
+device_initcall(phy_core_init);

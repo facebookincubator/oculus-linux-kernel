@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _UDA134X_CODEC_H
 #define _UDA134X_CODEC_H
 
@@ -25,8 +26,6 @@
 #define UDA134X_DATA010 12
 #define UDA134X_DATA011 13
 #define UDA134X_DATA1   14
-
-#define UDA134X_REGS_NUM 15
 
 #define STATUS0_DAIFMT_MASK (~(7<<1))
 #define STATUS0_SYSCLK_MASK (~(3<<4))

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ca91c042.h
  *
@@ -11,11 +12,6 @@
  * Copyright 2009 GE Intelligent Platforms Embedded Systems, Inc.
  *
  * Derived from ca91c042.h by Michael Wyrick
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
  */
 
 #ifndef _CA91CX42_H
@@ -43,7 +39,8 @@ struct ca91cx42_driver {
 	wait_queue_head_t dma_queue;
 	wait_queue_head_t iack_queue;
 	wait_queue_head_t mbox_queue;
-	void (*lm_callback[4])(int);	/* Called in interrupt handler */
+	void (*lm_callback[4])(void *);	/* Called in interrupt handler */
+	void *lm_data[4];
 	void *crcsr_kernel;
 	dma_addr_t crcsr_bus;
 	struct mutex vme_rmw;		/* Only one RMW cycle at a time */
@@ -547,7 +544,7 @@ static const int CA91CX42_LINT_LM[] = { CA91CX42_LINT_LM0, CA91CX42_LINT_LM1,
 #define CA91CX42_LM_CTL_DATA		(1<<22)
 #define CA91CX42_LM_CTL_SUPR		(1<<21)
 #define CA91CX42_LM_CTL_NPRIV		(1<<20)
-#define CA91CX42_LM_CTL_AS_M		(5<<16)
+#define CA91CX42_LM_CTL_AS_M		(7<<16)
 #define CA91CX42_LM_CTL_AS_A16		0
 #define CA91CX42_LM_CTL_AS_A24		(1<<16)
 #define CA91CX42_LM_CTL_AS_A32		(1<<17)

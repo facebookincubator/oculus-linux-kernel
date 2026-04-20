@@ -53,6 +53,8 @@
 #include <linux/errno.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -60,6 +62,7 @@
 #include <linux/interrupt.h>
 #include <linux/ioport.h>
 #include <linux/in.h>
+#include <linux/jiffies.h>
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
@@ -238,13 +241,13 @@ writereg(struct net_device *dev, u16 regno, u16 value)
 static int __init
 wait_eeprom_ready(struct net_device *dev)
 {
-	int timeout = jiffies;
+	unsigned long timeout = jiffies;
 	/* check to see if the EEPROM is ready,
 	 * a timeout is used just in case EEPROM is ready when
 	 * SI_BUSY in the PP_SelfST is clear
 	 */
 	while (readreg(dev, PP_SelfST) & SI_BUSY)
-		if (jiffies - timeout >= 40)
+		if (time_after_eq(jiffies, timeout + 40))
 			return -1;
 	return 0;
 }
@@ -447,11 +450,10 @@ skip_this_frame:
 
 	if (bp + length > lp->end_dma_buff) {
 		int semi_cnt = lp->end_dma_buff - bp;
-		memcpy(skb_put(skb, semi_cnt), bp, semi_cnt);
-		memcpy(skb_put(skb, length - semi_cnt), lp->dma_buff,
-		       length - semi_cnt);
+		skb_put_data(skb, bp, semi_cnt);
+		skb_put_data(skb, lp->dma_buff, length - semi_cnt);
 	} else {
-		memcpy(skb_put(skb, length), bp, length);
+		skb_put_data(skb, bp, length);
 	}
 	bp += (length + 3) & ~3;
 	if (bp >= lp->end_dma_buff)
@@ -485,7 +487,7 @@ control_dc_dc(struct net_device *dev, int on_not_off)
 {
 	struct net_local *lp = netdev_priv(dev);
 	unsigned int selfcontrol;
-	int timenow = jiffies;
+	unsigned long timenow = jiffies;
 	/* control the DC to DC convertor in the SelfControl register.
 	 * Note: This is hooked up to a general purpose pin, might not
 	 * always be a DC to DC convertor.
@@ -499,7 +501,7 @@ control_dc_dc(struct net_device *dev, int on_not_off)
 	writereg(dev, PP_SelfCTL, selfcontrol);
 
 	/* Wait for the DC/DC converter to power up - 500ms */
-	while (jiffies - timenow < HZ)
+	while (time_before(jiffies, timenow + HZ))
 		;
 }
 
@@ -514,7 +516,7 @@ send_test_pkt(struct net_device *dev)
 		0, 0,		/* DSAP=0 & SSAP=0 fields */
 		0xf3, 0		/* Control (Test Req + P bit set) */
 	};
-	long timenow = jiffies;
+	unsigned long timenow = jiffies;
 
 	writereg(dev, PP_LineCTL, readreg(dev, PP_LineCTL) | SERIAL_TX_ON);
 
@@ -525,10 +527,10 @@ send_test_pkt(struct net_device *dev)
 	iowrite16(ETH_ZLEN, lp->virt_addr + TX_LEN_PORT);
 
 	/* Test to see if the chip has allocated memory for the packet */
-	while (jiffies - timenow < 5)
+	while (time_before(jiffies, timenow + 5))
 		if (readreg(dev, PP_BusST) & READY_FOR_TX_NOW)
 			break;
-	if (jiffies - timenow >= 5)
+	if (time_after_eq(jiffies, timenow + 5))
 		return 0;	/* this shouldn't happen */
 
 	/* Write the contents of the packet */
@@ -536,7 +538,7 @@ send_test_pkt(struct net_device *dev)
 
 	cs89_dbg(1, debug, "Sending test packet ");
 	/* wait a couple of jiffies for packet to be received */
-	for (timenow = jiffies; jiffies - timenow < 3;)
+	for (timenow = jiffies; time_before(jiffies, timenow + 3);)
 		;
 	if ((readreg(dev, PP_TxEvent) & TX_SEND_OK_BITS) == TX_OK) {
 		cs89_dbg(1, cont, "succeeded\n");
@@ -556,7 +558,7 @@ static int
 detect_tp(struct net_device *dev)
 {
 	struct net_local *lp = netdev_priv(dev);
-	int timenow = jiffies;
+	unsigned long timenow = jiffies;
 	int fdx;
 
 	cs89_dbg(1, debug, "%s: Attempting TP\n", dev->name);
@@ -574,7 +576,7 @@ detect_tp(struct net_device *dev)
 	/* Delay for the hardware to work out if the TP cable is present
 	 * - 150ms
 	 */
-	for (timenow = jiffies; jiffies - timenow < 15;)
+	for (timenow = jiffies; time_before(jiffies, timenow + 15);)
 		;
 	if ((readreg(dev, PP_LineST) & LINK_OK) == 0)
 		return DETECTED_NONE;
@@ -618,7 +620,7 @@ detect_tp(struct net_device *dev)
 		if ((lp->auto_neg_cnf & AUTO_NEG_BITS) == AUTO_NEG_ENABLE) {
 			pr_info("%s: negotiating duplex...\n", dev->name);
 			while (readreg(dev, PP_AutoNegST) & AUTO_NEG_BUSY) {
-				if (jiffies - timenow > 4000) {
+				if (time_after(jiffies, timenow + 4000)) {
 					pr_err("**** Full / half duplex auto-negotiation timed out ****\n");
 					break;
 				}
@@ -1126,7 +1128,7 @@ net_get_stats(struct net_device *dev)
 	return &dev->stats;
 }
 
-static void net_timeout(struct net_device *dev)
+static void net_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	/* If we get here, some higher level has decided we are broken.
 	   There should really be a "kick me" function call instead. */
@@ -1263,7 +1265,6 @@ static const struct net_device_ops net_ops = {
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= net_poll_controller,
 #endif
-	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_validate_addr	= eth_validate_addr,
 };
 
@@ -1271,7 +1272,7 @@ static void __init reset_chip(struct net_device *dev)
 {
 #if !defined(CONFIG_MACH_MX31ADS)
 	struct net_local *lp = netdev_priv(dev);
-	int reset_start_time;
+	unsigned long reset_start_time;
 
 	writereg(dev, PP_SelfCTL, readreg(dev, PP_SelfCTL) | POWER_ON_RESET);
 
@@ -1294,7 +1295,7 @@ static void __init reset_chip(struct net_device *dev)
 	/* Wait until the chip is reset */
 	reset_start_time = jiffies;
 	while ((readreg(dev, PP_SelfST) & INIT_DONE) == 0 &&
-	       jiffies - reset_start_time < 2)
+	       time_before(jiffies, reset_start_time + 2))
 		;
 #endif /* !CONFIG_MACH_MX31ADS */
 }
@@ -1577,7 +1578,7 @@ out1:
 
 #ifndef CONFIG_CS89x0_PLATFORM
 /*
- * This function converts the I/O port addres used by the cs89x0_probe() and
+ * This function converts the I/O port address used by the cs89x0_probe() and
  * init_module() functions to the I/O memory address used by the
  * cs89x0_probe1() function.
  */
@@ -1702,12 +1703,12 @@ static int use_dma;			/* These generate unused var warnings if ALLOW_DMA = 0 */
 static int dma;
 static int dmasize = 16;		/* or 64 */
 
-module_param(io, int, 0);
-module_param(irq, int, 0);
+module_param_hw(io, int, ioport, 0);
+module_param_hw(irq, int, irq, 0);
 module_param(debug, int, 0);
 module_param_string(media, media, sizeof(media), 0);
 module_param(duplex, int, 0);
-module_param(dma , int, 0);
+module_param_hw(dma , int, dma, 0);
 module_param(dmasize , int, 0);
 module_param(use_dma , int, 0);
 MODULE_PARM_DESC(io, "cs89x0 I/O base address");
@@ -1843,15 +1844,11 @@ cleanup_module(void)
 static int __init cs89x0_platform_probe(struct platform_device *pdev)
 {
 	struct net_device *dev = alloc_etherdev(sizeof(struct net_local));
-	struct net_local *lp;
-	struct resource *mem_res;
 	void __iomem *virt_addr;
 	int err;
 
 	if (!dev)
 		return -ENOMEM;
-
-	lp = netdev_priv(dev);
 
 	dev->irq = platform_get_irq(pdev, 0);
 	if (dev->irq <= 0) {
@@ -1860,8 +1857,7 @@ static int __init cs89x0_platform_probe(struct platform_device *pdev)
 		goto free;
 	}
 
-	mem_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	virt_addr = devm_ioremap_resource(&pdev->dev, mem_res);
+	virt_addr = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(virt_addr)) {
 		err = PTR_ERR(virt_addr);
 		goto free;
@@ -1894,10 +1890,17 @@ static int cs89x0_platform_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id __maybe_unused cs89x0_match[] = {
+	{ .compatible = "cirrus,cs8900", },
+	{ .compatible = "cirrus,cs8920", },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, cs89x0_match);
+
 static struct platform_driver cs89x0_driver = {
 	.driver	= {
-		.name	= DRV_NAME,
-		.owner	= THIS_MODULE,
+		.name		= DRV_NAME,
+		.of_match_table	= of_match_ptr(cs89x0_match),
 	},
 	.remove	= cs89x0_platform_remove,
 };
@@ -1905,3 +1908,7 @@ static struct platform_driver cs89x0_driver = {
 module_platform_driver_probe(cs89x0_driver, cs89x0_platform_probe);
 
 #endif /* CONFIG_CS89x0_PLATFORM */
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Crystal Semiconductor (Now Cirrus Logic) CS89[02]0 network driver");
+MODULE_AUTHOR("Russell Nelson <nelson@crynwr.com>");

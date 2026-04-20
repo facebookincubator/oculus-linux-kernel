@@ -1,19 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * omap_control_phy.h - Header file for the PHY part of control module.
  *
  * Copyright (C) 2013 Texas Instruments Incorporated - http://www.ti.com
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
  * Author: Kishon Vijay Abraham I <kishon@ti.com>
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
  */
 
 #ifndef __OMAP_CONTROL_PHY_H__
@@ -66,7 +56,7 @@ enum omap_control_usb_mode {
 #define	OMAP_CTRL_PIPE3_PHY_TX_RX_POWEROFF	0x0
 
 #define	OMAP_CTRL_PCIE_PCS_MASK			0xff
-#define	OMAP_CTRL_PCIE_PCS_DELAY_COUNT_SHIFT	0x8
+#define	OMAP_CTRL_PCIE_PCS_DELAY_COUNT_SHIFT	16
 
 #define OMAP_CTRL_USB2_PHY_PD		BIT(28)
 
@@ -79,7 +69,7 @@ enum omap_control_usb_mode {
 void omap_control_phy_power(struct device *dev, int on);
 void omap_control_usb_set_mode(struct device *dev,
 			       enum omap_control_usb_mode mode);
-void omap_control_pcie_pcs(struct device *dev, u8 id, u8 delay);
+void omap_control_pcie_pcs(struct device *dev, u8 delay);
 #else
 
 static inline void omap_control_phy_power(struct device *dev, int on)
@@ -91,7 +81,7 @@ static inline void omap_control_usb_set_mode(struct device *dev,
 {
 }
 
-static inline void omap_control_pcie_pcs(struct device *dev, u8 id, u8 delay)
+static inline void omap_control_pcie_pcs(struct device *dev, u8 delay)
 {
 }
 #endif

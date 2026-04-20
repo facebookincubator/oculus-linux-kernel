@@ -1,14 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Wacom Penabled Driver for I2C
  *
  * Copyright (c) 2011 - 2013 Tatsunosuke Tobita, Wacom.
  * <tobita.tatsunosuke@wacom.co.jp>
- *
- * This program is free software; you can redistribute it
- * and/or modify it under the terms of the GNU General
- * Public License as published by the Free Software
- * Foundation; either version of 2 of the License,
- * or (at your option) any later version.
  */
 
 #include <linux/module.h>
@@ -17,7 +12,6 @@
 #include <linux/slab.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
-#include <linux/gpio.h>
 #include <asm/unaligned.h>
 
 #define WACOM_CMD_QUERY0	0x04
@@ -242,8 +236,7 @@ static int wacom_i2c_remove(struct i2c_client *client)
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int wacom_i2c_suspend(struct device *dev)
+static int __maybe_unused wacom_i2c_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 
@@ -252,7 +245,7 @@ static int wacom_i2c_suspend(struct device *dev)
 	return 0;
 }
 
-static int wacom_i2c_resume(struct device *dev)
+static int __maybe_unused wacom_i2c_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 
@@ -260,7 +253,6 @@ static int wacom_i2c_resume(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static SIMPLE_DEV_PM_OPS(wacom_i2c_pm, wacom_i2c_suspend, wacom_i2c_resume);
 
@@ -273,7 +265,6 @@ MODULE_DEVICE_TABLE(i2c, wacom_i2c_id);
 static struct i2c_driver wacom_i2c_driver = {
 	.driver	= {
 		.name	= "wacom_i2c",
-		.owner	= THIS_MODULE,
 		.pm	= &wacom_i2c_pm,
 	},
 

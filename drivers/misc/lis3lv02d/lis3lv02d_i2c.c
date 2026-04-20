@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * drivers/hwmon/lis3lv02d_i2c.c
  *
@@ -8,20 +9,6 @@
  * Copyright (C) 2009 Nokia Corporation and/or its subsidiary(-ies).
  *
  * Contact: Samu Onkalo <samu.p.onkalo@nokia.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301 USA
  */
 
 #include <linux/module.h>
@@ -106,7 +93,7 @@ static union axis_conversion lis3lv02d_axis_map =
 	{ .as_array = { LIS3_DEV_X, LIS3_DEV_Y, LIS3_DEV_Z } };
 
 #ifdef CONFIG_OF
-static struct of_device_id lis3lv02d_i2c_dt_ids[] = {
+static const struct of_device_id lis3lv02d_i2c_dt_ids[] = {
 	{ .compatible = "st,lis3lv02d" },
 	{}
 };
@@ -209,7 +196,7 @@ static int lis3lv02d_i2c_remove(struct i2c_client *client)
 #ifdef CONFIG_PM_SLEEP
 static int lis3lv02d_i2c_suspend(struct device *dev)
 {
-	struct i2c_client *client = container_of(dev, struct i2c_client, dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct lis3lv02d *lis3 = i2c_get_clientdata(client);
 
 	if (!lis3->pdata || !lis3->pdata->wakeup_flags)
@@ -219,7 +206,7 @@ static int lis3lv02d_i2c_suspend(struct device *dev)
 
 static int lis3lv02d_i2c_resume(struct device *dev)
 {
-	struct i2c_client *client = container_of(dev, struct i2c_client, dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct lis3lv02d *lis3 = i2c_get_clientdata(client);
 
 	/*
@@ -235,10 +222,10 @@ static int lis3lv02d_i2c_resume(struct device *dev)
 }
 #endif /* CONFIG_PM_SLEEP */
 
-#ifdef CONFIG_PM_RUNTIME
+#ifdef CONFIG_PM
 static int lis3_i2c_runtime_suspend(struct device *dev)
 {
-	struct i2c_client *client = container_of(dev, struct i2c_client, dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct lis3lv02d *lis3 = i2c_get_clientdata(client);
 
 	lis3lv02d_poweroff(lis3);
@@ -247,13 +234,13 @@ static int lis3_i2c_runtime_suspend(struct device *dev)
 
 static int lis3_i2c_runtime_resume(struct device *dev)
 {
-	struct i2c_client *client = container_of(dev, struct i2c_client, dev);
+	struct i2c_client *client = to_i2c_client(dev);
 	struct lis3lv02d *lis3 = i2c_get_clientdata(client);
 
 	lis3lv02d_poweron(lis3);
 	return 0;
 }
-#endif /* CONFIG_PM_RUNTIME */
+#endif /* CONFIG_PM */
 
 static const struct i2c_device_id lis3lv02d_id[] = {
 	{"lis3lv02d", LIS3LV02D},
@@ -274,7 +261,6 @@ static const struct dev_pm_ops lis3_pm_ops = {
 static struct i2c_driver lis3lv02d_i2c_driver = {
 	.driver	 = {
 		.name   = DRV_NAME,
-		.owner  = THIS_MODULE,
 		.pm     = &lis3_pm_ops,
 		.of_match_table = of_match_ptr(lis3lv02d_i2c_dt_ids),
 	},

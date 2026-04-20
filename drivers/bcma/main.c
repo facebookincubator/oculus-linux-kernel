@@ -7,10 +7,14 @@
 
 #include "bcma_private.h"
 #include <linux/module.h>
+#include <linux/mmc/sdio_func.h>
 #include <linux/platform_device.h>
+#include <linux/pci.h>
 #include <linux/bcma/bcma.h>
 #include <linux/slab.h>
 #include <linux/of_address.h>
+#include <linux/of_irq.h>
+#include <linux/of_platform.h>
 
 MODULE_DESCRIPTION("Broadcom's specific AMBA driver");
 MODULE_LICENSE("GPL");
@@ -132,18 +136,17 @@ static bool bcma_is_core_needed_early(u16 core_id)
 	return false;
 }
 
-#if defined(CONFIG_OF) && defined(CONFIG_OF_ADDRESS)
-static struct device_node *bcma_of_find_child_device(struct platform_device *parent,
+static struct device_node *bcma_of_find_child_device(struct device *parent,
 						     struct bcma_device *core)
 {
 	struct device_node *node;
 	u64 size;
 	const __be32 *reg;
 
-	if (!parent || !parent->dev.of_node)
+	if (!parent->of_node)
 		return NULL;
 
-	for_each_child_of_node(parent->dev.of_node, node) {
+	for_each_child_of_node(parent->of_node, node) {
 		reg = of_get_address(node, 0, &size, NULL);
 		if (!reg)
 			continue;
@@ -153,7 +156,47 @@ static struct device_node *bcma_of_find_child_device(struct platform_device *par
 	return NULL;
 }
 
-static void bcma_of_fill_device(struct platform_device *parent,
+static int bcma_of_irq_parse(struct device *parent,
+			     struct bcma_device *core,
+			     struct of_phandle_args *out_irq, int num)
+{
+	__be32 laddr[1];
+	int rc;
+
+	if (core->dev.of_node) {
+		rc = of_irq_parse_one(core->dev.of_node, num, out_irq);
+		if (!rc)
+			return rc;
+	}
+
+	out_irq->np = parent->of_node;
+	out_irq->args_count = 1;
+	out_irq->args[0] = num;
+
+	laddr[0] = cpu_to_be32(core->addr);
+	return of_irq_parse_raw(laddr, out_irq);
+}
+
+static unsigned int bcma_of_get_irq(struct device *parent,
+				    struct bcma_device *core, int num)
+{
+	struct of_phandle_args out_irq;
+	int ret;
+
+	if (!IS_ENABLED(CONFIG_OF_IRQ) || !parent->of_node)
+		return 0;
+
+	ret = bcma_of_irq_parse(parent, core, &out_irq, num);
+	if (ret) {
+		bcma_debug(core->bus, "bcma_of_get_irq() failed with rc=%d\n",
+			   ret);
+		return 0;
+	}
+
+	return irq_create_of_mapping(&out_irq);
+}
+
+static void bcma_of_fill_device(struct device *parent,
 				struct bcma_device *core)
 {
 	struct device_node *node;
@@ -161,47 +204,84 @@ static void bcma_of_fill_device(struct platform_device *parent,
 	node = bcma_of_find_child_device(parent, core);
 	if (node)
 		core->dev.of_node = node;
-}
-#else
-static void bcma_of_fill_device(struct platform_device *parent,
-				struct bcma_device *core)
-{
-}
-#endif /* CONFIG_OF */
 
-static void bcma_register_core(struct bcma_bus *bus, struct bcma_device *core)
-{
-	int err;
+	core->irq = bcma_of_get_irq(parent, core, 0);
 
-	core->dev.release = bcma_release_core_dev;
-	core->dev.bus = &bcma_bus_type;
-	dev_set_name(&core->dev, "bcma%d:%d", bus->num, core->core_index);
+	of_dma_configure(&core->dev, node, false);
+}
+
+unsigned int bcma_core_irq(struct bcma_device *core, int num)
+{
+	struct bcma_bus *bus = core->bus;
+	unsigned int mips_irq;
 
 	switch (bus->hosttype) {
 	case BCMA_HOSTTYPE_PCI:
-		core->dev.parent = &bus->host_pci->dev;
-		core->dma_dev = &bus->host_pci->dev;
+		return bus->host_pci->irq;
+	case BCMA_HOSTTYPE_SOC:
+		if (bus->drv_mips.core && num == 0) {
+			mips_irq = bcma_core_mips_irq(core);
+			return mips_irq <= 4 ? mips_irq + 2 : 0;
+		}
+		if (bus->dev)
+			return bcma_of_get_irq(bus->dev, core, num);
+		return 0;
+	case BCMA_HOSTTYPE_SDIO:
+		return 0;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(bcma_core_irq);
+
+void bcma_prepare_core(struct bcma_bus *bus, struct bcma_device *core)
+{
+	device_initialize(&core->dev);
+	core->dev.release = bcma_release_core_dev;
+	core->dev.bus = &bcma_bus_type;
+	dev_set_name(&core->dev, "bcma%d:%d", bus->num, core->core_index);
+	core->dev.parent = bus->dev;
+	if (bus->dev)
+		bcma_of_fill_device(bus->dev, core);
+
+	switch (bus->hosttype) {
+	case BCMA_HOSTTYPE_PCI:
+		core->dma_dev = bus->dev;
 		core->irq = bus->host_pci->irq;
 		break;
 	case BCMA_HOSTTYPE_SOC:
-		core->dev.dma_mask = &core->dev.coherent_dma_mask;
-		if (bus->host_pdev) {
-			core->dma_dev = &bus->host_pdev->dev;
-			core->dev.parent = &bus->host_pdev->dev;
-			bcma_of_fill_device(bus->host_pdev, core);
+		if (IS_ENABLED(CONFIG_OF) && bus->dev) {
+			core->dma_dev = bus->dev;
 		} else {
+			core->dev.dma_mask = &core->dev.coherent_dma_mask;
 			core->dma_dev = &core->dev;
 		}
 		break;
 	case BCMA_HOSTTYPE_SDIO:
 		break;
 	}
+}
 
-	err = device_register(&core->dev);
+void bcma_init_bus(struct bcma_bus *bus)
+{
+	mutex_lock(&bcma_buses_mutex);
+	bus->num = bcma_bus_next_num++;
+	mutex_unlock(&bcma_buses_mutex);
+
+	INIT_LIST_HEAD(&bus->cores);
+	bus->nr_cores = 0;
+
+	bcma_detect_chip(bus);
+}
+
+static void bcma_register_core(struct bcma_bus *bus, struct bcma_device *core)
+{
+	int err;
+
+	err = device_add(&core->dev);
 	if (err) {
 		bcma_err(bus, "Could not register dev for core 0x%03X\n",
 			 core->id.id);
-		put_device(&core->dev);
 		return;
 	}
 	core->dev_registered = true;
@@ -238,7 +318,7 @@ static int bcma_register_devices(struct bcma_bus *bus)
 		bcma_register_core(bus, core);
 	}
 
-#ifdef CONFIG_BCMA_DRIVER_MIPS
+#ifdef CONFIG_BCMA_PFLASH
 	if (bus->drv_cc.pflash.present) {
 		err = platform_device_register(&bcma_pflash_dev);
 		if (err)
@@ -276,27 +356,30 @@ static int bcma_register_devices(struct bcma_bus *bus)
 	return 0;
 }
 
-static void bcma_unregister_cores(struct bcma_bus *bus)
+void bcma_unregister_cores(struct bcma_bus *bus)
 {
 	struct bcma_device *core, *tmp;
 
 	list_for_each_entry_safe(core, tmp, &bus->cores, list) {
+		if (!core->dev_registered)
+			continue;
 		list_del(&core->list);
-		if (core->dev_registered)
-			device_unregister(&core->dev);
+		device_unregister(&core->dev);
 	}
 	if (bus->hosttype == BCMA_HOSTTYPE_SOC)
 		platform_device_unregister(bus->drv_cc.watchdog);
+
+	/* Now noone uses internally-handled cores, we can free them */
+	list_for_each_entry_safe(core, tmp, &bus->cores, list) {
+		list_del(&core->list);
+		put_device(&core->dev);
+	}
 }
 
 int bcma_bus_register(struct bcma_bus *bus)
 {
 	int err;
 	struct bcma_device *core;
-
-	mutex_lock(&bcma_buses_mutex);
-	bus->num = bcma_bus_next_num++;
-	mutex_unlock(&bcma_buses_mutex);
 
 	/* Scan for devices (cores) */
 	err = bcma_bus_scan(bus);
@@ -311,6 +394,16 @@ int bcma_bus_register(struct bcma_bus *bus)
 		bus->drv_cc.core = core;
 		bcma_core_chipcommon_early_init(&bus->drv_cc);
 	}
+
+	/* Early init PCIE core */
+	core = bcma_find_core(bus, BCMA_CORE_PCIE);
+	if (core) {
+		bus->drv_pci[0].core = core;
+		bcma_core_pci_early_init(&bus->drv_pci[0]);
+	}
+
+	if (bus->dev)
+		of_platform_default_populate(bus->dev->of_node, NULL, bus->dev);
 
 	/* Cores providing flash access go before SPROM init */
 	list_for_each_entry(core, &bus->cores, list) {
@@ -384,7 +477,6 @@ int bcma_bus_register(struct bcma_bus *bus)
 
 void bcma_bus_unregister(struct bcma_bus *bus)
 {
-	struct bcma_device *cores[3];
 	int err;
 
 	err = bcma_gpio_unregister(&bus->drv_cc);
@@ -395,46 +487,23 @@ void bcma_bus_unregister(struct bcma_bus *bus)
 
 	bcma_core_chipcommon_b_free(&bus->drv_cc_b);
 
-	cores[0] = bcma_find_core(bus, BCMA_CORE_MIPS_74K);
-	cores[1] = bcma_find_core(bus, BCMA_CORE_PCIE);
-	cores[2] = bcma_find_core(bus, BCMA_CORE_4706_MAC_GBIT_COMMON);
-
 	bcma_unregister_cores(bus);
-
-	kfree(cores[2]);
-	kfree(cores[1]);
-	kfree(cores[0]);
 }
 
-int __init bcma_bus_early_register(struct bcma_bus *bus,
-				   struct bcma_device *core_cc,
-				   struct bcma_device *core_mips)
+/*
+ * This is a special version of bus registration function designed for SoCs.
+ * It scans bus and performs basic initialization of main cores only.
+ * Please note it requires memory allocation, however it won't try to sleep.
+ */
+int __init bcma_bus_early_register(struct bcma_bus *bus)
 {
 	int err;
 	struct bcma_device *core;
-	struct bcma_device_id match;
 
-	match.manuf = BCMA_MANUF_BCM;
-	match.id = bcma_cc_core_id(bus);
-	match.class = BCMA_CL_SIM;
-	match.rev = BCMA_ANY_REV;
-
-	/* Scan for chip common core */
-	err = bcma_bus_scan_early(bus, &match, core_cc);
+	/* Scan for devices (cores) */
+	err = bcma_bus_scan(bus);
 	if (err) {
-		bcma_err(bus, "Failed to scan for common core: %d\n", err);
-		return -1;
-	}
-
-	match.manuf = BCMA_MANUF_MIPS;
-	match.id = BCMA_CORE_MIPS_74K;
-	match.class = BCMA_CL_SIM;
-	match.rev = BCMA_ANY_REV;
-
-	/* Scan for mips core */
-	err = bcma_bus_scan_early(bus, &match, core_mips);
-	if (err) {
-		bcma_err(bus, "Failed to scan for mips core: %d\n", err);
+		bcma_err(bus, "Failed to scan bus: %d\n", err);
 		return -1;
 	}
 
@@ -536,8 +605,11 @@ static int bcma_device_probe(struct device *dev)
 					       drv);
 	int err = 0;
 
+	get_device(dev);
 	if (adrv->probe)
 		err = adrv->probe(core);
+	if (err)
+		put_device(dev);
 
 	return err;
 }
@@ -550,6 +622,7 @@ static int bcma_device_remove(struct device *dev)
 
 	if (adrv->remove)
 		adrv->remove(core);
+	put_device(dev);
 
 	return 0;
 }
@@ -564,11 +637,36 @@ static int bcma_device_uevent(struct device *dev, struct kobj_uevent_env *env)
 			      core->id.rev, core->id.class);
 }
 
+static unsigned int bcma_bus_registered;
+
+/*
+ * If built-in, bus has to be registered early, before any driver calls
+ * bcma_driver_register.
+ * Otherwise registering driver would trigger BUG in driver_register.
+ */
+static int __init bcma_init_bus_register(void)
+{
+	int err;
+
+	if (bcma_bus_registered)
+		return 0;
+
+	err = bus_register(&bcma_bus_type);
+	if (!err)
+		bcma_bus_registered = 1;
+
+	return err;
+}
+#ifndef MODULE
+fs_initcall(bcma_init_bus_register);
+#endif
+
+/* Main initialization has to be done with SPI/mtd/NAND/SPROM available */
 static int __init bcma_modinit(void)
 {
 	int err;
 
-	err = bus_register(&bcma_bus_type);
+	err = bcma_init_bus_register();
 	if (err)
 		return err;
 
@@ -587,7 +685,7 @@ static int __init bcma_modinit(void)
 
 	return err;
 }
-fs_initcall(bcma_modinit);
+module_init(bcma_modinit);
 
 static void __exit bcma_modexit(void)
 {

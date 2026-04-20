@@ -1,16 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- *  This program is free software; you can distribute it and/or modify it
- *  under the terms of the GNU General Public License (Version 2) as
- *  published by the Free Software Foundation.
- *
- *  This program is distributed in the hope it will be useful, but WITHOUT
- *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- *  for more details.
- *
- *  You should have received a copy of the GNU General Public License along
- *  with this program; if not, write to the Free Software Foundation, Inc.,
- *  59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
  *
  * Copyright (C) 2007 MIPS Technologies, Inc.
  *    Chris Dearman (chris@mips.com)
@@ -19,7 +8,7 @@
 #undef DEBUG
 
 #include <linux/kernel.h>
-#include <linux/sched.h>
+#include <linux/sched/task_stack.h>
 #include <linux/smp.h>
 #include <linux/cpumask.h>
 #include <linux/interrupt.h>
@@ -37,22 +26,21 @@
 #include <asm/mipsmtregs.h>
 #include <asm/mips_mt.h>
 #include <asm/amon.h>
-#include <asm/gic.h>
 
 static void cmp_init_secondary(void)
 {
 	struct cpuinfo_mips *c __maybe_unused = &current_cpu_data;
 
 	/* Assume GIC is present */
-	change_c0_status(ST0_IM, STATUSF_IP3 | STATUSF_IP4 | STATUSF_IP6 |
-				 STATUSF_IP7);
+	change_c0_status(ST0_IM, STATUSF_IP2 | STATUSF_IP3 | STATUSF_IP4 |
+				 STATUSF_IP5 | STATUSF_IP6 | STATUSF_IP7);
 
 	/* Enable per-cpu interrupts: platform specific */
 
 #ifdef CONFIG_MIPS_MT_SMP
 	if (cpu_has_mipsmt)
-		c->vpe_id = (read_c0_tcbind() >> TCBIND_CURVPE_SHIFT) &
-			TCBIND_CURVPE;
+		cpu_set_vpe_id(c, (read_c0_tcbind() >> TCBIND_CURVPE_SHIFT) &
+				  TCBIND_CURVPE);
 #endif
 }
 
@@ -66,7 +54,7 @@ static void cmp_smp_finish(void)
 #ifdef CONFIG_MIPS_MT_FPAFF
 	/* If we have an FPU, enroll ourselves in the FPU-full mask */
 	if (cpu_has_fpu)
-		cpu_set(smp_processor_id(), mt_fpu_cpumask);
+		cpumask_set_cpu(smp_processor_id(), &mt_fpu_cpumask);
 #endif /* CONFIG_MIPS_MT_FPAFF */
 
 	local_irq_enable();
@@ -78,7 +66,7 @@ static void cmp_smp_finish(void)
  * __KSTK_TOS(idle) is apparently the stack pointer
  * (unsigned long)idle->thread_info the gp
  */
-static void cmp_boot_secondary(int cpu, struct task_struct *idle)
+static int cmp_boot_secondary(int cpu, struct task_struct *idle)
 {
 	struct thread_info *gp = task_thread_info(idle);
 	unsigned long sp = __KSTK_TOS(idle);
@@ -95,6 +83,7 @@ static void cmp_boot_secondary(int cpu, struct task_struct *idle)
 #endif
 
 	amon_cpu_start(cpu, pc, sp, (unsigned long)gp, a0);
+	return 0;
 }
 
 /*
@@ -110,7 +99,7 @@ void __init cmp_smp_setup(void)
 #ifdef CONFIG_MIPS_MT_FPAFF
 	/* If we have an FPU, enroll ourselves in the FPU-full mask */
 	if (cpu_has_fpu)
-		cpu_set(0, mt_fpu_cpumask);
+		cpumask_set_cpu(0, &mt_fpu_cpumask);
 #endif /* CONFIG_MIPS_MT_FPAFF */
 
 	for (i = 1; i < NR_CPUS; i++) {
@@ -148,9 +137,9 @@ void __init cmp_prepare_cpus(unsigned int max_cpus)
 
 }
 
-struct plat_smp_ops cmp_smp_ops = {
-	.send_ipi_single	= gic_send_ipi_single,
-	.send_ipi_mask		= gic_send_ipi_mask,
+const struct plat_smp_ops cmp_smp_ops = {
+	.send_ipi_single	= mips_smp_send_ipi_single,
+	.send_ipi_mask		= mips_smp_send_ipi_mask,
 	.init_secondary		= cmp_init_secondary,
 	.smp_finish		= cmp_smp_finish,
 	.boot_secondary		= cmp_boot_secondary,

@@ -1,23 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
- * sigreturn trampolines for AArch32.
+ * AArch32 sigreturn code.
+ * Based on the kuser helpers in arch/arm/kernel/entry-armv.S.
  *
- * Copyright (C) 2005-2011 Nicolas Pitre <nico at fluxnic.net>
- * Copyright (C) 2012 ARM Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- *
- * AArch32 sigreturn code
+ * Copyright (C) 2005-2011 Nicolas Pitre <nico@fluxnic.net>
+ * Copyright (C) 2012-2018 ARM Ltd.
  *
  * For ARM syscalls, the syscall number has to be loaded into r7.
  * We do not support an OABI userspace.
@@ -55,5 +42,5 @@ __aarch32_sigret_code_start:
 	.byte	__NR_compat_rt_sigreturn, 0x27			// svc	#__NR_compat_rt_sigreturn
 	.byte	__NR_compat_rt_sigreturn, 0xdf			// mov	r7, #__NR_compat_rt_sigreturn
 
-	.globl __aarch32_sigret_code_end
+        .globl __aarch32_sigret_code_end
 __aarch32_sigret_code_end:

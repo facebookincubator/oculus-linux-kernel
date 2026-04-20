@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
@@ -8,11 +9,6 @@
  * Version:	@(#)udp.h	1.0.2	04/28/93
  *
  * Author:	Fred N. van Kempen, <waltje@uWalt.NL.Mugnet.ORG>
- *
- *		This program is free software; you can redistribute it and/or
- *		modify it under the terms of the GNU General Public License
- *		as published by the Free Software Foundation; either version
- *		2 of the License, or (at your option) any later version.
  */
 #ifndef _LINUX_UDP_H
 #define _LINUX_UDP_H
@@ -50,15 +46,20 @@ struct udp_sock {
 	__u8		 encap_type;	/* Is this an Encapsulation socket? */
 	unsigned char	 no_check6_tx:1,/* Send zero UDP6 checksums on TX? */
 			 no_check6_rx:1,/* Allow zero UDP6 checksums on RX? */
-			 convert_csum:1;/* On receive, convert checksum
-					 * unnecessary to checksum complete
-					 * if possible.
-					 */
+			 encap_enabled:1, /* This socket enabled encap
+					   * processing; UDP tunnels and
+					   * different encapsulation layer set
+					   * this
+					   */
+			 gro_enabled:1,	/* Request GRO aggregation */
+			 accept_udp_l4:1,
+			 accept_udp_fraglist:1;
 	/*
 	 * Following member retains the information to create a UDP header
 	 * when the socket is uncorked.
 	 */
 	__u16		 len;		/* total length of pending frames */
+	__u16		 gso_size;
 	/*
 	 * Fields specific to UDP-Lite.
 	 */
@@ -74,8 +75,25 @@ struct udp_sock {
 	 * For encapsulation sockets.
 	 */
 	int (*encap_rcv)(struct sock *sk, struct sk_buff *skb);
+	int (*encap_err_lookup)(struct sock *sk, struct sk_buff *skb);
 	void (*encap_destroy)(struct sock *sk);
+
+	/* GRO functions for UDP socket */
+	struct sk_buff *	(*gro_receive)(struct sock *sk,
+					       struct list_head *head,
+					       struct sk_buff *skb);
+	int			(*gro_complete)(struct sock *sk,
+						struct sk_buff *skb,
+						int nhoff);
+
+	/* udp_recvmsg try to use this before splicing sk_receive_queue */
+	struct sk_buff_head	reader_queue ____cacheline_aligned_in_smp;
+
+	/* This field is dirtied by udp_recvmsg() */
+	int		forward_deficit;
 };
+
+#define UDP_MAX_SEGMENTS	(1 << 6UL)
 
 static inline struct udp_sock *udp_sk(const struct sock *sk)
 {
@@ -102,22 +120,65 @@ static inline bool udp_get_no_check6_rx(struct sock *sk)
 	return udp_sk(sk)->no_check6_rx;
 }
 
-static inline void udp_set_convert_csum(struct sock *sk, bool val)
+static inline void udp_cmsg_recv(struct msghdr *msg, struct sock *sk,
+				 struct sk_buff *skb)
 {
-	udp_sk(sk)->convert_csum = val;
+	int gso_size;
+
+	if (skb_shinfo(skb)->gso_type & SKB_GSO_UDP_L4) {
+		gso_size = skb_shinfo(skb)->gso_size;
+		put_cmsg(msg, SOL_UDP, UDP_GRO, sizeof(gso_size), &gso_size);
+	}
 }
 
-static inline bool udp_get_convert_csum(struct sock *sk)
+DECLARE_STATIC_KEY_FALSE(udp_encap_needed_key);
+#if IS_ENABLED(CONFIG_IPV6)
+DECLARE_STATIC_KEY_FALSE(udpv6_encap_needed_key);
+#endif
+
+static inline bool udp_encap_needed(void)
 {
-	return udp_sk(sk)->convert_csum;
+	if (static_branch_unlikely(&udp_encap_needed_key))
+		return true;
+
+#if IS_ENABLED(CONFIG_IPV6)
+	if (static_branch_unlikely(&udpv6_encap_needed_key))
+		return true;
+#endif
+
+	return false;
 }
 
-#define udp_portaddr_for_each_entry(__sk, node, list) \
-	hlist_nulls_for_each_entry(__sk, node, list, __sk_common.skc_portaddr_node)
+static inline bool udp_unexpected_gso(struct sock *sk, struct sk_buff *skb)
+{
+	if (!skb_is_gso(skb))
+		return false;
 
-#define udp_portaddr_for_each_entry_rcu(__sk, node, list) \
-	hlist_nulls_for_each_entry_rcu(__sk, node, list, __sk_common.skc_portaddr_node)
+	if (skb_shinfo(skb)->gso_type & SKB_GSO_UDP_L4 && !udp_sk(sk)->accept_udp_l4)
+		return true;
 
-#define IS_UDPLITE(__sk) (udp_sk(__sk)->pcflag)
+	if (skb_shinfo(skb)->gso_type & SKB_GSO_FRAGLIST && !udp_sk(sk)->accept_udp_fraglist)
+		return true;
+
+	/* GSO packets lacking the SKB_GSO_UDP_TUNNEL/_CSUM bits might still
+	 * land in a tunnel as the socket check in udp_gro_receive cannot be
+	 * foolproof.
+	 */
+	if (udp_encap_needed() &&
+	    READ_ONCE(udp_sk(sk)->encap_rcv) &&
+	    !(skb_shinfo(skb)->gso_type &
+	      (SKB_GSO_UDP_TUNNEL | SKB_GSO_UDP_TUNNEL_CSUM)))
+		return true;
+
+	return false;
+}
+
+#define udp_portaddr_for_each_entry(__sk, list) \
+	hlist_for_each_entry(__sk, list, __sk_common.skc_portaddr_node)
+
+#define udp_portaddr_for_each_entry_rcu(__sk, list) \
+	hlist_for_each_entry_rcu(__sk, list, __sk_common.skc_portaddr_node)
+
+#define IS_UDPLITE(__sk) (__sk->sk_protocol == IPPROTO_UDPLITE)
 
 #endif	/* _LINUX_UDP_H */

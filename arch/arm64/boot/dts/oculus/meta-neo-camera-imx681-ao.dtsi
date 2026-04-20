@@ -1,0 +1,153 @@
+
+&tlmm {
+	cam_sensor_suspend_i3c: cam_sensor_suspend_i3c {
+		mux {
+			pins = "gpio146", "gpio147";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio146", "gpio147";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+			qcom,apps; /* Enable EGPIO */
+		};
+	};
+
+	cam_sensor_active_i3c: cam_sensor_active_i3c {
+		config {
+			pins = "gpio146", "gpio147";
+			qcom,remote; /* Disable EGPIO */
+		};
+	};
+
+	cam_sensor_active_pur: cam_sensor_active_pur {
+		mux {
+			pins = "gpio149";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio149";
+			bias-disable;
+			drive-strength = <16>; /* 16mA */
+		};
+	};
+
+	cam_sensor_suspend_pur: cam_sensor_suspend_pur {
+		mux {
+			pins = "gpio149";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio149";
+			bias-pull-down;
+			drive-strength = <2>; /* 2mA */
+		};
+	};
+
+	cam_sensor_active_sisel: cam_sensor_active_sisel {
+		mux {
+			pins = "gpio148";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio148";
+			bias-disable;
+			drive-strength = <2>; /* 2mA */
+		};
+	};
+
+	cam_sensor_suspend_sisel: cam_sensor_suspend_sisel {
+		mux {
+			pins = "gpio148";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio148";
+			bias-pull-down;
+			drive-strength = <2>; /* 2mA */
+		};
+	};
+
+	cci0_suspend_ao: cci0_suspend_ao {
+		mux {
+			pins = "gpio85","gpio86";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio85","gpio86";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+		};
+	};
+};
+
+&eeprom_imx681 {
+	pinctrl-names = "cam_default", "cam_suspend";
+	pinctrl-0 = <&cam_sensor_mclk1_active
+		&cam_sensor_active_rst0
+		&cam_sensor_active_pur
+		&cam_sensor_active_sisel
+		&cam_sensor_suspend_i3c>;
+	pinctrl-1 = <&cam_sensor_mclk1_suspend
+		&cam_sensor_suspend_rst0
+		&cam_sensor_suspend_pur
+		&cam_sensor_suspend_sisel
+		&cam_sensor_active_i3c>;
+
+	gpios = <&tlmm 70 0>,
+		<&tlmm 65 0>,
+		<&tlmm 149 0>,
+		<&tlmm 148 0>;
+
+	gpio-custom1 = <2>;
+	gpio-custom2 = <3>;
+	gpio-req-tbl-num = <0 1 2 3>;
+	gpio-req-tbl-flags = <1 0 0 0>;
+	gpio-req-tbl-aoflags = <0 2 2 0>; // Set 2 (GPIOF_INIT_HIGH) for reset to preserve signal in always on
+	gpio-req-tbl-label = "CAMIF_MCLK1",
+					"CAM_RESET0",
+					"CAM_CCI_PUR",
+					"CAM_CCI_SISEL";
+};
+
+&sg_camera_sensor {
+	pinctrl-names = "cam_default", "cam_suspend", "cam_suspend_ao";
+	pinctrl-0 = <&cam_sensor_mclk1_active
+		&cam_sensor_active_rst0
+		&cam_sensor_active_pur
+		&cam_sensor_active_sisel
+		&cam_sensor_suspend_i3c>;
+	pinctrl-1 = <&cam_sensor_mclk1_suspend
+		&cam_sensor_suspend_rst0
+		&cam_sensor_suspend_pur
+		&cam_sensor_suspend_sisel
+		&cam_sensor_active_i3c>;
+	pinctrl-2 = <&cam_sensor_mclk1_suspend
+		&cam_sensor_suspend_sisel
+		&cam_sensor_active_i3c>;
+
+	gpios = <&tlmm 70 0>,
+		<&tlmm 65 0>,
+		<&tlmm 149 0>,
+		<&tlmm 148 0>;
+
+	gpio-custom1 = <2>;
+	gpio-custom2 = <3>;
+	gpio-req-tbl-num = <0 1 2 3>;
+	gpio-req-tbl-flags = <1 0 0 0>;
+	gpio-req-tbl-aoflags = <0 2 2 0>; // Set 2 (GPIOF_INIT_HIGH) for reset to preserve signal in always on
+	gpio-req-tbl-label = "CAMIF_MCLK1",
+					"CAM_RESET0",
+					"CAM_CCI_PUR",
+					"CAM_CCI_SISEL";
+	aoclpi-enable;
+};
+
+&cam_cci0 {
+	pinctrl-1 = <&cci0_suspend_ao>;
+};

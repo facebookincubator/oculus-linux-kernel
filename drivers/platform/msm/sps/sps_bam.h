@@ -1,15 +1,7 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2011-2019, The Linux Foundation. All rights reserved.
  */
-
 /*
  * Function and data structure declarations for SPS BAM handling.
  */
@@ -202,7 +194,7 @@ struct sps_bam {
 	/* BAM device state */
 	u32 state;
 	struct mutex lock;
-	void *base; /* BAM virtual base address */
+	void __iomem *base; /* BAM virtual base address */
 	u32 version;
 	spinlock_t isr_lock;
 	spinlock_t connection_lock;
@@ -228,6 +220,9 @@ struct sps_bam {
 
 	/* Desc cache pointers */
 	u8 *desc_cache_pointers[BAM_MAX_PIPES];
+
+	/* ISR behavior */
+	bool no_serve_irq;
 };
 
 /**
@@ -591,6 +586,24 @@ int sps_bam_pipe_get_unused_desc_num(struct sps_bam *dev, u32 pipe_index,
  * Return: 0 on success, negative value on error
  */
 int sps_bam_check_irq(struct sps_bam *dev);
+
+/*
+ * sps_bam_enable_all_irqs - Enable all IRQs of a BAM
+ * @dev - pointer to BAM device descriptor
+ *
+ * This function enables all irqs of a BAM and its pipes.
+ *
+ */
+void sps_bam_enable_all_irqs(struct sps_bam *dev);
+
+/*
+ * sps_bam_disable_all_irqs - Disable all IRQs of a BAM
+ * @dev - pointer to BAM device descriptor
+ *
+ * This function disables all irqs of a BAM and its pipes.
+ *
+ */
+void sps_bam_disable_all_irqs(struct sps_bam *dev);
 
 /*
  * sps_bam_pipe_pending_desc - checking pending descriptor.

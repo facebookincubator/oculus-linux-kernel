@@ -23,14 +23,40 @@
 #include <linux/bitops.h>
 #include <linux/slab.h>
 #include <net/bluetooth/bluetooth.h>
+#include <linux/err.h>
+#include <linux/gfp.h>
+#include <linux/interrupt.h>
+#include <linux/io.h>
+#include <linux/of_platform.h>
+#include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
+#include <linux/of_irq.h>
 
 #define BTM_HEADER_LEN			4
 #define BTM_UPLD_SIZE			2312
 
 /* Time to wait until Host Sleep state change in millisecond */
-#define WAIT_UNTIL_HS_STATE_CHANGED	5000
+#define WAIT_UNTIL_HS_STATE_CHANGED	msecs_to_jiffies(5000)
 /* Time to wait for command response in millisecond */
-#define WAIT_UNTIL_CMD_RESP		5000
+#define WAIT_UNTIL_CMD_RESP		msecs_to_jiffies(5000)
+
+enum rdwr_status {
+	RDWR_STATUS_SUCCESS = 0,
+	RDWR_STATUS_FAILURE = 1,
+	RDWR_STATUS_DONE = 2
+};
+
+#define FW_DUMP_MAX_NAME_LEN    8
+#define FW_DUMP_HOST_READY      0xEE
+#define FW_DUMP_DONE            0xFF
+#define FW_DUMP_READ_DONE       0xFE
+
+struct memory_type_mapping {
+	u8 mem_name[FW_DUMP_MAX_NAME_LEN];
+	u8 *mem_ptr;
+	u32 mem_size;
+	u8 done_flag;
+};
 
 struct btmrvl_thread {
 	struct task_struct *task;
@@ -71,26 +97,29 @@ struct btmrvl_adapter {
 	wait_queue_head_t event_hs_wait_q;
 	u8 cmd_complete;
 	bool is_suspended;
+	bool is_suspending;
 };
 
 struct btmrvl_private {
 	struct btmrvl_device btmrvl_dev;
 	struct btmrvl_adapter *adapter;
 	struct btmrvl_thread main_thread;
-	int (*hw_host_to_card) (struct btmrvl_private *priv,
+	int (*hw_host_to_card)(struct btmrvl_private *priv,
 				u8 *payload, u16 nb);
-	int (*hw_wakeup_firmware) (struct btmrvl_private *priv);
-	int (*hw_process_int_status) (struct btmrvl_private *priv);
+	int (*hw_wakeup_firmware)(struct btmrvl_private *priv);
+	int (*hw_process_int_status)(struct btmrvl_private *priv);
 	spinlock_t driver_lock;		/* spinlock used by driver */
 #ifdef CONFIG_DEBUG_FS
 	void *debugfs_data;
 #endif
+	bool surprise_removed;
 };
 
 #define MRVL_VENDOR_PKT			0xFE
 
 /* Vendor specific Bluetooth commands */
 #define BT_CMD_PSCAN_WIN_REPORT_ENABLE	0xFC03
+#define BT_CMD_ROUTE_SCO_TO_HOST	0xFC1D
 #define BT_CMD_SET_BDADDR		0xFC22
 #define BT_CMD_AUTO_SLEEP_MODE		0xFC23
 #define BT_CMD_HOST_SLEEP_CONFIG	0xFC59

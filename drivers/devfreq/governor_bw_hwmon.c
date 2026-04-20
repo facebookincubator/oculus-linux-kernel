@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt) "bw-hwmon: " fmt
@@ -35,51 +27,46 @@
 
 #define NUM_MBPS_ZONES		10
 struct hwmon_node {
-	unsigned int guard_band_mbps;
-	unsigned int decay_rate;
-	unsigned int io_percent;
-	unsigned int bw_step;
-	unsigned int sample_ms;
-	unsigned int up_scale;
-	unsigned int up_thres;
-	unsigned int down_thres;
-	unsigned int down_count;
-	unsigned int hist_memory;
-	unsigned int hyst_trigger_count;
-	unsigned int hyst_length;
-	unsigned int idle_mbps;
-	unsigned int low_power_ceil_mbps;
-	unsigned int low_power_io_percent;
-	unsigned int low_power_delay;
-	unsigned int mbps_zones[NUM_MBPS_ZONES];
+	unsigned int		guard_band_mbps;
+	unsigned int		decay_rate;
+	unsigned int		io_percent;
+	unsigned int		bw_step;
+	unsigned int		sample_ms;
+	unsigned int		up_scale;
+	unsigned int		up_thres;
+	unsigned int		down_thres;
+	unsigned int		down_count;
+	unsigned int		hist_memory;
+	unsigned int		hyst_trigger_count;
+	unsigned int		hyst_length;
+	unsigned int		idle_mbps;
+	unsigned int		mbps_zones[NUM_MBPS_ZONES];
 
-	unsigned long prev_ab;
-	unsigned long *dev_ab;
-	unsigned long resume_freq;
-	unsigned long resume_ab;
-	unsigned long bytes;
-	unsigned long max_mbps;
-	unsigned long hist_max_mbps;
-	unsigned long hist_mem;
-	unsigned long hyst_peak;
-	unsigned long hyst_mbps;
-	unsigned long hyst_trig_win;
-	unsigned long hyst_en;
-	unsigned long above_low_power;
-	unsigned long prev_req;
-	unsigned long up_wake_mbps;
-	unsigned long down_wake_mbps;
-	unsigned int wake;
-	unsigned int down_cnt;
-	ktime_t prev_ts;
-	ktime_t hist_max_ts;
-	bool sampled;
-	bool mon_started;
-	struct list_head list;
-	void *orig_data;
-	struct bw_hwmon *hw;
-	struct devfreq_governor *gov;
-	struct attribute_group *attr_grp;
+	unsigned long		prev_ab;
+	unsigned long		*dev_ab;
+	unsigned long		resume_freq;
+	unsigned long		resume_ab;
+	unsigned long		bytes;
+	unsigned long		max_mbps;
+	unsigned long		hist_max_mbps;
+	unsigned long		hist_mem;
+	unsigned long		hyst_peak;
+	unsigned long		hyst_mbps;
+	unsigned long		hyst_trig_win;
+	unsigned long		hyst_en;
+	unsigned long		prev_req;
+	unsigned int		wake;
+	unsigned int		down_cnt;
+	ktime_t			prev_ts;
+	ktime_t			hist_max_ts;
+	bool			sampled;
+	bool			mon_started;
+	struct list_head	list;
+	void			*orig_data;
+	struct bw_hwmon		*hw;
+	struct devfreq_governor	*gov;
+	struct attribute_group	*attr_grp;
+	struct mutex		mon_lock;
 };
 
 #define UP_WAKE 1
@@ -93,16 +80,16 @@ static int use_cnt;
 static DEFINE_MUTEX(state_lock);
 
 #define show_attr(name) \
-static ssize_t show_##name(struct device *dev,				\
+static ssize_t name##_show(struct device *dev,				\
 			struct device_attribute *attr, char *buf)	\
 {									\
 	struct devfreq *df = to_devfreq(dev);				\
 	struct hwmon_node *hw = df->data;				\
-	return snprintf(buf, PAGE_SIZE, "%u\n", hw->name);		\
+	return scnprintf(buf, PAGE_SIZE, "%u\n", hw->name);		\
 }
 
 #define store_attr(name, _min, _max) \
-static ssize_t store_##name(struct device *dev,				\
+static ssize_t name##_store(struct device *dev,				\
 			struct device_attribute *attr, const char *buf,	\
 			size_t count)					\
 {									\
@@ -110,22 +97,17 @@ static ssize_t store_##name(struct device *dev,				\
 	struct hwmon_node *hw = df->data;				\
 	int ret;							\
 	unsigned int val;						\
-	ret = sscanf(buf, "%u", &val);					\
-	if (ret != 1)							\
-		return -EINVAL;						\
+	ret = kstrtoint(buf, 10, &val);					\
+	if (ret < 0)							\
+		return ret;						\
 	val = max(val, _min);						\
 	val = min(val, _max);						\
 	hw->name = val;							\
 	return count;							\
 }
 
-#define gov_attr(__attr, min, max)	\
-show_attr(__attr)			\
-store_attr(__attr, min, max)		\
-static DEVICE_ATTR(__attr, 0644, show_##__attr, store_##__attr)
-
 #define show_list_attr(name, n) \
-static ssize_t show_list_##name(struct device *dev,			\
+static ssize_t name##_show(struct device *dev,			\
 			struct device_attribute *attr, char *buf)	\
 {									\
 	struct devfreq *df = to_devfreq(dev);				\
@@ -133,49 +115,49 @@ static ssize_t show_list_##name(struct device *dev,			\
 	unsigned int i, cnt = 0;					\
 									\
 	for (i = 0; i < n && hw->name[i]; i++)				\
-		cnt += snprintf(buf + cnt, PAGE_SIZE, "%u ", hw->name[i]);\
-	cnt += snprintf(buf + cnt, PAGE_SIZE, "\n");			\
+		cnt += scnprintf(buf + cnt, PAGE_SIZE, "%u ", hw->name[i]);\
+	cnt += scnprintf(buf + cnt, PAGE_SIZE, "\n");			\
 	return cnt;							\
 }
 
 #define store_list_attr(name, n, _min, _max) \
-static ssize_t store_list_##name(struct device *dev,			\
+static ssize_t name##_store(struct device *dev,			\
 			struct device_attribute *attr, const char *buf,	\
 			size_t count)					\
 {									\
 	struct devfreq *df = to_devfreq(dev);				\
 	struct hwmon_node *hw = df->data;				\
-	int ret;							\
+	int ret, numvals;						\
 	unsigned int i = 0, val;					\
+	char **strlist;							\
 									\
-	do {								\
-		ret = sscanf(buf, "%u", &val);				\
-		if (ret != 1)						\
-			break;						\
-		buf = strnchr(buf, PAGE_SIZE, ' ');			\
-		if (buf)						\
-			buf++;						\
+	strlist = argv_split(GFP_KERNEL, buf, &numvals);		\
+	if (!strlist)							\
+		return -ENOMEM;						\
+	numvals = min(numvals, n - 1);					\
+	for (i = 0; i < numvals; i++) {					\
+		ret = kstrtouint(strlist[i], 10, &val);			\
+		if (ret < 0)						\
+			goto out;					\
 		val = max(val, _min);					\
 		val = min(val, _max);					\
 		hw->name[i] = val;					\
-		i++;							\
-	} while (buf && i < n - 1);					\
-	if (i < 1)							\
-		return -EINVAL;						\
+	}								\
+	ret = count;							\
+out:									\
+	argv_free(strlist);						\
 	hw->name[i] = 0;						\
-	return count;							\
+	return ret;							\
 }
-
-#define gov_list_attr(__attr, n, min, max)	\
-show_list_attr(__attr, n)			\
-store_list_attr(__attr, n, min, max)		\
-static DEVICE_ATTR(__attr, 0644, show_list_##__attr, store_list_##__attr)
 
 #define MIN_MS	10U
 #define MAX_MS	500U
 
+#define SAMPLE_MIN_MS	1U
+#define SAMPLE_MAX_MS	50U
+
 /* Returns MBps of read/writes for the sampling window. */
-static unsigned int bytes_to_mbps(long long bytes, unsigned int us)
+static unsigned long bytes_to_mbps(unsigned long long bytes, unsigned int us)
 {
 	bytes *= USEC_PER_SEC;
 	do_div(bytes, us);
@@ -191,7 +173,7 @@ static unsigned int mbps_to_bytes(unsigned long mbps, unsigned int ms)
 	return mbps;
 }
 
-static int __bw_hwmon_sample_end(struct bw_hwmon *hwmon)
+static int __bw_hwmon_sw_sample_end(struct bw_hwmon *hwmon)
 {
 	struct devfreq *df;
 	struct hwmon_node *node;
@@ -220,9 +202,9 @@ static int __bw_hwmon_sample_end(struct bw_hwmon *hwmon)
 	 * bandwidth usage and do the bandwidth calculation based on just
 	 * this micro sample.
 	 */
-	if (mbps > node->up_wake_mbps) {
+	if (mbps > node->hw->up_wake_mbps) {
 		wake = UP_WAKE;
-	} else if (mbps < node->down_wake_mbps) {
+	} else if (mbps < node->hw->down_wake_mbps) {
 		if (node->down_cnt)
 			node->down_cnt--;
 		if (node->down_cnt <= 0)
@@ -241,6 +223,50 @@ static int __bw_hwmon_sample_end(struct bw_hwmon *hwmon)
 	return wake;
 }
 
+static int __bw_hwmon_hw_sample_end(struct bw_hwmon *hwmon)
+{
+	struct devfreq *df;
+	struct hwmon_node *node;
+	unsigned long bytes, mbps;
+	int wake = 0;
+
+	df = hwmon->df;
+	node = df->data;
+
+	/*
+	 * If this read is in response to an IRQ, the HW monitor should
+	 * return the measurement in the micro sample that triggered the IRQ.
+	 * Otherwise, it should return the maximum measured value in any
+	 * micro sample since the last time we called get_bytes_and_clear()
+	 */
+	bytes = hwmon->get_bytes_and_clear(hwmon);
+	mbps = bytes_to_mbps(bytes, node->sample_ms * USEC_PER_MSEC);
+	node->max_mbps = mbps;
+
+	if (mbps > node->hw->up_wake_mbps)
+		wake = UP_WAKE;
+	else if (mbps < node->hw->down_wake_mbps)
+		wake = DOWN_WAKE;
+
+	node->wake = wake;
+	node->sampled = true;
+
+	trace_bw_hwmon_meas(dev_name(df->dev.parent),
+				mbps,
+				node->sample_ms * USEC_PER_MSEC,
+				wake);
+
+	return 1;
+}
+
+static int __bw_hwmon_sample_end(struct bw_hwmon *hwmon)
+{
+	if (hwmon->set_hw_events)
+		return __bw_hwmon_hw_sample_end(hwmon);
+	else
+		return __bw_hwmon_sw_sample_end(hwmon);
+}
+
 int bw_hwmon_sample_end(struct bw_hwmon *hwmon)
 {
 	unsigned long flags;
@@ -252,8 +278,9 @@ int bw_hwmon_sample_end(struct bw_hwmon *hwmon)
 
 	return wake;
 }
+EXPORT_SYMBOL(bw_hwmon_sample_end);
 
-unsigned long to_mbps_zone(struct hwmon_node *node, unsigned long mbps)
+static unsigned long to_mbps_zone(struct hwmon_node *node, unsigned long mbps)
 {
 	int i;
 
@@ -273,14 +300,16 @@ static unsigned long get_bw_and_set_irq(struct hwmon_node *node,
 	unsigned long meas_mbps_zone;
 	unsigned long hist_lo_tol, hyst_lo_tol;
 	struct bw_hwmon *hw = node->hw;
-	unsigned int new_bw, io_percent;
+	unsigned int new_bw, io_percent = node->io_percent;
 	ktime_t ts;
-	unsigned int ms;
+	unsigned int ms = 0;
 
 	spin_lock_irqsave(&irq_lock, flags);
 
-	ts = ktime_get();
-	ms = ktime_to_ms(ktime_sub(ts, node->prev_ts));
+	if (!hw->set_hw_events) {
+		ts = ktime_get();
+		ms = ktime_to_ms(ktime_sub(ts, node->prev_ts));
+	}
 	if (!node->sampled || ms >= node->sample_ms)
 		__bw_hwmon_sample_end(node->hw);
 	node->sampled = false;
@@ -306,17 +335,6 @@ static unsigned long get_bw_and_set_irq(struct hwmon_node *node,
 		if (node->hist_mem)
 			node->hist_mem--;
 	}
-
-	/* Keep track of whether we are in low power mode consistently. */
-	if (meas_mbps > node->low_power_ceil_mbps)
-		node->above_low_power = node->low_power_delay;
-	if (node->above_low_power)
-		node->above_low_power--;
-
-	if (node->above_low_power)
-		io_percent = node->io_percent;
-	else
-		io_percent = node->low_power_io_percent;
 
 	/*
 	 * The AB value that corresponds to the lowest mbps zone greater than
@@ -388,9 +406,9 @@ static unsigned long get_bw_and_set_irq(struct hwmon_node *node,
 
 	/* Stretch the short sample window size, if the traffic is too low */
 	if (meas_mbps < MIN_MBPS) {
-		node->up_wake_mbps = (max(MIN_MBPS, req_mbps)
+		hw->up_wake_mbps = (max(MIN_MBPS, req_mbps)
 					* (100 + node->up_thres)) / 100;
-		node->down_wake_mbps = 0;
+		hw->down_wake_mbps = 0;
 		thres = mbps_to_bytes(max(MIN_MBPS, req_mbps / 2),
 					node->sample_ms);
 	} else {
@@ -401,13 +419,18 @@ static unsigned long get_bw_and_set_irq(struct hwmon_node *node,
 		 * reduce the vote based on the measured mbps being less than
 		 * the previous measurement that caused the "over request".
 		 */
-		node->up_wake_mbps = (req_mbps * (100 + node->up_thres)) / 100;
-		node->down_wake_mbps = (meas_mbps * node->down_thres) / 100;
+		hw->up_wake_mbps = (req_mbps * (100 + node->up_thres)) / 100;
+		hw->down_wake_mbps = (meas_mbps * node->down_thres) / 100;
 		thres = mbps_to_bytes(meas_mbps, node->sample_ms);
 	}
-	node->down_cnt = node->down_count;
 
-	node->bytes = hw->set_thres(hw, thres);
+	if (hw->set_hw_events) {
+		hw->down_cnt = node->down_count;
+		hw->set_hw_events(hw, node->sample_ms);
+	} else {
+		node->down_cnt = node->down_count;
+		node->bytes = hw->set_thres(hw, thres);
+	}
 
 	node->wake = 0;
 	node->prev_req = req_mbps;
@@ -432,8 +455,16 @@ static unsigned long get_bw_and_set_irq(struct hwmon_node *node,
 	trace_bw_hwmon_update(dev_name(node->hw->df->dev.parent),
 				new_bw,
 				*freq,
-				node->up_wake_mbps,
-				node->down_wake_mbps);
+				hw->up_wake_mbps,
+				hw->down_wake_mbps);
+
+	trace_bw_hwmon_debug(dev_name(node->hw->df->dev.parent),
+				req_mbps,
+				meas_mbps_zone,
+				node->hist_max_mbps,
+				node->hist_mem,
+				node->hyst_mbps,
+				node->hyst_en);
 	return req_mbps;
 }
 
@@ -470,23 +501,27 @@ int update_bw_hwmon(struct bw_hwmon *hwmon)
 	if (!node)
 		return -ENODEV;
 
-	if (!node->mon_started)
+	mutex_lock(&node->mon_lock);
+	if (!node->mon_started) {
+		mutex_unlock(&node->mon_lock);
 		return -EBUSY;
-
+	}
 	dev_dbg(df->dev.parent, "Got update request\n");
 	devfreq_monitor_stop(df);
 
 	mutex_lock(&df->lock);
 	ret = update_devfreq(df);
-	if (ret)
+	if (ret < 0)
 		dev_err(df->dev.parent,
-			"Unable to update freq on request!\n");
+			"Unable to update freq on request! (%d)\n", ret);
 	mutex_unlock(&df->lock);
 
 	devfreq_monitor_start(df);
+	mutex_unlock(&node->mon_lock);
 
 	return 0;
 }
+EXPORT_SYMBOL(update_bw_hwmon);
 
 static int start_monitor(struct devfreq *df, bool init)
 {
@@ -503,12 +538,14 @@ static int start_monitor(struct devfreq *df, bool init)
 		node->resume_freq = 0;
 		node->resume_ab = 0;
 		mbps = (df->previous_freq * node->io_percent) / 100;
+		hw->up_wake_mbps = mbps;
+		hw->down_wake_mbps = MIN_MBPS;
 		ret = hw->start_hwmon(hw, mbps);
 	} else {
 		ret = hw->resume_hwmon(hw);
 	}
 
-	if (ret) {
+	if (ret < 0) {
 		dev_err(dev, "Unable to start HW monitor! (%d)\n", ret);
 		return ret;
 	}
@@ -528,7 +565,9 @@ static void stop_monitor(struct devfreq *df, bool init)
 	struct hwmon_node *node = df->data;
 	struct bw_hwmon *hw = node->hw;
 
+	mutex_lock(&node->mon_lock);
 	node->mon_started = false;
+	mutex_unlock(&node->mon_lock);
 
 	if (init) {
 		devfreq_monitor_stop(df);
@@ -558,7 +597,7 @@ static int gov_start(struct devfreq *df)
 	stat.private_data = NULL;
 	if (df->profile->get_dev_status)
 		ret = df->profile->get_dev_status(df->dev.parent, &stat);
-	if (ret || !stat.private_data)
+	if (ret < 0 || !stat.private_data)
 		dev_warn(dev, "Device doesn't take AB votes!\n");
 	else
 		node->dev_ab = stat.private_data;
@@ -567,12 +606,20 @@ static int gov_start(struct devfreq *df)
 	node->orig_data = df->data;
 	df->data = node;
 
-	if (start_monitor(df, true))
+	ret = start_monitor(df, true);
+	if (ret < 0)
 		goto err_start;
 
 	ret = sysfs_create_group(&df->dev.kobj, node->attr_grp);
-	if (ret)
+	if (ret < 0) {
+		dev_err(dev, "Error creating sys entries: %d\n", ret);
 		goto err_sysfs;
+	}
+
+	mutex_lock(&df->lock);
+	df->min_freq = df->max_freq;
+	update_devfreq(df);
+	mutex_unlock(&df->lock);
 
 	return 0;
 
@@ -614,7 +661,7 @@ static int gov_suspend(struct devfreq *df)
 	unsigned long resume_ab = *node->dev_ab;
 
 	if (!node->hw->suspend_hwmon)
-		return -ENOSYS;
+		return -EPERM;
 
 	if (node->resume_freq) {
 		dev_warn(df->dev.parent, "Governor already suspended!\n");
@@ -638,12 +685,7 @@ static int gov_resume(struct devfreq *df)
 	struct hwmon_node *node = df->data;
 
 	if (!node->hw->resume_hwmon)
-		return -ENOSYS;
-
-	if (!node->resume_freq) {
-		dev_warn(df->dev.parent, "Governor already resumed!\n");
-		return -EBUSY;
-	}
+		return -EPERM;
 
 	mutex_lock(&df->lock);
 	update_devfreq(df);
@@ -656,8 +698,7 @@ static int gov_resume(struct devfreq *df)
 }
 
 static int devfreq_bw_hwmon_get_freq(struct devfreq *df,
-					unsigned long *freq,
-					u32 *flag)
+					unsigned long *freq)
 {
 	struct hwmon_node *node = df->data;
 
@@ -673,7 +714,7 @@ static int devfreq_bw_hwmon_get_freq(struct devfreq *df,
 	return 0;
 }
 
-static ssize_t store_throttle_adj(struct device *dev,
+static ssize_t throttle_adj_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct devfreq *df = to_devfreq(dev);
@@ -682,10 +723,10 @@ static ssize_t store_throttle_adj(struct device *dev,
 	unsigned int val;
 
 	if (!node->hw->set_throttle_adj)
-		return -ENOSYS;
+		return -EPERM;
 
 	ret = kstrtouint(buf, 10, &val);
-	if (ret)
+	if (ret < 0)
 		return ret;
 
 	ret = node->hw->set_throttle_adj(node->hw, val);
@@ -696,7 +737,7 @@ static ssize_t store_throttle_adj(struct device *dev,
 		return ret;
 }
 
-static ssize_t show_throttle_adj(struct device *dev,
+static ssize_t throttle_adj_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
 	struct devfreq *df = to_devfreq(dev);
@@ -708,29 +749,82 @@ static ssize_t show_throttle_adj(struct device *dev,
 	else
 		val = node->hw->get_throttle_adj(node->hw);
 
-	return snprintf(buf, PAGE_SIZE, "%u\n", val);
+	return scnprintf(buf, PAGE_SIZE, "%u\n", val);
 }
 
-static DEVICE_ATTR(throttle_adj, 0644, show_throttle_adj,
-						store_throttle_adj);
+static DEVICE_ATTR_RW(throttle_adj);
 
-gov_attr(guard_band_mbps, 0U, 2000U);
-gov_attr(decay_rate, 0U, 100U);
-gov_attr(io_percent, 1U, 100U);
-gov_attr(bw_step, 50U, 1000U);
-gov_attr(sample_ms, 1U, 50U);
-gov_attr(up_scale, 0U, 500U);
-gov_attr(up_thres, 1U, 100U);
-gov_attr(down_thres, 0U, 90U);
-gov_attr(down_count, 0U, 90U);
-gov_attr(hist_memory, 0U, 90U);
-gov_attr(hyst_trigger_count, 0U, 90U);
-gov_attr(hyst_length, 0U, 90U);
-gov_attr(idle_mbps, 0U, 2000U);
-gov_attr(low_power_ceil_mbps, 0U, 2500U);
-gov_attr(low_power_io_percent, 1U, 100U);
-gov_attr(low_power_delay, 1U, 60U);
-gov_list_attr(mbps_zones, NUM_MBPS_ZONES, 0U, UINT_MAX);
+static ssize_t sample_ms_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct devfreq *df = to_devfreq(dev);
+	struct hwmon_node *hw = df->data;
+	int ret;
+	unsigned int val;
+
+	ret = kstrtoint(buf, 10, &val);
+	if (ret)
+		return ret;
+
+	val = max(val, SAMPLE_MIN_MS);
+	val = min(val, SAMPLE_MAX_MS);
+	if (val > df->profile->polling_ms)
+		return -EINVAL;
+
+	hw->sample_ms = val;
+	return count;
+}
+
+static ssize_t sample_ms_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct devfreq *df = to_devfreq(dev);
+	struct hwmon_node *node = df->data;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", node->sample_ms);
+}
+
+static DEVICE_ATTR_RW(sample_ms);
+
+show_attr(guard_band_mbps);
+store_attr(guard_band_mbps, 0U, 2000U);
+static DEVICE_ATTR_RW(guard_band_mbps);
+show_attr(decay_rate);
+store_attr(decay_rate, 0U, 100U);
+static DEVICE_ATTR_RW(decay_rate);
+show_attr(io_percent);
+store_attr(io_percent, 1U, 400U);
+static DEVICE_ATTR_RW(io_percent);
+show_attr(bw_step);
+store_attr(bw_step, 50U, 1000U);
+static DEVICE_ATTR_RW(bw_step);
+show_attr(up_scale);
+store_attr(up_scale, 0U, 500U);
+static DEVICE_ATTR_RW(up_scale);
+show_attr(up_thres);
+store_attr(up_thres, 1U, 100U);
+static DEVICE_ATTR_RW(up_thres);
+show_attr(down_thres);
+store_attr(down_thres, 0U, 90U);
+static DEVICE_ATTR_RW(down_thres);
+show_attr(down_count);
+store_attr(down_count, 0U, 90U);
+static DEVICE_ATTR_RW(down_count);
+show_attr(hist_memory);
+store_attr(hist_memory, 0U, 90U);
+static DEVICE_ATTR_RW(hist_memory);
+show_attr(hyst_trigger_count);
+store_attr(hyst_trigger_count, 0U, 90U);
+static DEVICE_ATTR_RW(hyst_trigger_count);
+show_attr(hyst_length);
+store_attr(hyst_length, 0U, 90U);
+static DEVICE_ATTR_RW(hyst_length);
+show_attr(idle_mbps);
+store_attr(idle_mbps, 0U, 2000U);
+static DEVICE_ATTR_RW(idle_mbps);
+show_list_attr(mbps_zones, NUM_MBPS_ZONES);
+store_list_attr(mbps_zones, NUM_MBPS_ZONES, 0U, UINT_MAX);
+static DEVICE_ATTR_RW(mbps_zones);
 
 static struct attribute *dev_attr[] = {
 	&dev_attr_guard_band_mbps.attr,
@@ -746,9 +840,6 @@ static struct attribute *dev_attr[] = {
 	&dev_attr_hyst_trigger_count.attr,
 	&dev_attr_hyst_length.attr,
 	&dev_attr_idle_mbps.attr,
-	&dev_attr_low_power_ceil_mbps.attr,
-	&dev_attr_low_power_io_percent.attr,
-	&dev_attr_low_power_delay.attr,
 	&dev_attr_mbps_zones.attr,
 	&dev_attr_throttle_adj.attr,
 	NULL,
@@ -762,10 +853,12 @@ static struct attribute_group dev_attr_group = {
 static int devfreq_bw_hwmon_ev_handler(struct devfreq *df,
 					unsigned int event, void *data)
 {
-	int ret;
+	int ret = 0;
 	unsigned int sample_ms;
 	struct hwmon_node *node;
 	struct bw_hwmon *hw;
+
+	mutex_lock(&state_lock);
 
 	switch (event) {
 	case DEVFREQ_GOV_START:
@@ -775,21 +868,25 @@ static int devfreq_bw_hwmon_ev_handler(struct devfreq *df,
 		df->profile->polling_ms = sample_ms;
 
 		ret = gov_start(df);
-		if (ret)
-			return ret;
+		if (ret < 0)
+			goto out;
 
 		dev_dbg(df->dev.parent,
 			"Enabled dev BW HW monitor governor\n");
 		break;
-
 	case DEVFREQ_GOV_STOP:
 		gov_stop(df);
 		dev_dbg(df->dev.parent,
 			"Disabled dev BW HW monitor governor\n");
 		break;
-
-	case DEVFREQ_GOV_INTERVAL:
+	case DEVFREQ_GOV_UPDATE_INTERVAL:
+		node = df->data;
 		sample_ms = *(unsigned int *)data;
+		if (sample_ms < node->sample_ms) {
+			ret = -EINVAL;
+			goto out;
+		}
+
 		sample_ms = max(MIN_MS, sample_ms);
 		sample_ms = min(MAX_MS, sample_ms);
 		/*
@@ -798,25 +895,24 @@ static int devfreq_bw_hwmon_ev_handler(struct devfreq *df,
 		 * stop/start the delayed workqueue while the interval update
 		 * is happening.
 		 */
-		node = df->data;
 		hw = node->hw;
 		hw->suspend_hwmon(hw);
-		devfreq_interval_update(df, &sample_ms);
+		devfreq_update_interval(df, &sample_ms);
 		ret = hw->resume_hwmon(hw);
-		if (ret) {
+		if (ret < 0) {
 			dev_err(df->dev.parent,
 				"Unable to resume HW monitor (%d)\n", ret);
-			return ret;
+			goto out;
 		}
 		break;
 
 	case DEVFREQ_GOV_SUSPEND:
 		ret = gov_suspend(df);
-		if (ret) {
+		if (ret < 0) {
 			dev_err(df->dev.parent,
 				"Unable to suspend BW HW mon governor (%d)\n",
 				ret);
-			return ret;
+			goto out;
 		}
 
 		dev_dbg(df->dev.parent, "Suspended BW HW mon governor\n");
@@ -824,22 +920,26 @@ static int devfreq_bw_hwmon_ev_handler(struct devfreq *df,
 
 	case DEVFREQ_GOV_RESUME:
 		ret = gov_resume(df);
-		if (ret) {
+		if (ret < 0) {
 			dev_err(df->dev.parent,
 				"Unable to resume BW HW mon governor (%d)\n",
 				ret);
-			return ret;
+			goto out;
 		}
 
 		dev_dbg(df->dev.parent, "Resumed BW HW mon governor\n");
 		break;
 	}
 
-	return 0;
+out:
+	mutex_unlock(&state_lock);
+
+	return ret;
 }
 
 static struct devfreq_governor devfreq_gov_bw_hwmon = {
 	.name = "bw_hwmon",
+	.immutable = 1,
 	.get_target_freq = devfreq_bw_hwmon_get_freq,
 	.event_handler = devfreq_bw_hwmon_ev_handler,
 };
@@ -854,10 +954,8 @@ int register_bw_hwmon(struct device *dev, struct bw_hwmon *hwmon)
 		return -EINVAL;
 
 	node = devm_kzalloc(dev, sizeof(*node), GFP_KERNEL);
-	if (!node) {
-		dev_err(dev, "Unable to register gov. Out of memory!\n");
+	if (!node)
 		return -ENOMEM;
-	}
 
 	if (hwmon->gov) {
 		attr_grp = devm_kzalloc(dev, sizeof(*attr_grp), GFP_KERNEL);
@@ -879,9 +977,6 @@ int register_bw_hwmon(struct device *dev, struct bw_hwmon *hwmon)
 	node->guard_band_mbps = 100;
 	node->decay_rate = 90;
 	node->io_percent = 16;
-	node->low_power_ceil_mbps = 0;
-	node->low_power_io_percent = 16;
-	node->low_power_delay = 60;
 	node->bw_step = 190;
 	node->sample_ms = 50;
 	node->up_scale = 0;
@@ -895,6 +990,7 @@ int register_bw_hwmon(struct device *dev, struct bw_hwmon *hwmon)
 	node->mbps_zones[0] = 0;
 	node->hw = hwmon;
 
+	mutex_init(&node->mon_lock);
 	mutex_lock(&list_lock);
 	list_add_tail(&node->list, &hwmon_list);
 	mutex_unlock(&list_lock);
@@ -911,12 +1007,13 @@ int register_bw_hwmon(struct device *dev, struct bw_hwmon *hwmon)
 	}
 
 	if (!ret)
-		dev_info(dev, "BW HWmon governor registered.\n");
+		dev_dbg(dev, "BW HWmon governor registered.\n");
 	else
 		dev_err(dev, "BW HWmon governor registration failed!\n");
 
 	return ret;
 }
+EXPORT_SYMBOL(register_bw_hwmon);
 
 MODULE_DESCRIPTION("HW monitor based dev DDR bandwidth voting driver");
 MODULE_LICENSE("GPL v2");

@@ -1,6 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /* 
  * Copyright (C) 2000 - 2007 Jeff Dike (jdike@{addtoit,linux.intel}.com)
- * Licensed under the GPL
  */
 
 #ifndef __USER_H__
@@ -17,7 +17,7 @@
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 /* This is to get size_t */
-#ifdef __KERNEL__
+#ifndef __UM_HOST__
 #include <linux/types.h>
 #else
 #include <stddef.h>

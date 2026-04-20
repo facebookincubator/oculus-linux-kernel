@@ -1,25 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (c) by Jaroslav Kysela <perex@perex.cz>
  *  Universal interface for Audio Codec '97
  *
  *  For more details look to AC '97 component specification revision 2.2
  *  by Intel Corporation (http://developer.intel.com).
- *
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
- *
  */
 
 #include <linux/delay.h>
@@ -177,6 +162,7 @@ static const struct ac97_codec_id snd_ac97_codec_ids[] = {
 { 0x54524123, 0xffffffff, "TR28602",		NULL,		NULL }, // only guess --jk [TR28023 = eMicro EM28023 (new CT1297)]
 { 0x54584e03, 0xffffffff, "TLV320AIC27",	NULL,		NULL },
 { 0x54584e20, 0xffffffff, "TLC320AD9xC",	NULL,		NULL },
+{ 0x56494120, 0xfffffff0, "VIA1613",		patch_vt1613,	NULL },
 { 0x56494161, 0xffffffff, "VIA1612A",		NULL,		NULL }, // modified ICE1232 with S/PDIF
 { 0x56494170, 0xffffffff, "VIA1617A",		patch_vt1617a,	NULL }, // modified VT1616 with S/PDIF
 { 0x56494182, 0xffffffff, "VIA1618",		patch_vt1618,   NULL },
@@ -232,11 +218,11 @@ static int snd_ac97_valid_reg(struct snd_ac97 *ac97, unsigned short reg)
 	case AC97_ID_ST_AC97_ID4:
 		if (reg == 0x08)
 			return 0;
-		/* fall through */
+		fallthrough;
 	case AC97_ID_ST7597:
 		if (reg == 0x22 || reg == 0x7a)
 			return 1;
-		/* fall through */
+		fallthrough;
 	case AC97_ID_AK4540:
 	case AC97_ID_AK4542:
 		if (reg <= 0x1c || reg == 0x20 || reg == 0x26 || reg >= 0x7c)
@@ -463,14 +449,8 @@ static int snd_ac97_info_enum_double(struct snd_kcontrol *kcontrol,
 {
 	struct ac97_enum *e = (struct ac97_enum *)kcontrol->private_value;
 	
-	uinfo->type = SNDRV_CTL_ELEM_TYPE_ENUMERATED;
-	uinfo->count = e->shift_l == e->shift_r ? 1 : 2;
-	uinfo->value.enumerated.items = e->mask;
-	
-	if (uinfo->value.enumerated.item > e->mask - 1)
-		uinfo->value.enumerated.item = e->mask - 1;
-	strcpy(uinfo->value.enumerated.name, e->texts[uinfo->value.enumerated.item]);
-	return 0;
+	return snd_ctl_enum_info(uinfo, e->shift_l == e->shift_r ? 1 : 2,
+				 e->mask, e->texts);
 }
 
 static int snd_ac97_get_enum_double(struct snd_kcontrol *kcontrol,
@@ -615,11 +595,6 @@ static int snd_ac97_put_volsw(struct snd_kcontrol *kcontrol,
 #endif
 	return err;
 }
-
-static const struct snd_kcontrol_new snd_ac97_controls_master_mono[2] = {
-AC97_SINGLE("Master Mono Playback Switch", AC97_MASTER_MONO, 15, 1, 1),
-AC97_SINGLE("Master Mono Playback Volume", AC97_MASTER_MONO, 0, 31, 1)
-};
 
 static const struct snd_kcontrol_new snd_ac97_controls_tone[2] = {
 AC97_SINGLE("Tone Control - Bass", AC97_MASTER_TONE, 8, 15, 1),
@@ -829,7 +804,7 @@ static int snd_ac97_put_spsa(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_
 {
 	struct snd_ac97 *ac97 = snd_kcontrol_chip(kcontrol);
 	int reg = kcontrol->private_value & 0xff;
-	int shift = (kcontrol->private_value >> 8) & 0xff;
+	int shift = (kcontrol->private_value >> 8) & 0x0f;
 	int mask = (kcontrol->private_value >> 16) & 0xff;
 	// int invert = (kcontrol->private_value >> 24) & 0xff;
 	unsigned short value, old, new;
@@ -963,8 +938,8 @@ static int snd_ac97_ad18xx_pcm_get_volume(struct snd_kcontrol *kcontrol, struct 
 	int codec = kcontrol->private_value & 3;
 	
 	mutex_lock(&ac97->page_mutex);
-	ucontrol->value.integer.value[0] = 31 - ((ac97->spec.ad18xx.pcmreg[codec] >> 0) & 31);
-	ucontrol->value.integer.value[1] = 31 - ((ac97->spec.ad18xx.pcmreg[codec] >> 8) & 31);
+	ucontrol->value.integer.value[0] = 31 - ((ac97->spec.ad18xx.pcmreg[codec] >> 8) & 31);
+	ucontrol->value.integer.value[1] = 31 - ((ac97->spec.ad18xx.pcmreg[codec] >> 0) & 31);
 	mutex_unlock(&ac97->page_mutex);
 	return 0;
 }
@@ -1778,10 +1753,10 @@ static unsigned int snd_ac97_determine_spdif_rates(struct snd_ac97 *ac97)
 {
 	unsigned int result = 0;
 	int i;
-	static unsigned short ctl_bits[] = {
+	static const unsigned short ctl_bits[] = {
 		AC97_SC_SPSR_44K, AC97_SC_SPSR_32K, AC97_SC_SPSR_48K
 	};
-	static unsigned int rate_bits[] = {
+	static const unsigned int rate_bits[] = {
 		SNDRV_PCM_RATE_44100, SNDRV_PCM_RATE_32000, SNDRV_PCM_RATE_48000
 	};
 
@@ -1912,19 +1887,20 @@ static int ac97_reset_wait(struct snd_ac97 *ac97, int timeout, int with_modem)
  * write).  The other callbacks, wait and reset, are not mandatory.
  * 
  * The clock is set to 48000.  If another clock is needed, set
- * (*rbus)->clock manually.
+ * ``(*rbus)->clock`` manually.
  *
  * The AC97 bus instance is registered as a low-level device, so you don't
  * have to release it manually.
  *
  * Return: Zero if successful, or a negative error code on failure.
  */
-int snd_ac97_bus(struct snd_card *card, int num, struct snd_ac97_bus_ops *ops,
+int snd_ac97_bus(struct snd_card *card, int num,
+		 const struct snd_ac97_bus_ops *ops,
 		 void *private_data, struct snd_ac97_bus **rbus)
 {
 	int err;
 	struct snd_ac97_bus *bus;
-	static struct snd_device_ops dev_ops = {
+	static const struct snd_device_ops dev_ops = {
 		.dev_free =	snd_ac97_bus_dev_free,
 	};
 
@@ -1970,6 +1946,7 @@ static int snd_ac97_dev_register(struct snd_device *device)
 		     snd_ac97_get_short_name(ac97));
 	if ((err = device_register(&ac97->dev)) < 0) {
 		ac97_err(ac97, "Can't register ac97 bus\n");
+		put_device(&ac97->dev);
 		ac97->dev.bus = NULL;
 		return err;
 	}
@@ -2024,16 +2001,15 @@ int snd_ac97_mixer(struct snd_ac97_bus *bus, struct snd_ac97_template *template,
 	unsigned long end_time;
 	unsigned int reg;
 	const struct ac97_codec_id *pid;
-	static struct snd_device_ops ops = {
+	static const struct snd_device_ops ops = {
 		.dev_free =	snd_ac97_dev_free,
 		.dev_register =	snd_ac97_dev_register,
 		.dev_disconnect =	snd_ac97_dev_disconnect,
 	};
 
-	if (rac97)
-		*rac97 = NULL;
-	if (snd_BUG_ON(!bus || !template))
+	if (snd_BUG_ON(!bus || !template || !rac97))
 		return -EINVAL;
+	*rac97 = NULL;
 	if (snd_BUG_ON(template->num >= 4))
 		return -EINVAL;
 	if (bus->codec[template->num])
@@ -2370,7 +2346,7 @@ struct ac97_power_reg {
 
 enum { PWIDX_ADC, PWIDX_FRONT, PWIDX_CLFE, PWIDX_SURR, PWIDX_MIC, PWIDX_SIZE };
 
-static struct ac97_power_reg power_regs[PWIDX_SIZE] = {
+static const struct ac97_power_reg power_regs[PWIDX_SIZE] = {
 	[PWIDX_ADC] = { AC97_PCM_LR_ADC_RATE, AC97_POWERDOWN, AC97_PD_PR0},
 	[PWIDX_FRONT] = { AC97_PCM_FRONT_DAC_RATE, AC97_POWERDOWN, AC97_PD_PR1},
 	[PWIDX_CLFE] = { AC97_PCM_LFE_DAC_RATE, AC97_EXTENDED_STATUS,
@@ -2853,7 +2829,7 @@ struct quirk_table {
 	int (*func)(struct snd_ac97 *);
 };
 
-static struct quirk_table applicable_quirks[] = {
+static const struct quirk_table applicable_quirks[] = {
 	{ "none", NULL },
 	{ "hp_only", tune_hp_only },
 	{ "swap_hp", tune_swap_hp },
@@ -2881,7 +2857,7 @@ static int apply_quirk(struct snd_ac97 *ac97, int type)
 static int apply_quirk_str(struct snd_ac97 *ac97, const char *typestr)
 {
 	int i;
-	struct quirk_table *q;
+	const struct quirk_table *q;
 
 	for (i = 0; i < ARRAY_SIZE(applicable_quirks); i++) {
 		q = &applicable_quirks[i];
@@ -2907,7 +2883,8 @@ static int apply_quirk_str(struct snd_ac97 *ac97, const char *typestr)
  * Return: Zero if successful, or a negative error code on failure.
  */
 
-int snd_ac97_tune_hardware(struct snd_ac97 *ac97, struct ac97_quirk *quirk, const char *override)
+int snd_ac97_tune_hardware(struct snd_ac97 *ac97,
+			   const struct ac97_quirk *quirk, const char *override)
 {
 	int result;
 
@@ -2945,19 +2922,3 @@ int snd_ac97_tune_hardware(struct snd_ac97 *ac97, struct ac97_quirk *quirk, cons
 }
 
 EXPORT_SYMBOL(snd_ac97_tune_hardware);
-
-/*
- *  INIT part
- */
-
-static int __init alsa_ac97_init(void)
-{
-	return 0;
-}
-
-static void __exit alsa_ac97_exit(void)
-{
-}
-
-module_init(alsa_ac97_init)
-module_exit(alsa_ac97_exit)

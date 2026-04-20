@@ -1,20 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
     card-azt2320.c - driver for Aztech Systems AZT2320 based soundcards.
     Copyright (C) 1999-2000 by Massimo Piccioni <dafastidio@libero.it>
 
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 */
 
 /*
@@ -29,7 +17,7 @@
     activation method (full-duplex audio!).
 */
 
-#include <asm/io.h>
+#include <linux/io.h>
 #include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/time.h>
@@ -79,7 +67,7 @@ struct snd_card_azt2320 {
 	struct snd_wss *chip;
 };
 
-static struct pnp_card_device_id snd_azt2320_pnpids[] = {
+static const struct pnp_card_device_id snd_azt2320_pnpids[] = {
 	/* PRO16V */
 	{ .id = "AZT1008", .devs = { { "AZT1008" }, { "AZT2001" }, } },
 	/* Aztech Sound Galaxy 16 */
@@ -215,7 +203,7 @@ static int snd_card_azt2320_probe(int dev,
 	sprintf(card->longname, "%s, WSS at 0x%lx, irq %i, dma %i&%i",
 		card->shortname, chip->port, irq[dev], dma1[dev], dma2[dev]);
 
-	error = snd_wss_pcm(chip, 0, NULL);
+	error = snd_wss_pcm(chip, 0);
 	if (error < 0) {
 		snd_card_free(card);
 		return error;
@@ -225,7 +213,7 @@ static int snd_card_azt2320_probe(int dev,
 		snd_card_free(card);
 		return error;
 	}
-	error = snd_wss_timer(chip, 0, NULL);
+	error = snd_wss_timer(chip, 0);
 	if (error < 0) {
 		snd_card_free(card);
 		return error;

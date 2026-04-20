@@ -1,0 +1,182 @@
+/dts-v1/;
+/plugin/;
+
+#include "hammerhead.dtsi"
+#include "hammerhead-thermal.dtsi"
+
+/ {
+	model = "Hammerhead Dev0";
+	compatible = "meta,hammerhead", "meta,hammerhead-dev0";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <34 0xa0>;
+};
+
+&max17332 {
+	interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&fg_mux_defaults>;
+};
+
+/delete-node/ &max77813;
+
+&qupv3_se8_i2c {
+	max77813_se8_i2c:max77813_se8_i2c@18 {
+		compatible = "maxim,max77813";
+		reg = <0x18>;
+		status = "ok";
+	};
+};
+
+&qupv3_se0_spi_active {
+	config {
+		drive-strength = <10>;
+	};
+};
+
+&qupv3_se0_spi_sleep {
+	config {
+		drive-strength = <10>;
+	};
+};
+
+&qupv3_se0_spi_clk_sleep {
+	config {
+		drive-strength = <10>;
+	};
+};
+
+&qupv3_se0_spi_pins {
+	qupv3_se0_spi_cs_active {
+		config {
+			drive-strength = <6>;
+		};
+	};
+
+	qupv3_se0_spi_cs_sleep {
+		config {
+			drive-strength = <6>;
+		};
+	};
+};
+
+&usb_conn_gpio {
+	meta,suspend-disable;
+};
+
+&power_state_virtual_sensor {
+        meta,pmanagement-disable;
+};
+
+&spf_core_platform  {
+	cdc_dmic01_gpios: cdc_dmic01_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&cdc_dmic01_clk_active &cdc_dmic01_data_active>;
+		pinctrl-1 = <&cdc_dmic01_clk_sleep &cdc_dmic01_data_sleep>;
+		qcom,lpi-gpios;
+		#gpio-cells = <0>;
+	};
+
+	cdc_dmic23_gpios: cdc_dmic23_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&cdc_dmic23_clk_active &cdc_dmic23_data_active>;
+		pinctrl-1 = <&cdc_dmic23_clk_sleep &cdc_dmic23_data_sleep>;
+		qcom,lpi-gpios;
+		#gpio-cells = <0>;
+	};
+
+	cdc_dmic45_gpios: cdc_dmic45_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&cdc_dmic45_clk_active &cdc_dmic45_data_active>;
+		pinctrl-1 = <&cdc_dmic45_clk_sleep &cdc_dmic45_data_sleep>;
+		qcom,lpi-gpios;
+		#gpio-cells = <0>;
+	};
+
+	cdc_dmic67_gpios: cdc_dmic67_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&cdc_dmic67_clk_active &cdc_dmic67_data_active>;
+		pinctrl-1 = <&cdc_dmic67_clk_sleep &cdc_dmic67_data_sleep>;
+		qcom,lpi-gpios;
+		#gpio-cells = <0>;
+	};
+
+};
+
+&lpass_cdc {
+	qcom,num-macros = <2>;
+	qcom,lpass-cdc-version = <6>;
+	#address-cells = <1>;
+	#size-cells = <1>;
+	lpass-cdc-clk-rsc-mngr {
+		compatible = "qcom,lpass-cdc-clk-rsc-mngr";
+		qcom,fs-gen-sequence = <0x3000 0x1 0x1>, <0x3004 0x3 0x3>,
+					<0x3004 0x3 0x1>, <0x3080 0x2 0x2>;
+		qcom,rx_mclk_mode_muxsel = <0x033A40D8>;
+		qcom,wsa_mclk_mode_muxsel = <0x033A20E0>;
+		qcom,va_mclk_mode_muxsel = <0x03420000>;
+		clock-names = "tx_core_clk","va_core_clk";
+		clocks = <&clock_audio_tx_1 0>,<&clock_audio_va_1 0>;
+	};
+
+	va_macro: va-macro@33F0000 {
+		compatible = "qcom,lpass-cdc-va-macro";
+		reg = <0x33F0000 0x0>;
+		clock-names = "lpass_audio_hw_vote";
+		clocks = <&lpass_audio_hw_vote 0>;
+		qcom,va-dmic-sample-rate = <600000>;
+		qcom,va-clk-mux-select = <1>;
+		qcom,va-island-mode-muxsel = <0x03420000>;
+		qcom,default-clk-id = <TX_CORE_CLK>;
+	};
+
+	tx_macro: tx-macro@3220000 {
+		compatible = "qcom,lpass-cdc-tx-macro";
+		reg = <0x3220000 0x0>;
+		qcom,default-clk-id = <TX_CORE_CLK>;
+		qcom,tx-dmic-sample-rate = <2400000>;
+		qcom,is-used-swr-gpio = <0>;
+	};
+
+};
+
+&va_cdc_dma_0_tx {
+	qcom,msm-dai-is-island-supported = <1>;
+};
+
+&soc {
+	clock_audio_va_1: va_core_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x307>;
+		#clock-cells = <1>;
+	};
+
+	clock_audio_tx_1: tx_core_clk {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <AUDIO_LPASS_MCLK_6>;
+		qcom,codec-lpass-ext-clk-freq = <19200000>;
+		qcom,codec-lpass-clk-id = <0x30C>;
+		#clock-cells = <1>;
+	};
+};
+
+&waipio_snd {
+	asoc-codec  = <&stub_codec>, <&lpass_cdc>;
+	asoc-codec-names = "msm-stub-codec.1", "lpass-cdc";
+	qcom,cdc-dmic01-gpios = <&cdc_dmic01_gpios>;
+	qcom,cdc-dmic23-gpios = <&cdc_dmic23_gpios>;
+	qcom,cdc-dmic45-gpios = <&cdc_dmic45_gpios>;
+
+	qcom,audio-routing =
+	"TX DMIC0", "Digital Mic0",
+	"TX DMIC1", "Digital Mic1",
+	"TX DMIC2", "Digital Mic2",
+	"TX DMIC3", "Digital Mic3",
+	"TX DMIC4", "Digital Mic4";
+	meta,codec-dma-audio-intf = <1>;
+};

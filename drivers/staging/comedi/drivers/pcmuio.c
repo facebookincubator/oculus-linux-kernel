@@ -1,26 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * pcmuio.c
  * Comedi driver for Winsystems PC-104 based 48/96-channel DIO boards.
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 2006 Calin A. Culianu <calin@ajvar.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
  * Driver: pcmuio
  * Description: Winsystems PC-104 based 48/96-channel DIO boards.
- * Devices: (Winsystems) PCM-UIO48A [pcmuio48]
- *	    (Winsystems) PCM-UIO96A [pcmuio96]
+ * Devices: [Winsystems] PCM-UIO48A (pcmuio48), PCM-UIO96A (pcmuio96)
  * Author: Calin Culianu <calin@ajvar.org>
  * Updated: Fri, 13 Jan 2006 12:01:01 -0500
  * Status: works
@@ -58,7 +48,7 @@
  *
  * In the 48-channel version:
  *
- * On subdev 0, the first 24 channels channels are edge-detect channels.
+ * On subdev 0, the first 24 channels are edge-detect channels.
  *
  * In the 96-channel board you have the following channels that can do edge
  * detection:
@@ -77,8 +67,6 @@
 #include <linux/interrupt.h>
 
 #include "../comedidev.h"
-
-#include "comedi_fc.h"
 
 /*
  * Register I/O map
@@ -130,7 +118,6 @@ struct pcmuio_asic {
 	spinlock_t pagelock;	/* protects the page registers */
 	spinlock_t spinlock;	/* protects member variables */
 	unsigned int enabled_mask;
-	unsigned int stop_count;
 	unsigned int active:1;
 };
 
@@ -311,13 +298,12 @@ static void pcmuio_stop_intr(struct comedi_device *dev,
 
 static void pcmuio_handle_intr_subdev(struct comedi_device *dev,
 				      struct comedi_subdevice *s,
-				      unsigned triggered)
+				      unsigned int triggered)
 {
 	struct pcmuio_private *devpriv = dev->private;
 	int asic = pcmuio_subdevice_to_asic(s);
 	struct pcmuio_asic *chip = &devpriv->asics[asic];
 	struct comedi_cmd *cmd = &s->async->cmd;
-	unsigned oldevents = s->async->events;
 	unsigned int val = 0;
 	unsigned long flags;
 	unsigned int i;
@@ -337,33 +323,16 @@ static void pcmuio_handle_intr_subdev(struct comedi_device *dev,
 			val |= (1 << i);
 	}
 
-	/* Write the scan to the buffer. */
-	if (comedi_buf_put(s, val) &&
-	    comedi_buf_put(s, val >> 16)) {
-		s->async->events |= (COMEDI_CB_BLOCK | COMEDI_CB_EOS);
-	} else {
-		/* Overflow! Stop acquisition!! */
-		/* TODO: STOP_ACQUISITION_CALL_HERE!! */
-		pcmuio_stop_intr(dev, s);
-	}
+	comedi_buf_write_samples(s, &val, 1);
 
-	/* Check for end of acquisition. */
-	if (cmd->stop_src == TRIG_COUNT) {
-		if (chip->stop_count > 0) {
-			chip->stop_count--;
-			if (chip->stop_count == 0) {
-				s->async->events |= COMEDI_CB_EOA;
-				/* TODO: STOP_ACQUISITION_CALL_HERE!! */
-				pcmuio_stop_intr(dev, s);
-			}
-		}
-	}
+	if (cmd->stop_src == TRIG_COUNT &&
+	    s->async->scans_done >= cmd->stop_arg)
+		s->async->events |= COMEDI_CB_EOA;
 
 done:
 	spin_unlock_irqrestore(&chip->spinlock, flags);
 
-	if (oldevents != s->async->events)
-		comedi_event(dev, s);
+	comedi_handle_events(dev, s);
 }
 
 static int pcmuio_handle_asic_interrupt(struct comedi_device *dev, int asic)
@@ -487,8 +456,6 @@ static int pcmuio_cmd(struct comedi_device *dev, struct comedi_subdevice *s)
 	spin_lock_irqsave(&chip->spinlock, flags);
 	chip->active = 1;
 
-	chip->stop_count = cmd->stop_arg;
-
 	/* Set up start of acquisition. */
 	if (cmd->start_src == TRIG_INT)
 		s->async->inttrig = pcmuio_inttrig_start_intr;
@@ -508,19 +475,19 @@ static int pcmuio_cmdtest(struct comedi_device *dev,
 
 	/* Step 1 : check if triggers are trivially valid */
 
-	err |= cfc_check_trigger_src(&cmd->start_src, TRIG_NOW | TRIG_INT);
-	err |= cfc_check_trigger_src(&cmd->scan_begin_src, TRIG_EXT);
-	err |= cfc_check_trigger_src(&cmd->convert_src, TRIG_NOW);
-	err |= cfc_check_trigger_src(&cmd->scan_end_src, TRIG_COUNT);
-	err |= cfc_check_trigger_src(&cmd->stop_src, TRIG_COUNT | TRIG_NONE);
+	err |= comedi_check_trigger_src(&cmd->start_src, TRIG_NOW | TRIG_INT);
+	err |= comedi_check_trigger_src(&cmd->scan_begin_src, TRIG_EXT);
+	err |= comedi_check_trigger_src(&cmd->convert_src, TRIG_NOW);
+	err |= comedi_check_trigger_src(&cmd->scan_end_src, TRIG_COUNT);
+	err |= comedi_check_trigger_src(&cmd->stop_src, TRIG_COUNT | TRIG_NONE);
 
 	if (err)
 		return 1;
 
 	/* Step 2a : make sure trigger sources are unique */
 
-	err |= cfc_check_trigger_is_unique(cmd->start_src);
-	err |= cfc_check_trigger_is_unique(cmd->stop_src);
+	err |= comedi_check_trigger_is_unique(cmd->start_src);
+	err |= comedi_check_trigger_is_unique(cmd->stop_src);
 
 	/* Step 2b : and mutually compatible */
 
@@ -529,15 +496,16 @@ static int pcmuio_cmdtest(struct comedi_device *dev,
 
 	/* Step 3: check if arguments are trivially valid */
 
-	err |= cfc_check_trigger_arg_is(&cmd->start_arg, 0);
-	err |= cfc_check_trigger_arg_is(&cmd->scan_begin_arg, 0);
-	err |= cfc_check_trigger_arg_is(&cmd->convert_arg, 0);
-	err |= cfc_check_trigger_arg_is(&cmd->scan_end_arg, cmd->chanlist_len);
+	err |= comedi_check_trigger_arg_is(&cmd->start_arg, 0);
+	err |= comedi_check_trigger_arg_is(&cmd->scan_begin_arg, 0);
+	err |= comedi_check_trigger_arg_is(&cmd->convert_arg, 0);
+	err |= comedi_check_trigger_arg_is(&cmd->scan_end_arg,
+					   cmd->chanlist_len);
 
 	if (cmd->stop_src == TRIG_COUNT)
-		err |= cfc_check_trigger_arg_min(&cmd->stop_arg, 1);
+		err |= comedi_check_trigger_arg_min(&cmd->stop_arg, 1);
 	else	/* TRIG_NONE */
-		err |= cfc_check_trigger_arg_is(&cmd->stop_arg, 0);
+		err |= comedi_check_trigger_arg_is(&cmd->stop_arg, 0);
 
 	if (err)
 		return 3;
@@ -590,7 +558,7 @@ static int pcmuio_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 		} else if (it->options[2]) {
 			/* request the irq for the 2nd asic */
 			ret = request_irq(it->options[2], pcmuio_interrupt, 0,
-					dev->board_name, dev);
+					  dev->board_name, dev);
 			if (ret == 0)
 				devpriv->irq2 = it->options[2];
 		}
@@ -610,11 +578,12 @@ static int pcmuio_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 		s->insn_bits	= pcmuio_dio_insn_bits;
 		s->insn_config	= pcmuio_dio_insn_config;
 
-		/* subdevices 0 and 2 can suppport interrupts */
+		/* subdevices 0 and 2 can support interrupts */
 		if ((i == 0 && dev->irq) || (i == 2 && devpriv->irq2)) {
 			/* setup the interrupt subdevice */
 			dev->read_subdev = s;
-			s->subdev_flags	|= SDF_CMD_READ;
+			s->subdev_flags	|= SDF_CMD_READ | SDF_LSAMPL |
+					   SDF_PACKED;
 			s->len_chanlist	= s->n_chan;
 			s->cancel	= pcmuio_cancel;
 			s->do_cmd	= pcmuio_cmd;
@@ -650,6 +619,6 @@ static struct comedi_driver pcmuio_driver = {
 };
 module_comedi_driver(pcmuio_driver);
 
-MODULE_AUTHOR("Comedi http://www.comedi.org");
+MODULE_AUTHOR("Comedi https://www.comedi.org");
 MODULE_DESCRIPTION("Comedi low-level driver");
 MODULE_LICENSE("GPL");

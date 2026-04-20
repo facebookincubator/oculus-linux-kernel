@@ -1,15 +1,7 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2011-2019, 2021, The Linux Foundation. All rights reserved.
  */
-
 /* Bus-Access-Manager (BAM) Hardware manager functions API. */
 
 #ifndef _BAM_H_
@@ -83,6 +75,7 @@ struct bam_pipe_parameters {
 	u32 peer_pipe;
 	phys_addr_t data_base;	/* Physical address of data FIFO */
 	u32 data_size;	/* Size (bytes) of data FIFO */
+	bool dummy_peer;
 };
 
 /**
@@ -191,6 +184,21 @@ void bam_output_register_content(void *base, u32 ee);
 u32 bam_check_irq_source(void *base, u32 ee, u32 mask,
 				enum sps_callback_case *cb_case);
 
+/**
+ * Set BAM global interrupts
+ *
+ * This function initializes a BAM device.
+ *
+ * @base - BAM virtual base address.
+ *
+ * @ee - BAM execution environment index
+ *
+ * @mask - error interrupts mask
+ *
+ * @en - Enable or Disable interrupt
+ *
+ */
+void bam_set_global_irq(void *base, u32 ee, u32 mask, bool en);
 
 /**
  * Initialize a BAM pipe

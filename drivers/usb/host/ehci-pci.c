@@ -1,21 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * EHCI HCD (Host Controller Driver) PCI Bus Glue.
  *
  * Copyright (c) 2000-2004 by David Brownell
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include <linux/kernel.h>
@@ -34,12 +21,33 @@ static const char hcd_name[] = "ehci-pci";
 /* defined here to avoid adding to pci_ids.h for single instance use */
 #define PCI_DEVICE_ID_INTEL_CE4100_USB	0x2e70
 
+#define PCI_VENDOR_ID_ASPEED		0x1a03
+#define PCI_DEVICE_ID_ASPEED_EHCI	0x2603
+
 /*-------------------------------------------------------------------------*/
 #define PCI_DEVICE_ID_INTEL_QUARK_X1000_SOC		0x0939
 static inline bool is_intel_quark_x1000(struct pci_dev *pdev)
 {
 	return pdev->vendor == PCI_VENDOR_ID_INTEL &&
 		pdev->device == PCI_DEVICE_ID_INTEL_QUARK_X1000_SOC;
+}
+
+/*
+ * This is the list of PCI IDs for the devices that have EHCI USB class and
+ * specific drivers for that. One of the example is a ChipIdea device installed
+ * on some Intel MID platforms.
+ */
+static const struct pci_device_id bypass_pci_id_table[] = {
+	/* ChipIdea on Intel MID platform */
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0x0811), },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0x0829), },
+	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, 0xe006), },
+	{}
+};
+
+static inline bool is_bypassed_id(struct pci_dev *pdev)
+{
+	return !!pci_match_id(bypass_pci_id_table, pdev);
 }
 
 /*
@@ -119,8 +127,7 @@ static int ehci_pci_setup(struct usb_hcd *hcd)
 		case 0x005b:	/* CK804 */
 		case 0x00d8:	/* CK8 */
 		case 0x00e8:	/* CK8S */
-			if (pci_set_consistent_dma_mask(pdev,
-						DMA_BIT_MASK(31)) < 0)
+			if (dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(31)) < 0)
 				ehci_warn(ehci, "can't enable NVidia "
 					"workaround for >2GB RAM\n");
 			break;
@@ -144,7 +151,7 @@ static int ehci_pci_setup(struct usb_hcd *hcd)
 		break;
 	case PCI_VENDOR_ID_AMD:
 		/* AMD PLL quirk */
-		if (usb_amd_find_chipset_info())
+		if (usb_amd_quirk_pll_check())
 			ehci->amd_pll_fix = 1;
 		/* AMD8111 EHCI doesn't work, according to AMD errata */
 		if (pdev->device == 0x7463) {
@@ -181,7 +188,7 @@ static int ehci_pci_setup(struct usb_hcd *hcd)
 		break;
 	case PCI_VENDOR_ID_ATI:
 		/* AMD PLL quirk */
-		if (usb_amd_find_chipset_info())
+		if (usb_amd_quirk_pll_check())
 			ehci->amd_pll_fix = 1;
 
 		/*
@@ -210,6 +217,19 @@ static int ehci_pci_setup(struct usb_hcd *hcd)
 		/* MosChip frame-index-register bug */
 		ehci_info(ehci, "applying MosChip frame-index workaround\n");
 		ehci->frame_index_bug = 1;
+		break;
+	case PCI_VENDOR_ID_HUAWEI:
+		/* Synopsys HC bug */
+		if (pdev->device == 0xa239) {
+			ehci_info(ehci, "applying Synopsys HC workaround\n");
+			ehci->has_synopsys_hc_bug = 1;
+		}
+		break;
+	case PCI_VENDOR_ID_ASPEED:
+		if (pdev->device == PCI_DEVICE_ID_ASPEED_EHCI) {
+			ehci_info(ehci, "applying Aspeed HC workaround\n");
+			ehci->is_aspeed = 1;
+		}
 		break;
 	}
 
@@ -240,9 +260,8 @@ static int ehci_pci_setup(struct usb_hcd *hcd)
 	/* These workarounds need to be applied after ehci_setup() */
 	switch (pdev->vendor) {
 	case PCI_VENDOR_ID_NEC:
-		ehci->need_io_watchdog = 0;
-		break;
 	case PCI_VENDOR_ID_INTEL:
+	case PCI_VENDOR_ID_AMD:
 		ehci->need_io_watchdog = 0;
 		break;
 	case PCI_VENDOR_ID_NVIDIA:
@@ -287,6 +306,9 @@ static int ehci_pci_setup(struct usb_hcd *hcd)
 	if (pdev->vendor == PCI_VENDOR_ID_STMICRO
 	    && pdev->device == PCI_DEVICE_ID_STMICRO_USB_HOST)
 		;	/* ConneXT has no sbrn register */
+	else if (pdev->vendor == PCI_VENDOR_ID_HUAWEI
+			 && pdev->device == 0xa239)
+		;	/* HUAWEI Kunpeng920 USB EHCI has no sbrn register */
 	else
 		pci_read_config_byte(pdev, 0x60, &ehci->sbrn);
 
@@ -305,7 +327,7 @@ static int ehci_pci_setup(struct usb_hcd *hcd)
 		}
 	}
 
-#ifdef	CONFIG_PM_RUNTIME
+#ifdef	CONFIG_PM
 	if (ehci->no_selective_suspend && device_can_wakeup(&pdev->dev))
 		ehci_warn(ehci, "selective suspend/wakeup unavailable\n");
 #endif
@@ -352,14 +374,25 @@ static const struct ehci_driver_overrides pci_overrides __initconst = {
 
 /*-------------------------------------------------------------------------*/
 
+static int ehci_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+{
+	if (is_bypassed_id(pdev))
+		return -ENODEV;
+	return usb_hcd_pci_probe(pdev, id, &ehci_pci_hc_driver);
+}
+
+static void ehci_pci_remove(struct pci_dev *pdev)
+{
+	pci_clear_mwi(pdev);
+	usb_hcd_pci_remove(pdev);
+}
+
 /* PCI driver selection metadata; PCI hotplugging uses this */
 static const struct pci_device_id pci_ids [] = { {
 	/* handle any USB 2.0 EHCI controller */
 	PCI_DEVICE_CLASS(PCI_CLASS_SERIAL_USB_EHCI, ~0),
-	.driver_data =	(unsigned long) &ehci_pci_hc_driver,
 	}, {
 	PCI_VDEVICE(STMICRO, PCI_DEVICE_ID_STMICRO_USB_HOST),
-	.driver_data = (unsigned long) &ehci_pci_hc_driver,
 	},
 	{ /* end: all zeroes */ }
 };
@@ -367,11 +400,11 @@ MODULE_DEVICE_TABLE(pci, pci_ids);
 
 /* pci driver glue; this is a "new style" PCI driver module */
 static struct pci_driver ehci_pci_driver = {
-	.name =		(char *) hcd_name,
+	.name =		hcd_name,
 	.id_table =	pci_ids,
 
-	.probe =	usb_hcd_pci_probe,
-	.remove =	usb_hcd_pci_remove,
+	.probe =	ehci_pci_probe,
+	.remove =	ehci_pci_remove,
 	.shutdown = 	usb_hcd_pci_shutdown,
 
 #ifdef CONFIG_PM

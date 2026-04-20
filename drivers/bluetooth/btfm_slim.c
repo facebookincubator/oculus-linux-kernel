@@ -1,14 +1,8 @@
-/* Copyright (c) 2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
+
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -18,133 +12,106 @@
 #include <linux/debugfs.h>
 #include <linux/ratelimit.h>
 #include <linux/slab.h>
+#include <linux/fs.h>
+#include <linux/btpower.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
 #include <sound/tlv.h>
-#include <btfm_slim.h>
-#include <btfm_slim_wcn3990.h>
+#include "btfm_slim.h"
+#include "btfm_slim_slave.h"
+#define DELAY_FOR_PORT_OPEN_MS (200)
+#define SLIM_MANF_ID_QCOM	0x217
+#define SLIM_PROD_CODE		0x221
+#define BT_CMD_SLIM_TEST		0xbfac
+
+struct class *btfm_slim_class;
+static int btfm_slim_major;
+
+struct btfmslim *btfm_slim_drv_data;
+
+static int btfm_num_ports_open;
 
 int btfm_slim_write(struct btfmslim *btfmslim,
-		uint16_t reg, int bytes, void *src, uint8_t pgd)
+		uint16_t reg, uint8_t reg_val, uint8_t pgd)
 {
-	int ret, i;
-	struct slim_ele_access msg;
+	int ret = -1;
+	uint32_t reg_addr;
 	int slim_write_tries = SLIM_SLAVE_RW_MAX_TRIES;
 
-	BTFMSLIM_DBG("Write to %s", pgd?"PGD":"IFD");
-	msg.start_offset = SLIM_SLAVE_REG_OFFSET + reg;
-	msg.num_bytes = bytes;
-	msg.comp = NULL;
+	BTFMSLIM_INFO("Write to %s", pgd?"PGD":"IFD");
+	reg_addr = SLIM_SLAVE_REG_OFFSET + reg;
 
 	for ( ; slim_write_tries != 0; slim_write_tries--) {
 		mutex_lock(&btfmslim->xfer_lock);
-		ret = slim_change_val_element(pgd ? btfmslim->slim_pgd :
-			&btfmslim->slim_ifd, &msg, src, bytes);
+		ret = slim_writeb(pgd ? btfmslim->slim_pgd :
+			&btfmslim->slim_ifd, reg_addr, reg_val);
 		mutex_unlock(&btfmslim->xfer_lock);
-		if (ret == 0)
+		if (ret) {
+			BTFMSLIM_DBG("retrying to Write 0x%02x to reg 0x%x ret %d",
+					 reg_val, reg_addr, ret);
+		} else {
+			BTFMSLIM_DBG("Written 0x%02x to reg 0x%x ret %d", reg_val, reg_addr, ret);
 			break;
+		}
+
 		usleep_range(5000, 5100);
 	}
-
 	if (ret) {
-		BTFMSLIM_ERR("failed (%d)" , ret);
-		return ret;
+		BTFMSLIM_DBG("retrying to Write 0x%02x to reg 0x%x ret %d",
+				reg_val, reg_addr, ret);
 	}
-
-	for (i = 0; i < bytes; i++)
-		BTFMSLIM_DBG("Write 0x%02x to reg 0x%x", ((uint8_t *)src)[i],
-			reg + i);
-	return 0;
+	return ret;
 }
 
-int btfm_slim_write_pgd(struct btfmslim *btfmslim,
-		uint16_t reg, int bytes, void *src)
+int btfm_slim_read(struct btfmslim *btfmslim, uint32_t reg, uint8_t pgd)
 {
-	return btfm_slim_write(btfmslim, reg, bytes, src, PGD);
-}
-
-int btfm_slim_write_inf(struct btfmslim *btfmslim,
-		uint16_t reg, int bytes, void *src)
-{
-	return btfm_slim_write(btfmslim, reg, bytes, src, IFD);
-}
-
-int btfm_slim_read(struct btfmslim *btfmslim, unsigned short reg,
-				int bytes, void *dest, uint8_t pgd)
-{
-	int ret, i;
-	struct slim_ele_access msg;
+	int ret = -1;
 	int slim_read_tries = SLIM_SLAVE_RW_MAX_TRIES;
-
+	uint32_t reg_addr;
 	BTFMSLIM_DBG("Read from %s", pgd?"PGD":"IFD");
-	msg.start_offset = SLIM_SLAVE_REG_OFFSET + reg;
-	msg.num_bytes = bytes;
-	msg.comp = NULL;
+	reg_addr = SLIM_SLAVE_REG_OFFSET + reg;
 
 	for ( ; slim_read_tries != 0; slim_read_tries--) {
 		mutex_lock(&btfmslim->xfer_lock);
-		ret = slim_request_val_element(pgd ? btfmslim->slim_pgd :
-			&btfmslim->slim_ifd, &msg, dest, bytes);
+
+		ret = slim_readb(pgd ? btfmslim->slim_pgd :
+				&btfmslim->slim_ifd, reg_addr);
+		BTFMSLIM_DBG("Read 0x%02x from reg 0x%x", ret, reg_addr);
 		mutex_unlock(&btfmslim->xfer_lock);
-		if (ret == 0)
+		if (ret > 0)
 			break;
 		usleep_range(5000, 5100);
 	}
 
-	if (ret)
-		BTFMSLIM_ERR("failed (%d)" , ret);
-
-	for (i = 0; i < bytes; i++)
-		BTFMSLIM_DBG("Read 0x%02x from reg 0x%x", ((uint8_t *)dest)[i],
-			reg + i);
-
-	return 0;
-}
-
-int btfm_slim_read_pgd(struct btfmslim *btfmslim,
-		uint16_t reg, int bytes, void *dest)
-{
-	return btfm_slim_read(btfmslim, reg, bytes, dest, PGD);
-}
-
-int btfm_slim_read_inf(struct btfmslim *btfmslim,
-		uint16_t reg, int bytes, void *dest)
-{
-	return btfm_slim_read(btfmslim, reg, bytes, dest, IFD);
+	return ret;
 }
 
 int btfm_slim_enable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
-	uint8_t rxport, uint32_t rates, uint8_t grp, uint8_t nchan)
+	uint8_t rxport, uint32_t rates, uint8_t nchan)
 {
 	int ret, i;
-	struct slim_ch prop;
 	struct btfmslim_ch *chan = ch;
-	uint16_t ch_h[2];
+	int chipset_ver;
 
 	if (!btfmslim || !ch)
 		return -EINVAL;
 
-	BTFMSLIM_DBG("port:%d", ch->port);
+	BTFMSLIM_DBG("port: %d ch: %d", ch->port, ch->ch);
 
-	/* Define the channel with below parameters */
-	prop.prot = SLIM_AUTO_ISO;
-	prop.baser = SLIM_RATE_4000HZ;
-	prop.dataf = SLIM_CH_DATAF_LPCM_AUDIO;
-	prop.auxf = SLIM_CH_AUXF_NOT_APPLICABLE;
-	prop.ratem = (rates/4000);
-	prop.sampleszbits = 16;
-
-	ch_h[0] = ch->ch_hdl;
-	ch_h[1] = (grp) ? (ch+1)->ch_hdl : 0;
-
-	ret = slim_define_ch(btfmslim->slim_pgd, &prop, ch_h, nchan, grp,
-			&ch->grph);
-	if (ret < 0) {
-		BTFMSLIM_ERR("slim_define_ch failed ret[%d]", ret);
-		goto error;
+	chan->dai.sruntime = slim_stream_allocate(btfmslim->slim_pgd, "BTFM_SLIM");
+	if (chan->dai.sruntime == NULL) {
+		BTFMSLIM_ERR("slim_stream_allocate failed");
+		return -EINVAL;
 	}
+	chan->dai.sconfig.bps = btfmslim->bps;
+	chan->dai.sconfig.direction = btfmslim->direction;
+	chan->dai.sconfig.rate = rates;
+	chan->dai.sconfig.ch_count = nchan;
+	chan->dai.sconfig.chs = kcalloc(nchan, sizeof(unsigned int), GFP_KERNEL);
+	if (!chan->dai.sconfig.chs)
+		return -ENOMEM;
 
 	for (i = 0; i < nchan; i++, ch++) {
 		/* Enable port through registration setting */
@@ -157,80 +124,89 @@ int btfm_slim_enable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 				goto error;
 			}
 		}
-
-		if (rxport) {
-			BTFMSLIM_INFO("slim_connect_sink(port: %d, ch: %d)",
-				ch->port, ch->ch);
-			/* Connect Port with channel given by Machine driver*/
-			ret = slim_connect_sink(btfmslim->slim_pgd,
-				&ch->port_hdl, 1, ch->ch_hdl);
-			if (ret < 0) {
-				BTFMSLIM_ERR("slim_connect_sink failed ret[%d]",
-					ret);
-				goto remove_channel;
-			}
-
-		} else {
-			BTFMSLIM_INFO("slim_connect_src(port: %d, ch: %d)",
-				ch->port, ch->ch);
-			/* Connect Port with channel given by Machine driver*/
-			ret = slim_connect_src(btfmslim->slim_pgd, ch->port_hdl,
-				ch->ch_hdl);
-			if (ret < 0) {
-				BTFMSLIM_ERR("slim_connect_src failed ret[%d]",
-					ret);
-				goto remove_channel;
-			}
-		}
+		chan->dai.sconfig.chs[i] = ch->ch;
+		chan->dai.sconfig.port_mask |= BIT(ch->port);
 	}
 
 	/* Activate the channel immediately */
-	BTFMSLIM_INFO(
-		"port: %d, ch: %d, grp: %d, ch->grph: 0x%x, ch_hdl: 0x%x",
-		chan->port, chan->ch, grp, chan->grph, chan->ch_hdl);
-	ret = slim_control_ch(btfmslim->slim_pgd, (grp ? chan->grph :
-		chan->ch_hdl), SLIM_CH_ACTIVATE, true);
-	if (ret < 0) {
-		BTFMSLIM_ERR("slim_control_ch failed ret[%d]", ret);
-		goto remove_channel;
+	BTFMSLIM_INFO("port: %d, ch: %d", chan->port, chan->ch);
+	chipset_ver = btpower_get_chipset_version();
+	BTFMSLIM_INFO("chipset soc version:%x", chipset_ver);
+
+	/* for feedback channel, PCM bit should not be set */
+	if (btfm_feedback_ch_setting) {
+		BTFMSLIM_DBG("port open for feedback ch, not setting PCM bit");
+		//prop.dataf = SLIM_CH_DATAF_NOT_DEFINED;
+		/* reset so that next port open sets the data format properly */
+		btfm_feedback_ch_setting = 0;
 	}
 
-error:
+	ret = slim_stream_prepare(chan->dai.sruntime, &chan->dai.sconfig);
+	if (ret) {
+		BTFMSLIM_ERR("slim_stream_prepare failed = %d", ret);
+		goto error;
+	}
+
+	ret = slim_stream_enable(chan->dai.sruntime);
+	if (ret) {
+		BTFMSLIM_ERR("slim_stream_enable failed = %d", ret);
+		goto error;
+	}
+
+	if (ret == 0)
+		btfm_num_ports_open++;
+
+	BTFMSLIM_INFO("btfm_num_ports_open: %d", btfm_num_ports_open);
 	return ret;
-
-remove_channel:
-	/* Remove the channel immediately*/
-	ret = slim_control_ch(btfmslim->slim_pgd, (grp ? ch->grph : ch->ch_hdl),
-			SLIM_CH_REMOVE, true);
-	if (ret < 0)
-		BTFMSLIM_ERR("slim_control_ch failed ret[%d]", ret);
-
+error:
+	BTFMSLIM_INFO("error %d while opening port, btfm_num_ports_open: %d",
+			ret, btfm_num_ports_open);
+	kfree(chan->dai.sconfig.chs);
+	chan->dai.sconfig.chs = NULL;
 	return ret;
 }
 
 int btfm_slim_disable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
-	uint8_t rxport, uint8_t grp, uint8_t nchan)
+			uint8_t rxport, uint8_t nchan)
 {
 	int ret, i;
+	int chipset_ver = 0;
 
 	if (!btfmslim || !ch)
 		return -EINVAL;
 
-	BTFMSLIM_INFO("port:%d, grp: %d, ch->grph:0x%x, ch->ch_hdl:0x%x ",
-		ch->port, grp, ch->grph, ch->ch_hdl);
-	/* Remove the channel immediately*/
-	ret = slim_control_ch(btfmslim->slim_pgd, (grp ? ch->grph : ch->ch_hdl),
-			SLIM_CH_REMOVE, true);
-	if (ret < 0) {
-		BTFMSLIM_ERR("slim_control_ch failed ret[%d]", ret);
-		ret = slim_disconnect_ports(btfmslim->slim_pgd,
-			&ch->port_hdl, 1);
-		if (ret < 0) {
-			BTFMSLIM_ERR("slim_disconnect_ports failed ret[%d]",
-				ret);
-			goto error;
+	BTFMSLIM_INFO("port:%d ", ch->port);
+	if (ch->dai.sruntime == NULL) {
+		BTFMSLIM_ERR("Channel not enabled yet. returning");
+		return -EINVAL;
+	}
+
+	if (rxport && (btfmslim->sample_rate == 44100 ||
+		btfmslim->sample_rate == 88200)) {
+		BTFMSLIM_INFO("disconnecting the ports, removing the channel");
+		/* disconnect the ports of the stream */
+		ret = slim_stream_unprepare_disconnect_port(ch->dai.sruntime,
+				true, false);
+		if (ret != 0)
+			BTFMSLIM_ERR("slim_stream_unprepare failed %d", ret);
+	}
+
+	ret = slim_stream_disable(ch->dai.sruntime);
+	if (ret != 0) {
+		BTFMSLIM_ERR("slim_stream_disable failed returned val = %d", ret);
+		if ((btfmslim->sample_rate != 44100) && (btfmslim->sample_rate != 88200)) {
+			/* disconnect the ports of the stream */
+			ret = slim_stream_unprepare_disconnect_port(ch->dai.sruntime,
+					true, false);
+			if (ret != 0)
+				BTFMSLIM_ERR("slim_stream_unprepare failed %d", ret);
 		}
 	}
+
+	/* free the ports allocated to the stream */
+	ret = slim_stream_unprepare_disconnect_port(ch->dai.sruntime, false, true);
+	if (ret != 0)
+		BTFMSLIM_ERR("slim_stream_unprepare failed returned val = %d", ret);
 
 	/* Disable port through registration setting */
 	for (i = 0; i < nchan; i++, ch++) {
@@ -238,24 +214,89 @@ int btfm_slim_disable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 			ret = btfmslim->vendor_port_en(btfmslim, ch->port,
 				rxport, 0);
 			if (ret < 0) {
-				BTFMSLIM_ERR("vendor_port_en failed ret[%d]",
-					ret);
+				BTFMSLIM_ERR("vendor_port_en failed [%d]", ret);
 				break;
 			}
 		}
 	}
-error:
+	ch->dai.sconfig.port_mask = 0;
+	if (ch->dai.sconfig.chs != NULL) {
+		kfree(ch->dai.sconfig.chs);
+		BTFMSLIM_INFO("setting ch->dai.sconfig.chs to NULL");
+		ch->dai.sconfig.chs = NULL;
+	} else
+		BTFMSLIM_ERR("ch->dai.sconfig.chs is already NULL");
+
+	if (btfm_num_ports_open > 0)
+		btfm_num_ports_open--;
+
+	ch->dai.sruntime = NULL;
+
+	BTFMSLIM_INFO("btfm_num_ports_open: %d", btfm_num_ports_open);
+
+	chipset_ver = btpower_get_chipset_version();
+
+	if (btfm_num_ports_open == 0 && (chipset_ver == QCA_HSP_SOC_ID_0200 ||
+		chipset_ver == QCA_HSP_SOC_ID_0210 ||
+		chipset_ver == QCA_HSP_SOC_ID_1201 ||
+		chipset_ver == QCA_HSP_SOC_ID_1211 ||
+		chipset_ver == QCA_APACHE_SOC_ID_0100 ||
+		chipset_ver == QCA_APACHE_SOC_ID_0110 ||
+		chipset_ver == QCA_APACHE_SOC_ID_0120 ||
+		chipset_ver == QCA_APACHE_SOC_ID_0121 ||
+		chipset_ver == QCA_MOSELLE_SOC_ID_0100 ||
+		chipset_ver == QCA_MOSELLE_SOC_ID_0110 ||
+		chipset_ver == QCA_MOSELLE_SOC_ID_0120)) {
+		BTFMSLIM_INFO("SB reset needed after all ports disabled, sleeping");
+		msleep(DELAY_FOR_PORT_OPEN_MS);
+	}
+
 	return ret;
 }
+
+static int btfm_slim_alloc_port(struct btfmslim *btfmslim)
+{
+	int ret = -EINVAL, i;
+	int  chipset_ver;
+	struct btfmslim_ch *rx_chs;
+	struct btfmslim_ch *tx_chs;
+
+	if (!btfmslim)
+		return ret;
+
+	chipset_ver = btpower_get_chipset_version();
+	BTFMSLIM_INFO("chipset soc version:%x", chipset_ver);
+
+	rx_chs = btfmslim->rx_chs;
+	tx_chs = btfmslim->tx_chs;
+	if ((chipset_ver >=  QCA_CHEROKEE_SOC_ID_0310) &&
+		(chipset_ver <=  QCA_CHEROKEE_SOC_ID_0320_UMC)) {
+		for (i = 0; (tx_chs->port != BTFM_SLIM_PGD_PORT_LAST) &&
+		(i < BTFM_SLIM_NUM_CODEC_DAIS); i++, tx_chs++) {
+			if (tx_chs->port == SLAVE_SB_PGD_PORT_TX1_FM)
+				tx_chs->port = CHRKVER3_SB_PGD_PORT_TX1_FM;
+			else if (tx_chs->port == SLAVE_SB_PGD_PORT_TX2_FM)
+				tx_chs->port = CHRKVER3_SB_PGD_PORT_TX2_FM;
+			BTFMSLIM_INFO("Tx port:%d", tx_chs->port);
+		}
+		tx_chs = btfmslim->tx_chs;
+	}
+	if (!rx_chs || !tx_chs)
+		return ret;
+
+	return 0;
+}
+
 static int btfm_slim_get_logical_addr(struct slim_device *slim)
 {
 	int ret = 0;
 	const unsigned long timeout = jiffies +
 			      msecs_to_jiffies(SLIM_SLAVE_PRESENT_TIMEOUT);
+	BTFMSLIM_INFO("");
 
 	do {
-		ret = slim_get_logical_addr(slim, slim->e_addr,
-			ARRAY_SIZE(slim->e_addr), &slim->laddr);
+
+		ret = slim_get_logical_addr(slim);
 		if (!ret)  {
 			BTFMSLIM_DBG("Assigned l-addr: 0x%x", slim->laddr);
 			break;
@@ -268,64 +309,12 @@ static int btfm_slim_get_logical_addr(struct slim_device *slim)
 	return ret;
 }
 
-static int btfm_slim_alloc_port(struct btfmslim *btfmslim)
-{
-	int ret = -EINVAL, i;
-	struct btfmslim_ch *rx_chs;
-	struct btfmslim_ch *tx_chs;
-
-	if (!btfmslim)
-		return ret;
-
-	rx_chs = btfmslim->rx_chs;
-	tx_chs = btfmslim->tx_chs;
-
-	if (!rx_chs || !tx_chs)
-		return ret;
-
-	BTFMSLIM_DBG("Rx: id\tname\tport\thdl\tch\tch_hdl");
-	for (i = 0 ; (rx_chs->port != BTFM_SLIM_PGD_PORT_LAST) &&
-		(i < BTFM_SLIM_NUM_CODEC_DAIS); i++, rx_chs++) {
-
-		/* Get Rx port handler from slimbus driver based
-		  * on port number
-		  */
-		ret = slim_get_slaveport(btfmslim->slim_pgd->laddr,
-			rx_chs->port, &rx_chs->port_hdl, SLIM_SINK);
-		if (ret < 0) {
-			BTFMSLIM_ERR("slave port failure port#%d - ret[%d]",
-				rx_chs->port, SLIM_SINK);
-			return ret;
-		}
-		BTFMSLIM_DBG("    %d\t%s\t%d\t%x\t%d\t%x", rx_chs->id,
-			rx_chs->name, rx_chs->port, rx_chs->port_hdl,
-			rx_chs->ch, rx_chs->ch_hdl);
-	}
-
-	BTFMSLIM_DBG("Tx: id\tname\tport\thdl\tch\tch_hdl");
-	for (i = 0; (tx_chs->port != BTFM_SLIM_PGD_PORT_LAST) &&
-		(i < BTFM_SLIM_NUM_CODEC_DAIS); i++, tx_chs++) {
-
-		/* Get Tx port handler from slimbus driver based
-		  * on port number
-		  */
-		ret = slim_get_slaveport(btfmslim->slim_pgd->laddr,
-			tx_chs->port, &tx_chs->port_hdl, SLIM_SRC);
-		if (ret < 0) {
-			BTFMSLIM_ERR("slave port failure port#%d - ret[%d]",
-				tx_chs->port, SLIM_SRC);
-			return ret;
-		}
-		BTFMSLIM_DBG("    %d\t%s\t%d\t%x\t%d\t%x", tx_chs->id,
-			tx_chs->name, tx_chs->port, tx_chs->port_hdl,
-			tx_chs->ch, tx_chs->ch_hdl);
-	}
-	return ret;
-}
-
 int btfm_slim_hw_init(struct btfmslim *btfmslim)
 {
 	int ret;
+	int chipset_ver;
+	struct slim_device *slim;
+	struct slim_device *slim_ifd;
 
 	BTFMSLIM_DBG("");
 	if (!btfmslim)
@@ -335,42 +324,161 @@ int btfm_slim_hw_init(struct btfmslim *btfmslim)
 		BTFMSLIM_DBG("Already enabled");
 		return 0;
 	}
+
+	slim = btfmslim->slim_pgd;
+	slim_ifd = &btfmslim->slim_ifd;
+
 	mutex_lock(&btfmslim->io_lock);
+	BTFMSLIM_INFO(
+		"PGD Enum Addr: mfr id:%.02x prod code:%.02x dev ind:%.02x ins:%.02x",
+		slim->e_addr.manf_id, slim->e_addr.prod_code,
+		slim->e_addr.dev_index, slim->e_addr.instance);
+
+
+	chipset_ver = btpower_get_chipset_version();
+	BTFMSLIM_INFO("chipset soc version:%x", chipset_ver);
+
+	if (chipset_ver == QCA_HSP_SOC_ID_0100 ||
+		chipset_ver == QCA_HSP_SOC_ID_0110 ||
+		chipset_ver == QCA_HSP_SOC_ID_0200 ||
+		chipset_ver == QCA_HSP_SOC_ID_0210 ||
+		chipset_ver == QCA_HSP_SOC_ID_1201 ||
+		chipset_ver == QCA_HSP_SOC_ID_1211) {
+		BTFMSLIM_INFO("chipset is hastings prime, overwriting EA");
+		slim->is_laddr_valid = false;
+		slim->e_addr.manf_id = SLIM_MANF_ID_QCOM;
+		slim->e_addr.prod_code = SLIM_PROD_CODE;
+		slim->e_addr.dev_index = 0x01;
+		slim->e_addr.instance = 0x0;
+		/* we are doing this to indicate that this is not a child node
+		 * (doesn't have call back functions). Needed only for querying
+		 * logical address.
+		 */
+		slim_ifd->dev.driver = NULL;
+		slim_ifd->ctrl = btfmslim->slim_pgd->ctrl; //slimbus controller structure.
+		slim_ifd->is_laddr_valid = false;
+		slim_ifd->e_addr.manf_id = SLIM_MANF_ID_QCOM;
+		slim_ifd->e_addr.prod_code = SLIM_PROD_CODE;
+		slim_ifd->e_addr.dev_index = 0x0;
+		slim_ifd->e_addr.instance = 0x0;
+		slim_ifd->laddr = 0x0;
+	} else if (chipset_ver == QCA_MOSELLE_SOC_ID_0100 ||
+		chipset_ver == QCA_MOSELLE_SOC_ID_0110 ||
+		chipset_ver == QCA_MOSELLE_SOC_ID_0120) {
+		BTFMSLIM_INFO("chipset is Moselle, overwriting EA");
+		slim->is_laddr_valid = false;
+		slim->e_addr.manf_id = SLIM_MANF_ID_QCOM;
+		slim->e_addr.prod_code = 0x222;
+		slim->e_addr.dev_index = 0x01;
+		slim->e_addr.instance = 0x0;
+		/* we are doing this to indicate that this is not a child node
+		 * (doesn't have call back functions). Needed only for querying
+		 * logical address.
+		 */
+		slim_ifd->dev.driver = NULL;
+		slim_ifd->ctrl = btfmslim->slim_pgd->ctrl; //slimbus controller structure.
+		slim_ifd->is_laddr_valid = false;
+		slim_ifd->e_addr.manf_id = SLIM_MANF_ID_QCOM;
+		slim_ifd->e_addr.prod_code = 0x222;
+		slim_ifd->e_addr.dev_index = 0x0;
+		slim_ifd->e_addr.instance = 0x0;
+		slim_ifd->laddr = 0x0;
+	} else if (chipset_ver == QCA_HAMILTON_SOC_ID_0100 ||
+		chipset_ver ==  QCA_HAMILTON_SOC_ID_0101 ||
+		chipset_ver ==  QCA_HAMILTON_SOC_ID_0200) {
+		BTFMSLIM_INFO("chipset is Hamliton, overwriting EA");
+		slim->is_laddr_valid = false;
+		slim->e_addr.manf_id = SLIM_MANF_ID_QCOM;
+		slim->e_addr.prod_code = 0x220;
+		slim->e_addr.dev_index = 0x01;
+		slim->e_addr.instance = 0x0;
+		/* we are doing this to indicate that this is not a child node
+		 * (doesn't have call back functions). Needed only for querying
+		 * logical address.
+		 */
+		slim_ifd->dev.driver = NULL;
+		slim_ifd->ctrl = btfmslim->slim_pgd->ctrl; //slimbus controller structure.
+		slim_ifd->is_laddr_valid = false;
+		slim_ifd->e_addr.manf_id = SLIM_MANF_ID_QCOM;
+		slim_ifd->e_addr.prod_code = 0x220;
+		slim_ifd->e_addr.dev_index = 0x0;
+		slim_ifd->e_addr.instance = 0x0;
+		slim_ifd->laddr = 0x0;
+	} else if (chipset_ver == QCA_CHEROKEE_SOC_ID_0200 ||
+		chipset_ver ==  QCA_CHEROKEE_SOC_ID_0201  ||
+		chipset_ver ==  QCA_CHEROKEE_SOC_ID_0210  ||
+		chipset_ver ==  QCA_CHEROKEE_SOC_ID_0211  ||
+		chipset_ver ==  QCA_CHEROKEE_SOC_ID_0310  ||
+		chipset_ver ==  QCA_CHEROKEE_SOC_ID_0320  ||
+		chipset_ver ==  QCA_CHEROKEE_SOC_ID_0320_UMC  ||
+		chipset_ver ==  QCA_APACHE_SOC_ID_0100  ||
+		chipset_ver ==  QCA_APACHE_SOC_ID_0110  ||
+		chipset_ver ==  QCA_APACHE_SOC_ID_0120 ||
+		chipset_ver ==  QCA_APACHE_SOC_ID_0121 ||
+		chipset_ver ==  QCA_COMANCHE_SOC_ID_0101 ||
+		chipset_ver ==  QCA_COMANCHE_SOC_ID_0110 ||
+		chipset_ver ==  QCA_COMANCHE_SOC_ID_0120 ||
+		chipset_ver ==  QCA_COMANCHE_SOC_ID_0130 ||
+		chipset_ver ==  QCA_COMANCHE_SOC_ID_4130 ||
+		chipset_ver ==  QCA_COMANCHE_SOC_ID_5120 ||
+		chipset_ver ==  QCA_COMANCHE_SOC_ID_5130) {
+		BTFMSLIM_INFO("chipset is Chk/Apache/CMC, overwriting EA");
+		slim->is_laddr_valid = false;
+		slim->e_addr.manf_id = SLIM_MANF_ID_QCOM;
+		slim->e_addr.prod_code = 0x220;
+		slim->e_addr.dev_index = 0x01;
+		slim->e_addr.instance = 0x0;
+		/* we are doing this to indicate that this is not a child node
+		 * (doesn't have call back functions). Needed only for querying
+		 * logical address.
+		 */
+		slim_ifd->dev.driver = NULL;
+		slim_ifd->ctrl = btfmslim->slim_pgd->ctrl; //slimbus controller structure.
+		slim_ifd->is_laddr_valid = false;
+		slim_ifd->e_addr.manf_id = SLIM_MANF_ID_QCOM;
+		slim_ifd->e_addr.prod_code = 0x220;
+		slim_ifd->e_addr.dev_index = 0x0;
+		slim_ifd->e_addr.instance = 0x0;
+		slim_ifd->laddr = 0x0;
+	}
+	BTFMSLIM_INFO(
+		"PGD Enum Addr: manu id:%.02x prod code:%.02x dev idx:%.02x instance:%.02x",
+		slim->e_addr.manf_id, slim->e_addr.prod_code,
+		slim->e_addr.dev_index, slim->e_addr.instance);
+
+	BTFMSLIM_INFO(
+		"IFD Enum Addr: manu id:%.02x prod code:%.02x dev idx:%.02x instance:%.02x",
+		slim_ifd->e_addr.manf_id, slim_ifd->e_addr.prod_code,
+		slim_ifd->e_addr.dev_index, slim_ifd->e_addr.instance);
 
 	/* Assign Logical Address for PGD (Ported Generic Device)
-	  * enumeration address
-	  */
+	 * enumeration address
+	 */
 	ret = btfm_slim_get_logical_addr(btfmslim->slim_pgd);
 	if (ret) {
-		BTFMSLIM_ERR("failed to get slimbus %s logical address: %d",
-		       btfmslim->slim_pgd->name, ret);
+		BTFMSLIM_ERR("failed to get slimbus logical address: %d", ret);
 		goto error;
 	}
 
 	/* Assign Logical Address for Ported Generic Device
-	  * enumeration address
-	  */
+	 * enumeration address
+	 */
 	ret = btfm_slim_get_logical_addr(&btfmslim->slim_ifd);
 	if (ret) {
-		BTFMSLIM_ERR("failed to get slimbus %s logical address: %d",
-		       btfmslim->slim_ifd.name, ret);
+		BTFMSLIM_ERR("failed to get slimbus logical address: %d", ret);
 		goto error;
 	}
 
-	/* Allocate ports with logical address to get port handler from
-	  * slimbus driver
-	  */
 	ret = btfm_slim_alloc_port(btfmslim);
-	if (ret)
+	if (ret != 0)
 		goto error;
-
 	/* Start vendor specific initialization and get port information */
 	if (btfmslim->vendor_init)
 		ret = btfmslim->vendor_init(btfmslim);
 
 	/* Only when all registers read/write successfully, it set to
-	  * enabled status
-	  */
+	 * enabled status
+	 */
 	btfmslim->enabled = 1;
 error:
 	mutex_unlock(&btfmslim->io_lock);
@@ -382,6 +490,7 @@ int btfm_slim_hw_deinit(struct btfmslim *btfmslim)
 {
 	int ret = 0;
 
+	BTFMSLIM_INFO("");
 	if (!btfmslim)
 		return -EINVAL;
 
@@ -395,65 +504,51 @@ int btfm_slim_hw_deinit(struct btfmslim *btfmslim)
 	return ret;
 }
 
-static int btfm_slim_get_dt_info(struct btfmslim *btfmslim)
+static int btfm_slim_status(struct slim_device *sdev,
+				enum slim_device_status status)
 {
+	struct device *dev = &sdev->dev;
+	struct btfmslim *btfm_slim;
 	int ret = 0;
-	struct slim_device *slim = btfmslim->slim_pgd;
-	struct slim_device *slim_ifd = &btfmslim->slim_ifd;
-	struct property *prop;
-
-	if (!slim || !slim_ifd)
-		return -EINVAL;
-
-	if (slim->dev.of_node) {
-		BTFMSLIM_DBG("Platform data from device tree (%s)",
-			slim->name);
-		ret = of_property_read_string(slim->dev.of_node,
-			"qcom,btfm-slim-ifd", &slim_ifd->name);
-		if (ret) {
-			BTFMSLIM_ERR("Looking up %s property in node %s failed",
-				"qcom,btfm-slim-ifd",
-				 slim->dev.of_node->full_name);
-			return -ENODEV;
-		}
-		BTFMSLIM_DBG("qcom,btfm-slim-ifd (%s)", slim_ifd->name);
-
-		prop = of_find_property(slim->dev.of_node,
-				"qcom,btfm-slim-ifd-elemental-addr", NULL);
-		if (!prop) {
-			BTFMSLIM_ERR("Looking up %s property in node %s failed",
-				"qcom,btfm-slim-ifd-elemental-addr",
-				slim->dev.of_node->full_name);
-			return -ENODEV;
-		} else if (prop->length != 6) {
-			BTFMSLIM_ERR(
-				"invalid codec slim ifd addr. addr length= %d",
-				prop->length);
-			return -ENODEV;
-		}
-		memcpy(slim_ifd->e_addr, prop->value, 6);
-		BTFMSLIM_DBG(
-			"PGD Enum Addr: %.02x:%.02x:%.02x:%.02x:%.02x: %.02x",
-			slim->e_addr[0], slim->e_addr[1], slim->e_addr[2],
-			slim->e_addr[3], slim->e_addr[4], slim->e_addr[5]);
-		BTFMSLIM_DBG(
-			"IFD Enum Addr: %.02x:%.02x:%.02x:%.02x:%.02x: %.02x",
-			slim_ifd->e_addr[0], slim_ifd->e_addr[1],
-			slim_ifd->e_addr[2], slim_ifd->e_addr[3],
-			slim_ifd->e_addr[4], slim_ifd->e_addr[5]);
-	} else {
-		BTFMSLIM_ERR("Platform data is not valid");
-	}
+	btfm_slim = dev_get_drvdata(dev);
+	ret = btfm_slim_register_codec(btfm_slim);
+	if (ret)
+		BTFMSLIM_ERR("error, registering slimbus codec failed");
 
 	return ret;
 }
+
+static long btfm_slim_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	int ret = 0;
+
+	switch (cmd) {
+	case BT_CMD_SLIM_TEST:
+		BTFMSLIM_INFO("cmd BT_CMD_SLIM_TEST, call btfm_slim_hw_init");
+		ret = btfm_slim_hw_init(btfm_slim_drv_data);
+		break;
+	}
+	return ret;
+}
+
+static const struct file_operations bt_dev_fops = {
+	.unlocked_ioctl = btfm_slim_ioctl,
+	.compat_ioctl = btfm_slim_ioctl,
+};
 
 static int btfm_slim_probe(struct slim_device *slim)
 {
 	int ret = 0;
 	struct btfmslim *btfm_slim;
 
+	pr_info("%s: name = %s\n", __func__, dev_name(&slim->dev));
+	/*this as true during the probe then slimbus won't check for logical address*/
+	slim->is_laddr_valid = true;
+	dev_set_name(&slim->dev, "%s", "btfmslim_slave");
+	pr_info("%s: name = %s\n", __func__, dev_name(&slim->dev));
+
 	BTFMSLIM_DBG("");
+	BTFMSLIM_ERR("is_laddr_valid is true");
 	if (!slim->ctrl)
 		return -EINVAL;
 
@@ -465,7 +560,6 @@ static int btfm_slim_probe(struct slim_device *slim)
 	}
 	/* BTFM Slimbus driver control data configuration */
 	btfm_slim->slim_pgd = slim;
-
 	/* Assign vendor specific function */
 	btfm_slim->rx_chs = SLIM_SLAVE_RXPORT;
 	btfm_slim->tx_chs = SLIM_SLAVE_TXPORT;
@@ -475,56 +569,80 @@ static int btfm_slim_probe(struct slim_device *slim)
 	/* Created Mutex for slimbus data transfer */
 	mutex_init(&btfm_slim->io_lock);
 	mutex_init(&btfm_slim->xfer_lock);
-
-	/* Get Device tree node for Interface Device enumeration address */
-	ret = btfm_slim_get_dt_info(btfm_slim);
-	if (ret)
-		goto dealloc;
-
-	/* Add Interface Device for slimbus driver */
-	ret = slim_add_device(btfm_slim->slim_pgd->ctrl, &btfm_slim->slim_ifd);
-	if (ret) {
-		BTFMSLIM_ERR("error, adding SLIMBUS device failed");
-		goto dealloc;
-	}
-
-	/* Platform driver data allocation */
-	slim->dev.platform_data = btfm_slim;
+	dev_set_drvdata(&slim->dev, btfm_slim);
 
 	/* Driver specific data allocation */
 	btfm_slim->dev = &slim->dev;
-	ret = btfm_slim_register_codec(&slim->dev);
+	ret = btpower_register_slimdev(&slim->dev);
+	if (ret < 0) {
+		btfm_slim_unregister_codec(&slim->dev);
+		ret = -EPROBE_DEFER;
+		goto dealloc;
+	}
+
+	btfm_slim_drv_data = btfm_slim;
+	btfm_slim_major = register_chrdev(0, "btfm_slim", &bt_dev_fops);
+	if (btfm_slim_major < 0) {
+		BTFMSLIM_ERR("%s: failed to allocate char dev\n", __func__);
+		ret = -1;
+		goto register_err;
+	}
+
+	btfm_slim_class = class_create(THIS_MODULE, "btfmslim-dev");
+	if (IS_ERR(btfm_slim_class)) {
+		BTFMSLIM_ERR("%s: coudn't create class\n", __func__);
+		ret = -1;
+		goto class_err;
+	}
+
+	if (device_create(btfm_slim_class, NULL, MKDEV(btfm_slim_major, 0),
+		NULL, "btfmslim") == NULL) {
+		BTFMSLIM_ERR("%s: failed to allocate char dev\n", __func__);
+		ret = -1;
+		goto device_err;
+	}
 	return ret;
 
+device_err:
+	class_destroy(btfm_slim_class);
+class_err:
+	unregister_chrdev(btfm_slim_major, "btfm_slim");
+register_err:
+	btfm_slim_unregister_codec(&slim->dev);
 dealloc:
 	mutex_destroy(&btfm_slim->io_lock);
 	mutex_destroy(&btfm_slim->xfer_lock);
 	kfree(btfm_slim);
 	return ret;
 }
-static int btfm_slim_remove(struct slim_device *slim)
-{
-	struct btfmslim *btfm_slim = slim->dev.platform_data;
 
+static void btfm_slim_remove(struct slim_device *slim)
+{
+	struct device *dev = &slim->dev;
+	struct btfmslim *btfm_slim = dev_get_drvdata(dev);
 	BTFMSLIM_DBG("");
 	mutex_destroy(&btfm_slim->io_lock);
 	mutex_destroy(&btfm_slim->xfer_lock);
-	snd_soc_unregister_codec(&slim->dev);
-
-	BTFMSLIM_DBG("slim_remove_device() - btfm_slim->slim_ifd");
-	slim_remove_device(&btfm_slim->slim_ifd);
-
-	BTFMSLIM_DBG("slim_remove_device() - btfm_slim->slim_pgd");
-	slim_remove_device(slim);
-
+	snd_soc_unregister_component(&slim->dev);
 	kfree(btfm_slim);
-	return 0;
 }
 
 static const struct slim_device_id btfm_slim_id[] = {
-	{SLIM_SLAVE_COMPATIBLE_STR, 0},
-	{}
+	{
+	.manf_id = SLIM_MANF_ID_QCOM,
+	.prod_code = SLIM_PROD_CODE,
+	.dev_index = 0x1,
+	.instance = 0x0,
+	},
+	{
+	.manf_id = SLIM_MANF_ID_QCOM,
+	.prod_code = 0x220,
+	.dev_index = 0x1,
+	.instance = 0x0,
+	}
 };
+
+MODULE_DEVICE_TABLE(slim, btfm_slim_id);
 
 static struct slim_driver btfm_slim_driver = {
 	.driver = {
@@ -532,29 +650,11 @@ static struct slim_driver btfm_slim_driver = {
 		.owner = THIS_MODULE,
 	},
 	.probe = btfm_slim_probe,
+	.device_status = btfm_slim_status,
 	.remove = btfm_slim_remove,
 	.id_table = btfm_slim_id
 };
 
-static int __init btfm_slim_init(void)
-{
-	int ret;
-
-	BTFMSLIM_DBG("");
-	ret = slim_driver_register(&btfm_slim_driver);
-	if (ret)
-		BTFMSLIM_ERR("Failed to register slimbus driver: %d", ret);
-	return ret;
-}
-
-static void __exit btfm_slim_exit(void)
-{
-	BTFMSLIM_DBG("");
-	slim_driver_unregister(&btfm_slim_driver);
-}
-
-module_init(btfm_slim_init);
-module_exit(btfm_slim_exit);
-
+module_slim_driver(btfm_slim_driver);
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("BTFM Slimbus Slave driver");

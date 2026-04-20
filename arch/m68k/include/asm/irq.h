@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _M68K_IRQ_H_
 #define _M68K_IRQ_H_
 
@@ -64,8 +65,7 @@ extern void m68k_setup_auto_interrupt(void (*handler)(unsigned int,
 						      struct pt_regs *));
 extern void m68k_setup_user_interrupt(unsigned int vec, unsigned int cnt);
 extern void m68k_setup_irq_controller(struct irq_chip *,
-				      void (*handle)(unsigned int irq,
-						     struct irq_desc *desc),
+				      void (*handle)(struct irq_desc *desc),
 				      unsigned int irq, unsigned int cnt);
 
 extern unsigned int irq_canonicalize(unsigned int irq);

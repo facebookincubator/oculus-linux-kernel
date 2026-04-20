@@ -1,11 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+#include <linux/types.h>
+#include <linux/device.h>
+#include <target/target_core_base.h> /* struct se_cmd */
+
 #define TCM_LOOP_VERSION		"v2.1-rc2"
 #define TL_WWN_ADDR_LEN			256
 #define TL_TPGS_PER_HBA			32
-
-/*
- * Used in tcm_loop_driver_probe() for struct Scsi_Host->max_cmd_len
- */
-#define TL_SCSI_MAX_CMD_LEN		32
 
 struct tcm_loop_cmd {
 	/* State of Linux/SCSI CDB+Data descriptor */
@@ -17,13 +17,9 @@ struct tcm_loop_cmd {
 	/* The TCM I/O descriptor that is accessed via container_of() */
 	struct se_cmd tl_se_cmd;
 	struct work_struct work;
+	struct completion tmr_done;
 	/* Sense buffer that will be mapped into outgoing status */
 	unsigned char tl_sense_buf[TRANSPORT_SENSE_BUFFER];
-};
-
-struct tcm_loop_tmr {
-	atomic_t tmr_complete;
-	wait_queue_head_t tl_tmr_wait;
 };
 
 struct tcm_loop_nexus {
@@ -33,16 +29,13 @@ struct tcm_loop_nexus {
 	struct se_session *se_sess;
 };
 
-struct tcm_loop_nacl {
-	struct se_node_acl se_node_acl;
-};
-
 #define TCM_TRANSPORT_ONLINE 0
 #define TCM_TRANSPORT_OFFLINE 1
 
 struct tcm_loop_tpg {
 	unsigned short tl_tpgt;
 	unsigned short tl_transport_status;
+	enum target_prot_type tl_fabric_prot_type;
 	atomic_t tl_tpg_port_count;
 	struct se_portal_group tl_se_tpg;
 	struct tcm_loop_hba *tl_hba;

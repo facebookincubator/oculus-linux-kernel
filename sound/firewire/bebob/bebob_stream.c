@@ -1,14 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * bebob_stream.c - a part of driver for BeBoB based devices
  *
  * Copyright (c) 2013-2014 Takashi Sakamoto
- *
- * Licensed under the terms of the GNU General Public License, version 2.
  */
 
 #include "./bebob.h"
 
-#define CALLBACK_TIMEOUT	1000
+#define CALLBACK_TIMEOUT	2500
 #define FW_ISO_RESOURCE_DELAY	1000
 
 /*
@@ -118,15 +117,14 @@ end:
 	return err;
 }
 
-int
-snd_bebob_stream_check_internal_clock(struct snd_bebob *bebob, bool *internal)
+int snd_bebob_stream_get_clock_src(struct snd_bebob *bebob,
+				   enum snd_bebob_clock_type *src)
 {
-	struct snd_bebob_clock_spec *clk_spec = bebob->spec->clock;
+	const struct snd_bebob_clock_spec *clk_spec = bebob->spec->clock;
 	u8 addr[AVC_BRIDGECO_ADDR_BYTES], input[7];
 	unsigned int id;
+	enum avc_bridgeco_plug_type type;
 	int err = 0;
-
-	*internal = false;
 
 	/* 1.The device has its own operation to switch source of clock */
 	if (clk_spec) {
@@ -145,10 +143,7 @@ snd_bebob_stream_check_internal_clock(struct snd_bebob *bebob, bool *internal)
 			goto end;
 		}
 
-		if (strncmp(clk_spec->labels[id], SND_BEBOB_CLOCK_INTERNAL,
-			    strlen(SND_BEBOB_CLOCK_INTERNAL)) == 0)
-			*internal = true;
-
+		*src = clk_spec->types[id];
 		goto end;
 	}
 
@@ -157,7 +152,7 @@ snd_bebob_stream_check_internal_clock(struct snd_bebob *bebob, bool *internal)
 	 *   to use internal clock always
 	 */
 	if (bebob->sync_input_plug < 0) {
-		*internal = true;
+		*src = SND_BEBOB_CLOCK_TYPE_INTERNAL;
 		goto end;
 	}
 
@@ -180,24 +175,84 @@ snd_bebob_stream_check_internal_clock(struct snd_bebob *bebob, bool *internal)
 	 * Here check the first field. This field is used for direction.
 	 */
 	if (input[0] == 0xff) {
-		*internal = true;
+		*src = SND_BEBOB_CLOCK_TYPE_INTERNAL;
 		goto end;
 	}
 
-	/*
-	 * If source of clock is internal CSR, Music Sub Unit Sync Input is
-	 * a destination of Music Sub Unit Sync Output.
-	 */
-	*internal = ((input[0] == AVC_BRIDGECO_PLUG_DIR_OUT) &&
-		     (input[1] == AVC_BRIDGECO_PLUG_MODE_SUBUNIT) &&
-		     (input[2] == 0x0c) &&
-		     (input[3] == 0x00));
+	/* The source from any output plugs is for one purpose only. */
+	if (input[0] == AVC_BRIDGECO_PLUG_DIR_OUT) {
+		/*
+		 * In BeBoB architecture, the source from music subunit may
+		 * bypass from oPCR[0]. This means that this source gives
+		 * synchronization to IEEE 1394 cycle start packet.
+		 */
+		if (input[1] == AVC_BRIDGECO_PLUG_MODE_SUBUNIT &&
+		    input[2] == 0x0c) {
+			*src = SND_BEBOB_CLOCK_TYPE_INTERNAL;
+			goto end;
+		}
+	/* The source from any input units is for several purposes. */
+	} else if (input[1] == AVC_BRIDGECO_PLUG_MODE_UNIT) {
+		if (input[2] == AVC_BRIDGECO_PLUG_UNIT_ISOC) {
+			if (input[3] == 0x00) {
+				/*
+				 * This source comes from iPCR[0]. This means
+				 * that presentation timestamp calculated by
+				 * SYT series of the received packets. In
+				 * short, this driver is the master of
+				 * synchronization.
+				 */
+				*src = SND_BEBOB_CLOCK_TYPE_SYT;
+				goto end;
+			} else {
+				/*
+				 * This source comes from iPCR[1-29]. This
+				 * means that the synchronization stream is not
+				 * the Audio/MIDI compound stream.
+				 */
+				*src = SND_BEBOB_CLOCK_TYPE_EXTERNAL;
+				goto end;
+			}
+		} else if (input[2] == AVC_BRIDGECO_PLUG_UNIT_EXT) {
+			/* Check type of this plug.  */
+			avc_bridgeco_fill_unit_addr(addr,
+						    AVC_BRIDGECO_PLUG_DIR_IN,
+						    AVC_BRIDGECO_PLUG_UNIT_EXT,
+						    input[3]);
+			err = avc_bridgeco_get_plug_type(bebob->unit, addr,
+							 &type);
+			if (err < 0)
+				goto end;
+
+			if (type == AVC_BRIDGECO_PLUG_TYPE_DIG) {
+				/*
+				 * SPDIF/ADAT or sometimes (not always) word
+				 * clock.
+				 */
+				*src = SND_BEBOB_CLOCK_TYPE_EXTERNAL;
+				goto end;
+			} else if (type == AVC_BRIDGECO_PLUG_TYPE_SYNC) {
+				/* Often word clock. */
+				*src = SND_BEBOB_CLOCK_TYPE_EXTERNAL;
+				goto end;
+			} else if (type == AVC_BRIDGECO_PLUG_TYPE_ADDITION) {
+				/*
+				 * Not standard.
+				 * Mostly, additional internal clock.
+				 */
+				*src = SND_BEBOB_CLOCK_TYPE_INTERNAL;
+				goto end;
+			}
+		}
+	}
+
+	/* Not supported. */
+	err = -EIO;
 end:
 	return err;
 }
 
-static unsigned int
-map_data_channels(struct snd_bebob *bebob, struct amdtp_stream *s)
+static int map_data_channels(struct snd_bebob *bebob, struct amdtp_stream *s)
 {
 	unsigned int sec, sections, ch, channels;
 	unsigned int pcm, midi, location;
@@ -283,7 +338,7 @@ map_data_channels(struct snd_bebob *bebob, struct amdtp_stream *s)
 					err = -ENOSYS;
 					goto end;
 				}
-				s->midi_position = stm_pos;
+				amdtp_am824_set_midi_position(s, stm_pos);
 				midi = stm_pos;
 				break;
 			/* for PCM data channel */
@@ -299,11 +354,12 @@ map_data_channels(struct snd_bebob *bebob, struct amdtp_stream *s)
 			case 0x09:	/* Digital */
 			default:
 				location = pcm + sec_loc;
-				if (location >= AMDTP_MAX_CHANNELS_FOR_PCM) {
+				if (location >= AM824_MAX_CHANNELS_FOR_PCM) {
 					err = -ENOSYS;
 					goto end;
 				}
-				s->pcm_positions[location] = stm_pos;
+				amdtp_am824_set_pcm_position(s, location,
+							     stm_pos);
 				break;
 			}
 		}
@@ -315,24 +371,6 @@ map_data_channels(struct snd_bebob *bebob, struct amdtp_stream *s)
 	}
 end:
 	kfree(buf);
-	return err;
-}
-
-static int
-init_both_connections(struct snd_bebob *bebob)
-{
-	int err;
-
-	err = cmp_connection_init(&bebob->in_conn,
-				  bebob->unit, CMP_INPUT, 0);
-	if (err < 0)
-		goto end;
-
-	err = cmp_connection_init(&bebob->out_conn,
-				  bebob->unit, CMP_OUTPUT, 0);
-	if (err < 0)
-		cmp_connection_destroy(&bebob->in_conn);
-end:
 	return err;
 }
 
@@ -360,77 +398,36 @@ check_connection_used_by_others(struct snd_bebob *bebob, struct amdtp_stream *s)
 	return err;
 }
 
-static int
-make_both_connections(struct snd_bebob *bebob, unsigned int rate)
+static int make_both_connections(struct snd_bebob *bebob)
 {
-	int index, pcm_channels, midi_channels, err = 0;
+	int err = 0;
 
-	if (bebob->connected)
-		goto end;
-
-	/* confirm params for both streams */
-	err = get_formation_index(rate, &index);
+	err = cmp_connection_establish(&bebob->out_conn);
 	if (err < 0)
-		goto end;
-	pcm_channels = bebob->tx_stream_formations[index].pcm;
-	midi_channels = bebob->tx_stream_formations[index].midi;
-	amdtp_stream_set_parameters(&bebob->tx_stream,
-				    rate, pcm_channels, midi_channels * 8);
-	pcm_channels = bebob->rx_stream_formations[index].pcm;
-	midi_channels = bebob->rx_stream_formations[index].midi;
-	amdtp_stream_set_parameters(&bebob->rx_stream,
-				    rate, pcm_channels, midi_channels * 8);
+		return err;
 
-	/* establish connections for both streams */
-	err = cmp_connection_establish(&bebob->out_conn,
-			amdtp_stream_get_max_payload(&bebob->tx_stream));
-	if (err < 0)
-		goto end;
-	err = cmp_connection_establish(&bebob->in_conn,
-			amdtp_stream_get_max_payload(&bebob->rx_stream));
+	err = cmp_connection_establish(&bebob->in_conn);
 	if (err < 0) {
 		cmp_connection_break(&bebob->out_conn);
-		goto end;
+		return err;
 	}
 
-	bebob->connected = true;
-end:
-	return err;
+	return 0;
 }
 
-static void
-break_both_connections(struct snd_bebob *bebob)
+static void break_both_connections(struct snd_bebob *bebob)
 {
 	cmp_connection_break(&bebob->in_conn);
 	cmp_connection_break(&bebob->out_conn);
 
-	bebob->connected = false;
-
-	/* These models seems to be in transition state for a longer time. */
-	if (bebob->maudio_special_quirk != NULL)
-		msleep(200);
+	// These models seem to be in transition state for a longer time. When
+	// accessing in the state, any transactions is corrupted. In the worst
+	// case, the device is going to reboot.
+	if (bebob->version < 2)
+		msleep(600);
 }
 
-static void
-destroy_both_connections(struct snd_bebob *bebob)
-{
-	break_both_connections(bebob);
-
-	cmp_connection_destroy(&bebob->in_conn);
-	cmp_connection_destroy(&bebob->out_conn);
-}
-
-static int
-get_sync_mode(struct snd_bebob *bebob, enum cip_flags *sync_mode)
-{
-	/* currently this module doesn't support SYT-Match mode */
-	*sync_mode = CIP_SYNC_TO_DEVICE;
-	return 0;
-}
-
-static int
-start_stream(struct snd_bebob *bebob, struct amdtp_stream *stream,
-	     unsigned int rate)
+static int start_stream(struct snd_bebob *bebob, struct amdtp_stream *stream)
 {
 	struct cmp_connection *conn;
 	int err = 0;
@@ -440,305 +437,307 @@ start_stream(struct snd_bebob *bebob, struct amdtp_stream *stream,
 	else
 		conn = &bebob->out_conn;
 
-	/* channel mapping */
+	// channel mapping.
 	if (bebob->maudio_special_quirk == NULL) {
 		err = map_data_channels(bebob, stream);
 		if (err < 0)
-			goto end;
+			return err;
 	}
 
-	/* start amdtp stream */
-	err = amdtp_stream_start(stream,
-				 conn->resources.channel,
-				 conn->speed);
-end:
-	return err;
+	err = cmp_connection_establish(conn);
+	if (err < 0)
+		return err;
+
+	return amdtp_domain_add_stream(&bebob->domain, stream,
+				       conn->resources.channel, conn->speed);
+}
+
+static int init_stream(struct snd_bebob *bebob, struct amdtp_stream *stream)
+{
+	enum amdtp_stream_direction dir_stream;
+	struct cmp_connection *conn;
+	enum cmp_direction dir_conn;
+	int err;
+
+	if (stream == &bebob->tx_stream) {
+		dir_stream = AMDTP_IN_STREAM;
+		conn = &bebob->out_conn;
+		dir_conn = CMP_OUTPUT;
+	} else {
+		dir_stream = AMDTP_OUT_STREAM;
+		conn = &bebob->in_conn;
+		dir_conn = CMP_INPUT;
+	}
+
+	err = cmp_connection_init(conn, bebob->unit, dir_conn, 0);
+	if (err < 0)
+		return err;
+
+	err = amdtp_am824_init(stream, bebob->unit, dir_stream, CIP_BLOCKING);
+	if (err < 0) {
+		cmp_connection_destroy(conn);
+		return err;
+	}
+
+	if (stream == &bebob->tx_stream) {
+		// BeBoB v3 transfers packets with these qurks:
+		//  - In the beginning of streaming, the value of dbc is
+		//    incremented even if no data blocks are transferred.
+		//  - The value of dbc is reset suddenly.
+		if (bebob->version > 2)
+			bebob->tx_stream.flags |= CIP_EMPTY_HAS_WRONG_DBC |
+						  CIP_SKIP_DBC_ZERO_CHECK;
+
+		// At high sampling rate, M-Audio special firmware transmits
+		// empty packet with the value of dbc incremented by 8 but the
+		// others are valid to IEC 61883-1.
+		if (bebob->maudio_special_quirk)
+			bebob->tx_stream.flags |= CIP_EMPTY_HAS_WRONG_DBC;
+	}
+
+	return 0;
+}
+
+static void destroy_stream(struct snd_bebob *bebob, struct amdtp_stream *stream)
+{
+	amdtp_stream_destroy(stream);
+
+	if (stream == &bebob->tx_stream)
+		cmp_connection_destroy(&bebob->out_conn);
+	else
+		cmp_connection_destroy(&bebob->in_conn);
 }
 
 int snd_bebob_stream_init_duplex(struct snd_bebob *bebob)
 {
 	int err;
 
-	err = init_both_connections(bebob);
+	err = init_stream(bebob, &bebob->tx_stream);
 	if (err < 0)
-		goto end;
+		return err;
 
-	err = amdtp_stream_init(&bebob->tx_stream, bebob->unit,
-				AMDTP_IN_STREAM, CIP_BLOCKING);
+	err = init_stream(bebob, &bebob->rx_stream);
 	if (err < 0) {
-		amdtp_stream_destroy(&bebob->tx_stream);
-		destroy_both_connections(bebob);
-		goto end;
+		destroy_stream(bebob, &bebob->tx_stream);
+		return err;
 	}
-	/* See comments in next function */
-	init_completion(&bebob->bus_reset);
-	bebob->tx_stream.flags |= CIP_SKIP_INIT_DBC_CHECK;
-	/*
-	 * At high sampling rate, M-Audio special firmware transmits empty
-	 * packet with the value of dbc incremented by 8 but the others are
-	 * valid to IEC 61883-1.
-	 */
-	if (bebob->maudio_special_quirk)
-		bebob->tx_stream.flags |= CIP_EMPTY_HAS_WRONG_DBC;
 
-	err = amdtp_stream_init(&bebob->rx_stream, bebob->unit,
-				AMDTP_OUT_STREAM, CIP_BLOCKING);
+	err = amdtp_domain_init(&bebob->domain);
 	if (err < 0) {
-		amdtp_stream_destroy(&bebob->tx_stream);
-		amdtp_stream_destroy(&bebob->rx_stream);
-		destroy_both_connections(bebob);
+		destroy_stream(bebob, &bebob->tx_stream);
+		destroy_stream(bebob, &bebob->rx_stream);
 	}
-	/*
-	 * The firmware for these devices ignore MIDI messages in more than
-	 * first 8 data blocks of an received AMDTP packet.
-	 */
-	if (bebob->spec == &maudio_fw410_spec ||
-	    bebob->spec == &maudio_special_spec)
-		bebob->rx_stream.rx_blocks_for_midi = 8;
-end:
+
 	return err;
 }
 
-int snd_bebob_stream_start_duplex(struct snd_bebob *bebob, unsigned int rate)
+static int keep_resources(struct snd_bebob *bebob, struct amdtp_stream *stream,
+			  unsigned int rate, unsigned int index)
 {
-	struct snd_bebob_rate_spec *rate_spec = bebob->spec->rate;
-	struct amdtp_stream *master, *slave;
-	atomic_t *slave_substreams;
-	enum cip_flags sync_mode;
-	unsigned int curr_rate;
-	bool updated = false;
-	int err = 0;
+	unsigned int pcm_channels;
+	unsigned int midi_ports;
+	struct cmp_connection *conn;
+	int err;
 
-	/*
-	 * Normal BeBoB firmware has a quirk at bus reset to transmits packets
-	 * with discontinuous value in dbc field.
-	 *
-	 * This 'struct completion' is used to call .update() at first to update
-	 * connections/streams. Next following codes handle streaming error.
-	 */
-	if (amdtp_streaming_error(&bebob->tx_stream)) {
-		if (completion_done(&bebob->bus_reset))
-			reinit_completion(&bebob->bus_reset);
-
-		updated = (wait_for_completion_interruptible_timeout(
-				&bebob->bus_reset,
-				msecs_to_jiffies(FW_ISO_RESOURCE_DELAY)) > 0);
-	}
-
-	mutex_lock(&bebob->mutex);
-
-	/* Need no substreams */
-	if (atomic_read(&bebob->playback_substreams) == 0 &&
-	    atomic_read(&bebob->capture_substreams)  == 0)
-		goto end;
-
-	err = get_sync_mode(bebob, &sync_mode);
-	if (err < 0)
-		goto end;
-	if (sync_mode == CIP_SYNC_TO_DEVICE) {
-		master = &bebob->tx_stream;
-		slave  = &bebob->rx_stream;
-		slave_substreams = &bebob->playback_substreams;
+	if (stream == &bebob->tx_stream) {
+		pcm_channels = bebob->tx_stream_formations[index].pcm;
+		midi_ports = bebob->midi_input_ports;
+		conn = &bebob->out_conn;
 	} else {
-		master = &bebob->rx_stream;
-		slave  = &bebob->tx_stream;
-		slave_substreams = &bebob->capture_substreams;
+		pcm_channels = bebob->rx_stream_formations[index].pcm;
+		midi_ports = bebob->midi_output_ports;
+		conn = &bebob->in_conn;
 	}
 
-	/*
-	 * Considering JACK/FFADO streaming:
-	 * TODO: This can be removed hwdep functionality becomes popular.
-	 */
-	err = check_connection_used_by_others(bebob, master);
+	err = amdtp_am824_set_parameters(stream, rate, pcm_channels, midi_ports, false);
 	if (err < 0)
-		goto end;
+		return err;
 
-	/*
-	 * packet queueing error or detecting discontinuity
-	 *
-	 * At bus reset, connections should not be broken here. So streams need
-	 * to be re-started. This is a reason to use SKIP_INIT_DBC_CHECK flag.
-	 */
-	if (amdtp_streaming_error(master))
-		amdtp_stream_stop(master);
-	if (amdtp_streaming_error(slave))
-		amdtp_stream_stop(slave);
-	if (!updated &&
-	    !amdtp_stream_running(master) && !amdtp_stream_running(slave))
-		break_both_connections(bebob);
+	return cmp_connection_reserve(conn, amdtp_stream_get_max_payload(stream));
+}
 
-	/* stop streams if rate is different */
-	err = rate_spec->get(bebob, &curr_rate);
-	if (err < 0) {
-		dev_err(&bebob->unit->device,
-			"fail to get sampling rate: %d\n", err);
-		goto end;
-	}
+int snd_bebob_stream_reserve_duplex(struct snd_bebob *bebob, unsigned int rate,
+				    unsigned int frames_per_period,
+				    unsigned int frames_per_buffer)
+{
+	unsigned int curr_rate;
+	int err;
+
+	// Considering JACK/FFADO streaming:
+	// TODO: This can be removed hwdep functionality becomes popular.
+	err = check_connection_used_by_others(bebob, &bebob->rx_stream);
+	if (err < 0)
+		return err;
+
+	err = bebob->spec->rate->get(bebob, &curr_rate);
+	if (err < 0)
+		return err;
 	if (rate == 0)
 		rate = curr_rate;
-	if (rate != curr_rate) {
-		amdtp_stream_stop(master);
-		amdtp_stream_stop(slave);
+	if (curr_rate != rate) {
+		amdtp_domain_stop(&bebob->domain);
+		break_both_connections(bebob);
+
+		cmp_connection_release(&bebob->out_conn);
+		cmp_connection_release(&bebob->in_conn);
+	}
+
+	if (bebob->substreams_counter == 0 || curr_rate != rate) {
+		unsigned int index;
+
+		// NOTE:
+		// If establishing connections at first, Yamaha GO46
+		// (and maybe Terratec X24) don't generate sound.
+		//
+		// For firmware customized by M-Audio, refer to next NOTE.
+		err = bebob->spec->rate->set(bebob, rate);
+		if (err < 0) {
+			dev_err(&bebob->unit->device,
+				"fail to set sampling rate: %d\n",
+				err);
+			return err;
+		}
+
+		err = get_formation_index(rate, &index);
+		if (err < 0)
+			return err;
+
+		err = keep_resources(bebob, &bebob->tx_stream, rate, index);
+		if (err < 0)
+			return err;
+
+		err = keep_resources(bebob, &bebob->rx_stream, rate, index);
+		if (err < 0) {
+			cmp_connection_release(&bebob->out_conn);
+			return err;
+		}
+
+		err = amdtp_domain_set_events_per_period(&bebob->domain,
+					frames_per_period, frames_per_buffer);
+		if (err < 0) {
+			cmp_connection_release(&bebob->out_conn);
+			cmp_connection_release(&bebob->in_conn);
+			return err;
+		}
+	}
+
+	return 0;
+}
+
+int snd_bebob_stream_start_duplex(struct snd_bebob *bebob)
+{
+	int err;
+
+	// Need no substreams.
+	if (bebob->substreams_counter == 0)
+		return -EIO;
+
+	// packet queueing error or detecting discontinuity
+	if (amdtp_streaming_error(&bebob->rx_stream) ||
+	    amdtp_streaming_error(&bebob->tx_stream)) {
+		amdtp_domain_stop(&bebob->domain);
 		break_both_connections(bebob);
 	}
 
-	/* master should be always running */
-	if (!amdtp_stream_running(master)) {
-		amdtp_stream_set_sync(sync_mode, master, slave);
-		bebob->master = master;
+	if (!amdtp_stream_running(&bebob->rx_stream)) {
+		enum snd_bebob_clock_type src;
+		struct amdtp_stream *master, *slave;
+		unsigned int curr_rate;
+		unsigned int ir_delay_cycle;
 
-		/*
-		 * NOTE:
-		 * If establishing connections at first, Yamaha GO46
-		 * (and maybe Terratec X24) don't generate sound.
-		 *
-		 * For firmware customized by M-Audio, refer to next NOTE.
-		 */
-		if (bebob->maudio_special_quirk == NULL) {
-			err = rate_spec->set(bebob, rate);
-			if (err < 0) {
-				dev_err(&bebob->unit->device,
-					"fail to set sampling rate: %d\n",
-					err);
-				goto end;
-			}
+		if (bebob->maudio_special_quirk) {
+			err = bebob->spec->rate->get(bebob, &curr_rate);
+			if (err < 0)
+				return err;
 		}
 
-		err = make_both_connections(bebob, rate);
+		err = snd_bebob_stream_get_clock_src(bebob, &src);
 		if (err < 0)
-			goto end;
+			return err;
 
-		err = start_stream(bebob, master, rate);
-		if (err < 0) {
-			dev_err(&bebob->unit->device,
-				"fail to run AMDTP master stream:%d\n", err);
-			break_both_connections(bebob);
-			goto end;
+		if (src != SND_BEBOB_CLOCK_TYPE_SYT) {
+			master = &bebob->tx_stream;
+			slave = &bebob->rx_stream;
+		} else {
+			master = &bebob->rx_stream;
+			slave = &bebob->tx_stream;
 		}
 
-		/*
-		 * NOTE:
-		 * The firmware customized by M-Audio uses these commands to
-		 * start transmitting stream. This is not usual way.
-		 */
-		if (bebob->maudio_special_quirk != NULL) {
-			err = rate_spec->set(bebob, rate);
+		err = start_stream(bebob, master);
+		if (err < 0)
+			goto error;
+
+		err = start_stream(bebob, slave);
+		if (err < 0)
+			goto error;
+
+		// The device postpones start of transmission mostly for 1 sec
+		// after receives packets firstly. For safe, IR context starts
+		// 0.4 sec (=3200 cycles) later to version 1 or 2 firmware,
+		// 2.0 sec (=16000 cycles) for version 3 firmware. This is
+		// within 2.5 sec (=CALLBACK_TIMEOUT).
+		// Furthermore, some devices transfer isoc packets with
+		// discontinuous counter in the beginning of packet streaming.
+		// The delay has an effect to avoid detection of this
+		// discontinuity.
+		if (bebob->version < 2)
+			ir_delay_cycle = 3200;
+		else
+			ir_delay_cycle = 16000;
+		err = amdtp_domain_start(&bebob->domain, ir_delay_cycle);
+		if (err < 0)
+			goto error;
+
+		// NOTE:
+		// The firmware customized by M-Audio uses these commands to
+		// start transmitting stream. This is not usual way.
+		if (bebob->maudio_special_quirk) {
+			err = bebob->spec->rate->set(bebob, curr_rate);
 			if (err < 0) {
 				dev_err(&bebob->unit->device,
 					"fail to ensure sampling rate: %d\n",
 					err);
-				amdtp_stream_stop(master);
-				break_both_connections(bebob);
-				goto end;
+				goto error;
 			}
 		}
 
-		/* wait first callback */
-		if (!amdtp_stream_wait_callback(master, CALLBACK_TIMEOUT)) {
-			amdtp_stream_stop(master);
-			break_both_connections(bebob);
+		if (!amdtp_stream_wait_callback(&bebob->rx_stream,
+						CALLBACK_TIMEOUT) ||
+		    !amdtp_stream_wait_callback(&bebob->tx_stream,
+						CALLBACK_TIMEOUT)) {
 			err = -ETIMEDOUT;
-			goto end;
+			goto error;
 		}
 	}
 
-	/* start slave if needed */
-	if (atomic_read(slave_substreams) > 0 && !amdtp_stream_running(slave)) {
-		err = start_stream(bebob, slave, rate);
-		if (err < 0) {
-			dev_err(&bebob->unit->device,
-				"fail to run AMDTP slave stream:%d\n", err);
-			amdtp_stream_stop(master);
-			break_both_connections(bebob);
-			goto end;
-		}
-
-		/* wait first callback */
-		if (!amdtp_stream_wait_callback(slave, CALLBACK_TIMEOUT)) {
-			amdtp_stream_stop(slave);
-			amdtp_stream_stop(master);
-			break_both_connections(bebob);
-			err = -ETIMEDOUT;
-		}
-	}
-end:
-	mutex_unlock(&bebob->mutex);
+	return 0;
+error:
+	amdtp_domain_stop(&bebob->domain);
+	break_both_connections(bebob);
 	return err;
 }
 
 void snd_bebob_stream_stop_duplex(struct snd_bebob *bebob)
 {
-	struct amdtp_stream *master, *slave;
-	atomic_t *master_substreams, *slave_substreams;
-
-	if (bebob->master == &bebob->rx_stream) {
-		slave  = &bebob->tx_stream;
-		master = &bebob->rx_stream;
-		slave_substreams  = &bebob->capture_substreams;
-		master_substreams = &bebob->playback_substreams;
-	} else {
-		slave  = &bebob->rx_stream;
-		master = &bebob->tx_stream;
-		slave_substreams  = &bebob->playback_substreams;
-		master_substreams = &bebob->capture_substreams;
-	}
-
-	mutex_lock(&bebob->mutex);
-
-	if (atomic_read(slave_substreams) == 0) {
-		amdtp_stream_pcm_abort(slave);
-		amdtp_stream_stop(slave);
-
-		if (atomic_read(master_substreams) == 0) {
-			amdtp_stream_pcm_abort(master);
-			amdtp_stream_stop(master);
-			break_both_connections(bebob);
-		}
-	}
-
-	mutex_unlock(&bebob->mutex);
-}
-
-void snd_bebob_stream_update_duplex(struct snd_bebob *bebob)
-{
-	/* vs. XRUN recovery due to discontinuity at bus reset */
-	mutex_lock(&bebob->mutex);
-
-	if ((cmp_connection_update(&bebob->in_conn) < 0) ||
-	    (cmp_connection_update(&bebob->out_conn) < 0)) {
-		amdtp_stream_pcm_abort(&bebob->rx_stream);
-		amdtp_stream_pcm_abort(&bebob->tx_stream);
-		amdtp_stream_stop(&bebob->rx_stream);
-		amdtp_stream_stop(&bebob->tx_stream);
+	if (bebob->substreams_counter == 0) {
+		amdtp_domain_stop(&bebob->domain);
 		break_both_connections(bebob);
-	} else {
-		amdtp_stream_update(&bebob->rx_stream);
-		amdtp_stream_update(&bebob->tx_stream);
+
+		cmp_connection_release(&bebob->out_conn);
+		cmp_connection_release(&bebob->in_conn);
 	}
-
-	/* wake up stream_start_duplex() */
-	if (!completion_done(&bebob->bus_reset))
-		complete_all(&bebob->bus_reset);
-
-	mutex_unlock(&bebob->mutex);
 }
 
+/*
+ * This function should be called before starting streams or after stopping
+ * streams.
+ */
 void snd_bebob_stream_destroy_duplex(struct snd_bebob *bebob)
 {
-	mutex_lock(&bebob->mutex);
+	amdtp_domain_destroy(&bebob->domain);
 
-	amdtp_stream_pcm_abort(&bebob->rx_stream);
-	amdtp_stream_pcm_abort(&bebob->tx_stream);
-
-	amdtp_stream_stop(&bebob->rx_stream);
-	amdtp_stream_stop(&bebob->tx_stream);
-
-	amdtp_stream_destroy(&bebob->rx_stream);
-	amdtp_stream_destroy(&bebob->tx_stream);
-
-	destroy_both_connections(bebob);
-
-	mutex_unlock(&bebob->mutex);
+	destroy_stream(bebob, &bebob->tx_stream);
+	destroy_stream(bebob, &bebob->rx_stream);
 }
 
 /*
@@ -809,8 +808,8 @@ parse_stream_formation(u8 *buf, unsigned int len,
 		}
 	}
 
-	if (formation[i].pcm  > AMDTP_MAX_CHANNELS_FOR_PCM ||
-	    formation[i].midi > AMDTP_MAX_CHANNELS_FOR_MIDI)
+	if (formation[i].pcm  > AM824_MAX_CHANNELS_FOR_PCM ||
+	    formation[i].midi > AM824_MAX_CHANNELS_FOR_MIDI)
 		return -ENOSYS;
 
 	return 0;
@@ -904,7 +903,7 @@ end:
 
 int snd_bebob_stream_discover(struct snd_bebob *bebob)
 {
-	struct snd_bebob_clock_spec *clk_spec = bebob->spec->clock;
+	const struct snd_bebob_clock_spec *clk_spec = bebob->spec->clock;
 	u8 plugs[AVC_PLUG_INFO_BUF_BYTES], addr[AVC_BRIDGECO_ADDR_BYTES];
 	enum avc_bridgeco_plug_type type;
 	unsigned int i;
