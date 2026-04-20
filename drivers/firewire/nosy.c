@@ -1,20 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * nosy - Snoop mode driver for TI PCILynx 1394 controllers
  * Copyright (C) 2002-2007 Kristian Høgsberg
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
 #include <linux/device.h>
@@ -33,6 +20,7 @@
 #include <linux/sched.h> /* required for linux/wait.h */
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/time64.h>
 #include <linux/timex.h>
 #include <linux/uaccess.h>
 #include <linux/wait.h>
@@ -64,7 +52,7 @@ struct pcl {
 
 struct packet {
 	unsigned int length;
-	char data[0];
+	char data[];
 };
 
 struct packet_buffer {
@@ -160,10 +148,12 @@ packet_buffer_get(struct client *client, char __user *data, size_t user_length)
 	if (atomic_read(&buffer->size) == 0)
 		return -ENODEV;
 
-	/* FIXME: Check length <= user_length. */
+	length = buffer->head->length;
+
+	if (length > user_length)
+		return 0;
 
 	end = buffer->data + buffer->capacity;
-	length = buffer->head->length;
 
 	if (&buffer->head->data[length] < end) {
 		if (copy_to_user(data, buffer->head->data, length))
@@ -302,7 +292,7 @@ nosy_open(struct inode *inode, struct file *file)
 
 	file->private_data = client;
 
-	return nonseekable_open(inode, file);
+	return stream_open(inode, file);
 fail:
 	kfree(client);
 	lynx_put(lynx);
@@ -327,19 +317,19 @@ nosy_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static unsigned int
+static __poll_t
 nosy_poll(struct file *file, poll_table *pt)
 {
 	struct client *client = file->private_data;
-	unsigned int ret = 0;
+	__poll_t ret = 0;
 
 	poll_wait(file, &client->buffer.wait, pt);
 
 	if (atomic_read(&client->buffer.size) > 0)
-		ret = POLLIN | POLLRDNORM;
+		ret = EPOLLIN | EPOLLRDNORM;
 
 	if (list_empty(&client->lynx->link))
-		ret |= POLLHUP;
+		ret |= EPOLLHUP;
 
 	return ret;
 }
@@ -358,6 +348,7 @@ nosy_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct client *client = file->private_data;
 	spinlock_t *client_list_lock = &client->lynx->client_list_lock;
 	struct nosy_stats stats;
+	int ret;
 
 	switch (cmd) {
 	case NOSY_IOC_GET_STATS:
@@ -372,11 +363,15 @@ nosy_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return 0;
 
 	case NOSY_IOC_START:
+		ret = -EBUSY;
 		spin_lock_irq(client_list_lock);
-		list_add_tail(&client->link, &client->lynx->client_list);
+		if (list_empty(&client->link)) {
+			list_add_tail(&client->link, &client->lynx->client_list);
+			ret = 0;
+		}
 		spin_unlock_irq(client_list_lock);
 
-		return 0;
+		return ret;
 
 	case NOSY_IOC_STOP:
 		spin_lock_irq(client_list_lock);
@@ -413,17 +408,18 @@ static void
 packet_irq_handler(struct pcilynx *lynx)
 {
 	struct client *client;
-	u32 tcode_mask, tcode;
+	u32 tcode_mask, tcode, timestamp;
 	size_t length;
-	struct timeval tv;
+	struct timespec64 ts64;
 
 	/* FIXME: Also report rcv_speed. */
 
 	length = __le32_to_cpu(lynx->rcv_pcl->pcl_status) & 0x00001fff;
 	tcode  = __le32_to_cpu(lynx->rcv_buffer[1]) >> 4 & 0xf;
 
-	do_gettimeofday(&tv);
-	lynx->rcv_buffer[0] = (__force __le32)tv.tv_usec;
+	ktime_get_real_ts64(&ts64);
+	timestamp = ts64.tv_nsec / NSEC_PER_USEC;
+	lynx->rcv_buffer[0] = (__force __le32)timestamp;
 
 	if (length == PHY_PACKET_SIZE)
 		tcode_mask = 1 << TCODE_PHY_PACKET;
@@ -444,14 +440,16 @@ static void
 bus_reset_irq_handler(struct pcilynx *lynx)
 {
 	struct client *client;
-	struct timeval tv;
+	struct timespec64 ts64;
+	u32    timestamp;
 
-	do_gettimeofday(&tv);
+	ktime_get_real_ts64(&ts64);
+	timestamp = ts64.tv_nsec / NSEC_PER_USEC;
 
 	spin_lock(&lynx->client_list_lock);
 
 	list_for_each_entry(client, &lynx->client_list, link)
-		packet_buffer_put(&client->buffer, &tv.tv_usec, 4);
+		packet_buffer_put(&client->buffer, &timestamp, 4);
 
 	spin_unlock(&lynx->client_list_lock);
 }
@@ -560,8 +558,13 @@ add_card(struct pci_dev *dev, const struct pci_device_id *unused)
 	INIT_LIST_HEAD(&lynx->client_list);
 	kref_init(&lynx->kref);
 
-	lynx->registers = ioremap_nocache(pci_resource_start(dev, 0),
+	lynx->registers = ioremap(pci_resource_start(dev, 0),
 					  PCILYNX_MAX_REGISTER);
+	if (lynx->registers == NULL) {
+		dev_err(&dev->dev, "Failed to map registers\n");
+		ret = -ENOMEM;
+		goto fail_deallocate_lynx;
+	}
 
 	lynx->rcv_start_pcl = pci_alloc_consistent(lynx->pci_device,
 				sizeof(struct pcl), &lynx->rcv_start_pcl_bus);
@@ -574,7 +577,7 @@ add_card(struct pci_dev *dev, const struct pci_device_id *unused)
 	    lynx->rcv_buffer == NULL) {
 		dev_err(&dev->dev, "Failed to allocate receive buffer\n");
 		ret = -ENOMEM;
-		goto fail_deallocate;
+		goto fail_deallocate_buffers;
 	}
 	lynx->rcv_start_pcl->next	= cpu_to_le32(lynx->rcv_pcl_bus);
 	lynx->rcv_pcl->next		= cpu_to_le32(PCL_NEXT_INVALID);
@@ -637,7 +640,7 @@ add_card(struct pci_dev *dev, const struct pci_device_id *unused)
 		dev_err(&dev->dev,
 			"Failed to allocate shared interrupt %d\n", dev->irq);
 		ret = -EIO;
-		goto fail_deallocate;
+		goto fail_deallocate_buffers;
 	}
 
 	lynx->misc.parent = &dev->dev;
@@ -664,7 +667,7 @@ fail_free_irq:
 	reg_write(lynx, PCI_INT_ENABLE, 0);
 	free_irq(lynx->pci_device->irq, lynx);
 
-fail_deallocate:
+fail_deallocate_buffers:
 	if (lynx->rcv_start_pcl)
 		pci_free_consistent(lynx->pci_device, sizeof(struct pcl),
 				lynx->rcv_start_pcl, lynx->rcv_start_pcl_bus);
@@ -675,6 +678,8 @@ fail_deallocate:
 		pci_free_consistent(lynx->pci_device, PAGE_SIZE,
 				lynx->rcv_buffer, lynx->rcv_buffer_bus);
 	iounmap(lynx->registers);
+
+fail_deallocate_lynx:
 	kfree(lynx);
 
 fail_disable:

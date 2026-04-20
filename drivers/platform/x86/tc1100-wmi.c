@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  HP Compaq TC1100 Tablet WMI Extras Driver
  *
@@ -5,24 +6,6 @@
  *  Copyright (C) 2004 Jamey Hicks <jamey.hicks@hp.com>
  *  Copyright (C) 2001, 2002 Andy Grover <andrew.grover@intel.com>
  *  Copyright (C) 2001, 2002 Paul Diefenbaugh <paul.s.diefenbaugh@intel.com>
- *
- * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or (at
- *  your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful, but
- *  WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License along
- *  with this program; if not, write to the Free Software Foundation, Inc.,
- *  59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
- *
- * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -52,7 +35,9 @@ struct tc1100_data {
 	u32 jogdial;
 };
 
+#ifdef CONFIG_PM
 static struct tc1100_data suspend_data;
+#endif
 
 /* --------------------------------------------------------------------------
 				Device Management
@@ -82,7 +67,7 @@ static int get_state(u32 *out, u8 instance)
 		tmp = 0;
 	}
 
-	if (result.length > 0 && result.pointer)
+	if (result.length > 0)
 		kfree(result.pointer);
 
 	switch (instance) {
@@ -234,7 +219,6 @@ static const struct dev_pm_ops tc1100_pm_ops = {
 static struct platform_driver tc1100_driver = {
 	.driver = {
 		.name = "tc1100-wmi",
-		.owner = THIS_MODULE,
 #ifdef CONFIG_PM
 		.pm = &tc1100_pm_ops,
 #endif

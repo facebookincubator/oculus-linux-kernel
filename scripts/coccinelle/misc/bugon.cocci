@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /// Use BUG_ON instead of a if condition followed by BUG.
 ///
 //# This makes an effort to find cases where BUG() follows an if
@@ -6,7 +7,7 @@
 //# as argument.
 //
 // Confidence: High
-// Copyright: (C) 2014 Himangi Saraogi.  GPLv2.
+// Copyright: (C) 2014 Himangi Saraogi.
 // Comments:
 // Options: --no-includes --include-headers
 
@@ -40,7 +41,7 @@ expression e;
 //  For org and report mode
 //----------------------------------------------------------
 
-@r@
+@r depends on (org || report)@
 expression e;
 position p;
 @@
@@ -57,6 +58,6 @@ coccilib.org.print_todo(p[0], "WARNING use BUG_ON")
 p << r.p;
 @@
 
-msg="WARNING: Use BUG_ON"
+msg="WARNING: Use BUG_ON instead of if condition followed by BUG.\nPlease make sure the condition has no side effects (see conditional BUG_ON definition in include/asm-generic/bug.h)"
 coccilib.report.print_report(p[0], msg)
 

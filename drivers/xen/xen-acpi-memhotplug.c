@@ -1,18 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2012 Intel Corporation
  *    Author: Liu Jinsong <jinsong.liu@intel.com>
  *    Author: Jiang Yunhong <yunhong.jiang@intel.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or (at
- * your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, GOOD TITLE or
- * NON INFRINGEMENT.  See the GNU General Public License for more
- * details.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -117,8 +107,8 @@ acpi_memory_get_resource(struct acpi_resource *resource, void *context)
 	list_for_each_entry(info, &mem_device->res_list, list) {
 		if ((info->caching == address64.info.mem.caching) &&
 		    (info->write_protect == address64.info.mem.write_protect) &&
-		    (info->start_addr + info->length == address64.minimum)) {
-			info->length += address64.address_length;
+		    (info->start_addr + info->length == address64.address.minimum)) {
+			info->length += address64.address.address_length;
 			return AE_OK;
 		}
 	}
@@ -130,8 +120,8 @@ acpi_memory_get_resource(struct acpi_resource *resource, void *context)
 	INIT_LIST_HEAD(&new->list);
 	new->caching = address64.info.mem.caching;
 	new->write_protect = address64.info.mem.write_protect;
-	new->start_addr = address64.minimum;
-	new->length = address64.address_length;
+	new->start_addr = address64.address.minimum;
+	new->length = address64.address.address_length;
 	list_add_tail(&new->list, &mem_device->res_list);
 
 	return AE_OK;
@@ -239,7 +229,7 @@ static void acpi_memory_device_notify(acpi_handle handle, u32 event, void *data)
 	case ACPI_NOTIFY_BUS_CHECK:
 		ACPI_DEBUG_PRINT((ACPI_DB_INFO,
 			"\nReceived BUS CHECK notification for device\n"));
-		/* Fall Through */
+		fallthrough;
 	case ACPI_NOTIFY_DEVICE_CHECK:
 		if (event == ACPI_NOTIFY_DEVICE_CHECK)
 			ACPI_DEBUG_PRINT((ACPI_DB_INFO,

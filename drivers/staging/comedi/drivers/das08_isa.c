@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  *  das08_isa.c
  *  comedi driver for DAS08 ISA/PC-104 boards
@@ -6,33 +7,17 @@
  *  Copyright (C) 2000 David A. Schleef <ds@schleef.org>
  *  Copyright (C) 2001,2002,2003 Frank Mori Hess <fmhess@users.sourceforge.net>
  *  Copyright (C) 2004 Salvador E. Tropea <set@users.sf.net> <set@ieee.org>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
  */
 
 /*
  * Driver: das08_isa
  * Description: DAS-08 ISA/PC-104 compatible boards
- * Devices: (Keithley Metrabyte) DAS08 [isa-das08],
- *	    (ComputerBoards) DAS08 [isa-das08]
- *	    (ComputerBoards) DAS08-PGM [das08-pgm]
- *	    (ComputerBoards) DAS08-PGH [das08-pgh]
- *	    (ComputerBoards) DAS08-PGL [das08-pgl]
- *	    (ComputerBoards) DAS08-AOH [das08-aoh]
- *	    (ComputerBoards) DAS08-AOL [das08-aol]
- *	    (ComputerBoards) DAS08-AOM [das08-aom]
- *	    (ComputerBoards) DAS08/JR-AO [das08/jr-ao]
- *	    (ComputerBoards) DAS08/JR-16-AO [das08jr-16-ao]
- *	    (ComputerBoards) PC104-DAS08 [pc104-das08]
- *	    (ComputerBoards) DAS08/JR/16 [das08jr/16]
+ * Devices: [Keithley Metrabyte] DAS08 (isa-das08),
+ *   [ComputerBoards] DAS08 (isa-das08), DAS08-PGM (das08-pgm),
+ *   DAS08-PGH (das08-pgh), DAS08-PGL (das08-pgl), DAS08-AOH (das08-aoh),
+ *   DAS08-AOL (das08-aol), DAS08-AOM (das08-aom), DAS08/JR-AO (das08/jr-ao),
+ *   DAS08/JR-16-AO (das08jr-16-ao), PC104-DAS08 (pc104-das08),
+ *   DAS08/JR/16 (das08jr/16)
  * Author: Warren Jasper, ds, Frank Hess
  * Updated: Fri, 31 Aug 2012 19:19:06 +0100
  * Status: works
@@ -174,7 +159,7 @@ static const struct das08_board_struct das08_isa_boards[] = {
 static int das08_isa_attach(struct comedi_device *dev,
 			    struct comedi_devconfig *it)
 {
-	const struct das08_board_struct *thisboard = dev->board_ptr;
+	const struct das08_board_struct *board = dev->board_ptr;
 	struct das08_private_struct *devpriv;
 	int ret;
 
@@ -182,7 +167,7 @@ static int das08_isa_attach(struct comedi_device *dev,
 	if (!devpriv)
 		return -ENOMEM;
 
-	ret = comedi_request_region(dev, it->options[0], thisboard->iosize);
+	ret = comedi_request_region(dev, it->options[0], board->iosize);
 	if (ret)
 		return ret;
 
@@ -200,6 +185,6 @@ static struct comedi_driver das08_isa_driver = {
 };
 module_comedi_driver(das08_isa_driver);
 
-MODULE_AUTHOR("Comedi http://www.comedi.org");
+MODULE_AUTHOR("Comedi https://www.comedi.org");
 MODULE_DESCRIPTION("Comedi low-level driver");
 MODULE_LICENSE("GPL");

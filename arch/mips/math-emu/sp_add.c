@@ -1,22 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* IEEE754 floating point arithmetic
  * single precision
  */
 /*
  * MIPS floating point support
  * Copyright (C) 1994-2000 Algorithmics Ltd.
- *
- *  This program is free software; you can distribute it and/or modify it
- *  under the terms of the GNU General Public License (Version 2) as
- *  published by the Free Software Foundation.
- *
- *  This program is distributed in the hope it will be useful, but WITHOUT
- *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- *  for more details.
- *
- *  You should have received a copy of the GNU General Public License along
- *  with this program; if not, write to the Free Software Foundation, Inc.,
- *  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  */
 
 #include "ieee754sp.h"
@@ -37,19 +25,20 @@ union ieee754sp ieee754sp_add(union ieee754sp x, union ieee754sp y)
 	FLUSHYSP;
 
 	switch (CLPAIR(xc, yc)) {
-	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_QNAN):
 	case CLPAIR(IEEE754_CLASS_QNAN, IEEE754_CLASS_SNAN):
-	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_SNAN):
 	case CLPAIR(IEEE754_CLASS_ZERO, IEEE754_CLASS_SNAN):
 	case CLPAIR(IEEE754_CLASS_NORM, IEEE754_CLASS_SNAN):
 	case CLPAIR(IEEE754_CLASS_DNORM, IEEE754_CLASS_SNAN):
 	case CLPAIR(IEEE754_CLASS_INF, IEEE754_CLASS_SNAN):
+		return ieee754sp_nanxcpt(y);
+
+	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_SNAN):
+	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_QNAN):
 	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_ZERO):
 	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_NORM):
 	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_DNORM):
 	case CLPAIR(IEEE754_CLASS_SNAN, IEEE754_CLASS_INF):
-		ieee754_setcx(IEEE754_INVALID_OPERATION);
-		return ieee754sp_nanxcpt(ieee754sp_indef());
+		return ieee754sp_nanxcpt(x);
 
 	case CLPAIR(IEEE754_CLASS_ZERO, IEEE754_CLASS_QNAN):
 	case CLPAIR(IEEE754_CLASS_NORM, IEEE754_CLASS_QNAN):
@@ -103,9 +92,7 @@ union ieee754sp ieee754sp_add(union ieee754sp x, union ieee754sp y)
 
 	case CLPAIR(IEEE754_CLASS_DNORM, IEEE754_CLASS_DNORM):
 		SPDNORMX;
-
-		/* FALL THROUGH */
-
+		fallthrough;
 	case CLPAIR(IEEE754_CLASS_NORM, IEEE754_CLASS_DNORM):
 		SPDNORMY;
 		break;
@@ -131,13 +118,15 @@ union ieee754sp ieee754sp_add(union ieee754sp x, union ieee754sp y)
 		 * Have to shift y fraction right to align.
 		 */
 		s = xe - ye;
-		SPXSRSYn(s);
+		ym = XSPSRS(ym, s);
+		ye += s;
 	} else if (ye > xe) {
 		/*
 		 * Have to shift x fraction right to align.
 		 */
 		s = ye - xe;
-		SPXSRSXn(s);
+		xm = XSPSRS(xm, s);
+		xe += s;
 	}
 	assert(xe == ye);
 	assert(xe <= SP_EMAX);
@@ -148,8 +137,6 @@ union ieee754sp ieee754sp_add(union ieee754sp x, union ieee754sp y)
 		 * leaving result in xm, xs and xe.
 		 */
 		xm = xm + ym;
-		xe = xe;
-		xs = xs;
 
 		if (xm >> (SP_FBITS + 1 + 3)) { /* carry out */
 			SPXSRSX1();
@@ -157,11 +144,8 @@ union ieee754sp ieee754sp_add(union ieee754sp x, union ieee754sp y)
 	} else {
 		if (xm >= ym) {
 			xm = xm - ym;
-			xe = xe;
-			xs = xs;
 		} else {
 			xm = ym - xm;
-			xe = xe;
 			xs = ys;
 		}
 		if (xm == 0)

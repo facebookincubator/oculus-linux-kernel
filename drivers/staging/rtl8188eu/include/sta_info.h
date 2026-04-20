@@ -1,20 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2011 Realtek Corporation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
- *
  *
  ******************************************************************************/
 #ifndef __STA_INFO_H_
@@ -113,7 +100,6 @@ struct sta_info {
 
 	u8	raid;
 	u8	init_rate;
-	u32	ra_mask;
 	u8	wireless_mode;	/*  NETWORK_TYPE */
 	struct stainfo_stats sta_stats;
 
@@ -132,7 +118,8 @@ struct sta_info {
 	/* Notes: */
 	/* STA_Mode: */
 	/* curr_network(mlme_priv/security_priv/qos/ht) +
-	 * sta_info: (STA & AP) CAP/INFO */
+	 * sta_info: (STA & AP) CAP/INFO
+	 */
 	/* scan_q: AP CAP/INFO */
 
 	/* AP_Mode: */
@@ -190,7 +177,8 @@ struct sta_info {
 
 	/*  ================ODM Relative Info======================= */
 	/*  Please be careful, don't declare too much structure here.
-	 *  It will cost memory * STA support num. */
+	 *  It will cost memory * STA support num.
+	 */
 	/*  2011/10/20 MH Add for ODM STA info. */
 	/*  Driver Write */
 	u8	bValid;		/*  record the sta status link or not? */
@@ -324,9 +312,11 @@ struct	sta_priv {
 	struct sta_info *sta_aid[NUM_STA];
 
 	u16 sta_dz_bitmap;/* only support 15 stations, station aid bitmap
-			   * for sleeping sta. */
+			   * for sleeping sta.
+			   */
 	u16 tim_bitmap;	/* only support 15 stations, aid=0~15 mapping
-			 * bit0~bit15 */
+			 * bit0~bit15
+			 */
 
 	u16 max_num_sta;
 
@@ -351,19 +341,19 @@ static inline u32 wifi_mac_hash(u8 *mac)
 	return x;
 }
 
-extern u32	_rtw_init_sta_priv(struct sta_priv *pstapriv);
-extern u32	_rtw_free_sta_priv(struct sta_priv *pstapriv);
+u32 _rtw_init_sta_priv(struct sta_priv *pstapriv);
+u32 _rtw_free_sta_priv(struct sta_priv *pstapriv);
 
 #define stainfo_offset_valid(offset) (offset < NUM_STA && offset >= 0)
 int rtw_stainfo_offset(struct sta_priv *stapriv, struct sta_info *sta);
 struct sta_info *rtw_get_stainfo_by_offset(struct sta_priv *stapriv, int off);
 
-extern struct sta_info *rtw_alloc_stainfo(struct sta_priv *stapriv, u8 *hwaddr);
-extern u32	rtw_free_stainfo(struct adapter *adapt, struct sta_info *psta);
-extern void rtw_free_all_stainfo(struct adapter *adapt);
-extern struct sta_info *rtw_get_stainfo(struct sta_priv *stapriv, u8 *hwaddr);
-extern u32 rtw_init_bcmc_stainfo(struct adapter *adapt);
-extern struct sta_info *rtw_get_bcmc_stainfo(struct adapter *padapter);
-extern u8 rtw_access_ctrl(struct adapter *padapter, u8 *mac_addr);
+struct sta_info *rtw_alloc_stainfo(struct sta_priv *stapriv, u8 *hwaddr);
+u32 rtw_free_stainfo(struct adapter *adapt, struct sta_info *psta);
+void rtw_free_all_stainfo(struct adapter *adapt);
+struct sta_info *rtw_get_stainfo(struct sta_priv *stapriv, u8 *hwaddr);
+u32 rtw_init_bcmc_stainfo(struct adapter *adapt);
+struct sta_info *rtw_get_bcmc_stainfo(struct adapter *padapter);
+bool rtw_access_ctrl(struct adapter *padapter, u8 *mac_addr);
 
 #endif /* _STA_INFO_H_ */

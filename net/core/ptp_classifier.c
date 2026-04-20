@@ -1,13 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* PTP classifier
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of version 2 of the GNU General Public
- * License as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
  */
 
 /* The below program is the bpf_asm (tools/net/) representation of
@@ -58,7 +50,7 @@
  *   jneq #0x0, drop_ieee1588      ; for PTP_GEN_BIT and drop these
  *   ldh [18]                      ; reload payload
  *   and #0xf                      ; mask PTP_CLASS_VMASK
- *   or #0x70                      ; PTP_CLASS_VLAN|PTP_CLASS_L2
+ *   or #0xc0                      ; PTP_CLASS_VLAN|PTP_CLASS_L2
  *   ret a                         ; return PTP class
  *
  * ; PTP over UDP over IPv4 over 802.1Q over Ethernet
@@ -73,7 +65,7 @@
  *   jneq #319, drop_8021q_ipv4    ; is port PTP_EV_PORT ?
  *   ldh [x + 26]                  ; load payload
  *   and #0xf                      ; mask PTP_CLASS_VMASK
- *   or #0x50                      ; PTP_CLASS_VLAN|PTP_CLASS_IPV4
+ *   or #0x90                      ; PTP_CLASS_VLAN|PTP_CLASS_IPV4
  *   ret a                         ; return PTP class
  *   drop_8021q_ipv4: ret #0x0     ; PTP_CLASS_NONE
  *
@@ -86,7 +78,7 @@
  *   jneq #319, drop_8021q_ipv6          ; is port PTP_EV_PORT ?
  *   ldh [66]                      ; load payload
  *   and #0xf                      ; mask PTP_CLASS_VMASK
- *   or #0x60                      ; PTP_CLASS_VLAN|PTP_CLASS_IPV6
+ *   or #0xa0                      ; PTP_CLASS_VLAN|PTP_CLASS_IPV6
  *   ret a                         ; return PTP class
  *   drop_8021q_ipv6: ret #0x0     ; PTP_CLASS_NONE
  *
@@ -98,7 +90,7 @@
  *   jneq #0x0, drop_ieee1588      ; for PTP_GEN_BIT and drop these
  *   ldh [14]                      ; reload payload
  *   and #0xf                      ; mask PTP_CLASS_VMASK
- *   or #0x30                      ; PTP_CLASS_L2
+ *   or #0x40                      ; PTP_CLASS_L2
  *   ret a                         ; return PTP class
  *   drop_ieee1588: ret #0x0       ; PTP_CLASS_NONE
  */
@@ -114,6 +106,36 @@ unsigned int ptp_classify_raw(const struct sk_buff *skb)
 	return BPF_PROG_RUN(ptp_insns, skb);
 }
 EXPORT_SYMBOL_GPL(ptp_classify_raw);
+
+struct ptp_header *ptp_parse_header(struct sk_buff *skb, unsigned int type)
+{
+	u8 *ptr = skb_mac_header(skb);
+
+	if (type & PTP_CLASS_VLAN)
+		ptr += VLAN_HLEN;
+
+	switch (type & PTP_CLASS_PMASK) {
+	case PTP_CLASS_IPV4:
+		ptr += IPV4_HLEN(ptr) + UDP_HLEN;
+		break;
+	case PTP_CLASS_IPV6:
+		ptr += IP6_HLEN + UDP_HLEN;
+		break;
+	case PTP_CLASS_L2:
+		break;
+	default:
+		return NULL;
+	}
+
+	ptr += ETH_HLEN;
+
+	/* Ensure that the entire header is present in this packet. */
+	if (ptr + sizeof(struct ptp_header) > skb->data + skb->len)
+		return NULL;
+
+	return (struct ptp_header *)ptr;
+}
+EXPORT_SYMBOL_GPL(ptp_parse_header);
 
 void __init ptp_classifier_init(void)
 {
@@ -150,7 +172,7 @@ void __init ptp_classifier_init(void)
 		{ 0x15,  0, 35, 0x00000000 },
 		{ 0x28,  0,  0, 0x00000012 },
 		{ 0x54,  0,  0, 0x0000000f },
-		{ 0x44,  0,  0, 0x00000070 },
+		{ 0x44,  0,  0, 0x000000c0 },
 		{ 0x16,  0,  0, 0x00000000 },
 		{ 0x15,  0, 12, 0x00000800 },
 		{ 0x30,  0,  0, 0x0000001b },
@@ -162,7 +184,7 @@ void __init ptp_classifier_init(void)
 		{ 0x15,  0,  4, 0x0000013f },
 		{ 0x48,  0,  0, 0x0000001a },
 		{ 0x54,  0,  0, 0x0000000f },
-		{ 0x44,  0,  0, 0x00000050 },
+		{ 0x44,  0,  0, 0x00000090 },
 		{ 0x16,  0,  0, 0x00000000 },
 		{ 0x06,  0,  0, 0x00000000 },
 		{ 0x15,  0,  8, 0x000086dd },
@@ -172,7 +194,7 @@ void __init ptp_classifier_init(void)
 		{ 0x15,  0,  4, 0x0000013f },
 		{ 0x28,  0,  0, 0x00000042 },
 		{ 0x54,  0,  0, 0x0000000f },
-		{ 0x44,  0,  0, 0x00000060 },
+		{ 0x44,  0,  0, 0x000000a0 },
 		{ 0x16,  0,  0, 0x00000000 },
 		{ 0x06,  0,  0, 0x00000000 },
 		{ 0x15,  0,  7, 0x000088f7 },
@@ -181,13 +203,14 @@ void __init ptp_classifier_init(void)
 		{ 0x15,  0,  4, 0x00000000 },
 		{ 0x28,  0,  0, 0x0000000e },
 		{ 0x54,  0,  0, 0x0000000f },
-		{ 0x44,  0,  0, 0x00000030 },
+		{ 0x44,  0,  0, 0x00000040 },
 		{ 0x16,  0,  0, 0x00000000 },
 		{ 0x06,  0,  0, 0x00000000 },
 	};
-	struct sock_fprog_kern ptp_prog = {
-		.len = ARRAY_SIZE(ptp_filter), .filter = ptp_filter,
-	};
+	struct sock_fprog_kern ptp_prog;
+
+	ptp_prog.len = ARRAY_SIZE(ptp_filter);
+	ptp_prog.filter = ptp_filter;
 
 	BUG_ON(bpf_prog_create(&ptp_insns, &ptp_prog));
 }

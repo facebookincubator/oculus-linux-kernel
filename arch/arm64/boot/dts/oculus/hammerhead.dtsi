@@ -1,0 +1,97 @@
+#include "meta-neo-common.dtsi"
+#include "meta-neo-usb-conn-gpio.dtsi"
+#include "hammerhead-gpios.dtsi"
+
+&qupv3_se10_i2c {
+	/**
+	 * This needs to come after the BOB nodes because I2C probe order is
+	 * determined by the order of the device tree nodes and max77132 needs to
+	 * request the BOB regulator during probe.
+	 */
+	#include "meta-neo-max17332-fg.dtsi"
+};
+
+&generic_virtual_sensor {
+	offset = <7651>;
+	zones {
+		zone0 {
+			type = "therm-rf-usr";
+			// 32 bit 2's complement -690
+			coefficient = <4294966606>;
+		};
+		zone1 {
+			type = "therm-in-temp-usr";
+			coefficient = <1522>;
+		};
+		zone2 {
+			type = "therm-soc-usr";
+			// 32 bit 2's complement -113
+			coefficient = <4294967183>;
+		};
+		zone3 {
+			type = "therm-quiet-usr";
+			coefficient = <75>;
+		};
+	};
+};
+
+&outdoor_virtual_sensor {
+	offset = <7651>;
+	zones {
+		zone0 {
+			type = "therm-rf-usr";
+			// 32 bit 2's complement -690
+			coefficient = <4294966606>;
+		};
+		zone1 {
+			type = "therm-in-temp-usr";
+			coefficient = <1522>;
+		};
+		zone2 {
+			type = "therm-soc-usr";
+			// 32 bit 2's complement -113
+			coefficient = <4294967183>;
+		};
+		zone3 {
+			type = "therm-quiet-usr";
+			coefficient = <75>;
+		};
+	};
+};
+
+&pm8150_l16 {
+	qcom,init-voltage = <2500000>;
+};
+
+&qupv3_se8_i2c {
+	aw2026_led: aw2026@64 {
+		compatible = "awinic,aw2026_led";
+		reg = <0x64>;
+		status = "ok";
+
+		aw2026,white {
+			aw2026,name = "white";
+			aw2026,id = <0>;
+			aw2026,imax = <1>;
+			aw2026,led-current = <21>;
+			aw2026,max-brightness = <255>;
+			aw2026,rise-time-ms = <1>;
+			aw2026,hold-time-ms = <2>;
+			aw2026,fall-time-ms = <4>;
+			aw2026,off-time-ms = <1>;
+		};
+	};
+};
+
+&qupv3_se5_i2c {
+	ktb8399: ktb8399@60 {
+		compatible = "kinetic,ktb8399";
+		reg = <0x60>;
+		regulator-name = "ktb8399-buck";
+		ktb8399,vsel-active-low;
+		regulator-min-microvolt = <1331250>;
+		regulator-max-microvolt = <1331250>;
+		regulator-always-on;
+		status = "ok";
+	};
+};

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # USB peripheral controller drivers
 #
@@ -32,19 +33,38 @@ usb_f_mass_storage-y		:= f_mass_storage.o storage_common.o
 obj-$(CONFIG_USB_F_MASS_STORAGE)+= usb_f_mass_storage.o
 usb_f_fs-y			:= f_fs.o
 obj-$(CONFIG_USB_F_FS)		+= usb_f_fs.o
-usb_f_uac1-y			:= f_uac1.o u_uac1.o
+obj-$(CONFIG_USB_U_AUDIO)	+= u_audio.o
+usb_f_uac1-y			:= f_uac1.o
 obj-$(CONFIG_USB_F_UAC1)	+= usb_f_uac1.o
+usb_f_uac1_legacy-y		:= f_uac1_legacy.o u_uac1_legacy.o
+obj-$(CONFIG_USB_F_UAC1_LEGACY)	+= usb_f_uac1_legacy.o
 usb_f_uac2-y			:= f_uac2.o
 obj-$(CONFIG_USB_F_UAC2)	+= usb_f_uac2.o
-usb_f_uvc-y			:= f_uvc.o uvc_queue.o uvc_v4l2.o uvc_video.o
+usb_f_uvc-y			:= f_uvc.o uvc_queue.o uvc_v4l2.o uvc_video.o uvc_configfs.o
 obj-$(CONFIG_USB_F_UVC)		+= usb_f_uvc.o
-usb_f_mtp-y                     := f_mtp.o
-obj-$(CONFIG_USB_F_MTP)         += usb_f_mtp.o
-usb_f_ptp-y                     := f_ptp.o
-obj-$(CONFIG_USB_F_PTP)         += usb_f_ptp.o
-usb_f_audio_source-y            := f_audio_source.o
-obj-$(CONFIG_USB_F_AUDIO_SRC)   += usb_f_audio_source.o
-usb_f_accessory-y               := f_accessory.o
-obj-$(CONFIG_USB_F_ACC)         += usb_f_accessory.o
-
-
+usb_f_midi-y			:= f_midi.o
+obj-$(CONFIG_USB_F_MIDI)	+= usb_f_midi.o
+usb_f_hid-y			:= f_hid.o
+obj-$(CONFIG_USB_F_HID)		+= usb_f_hid.o
+usb_f_printer-y			:= f_printer.o
+obj-$(CONFIG_USB_F_PRINTER)	+= usb_f_printer.o
+usb_f_tcm-y			:= f_tcm.o
+obj-$(CONFIG_USB_F_TCM)		+= usb_f_tcm.o
+usb_f_accessory-y		:= f_accessory.o
+obj-$(CONFIG_USB_F_ACC)		+= usb_f_accessory.o
+usb_f_audio_source-y		:= f_audio_source.o
+obj-$(CONFIG_USB_F_AUDIO_SRC)	+= usb_f_audio_source.o
+usb_f_diag-y			:= f_diag.o
+obj-$(CONFIG_USB_F_DIAG)	+= usb_f_diag.o
+usb_f_qdss-y			:= f_qdss.o u_qdss.o
+obj-$(CONFIG_USB_F_QDSS)	+= usb_f_qdss.o
+usb_f_ccid-y			:= f_ccid.o
+obj-$(CONFIG_USB_F_CCID)	+= usb_f_ccid.o
+usb_f_cdev-y			:= f_cdev.o
+obj-$(CONFIG_USB_F_CDEV)	+= usb_f_cdev.o
+usb_f_gsi-y			:= f_gsi.o
+ifeq ($(CONFIG_USB_F_RNDIS),)
+usb_f_gsi-y			+= rndis.o
+endif
+obj-$(CONFIG_USB_F_GSI)		+= usb_f_gsi.o
+obj-$(CONFIG_USB_F_FS_IPC_LOGGING)	+= f_fs_ipc_log.o

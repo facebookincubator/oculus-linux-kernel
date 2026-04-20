@@ -1,35 +1,46 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Atmel maXTouch Touchscreen driver
  *
  * Copyright (C) 2010 Samsung Electronics Co.Ltd
  * Copyright (C) 2011-2014 Atmel Corporation
  * Copyright (C) 2012 Google, Inc.
+ * Copyright (C) 2016 Zodiac Inflight Innovations
  *
  * Author: Joonyoung Shim <jy0922.shim@samsung.com>
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
- *
  */
 
+#include <linux/acpi.h>
+#include <linux/dmi.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/completion.h>
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/i2c.h>
-#include <linux/i2c/atmel_mxt_ts.h>
+#include <linux/input.h>
 #include <linux/input/mt.h>
 #include <linux/interrupt.h>
+#include <linux/regulator/consumer.h>
+#include <linux/irq.h>
 #include <linux/of.h>
+#include <linux/soc/qcom/panel_event_notifier.h>
+#include <linux/property.h>
 #include <linux/slab.h>
+#include <linux/gpio/consumer.h>
+#include <linux/property.h>
+#include <asm/unaligned.h>
+#include <media/v4l2-device.h>
+#include <media/v4l2-ioctl.h>
+#include <media/videobuf2-v4l2.h>
+#include <media/videobuf2-vmalloc.h>
+#include <linux/pinctrl/consumer.h>
+#include <linux/platform_device.h>
+#include <linux/gpio.h>
 
-/* Version */
-#define MXT_VER_20		20
-#define MXT_VER_21		21
-#define MXT_VER_22		22
+#ifdef CONFIG_DRM
+#include <drm/drm_panel.h>
+#endif
 
 /* Firmware files */
 #define MXT_FW_NAME		"maxtouch.fw"
@@ -37,16 +48,7 @@
 #define MXT_CFG_MAGIC		"OBP_RAW V1"
 
 /* Registers */
-#define MXT_INFO		0x00
-#define MXT_FAMILY_ID		0x00
-#define MXT_VARIANT_ID		0x01
-#define MXT_VERSION		0x02
-#define MXT_BUILD		0x03
-#define MXT_MATRIX_X_SIZE	0x04
-#define MXT_MATRIX_Y_SIZE	0x05
-#define MXT_OBJECT_NUM		0x06
 #define MXT_OBJECT_START	0x07
-
 #define MXT_OBJECT_SIZE		6
 #define MXT_INFO_CHECKSUM_SIZE	3
 #define MXT_MAX_BLOCK_WRITE	256
@@ -79,6 +81,31 @@
 #define MXT_SPT_DIGITIZER_T43		43
 #define MXT_SPT_MESSAGECOUNT_T44	44
 #define MXT_SPT_CTECONFIG_T46		46
+#define MXT_SPT_DYNAMICCONFIGURATIONCONTAINER_T71 71
+#define MXT_TOUCH_MULTITOUCHSCREEN_T100 100
+
+/* Delay times */
+#define MXT_BACKUP_TIME		50	/* msec */
+#define MXT_RESET_TIME		200	/* msec */
+#define MXT_RESET_TIMEOUT	3000	/* msec */
+#define MXT_CRC_TIMEOUT		1000	/* msec */
+#define MXT_FW_RESET_TIME	3000	/* msec */
+#define MXT_FW_CHG_TIMEOUT	300	/* msec */
+#define MXT_WAKEUP_TIME		25	/* msec */
+#define MXT_REGULATOR_DELAY	150	/* msec */
+#define MXT_POWERON_DELAY	150	/* msec */
+
+/* recommended voltage specifications */
+#define MXT_VDD_VTG_MIN_UV	1800000
+#define MXT_VDD_VTG_MAX_UV	1800000
+#define MXT_AVDD_VTG_MIN_UV	3000000
+#define MXT_AVDD_VTG_MAX_UV	3300000
+#define MXT_XVDD_VTG_MIN_UV	2700000
+#define MXT_XVDD_VTG_MAX_UV	10000000
+
+/* recommended load specifications */
+#define MXT_ENABLE_LOAD		10000
+#define MXT_DISABLE_LOAD	0
 
 /* MXT_GEN_MESSAGE_T5 object */
 #define MXT_RPTID_NOMSG		0xff
@@ -91,12 +118,12 @@
 #define MXT_COMMAND_DIAGNOSTIC	5
 
 /* Define for T6 status byte */
-#define MXT_T6_STATUS_RESET	(1 << 7)
-#define MXT_T6_STATUS_OFL	(1 << 6)
-#define MXT_T6_STATUS_SIGERR	(1 << 5)
-#define MXT_T6_STATUS_CAL	(1 << 4)
-#define MXT_T6_STATUS_CFGERR	(1 << 3)
-#define MXT_T6_STATUS_COMSERR	(1 << 2)
+#define MXT_T6_STATUS_RESET	BIT(7)
+#define MXT_T6_STATUS_OFL	BIT(6)
+#define MXT_T6_STATUS_SIGERR	BIT(5)
+#define MXT_T6_STATUS_CAL	BIT(4)
+#define MXT_T6_STATUS_CFGERR	BIT(3)
+#define MXT_T6_STATUS_COMSERR	BIT(2)
 
 /* MXT_GEN_POWER_T7 field */
 struct t7_config {
@@ -107,89 +134,99 @@ struct t7_config {
 #define MXT_POWER_CFG_RUN		0
 #define MXT_POWER_CFG_DEEPSLEEP		1
 
-/* MXT_GEN_ACQUIRE_T8 field */
-#define MXT_ACQUIRE_CHRGTIME	0
-#define MXT_ACQUIRE_TCHDRIFT	2
-#define MXT_ACQUIRE_DRIFTST	3
-#define MXT_ACQUIRE_TCHAUTOCAL	4
-#define MXT_ACQUIRE_SYNC	5
-#define MXT_ACQUIRE_ATCHCALST	6
-#define MXT_ACQUIRE_ATCHCALSTHR	7
-
 /* MXT_TOUCH_MULTI_T9 field */
+#define MXT_T9_CTRL		0
+#define MXT_T9_XSIZE		3
+#define MXT_T9_YSIZE		4
 #define MXT_T9_ORIENT		9
 #define MXT_T9_RANGE		18
 
 /* MXT_TOUCH_MULTI_T9 status */
-#define MXT_T9_UNGRIP		(1 << 0)
-#define MXT_T9_SUPPRESS		(1 << 1)
-#define MXT_T9_AMP		(1 << 2)
-#define MXT_T9_VECTOR		(1 << 3)
-#define MXT_T9_MOVE		(1 << 4)
-#define MXT_T9_RELEASE		(1 << 5)
-#define MXT_T9_PRESS		(1 << 6)
-#define MXT_T9_DETECT		(1 << 7)
+#define MXT_T9_UNGRIP		BIT(0)
+#define MXT_T9_SUPPRESS		BIT(1)
+#define MXT_T9_AMP		BIT(2)
+#define MXT_T9_VECTOR		BIT(3)
+#define MXT_T9_MOVE		BIT(4)
+#define MXT_T9_RELEASE		BIT(5)
+#define MXT_T9_PRESS		BIT(6)
+#define MXT_T9_DETECT		BIT(7)
 
 struct t9_range {
-	u16 x;
-	u16 y;
+	__le16 x;
+	__le16 y;
 } __packed;
 
 /* MXT_TOUCH_MULTI_T9 orient */
-#define MXT_T9_ORIENT_SWITCH	(1 << 0)
-
-/* MXT_PROCI_GRIPFACE_T20 field */
-#define MXT_GRIPFACE_CTRL	0
-#define MXT_GRIPFACE_XLOGRIP	1
-#define MXT_GRIPFACE_XHIGRIP	2
-#define MXT_GRIPFACE_YLOGRIP	3
-#define MXT_GRIPFACE_YHIGRIP	4
-#define MXT_GRIPFACE_MAXTCHS	5
-#define MXT_GRIPFACE_SZTHR1	7
-#define MXT_GRIPFACE_SZTHR2	8
-#define MXT_GRIPFACE_SHPTHR1	9
-#define MXT_GRIPFACE_SHPTHR2	10
-#define MXT_GRIPFACE_SUPEXTTO	11
-
-/* MXT_PROCI_NOISE field */
-#define MXT_NOISE_CTRL		0
-#define MXT_NOISE_OUTFLEN	1
-#define MXT_NOISE_GCAFUL_LSB	3
-#define MXT_NOISE_GCAFUL_MSB	4
-#define MXT_NOISE_GCAFLL_LSB	5
-#define MXT_NOISE_GCAFLL_MSB	6
-#define MXT_NOISE_ACTVGCAFVALID	7
-#define MXT_NOISE_NOISETHR	8
-#define MXT_NOISE_FREQHOPSCALE	10
-#define MXT_NOISE_FREQ0		11
-#define MXT_NOISE_FREQ1		12
-#define MXT_NOISE_FREQ2		13
-#define MXT_NOISE_FREQ3		14
-#define MXT_NOISE_FREQ4		15
-#define MXT_NOISE_IDLEGCAFVALID	16
+#define MXT_T9_ORIENT_SWITCH	BIT(0)
+#define MXT_T9_ORIENT_INVERTX	BIT(1)
+#define MXT_T9_ORIENT_INVERTY	BIT(2)
 
 /* MXT_SPT_COMMSCONFIG_T18 */
 #define MXT_COMMS_CTRL		0
 #define MXT_COMMS_CMD		1
+#define MXT_COMMS_RETRIGEN	BIT(6)
 
-/* MXT_SPT_CTECONFIG_T28 field */
-#define MXT_CTE_CTRL		0
-#define MXT_CTE_CMD		1
-#define MXT_CTE_MODE		2
-#define MXT_CTE_IDLEGCAFDEPTH	3
-#define MXT_CTE_ACTVGCAFDEPTH	4
-#define MXT_CTE_VOLTAGE		5
+/* MXT_DEBUG_DIAGNOSTIC_T37 */
+#define MXT_DIAGNOSTIC_PAGEUP	0x01
+#define MXT_DIAGNOSTIC_DELTAS	0x10
+#define MXT_DIAGNOSTIC_REFS	0x11
+#define MXT_DIAGNOSTIC_SIZE	128
 
-#define MXT_VOLTAGE_DEFAULT	2700000
-#define MXT_VOLTAGE_STEP	10000
+#define MXT_FAMILY_1386			160
+#define MXT1386_COLUMNS			3
+#define MXT1386_PAGES_PER_COLUMN	8
+
+struct t37_debug {
+#ifdef CONFIG_TOUCHSCREEN_ATMEL_MXT_T37
+	u8 mode;
+	u8 page;
+	u8 data[MXT_DIAGNOSTIC_SIZE];
+#endif
+};
 
 /* Define for MXT_GEN_COMMAND_T6 */
 #define MXT_BOOT_VALUE		0xa5
 #define MXT_RESET_VALUE		0x01
 #define MXT_BACKUP_VALUE	0x55
 
+/* T100 Multiple Touch Touchscreen */
+#define MXT_T100_CTRL		0
+#define MXT_T100_CFG1		1
+#define MXT_T100_TCHAUX		3
+#define MXT_T100_XSIZE		9
+#define MXT_T100_XRANGE		13
+#define MXT_T100_YSIZE		20
+#define MXT_T100_YRANGE		24
+
+#define MXT_T100_CFG_SWITCHXY	BIT(5)
+#define MXT_T100_CFG_INVERTY	BIT(6)
+#define MXT_T100_CFG_INVERTX	BIT(7)
+
+#define MXT_T100_TCHAUX_VECT	BIT(0)
+#define MXT_T100_TCHAUX_AMPL	BIT(1)
+#define MXT_T100_TCHAUX_AREA	BIT(2)
+
+#define MXT_T100_DETECT		BIT(7)
+#define MXT_T100_TYPE_MASK	0x70
+
+enum t100_type {
+	MXT_T100_TYPE_FINGER		= 1,
+	MXT_T100_TYPE_PASSIVE_STYLUS	= 2,
+	MXT_T100_TYPE_HOVERING_FINGER	= 4,
+	MXT_T100_TYPE_GLOVE		= 5,
+	MXT_T100_TYPE_LARGE_TOUCH	= 6,
+};
+
+#define MXT_DISTANCE_ACTIVE_TOUCH	0
+#define MXT_DISTANCE_HOVERING		1
+
+#define MXT_TOUCH_MAJOR_DEFAULT		1
+#define MXT_PRESSURE_DEFAULT		1
+
 /* Delay times */
 #define MXT_BACKUP_TIME		50	/* msec */
+#define MXT_RESET_GPIO_TIME	20	/* msec */
+#define MXT_RESET_INVALID_CHG	100	/* msec */
 #define MXT_RESET_TIME		200	/* msec */
 #define MXT_RESET_TIMEOUT	3000	/* msec */
 #define MXT_CRC_TIMEOUT		1000	/* msec */
@@ -208,13 +245,15 @@ struct t9_range {
 #define MXT_FRAME_CRC_PASS	0x04
 #define MXT_APP_CRC_FAIL	0x40	/* valid 7 8 bit only */
 #define MXT_BOOT_STATUS_MASK	0x3f
-#define MXT_BOOT_EXTENDED_ID	(1 << 5)
+#define MXT_BOOT_EXTENDED_ID	BIT(5)
 #define MXT_BOOT_ID_MASK	0x1f
 
 /* Touchscreen absolute values */
 #define MXT_MAX_AREA		0xff
 
 #define MXT_PIXELS_PER_MM	20
+
+#define MXT_COORDS_ARR_SIZE	4
 
 struct mxt_info {
 	u8 family_id;
@@ -234,29 +273,83 @@ struct mxt_object {
 	u8 num_report_ids;
 } __packed;
 
+struct mxt_dbg {
+	u16 t37_address;
+	u16 diag_cmd_address;
+	struct t37_debug *t37_buf;
+	unsigned int t37_pages;
+	unsigned int t37_nodes;
+
+	struct v4l2_device v4l2;
+	struct v4l2_pix_format format;
+	struct video_device vdev;
+	struct vb2_queue queue;
+	struct mutex lock;
+	int input;
+};
+
+enum v4l_dbg_inputs {
+	MXT_V4L_INPUT_DELTAS,
+	MXT_V4L_INPUT_REFS,
+	MXT_V4L_INPUT_MAX,
+};
+
+enum mxt_suspend_mode {
+	MXT_SUSPEND_DEEP_SLEEP	= 0,
+	MXT_SUSPEND_T9_CTRL	= 1,
+};
+
+/* Config update context */
+struct mxt_cfg {
+	u8 *raw;
+	size_t raw_size;
+	off_t raw_pos;
+
+	u8 *mem;
+	size_t mem_size;
+	int start_ofs;
+
+	struct mxt_info info;
+};
+
 /* Each client has this additional data */
 struct mxt_data {
 	struct i2c_client *client;
 	struct input_dev *input_dev;
 	char phys[64];		/* device physical location */
-	const struct mxt_platform_data *pdata;
 	struct mxt_object *object_table;
-	struct mxt_info info;
+	struct mxt_info *info;
+	void *raw_info_block;
 	unsigned int irq;
 	unsigned int max_x;
 	unsigned int max_y;
+	bool invertx;
+	bool inverty;
+	bool xy_switch;
+	u8 xsize;
+	u8 ysize;
 	bool in_bootloader;
 	u16 mem_size;
+	u8 t100_aux_ampl;
+	u8 t100_aux_area;
+	u8 t100_aux_vect;
 	u8 max_reportid;
 	u32 config_crc;
 	u32 info_crc;
 	u8 bootloader_addr;
 	u8 *msg_buf;
+	u8 *cmd_buf;
+	u8 *read_buf;
 	u8 t6_status;
 	bool update_input;
 	u8 last_message_count;
 	u8 num_touchids;
+	u8 multitouch;
 	struct t7_config t7_cfg;
+	struct mxt_dbg dbg;
+	struct gpio_desc *reset_gpio;
+	struct gpio_desc *irq_gpio;
+	bool use_retrigen_workaround;
 
 	/* Cached parameters from object table */
 	u16 T5_address;
@@ -264,10 +357,14 @@ struct mxt_data {
 	u8 T6_reportid;
 	u16 T6_address;
 	u16 T7_address;
+	u16 T71_address;
 	u8 T9_reportid_min;
 	u8 T9_reportid_max;
+	u16 T18_address;
 	u8 T19_reportid;
 	u16 T44_address;
+	u8 T100_reportid_min;
+	u8 T100_reportid_max;
 
 	/* for fw update in bootloader */
 	struct completion bl_completion;
@@ -277,6 +374,34 @@ struct mxt_data {
 
 	/* for config update handling */
 	struct completion crc_completion;
+
+	/* Enable reporting of input events */
+	bool enable_reporting;
+
+	/* Indicates whether device is in suspend */
+	bool suspended;
+
+	u32 *t19_keymap;
+	unsigned int t19_num_keys;
+
+	enum mxt_suspend_mode suspend_mode;
+
+	bool use_regulator;
+	struct regulator *reg_vdd;
+	struct regulator *reg_avdd;
+	struct regulator *reg_xvdd;
+	struct pinctrl *ts_pinctrl;
+	struct pinctrl_state *gpio_state_active;
+	struct pinctrl_state *gpio_state_suspend;
+
+	u32 panel_minx, panel_miny, panel_maxx, panel_maxy;
+	u32 disp_minx, disp_miny, disp_maxx, disp_maxy;
+	void *notifier_cookie;
+};
+
+struct mxt_vb2_buffer {
+	struct vb2_buffer	vb;
+	struct list_head	list;
 };
 
 static size_t mxt_obj_size(const struct mxt_object *obj)
@@ -289,6 +414,8 @@ static size_t mxt_obj_instances(const struct mxt_object *obj)
 	return obj->instances_minus_one + 1;
 }
 
+static int mxt_regulator_configure(struct mxt_data *data, bool enable);
+
 static bool mxt_object_readable(unsigned int type)
 {
 	switch (type) {
@@ -300,6 +427,7 @@ static bool mxt_object_readable(unsigned int type)
 	case MXT_TOUCH_KEYARRAY_T15:
 	case MXT_TOUCH_PROXIMITY_T23:
 	case MXT_TOUCH_PROXKEY_T52:
+	case MXT_TOUCH_MULTITOUCHSCREEN_T100:
 	case MXT_PROCI_GRIPFACE_T20:
 	case MXT_PROCG_NOISE_T22:
 	case MXT_PROCI_ONETOUCH_T24:
@@ -316,6 +444,7 @@ static bool mxt_object_readable(unsigned int type)
 	case MXT_SPT_USERDATA_T38:
 	case MXT_SPT_DIGITIZER_T43:
 	case MXT_SPT_CTECONFIG_T46:
+	case MXT_SPT_DYNAMICCONFIGURATIONCONTAINER_T71:
 		return true;
 	default:
 		return false;
@@ -356,10 +485,11 @@ static int mxt_bootloader_read(struct mxt_data *data,
 	msg.flags = data->client->flags & I2C_M_TEN;
 	msg.flags |= I2C_M_RD;
 	msg.len = count;
-	msg.buf = val;
+	msg.buf = data->read_buf;
 
 	ret = i2c_transfer(data->client->adapter, &msg, 1);
 	if (ret == 1) {
+		memcpy(val, msg.buf, count);
 		ret = 0;
 	} else {
 		ret = ret < 0 ? ret : -EIO;
@@ -397,16 +527,17 @@ static int mxt_lookup_bootloader_address(struct mxt_data *data, bool retry)
 {
 	u8 appmode = data->client->addr;
 	u8 bootloader;
+	u8 family_id = data->info ? data->info->family_id : 0;
 
 	switch (appmode) {
 	case 0x4a:
 	case 0x4b:
 		/* Chips after 1664S use different scheme */
-		if (retry || data->info.family_id >= 0xa2) {
+		if (retry || family_id >= 0xa2) {
 			bootloader = appmode - 0x24;
 			break;
 		}
-		/* Fall through for normal case */
+		fallthrough;	/* for normal case */
 	case 0x4c:
 	case 0x4d:
 	case 0x5a:
@@ -452,17 +583,20 @@ static int mxt_probe_bootloader(struct mxt_data *data, bool alt_address)
 static u8 mxt_get_bootloader_version(struct mxt_data *data, u8 val)
 {
 	struct device *dev = &data->client->dev;
-	u8 buf[3];
+	u8 ver = 0;
+	u8 *buf = kzalloc(4, GFP_KERNEL);
 
-	if (val & MXT_BOOT_EXTENDED_ID) {
-		if (mxt_bootloader_read(data, &buf[0], 3) != 0) {
+	if ((val & MXT_BOOT_EXTENDED_ID) && buf) {
+		if (mxt_bootloader_read(data, buf, 3) != 0) {
 			dev_err(dev, "%s: i2c failure\n", __func__);
 			return val;
 		}
 
-		dev_dbg(dev, "Bootloader ID:%d Version:%d\n", buf[1], buf[2]);
-
-		return buf[0];
+		dev_dbg(dev, "Bootloader ID:%d Version:%d\n",
+				*(buf + 1), *(buf + 2));
+		ver = *(buf + 0);
+		kfree(buf);
+		return ver;
 	} else {
 		dev_dbg(dev, "Bootloader ID:%d\n", val & MXT_BOOT_ID_MASK);
 
@@ -536,14 +670,14 @@ recheck:
 static int mxt_send_bootloader_cmd(struct mxt_data *data, bool unlock)
 {
 	int ret;
-	u8 buf[2];
+	u8 *buf = data->cmd_buf;
 
 	if (unlock) {
-		buf[0] = MXT_UNLOCK_CMD_LSB;
-		buf[1] = MXT_UNLOCK_CMD_MSB;
+		*buf = MXT_UNLOCK_CMD_LSB;
+		*(buf + 1) = MXT_UNLOCK_CMD_MSB;
 	} else {
-		buf[0] = 0x01;
-		buf[1] = 0x01;
+		*buf = 0x01;
+		*(buf + 1) = 0x01;
 	}
 
 	ret = mxt_bootloader_write(data, buf, 2);
@@ -553,15 +687,15 @@ static int mxt_send_bootloader_cmd(struct mxt_data *data, bool unlock)
 	return 0;
 }
 
-static int __mxt_read_reg(struct i2c_client *client,
-			       u16 reg, u16 len, void *val)
+static int __mxt_read_reg(struct mxt_data *data, u16 reg, u16 len, void *val)
 {
 	struct i2c_msg xfer[2];
-	u8 buf[2];
 	int ret;
+	u8 *buf = data->cmd_buf;
+	struct i2c_client *client = data->client;
 
-	buf[0] = reg & 0xff;
-	buf[1] = (reg >> 8) & 0xff;
+	*buf = reg & 0xff;
+	*(buf + 1) = (reg >> 8) & 0xff;
 
 	/* Write register */
 	xfer[0].addr = client->addr;
@@ -610,7 +744,7 @@ static int __mxt_write_reg(struct i2c_client *client, u16 reg, u16 len,
 	} else {
 		if (ret >= 0)
 			ret = -EIO;
-		dev_err(&client->dev, "%s: i2c send failed (%d)\n",
+		dev_dbg(&client->dev, "%s: i2c send failed (%d)\n",
 			__func__, ret);
 	}
 
@@ -629,7 +763,7 @@ mxt_get_object(struct mxt_data *data, u8 type)
 	struct mxt_object *object;
 	int i;
 
-	for (i = 0; i < data->info.object_num; i++) {
+	for (i = 0; i < data->info->object_num; i++) {
 		object = data->object_table + i;
 		if (object->type == type)
 			return object;
@@ -645,12 +779,12 @@ static void mxt_proc_t6_messages(struct mxt_data *data, u8 *msg)
 	u8 status = msg[1];
 	u32 crc = msg[2] | (msg[3] << 8) | (msg[4] << 16);
 
-	complete(&data->crc_completion);
-
 	if (crc != data->config_crc) {
 		data->config_crc = crc;
 		dev_dbg(dev, "T6 Config Checksum: 0x%06X\n", crc);
 	}
+
+	complete(&data->crc_completion);
 
 	/* Detect reset */
 	if (status & MXT_T6_STATUS_RESET)
@@ -672,26 +806,39 @@ static void mxt_proc_t6_messages(struct mxt_data *data, u8 *msg)
 	data->t6_status = status;
 }
 
+static int mxt_write_object(struct mxt_data *data,
+				 u8 type, u8 offset, u8 val)
+{
+	struct mxt_object *object;
+	u16 reg;
+
+	object = mxt_get_object(data, type);
+	if (!object || offset >= mxt_obj_size(object))
+		return -EINVAL;
+
+	reg = object->start_address;
+	return mxt_write_reg(data->client, reg + offset, val);
+}
+
 static void mxt_input_button(struct mxt_data *data, u8 *message)
 {
 	struct input_dev *input = data->input_dev;
-	const struct mxt_platform_data *pdata = data->pdata;
-	bool button;
 	int i;
 
-	/* Active-low switch */
-	for (i = 0; i < pdata->t19_num_keys; i++) {
-		if (pdata->t19_keymap[i] == KEY_RESERVED)
+	for (i = 0; i < data->t19_num_keys; i++) {
+		if (data->t19_keymap[i] == KEY_RESERVED)
 			continue;
-		button = !(message[1] & (1 << i));
-		input_report_key(input, pdata->t19_keymap[i], button);
+
+		/* Active-low switch */
+		input_report_key(input, data->t19_keymap[i],
+				 !(message[1] & BIT(i)));
 	}
 }
 
 static void mxt_input_sync(struct mxt_data *data)
 {
 	input_mt_report_pointer_emulation(data->input_dev,
-					  data->pdata->t19_num_keys);
+					  data->t19_num_keys);
 	input_sync(data->input_dev);
 }
 
@@ -742,20 +889,151 @@ static void mxt_proc_t9_message(struct mxt_data *data, u8 *message)
 		 * have happened.
 		 */
 		if (status & MXT_T9_RELEASE) {
-			input_mt_report_slot_state(input_dev,
-						   MT_TOOL_FINGER, 0);
+			input_mt_report_slot_inactive(input_dev);
 			mxt_input_sync(data);
 		}
 
+		/* if active, pressure must be non-zero */
+		if (!amplitude)
+			amplitude = MXT_PRESSURE_DEFAULT;
+
+		/* Handle orientation */
+		if (data->xy_switch)
+			swap(x, y);
+		if (data->invertx)
+			x = data->max_x - x;
+		if (data->inverty)
+			y = data->max_y - y;
+
 		/* Touch active */
 		input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, 1);
-		input_report_abs(input_dev, ABS_MT_POSITION_X, x);
-		input_report_abs(input_dev, ABS_MT_POSITION_Y, y);
+		input_report_abs(input_dev, ABS_MT_POSITION_X,
+			x - data->disp_minx);
+		input_report_abs(input_dev, ABS_MT_POSITION_Y,
+			y - data->disp_miny);
 		input_report_abs(input_dev, ABS_MT_PRESSURE, amplitude);
 		input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, area);
 	} else {
 		/* Touch no longer active, close out slot */
-		input_mt_report_slot_state(input_dev, MT_TOOL_FINGER, 0);
+		input_mt_report_slot_inactive(input_dev);
+	}
+
+	data->update_input = true;
+}
+
+static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
+{
+	struct device *dev = &data->client->dev;
+	struct input_dev *input_dev = data->input_dev;
+	int id;
+	u8 status;
+	u8 type = 0;
+	u16 x;
+	u16 y;
+	int distance = 0;
+	int tool = 0;
+	u8 major = 0;
+	u8 pressure = 0;
+	u8 orientation = 0;
+
+	id = message[0] - data->T100_reportid_min - 2;
+
+	/* ignore SCRSTATUS events */
+	if (id < 0)
+		return;
+
+	status = message[1];
+	x = get_unaligned_le16(&message[2]);
+	y = get_unaligned_le16(&message[4]);
+
+	if (status & MXT_T100_DETECT) {
+		type = (status & MXT_T100_TYPE_MASK) >> 4;
+
+		switch (type) {
+		case MXT_T100_TYPE_HOVERING_FINGER:
+			tool = MT_TOOL_FINGER;
+			distance = MXT_DISTANCE_HOVERING;
+
+			if (data->t100_aux_vect)
+				orientation = message[data->t100_aux_vect];
+
+			break;
+
+		case MXT_T100_TYPE_FINGER:
+		case MXT_T100_TYPE_GLOVE:
+			tool = MT_TOOL_FINGER;
+			distance = MXT_DISTANCE_ACTIVE_TOUCH;
+
+			if (data->t100_aux_area)
+				major = message[data->t100_aux_area];
+
+			if (data->t100_aux_ampl)
+				pressure = message[data->t100_aux_ampl];
+
+			if (data->t100_aux_vect)
+				orientation = message[data->t100_aux_vect];
+
+			break;
+
+		case MXT_T100_TYPE_PASSIVE_STYLUS:
+			tool = MT_TOOL_PEN;
+
+			/*
+			 * Passive stylus is reported with size zero so
+			 * hardcode.
+			 */
+			major = MXT_TOUCH_MAJOR_DEFAULT;
+
+			if (data->t100_aux_ampl)
+				pressure = message[data->t100_aux_ampl];
+
+			break;
+
+		case MXT_T100_TYPE_LARGE_TOUCH:
+			/* Ignore suppressed touch */
+			break;
+
+		default:
+			dev_dbg(dev, "Unexpected T100 type\n");
+			return;
+		}
+	}
+
+	/*
+	 * Values reported should be non-zero if tool is touching the
+	 * device
+	 */
+	if (!pressure && type != MXT_T100_TYPE_HOVERING_FINGER)
+		pressure = MXT_PRESSURE_DEFAULT;
+
+	input_mt_slot(input_dev, id);
+
+	if (status & MXT_T100_DETECT) {
+		dev_dbg(dev, "[%u] type:%u x:%u y:%u a:%02X p:%02X v:%02X\n",
+			id, type, x, y, major, pressure, orientation);
+
+		/* Handle orientation */
+		if (data->xy_switch)
+			swap(x, y);
+		if (data->invertx)
+			x = data->max_x - x;
+		if (data->inverty)
+			y = data->max_y - y;
+
+		input_mt_report_slot_state(input_dev, tool, 1);
+		input_report_abs(input_dev, ABS_MT_POSITION_X,
+			x - data->disp_minx);
+		input_report_abs(input_dev, ABS_MT_POSITION_Y,
+			y - data->disp_miny);
+		input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, major);
+		input_report_abs(input_dev, ABS_MT_PRESSURE, pressure);
+		input_report_abs(input_dev, ABS_MT_DISTANCE, distance);
+		input_report_abs(input_dev, ABS_MT_ORIENTATION, orientation);
+	} else {
+		dev_dbg(dev, "[%u] release\n", id);
+
+		/* close out slot */
+		input_mt_report_slot_inactive(input_dev);
 	}
 
 	data->update_input = true;
@@ -776,9 +1054,12 @@ static int mxt_proc_message(struct mxt_data *data, u8 *message)
 		 * is not yet registered.
 		 */
 		mxt_dump_message(data, message);
-	} else if (report_id >= data->T9_reportid_min
-	    && report_id <= data->T9_reportid_max) {
+	} else if (report_id >= data->T9_reportid_min &&
+		   report_id <= data->T9_reportid_max) {
 		mxt_proc_t9_message(data, message);
+	} else if (report_id >= data->T100_reportid_min &&
+		   report_id <= data->T100_reportid_max) {
+		mxt_proc_t100_message(data, message);
 	} else if (report_id == data->T19_reportid) {
 		mxt_input_button(data, message);
 		data->update_input = true;
@@ -801,7 +1082,7 @@ static int mxt_read_and_process_messages(struct mxt_data *data, u8 count)
 		return -EINVAL;
 
 	/* Process remaining messages if necessary */
-	ret = __mxt_read_reg(data->client, data->T5_address,
+	ret = __mxt_read_reg(data, data->T5_address,
 				data->T5_msg_size * count, data->msg_buf);
 	if (ret) {
 		dev_err(dev, "Failed to read %u messages (%d)\n", count, ret);
@@ -827,7 +1108,7 @@ static irqreturn_t mxt_process_messages_t44(struct mxt_data *data)
 	u8 count, num_left;
 
 	/* Read T44 and T5 together */
-	ret = __mxt_read_reg(data->client, data->T44_address,
+	ret = __mxt_read_reg(data, data->T44_address,
 		data->T5_msg_size + 1, data->msg_buf);
 	if (ret) {
 		dev_err(dev, "Failed to read T44 and T5 (%d)\n", ret);
@@ -836,16 +1117,15 @@ static irqreturn_t mxt_process_messages_t44(struct mxt_data *data)
 
 	count = data->msg_buf[0];
 
-	if (count == 0) {
-		/*
-		 * This condition is caused by the CHG line being configured
-		 * in Mode 0. It results in unnecessary I2C operations but it
-		 * is benign.
-		 */
-		dev_dbg(dev, "Interrupt triggered but zero messages\n");
+	/*
+	 * This condition may be caused by the CHG line being configured in
+	 * Mode 0. It results in unnecessary I2C operations but it is benign.
+	 */
+	if (count == 0)
 		return IRQ_NONE;
-	} else if (count > data->max_reportid) {
-		dev_err(dev, "T44 count %d exceeded max report id\n", count);
+
+	if (count > data->max_reportid) {
+		dev_warn(dev, "T44 count %d exceeded max report id\n", count);
 		count = data->max_reportid;
 	}
 
@@ -978,9 +1258,10 @@ static int mxt_t6_command(struct mxt_data *data, u16 cmd_offset,
 
 	do {
 		msleep(20);
-		ret = __mxt_read_reg(data->client, reg, 1, &command_register);
+		ret = __mxt_read_reg(data, reg, 1, data->read_buf);
 		if (ret)
 			return ret;
+		command_register = *(data->read_buf);
 	} while (command_register != 0 && timeout_counter++ <= 100);
 
 	if (timeout_counter > 100) {
@@ -991,18 +1272,40 @@ static int mxt_t6_command(struct mxt_data *data, u16 cmd_offset,
 	return 0;
 }
 
+static int mxt_acquire_irq(struct mxt_data *data)
+{
+	int error;
+
+	enable_irq(data->irq);
+
+	if (data->use_retrigen_workaround) {
+		error = mxt_process_messages_until_invalid(data);
+		if (error)
+			return error;
+	}
+
+	return 0;
+}
+
 static int mxt_soft_reset(struct mxt_data *data)
 {
 	struct device *dev = &data->client->dev;
 	int ret = 0;
 
-	dev_info(dev, "Resetting chip\n");
+	dev_dbg(dev, "Resetting device\n");
+
+	disable_irq(data->irq);
 
 	reinit_completion(&data->reset_completion);
 
 	ret = mxt_t6_command(data, MXT_COMMAND_RESET, MXT_RESET_VALUE, false);
 	if (ret)
 		return ret;
+
+	/* Ignore CHG line for 100ms after reset */
+	msleep(MXT_RESET_INVALID_CHG);
+
+	mxt_acquire_irq(data);
 
 	ret = mxt_wait_for_completion(data, &data->reset_completion,
 				      MXT_RESET_TIMEOUT);
@@ -1069,12 +1372,39 @@ static u32 mxt_calculate_crc(u8 *base, off_t start_off, off_t end_off)
 	return crc;
 }
 
-static int mxt_prepare_cfg_mem(struct mxt_data *data,
-			       const struct firmware *cfg,
-			       unsigned int data_pos,
-			       unsigned int cfg_start_ofs,
-			       u8 *config_mem,
-			       size_t config_mem_size)
+static int mxt_check_retrigen(struct mxt_data *data)
+{
+	struct i2c_client *client = data->client;
+	int error;
+	int val;
+	struct irq_data *irqd;
+
+	data->use_retrigen_workaround = false;
+
+	irqd = irq_get_irq_data(data->irq);
+	if (!irqd)
+		return -EINVAL;
+
+	if (irqd_is_level_type(irqd))
+		return 0;
+
+	if (data->T18_address) {
+		error = __mxt_read_reg(data,
+				       data->T18_address + MXT_COMMS_CTRL,
+				       1, &val);
+		if (error)
+			return error;
+
+		if (val & MXT_COMMS_RETRIGEN)
+			return 0;
+	}
+
+	dev_warn(&client->dev, "Enabling RETRIGEN workaround\n");
+	data->use_retrigen_workaround = true;
+	return 0;
+}
+
+static int mxt_prepare_cfg_mem(struct mxt_data *data, struct mxt_cfg *cfg)
 {
 	struct device *dev = &data->client->dev;
 	struct mxt_object *object;
@@ -1085,9 +1415,9 @@ static int mxt_prepare_cfg_mem(struct mxt_data *data,
 	u16 reg;
 	u8 val;
 
-	while (data_pos < cfg->size) {
+	while (cfg->raw_pos < cfg->raw_size) {
 		/* Read type, instance, length */
-		ret = sscanf(cfg->data + data_pos, "%x %x %x%n",
+		ret = sscanf(cfg->raw + cfg->raw_pos, "%x %x %x%n",
 			     &type, &instance, &size, &offset);
 		if (ret == 0) {
 			/* EOF */
@@ -1096,20 +1426,26 @@ static int mxt_prepare_cfg_mem(struct mxt_data *data,
 			dev_err(dev, "Bad format: failed to parse object\n");
 			return -EINVAL;
 		}
-		data_pos += offset;
+
+		if (cfg->raw_pos + offset >= cfg->raw_size)
+			return -EINVAL;
+
+		cfg->raw_pos += offset;
 
 		object = mxt_get_object(data, type);
 		if (!object) {
 			/* Skip object */
 			for (i = 0; i < size; i++) {
-				ret = sscanf(cfg->data + data_pos, "%hhx%n",
+				ret = sscanf(cfg->raw + cfg->raw_pos, "%hhx%n",
 					     &val, &offset);
-				if (ret != 1) {
+				if (ret != 1 || (cfg->raw_pos + offset >=
+					cfg->raw_size)) {
 					dev_err(dev, "Bad format in T%d at %d\n",
 						type, i);
 					return -EINVAL;
 				}
-				data_pos += offset;
+				cfg->raw_pos += offset;
+
 			}
 			continue;
 		}
@@ -1144,23 +1480,24 @@ static int mxt_prepare_cfg_mem(struct mxt_data *data,
 		reg = object->start_address + mxt_obj_size(object) * instance;
 
 		for (i = 0; i < size; i++) {
-			ret = sscanf(cfg->data + data_pos, "%hhx%n",
+			ret = sscanf(cfg->raw + cfg->raw_pos, "%hhx%n",
 				     &val,
 				     &offset);
-			if (ret != 1) {
+			if (ret != 1 ||
+				(cfg->raw_pos + offset >= cfg->raw_size)) {
 				dev_err(dev, "Bad format in T%d at %d\n",
 					type, i);
 				return -EINVAL;
 			}
-			data_pos += offset;
+			cfg->raw_pos += offset;
 
 			if (i > mxt_obj_size(object))
 				continue;
 
-			byte_offset = reg + i - cfg_start_ofs;
+			byte_offset = reg + i - cfg->start_ofs;
 
-			if (byte_offset >= 0 && byte_offset < config_mem_size) {
-				*(config_mem + byte_offset) = val;
+			if (byte_offset >= 0 && byte_offset < cfg->mem_size) {
+				*(cfg->mem + byte_offset) = val;
 			} else {
 				dev_err(dev, "Bad object: reg:%d, T%d, ofs=%d\n",
 					reg, object->type, byte_offset);
@@ -1172,22 +1509,21 @@ static int mxt_prepare_cfg_mem(struct mxt_data *data,
 	return 0;
 }
 
-static int mxt_upload_cfg_mem(struct mxt_data *data, unsigned int cfg_start,
-			      u8 *config_mem, size_t config_mem_size)
+static int mxt_upload_cfg_mem(struct mxt_data *data, struct mxt_cfg *cfg)
 {
 	unsigned int byte_offset = 0;
 	int error;
 
 	/* Write configuration as blocks */
-	while (byte_offset < config_mem_size) {
-		unsigned int size = config_mem_size - byte_offset;
+	while (byte_offset < cfg->mem_size) {
+		unsigned int size = cfg->mem_size - byte_offset;
 
 		if (size > MXT_MAX_BLOCK_WRITE)
 			size = MXT_MAX_BLOCK_WRITE;
 
 		error = __mxt_write_reg(data->client,
-					cfg_start + byte_offset,
-					size, config_mem + byte_offset);
+					cfg->start_ofs + byte_offset,
+					size, cfg->mem + byte_offset);
 		if (error) {
 			dev_err(&data->client->dev,
 				"Config write error, ret=%d\n", error);
@@ -1199,6 +1535,8 @@ static int mxt_upload_cfg_mem(struct mxt_data *data, unsigned int cfg_start,
 
 	return 0;
 }
+
+static int mxt_init_t7_power_cfg(struct mxt_data *data);
 
 /*
  * mxt_update_cfg - download configuration to chip
@@ -1219,65 +1557,75 @@ static int mxt_upload_cfg_mem(struct mxt_data *data, unsigned int cfg_start,
  *   <SIZE> - 2-byte object size as hex
  *   <CONTENTS> - array of <SIZE> 1-byte hex values
  */
-static int mxt_update_cfg(struct mxt_data *data, const struct firmware *cfg)
+static int mxt_update_cfg(struct mxt_data *data, const struct firmware *fw)
 {
 	struct device *dev = &data->client->dev;
-	struct mxt_info cfg_info;
+	struct mxt_cfg cfg;
 	int ret;
 	int offset;
-	int data_pos;
 	int i;
-	int cfg_start_ofs;
 	u32 info_crc, config_crc, calculated_crc;
-	u8 *config_mem;
-	size_t config_mem_size;
+	u16 crc_start = 0;
+
+	/* Make zero terminated copy of the OBP_RAW file */
+	cfg.raw = kmemdup_nul(fw->data, fw->size, GFP_KERNEL);
+	if (!cfg.raw)
+		return -ENOMEM;
+
+	cfg.raw_size = fw->size;
 
 	mxt_update_crc(data, MXT_COMMAND_REPORTALL, 1);
 
-	if (strncmp(cfg->data, MXT_CFG_MAGIC, strlen(MXT_CFG_MAGIC))) {
+	if (memcmp(cfg.raw, MXT_CFG_MAGIC, strlen(MXT_CFG_MAGIC))) {
 		dev_err(dev, "Unrecognised config file\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto release_raw;
 	}
 
-	data_pos = strlen(MXT_CFG_MAGIC);
+	cfg.raw_pos = strlen(MXT_CFG_MAGIC);
 
 	/* Load information block and check */
 	for (i = 0; i < sizeof(struct mxt_info); i++) {
-		ret = sscanf(cfg->data + data_pos, "%hhx%n",
-			     (unsigned char *)&cfg_info + i,
+		ret = sscanf(cfg.raw + cfg.raw_pos, "%hhx%n",
+			     (unsigned char *)&cfg.info + i,
 			     &offset);
-		if (ret != 1) {
+		if (ret != 1 || (cfg.raw_pos + offset >= cfg.raw_size)) {
 			dev_err(dev, "Bad format\n");
-			return -EINVAL;
+			ret = -EINVAL;
+			goto release_raw;
 		}
 
-		data_pos += offset;
+		cfg.raw_pos += offset;
 	}
 
-	if (cfg_info.family_id != data->info.family_id) {
+	if (cfg.info.family_id != data->info->family_id) {
 		dev_err(dev, "Family ID mismatch!\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto release_raw;
 	}
 
-	if (cfg_info.variant_id != data->info.variant_id) {
+	if (cfg.info.variant_id != data->info->variant_id) {
 		dev_err(dev, "Variant ID mismatch!\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto release_raw;
 	}
 
 	/* Read CRCs */
-	ret = sscanf(cfg->data + data_pos, "%x%n", &info_crc, &offset);
-	if (ret != 1) {
+	ret = sscanf(cfg.raw + cfg.raw_pos, "%x%n", &info_crc, &offset);
+	if (ret != 1 || (cfg.raw_pos + offset >= cfg.raw_size)) {
 		dev_err(dev, "Bad format: failed to parse Info CRC\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto release_raw;
 	}
-	data_pos += offset;
+	cfg.raw_pos += offset;
 
-	ret = sscanf(cfg->data + data_pos, "%x%n", &config_crc, &offset);
-	if (ret != 1) {
+	ret = sscanf(cfg.raw + cfg.raw_pos, "%x%n", &config_crc, &offset);
+	if (ret != 1 || (cfg.raw_pos + offset >= cfg.raw_size)) {
 		dev_err(dev, "Bad format: failed to parse Config CRC\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto release_raw;
 	}
-	data_pos += offset;
+	cfg.raw_pos += offset;
 
 	/*
 	 * The Info Block CRC is calculated over mxt_info and the object
@@ -1291,7 +1639,8 @@ static int mxt_update_cfg(struct mxt_data *data, const struct firmware *cfg)
 		} else if (config_crc == data->config_crc) {
 			dev_dbg(dev, "Config CRC 0x%06X: OK\n",
 				 data->config_crc);
-			return 0;
+			ret = 0;
+			goto release_raw;
 		} else {
 			dev_info(dev, "Config CRC 0x%06X: does not match file 0x%06X\n",
 				 data->config_crc, config_crc);
@@ -1303,43 +1652,47 @@ static int mxt_update_cfg(struct mxt_data *data, const struct firmware *cfg)
 	}
 
 	/* Malloc memory to store configuration */
-	cfg_start_ofs = MXT_OBJECT_START +
-			data->info.object_num * sizeof(struct mxt_object) +
+	cfg.start_ofs = MXT_OBJECT_START +
+			data->info->object_num * sizeof(struct mxt_object) +
 			MXT_INFO_CHECKSUM_SIZE;
-	config_mem_size = data->mem_size - cfg_start_ofs;
-	config_mem = kzalloc(config_mem_size, GFP_KERNEL);
-	if (!config_mem) {
-		dev_err(dev, "Failed to allocate memory\n");
-		return -ENOMEM;
+	cfg.mem_size = data->mem_size - cfg.start_ofs;
+	cfg.mem = kzalloc(cfg.mem_size, GFP_KERNEL);
+	if (!cfg.mem) {
+		ret = -ENOMEM;
+		goto release_raw;
 	}
 
-	ret = mxt_prepare_cfg_mem(data, cfg, data_pos, cfg_start_ofs,
-				  config_mem, config_mem_size);
+	ret = mxt_prepare_cfg_mem(data, &cfg);
 	if (ret)
 		goto release_mem;
 
 	/* Calculate crc of the received configs (not the raw config file) */
-	if (data->T7_address < cfg_start_ofs) {
-		dev_err(dev, "Bad T7 address, T7addr = %x, config offset %x\n",
-			data->T7_address, cfg_start_ofs);
-		ret = 0;
-		goto release_mem;
+	if (data->T71_address)
+		crc_start = data->T71_address;
+	else if (data->T7_address)
+		crc_start = data->T7_address;
+	else
+		dev_warn(dev, "Could not find CRC start\n");
+
+	if (crc_start > cfg.start_ofs) {
+		calculated_crc = mxt_calculate_crc(cfg.mem,
+						   crc_start - cfg.start_ofs,
+						   cfg.mem_size);
+
+		if (config_crc > 0 && config_crc != calculated_crc)
+			dev_warn(dev, "Config CRC in file inconsistent, calculated=%06X, file=%06X\n",
+				 calculated_crc, config_crc);
 	}
 
-	calculated_crc = mxt_calculate_crc(config_mem,
-					   data->T7_address - cfg_start_ofs,
-					   config_mem_size);
-
-	if (config_crc > 0 && config_crc != calculated_crc)
-		dev_warn(dev, "Config CRC error, calculated=%06X, file=%06X\n",
-			 calculated_crc, config_crc);
-
-	ret = mxt_upload_cfg_mem(data, cfg_start_ofs,
-				 config_mem, config_mem_size);
+	ret = mxt_upload_cfg_mem(data, &cfg);
 	if (ret)
 		goto release_mem;
 
 	mxt_update_crc(data, MXT_COMMAND_BACKUPNV, MXT_BACKUP_VALUE);
+
+	ret = mxt_check_retrigen(data);
+	if (ret)
+		goto release_mem;
 
 	ret = mxt_soft_reset(data);
 	if (ret)
@@ -1347,36 +1700,14 @@ static int mxt_update_cfg(struct mxt_data *data, const struct firmware *cfg)
 
 	dev_info(dev, "Config successfully updated\n");
 
+	/* T7 config may have changed */
+	mxt_init_t7_power_cfg(data);
+
 release_mem:
-	kfree(config_mem);
+	kfree(cfg.mem);
+release_raw:
+	kfree(cfg.raw);
 	return ret;
-}
-
-static int mxt_acquire_irq(struct mxt_data *data)
-{
-	int error;
-
-	enable_irq(data->irq);
-
-	error = mxt_process_messages_until_invalid(data);
-	if (error)
-		return error;
-
-	return 0;
-}
-
-static int mxt_get_info(struct mxt_data *data)
-{
-	struct i2c_client *client = data->client;
-	struct mxt_info *info = &data->info;
-	int error;
-
-	/* Read 7-byte info block starting at address 0 */
-	error = __mxt_read_reg(client, MXT_INFO, sizeof(*info), info);
-	if (error)
-		return error;
-
-	return 0;
 }
 
 static void mxt_free_input_device(struct mxt_data *data)
@@ -1389,49 +1720,43 @@ static void mxt_free_input_device(struct mxt_data *data)
 
 static void mxt_free_object_table(struct mxt_data *data)
 {
-	kfree(data->object_table);
+#ifdef CONFIG_TOUCHSCREEN_ATMEL_MXT_T37
+	video_unregister_device(&data->dbg.vdev);
+	v4l2_device_unregister(&data->dbg.v4l2);
+#endif
 	data->object_table = NULL;
+	data->info = NULL;
+	kfree(data->raw_info_block);
+	data->raw_info_block = NULL;
 	kfree(data->msg_buf);
 	data->msg_buf = NULL;
 	data->T5_address = 0;
 	data->T5_msg_size = 0;
 	data->T6_reportid = 0;
 	data->T7_address = 0;
+	data->T71_address = 0;
 	data->T9_reportid_min = 0;
 	data->T9_reportid_max = 0;
+	data->T18_address = 0;
 	data->T19_reportid = 0;
 	data->T44_address = 0;
+	data->T100_reportid_min = 0;
+	data->T100_reportid_max = 0;
 	data->max_reportid = 0;
 }
 
-static int mxt_get_object_table(struct mxt_data *data)
+static int mxt_parse_object_table(struct mxt_data *data,
+				  struct mxt_object *object_table)
 {
 	struct i2c_client *client = data->client;
-	size_t table_size;
-	struct mxt_object *object_table;
-	int error;
 	int i;
 	u8 reportid;
 	u16 end_address;
 
-	table_size = data->info.object_num * sizeof(struct mxt_object);
-	object_table = kzalloc(table_size, GFP_KERNEL);
-	if (!object_table) {
-		dev_err(&data->client->dev, "Failed to allocate memory\n");
-		return -ENOMEM;
-	}
-
-	error = __mxt_read_reg(client, MXT_OBJECT_START, table_size,
-			object_table);
-	if (error) {
-		kfree(object_table);
-		return error;
-	}
-
 	/* Valid Report IDs start counting from 1 */
 	reportid = 1;
 	data->mem_size = 0;
-	for (i = 0; i < data->info.object_num; i++) {
+	for (i = 0; i < data->info->object_num; i++) {
 		struct mxt_object *object = object_table + i;
 		u8 min_id, max_id;
 
@@ -1455,8 +1780,8 @@ static int mxt_get_object_table(struct mxt_data *data)
 
 		switch (object->type) {
 		case MXT_GEN_MESSAGE_T5:
-			if (data->info.family_id == 0x80 &&
-			    data->info.version < 0x20) {
+			if (data->info->family_id == 0x80 &&
+			    data->info->version < 0x20) {
 				/*
 				 * On mXT224 firmware versions prior to V2.0
 				 * read and discard unused CRC byte otherwise
@@ -1476,17 +1801,32 @@ static int mxt_get_object_table(struct mxt_data *data)
 		case MXT_GEN_POWER_T7:
 			data->T7_address = object->start_address;
 			break;
+		case MXT_SPT_DYNAMICCONFIGURATIONCONTAINER_T71:
+			data->T71_address = object->start_address;
+			break;
 		case MXT_TOUCH_MULTI_T9:
+			data->multitouch = MXT_TOUCH_MULTI_T9;
+			/* Only handle messages from first T9 instance */
 			data->T9_reportid_min = min_id;
-			data->T9_reportid_max = max_id;
-			data->num_touchids = object->num_report_ids
-						* mxt_obj_instances(object);
+			data->T9_reportid_max = min_id +
+						object->num_report_ids - 1;
+			data->num_touchids = object->num_report_ids;
+			break;
+		case MXT_SPT_COMMSCONFIG_T18:
+			data->T18_address = object->start_address;
 			break;
 		case MXT_SPT_MESSAGECOUNT_T44:
 			data->T44_address = object->start_address;
 			break;
 		case MXT_SPT_GPIOPWM_T19:
 			data->T19_reportid = min_id;
+			break;
+		case MXT_TOUCH_MULTITOUCHSCREEN_T100:
+			data->multitouch = MXT_TOUCH_MULTITOUCHSCREEN_T100;
+			data->T100_reportid_min = min_id;
+			data->T100_reportid_max = max_id;
+			/* first two report IDs reserved */
+			data->num_touchids = object->num_report_ids - 2;
 			break;
 		}
 
@@ -1503,32 +1843,414 @@ static int mxt_get_object_table(struct mxt_data *data)
 	/* If T44 exists, T5 position has to be directly after */
 	if (data->T44_address && (data->T5_address != data->T44_address + 1)) {
 		dev_err(&client->dev, "Invalid T44 position\n");
-		error = -EINVAL;
-		goto free_object_table;
+		return -EINVAL;
 	}
 
 	data->msg_buf = kcalloc(data->max_reportid,
 				data->T5_msg_size, GFP_KERNEL);
-	if (!data->msg_buf) {
-		dev_err(&client->dev, "Failed to allocate message buffer\n");
+	if (!data->msg_buf)
+		return -ENOMEM;
+
+	return 0;
+}
+
+static int mxt_read_info_block(struct mxt_data *data)
+{
+	struct i2c_client *client = data->client;
+	int error;
+	size_t size;
+	void *id_buf, *buf;
+	uint8_t num_objects;
+	u32 calculated_crc;
+	u8 *crc_ptr;
+
+	/* If info block already allocated, free it */
+	if (data->raw_info_block)
+		mxt_free_object_table(data);
+
+	/* Read 7-byte ID information block starting at address 0 */
+	size = sizeof(struct mxt_info);
+	id_buf = kzalloc(size, GFP_KERNEL);
+	if (!id_buf)
+		return -ENOMEM;
+
+	error = __mxt_read_reg(data, 0, size, id_buf);
+	if (error)
+		goto err_free_mem;
+
+	/* Resize buffer to give space for rest of info block */
+	num_objects = ((struct mxt_info *)id_buf)->object_num;
+	size += (num_objects * sizeof(struct mxt_object))
+		+ MXT_INFO_CHECKSUM_SIZE;
+
+	buf = krealloc(id_buf, size, GFP_KERNEL);
+	if (!buf) {
 		error = -ENOMEM;
-		goto free_object_table;
+		goto err_free_mem;
+	}
+	id_buf = buf;
+
+	/* Read rest of info block */
+	error = __mxt_read_reg(data, MXT_OBJECT_START,
+			       size - MXT_OBJECT_START,
+			       id_buf + MXT_OBJECT_START);
+	if (error)
+		goto err_free_mem;
+
+	/* Extract & calculate checksum */
+	crc_ptr = id_buf + size - MXT_INFO_CHECKSUM_SIZE;
+	data->info_crc = crc_ptr[0] | (crc_ptr[1] << 8) | (crc_ptr[2] << 16);
+
+	calculated_crc = mxt_calculate_crc(id_buf, 0,
+					   size - MXT_INFO_CHECKSUM_SIZE);
+
+	/*
+	 * CRC mismatch can be caused by data corruption due to I2C comms
+	 * issue or else device is not using Object Based Protocol (eg i2c-hid)
+	 */
+	if ((data->info_crc == 0) || (data->info_crc != calculated_crc)) {
+		dev_err(&client->dev,
+			"Info Block CRC error calculated=0x%06X read=0x%06X\n",
+			calculated_crc, data->info_crc);
+		error = -EIO;
+		goto err_free_mem;
 	}
 
-	data->object_table = object_table;
+	data->raw_info_block = id_buf;
+	data->info = (struct mxt_info *)id_buf;
+
+	dev_info(&client->dev,
+		 "Family: %u Variant: %u Firmware V%u.%u.%02X Objects: %u\n",
+		 data->info->family_id, data->info->variant_id,
+		 data->info->version >> 4, data->info->version & 0xf,
+		 data->info->build, data->info->object_num);
+
+	/* Parse object table information */
+	error = mxt_parse_object_table(data, id_buf + MXT_OBJECT_START);
+	if (error) {
+		dev_err(&client->dev, "Error %d parsing object table\n", error);
+		mxt_free_object_table(data);
+		return error;
+	}
+
+	data->object_table = (struct mxt_object *)(id_buf + MXT_OBJECT_START);
 
 	return 0;
 
-free_object_table:
-	mxt_free_object_table(data);
+err_free_mem:
+	kfree(id_buf);
+	return error;
+}
+
+static int mxt_pinctrl_init(struct mxt_data *data)
+{
+	int error;
+
+	/* Get pinctrl if target uses pinctrl */
+	data->ts_pinctrl = devm_pinctrl_get((&data->client->dev));
+	if (IS_ERR_OR_NULL(data->ts_pinctrl)) {
+		dev_dbg(&data->client->dev,
+			"Device does not use pinctrl\n");
+		error = PTR_ERR(data->ts_pinctrl);
+		data->ts_pinctrl = NULL;
+		return error;
+	}
+
+	data->gpio_state_active
+		= pinctrl_lookup_state(data->ts_pinctrl, "pmx_ts_active");
+	if (IS_ERR_OR_NULL(data->gpio_state_active)) {
+		dev_dbg(&data->client->dev,
+			"Can not get ts default pinstate\n");
+		error = PTR_ERR(data->gpio_state_active);
+		data->ts_pinctrl = NULL;
+		return error;
+	}
+
+	data->gpio_state_suspend
+		= pinctrl_lookup_state(data->ts_pinctrl, "pmx_ts_suspend");
+	if (IS_ERR_OR_NULL(data->gpio_state_suspend)) {
+		dev_dbg(&data->client->dev,
+			"Can not get ts sleep pinstate\n");
+		error = PTR_ERR(data->gpio_state_suspend);
+		data->ts_pinctrl = NULL;
+		return error;
+	}
+
+	return 0;
+}
+
+static int mxt_pinctrl_select(struct mxt_data *data, bool on)
+{
+	struct pinctrl_state *pins_state;
+	int error;
+
+	pins_state = on ? data->gpio_state_active
+		: data->gpio_state_suspend;
+	if (!IS_ERR_OR_NULL(pins_state)) {
+		error = pinctrl_select_state(data->ts_pinctrl, pins_state);
+		if (error) {
+			dev_err(&data->client->dev,
+				"can not set %s pins\n",
+				on ? "pmx_ts_active" : "pmx_ts_suspend");
+			return error;
+		}
+	} else {
+		dev_err(&data->client->dev,
+			"not a valid '%s' pinstate\n",
+				on ? "pmx_ts_active" : "pmx_ts_suspend");
+	}
+
+	return 0;
+}
+
+static int mxt_gpio_enable(struct mxt_data *data, bool enable)
+{
+	int error;
+
+	if (data->ts_pinctrl) {
+		error = mxt_pinctrl_select(data, enable);
+		if (error < 0)
+			return error;
+	}
+
+	if (enable) {
+		error = gpiod_direction_input(data->irq_gpio);
+		if (error)
+			dev_err(&data->client->dev,
+				"unable to set dir for %d gpio(%d)\n",
+				desc_to_gpio(data->irq_gpio), error);
+		if (data->reset_gpio)
+			gpiod_set_value(data->reset_gpio, 1);
+	} else  {
+		if (data->reset_gpio)
+			gpiod_set_value(data->reset_gpio, 0);
+	}
+
+	return 0;
+}
+
+static int mxt_regulator_enable(struct mxt_data *data)
+{
+	int error;
+
+	if (!data->use_regulator)
+		return 0;
+
+	gpiod_set_value(data->reset_gpio, 0);
+
+	error = mxt_regulator_configure(data, true);
+	if (error) {
+		dev_err(&data->client->dev, "Failed to configure regulators on\n");
+		return error;
+	}
+
+	error = regulator_enable(data->reg_avdd);
+	if (error) {
+		dev_err(&data->client->dev,
+			"avdd enable failed, error=%d\n", error);
+		goto err_dis_configure;
+	}
+	usleep_range(10000, 15000);
+
+	error = regulator_enable(data->reg_vdd);
+	if (error) {
+		dev_err(&data->client->dev,
+			"vdd enable failed, error=%d\n", error);
+		goto err_dis_avdd;
+	}
+
+	if (!IS_ERR(data->reg_xvdd)) {
+		usleep_range(10000, 15000);
+		error = regulator_enable(data->reg_xvdd);
+		if (error) {
+			dev_err(&data->client->dev,
+				"xvdd enable failed, error=%d\n", error);
+			goto err_dis_vdd;
+		}
+	}
+	msleep(MXT_REGULATOR_DELAY);
+
+	reinit_completion(&data->bl_completion);
+	gpiod_set_value(data->reset_gpio, 1);
+	mxt_wait_for_completion(data, &data->bl_completion, MXT_POWERON_DELAY);
+
+	return 0;
+
+err_dis_vdd:
+	regulator_disable(data->reg_vdd);
+err_dis_avdd:
+	regulator_disable(data->reg_avdd);
+err_dis_configure:
+	mxt_regulator_configure(data, false);
+	return error;
+}
+
+static void mxt_regulator_disable(struct mxt_data *data)
+{
+	int error;
+
+	regulator_disable(data->reg_vdd);
+	regulator_disable(data->reg_avdd);
+	if (!IS_ERR(data->reg_xvdd))
+		regulator_disable(data->reg_xvdd);
+
+	error = mxt_regulator_configure(data, false);
+	if (error)
+		dev_err(&data->client->dev, "Failed to configure regulators off\n");
+
+}
+
+static int mxt_regulator_parse(struct mxt_data *data)
+{
+	struct device *dev = &data->client->dev;
+	struct device_node *np = dev->of_node;
+	struct property *prop;
+	int error = 0;
+
+	if (!data->reset_gpio) {
+		dev_warn(dev, "Must have reset GPIO to use regulator support\n");
+		return 0;
+	}
+
+	data->reg_vdd = regulator_get(dev, "vdd");
+	if (IS_ERR(data->reg_vdd)) {
+		error = PTR_ERR(data->reg_vdd);
+		dev_err(dev, "Error %d getting vdd regulator\n", error);
+		return error;
+	}
+
+	data->reg_avdd = regulator_get(dev, "avdd");
+	if (IS_ERR(data->reg_avdd)) {
+		error = PTR_ERR(data->reg_avdd);
+		dev_err(dev, "Error %d getting avdd regulator\n", error);
+		goto fail_put_vdd;
+	}
+
+	data->reg_xvdd = regulator_get(dev, "xvdd");
+	if (IS_ERR(data->reg_xvdd)) {
+		error = PTR_ERR(data->reg_xvdd);
+		prop = of_find_property(np, "xvdd-supply", NULL);
+		if (prop && (error == -EPROBE_DEFER))
+			return -EPROBE_DEFER;
+		dev_dbg(dev, "xvdd regulator is not used\n");
+	}
+
+	data->use_regulator = true;
+
+	dev_err(dev, "Initialised regulators\n");
+	return 0;
+
+fail_put_vdd:
+	regulator_put(data->reg_vdd);
+	return error;
+}
+
+static int mxt_regulator_configure(struct mxt_data *data, bool enable)
+{
+	struct device *dev = &data->client->dev;
+	int error = 0;
+
+	/* According to maXTouch power sequencing specification, RESET line
+	 * must be kept low until some time after regulators come up to
+	 * voltage
+	 */
+	if (!data->reset_gpio) {
+		dev_warn(dev, "Must have reset GPIO to use regulator support\n");
+		return 0;
+	}
+
+	if (!enable) {
+		if (regulator_count_voltages(data->reg_avdd) > 0) {
+			error = regulator_set_load(data->reg_avdd, MXT_DISABLE_LOAD);
+			if (error) {
+				dev_err(&data->client->dev,
+					"avdd set_load failed err=%d\n", error);
+				return error;
+			}
+		}
+
+		if (regulator_count_voltages(data->reg_vdd) > 0) {
+			error = regulator_set_load(data->reg_vdd, MXT_DISABLE_LOAD);
+			if (error) {
+				dev_err(&data->client->dev,
+					"vdd set_load failed err=%d\n", error);
+				return error;
+			}
+		}
+
+		if (!IS_ERR(data->reg_xvdd)) {
+			if (regulator_count_voltages(data->reg_xvdd) > 0) {
+				error = regulator_set_load(data->reg_xvdd, MXT_DISABLE_LOAD);
+				if (error)
+					dev_err(&data->client->dev,
+						"xvdd set_load failed err=%d\n", error);
+			}
+		}
+	} else {
+		if (regulator_count_voltages(data->reg_vdd) > 0) {
+			error = regulator_set_load(data->reg_vdd, MXT_ENABLE_LOAD);
+			if (error) {
+				dev_err(&data->client->dev,
+					"vdd set_load failed err=%d\n", error);
+				return error;
+			}
+			error = regulator_set_voltage(data->reg_vdd,
+				MXT_VDD_VTG_MIN_UV, MXT_VDD_VTG_MAX_UV);
+			if (error) {
+				dev_err(&data->client->dev,
+					"vdd set_vtg failed err=%d\n", error);
+				goto err_vdd_load;
+			}
+		}
+
+		if (regulator_count_voltages(data->reg_avdd) > 0) {
+			error = regulator_set_load(data->reg_avdd, MXT_ENABLE_LOAD);
+			if (error) {
+				dev_err(&data->client->dev,
+					"avdd set_load failed err=%d\n", error);
+				goto err_vdd_load;
+			}
+			error = regulator_set_voltage(data->reg_avdd,
+				MXT_AVDD_VTG_MIN_UV, MXT_AVDD_VTG_MAX_UV);
+			if (error) {
+				dev_err(&data->client->dev,
+					"avdd set_vtg failed err=%d\n", error);
+				goto err_avdd_load;
+			}
+		}
+
+		if (!IS_ERR(data->reg_xvdd)) {
+			if (regulator_count_voltages(data->reg_xvdd) > 0) {
+				error = regulator_set_load(data->reg_xvdd, MXT_ENABLE_LOAD);
+				if (error) {
+					dev_err(&data->client->dev,
+						"xvdd set_load failed err=%d\n", error);
+					goto err_avdd_load;
+				}
+				error = regulator_set_voltage(data->reg_xvdd,
+					MXT_XVDD_VTG_MIN_UV, MXT_XVDD_VTG_MAX_UV);
+				if (error) {
+					dev_err(&data->client->dev,
+						"xvdd set_vtg failed err=%d\n", error);
+					goto err_xvdd_load;
+				}
+			}
+		}
+	}
+	return error;
+
+err_xvdd_load:
+	regulator_set_load(data->reg_xvdd, MXT_DISABLE_LOAD);
+err_avdd_load:
+	regulator_set_load(data->reg_avdd, MXT_DISABLE_LOAD);
+err_vdd_load:
+	regulator_set_load(data->reg_vdd, MXT_DISABLE_LOAD);
 	return error;
 }
 
 static int mxt_read_t9_resolution(struct mxt_data *data)
 {
-	struct i2c_client *client = data->client;
 	int error;
-	struct t9_range range;
 	unsigned char orient;
 	struct mxt_object *object;
 
@@ -1536,38 +2258,138 @@ static int mxt_read_t9_resolution(struct mxt_data *data)
 	if (!object)
 		return -EINVAL;
 
-	error = __mxt_read_reg(client,
+	error = __mxt_read_reg(data,
+			       object->start_address + MXT_T9_XSIZE,
+			       sizeof(data->xsize), &data->xsize);
+	if (error)
+		return error;
+
+	error = __mxt_read_reg(data,
+			       object->start_address + MXT_T9_YSIZE,
+			       sizeof(data->ysize), &data->ysize);
+	if (error)
+		return error;
+
+	error = __mxt_read_reg(data,
 			       object->start_address + MXT_T9_RANGE,
-			       sizeof(range), &range);
+			       sizeof(struct t9_range), data->read_buf);
 	if (error)
 		return error;
 
-	le16_to_cpus(&range.x);
-	le16_to_cpus(&range.y);
+	data->max_x = get_unaligned_le16(data->read_buf);
+	data->max_y = get_unaligned_le16(data->read_buf + sizeof(__le16));
 
-	error =  __mxt_read_reg(client,
+	error = __mxt_read_reg(data,
 				object->start_address + MXT_T9_ORIENT,
-				1, &orient);
+				1, data->read_buf);
+	if (error)
+		return error;
+	orient = *(data->read_buf);
+
+	if (data->xy_switch != (orient & MXT_T9_ORIENT_SWITCH))
+		dev_warn(&data->client->dev,
+			"T9 data->xy_switch:%d\n",
+			data->xy_switch);
+
+	if (data->invertx != (orient & MXT_T9_ORIENT_INVERTX))
+		dev_warn(&data->client->dev,
+			"T9 data->data->invertx:%d\n",
+			data->invertx);
+
+	if (data->inverty != (orient & MXT_T9_ORIENT_INVERTY))
+		dev_warn(&data->client->dev,
+			"T9 data->data->inverty:%d\n",
+			data->inverty);
+
+	return 0;
+}
+
+static int mxt_read_t100_config(struct mxt_data *data)
+{
+	int error;
+	struct mxt_object *object;
+	u8 cfg, tchaux;
+	u8 aux;
+
+	object = mxt_get_object(data, MXT_TOUCH_MULTITOUCHSCREEN_T100);
+	if (!object)
+		return -EINVAL;
+
+	/* read touchscreen dimensions */
+	error = __mxt_read_reg(data,
+			       object->start_address + MXT_T100_XRANGE,
+			       sizeof(__le16), data->read_buf);
 	if (error)
 		return error;
 
-	/* Handle default values */
-	if (range.x == 0)
-		range.x = 1023;
+	data->max_x = get_unaligned_le16(data->read_buf);
 
-	if (range.y == 0)
-		range.y = 1023;
+	error = __mxt_read_reg(data,
+			       object->start_address + MXT_T100_YRANGE,
+			       sizeof(__le16), data->read_buf);
 
-	if (orient & MXT_T9_ORIENT_SWITCH) {
-		data->max_x = range.y;
-		data->max_y = range.x;
-	} else {
-		data->max_x = range.x;
-		data->max_y = range.y;
-	}
+	if (error)
+		return error;
 
-	dev_dbg(&client->dev,
-		"Touchscreen size X%uY%u\n", data->max_x, data->max_y);
+	data->max_y = get_unaligned_le16(data->read_buf);
+
+	error = __mxt_read_reg(data,
+			       object->start_address + MXT_T100_XSIZE,
+			       sizeof(data->xsize), &data->xsize);
+	if (error)
+		return error;
+
+	error = __mxt_read_reg(data,
+			       object->start_address + MXT_T100_YSIZE,
+			       sizeof(data->ysize), &data->ysize);
+	if (error)
+		return error;
+
+	/* read orientation config */
+	error = __mxt_read_reg(data,
+				object->start_address + MXT_T100_CFG1,
+				1, data->read_buf);
+	if (error)
+		return error;
+	cfg = *(data->read_buf);
+
+	if (data->xy_switch != (cfg & MXT_T100_CFG_SWITCHXY))
+		dev_warn(&data->client->dev,
+			"T100 data->xy_switch:%d\n",
+			data->xy_switch);
+
+	if (data->invertx != (cfg & MXT_T100_CFG_INVERTX))
+		dev_warn(&data->client->dev,
+			"T100 data->data->invertx:%d\n",
+			data->invertx);
+
+	if (data->inverty != (cfg & MXT_T100_CFG_INVERTY))
+		dev_warn(&data->client->dev,
+			"T100 data->data->inverty:%d\n",
+			data->inverty);
+
+	/* allocate aux bytes */
+	error =  __mxt_read_reg(data,
+				object->start_address + MXT_T100_TCHAUX,
+				1, data->read_buf);
+	if (error)
+		return error;
+	tchaux = *(data->read_buf);
+
+	aux = 6;
+
+	if (tchaux & MXT_T100_TCHAUX_VECT)
+		data->t100_aux_vect = aux++;
+
+	if (tchaux & MXT_T100_TCHAUX_AMPL)
+		data->t100_aux_ampl = aux++;
+
+	if (tchaux & MXT_T100_TCHAUX_AREA)
+		data->t100_aux_area = aux++;
+
+	dev_dbg(&data->client->dev,
+		"T100 aux mappings vect:%u ampl:%u area:%u\n",
+		data->t100_aux_vect, data->t100_aux_ampl, data->t100_aux_area);
 
 	return 0;
 }
@@ -1575,25 +2397,72 @@ static int mxt_read_t9_resolution(struct mxt_data *data)
 static int mxt_input_open(struct input_dev *dev);
 static void mxt_input_close(struct input_dev *dev);
 
-static int mxt_initialize_t9_input_device(struct mxt_data *data)
+static void mxt_set_up_as_touchpad(struct input_dev *input_dev,
+				   struct mxt_data *data)
+{
+	int i;
+
+	input_dev->name = "Atmel maXTouch Touchpad";
+
+	__set_bit(INPUT_PROP_BUTTONPAD, input_dev->propbit);
+
+	input_abs_set_res(input_dev, ABS_X, MXT_PIXELS_PER_MM);
+	input_abs_set_res(input_dev, ABS_Y, MXT_PIXELS_PER_MM);
+	input_abs_set_res(input_dev, ABS_MT_POSITION_X,
+			  MXT_PIXELS_PER_MM);
+	input_abs_set_res(input_dev, ABS_MT_POSITION_Y,
+			  MXT_PIXELS_PER_MM);
+
+	for (i = 0; i < data->t19_num_keys; i++)
+		if (data->t19_keymap[i] != KEY_RESERVED)
+			input_set_capability(input_dev, EV_KEY,
+					     data->t19_keymap[i]);
+}
+
+static int mxt_initialize_input_device(struct mxt_data *data)
 {
 	struct device *dev = &data->client->dev;
-	const struct mxt_platform_data *pdata = data->pdata;
 	struct input_dev *input_dev;
 	int error;
 	unsigned int num_mt_slots;
 	unsigned int mt_flags = 0;
-	int i;
 
-	error = mxt_read_t9_resolution(data);
-	if (error)
-		dev_warn(dev, "Failed to initialize T9 resolution\n");
+	switch (data->multitouch) {
+	case MXT_TOUCH_MULTI_T9:
+		num_mt_slots = data->T9_reportid_max - data->T9_reportid_min + 1;
+		error = mxt_read_t9_resolution(data);
+		if (error)
+			dev_warn(dev, "Failed to initialize T9 resolution\n");
+		break;
 
-	input_dev = input_allocate_device();
-	if (!input_dev) {
-		dev_err(dev, "Failed to allocate memory\n");
-		return -ENOMEM;
+	case MXT_TOUCH_MULTITOUCHSCREEN_T100:
+		num_mt_slots = data->num_touchids;
+		error = mxt_read_t100_config(data);
+		if (error)
+			dev_warn(dev, "Failed to read T100 config\n");
+		break;
+
+	default:
+		dev_err(dev, "Invalid multitouch object\n");
+		return -EINVAL;
 	}
+
+	/* Handle default values and orientation switch */
+	if (data->max_x == 0)
+		data->max_x = 1023;
+
+	if (data->max_y == 0)
+		data->max_y = 1023;
+
+	if (data->xy_switch)
+		swap(data->max_x, data->max_y);
+
+	dev_info(dev, "Touchscreen size X%uY%u\n", data->max_x, data->max_y);
+
+	/* Register input device */
+	input_dev = input_allocate_device();
+	if (!input_dev)
+		return -ENOMEM;
 
 	input_dev->name = "Atmel maXTouch Touchscreen";
 	input_dev->phys = data->phys;
@@ -1602,54 +2471,73 @@ static int mxt_initialize_t9_input_device(struct mxt_data *data)
 	input_dev->open = mxt_input_open;
 	input_dev->close = mxt_input_close;
 
-	__set_bit(EV_ABS, input_dev->evbit);
-	__set_bit(EV_KEY, input_dev->evbit);
-	__set_bit(BTN_TOUCH, input_dev->keybit);
+	input_set_capability(input_dev, EV_KEY, BTN_TOUCH);
 
-	if (pdata->t19_num_keys) {
-		__set_bit(INPUT_PROP_BUTTONPAD, input_dev->propbit);
+	if (data->disp_maxx == 0 || data->disp_maxx > data->max_x)
+		data->disp_maxx = data->max_x;
+	if (data->disp_maxy == 0 || data->disp_maxy > data->max_y)
+		data->disp_maxy = data->max_y;
 
-		for (i = 0; i < pdata->t19_num_keys; i++)
-			if (pdata->t19_keymap[i] != KEY_RESERVED)
-				input_set_capability(input_dev, EV_KEY,
-						     pdata->t19_keymap[i]);
-
-		mt_flags |= INPUT_MT_POINTER;
-
-		input_abs_set_res(input_dev, ABS_X, MXT_PIXELS_PER_MM);
-		input_abs_set_res(input_dev, ABS_Y, MXT_PIXELS_PER_MM);
-		input_abs_set_res(input_dev, ABS_MT_POSITION_X,
-				  MXT_PIXELS_PER_MM);
-		input_abs_set_res(input_dev, ABS_MT_POSITION_Y,
-				  MXT_PIXELS_PER_MM);
-
-		input_dev->name = "Atmel maXTouch Touchpad";
+	if (data->multitouch == MXT_TOUCH_MULTI_T9 ||
+	    (data->multitouch == MXT_TOUCH_MULTITOUCHSCREEN_T100 &&
+	     data->t100_aux_ampl)) {
+		input_set_abs_params(input_dev, ABS_PRESSURE, 0, 255, 0, 0);
 	}
 
-	/* For single touch */
-	input_set_abs_params(input_dev, ABS_X,
-			     0, data->max_x, 0, 0);
-	input_set_abs_params(input_dev, ABS_Y,
-			     0, data->max_y, 0, 0);
-	input_set_abs_params(input_dev, ABS_PRESSURE,
-			     0, 255, 0, 0);
+	/* If device has buttons we assume it is a touchpad */
+	if (data->t19_num_keys) {
+		mxt_set_up_as_touchpad(input_dev, data);
+		mt_flags |= INPUT_MT_POINTER;
+	} else {
+		mt_flags |= INPUT_MT_DIRECT;
+	}
 
 	/* For multi touch */
-	num_mt_slots = data->T9_reportid_max - data->T9_reportid_min + 1;
 	error = input_mt_init_slots(input_dev, num_mt_slots, mt_flags);
 	if (error) {
 		dev_err(dev, "Error %d initialising slots\n", error);
 		goto err_free_mem;
 	}
 
-	input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR,
-			     0, MXT_MAX_AREA, 0, 0);
+	if (data->multitouch == MXT_TOUCH_MULTITOUCHSCREEN_T100) {
+		input_set_abs_params(input_dev, ABS_MT_TOOL_TYPE,
+				     0, MT_TOOL_MAX, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_DISTANCE,
+				     MXT_DISTANCE_ACTIVE_TOUCH,
+				     MXT_DISTANCE_HOVERING,
+				     0, 0);
+	}
+
 	input_set_abs_params(input_dev, ABS_MT_POSITION_X,
-			     0, data->max_x, 0, 0);
+			0, data->disp_maxx - data->disp_minx, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_POSITION_Y,
-			     0, data->max_y, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_PRESSURE,
-			     0, 255, 0, 0);
+			0, data->disp_maxy - data->disp_miny, 0, 0);
+
+	if (data->multitouch == MXT_TOUCH_MULTI_T9 ||
+	    (data->multitouch == MXT_TOUCH_MULTITOUCHSCREEN_T100 &&
+	     data->t100_aux_area)) {
+		input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR,
+				     0, MXT_MAX_AREA, 0, 0);
+	}
+
+	if (data->multitouch == MXT_TOUCH_MULTI_T9 ||
+	    (data->multitouch == MXT_TOUCH_MULTITOUCHSCREEN_T100 &&
+	     data->t100_aux_ampl)) {
+		input_set_abs_params(input_dev, ABS_MT_PRESSURE,
+				     0, 255, 0, 0);
+	}
+
+	if (data->multitouch == MXT_TOUCH_MULTITOUCHSCREEN_T100 &&
+	    data->t100_aux_vect) {
+		input_set_abs_params(input_dev, ABS_MT_ORIENTATION,
+				     0, 255, 0, 0);
+	}
+
+	if (data->multitouch == MXT_TOUCH_MULTITOUCHSCREEN_T100 &&
+	    data->t100_aux_vect) {
+		input_set_abs_params(input_dev, ABS_MT_ORIENTATION,
+				     0, 255, 0, 0);
+	}
 
 	input_set_drvdata(input_dev, data);
 
@@ -1684,7 +2572,7 @@ static int mxt_initialize(struct mxt_data *data)
 	int error;
 
 	while (1) {
-		error = mxt_get_info(data);
+		error = mxt_read_info_block(data);
 		if (!error)
 			break;
 
@@ -1692,15 +2580,16 @@ static int mxt_initialize(struct mxt_data *data)
 		error = mxt_probe_bootloader(data, false);
 		if (error) {
 			dev_info(&client->dev, "Trying alternate bootloader address\n");
+			mxt_soft_reset(data);
 			error = mxt_probe_bootloader(data, true);
 			if (error) {
 				/* Chip is not in appmode or bootloader mode */
-				return error;
+				dev_err(&client->dev, "Fail probe boot, continue\n");
 			}
 		}
 
 		/* OK, we are in bootloader, see if we can recover */
-		if (++recovery_attempts > 1) {
+		if (++recovery_attempts > 10) {
 			dev_err(&client->dev, "Could not recover from bootloader mode\n");
 			/*
 			 * We can reflash from this state, so do not
@@ -1715,16 +2604,13 @@ static int mxt_initialize(struct mxt_data *data)
 		msleep(MXT_FW_RESET_TIME);
 	}
 
-	/* Get object table information */
-	error = mxt_get_object_table(data);
-	if (error) {
-		dev_err(&client->dev, "Error %d reading object table\n", error);
+	error = mxt_check_retrigen(data);
+	if (error)
 		return error;
-	}
 
 	error = mxt_acquire_irq(data);
 	if (error)
-		goto err_free_object_table;
+		return error;
 
 	error = request_firmware_nowait(THIS_MODULE, true, MXT_CFG_NAME,
 					&client->dev, GFP_KERNEL, data,
@@ -1732,14 +2618,10 @@ static int mxt_initialize(struct mxt_data *data)
 	if (error) {
 		dev_err(&client->dev, "Failed to invoke firmware loader: %d\n",
 			error);
-		goto err_free_object_table;
+		return error;
 	}
 
 	return 0;
-
-err_free_object_table:
-	mxt_free_object_table(data);
-	return error;
 }
 
 static int mxt_set_t7_power_cfg(struct mxt_data *data, u8 sleep)
@@ -1772,7 +2654,7 @@ static int mxt_init_t7_power_cfg(struct mxt_data *data)
 	bool retry = false;
 
 recheck:
-	error = __mxt_read_reg(data->client, data->T7_address,
+	error = __mxt_read_reg(data, data->T7_address,
 				sizeof(data->t7_cfg), &data->t7_cfg);
 	if (error)
 		return error;
@@ -1796,18 +2678,436 @@ recheck:
 	return 0;
 }
 
+#ifdef CONFIG_TOUCHSCREEN_ATMEL_MXT_T37
+static const struct v4l2_file_operations mxt_video_fops = {
+	.owner = THIS_MODULE,
+	.open = v4l2_fh_open,
+	.release = vb2_fop_release,
+	.unlocked_ioctl = video_ioctl2,
+	.read = vb2_fop_read,
+	.mmap = vb2_fop_mmap,
+	.poll = vb2_fop_poll,
+};
+
+static u16 mxt_get_debug_value(struct mxt_data *data, unsigned int x,
+			       unsigned int y)
+{
+	struct mxt_info *info = data->info;
+	struct mxt_dbg *dbg = &data->dbg;
+	unsigned int ofs, page;
+	unsigned int col = 0;
+	unsigned int col_width;
+
+	if (info->family_id == MXT_FAMILY_1386) {
+		col_width = info->matrix_ysize / MXT1386_COLUMNS;
+		col = y / col_width;
+		y = y % col_width;
+	} else {
+		col_width = info->matrix_ysize;
+	}
+
+	ofs = (y + (x * col_width)) * sizeof(u16);
+	page = ofs / MXT_DIAGNOSTIC_SIZE;
+	ofs %= MXT_DIAGNOSTIC_SIZE;
+
+	if (info->family_id == MXT_FAMILY_1386)
+		page += col * MXT1386_PAGES_PER_COLUMN;
+
+	return get_unaligned_le16(&dbg->t37_buf[page].data[ofs]);
+}
+
+static int mxt_convert_debug_pages(struct mxt_data *data, u16 *outbuf)
+{
+	struct mxt_dbg *dbg = &data->dbg;
+	unsigned int x = 0;
+	unsigned int y = 0;
+	unsigned int i, rx, ry;
+
+	for (i = 0; i < dbg->t37_nodes; i++) {
+		/* Handle orientation */
+		rx = data->xy_switch ? y : x;
+		ry = data->xy_switch ? x : y;
+		rx = data->invertx ? (data->xsize - 1 - rx) : rx;
+		ry = data->inverty ? (data->ysize - 1 - ry) : ry;
+
+		outbuf[i] = mxt_get_debug_value(data, rx, ry);
+
+		/* Next value */
+		if (++x >= (data->xy_switch ? data->ysize : data->xsize)) {
+			x = 0;
+			y++;
+		}
+	}
+
+	return 0;
+}
+
+static int mxt_read_diagnostic_debug(struct mxt_data *data, u8 mode,
+				     u16 *outbuf)
+{
+	struct mxt_dbg *dbg = &data->dbg;
+	int retries = 0;
+	int page;
+	int ret;
+	u8 cmd = mode;
+	struct t37_debug *p;
+	u8 cmd_poll;
+
+	for (page = 0; page < dbg->t37_pages; page++) {
+		p = dbg->t37_buf + page;
+
+		ret = mxt_write_reg(data->client, dbg->diag_cmd_address,
+				    cmd);
+		if (ret)
+			return ret;
+
+		retries = 0;
+		msleep(20);
+wait_cmd:
+		/* Read back command byte */
+		ret = __mxt_read_reg(data, dbg->diag_cmd_address,
+				     sizeof(cmd_poll), data->read_buf);
+		if (ret)
+			return ret;
+
+		cmd_poll = *(data->read_buf);
+		/* Field is cleared once the command has been processed */
+		if (cmd_poll) {
+			if (retries++ > 100)
+				return -EINVAL;
+
+			msleep(20);
+			goto wait_cmd;
+		}
+
+		/* Read T37 page */
+		ret = __mxt_read_reg(data, dbg->t37_address,
+				     sizeof(struct t37_debug), p);
+		if (ret)
+			return ret;
+
+		if (p->mode != mode || p->page != page) {
+			dev_err(&data->client->dev, "T37 page mismatch\n");
+			return -EINVAL;
+		}
+
+		dev_dbg(&data->client->dev, "%s page:%d retries:%d\n",
+			__func__, page, retries);
+
+		/* For remaining pages, write PAGEUP rather than mode */
+		cmd = MXT_DIAGNOSTIC_PAGEUP;
+	}
+
+	return mxt_convert_debug_pages(data, outbuf);
+}
+
+static int mxt_queue_setup(struct vb2_queue *q,
+		       unsigned int *nbuffers, unsigned int *nplanes,
+		       unsigned int sizes[], struct device *alloc_devs[])
+{
+	struct mxt_data *data = q->drv_priv;
+	size_t size = data->dbg.t37_nodes * sizeof(u16);
+
+	if (*nplanes)
+		return sizes[0] < size ? -EINVAL : 0;
+
+	*nplanes = 1;
+	sizes[0] = size;
+
+	return 0;
+}
+
+static void mxt_buffer_queue(struct vb2_buffer *vb)
+{
+	struct mxt_data *data = vb2_get_drv_priv(vb->vb2_queue);
+	u16 *ptr;
+	int ret;
+	u8 mode;
+
+	ptr = vb2_plane_vaddr(vb, 0);
+	if (!ptr) {
+		dev_err(&data->client->dev, "Error acquiring frame ptr\n");
+		goto fault;
+	}
+
+	switch (data->dbg.input) {
+	case MXT_V4L_INPUT_DELTAS:
+	default:
+		mode = MXT_DIAGNOSTIC_DELTAS;
+		break;
+
+	case MXT_V4L_INPUT_REFS:
+		mode = MXT_DIAGNOSTIC_REFS;
+		break;
+	}
+
+	ret = mxt_read_diagnostic_debug(data, mode, ptr);
+	if (ret)
+		goto fault;
+
+	vb2_set_plane_payload(vb, 0, data->dbg.t37_nodes * sizeof(u16));
+	vb2_buffer_done(vb, VB2_BUF_STATE_DONE);
+	return;
+
+fault:
+	vb2_buffer_done(vb, VB2_BUF_STATE_ERROR);
+}
+
+/* V4L2 structures */
+static const struct vb2_ops mxt_queue_ops = {
+	.queue_setup		= mxt_queue_setup,
+	.buf_queue		= mxt_buffer_queue,
+	.wait_prepare		= vb2_ops_wait_prepare,
+	.wait_finish		= vb2_ops_wait_finish,
+};
+
+static const struct vb2_queue mxt_queue = {
+	.type = V4L2_BUF_TYPE_VIDEO_CAPTURE,
+	.io_modes = VB2_MMAP | VB2_USERPTR | VB2_DMABUF | VB2_READ,
+	.buf_struct_size = sizeof(struct mxt_vb2_buffer),
+	.ops = &mxt_queue_ops,
+	.mem_ops = &vb2_vmalloc_memops,
+	.timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC,
+	.min_buffers_needed = 1,
+};
+
+static int mxt_vidioc_querycap(struct file *file, void *priv,
+				 struct v4l2_capability *cap)
+{
+	struct mxt_data *data = video_drvdata(file);
+
+	strlcpy(cap->driver, "atmel_mxt_ts", sizeof(cap->driver));
+	strlcpy(cap->card, "atmel_mxt_ts touch", sizeof(cap->card));
+	snprintf(cap->bus_info, sizeof(cap->bus_info),
+		 "I2C:%s", dev_name(&data->client->dev));
+	return 0;
+}
+
+static int mxt_vidioc_enum_input(struct file *file, void *priv,
+				   struct v4l2_input *i)
+{
+	if (i->index >= MXT_V4L_INPUT_MAX)
+		return -EINVAL;
+
+	i->type = V4L2_INPUT_TYPE_TOUCH;
+
+	switch (i->index) {
+	case MXT_V4L_INPUT_REFS:
+		strlcpy(i->name, "Mutual Capacitance References",
+			sizeof(i->name));
+		break;
+	case MXT_V4L_INPUT_DELTAS:
+		strlcpy(i->name, "Mutual Capacitance Deltas", sizeof(i->name));
+		break;
+	}
+
+	return 0;
+}
+
+static int mxt_set_input(struct mxt_data *data, unsigned int i)
+{
+	struct v4l2_pix_format *f = &data->dbg.format;
+
+	if (i >= MXT_V4L_INPUT_MAX)
+		return -EINVAL;
+
+	if (i == MXT_V4L_INPUT_DELTAS)
+		f->pixelformat = V4L2_TCH_FMT_DELTA_TD16;
+	else
+		f->pixelformat = V4L2_TCH_FMT_TU16;
+
+	f->width = data->xy_switch ? data->ysize : data->xsize;
+	f->height = data->xy_switch ? data->xsize : data->ysize;
+	f->field = V4L2_FIELD_NONE;
+	f->colorspace = V4L2_COLORSPACE_RAW;
+	f->bytesperline = f->width * sizeof(u16);
+	f->sizeimage = f->width * f->height * sizeof(u16);
+
+	data->dbg.input = i;
+
+	return 0;
+}
+
+static int mxt_vidioc_s_input(struct file *file, void *priv, unsigned int i)
+{
+	return mxt_set_input(video_drvdata(file), i);
+}
+
+static int mxt_vidioc_g_input(struct file *file, void *priv, unsigned int *i)
+{
+	struct mxt_data *data = video_drvdata(file);
+
+	*i = data->dbg.input;
+
+	return 0;
+}
+
+static int mxt_vidioc_fmt(struct file *file, void *priv, struct v4l2_format *f)
+{
+	struct mxt_data *data = video_drvdata(file);
+
+	f->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	f->fmt.pix = data->dbg.format;
+
+	return 0;
+}
+
+static int mxt_vidioc_enum_fmt(struct file *file, void *priv,
+				 struct v4l2_fmtdesc *fmt)
+{
+	if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		return -EINVAL;
+
+	switch (fmt->index) {
+	case 0:
+		fmt->pixelformat = V4L2_TCH_FMT_TU16;
+		break;
+
+	case 1:
+		fmt->pixelformat = V4L2_TCH_FMT_DELTA_TD16;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int mxt_vidioc_g_parm(struct file *file, void *fh,
+			     struct v4l2_streamparm *a)
+{
+	if (a->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		return -EINVAL;
+
+	a->parm.capture.readbuffers = 1;
+	a->parm.capture.timeperframe.numerator = 1;
+	a->parm.capture.timeperframe.denominator = 10;
+	return 0;
+}
+
+static const struct v4l2_ioctl_ops mxt_video_ioctl_ops = {
+	.vidioc_querycap        = mxt_vidioc_querycap,
+
+	.vidioc_enum_fmt_vid_cap = mxt_vidioc_enum_fmt,
+	.vidioc_s_fmt_vid_cap   = mxt_vidioc_fmt,
+	.vidioc_g_fmt_vid_cap   = mxt_vidioc_fmt,
+	.vidioc_try_fmt_vid_cap	= mxt_vidioc_fmt,
+	.vidioc_g_parm		= mxt_vidioc_g_parm,
+
+	.vidioc_enum_input      = mxt_vidioc_enum_input,
+	.vidioc_g_input         = mxt_vidioc_g_input,
+	.vidioc_s_input         = mxt_vidioc_s_input,
+
+	.vidioc_reqbufs         = vb2_ioctl_reqbufs,
+	.vidioc_create_bufs     = vb2_ioctl_create_bufs,
+	.vidioc_querybuf        = vb2_ioctl_querybuf,
+	.vidioc_qbuf            = vb2_ioctl_qbuf,
+	.vidioc_dqbuf           = vb2_ioctl_dqbuf,
+	.vidioc_expbuf          = vb2_ioctl_expbuf,
+
+	.vidioc_streamon        = vb2_ioctl_streamon,
+	.vidioc_streamoff       = vb2_ioctl_streamoff,
+};
+
+static const struct video_device mxt_video_device = {
+	.name = "Atmel maxTouch",
+	.fops = &mxt_video_fops,
+	.ioctl_ops = &mxt_video_ioctl_ops,
+	.release = video_device_release_empty,
+	.device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_TOUCH |
+		       V4L2_CAP_READWRITE | V4L2_CAP_STREAMING,
+};
+
+static void mxt_debug_init(struct mxt_data *data)
+{
+	struct mxt_info *info = data->info;
+	struct mxt_dbg *dbg = &data->dbg;
+	struct mxt_object *object;
+	int error;
+
+	object = mxt_get_object(data, MXT_GEN_COMMAND_T6);
+	if (!object)
+		goto error;
+
+	dbg->diag_cmd_address = object->start_address + MXT_COMMAND_DIAGNOSTIC;
+
+	object = mxt_get_object(data, MXT_DEBUG_DIAGNOSTIC_T37);
+	if (!object)
+		goto error;
+
+	if (mxt_obj_size(object) != sizeof(struct t37_debug)) {
+		dev_warn(&data->client->dev, "Bad T37 size");
+		goto error;
+	}
+
+	dbg->t37_address = object->start_address;
+
+	/* Calculate size of data and allocate buffer */
+	dbg->t37_nodes = data->xsize * data->ysize;
+
+	if (info->family_id == MXT_FAMILY_1386)
+		dbg->t37_pages = MXT1386_COLUMNS * MXT1386_PAGES_PER_COLUMN;
+	else
+		dbg->t37_pages = DIV_ROUND_UP(data->xsize *
+					      info->matrix_ysize *
+					      sizeof(u16),
+					      sizeof(dbg->t37_buf->data));
+
+	dbg->t37_buf = devm_kmalloc_array(&data->client->dev, dbg->t37_pages,
+					  sizeof(struct t37_debug), GFP_KERNEL);
+	if (!dbg->t37_buf)
+		goto error;
+
+	/* init channel to zero */
+	mxt_set_input(data, 0);
+
+	/* register video device */
+	snprintf(dbg->v4l2.name, sizeof(dbg->v4l2.name), "%s", "atmel_mxt_ts");
+	error = v4l2_device_register(&data->client->dev, &dbg->v4l2);
+	if (error)
+		goto error;
+
+	/* initialize the queue */
+	mutex_init(&dbg->lock);
+	dbg->queue = mxt_queue;
+	dbg->queue.drv_priv = data;
+	dbg->queue.lock = &dbg->lock;
+	dbg->queue.dev = &data->client->dev;
+
+	error = vb2_queue_init(&dbg->queue);
+	if (error)
+		goto error_unreg_v4l2;
+
+	dbg->vdev = mxt_video_device;
+	dbg->vdev.v4l2_dev = &dbg->v4l2;
+	dbg->vdev.lock = &dbg->lock;
+	dbg->vdev.vfl_dir = VFL_DIR_RX;
+	dbg->vdev.queue = &dbg->queue;
+	video_set_drvdata(&dbg->vdev, data);
+
+	error = video_register_device(&dbg->vdev, VFL_TYPE_TOUCH, -1);
+	if (error)
+		goto error_unreg_v4l2;
+
+	return;
+
+error_unreg_v4l2:
+	v4l2_device_unregister(&dbg->v4l2);
+error:
+	dev_warn(&data->client->dev, "Error initializing T37\n");
+}
+#else
+static void mxt_debug_init(struct mxt_data *data)
+{
+}
+#endif
+
 static int mxt_configure_objects(struct mxt_data *data,
 				 const struct firmware *cfg)
 {
 	struct device *dev = &data->client->dev;
-	struct mxt_info *info = &data->info;
 	int error;
-
-	if (cfg) {
-		error = mxt_update_cfg(data, cfg);
-		if (error)
-			dev_warn(dev, "Error %d updating config\n", error);
-	}
 
 	error = mxt_init_t7_power_cfg(data);
 	if (error) {
@@ -1815,15 +3115,23 @@ static int mxt_configure_objects(struct mxt_data *data,
 		return error;
 	}
 
-	error = mxt_initialize_t9_input_device(data);
-	if (error)
-		return error;
+	if (cfg) {
+		error = mxt_update_cfg(data, cfg);
+		if (error)
+			dev_warn(dev, "Error %d updating config\n", error);
+	}
 
-	dev_info(dev,
-		 "Family: %u Variant: %u Firmware V%u.%u.%02X Objects: %u\n",
-		 info->family_id, info->variant_id, info->version >> 4,
-		 info->version & 0xf, info->build, info->object_num);
+	if (data->multitouch) {
+		error = mxt_initialize_input_device(data);
+		if (error)
+			return error;
+	} else {
+		dev_warn(dev, "No touch object detected\n");
+	}
 
+	mxt_debug_init(data);
+
+	enable_irq(data->irq);
 	return 0;
 }
 
@@ -1832,7 +3140,7 @@ static ssize_t mxt_fw_version_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
-	struct mxt_info *info = &data->info;
+	struct mxt_info *info = data->info;
 	return scnprintf(buf, PAGE_SIZE, "%u.%u.%02X\n",
 			 info->version >> 4, info->version & 0xf, info->build);
 }
@@ -1842,7 +3150,7 @@ static ssize_t mxt_hw_version_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
 	struct mxt_data *data = dev_get_drvdata(dev);
-	struct mxt_info *info = &data->info;
+	struct mxt_info *info = data->info;
 	return scnprintf(buf, PAGE_SIZE, "%u.%u\n",
 			 info->family_id, info->variant_id);
 }
@@ -1881,7 +3189,7 @@ static ssize_t mxt_object_show(struct device *dev,
 		return -ENOMEM;
 
 	error = 0;
-	for (i = 0; i < data->info.object_num; i++) {
+	for (i = 0; i < data->info->object_num; i++) {
 		object = data->object_table + i;
 
 		if (!mxt_object_readable(object->type))
@@ -1894,7 +3202,7 @@ static ssize_t mxt_object_show(struct device *dev,
 			u16 size = mxt_obj_size(object);
 			u16 addr = object->start_address + j * size;
 
-			error = __mxt_read_reg(data->client, addr, size, obuf);
+			error = __mxt_read_reg(data, addr, size, obuf);
 			if (error)
 				goto done;
 
@@ -2093,124 +3401,464 @@ static const struct attribute_group mxt_attr_group = {
 
 static void mxt_start(struct mxt_data *data)
 {
-	mxt_set_t7_power_cfg(data, MXT_POWER_CFG_RUN);
+	if (!data->suspended || data->in_bootloader)
+		return;
 
-	/* Recalibrate since chip has been in deep sleep */
-	mxt_t6_command(data, MXT_COMMAND_CALIBRATE, 1, false);
+	/* enable gpios */
+	mxt_gpio_enable(data, true);
+
+	/* enable regulators */
+	mxt_regulator_enable(data);
+
+	switch (data->suspend_mode) {
+	case MXT_SUSPEND_T9_CTRL:
+		mxt_soft_reset(data);
+
+		/* Touch enable */
+		/* 0x83 = SCANEN | RPTEN | ENABLE */
+		mxt_write_object(data,
+				MXT_TOUCH_MULTI_T9, MXT_T9_CTRL, 0x83);
+		break;
+
+	case MXT_SUSPEND_DEEP_SLEEP:
+	default:
+		mxt_set_t7_power_cfg(data, MXT_POWER_CFG_RUN);
+
+		/* Recalibrate since chip has been in deep sleep */
+		mxt_t6_command(data, MXT_COMMAND_CALIBRATE, 1, false);
+		break;
+	}
+
+	mxt_acquire_irq(data);
+	data->suspended = false;
 }
 
 static void mxt_stop(struct mxt_data *data)
 {
-	mxt_set_t7_power_cfg(data, MXT_POWER_CFG_DEEPSLEEP);
+	if (data->suspended || data->in_bootloader)
+		return;
+
+	disable_irq(data->irq);
+
+	switch (data->suspend_mode) {
+	case MXT_SUSPEND_T9_CTRL:
+		/* Touch disable */
+		mxt_write_object(data,
+				MXT_TOUCH_MULTI_T9, MXT_T9_CTRL, 0);
+		break;
+
+	case MXT_SUSPEND_DEEP_SLEEP:
+	default:
+		mxt_set_t7_power_cfg(data, MXT_POWER_CFG_DEEPSLEEP);
+		break;
+	}
+
+	/* disable regulators */
+	mxt_regulator_disable(data);
+	/* disable gpios */
+	mxt_gpio_enable(data, false);
+
+	data->suspended = true;
 }
 
 static int mxt_input_open(struct input_dev *dev)
 {
+#if !defined(CONFIG_DRM)
 	struct mxt_data *data = input_get_drvdata(dev);
 
 	mxt_start(data);
-
+#endif
 	return 0;
 }
 
 static void mxt_input_close(struct input_dev *dev)
 {
+#if !defined(CONFIG_DRM)
 	struct mxt_data *data = input_get_drvdata(dev);
 
 	mxt_stop(data);
+#endif
+}
+
+static int mxt_parse_device_properties(struct mxt_data *data)
+{
+	static const char keymap_property[] = "linux,gpio-keymap";
+	struct device *dev = &data->client->dev;
+	u32 *keymap;
+	int n_keys;
+	int error;
+
+	if (device_property_present(dev, keymap_property)) {
+		n_keys = device_property_read_u32_array(dev, keymap_property,
+							NULL, 0);
+		if (n_keys <= 0) {
+			error = n_keys < 0 ? n_keys : -EINVAL;
+			dev_err(dev, "invalid/malformed '%s' property: %d\n",
+				keymap_property, error);
+			return error;
+		}
+
+		keymap = devm_kmalloc_array(dev, n_keys, sizeof(*keymap),
+					    GFP_KERNEL);
+		if (!keymap)
+			return -ENOMEM;
+
+		error = device_property_read_u32_array(dev, keymap_property,
+						       keymap, n_keys);
+		if (error) {
+			dev_err(dev, "failed to parse '%s' property: %d\n",
+				keymap_property, error);
+			return error;
+		}
+
+		data->t19_keymap = keymap;
+		data->t19_num_keys = n_keys;
+	}
+
+	return 0;
 }
 
 #ifdef CONFIG_OF
-static struct mxt_platform_data *mxt_parse_dt(struct i2c_client *client)
+
+static int mxt_check_dedicated_touch(struct device_node *dt, const char *prop,
+		const char *active_prop)
 {
-	struct mxt_platform_data *pdata;
-	u32 *keymap;
-	u32 keycode;
-	int proplen, i, ret;
+	const char *active_touch;
+	const char *compatible;
+	char *temp;
+	int ret = 0;
 
-	if (!client->dev.of_node)
-		return ERR_PTR(-ENODEV);
-
-	pdata = devm_kzalloc(&client->dev, sizeof(*pdata), GFP_KERNEL);
-	if (!pdata)
-		return ERR_PTR(-ENOMEM);
-
-	if (of_find_property(client->dev.of_node, "linux,gpio-keymap",
-			     &proplen)) {
-		pdata->t19_num_keys = proplen / sizeof(u32);
-
-		keymap = devm_kzalloc(&client->dev,
-				pdata->t19_num_keys * sizeof(keymap[0]),
-				GFP_KERNEL);
-		if (!keymap)
-			return ERR_PTR(-ENOMEM);
-
-		for (i = 0; i < pdata->t19_num_keys; i++) {
-			ret = of_property_read_u32_index(client->dev.of_node,
-					"linux,gpio-keymap", i, &keycode);
-			if (ret)
-				keycode = KEY_RESERVED;
-
-			keymap[i] = keycode;
-		}
-
-		pdata->t19_keymap = keymap;
+	ret = of_property_read_string(dt->parent, active_prop, &active_touch);
+	if (ret < 0) {
+		pr_info(" %s:not dedicated active touch\n", __func__);
+		return -ENODEV;
 	}
 
-	return pdata;
+	ret = of_property_read_string(dt, prop, &compatible);
+	if (ret < 0) {
+		pr_err(" %s:fail to read %s %d\n", __func__, "compatible", ret);
+		return -ENODEV;
+	}
+
+	temp = strnstr(active_touch, compatible, strlen(active_touch));
+	if (!temp) {
+		pr_info(" %s:no match compatible, %s, %s\n",
+			__func__, compatible, active_touch);
+		return -ENODEV;
+
+	}
+
+	return ret;
 }
-#else
-static struct mxt_platform_data *mxt_parse_dt(struct i2c_client *client)
+
+#ifdef CONFIG_DRM
+static struct drm_panel *active_panel;
+static int mxt_check_dt(struct device_node *np)
 {
-	dev_dbg(&client->dev, "No platform data specified\n");
-	return ERR_PTR(-EINVAL);
+	int i;
+	int count;
+	struct device_node *node;
+	struct drm_panel *panel;
+
+	count = of_count_phandle_with_args(np, "panel", NULL);
+	if (count <= 0)
+		return 0;
+
+	for (i = 0; i < count; i++) {
+		node = of_parse_phandle(np, "panel", i);
+		panel = of_drm_find_panel(node);
+		of_node_put(node);
+		if (!IS_ERR(panel)) {
+			active_panel = panel;
+			return 0;
+		}
+	}
+
+	return PTR_ERR(panel);
+}
+#endif
+
+static int mxt_get_dt_coords(struct device *dev, char *name,
+				struct mxt_data *data)
+{
+	u32 coords[MXT_COORDS_ARR_SIZE];
+	struct property *prop;
+	struct device_node *np = dev->of_node;
+	size_t coords_size;
+	int error;
+
+	prop = of_find_property(np, name, NULL);
+	if (!prop)
+		return -EINVAL;
+	if (!prop->value)
+		return -ENODATA;
+
+	coords_size = prop->length / sizeof(u32);
+	if (coords_size != MXT_COORDS_ARR_SIZE) {
+		dev_err(dev, "invalid %s\n", name);
+		return -EINVAL;
+	}
+
+	error = of_property_read_u32_array(np, name, coords, coords_size);
+	if (error && (error != -EINVAL)) {
+		dev_err(dev, "Unable to read %s\n", name);
+		return error;
+	}
+
+	if (strcmp(name, "atmel,panel-coords") == 0) {
+		data->panel_minx = coords[0];
+		data->panel_miny = coords[1];
+		data->panel_maxx = coords[2];
+		data->panel_maxy = coords[3];
+	} else if (strcmp(name, "atmel,display-coords") == 0) {
+		data->disp_minx = coords[0];
+		data->disp_miny = coords[1];
+		data->disp_maxx = coords[2];
+		data->disp_maxy = coords[3];
+	} else {
+		dev_err(dev, "unsupported property %s\n", name);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+#endif
+
+static const struct dmi_system_id chromebook_T9_suspend_dmi[] = {
+	{
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "GOOGLE"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "Link"),
+		},
+	},
+	{
+		.matches = {
+			DMI_MATCH(DMI_PRODUCT_NAME, "Peppy"),
+		},
+	},
+	{ }
+};
+
+#ifdef CONFIG_DRM
+
+static void mxt_panel_notifier_callback(enum panel_event_notifier_tag tag,
+		struct panel_event_notification *notification,
+		void *client_data)
+{
+	struct mxt_data *mxt = client_data;
+	struct input_dev *input_dev;
+
+	if (!notification) {
+		pr_err("Invalid notification\n");
+		return;
+	}
+
+	if (!mxt) {
+		pr_err("Invalid mxt data\n");
+		return;
+	}
+
+	pr_debug("Notification type:%d, early_trigger:%d\n",
+			notification->notif_type,
+			notification->notif_data.early_trigger);
+
+	input_dev = mxt->input_dev;
+
+	switch (notification->notif_type) {
+	case DRM_PANEL_EVENT_UNBLANK:
+		if (!notification->notif_data.early_trigger) {
+			if (input_dev)
+				mutex_lock(&input_dev->mutex);
+
+			mxt_start(mxt);
+
+			if (input_dev)
+				mutex_unlock(&input_dev->mutex);
+		}
+		break;
+	case DRM_PANEL_EVENT_BLANK:
+		if (input_dev)
+			mutex_lock(&input_dev->mutex);
+
+		mxt_stop(mxt);
+
+		if (input_dev)
+			mutex_unlock(&input_dev->mutex);
+		break;
+	default:
+		break;
+	}
+}
+
+static void mxt_register_for_panel_events(struct device_node *dt,
+		struct mxt_data *data)
+{
+	void *cookie = NULL;
+
+	cookie = panel_event_notifier_register(
+			PANEL_EVENT_NOTIFICATION_PRIMARY,
+			PANEL_EVENT_NOTIFIER_CLIENT_PRIMARY_TOUCH,
+			active_panel, &mxt_panel_notifier_callback, data);
+	if (!cookie) {
+		pr_err("Failed to register for panel events\n");
+		return;
+	}
+	pr_debug("registered for panel notifications on panel: 0x%x\n",
+		       active_panel);
+
+	data->notifier_cookie = cookie;
 }
 #endif
 
 static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct mxt_data *data;
-	const struct mxt_platform_data *pdata;
-	int error;
+	int error = 0;
+#ifdef CONFIG_OF
+	struct device_node *dt = client->dev.of_node;
+#endif
+	/*
+	 * Ignore devices that do not have device properties attached to
+	 * them, as we need help determining whether we are dealing with
+	 * touch screen or touchpad.
+	 *
+	 * So far on x86 the only users of Atmel touch controllers are
+	 * Chromebooks, and chromeos_laptop driver will ensure that
+	 * necessary properties are provided (if firmware does not do that).
+	 */
+	if (!device_property_present(&client->dev, "compatible"))
+		return -ENXIO;
 
-	pdata = dev_get_platdata(&client->dev);
-	if (!pdata) {
-		pdata = mxt_parse_dt(client);
-		if (IS_ERR(pdata))
-			return PTR_ERR(pdata);
+	/*
+	 * Ignore ACPI devices representing bootloader mode.
+	 *
+	 * This is a bit of a hack: Google Chromebook BIOS creates ACPI
+	 * devices for both application and bootloader modes, but we are
+	 * interested in application mode only (if device is in bootloader
+	 * mode we'll end up switching into application anyway). So far
+	 * application mode addresses were all above 0x40, so we'll use it
+	 * as a threshold.
+	 */
+	if (ACPI_COMPANION(&client->dev) && client->addr < 0x40)
+		return -ENXIO;
+
+#ifdef CONFIG_OF
+#ifdef CONFIG_DRM
+	error = mxt_check_dt(dt);
+	if (error == -EPROBE_DEFER)
+		return error;
+
+	if (error) {
+		if (!(mxt_check_dedicated_touch(dt, "compatible",
+			"qcom,i2c-touch-active")))
+			return -EPROBE_DEFER;
+		else
+			return -ENODEV;
 	}
-
-	data = kzalloc(sizeof(struct mxt_data), GFP_KERNEL);
-	if (!data) {
-		dev_err(&client->dev, "Failed to allocate memory\n");
+#else
+	if (mxt_check_dedicated_touch(dt, "compatible",
+				"qcom,i2c-touch-active") < 0)
+		return -ENODEV;
+#endif
+#endif
+	data = devm_kzalloc(&client->dev, sizeof(struct mxt_data), GFP_KERNEL);
+	if (!data)
 		return -ENOMEM;
-	}
 
 	snprintf(data->phys, sizeof(data->phys), "i2c-%u-%04x/input0",
 		 client->adapter->nr, client->addr);
 
 	data->client = client;
-	data->pdata = pdata;
 	data->irq = client->irq;
 	i2c_set_clientdata(client, data);
+
+#ifdef CONFIG_OF
+	error = mxt_get_dt_coords(&client->dev, "atmel,display-coords", data);
+	if (error)
+		return error;
+
+	data->xy_switch = of_property_read_bool(dt, "atmel,xy_switch");
+	data->invertx = of_property_read_bool(dt, "atmel,invertx");
+	data->inverty = of_property_read_bool(dt, "atmel,inverty");
+#endif
+
+	data->cmd_buf = devm_kzalloc(&client->dev, 64, GFP_KERNEL);
+	if (!data->cmd_buf)
+		return -ENOMEM;
+	data->read_buf = data->cmd_buf + 32;
 
 	init_completion(&data->bl_completion);
 	init_completion(&data->reset_completion);
 	init_completion(&data->crc_completion);
 
-	error = request_threaded_irq(client->irq, NULL, mxt_interrupt,
-				     pdata->irqflags | IRQF_ONESHOT,
-				     client->name, data);
+#if defined(CONFIG_OF) && defined(CONFIG_DRM)
+	data->suspend_mode = MXT_SUSPEND_T9_CTRL;
+#else
+	data->suspend_mode = dmi_check_system(chromebook_T9_suspend_dmi) ?
+		MXT_SUSPEND_T9_CTRL : MXT_SUSPEND_DEEP_SLEEP;
+#endif
+
+	error = mxt_parse_device_properties(data);
+	if (error)
+		return error;
+
+	error = mxt_pinctrl_init(data);
+	if (error)
+		dev_info(&client->dev, "No pinctrl support\n");
+
+	data->reset_gpio = devm_gpiod_get_optional(&client->dev,
+						"reset", GPIOD_OUT_LOW);
+	data->irq_gpio = devm_gpiod_get_optional(&client->dev,
+						"irq", GPIOD_IN);
+	if (IS_ERR(data->reset_gpio)) {
+		error = PTR_ERR(data->reset_gpio);
+		dev_err(&client->dev, "Failed to get reset gpio: %d\n", error);
+		return error;
+	}
+
+	gpiod_direction_input(data->irq_gpio);
+	gpiod_direction_output(data->reset_gpio, 0);
+
+	error = mxt_regulator_parse(data);
+	if (error) {
+		dev_err(&client->dev, "Failed to parse regulators\n");
+		return error;
+	}
+
+	error = mxt_regulator_enable(data);
+	if (error) {
+		dev_err(&client->dev, "Error %d enabling regulators\n", error);
+		return error;
+	}
+
+	error = devm_request_threaded_irq(&client->dev, client->irq,
+					  NULL, mxt_interrupt, IRQF_ONESHOT,
+					  client->name, data);
 	if (error) {
 		dev_err(&client->dev, "Failed to register interrupt\n");
-		goto err_free_mem;
+		goto err_disable_regulator;
 	}
 
 	disable_irq(client->irq);
 
+	if (data->reset_gpio) {
+		gpiod_set_value(data->reset_gpio, 0);
+		msleep(MXT_RESET_GPIO_TIME);
+		gpiod_set_value(data->reset_gpio, 1);
+		msleep(MXT_RESET_INVALID_CHG);
+	}
+
+	error = mxt_gpio_enable(data, true);
+	if (error)
+		dev_err(&client->dev, "Failed to configure gpios\n");
+
+	data->irq = data->client->irq =
+				gpiod_to_irq(data->irq_gpio);
+
 	error = mxt_initialize(data);
 	if (error)
-		goto err_free_irq;
+		goto err_disable_regulator;
 
 	error = sysfs_create_group(&client->dev.kobj, &mxt_attr_group);
 	if (error) {
@@ -2218,16 +3866,18 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 			error);
 		goto err_free_object;
 	}
-
+#ifdef CONFIG_DRM
+	if (active_panel)
+		mxt_register_for_panel_events(dt, data);
+#endif
 	return 0;
 
 err_free_object:
 	mxt_free_input_device(data);
 	mxt_free_object_table(data);
-err_free_irq:
-	free_irq(client->irq, data);
-err_free_mem:
-	kfree(data);
+
+err_disable_regulator:
+	mxt_regulator_disable(data);
 	return error;
 }
 
@@ -2235,21 +3885,28 @@ static int mxt_remove(struct i2c_client *client)
 {
 	struct mxt_data *data = i2c_get_clientdata(client);
 
+#ifdef CONFIG_DRM
+	if (active_panel && data->notifier_cookie)
+		panel_event_notifier_unregister(data->notifier_cookie);
+#endif
+	disable_irq(data->irq);
+	mxt_regulator_disable(data);
 	sysfs_remove_group(&client->dev.kobj, &mxt_attr_group);
-	free_irq(data->irq, data);
 	mxt_free_input_device(data);
 	mxt_free_object_table(data);
-	kfree(data);
 
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int mxt_suspend(struct device *dev)
+static int __maybe_unused mxt_suspend(struct device *dev)
 {
+#if !defined(CONFIG_DRM)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct mxt_data *data = i2c_get_clientdata(client);
 	struct input_dev *input_dev = data->input_dev;
+
+	if (!input_dev)
+		return 0;
 
 	mutex_lock(&input_dev->mutex);
 
@@ -2258,14 +3915,23 @@ static int mxt_suspend(struct device *dev)
 
 	mutex_unlock(&input_dev->mutex);
 
+	disable_irq(data->irq);
+#endif
+
 	return 0;
 }
 
-static int mxt_resume(struct device *dev)
+static int __maybe_unused mxt_resume(struct device *dev)
 {
+#if !defined(CONFIG_DRM)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct mxt_data *data = i2c_get_clientdata(client);
 	struct input_dev *input_dev = data->input_dev;
+
+	if (!input_dev)
+		return 0;
+
+	enable_irq(data->irq);
 
 	mutex_lock(&input_dev->mutex);
 
@@ -2273,23 +3939,38 @@ static int mxt_resume(struct device *dev)
 		mxt_start(data);
 
 	mutex_unlock(&input_dev->mutex);
+#endif
 
 	return 0;
 }
-#endif
 
 static SIMPLE_DEV_PM_OPS(mxt_pm_ops, mxt_suspend, mxt_resume);
 
 static const struct of_device_id mxt_of_match[] = {
 	{ .compatible = "atmel,maxtouch", },
+	/* Compatibles listed below are deprecated */
+	{ .compatible = "atmel,qt602240_ts", },
+	{ .compatible = "atmel,atmel_mxt_ts", },
+	{ .compatible = "atmel,atmel_mxt_tp", },
+	{ .compatible = "atmel,mXT224", },
 	{},
 };
 MODULE_DEVICE_TABLE(of, mxt_of_match);
+
+#ifdef CONFIG_ACPI
+static const struct acpi_device_id mxt_acpi_id[] = {
+	{ "ATML0000", 0 },	/* Touchpad */
+	{ "ATML0001", 0 },	/* Touchscreen */
+	{ }
+};
+MODULE_DEVICE_TABLE(acpi, mxt_acpi_id);
+#endif
 
 static const struct i2c_device_id mxt_id[] = {
 	{ "qt602240_ts", 0 },
 	{ "atmel_mxt_ts", 0 },
 	{ "atmel_mxt_tp", 0 },
+	{ "maxtouch", 0 },
 	{ "mXT224", 0 },
 	{ }
 };
@@ -2298,8 +3979,8 @@ MODULE_DEVICE_TABLE(i2c, mxt_id);
 static struct i2c_driver mxt_driver = {
 	.driver = {
 		.name	= "atmel_mxt_ts",
-		.owner	= THIS_MODULE,
-		.of_match_table = of_match_ptr(mxt_of_match),
+		.of_match_table = mxt_of_match,
+		.acpi_match_table = ACPI_PTR(mxt_acpi_id),
 		.pm	= &mxt_pm_ops,
 	},
 	.probe		= mxt_probe,

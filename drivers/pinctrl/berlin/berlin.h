@@ -1,13 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Marvell Berlin SoC pinctrl driver.
  *
  * Copyright (C) 2014 Marvell Technology Group Ltd.
  *
- * Antoine TÃ©nart <antoine.tenart@free-electrons.com>
- *
- * This file is licensed under the terms of the GNU General Public
- * License version 2. This program is licensed "as is" without any
- * warranty of any kind, whether express or implied.
+ * Antoine Ténart <antoine.tenart@free-electrons.com>
  */
 
 #ifndef __PINCTRL_BERLIN_H
@@ -57,5 +54,9 @@ struct berlin_pinctrl_function {
 
 int berlin_pinctrl_probe(struct platform_device *pdev,
 			 const struct berlin_pinctrl_desc *desc);
+
+int berlin_pinctrl_probe_regmap(struct platform_device *pdev,
+				const struct berlin_pinctrl_desc *desc,
+				struct regmap *regmap);
 
 #endif /* __PINCTRL_BERLIN_H */

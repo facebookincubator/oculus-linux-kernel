@@ -1,0 +1,279 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
+#include "vendor-base/qcom/neo-pmic-overlay.dtsi"
+#include "vendor-base/qcom/neo-thermal-overlay.dtsi"
+#include "meg2-neo-thermal.dtsi"
+
+// Left Temple Arm FG
+&qupv3_se10_i2c {
+	status = "ok";
+	/**
+	 * This needs to come after the BOB nodes because I2C probe order is
+	 * determined by the order of the device tree nodes and max77132 needs to
+	 * request the BOB regulator during probe.
+	 */
+
+	max17332_left: max17332@36 {
+    compatible = "maxim,max17332";
+    interrupt-parent = <&tlmm>;
+    interrupts = <7 IRQ_TYPE_LEVEL_HIGH>;
+    interrupt-cells = <1>;
+    interrupt-controller;
+    reg = <0x36>;
+    status= "ok";
+    nvm-address = /bits/ 8 <0x0b>;
+    pinctrl-names = "default", "alert_enable";
+    pinctrl-0 = <&fg_mux_defaults>;
+    pinctrl-1 = <&fg_alert_defaults>;
+    max17332,pmic-init = /bits/ 16 <0x0B 0x7207>;
+    max17332,nvm-init = /bits/ 16 <>;
+    max17332,max-bob-voltage-uv = <4580000>;
+    max17332,bob-voltage-delta-uv = <250000>;
+	dual-battery;
+	battery-node = "l";
+
+    #include "meg2-battery-common.dtsi"
+
+    charger {
+        compatible = "maxim,max17332-charger";
+        status = "ok";
+    	};
+	};
+};
+
+// Right Temple Arm FG
+&qupv3_se0_i2c {
+	status = "ok";
+	/**
+	 * This needs to come after the BOB nodes because I2C probe order is
+	 * determined by the order of the device tree nodes and max77132 needs to
+	 * request the BOB regulator during probe.
+	 */
+
+	max17332_right: max17332@36 {
+    compatible = "maxim,max17332";
+    interrupt-parent = <&tlmm>;
+    interrupts = <7 IRQ_TYPE_LEVEL_HIGH>;
+    interrupt-cells = <1>;
+    interrupt-controller;
+    reg = <0x36>;
+    status= "ok";
+    nvm-address = /bits/ 8 <0x0b>;
+    pinctrl-names = "alert_enable";
+    pinctrl-1 = <&fg_alert_defaults>;
+    max17332,pmic-init = /bits/ 16 <0x0B 0x7207>;
+    max17332,nvm-init = /bits/ 16 <>;
+    max17332,max-bob-voltage-uv = <4580000>;
+    max17332,bob-voltage-delta-uv = <250000>;
+	dual-battery;
+	battery-node = "r";
+
+    #include "meg2-battery-common.dtsi"
+
+    charger {
+        compatible = "maxim,max17332-charger";
+        status = "ok";
+    	};
+	};
+};
+
+// I2C_AP2DBG
+&qupv3_se1_i2c {
+	status = "ok";
+
+	lp5562@30 {
+		compatible = "ti,lp5562";
+		reg = <0x30>;
+		clock-mode = /bits/8 <2>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&nff_dbg_led_en>;
+		label = "nff_dbg_led";
+
+		chan0@0 {
+			chan-name = "nff_dbg_led_red";
+			color = "red";
+			reg = <0>;
+			led-cur = /bits/ 8 <0x05>;
+			max-cur = /bits/ 8 <0x60>;
+		};
+		chan1@1 {
+			chan-name = "nff_dbg_led_green";
+			color = "green";
+			reg = <1>;
+			led-cur = /bits/ 8 <0x05>;
+			max-cur = /bits/ 8 <0x60>;
+		};
+		chan2@2 {
+			chan-name = "nff_dbg_led_blue";
+			color = "blue";
+			reg = <2>;
+			led-cur = /bits/ 8 <0x05>;
+			max-cur = /bits/ 8 <0x60>;
+		};
+		chan3@3 {
+			chan-name = "nff_dbg_led_white";
+			color = "white";
+			reg = <3>;
+			led-cur = /bits/ 8 <0x05>;
+			max-cur = /bits/ 8 <0x60>;
+		};
+	};
+};
+
+// Used by PM3003A
+&qupv3_se5_i2c {
+	status = "ok";
+};
+
+// RT6160 Buckboost
+&qupv3_se8_i2c {
+	status = "ok";
+	rt6160: rt6160@75 {
+		compatible = "richtek,rt6160";
+		reg = <0x75>;
+		regulator-name = "rt6160-buckboost";
+		regulator-min-microvolt = <2025000>;
+		regulator-max-microvolt = <5200000>;
+		status = "ok";
+	};
+
+	pm8008i@8 {
+		status = "disabled";
+	};
+
+	pm8008i@9 {
+		status = "disabled";
+	};
+};
+
+// Floating LDOs
+&L17A {
+	qcom,init-enable = <0>;
+};
+
+// Comparator- LDO16
+&apps_rsc {
+	rpmh-regulator-ldoa16 {
+		compatible = "qcom,rpmh-vrm-regulator";
+		qcom,resource-name = "ldoa16";
+		qcom,regulator-type = "pmic5-ldo";
+		qcom,supported-modes =
+			<RPMH_REGULATOR_MODE_LPM
+			RPMH_REGULATOR_MODE_HPM>;
+		qcom,mode-threshold-currents = <0 10000>;
+		L16A:
+		pm8150_l16: regulator-pm8150-l16 {
+		regulator-name = "pm8150_l16";
+			qcom,set = <RPMH_REGULATOR_SET_ALL>;
+			regulator-min-microvolt = <1504000>;
+			regulator-max-microvolt = <3300000>;
+			qcom,init-voltage = <2500000>;
+			qcom,init-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+	};
+};
+
+// Action button Config
+&tlmm {
+	action_button_input: action_button_input {
+		mux {
+			pins = "gpio62";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio62";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	nff_dbg_led_en: nff_dbg_led_en {
+		mux {
+			pins = "gpio121";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio121";
+			output-high;
+			bias-pull-up;
+			drive-strength = <6>;
+		};
+	};
+};
+
+&tlmm {
+   fg_mux_defaults: fg_mux_defaults {
+      mux {
+          pins = "gpio30";
+          function = "gpio";
+      };
+
+      config {
+          pins = "gpio30";
+          drive-strength = <10>;
+          bias-pull-down;
+          input-enable;
+          output-high;
+      };
+   };
+
+    fg_alert_defaults: fg_alert_defaults {
+        mux {
+            pins = "gpio7";
+            function = "gpio";
+        };
+
+        config {
+            pins = "gpio7";
+            bias-pull-up;
+            input-enable;
+        };
+    };
+};
+
+
+&tlmm {
+	pinctrl-names = "default";
+	pinctrl-0 = <&action_button_input>;
+};
+
+
+&reserved_memory {
+	ramoops: ramoops@a6c00000 {
+		compatible = "ramoops";
+		reg = <0 0xa6c00000 0 0x00090000>;
+		record-size = <131072>;
+		console-size = <131072>;
+		pmsg-size = <131072>;
+	};
+};
+
+&soc {
+	amem {
+		compatible = "meta,amem";
+		status = "ok";
+	};
+};
+
+&pm8150_pon {
+	interrupts = <0x0 0x8 0x0 IRQ_TYPE_EDGE_BOTH>,
+		     <0x0 0x8 0x1 IRQ_TYPE_EDGE_BOTH>,
+		     <0x0 0x8 0x2 IRQ_TYPE_EDGE_BOTH>;
+	interrupt-names = "kpdpwr", "resin", "cblpwr";
+	qcom,cblpwr-usb-conn;
+
+	qcom,pon_3 {
+		qcom,pon-type = <PON_POWER_ON_TYPE_CBLPWR>;
+		qcom,pull-up;
+		linux,code = <KEY_PROG1>;
+	};
+};
+
+&usb0 {
+	extcon = <&pm8150_pon>;
+};

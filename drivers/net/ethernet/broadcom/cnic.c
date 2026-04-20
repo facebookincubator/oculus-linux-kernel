@@ -1,7 +1,7 @@
 /* cnic.c: QLogic CNIC core network driver.
  *
  * Copyright (c) 2006-2014 Broadcom Corporation
- * Copyright (c) 2014 QLogic Corporation
+ * Copyright (c) 2014-2015 QLogic Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,11 +58,11 @@
 #define CNIC_MODULE_NAME	"cnic"
 
 static char version[] =
-	"QLogic NetXtreme II CNIC Driver " CNIC_MODULE_NAME " v" CNIC_MODULE_VERSION " (" CNIC_MODULE_RELDATE ")\n";
+	"QLogic " CNIC_MODULE_NAME "Driver v" CNIC_MODULE_VERSION " (" CNIC_MODULE_RELDATE ")\n";
 
 MODULE_AUTHOR("Michael Chan <mchan@broadcom.com> and John(Zongxi) "
 	      "Chen (zongxi@broadcom.com");
-MODULE_DESCRIPTION("QLogic NetXtreme II CNIC Driver");
+MODULE_DESCRIPTION("QLogic cnic Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(CNIC_MODULE_VERSION);
 
@@ -192,6 +192,7 @@ static void cnic_ctx_wr(struct cnic_dev *dev, u32 cid_addr, u32 off, u32 val)
 	struct drv_ctl_info info;
 	struct drv_ctl_io *io = &info.data.io;
 
+	memset(&info, 0, sizeof(struct drv_ctl_info));
 	info.cmd = DRV_CTL_CTX_WR_CMD;
 	io->cid_addr = cid_addr;
 	io->offset = off;
@@ -206,6 +207,7 @@ static void cnic_ctx_tbl_wr(struct cnic_dev *dev, u32 off, dma_addr_t addr)
 	struct drv_ctl_info info;
 	struct drv_ctl_io *io = &info.data.io;
 
+	memset(&info, 0, sizeof(struct drv_ctl_info));
 	info.cmd = DRV_CTL_CTXTBL_WR_CMD;
 	io->offset = off;
 	io->dma_addr = addr;
@@ -219,6 +221,7 @@ static void cnic_ring_ctl(struct cnic_dev *dev, u32 cid, u32 cl_id, int start)
 	struct drv_ctl_info info;
 	struct drv_ctl_l2_ring *ring = &info.data.ring;
 
+	memset(&info, 0, sizeof(struct drv_ctl_info));
 	if (start)
 		info.cmd = DRV_CTL_START_L2_CMD;
 	else
@@ -236,6 +239,7 @@ static void cnic_reg_wr_ind(struct cnic_dev *dev, u32 off, u32 val)
 	struct drv_ctl_info info;
 	struct drv_ctl_io *io = &info.data.io;
 
+	memset(&info, 0, sizeof(struct drv_ctl_info));
 	info.cmd = DRV_CTL_IO_WR_CMD;
 	io->offset = off;
 	io->data = val;
@@ -249,13 +253,14 @@ static u32 cnic_reg_rd_ind(struct cnic_dev *dev, u32 off)
 	struct drv_ctl_info info;
 	struct drv_ctl_io *io = &info.data.io;
 
+	memset(&info, 0, sizeof(struct drv_ctl_info));
 	info.cmd = DRV_CTL_IO_RD_CMD;
 	io->offset = off;
 	ethdev->drv_ctl(dev->netdev, &info);
 	return io->data;
 }
 
-static void cnic_ulp_ctl(struct cnic_dev *dev, int ulp_type, bool reg)
+static void cnic_ulp_ctl(struct cnic_dev *dev, int ulp_type, bool reg, int state)
 {
 	struct cnic_local *cp = dev->cnic_priv;
 	struct cnic_eth_dev *ethdev = cp->ethdev;
@@ -263,6 +268,7 @@ static void cnic_ulp_ctl(struct cnic_dev *dev, int ulp_type, bool reg)
 	struct fcoe_capabilities *fcoe_cap =
 		&info.data.register_data.fcoe_features;
 
+	memset(&info, 0, sizeof(struct drv_ctl_info));
 	if (reg) {
 		info.cmd = DRV_CTL_ULP_REGISTER_CMD;
 		if (ulp_type == CNIC_ULP_FCOE && dev->fcoe_cap)
@@ -272,6 +278,7 @@ static void cnic_ulp_ctl(struct cnic_dev *dev, int ulp_type, bool reg)
 	}
 
 	info.data.ulp_type = ulp_type;
+	info.drv_state = state;
 	ethdev->drv_ctl(dev->netdev, &info);
 }
 
@@ -286,6 +293,7 @@ static void cnic_spq_completion(struct cnic_dev *dev, int cmd, u32 count)
 	struct cnic_eth_dev *ethdev = cp->ethdev;
 	struct drv_ctl_info info;
 
+	memset(&info, 0, sizeof(struct drv_ctl_info));
 	info.cmd = cmd;
 	info.data.credit.credit_count = count;
 	ethdev->drv_ctl(dev->netdev, &info);
@@ -591,7 +599,7 @@ static int cnic_register_device(struct cnic_dev *dev, int ulp_type,
 
 	mutex_unlock(&cnic_lock);
 
-	cnic_ulp_ctl(dev, ulp_type, true);
+	cnic_ulp_ctl(dev, ulp_type, true, DRV_ACTIVE);
 
 	return 0;
 
@@ -636,7 +644,10 @@ static int cnic_unregister_device(struct cnic_dev *dev, int ulp_type)
 	if (test_bit(ULP_F_CALL_PENDING, &cp->ulp_flags[ulp_type]))
 		netdev_warn(dev->netdev, "Failed waiting for ULP up call to complete\n");
 
-	cnic_ulp_ctl(dev, ulp_type, false);
+	if (test_bit(ULP_F_INIT, &cp->ulp_flags[ulp_type]))
+		cnic_ulp_ctl(dev, ulp_type, false, DRV_UNLOADED);
+	else
+		cnic_ulp_ctl(dev, ulp_type, false, DRV_INACTIVE);
 
 	return 0;
 }
@@ -649,7 +660,7 @@ static int cnic_init_id_tbl(struct cnic_id_tbl *id_tbl, u32 size, u32 start_id,
 	id_tbl->max = size;
 	id_tbl->next = next;
 	spin_lock_init(&id_tbl->lock);
-	id_tbl->table = kzalloc(DIV_ROUND_UP(size, 32) * 4, GFP_KERNEL);
+	id_tbl->table = kcalloc(BITS_TO_LONGS(size), sizeof(long), GFP_KERNEL);
 	if (!id_tbl->table)
 		return -ENOMEM;
 
@@ -1244,13 +1255,13 @@ static int cnic_alloc_bnx2x_resc(struct cnic_dev *dev)
 			cp->fcoe_init_cid = 0x10;
 	}
 
-	cp->iscsi_tbl = kzalloc(sizeof(struct cnic_iscsi) * MAX_ISCSI_TBL_SZ,
+	cp->iscsi_tbl = kcalloc(MAX_ISCSI_TBL_SZ, sizeof(struct cnic_iscsi),
 				GFP_KERNEL);
 	if (!cp->iscsi_tbl)
 		goto error;
 
-	cp->ctx_tbl = kzalloc(sizeof(struct cnic_context) *
-				cp->max_cid_space, GFP_KERNEL);
+	cp->ctx_tbl = kcalloc(cp->max_cid_space, sizeof(struct cnic_context),
+			      GFP_KERNEL);
 	if (!cp->ctx_tbl)
 		goto error;
 
@@ -1267,7 +1278,7 @@ static int cnic_alloc_bnx2x_resc(struct cnic_dev *dev)
 
 	ret = cnic_alloc_dma(dev, kwq_16_dma, pages, 0);
 	if (ret)
-		return -ENOMEM;
+		goto error;
 
 	n = CNIC_PAGE_SIZE / CNIC_KWQ16_DATA_SIZE;
 	for (i = 0, j = 0; i < cp->max_cid_space; i++) {
@@ -1907,7 +1918,6 @@ static int cnic_bnx2x_iscsi_ofld1(struct cnic_dev *dev, struct kwqe *wqes[],
 	ret = cnic_alloc_bnx2x_conn_resc(dev, l5_cid);
 	if (ret) {
 		atomic_dec(&cp->iscsi_conn);
-		ret = 0;
 		goto done;
 	}
 	ret = cnic_setup_bnx2x_ctx(dev, wqes, num);
@@ -2551,7 +2561,6 @@ static void cnic_bnx2x_delete_wait(struct cnic_dev *dev, u32 start_cid)
 
 static int cnic_bnx2x_fcoe_fw_destroy(struct cnic_dev *dev, struct kwqe *kwqe)
 {
-	struct fcoe_kwqe_destroy *req;
 	union l5cm_specific_data l5_data;
 	struct cnic_local *cp = dev->cnic_priv;
 	struct bnx2x *bp = netdev_priv(dev->netdev);
@@ -2560,7 +2569,6 @@ static int cnic_bnx2x_fcoe_fw_destroy(struct cnic_dev *dev, struct kwqe *kwqe)
 
 	cnic_bnx2x_delete_wait(dev, MAX_ISCSI_TBL_SZ);
 
-	req = (struct fcoe_kwqe_destroy *) kwqe;
 	cid = BNX2X_HW_CID(bp, cp->fcoe_init_cid);
 
 	memset(&l5_data, 0, sizeof(l5_data));
@@ -3001,10 +3009,10 @@ static int cnic_service_bnx2(void *data, void *status_blk)
 	return cnic_service_bnx2_queues(dev);
 }
 
-static void cnic_service_bnx2_msix(unsigned long data)
+static void cnic_service_bnx2_msix(struct tasklet_struct *t)
 {
-	struct cnic_dev *dev = (struct cnic_dev *) data;
-	struct cnic_local *cp = dev->cnic_priv;
+	struct cnic_local *cp = from_tasklet(cp, t, cnic_irq_task);
+	struct cnic_dev *dev = cp->dev;
 
 	cp->last_status_idx = cnic_service_bnx2_queues(dev);
 
@@ -3126,10 +3134,10 @@ static u32 cnic_service_bnx2x_kcq(struct cnic_dev *dev, struct kcq_info *info)
 	return last_status;
 }
 
-static void cnic_service_bnx2x_bh(unsigned long data)
+static void cnic_service_bnx2x_bh(struct tasklet_struct *t)
 {
-	struct cnic_dev *dev = (struct cnic_dev *) data;
-	struct cnic_local *cp = dev->cnic_priv;
+	struct cnic_local *cp = from_tasklet(cp, t, cnic_irq_task);
+	struct cnic_dev *dev = cp->dev;
 	struct bnx2x *bp = netdev_priv(dev->netdev);
 	u32 status_idx, new_status_idx;
 
@@ -3303,7 +3311,7 @@ static int cnic_ctl(void *data, struct cnic_ctl_info *info)
 	}
 	case CNIC_CTL_FCOE_STATS_GET_CMD:
 		ulp_type = CNIC_ULP_FCOE;
-		/* fall through */
+		fallthrough;
 	case CNIC_CTL_ISCSI_STATS_GET_CMD:
 		cnic_hold(dev);
 		cnic_copy_ulp_stats(dev, ulp_type);
@@ -3654,7 +3662,7 @@ static int cnic_cm_destroy(struct cnic_sock *csk)
 static inline u16 cnic_get_vlan(struct net_device *dev,
 				struct net_device **vlan_dev)
 {
-	if (dev->priv_flags & IFF_802_1Q_VLAN) {
+	if (is_vlan_dev(dev)) {
 		*vlan_dev = vlan_dev_real_dev(dev);
 		return vlan_dev_vlan_id(dev);
 	}
@@ -4029,15 +4037,14 @@ static void cnic_cm_process_kcqe(struct cnic_dev *dev, struct kcqe *kcqe)
 	case L5CM_RAMROD_CMD_ID_CLOSE: {
 		struct iscsi_kcqe *l5kcqe = (struct iscsi_kcqe *) kcqe;
 
-		if (l4kcqe->status != 0 || l5kcqe->completion_status != 0) {
-			netdev_warn(dev->netdev, "RAMROD CLOSE compl with status 0x%x completion status 0x%x\n",
-				    l4kcqe->status, l5kcqe->completion_status);
-			opcode = L4_KCQE_OPCODE_VALUE_CLOSE_COMP;
-			/* Fall through */
-		} else {
+		if (l4kcqe->status == 0 && l5kcqe->completion_status == 0)
 			break;
-		}
+
+		netdev_warn(dev->netdev, "RAMROD CLOSE compl with status 0x%x completion status 0x%x\n",
+			    l4kcqe->status, l5kcqe->completion_status);
+		opcode = L4_KCQE_OPCODE_VALUE_CLOSE_COMP;
 	}
+		fallthrough;
 	case L4_KCQE_OPCODE_VALUE_RESET_RECEIVED:
 	case L4_KCQE_OPCODE_VALUE_CLOSE_COMP:
 	case L4_KCQE_OPCODE_VALUE_RESET_COMP:
@@ -4079,7 +4086,7 @@ static void cnic_cm_free_mem(struct cnic_dev *dev)
 {
 	struct cnic_local *cp = dev->cnic_priv;
 
-	kfree(cp->csk_tbl);
+	kvfree(cp->csk_tbl);
 	cp->csk_tbl = NULL;
 	cnic_free_id_tbl(&cp->csk_port_tbl);
 }
@@ -4088,11 +4095,15 @@ static int cnic_cm_alloc_mem(struct cnic_dev *dev)
 {
 	struct cnic_local *cp = dev->cnic_priv;
 	u32 port_id;
+	int i;
 
-	cp->csk_tbl = kzalloc(sizeof(struct cnic_sock) * MAX_CM_SK_TBL_SZ,
-			      GFP_KERNEL);
+	cp->csk_tbl = kvcalloc(MAX_CM_SK_TBL_SZ, sizeof(struct cnic_sock),
+			       GFP_KERNEL);
 	if (!cp->csk_tbl)
 		return -ENOMEM;
+
+	for (i = 0; i < MAX_CM_SK_TBL_SZ; i++)
+		atomic_set(&cp->csk_tbl[i].ref_count, 0);
 
 	port_id = prandom_u32();
 	port_id %= CNIC_LOCAL_PORT_RANGE;
@@ -4267,6 +4278,7 @@ static void cnic_delete_task(struct work_struct *work)
 
 		cnic_ulp_stop_one(cp, CNIC_ULP_ISCSI);
 
+		memset(&info, 0, sizeof(struct drv_ctl_info));
 		info.cmd = DRV_CTL_ISCSI_STOPPED_CMD;
 		cp->ethdev->drv_ctl(dev->netdev, &info);
 	}
@@ -4446,8 +4458,7 @@ static int cnic_init_bnx2_irq(struct cnic_dev *dev)
 		CNIC_WR(dev, base + BNX2_HC_CMD_TICKS_OFF, (64 << 16) | 220);
 
 		cp->last_status_idx = cp->status_blk.bnx2->status_idx;
-		tasklet_init(&cp->cnic_irq_task, cnic_service_bnx2_msix,
-			     (unsigned long) dev);
+		tasklet_setup(&cp->cnic_irq_task, cnic_service_bnx2_msix);
 		err = cnic_request_irq(dev);
 		if (err)
 			return err;
@@ -4856,8 +4867,7 @@ static int cnic_init_bnx2x_irq(struct cnic_dev *dev)
 	struct cnic_eth_dev *ethdev = cp->ethdev;
 	int err = 0;
 
-	tasklet_init(&cp->cnic_irq_task, cnic_service_bnx2x_bh,
-		     (unsigned long) dev);
+	tasklet_setup(&cp->cnic_irq_task, cnic_service_bnx2x_bh);
 	if (ethdev->drv_state & CNIC_DRV_STATE_USING_MSIX)
 		err = cnic_request_irq(dev);
 
@@ -5079,13 +5089,12 @@ static int cnic_start_bnx2x_hw(struct cnic_dev *dev)
 	struct cnic_local *cp = dev->cnic_priv;
 	struct bnx2x *bp = netdev_priv(dev->netdev);
 	struct cnic_eth_dev *ethdev = cp->ethdev;
-	int func, ret;
+	int ret;
 	u32 pfid;
 
 	dev->stats_addr = ethdev->addr_drv_info_to_mcp;
 	cp->func = bp->pf_num;
 
-	func = CNIC_FUNC(cp);
 	pfid = bp->pfid;
 
 	ret = cnic_init_id_tbl(&cp->cid_tbl, MAX_ISCSI_TBL_SZ,
@@ -5195,6 +5204,8 @@ static void cnic_init_rings(struct cnic_dev *dev)
 
 		cnic_init_bnx2x_tx_ring(dev, data);
 		cnic_init_bnx2x_rx_ring(dev, data);
+
+		data->general.fp_hsi_ver =  ETH_FP_HSI_VERSION;
 
 		l5_data.phy_address.lo = udev->l2_buf_map & 0xffffffff;
 		l5_data.phy_address.hi = (u64) udev->l2_buf_map >> 32;
@@ -5338,7 +5349,10 @@ static int cnic_start_hw(struct cnic_dev *dev)
 	return 0;
 
 err1:
-	cp->free_resc(dev);
+	if (ethdev->drv_state & CNIC_DRV_STATE_HANDLES_IRQ)
+		cp->stop_hw(dev);
+	else
+		cp->free_resc(dev);
 	pci_dev_put(dev->pcidev);
 	return err;
 }
@@ -5433,6 +5447,23 @@ static void cnic_free_dev(struct cnic_dev *dev)
 	kfree(dev);
 }
 
+static int cnic_get_fc_npiv_tbl(struct cnic_dev *dev,
+				struct cnic_fc_npiv_tbl *npiv_tbl)
+{
+	struct cnic_local *cp = dev->cnic_priv;
+	struct bnx2x *bp = netdev_priv(dev->netdev);
+	int ret;
+
+	if (!test_bit(CNIC_F_CNIC_UP, &dev->flags))
+		return -EAGAIN;     /* bnx2x is down */
+
+	if (!BNX2X_CHIP_IS_E2_PLUS(bp))
+		return -EINVAL;
+
+	ret = cp->ethdev->drv_get_fc_npiv_tbl(dev->netdev, npiv_tbl);
+	return ret;
+}
+
 static struct cnic_dev *cnic_alloc_dev(struct net_device *dev,
 				       struct pci_dev *pdev)
 {
@@ -5451,6 +5482,8 @@ static struct cnic_dev *cnic_alloc_dev(struct net_device *dev,
 	cdev->register_device = cnic_register_device;
 	cdev->unregister_device = cnic_unregister_device;
 	cdev->iscsi_nl_msg_recv = cnic_iscsi_nl_msg_recv;
+	cdev->get_fc_npiv_tbl = cnic_get_fc_npiv_tbl;
+	atomic_set(&cdev->ref_count, 0);
 
 	cp = cdev->cnic_priv;
 	cp->dev = cdev;
@@ -5701,7 +5734,7 @@ static int cnic_netdev_event(struct notifier_block *this, unsigned long event,
 		if (realdev) {
 			dev = cnic_from_netdev(realdev);
 			if (dev) {
-				vid |= VLAN_TAG_PRESENT;
+				vid |= VLAN_CFI_MASK;	/* make non-zero */
 				cnic_rcv_netevent(dev->cnic_priv, event, vid);
 				cnic_put(dev);
 			}

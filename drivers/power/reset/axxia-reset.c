@@ -1,17 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Reset driver for Axxia devices
  *
  * Copyright (C) 2014 LSI
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
  */
 #include <linux/init.h>
 #include <linux/err.h>
@@ -19,13 +10,11 @@
 #include <linux/kernel.h>
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
+#include <linux/notifier.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/reboot.h>
 #include <linux/regmap.h>
-
-#include <asm/system_misc.h>
-
 
 #define SC_CRIT_WRITE_KEY	0x1000
 #define SC_LATCH_ON_RESET	0x1004
@@ -39,7 +28,8 @@
 
 static struct regmap *syscon;
 
-static void do_axxia_restart(enum reboot_mode reboot_mode, const char *cmd)
+static int axxia_restart_handler(struct notifier_block *this,
+				 unsigned long mode, void *cmd)
 {
 	/* Access Key (0xab) */
 	regmap_write(syscon, SC_CRIT_WRITE_KEY, 0xab);
@@ -50,21 +40,31 @@ static void do_axxia_restart(enum reboot_mode reboot_mode, const char *cmd)
 	/* Assert chip reset */
 	regmap_update_bits(syscon, SC_RESET_CONTROL,
 			   RSTCTL_RST_CHIP, RSTCTL_RST_CHIP);
+
+	return NOTIFY_DONE;
 }
+
+static struct notifier_block axxia_restart_nb = {
+	.notifier_call = axxia_restart_handler,
+	.priority = 128,
+};
 
 static int axxia_reset_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
+	int err;
 
 	syscon = syscon_regmap_lookup_by_phandle(dev->of_node, "syscon");
 	if (IS_ERR(syscon)) {
-		pr_err("%s: syscon lookup failed\n", dev->of_node->name);
+		pr_err("%pOFn: syscon lookup failed\n", dev->of_node);
 		return PTR_ERR(syscon);
 	}
 
-	arm_pm_restart = do_axxia_restart;
+	err = register_restart_handler(&axxia_restart_nb);
+	if (err)
+		dev_err(dev, "cannot register restart handler (err=%d)\n", err);
 
-	return 0;
+	return err;
 }
 
 static const struct of_device_id of_axxia_reset_match[] = {

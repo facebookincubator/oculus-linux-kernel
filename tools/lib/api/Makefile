@@ -1,49 +1,67 @@
+# SPDX-License-Identifier: GPL-2.0
 include ../../scripts/Makefile.include
-include ../../perf/config/utilities.mak		# QUIET_CLEAN
+include ../../scripts/utilities.mak		# QUIET_CLEAN
 
-CC = $(CROSS_COMPILE)gcc
-AR = $(CROSS_COMPILE)ar
+ifeq ($(srctree),)
+srctree := $(patsubst %/,%,$(dir $(CURDIR)))
+srctree := $(patsubst %/,%,$(dir $(srctree)))
+srctree := $(patsubst %/,%,$(dir $(srctree)))
+#$(info Determined 'srctree' to be $(srctree))
+endif
 
-# guard against environment variables
-LIB_H=
-LIB_OBJS=
+CC ?= $(CROSS_COMPILE)gcc
+AR ?= $(CROSS_COMPILE)ar
+LD ?= $(CROSS_COMPILE)ld
 
-LIB_H += fs/debugfs.h
-LIB_H += fs/fs.h
-# See comment below about piggybacking...
-LIB_H += fd/array.h
+MAKEFLAGS += --no-print-directory
 
-LIB_OBJS += $(OUTPUT)fs/debugfs.o
-LIB_OBJS += $(OUTPUT)fs/fs.o
-# XXX piggybacking here, need to introduce libapikfd, or rename this
-# to plain libapik.a and make it have it all api goodies
-LIB_OBJS += $(OUTPUT)fd/array.o
+LIBFILE = $(OUTPUT)libapi.a
 
-LIBFILE = libapikfs.a
+CFLAGS := $(EXTRA_WARNINGS) $(EXTRA_CFLAGS)
+CFLAGS += -ggdb3 -Wall -Wextra -std=gnu99 -U_FORTIFY_SOURCE -fPIC
 
-CFLAGS = -ggdb3 -Wall -Wextra -std=gnu99 -Werror -O6 -D_FORTIFY_SOURCE=2 $(EXTRA_WARNINGS) $(EXTRA_CFLAGS) -fPIC
-EXTLIBS = -lelf -lpthread -lrt -lm
-ALL_CFLAGS = $(CFLAGS) $(BASIC_CFLAGS) -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
-ALL_LDFLAGS = $(LDFLAGS)
+ifeq ($(DEBUG),0)
+ifeq ($(CC_NO_CLANG), 0)
+  CFLAGS += -O3
+else
+  CFLAGS += -O6
+endif
+endif
+
+ifeq ($(DEBUG),0)
+  CFLAGS += -D_FORTIFY_SOURCE
+endif
+
+# Treat warnings as errors unless directed not to
+ifneq ($(WERROR),0)
+  CFLAGS += -Werror
+endif
+
+CFLAGS += -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
+CFLAGS += -I$(srctree)/tools/lib/api
+CFLAGS += -I$(srctree)/tools/include
 
 RM = rm -f
 
-$(LIBFILE): $(LIB_OBJS)
-	$(QUIET_AR)$(RM) $@ && $(AR) rcs $(OUTPUT)$@ $(LIB_OBJS)
+API_IN := $(OUTPUT)libapi-in.o
 
-$(LIB_OBJS): $(LIB_H)
+all:
 
-libapi_dirs:
-	$(QUIET_MKDIR)mkdir -p $(OUTPUT)fd $(OUTPUT)fs
+export srctree OUTPUT CC LD CFLAGS V
+include $(srctree)/tools/build/Makefile.include
 
-$(OUTPUT)%.o: %.c libapi_dirs
-	$(QUIET_CC)$(CC) -o $@ -c $(ALL_CFLAGS) $<
-$(OUTPUT)%.s: %.c libapi_dirs
-	$(QUIET_CC)$(CC) -S $(ALL_CFLAGS) $<
-$(OUTPUT)%.o: %.S libapi_dirs
-	$(QUIET_CC)$(CC) -o $@ -c $(ALL_CFLAGS) $<
+all: fixdep $(LIBFILE)
+
+$(API_IN): FORCE
+	@$(MAKE) $(build)=libapi
+
+$(LIBFILE): $(API_IN)
+	$(QUIET_AR)$(RM) $@ && $(AR) rcs $@ $(API_IN)
 
 clean:
-	$(call QUIET_CLEAN, libapi) $(RM) $(LIB_OBJS) $(LIBFILE)
+	$(call QUIET_CLEAN, libapi) $(RM) $(LIBFILE); \
+	find $(if $(OUTPUT),$(OUTPUT),.) -name \*.o -or -name \*.o.cmd -or -name \*.o.d | xargs $(RM)
 
-.PHONY: clean
+FORCE:
+
+.PHONY: clean FORCE

@@ -1,34 +1,25 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
-    comedi/drivers/contec_pci_dio.c
+ * comedi/drivers/contec_pci_dio.c
+ *
+ * COMEDI - Linux Control and Measurement Device Interface
+ * Copyright (C) 2000 David A. Schleef <ds@schleef.org>
+ */
 
-    COMEDI - Linux Control and Measurement Device Interface
-    Copyright (C) 2000 David A. Schleef <ds@schleef.org>
-
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-*/
 /*
-Driver: contec_pci_dio
-Description: Contec PIO1616L digital I/O board
-Devices: [Contec] PIO1616L (contec_pci_dio)
-Author: Stefano Rivoir <s.rivoir@gts.it>
-Updated: Wed, 27 Jun 2007 13:00:06 +0100
-Status: works
-
-Configuration Options: not applicable, uses comedi PCI auto config
-*/
+ * Driver: contec_pci_dio
+ * Description: Contec PIO1616L digital I/O board
+ * Devices: [Contec] PIO1616L (contec_pci_dio)
+ * Author: Stefano Rivoir <s.rivoir@gts.it>
+ * Updated: Wed, 27 Jun 2007 13:00:06 +0100
+ * Status: works
+ *
+ * Configuration Options: not applicable, uses comedi PCI auto config
+ */
 
 #include <linux/module.h>
-#include <linux/pci.h>
 
-#include "../comedidev.h"
+#include "../comedi_pci.h"
 
 /*
  * Register map
@@ -59,7 +50,7 @@ static int contec_di_insn_bits(struct comedi_device *dev,
 }
 
 static int contec_auto_attach(struct comedi_device *dev,
-					unsigned long context_unused)
+			      unsigned long context_unused)
 {
 	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
 	struct comedi_subdevice *s;
@@ -121,6 +112,6 @@ static struct pci_driver contec_pci_dio_pci_driver = {
 };
 module_comedi_pci_driver(contec_pci_dio_driver, contec_pci_dio_pci_driver);
 
-MODULE_AUTHOR("Comedi http://www.comedi.org");
+MODULE_AUTHOR("Comedi https://www.comedi.org");
 MODULE_DESCRIPTION("Comedi low-level driver");
 MODULE_LICENSE("GPL");

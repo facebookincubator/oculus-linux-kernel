@@ -1,24 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright © 2008 Ingo Molnar
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.
  */
 
 #include <asm/iomap.h>
-#include <asm/pat.h>
-#include <linux/module.h>
+#include <asm/memtype.h>
+#include <linux/export.h>
 #include <linux/highmem.h>
 
 static int is_io_mapping_possible(resource_size_t base, unsigned long size)
@@ -33,24 +20,27 @@ static int is_io_mapping_possible(resource_size_t base, unsigned long size)
 
 int iomap_create_wc(resource_size_t base, unsigned long size, pgprot_t *prot)
 {
-	unsigned long flag = _PAGE_CACHE_WC;
+	enum page_cache_mode pcm = _PAGE_CACHE_MODE_WC;
 	int ret;
 
 	if (!is_io_mapping_possible(base, size))
 		return -EINVAL;
 
-	ret = io_reserve_memtype(base, base + size, &flag);
+	ret = memtype_reserve_io(base, base + size, &pcm);
 	if (ret)
 		return ret;
 
-	*prot = __pgprot(__PAGE_KERNEL | flag);
+	*prot = __pgprot(__PAGE_KERNEL | cachemode2protval(pcm));
+	/* Filter out unsupported __PAGE_KERNEL* bits: */
+	pgprot_val(*prot) &= __default_kernel_pte_mask;
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(iomap_create_wc);
 
 void iomap_free(resource_size_t base, unsigned long size)
 {
-	io_free_memtype(base, base + size);
+	memtype_free_io(base, base + size);
 }
 EXPORT_SYMBOL_GPL(iomap_free);
 
@@ -59,6 +49,7 @@ void *kmap_atomic_prot_pfn(unsigned long pfn, pgprot_t prot)
 	unsigned long vaddr;
 	int idx, type;
 
+	preempt_disable();
 	pagefault_disable();
 
 	type = kmap_atomic_idx_push();
@@ -77,13 +68,18 @@ void __iomem *
 iomap_atomic_prot_pfn(unsigned long pfn, pgprot_t prot)
 {
 	/*
-	 * For non-PAT systems, promote PAGE_KERNEL_WC to PAGE_KERNEL_UC_MINUS.
-	 * PAGE_KERNEL_WC maps to PWT, which translates to uncached if the
-	 * MTRR is UC or WC.  UC_MINUS gets the real intention, of the
-	 * user, which is "WC if the MTRR is WC, UC if you can't do that."
+	 * For non-PAT systems, translate non-WB request to UC- just in
+	 * case the caller set the PWT bit to prot directly without using
+	 * pgprot_writecombine(). UC- translates to uncached if the MTRR
+	 * is UC or WC. UC- gets the real intention, of the user, which is
+	 * "WC if the MTRR is WC, UC if you can't do that."
 	 */
-	if (!pat_enabled && pgprot_val(prot) == pgprot_val(PAGE_KERNEL_WC))
-		prot = PAGE_KERNEL_UC_MINUS;
+	if (!pat_enabled() && pgprot2cachemode(prot) != _PAGE_CACHE_MODE_WB)
+		prot = __pgprot(__PAGE_KERNEL |
+				cachemode2protval(_PAGE_CACHE_MODE_UC_MINUS));
+
+	/* Filter out unsupported __PAGE_KERNEL* bits: */
+	pgprot_val(prot) &= __default_kernel_pte_mask;
 
 	return (void __force __iomem *) kmap_atomic_prot_pfn(pfn, prot);
 }
@@ -115,5 +111,6 @@ iounmap_atomic(void __iomem *kvaddr)
 	}
 
 	pagefault_enable();
+	preempt_enable();
 }
 EXPORT_SYMBOL_GPL(iounmap_atomic);

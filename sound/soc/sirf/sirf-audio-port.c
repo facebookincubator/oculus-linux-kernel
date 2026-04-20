@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * SiRF Audio port driver
  *
  * Copyright (c) 2011 Cambridge Silicon Radio Limited, a CSR plc group company.
- *
- * Licensed under GPLv2 or later.
  */
 #include <linux/module.h>
 #include <sound/soc.h>
@@ -19,6 +18,7 @@ struct sirf_audio_port {
 static int sirf_audio_port_dai_probe(struct snd_soc_dai *dai)
 {
 	struct sirf_audio_port *port = snd_soc_dai_get_drvdata(dai);
+
 	snd_soc_dai_init_dma_data(dai, &port->playback_dma_data,
 			&port->capture_dma_data);
 	return 0;
@@ -74,7 +74,6 @@ MODULE_DEVICE_TABLE(of, sirf_audio_port_of_match);
 static struct platform_driver sirf_audio_port_driver = {
 	.driver = {
 		.name = "sirf-audio-port",
-		.owner = THIS_MODULE,
 		.of_match_table = sirf_audio_port_of_match,
 	},
 	.probe = sirf_audio_port_probe,

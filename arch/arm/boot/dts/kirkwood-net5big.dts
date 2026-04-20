@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Device Tree file for LaCie 5Big Network v2
  *
@@ -8,9 +9,6 @@
  * Based on netxbig_v2-setup.c,
  * Copyright (C) 2010 Simon Guinot <sguinot@lacie.com>
  *
- * This file is licensed under the terms of the GNU General Public
- * License version 2.  This program is licensed "as is" without any
- * warranty of any kind, whether express or implied.
 */
 
 /dts-v1/;
@@ -85,6 +83,66 @@
 			 #clock-cells = <0>;
 			 clock-frequency = <32768>;
 	       };
+	};
+
+	netxbig-leds {
+		blue-sata2 {
+			label = "netxbig:blue:sata2";
+			mode-addr = <5>;
+			mode-val = <NETXBIG_LED_OFF 0
+				    NETXBIG_LED_ON 7
+				    NETXBIG_LED_SATA 1
+				    NETXBIG_LED_TIMER1 3>;
+			bright-addr = <2>;
+			max-brightness = <7>;
+		};
+		red-sata2 {
+			label = "netxbig:red:sata2";
+			mode-addr = <5>;
+			mode-val = <NETXBIG_LED_OFF 0
+				    NETXBIG_LED_ON 2
+				    NETXBIG_LED_TIMER1 4>;
+			bright-addr = <2>;
+			max-brightness = <7>;
+		};
+		blue-sata3 {
+			label = "netxbig:blue:sata3";
+			mode-addr = <6>;
+			mode-val = <NETXBIG_LED_OFF 0
+				    NETXBIG_LED_ON 7
+				    NETXBIG_LED_SATA 1
+				    NETXBIG_LED_TIMER1 3>;
+			bright-addr = <2>;
+			max-brightness = <7>;
+		};
+		red-sata3 {
+			label = "netxbig:red:sata3";
+			mode-addr = <6>;
+			mode-val = <NETXBIG_LED_OFF 0
+				    NETXBIG_LED_ON 2
+				    NETXBIG_LED_TIMER1 4>;
+			bright-addr = <2>;
+			max-brightness = <7>;
+		};
+		blue-sata4 {
+			label = "netxbig:blue:sata4";
+			mode-addr = <7>;
+			mode-val = <NETXBIG_LED_OFF 0
+				    NETXBIG_LED_ON 7
+				    NETXBIG_LED_SATA 1
+				    NETXBIG_LED_TIMER1 3>;
+			bright-addr = <2>;
+			max-brightness = <7>;
+		};
+		red-sata4 {
+			label = "netxbig:red:sata4";
+			mode-addr = <7>;
+			mode-val = <NETXBIG_LED_OFF 0
+				    NETXBIG_LED_ON 2
+				    NETXBIG_LED_TIMER1 4>;
+			bright-addr = <2>;
+			max-brightness = <7>;
+		};
 	};
 };
 

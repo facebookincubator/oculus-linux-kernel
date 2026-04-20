@@ -1,23 +1,5 @@
-/* Intel PRO/1000 Linux driver
- * Copyright(c) 1999 - 2014 Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * The full GNU General Public License is included in this distribution in
- * the file called "COPYING".
- *
- * Contact Information:
- * Linux NICS <linux.nics@intel.com>
- * e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
- * Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
- */
+/* SPDX-License-Identifier: GPL-2.0 */
+/* Copyright(c) 1999 - 2018 Intel Corporation. */
 
 #ifndef _E1000E_ICH8LAN_H_
 #define _E1000E_ICH8LAN_H_
@@ -73,10 +55,10 @@
 				 (ID_LED_OFF1_ON2  <<  4) | \
 				 (ID_LED_DEF1_DEF2))
 
-#define E1000_ICH_NVM_SIG_WORD		0x13
-#define E1000_ICH_NVM_SIG_MASK		0xC000
-#define E1000_ICH_NVM_VALID_SIG_MASK	0xC0
-#define E1000_ICH_NVM_SIG_VALUE		0x80
+#define E1000_ICH_NVM_SIG_WORD		0x13u
+#define E1000_ICH_NVM_SIG_MASK		0xC000u
+#define E1000_ICH_NVM_VALID_SIG_MASK	0xC0u
+#define E1000_ICH_NVM_SIG_VALUE		0x80u
 
 #define E1000_ICH8_LAN_INIT_TIMEOUT	1500
 
@@ -95,9 +77,26 @@
 
 #define E1000_FEXTNVM6_REQ_PLL_CLK	0x00000100
 #define E1000_FEXTNVM6_ENABLE_K1_ENTRY_CONDITION	0x00000200
-
+#define E1000_FEXTNVM6_K1_OFF_ENABLE	0x80000000
+/* bit for disabling packet buffer read */
+#define E1000_FEXTNVM7_DISABLE_PB_READ	0x00040000
+#define E1000_FEXTNVM7_SIDE_CLK_UNGATE	0x00000004
 #define E1000_FEXTNVM7_DISABLE_SMB_PERST	0x00000020
+#define E1000_FEXTNVM9_IOSFSB_CLKGATE_DIS	0x00000800
+#define E1000_FEXTNVM9_IOSFSB_CLKREQ_DIS	0x00001000
+#define E1000_FEXTNVM11_DISABLE_PB_READ		0x00000200
+#define E1000_FEXTNVM11_DISABLE_MULR_FIX	0x00002000
 
+/* bit24: RXDCTL thresholds granularity: 0 - cache lines, 1 - descriptors */
+#define E1000_RXDCTL_THRESH_UNIT_DESC	0x01000000
+
+#define K1_ENTRY_LATENCY	0
+#define K1_MIN_TIME		1
+#define NVM_SIZE_MULTIPLIER 4096	/*multiplier for NVMS field */
+#define E1000_FLASH_BASE_ADDR 0xE000	/*offset of NVM access regs */
+#define E1000_CTRL_EXT_NVMVS 0x3	/*NVM valid sector */
+#define E1000_TARC0_CB_MULTIQ_3_REQ	0x30000000
+#define E1000_TARC0_CB_MULTIQ_2_REQ	0x20000000
 #define PCIE_ICH8_SNOOP_ALL	PCIE_NO_SNOOP_ALL
 
 #define E1000_ICH_RAR_ENTRIES	7
@@ -172,6 +171,10 @@
 #define I218_ULP_CONFIG1_INBAND_EXIT	0x0020	/* Inband on ULP exit */
 #define I218_ULP_CONFIG1_WOL_HOST	0x0040	/* WoL Host on ULP exit */
 #define I218_ULP_CONFIG1_RESET_TO_SMBUS	0x0100	/* Reset to SMBus mode */
+/* enable ULP even if when phy powered down via lanphypc */
+#define I218_ULP_CONFIG1_EN_ULP_LANPHYPC	0x0400
+/* disable clear of sticky ULP on PERST */
+#define I218_ULP_CONFIG1_DIS_CLR_STICKY_ON_PERST	0x0800
 #define I218_ULP_CONFIG1_DISABLE_SMB_PERST	0x1000	/* Disable on PERST# */
 
 /* SMBus Address Phy Register */
@@ -207,8 +210,11 @@
 
 /* PHY Power Management Control */
 #define HV_PM_CTRL		PHY_REG(770, 17)
-#define HV_PM_CTRL_PLL_STOP_IN_K1_GIGA	0x100
+#define HV_PM_CTRL_K1_CLK_REQ		0x200
 #define HV_PM_CTRL_K1_ENABLE		0x4000
+
+#define I217_PLL_CLOCK_GATE_REG	PHY_REG(772, 28)
+#define I217_PLL_CLOCK_GATE_MASK	0x07FF
 
 #define SW_FLAG_TIMEOUT		1000	/* SW Semaphore flag timeout in ms */
 
@@ -268,14 +274,20 @@
 
 /* Latency Tolerance Reporting */
 #define E1000_LTRV			0x000F8
+#define E1000_LTRV_VALUE_MASK		0x000003FF
 #define E1000_LTRV_SCALE_MAX		5
 #define E1000_LTRV_SCALE_FACTOR		5
+#define E1000_LTRV_SCALE_SHIFT		10
+#define E1000_LTRV_SCALE_MASK		0x00001C00
 #define E1000_LTRV_REQ_SHIFT		15
 #define E1000_LTRV_NOSNOOP_SHIFT	16
 #define E1000_LTRV_SEND			(1 << 30)
 
 /* Proprietary Latency Tolerance Reporting PCI Capability */
 #define E1000_PCI_LTR_CAP_LPT		0xA8
+
+/* Don't gate wake DMA clock */
+#define E1000_FFLT_DBG_DONT_GATE_WAKE_DMA_CLK	0x1000
 
 void e1000e_write_protect_nvm_ich8lan(struct e1000_hw *hw);
 void e1000e_set_kmrn_lock_loss_workaround_ich8lan(struct e1000_hw *hw,

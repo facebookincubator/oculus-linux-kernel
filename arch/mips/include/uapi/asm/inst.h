@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * Format of an instruction in memory.
  *
@@ -21,20 +22,20 @@
 enum major_op {
 	spec_op, bcond_op, j_op, jal_op,
 	beq_op, bne_op, blez_op, bgtz_op,
-	addi_op, addiu_op, slti_op, sltiu_op,
+	addi_op, pop10_op = addi_op, addiu_op, slti_op, sltiu_op,
 	andi_op, ori_op, xori_op, lui_op,
 	cop0_op, cop1_op, cop2_op, cop1x_op,
 	beql_op, bnel_op, blezl_op, bgtzl_op,
-	daddi_op, daddiu_op, ldl_op, ldr_op,
-	spec2_op, jalx_op, mdmx_op, spec3_op,
+	daddi_op, pop30_op = daddi_op, daddiu_op, ldl_op, ldr_op,
+	spec2_op, jalx_op, mdmx_op, msa_op = mdmx_op, spec3_op,
 	lb_op, lh_op, lwl_op, lw_op,
 	lbu_op, lhu_op, lwr_op, lwu_op,
 	sb_op, sh_op, swl_op, sw_op,
 	sdl_op, sdr_op, swr_op, cache_op,
-	ll_op, lwc1_op, lwc2_op, pref_op,
-	lld_op, ldc1_op, ldc2_op, ld_op,
-	sc_op, swc1_op, swc2_op, major_3b_op,
-	scd_op, sdc1_op, sdc2_op, sd_op
+	ll_op, lwc1_op, lwc2_op, bc6_op = lwc2_op, pref_op,
+	lld_op, ldc1_op, ldc2_op, pop66_op = ldc2_op, ld_op,
+	sc_op, swc1_op, swc2_op, balc6_op = swc2_op, major_3b_op,
+	scd_op, sdc1_op, sdc2_op, pop76_op = sdc2_op, sd_op
 };
 
 /*
@@ -54,9 +55,9 @@ enum spec_op {
 	spec3_unused_op, spec4_unused_op, slt_op, sltu_op,
 	dadd_op, daddu_op, dsub_op, dsubu_op,
 	tge_op, tgeu_op, tlt_op, tltu_op,
-	teq_op, spec5_unused_op, tne_op, spec6_unused_op,
-	dsll_op, spec7_unused_op, dsrl_op, dsra_op,
-	dsll32_op, spec8_unused_op, dsrl32_op, dsra32_op
+	teq_op, seleqz_op, tne_op, selnez_op,
+	dsll_op, spec5_unused_op, dsrl_op, dsra_op,
+	dsll32_op, spec6_unused_op, dsrl32_op, dsra32_op
 };
 
 /*
@@ -83,10 +84,57 @@ enum spec3_op {
 	swe_op    = 0x1f, bshfl_op  = 0x20,
 	swle_op   = 0x21, swre_op   = 0x22,
 	prefe_op  = 0x23, dbshfl_op = 0x24,
-	lbue_op   = 0x28, lhue_op   = 0x29,
-	lbe_op    = 0x2c, lhe_op    = 0x2d,
-	lle_op    = 0x2e, lwe_op    = 0x2f,
+	cache6_op = 0x25, sc6_op    = 0x26,
+	scd6_op   = 0x27, lbue_op   = 0x28,
+	lhue_op   = 0x29, lbe_op    = 0x2c,
+	lhe_op    = 0x2d, lle_op    = 0x2e,
+	lwe_op    = 0x2f, pref6_op  = 0x35,
+	ll6_op    = 0x36, lld6_op   = 0x37,
 	rdhwr_op  = 0x3b
+};
+
+/*
+ * Bits 10-6 minor opcode for r6 spec mult/div encodings
+ */
+enum mult_op {
+	mult_mult_op = 0x0,
+	mult_mul_op = 0x2,
+	mult_muh_op = 0x3,
+};
+enum multu_op {
+	multu_multu_op = 0x0,
+	multu_mulu_op = 0x2,
+	multu_muhu_op = 0x3,
+};
+enum div_op {
+	div_div_op = 0x0,
+	div_div6_op = 0x2,
+	div_mod_op = 0x3,
+};
+enum divu_op {
+	divu_divu_op = 0x0,
+	divu_divu6_op = 0x2,
+	divu_modu_op = 0x3,
+};
+enum dmult_op {
+	dmult_dmult_op = 0x0,
+	dmult_dmul_op = 0x2,
+	dmult_dmuh_op = 0x3,
+};
+enum dmultu_op {
+	dmultu_dmultu_op = 0x0,
+	dmultu_dmulu_op = 0x2,
+	dmultu_dmuhu_op = 0x3,
+};
+enum ddiv_op {
+	ddiv_ddiv_op = 0x0,
+	ddiv_ddiv6_op = 0x2,
+	ddiv_dmod_op = 0x3,
+};
+enum ddivu_op {
+	ddivu_ddivu_op = 0x0,
+	ddivu_ddivu6_op = 0x2,
+	ddivu_dmodu_op = 0x3,
 };
 
 /*
@@ -100,7 +148,7 @@ enum rt_op {
 	bltzal_op, bgezal_op, bltzall_op, bgezall_op,
 	rt_op_0x14, rt_op_0x15, rt_op_0x16, rt_op_0x17,
 	rt_op_0x18, rt_op_0x19, rt_op_0x1a, rt_op_0x1b,
-	bposge32_op, rt_op_0x1d, rt_op_0x1e, rt_op_0x1f
+	bposge32_op, rt_op_0x1d, rt_op_0x1e, synci_op
 };
 
 /*
@@ -108,10 +156,13 @@ enum rt_op {
  */
 enum cop_op {
 	mfc_op	      = 0x00, dmfc_op	    = 0x01,
-	cfc_op	      = 0x02, mfhc_op	    = 0x03,
-	mtc_op        = 0x04, dmtc_op	    = 0x05,
-	ctc_op	      = 0x06, mthc_op	    = 0x07,
-	bc_op	      = 0x08, cop_op	    = 0x10,
+	cfc_op	      = 0x02, mfhc0_op	    = 0x02,
+	mfhc_op       = 0x03, mtc_op	    = 0x04,
+	dmtc_op	      = 0x05, ctc_op	    = 0x06,
+	mthc0_op      = 0x06, mthc_op	    = 0x07,
+	bc_op	      = 0x08, bc1eqz_op     = 0x09,
+	mfmc0_op      = 0x0b, bc1nez_op     = 0x0d,
+	wrpgpr_op     = 0x0e, cop_op	    = 0x10,
 	copm_op	      = 0x18
 };
 
@@ -129,7 +180,7 @@ enum cop0_coi_func {
 	tlbr_op	      = 0x01, tlbwi_op	    = 0x02,
 	tlbwr_op      = 0x06, tlbp_op	    = 0x08,
 	rfe_op	      = 0x10, eret_op	    = 0x18,
-	wait_op       = 0x20,
+	wait_op       = 0x20, hypcall_op    = 0x28
 };
 
 /*
@@ -161,9 +212,15 @@ enum cop1_sdw_func {
 	fceill_op    =	0x0a, ffloorl_op   =  0x0b,
 	fround_op    =	0x0c, ftrunc_op	   =  0x0d,
 	fceil_op     =	0x0e, ffloor_op	   =  0x0f,
+	fsel_op      =  0x10,
 	fmovc_op     =	0x11, fmovz_op	   =  0x12,
-	fmovn_op     =	0x13, frecip_op	   =  0x15,
-	frsqrt_op    =	0x16, fcvts_op	   =  0x20,
+	fmovn_op     =	0x13, fseleqz_op   =  0x14,
+	frecip_op    =  0x15, frsqrt_op    =  0x16,
+	fselnez_op   =  0x17, fmaddf_op    =  0x18,
+	fmsubf_op    =  0x19, frint_op     =  0x1a,
+	fclass_op    =  0x1b, fmin_op      =  0x1c,
+	fmina_op     =  0x1d, fmax_op      =  0x1e,
+	fmaxa_op     =  0x1f, fcvts_op     =  0x20,
 	fcvtd_op     =	0x21, fcvte_op	   =  0x22,
 	fcvtw_op     =	0x24, fcvtl_op	   =  0x25,
 	fcmp_op	     =	0x30
@@ -193,6 +250,16 @@ enum mad_func {
 };
 
 /*
+ * func field for page table walker (Loongson-3).
+ */
+enum ptw_func {
+	lwdir_op = 0x00,
+	lwpte_op = 0x01,
+	lddir_op = 0x02,
+	ldpte_op = 0x03,
+};
+
+/*
  * func field for special3 lx opcodes (Cavium Octeon).
  */
 enum lx_func {
@@ -210,9 +277,49 @@ enum lx_func {
  */
 enum bshfl_func {
 	wsbh_op = 0x2,
-	dshd_op = 0x5,
 	seb_op  = 0x10,
 	seh_op  = 0x18,
+};
+
+/*
+ * DBSHFL opcodes
+ */
+enum dbshfl_func {
+	dsbh_op = 0x2,
+	dshd_op = 0x5,
+};
+
+/*
+ * MSA minor opcodes.
+ */
+enum msa_func {
+	msa_elm_op = 0x19,
+};
+
+/*
+ * MSA ELM opcodes.
+ */
+enum msa_elm {
+	msa_ctc_op = 0x3e,
+	msa_cfc_op = 0x7e,
+};
+
+/*
+ * func field for MSA MI10 format.
+ */
+enum msa_mi10_func {
+	msa_ld_op = 8,
+	msa_st_op = 9,
+};
+
+/*
+ * MSA 2 bit format fields.
+ */
+enum msa_2b_fmt {
+	msa_fmt_b = 0,
+	msa_fmt_h = 1,
+	msa_fmt_w = 2,
+	msa_fmt_d = 3,
 };
 
 /*
@@ -224,7 +331,7 @@ enum mm_major_op {
 	mm_pool32b_op, mm_pool16b_op, mm_lhu16_op, mm_andi16_op,
 	mm_addiu32_op, mm_lhu32_op, mm_sh32_op, mm_lh32_op,
 	mm_pool32i_op, mm_pool16c_op, mm_lwsp16_op, mm_pool16d_op,
-	mm_ori32_op, mm_pool32f_op, mm_reserved1_op, mm_reserved2_op,
+	mm_ori32_op, mm_pool32f_op, mm_pool32s_op, mm_reserved2_op,
 	mm_pool32c_op, mm_lwgp16_op, mm_lw16_op, mm_pool16e_op,
 	mm_xori32_op, mm_jals32_op, mm_addiupc_op, mm_reserved3_op,
 	mm_reserved4_op, mm_pool16f_op, mm_sb16_op, mm_beqz16_op,
@@ -262,8 +369,9 @@ enum mm_32a_minor_op {
 	mm_ext_op = 0x02c,
 	mm_pool32axf_op = 0x03c,
 	mm_srl32_op = 0x040,
+	mm_srlv32_op = 0x050,
 	mm_sra_op = 0x080,
-	mm_srlv32_op = 0x090,
+	mm_srav_op = 0x090,
 	mm_rotr_op = 0x0c0,
 	mm_lwxs_op = 0x118,
 	mm_addu32_op = 0x150,
@@ -320,7 +428,10 @@ enum mm_32axf_minor_op {
 	mm_mflo32_op = 0x075,
 	mm_jalrhb_op = 0x07c,
 	mm_tlbwi_op = 0x08d,
+	mm_mthi32_op = 0x0b5,
 	mm_tlbwr_op = 0x0cd,
+	mm_mtlo32_op = 0x0f5,
+	mm_di_op = 0x11d,
 	mm_jalrs_op = 0x13c,
 	mm_jalrshb_op = 0x17c,
 	mm_sync_op = 0x1ad,
@@ -439,6 +550,13 @@ enum mm_32f_73_minor_op {
 };
 
 /*
+ * (microMIPS) POOL32S minor opcodes.
+ */
+enum mm_32s_minor_op {
+	mm_32s_elm_op = 0x16,
+};
+
+/*
  * (microMIPS) POOL16C minor opcodes.
  */
 enum mm_16c_minor_op {
@@ -501,7 +619,7 @@ enum MIPS6e_i8_func {
 };
 
 /*
- * (microMIPS & MIPS16e) NOP instruction.
+ * (microMIPS) NOP instruction.
  */
 #define MM_NOP16	0x0c00
 
@@ -544,6 +662,36 @@ struct r_format {			/* Register format */
 	__BITFIELD_FIELD(unsigned int re : 5,
 	__BITFIELD_FIELD(unsigned int func : 6,
 	;))))))
+};
+
+struct c0r_format {			/* C0 register format */
+	__BITFIELD_FIELD(unsigned int opcode : 6,
+	__BITFIELD_FIELD(unsigned int rs : 5,
+	__BITFIELD_FIELD(unsigned int rt : 5,
+	__BITFIELD_FIELD(unsigned int rd : 5,
+	__BITFIELD_FIELD(unsigned int z: 8,
+	__BITFIELD_FIELD(unsigned int sel : 3,
+	;))))))
+};
+
+struct mfmc0_format {			/* MFMC0 register format */
+	__BITFIELD_FIELD(unsigned int opcode : 6,
+	__BITFIELD_FIELD(unsigned int rs : 5,
+	__BITFIELD_FIELD(unsigned int rt : 5,
+	__BITFIELD_FIELD(unsigned int rd : 5,
+	__BITFIELD_FIELD(unsigned int re : 5,
+	__BITFIELD_FIELD(unsigned int sc : 1,
+	__BITFIELD_FIELD(unsigned int : 2,
+	__BITFIELD_FIELD(unsigned int sel : 3,
+	;))))))))
+};
+
+struct co_format {			/* C0 CO format */
+	__BITFIELD_FIELD(unsigned int opcode : 6,
+	__BITFIELD_FIELD(unsigned int co : 1,
+	__BITFIELD_FIELD(unsigned int code : 19,
+	__BITFIELD_FIELD(unsigned int func : 6,
+	;))))
 };
 
 struct p_format {		/* Performance counter format (R10000) */
@@ -606,6 +754,26 @@ struct v_format {				/* MDMX vector format */
 	;)))))))
 };
 
+struct msa_mi10_format {		/* MSA MI10 */
+	__BITFIELD_FIELD(unsigned int opcode : 6,
+	__BITFIELD_FIELD(signed int s10 : 10,
+	__BITFIELD_FIELD(unsigned int rs : 5,
+	__BITFIELD_FIELD(unsigned int wd : 5,
+	__BITFIELD_FIELD(unsigned int func : 4,
+	__BITFIELD_FIELD(unsigned int df : 2,
+	;))))))
+};
+
+struct dsp_format {		/* SPEC3 DSP format instructions */
+	__BITFIELD_FIELD(unsigned int opcode : 6,
+	__BITFIELD_FIELD(unsigned int base : 5,
+	__BITFIELD_FIELD(unsigned int index : 5,
+	__BITFIELD_FIELD(unsigned int rd : 5,
+	__BITFIELD_FIELD(unsigned int op : 5,
+	__BITFIELD_FIELD(unsigned int func : 6,
+	;))))))
+};
+
 struct spec3_format {   /* SPEC3 */
 	__BITFIELD_FIELD(unsigned int opcode:6,
 	__BITFIELD_FIELD(unsigned int rs:5,
@@ -641,7 +809,7 @@ struct fp0_format {		/* FPU multiply and add format (MIPS32) */
 	;))))))
 };
 
-struct mm_fp0_format {		/* FPU multipy and add format (microMIPS) */
+struct mm_fp0_format {		/* FPU multiply and add format (microMIPS) */
 	__BITFIELD_FIELD(unsigned int opcode : 6,
 	__BITFIELD_FIELD(unsigned int ft : 5,
 	__BITFIELD_FIELD(unsigned int fs : 5,
@@ -761,6 +929,13 @@ struct mm_x_format {		/* Scaled indexed load format (microMIPS) */
 	;)))))
 };
 
+struct mm_a_format {		/* ADDIUPC format (microMIPS) */
+	__BITFIELD_FIELD(unsigned int opcode : 6,
+	__BITFIELD_FIELD(unsigned int rs : 3,
+	__BITFIELD_FIELD(signed int simmediate : 23,
+	;)))
+};
+
 /*
  * microMIPS instruction formats (16-bit length)
  */
@@ -808,9 +983,43 @@ struct mm16_r3_format {		/* Load from global pointer format */
 struct mm16_r5_format {		/* Load/store from stack pointer format */
 	__BITFIELD_FIELD(unsigned int opcode : 6,
 	__BITFIELD_FIELD(unsigned int rt : 5,
-	__BITFIELD_FIELD(signed int simmediate : 5,
+	__BITFIELD_FIELD(unsigned int imm : 5,
 	__BITFIELD_FIELD(unsigned int : 16, /* Ignored */
 	;))))
+};
+
+/*
+ * Loongson-3 overridden COP2 instruction formats (32-bit length)
+ */
+struct loongson3_lswc2_format {	/* Loongson-3 overridden lwc2/swc2 Load/Store format */
+	__BITFIELD_FIELD(unsigned int opcode : 6,
+	__BITFIELD_FIELD(unsigned int base : 5,
+	__BITFIELD_FIELD(unsigned int rt : 5,
+	__BITFIELD_FIELD(unsigned int fr : 1,
+	__BITFIELD_FIELD(unsigned int offset : 9,
+	__BITFIELD_FIELD(unsigned int ls : 1,
+	__BITFIELD_FIELD(unsigned int rq : 5,
+	;)))))))
+};
+
+struct loongson3_lsdc2_format {	/* Loongson-3 overridden ldc2/sdc2 Load/Store format */
+	__BITFIELD_FIELD(unsigned int opcode : 6,
+	__BITFIELD_FIELD(unsigned int base : 5,
+	__BITFIELD_FIELD(unsigned int rt : 5,
+	__BITFIELD_FIELD(unsigned int index : 5,
+	__BITFIELD_FIELD(unsigned int offset : 8,
+	__BITFIELD_FIELD(unsigned int opcode1 : 3,
+	;))))))
+};
+
+struct loongson3_lscsr_format {	/* Loongson-3 CPUCFG&CSR read/write format */
+	__BITFIELD_FIELD(unsigned int opcode : 6,
+	__BITFIELD_FIELD(unsigned int rs : 5,
+	__BITFIELD_FIELD(unsigned int fr : 5,
+	__BITFIELD_FIELD(unsigned int rd : 5,
+	__BITFIELD_FIELD(unsigned int fd : 5,
+	__BITFIELD_FIELD(unsigned int func : 6,
+	;))))))
 };
 
 /*
@@ -880,12 +1089,17 @@ union mips_instruction {
 	struct u_format u_format;
 	struct c_format c_format;
 	struct r_format r_format;
+	struct c0r_format c0r_format;
+	struct mfmc0_format mfmc0_format;
+	struct co_format co_format;
 	struct p_format p_format;
 	struct f_format f_format;
 	struct ma_format ma_format;
+	struct msa_mi10_format msa_mi10_format;
 	struct b_format b_format;
 	struct ps_format ps_format;
 	struct v_format v_format;
+	struct dsp_format dsp_format;
 	struct spec3_format spec3_format;
 	struct fb_format fb_format;
 	struct fp0_format fp0_format;
@@ -901,12 +1115,16 @@ union mips_instruction {
 	struct mm_i_format mm_i_format;
 	struct mm_m_format mm_m_format;
 	struct mm_x_format mm_x_format;
+	struct mm_a_format mm_a_format;
 	struct mm_b0_format mm_b0_format;
 	struct mm_b1_format mm_b1_format;
 	struct mm16_m_format mm16_m_format ;
 	struct mm16_rb_format mm16_rb_format;
 	struct mm16_r3_format mm16_r3_format;
 	struct mm16_r5_format mm16_r5_format;
+	struct loongson3_lswc2_format loongson3_lswc2_format;
+	struct loongson3_lsdc2_format loongson3_lsdc2_format;
+	struct loongson3_lscsr_format loongson3_lscsr_format;
 };
 
 union mips16e_instruction {

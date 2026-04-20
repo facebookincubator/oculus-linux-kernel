@@ -1,24 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Adapted from arm64 version.
  *
  * GNU linker script for the VDSO library.
- *
- * Copyright (C) 2012 ARM Limited
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * Author: Will Deacon <will.deacon at arm.com>
  * Heavily based on the vDSO linker scripts for other archs.
+ *
+ * Copyright (C) 2012-2018 ARM Limited
  */
 
 #include <linux/const.h>
@@ -30,7 +17,10 @@ OUTPUT_ARCH(arm)
 
 SECTIONS
 {
-	PROVIDE_HIDDEN(_vdso_data = . - PAGE_SIZE);
+	PROVIDE_HIDDEN(_vdso_data = . - __VVAR_PAGES * PAGE_SIZE);
+#ifdef CONFIG_TIME_NS
+	PROVIDE_HIDDEN(_timens_data = _vdso_data + PAGE_SIZE);
+#endif
 	. = VDSO_LBASE + SIZEOF_HEADERS;
 
 	.hash		: { *(.hash) }			:text
@@ -76,18 +66,8 @@ VERSION
 	global:
 		__vdso_clock_gettime;
 		__vdso_gettimeofday;
-		__kernel_sigreturn_arm;
-		__kernel_sigreturn_thumb;
-		__kernel_rt_sigreturn_arm;
-		__kernel_rt_sigreturn_thumb;
+		__vdso_clock_getres;
+		__vdso_clock_gettime64;
 	local: *;
 	};
 }
-
-/*
- * Make the sigreturn code visible to the kernel.
- */
-VDSO_compat_sigreturn_arm	= __kernel_sigreturn_arm;
-VDSO_compat_sigreturn_thumb	= __kernel_sigreturn_thumb;
-VDSO_compat_rt_sigreturn_arm	= __kernel_rt_sigreturn_arm;
-VDSO_compat_rt_sigreturn_thumb	= __kernel_rt_sigreturn_thumb;

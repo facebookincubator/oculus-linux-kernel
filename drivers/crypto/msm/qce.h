@@ -1,17 +1,9 @@
-/* Qualcomm Crypto Engine driver API
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * QTI Crypto Engine driver API
  *
- * Copyright (c) 2010-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2010-2021, The Linux Foundation. All rights reserved.
  */
-
 
 #ifndef __CRYPTO_MSM_QCE_H
 #define __CRYPTO_MSM_QCE_H
@@ -19,6 +11,7 @@
 #include <linux/types.h>
 #include <linux/platform_device.h>
 #include <linux/crypto.h>
+#include <crypto/skcipher.h>
 
 #include <crypto/algapi.h>
 #include <crypto/aes.h>
@@ -54,6 +47,16 @@
 
 /* Maximum Nonce bytes  */
 #define MAX_NONCE  16
+
+/* Crypto clock control flags */
+#define QCE_CLK_ENABLE_FIRST		1
+#define QCE_BW_REQUEST_FIRST		2
+#define QCE_CLK_DISABLE_FIRST		3
+#define QCE_BW_REQUEST_RESET_FIRST	4
+
+/* default average and peak bw for crypto device */
+#define CRYPTO_AVG_BW			384
+#define CRYPTO_PEAK_BW			384
 
 typedef void (*qce_comp_func_ptr_t)(void *areq,
 		unsigned char *icv, unsigned char *iv, int ret);
@@ -101,6 +104,19 @@ enum qce_req_op_enum {
 	QCE_REQ_LAST
 };
 
+/* Offload operation type */
+enum qce_offload_op_enum {
+	QCE_OFFLOAD_NONE = 0, /* kernel pipe */
+	QCE_OFFLOAD_HLOS_HLOS = 1,
+	QCE_OFFLOAD_HLOS_CPB = 2,
+	QCE_OFFLOAD_CPB_HLOS = 3,
+	QCE_OFFLOAD_HLOS_CPB_1,
+	QCE_OFFLOAD_HLOS_CPB_2,
+	QCE_OFFLOAD_HLOS_CPB_3,
+	QCE_OFFLOAD_HLOS_CPB_4,
+	QCE_OFFLOAD_OPER_LAST
+};
+
 /* Algorithms/features supported in CE HW engine */
 struct ce_hw_support {
 	bool sha1_hmac_20; /* Supports 20 bytes of HMAC key*/
@@ -123,6 +139,7 @@ struct ce_hw_support {
 	bool use_sw_hmac_algo;
 	bool use_sw_aes_ccm_algo;
 	bool clk_mgmt_sus_res;
+	bool req_bw_before_clk;
 	unsigned int ce_device;
 	unsigned int ce_hw_instance;
 	unsigned int max_request;
@@ -142,6 +159,7 @@ struct qce_sha_req {
 	unsigned int size;		/* data length in bytes */
 	void *areq;
 	unsigned int  flags;
+	int current_req_info;
 };
 
 struct qce_req {
@@ -163,10 +181,17 @@ struct qce_req {
 	unsigned int encklen;		/* cipher key length */
 	unsigned char *iv;		/* initialization vector */
 	unsigned int ivsize;		/* initialization vector size*/
+	unsigned int iv_ctr_size;	/* iv increment counter size*/
 	unsigned int cryptlen;		/* data length */
 	unsigned int use_pmem;		/* is source of data PMEM allocated? */
 	struct qcedev_pmem_info *pmem;	/* pointer to pmem_info structure*/
 	unsigned int  flags;
+	enum qce_offload_op_enum offload_op;	/* Offload usecase */
+	bool is_pattern_valid;		/* Is pattern setting required */
+	unsigned int pattern_info;	/* Pattern info for offload operation */
+	unsigned int block_offset;	/* partial first block for AES CTR */
+	bool is_copy_op;		/* copy buffers without crypto ops */
+	int current_req_info;
 };
 
 struct qce_pm_table {
@@ -186,5 +211,10 @@ int qce_enable_clk(void *handle);
 int qce_disable_clk(void *handle);
 void qce_get_driver_stats(void *handle);
 void qce_clear_driver_stats(void *handle);
-
+void qce_dump_req(void *handle);
+void qce_get_crypto_status(void *handle, unsigned int *s1, unsigned int *s2,
+			   unsigned int *s3, unsigned int *s4,
+			   unsigned int *s5);
+int qce_manage_timeout(void *handle, int req_info);
+int qce_set_irqs(void *handle, bool enable);
 #endif /* __CRYPTO_MSM_QCE_H */

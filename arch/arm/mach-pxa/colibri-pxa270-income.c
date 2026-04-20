@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/mach-pxa/income.c
  *
@@ -6,22 +7,20 @@
  * Copyright (C) 2010
  * Marek Vasut <marek.vasut@gmail.com>
  * Pavel Revak <palo@bielyvlk.sk>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/bitops.h>
 #include <linux/delay.h>
-#include <linux/gpio.h>
+#include <linux/gpio/machine.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/leds.h>
 #include <linux/ioport.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
+#include <linux/pwm.h>
 #include <linux/pwm_backlight.h>
-#include <linux/i2c/pxa-i2c.h>
+#include <linux/platform_data/i2c-pxa.h>
 
 #include <asm/irq.h>
 #include <asm/mach-types.h>
@@ -29,8 +28,8 @@
 #include <mach/hardware.h>
 #include <linux/platform_data/mmc-pxamci.h>
 #include <linux/platform_data/usb-ohci-pxa27x.h>
-#include <mach/pxa27x.h>
-#include <mach/pxa27x-udc.h>
+#include "pxa27x.h"
+#include "pxa27x-udc.h"
 #include <linux/platform_data/video-pxafb.h>
 
 #include "devices.h"
@@ -49,14 +48,25 @@
 #if defined(CONFIG_MMC_PXA) || defined(CONFIG_MMC_PXA_MODULE)
 static struct pxamci_platform_data income_mci_platform_data = {
 	.ocr_mask		= MMC_VDD_32_33 | MMC_VDD_33_34,
-	.gpio_power		= -1,
-	.gpio_card_detect	= GPIO0_INCOME_SD_DETECT,
-	.gpio_card_ro		= GPIO0_INCOME_SD_RO,
 	.detect_delay_ms	= 200,
+};
+
+static struct gpiod_lookup_table income_mci_gpio_table = {
+	.dev_id = "pxa2xx-mci.0",
+	.table = {
+		/* Card detect on GPIO 0 */
+		GPIO_LOOKUP("gpio-pxa", GPIO0_INCOME_SD_DETECT,
+			    "cd", GPIO_ACTIVE_LOW),
+		/* Write protect on GPIO 1 */
+		GPIO_LOOKUP("gpio-pxa", GPIO0_INCOME_SD_RO,
+			    "wp", GPIO_ACTIVE_LOW),
+		{ },
+	},
 };
 
 static void __init income_mmc_init(void)
 {
+	gpiod_add_lookup_table(&income_mci_gpio_table);
 	pxa_set_mci_info(&income_mci_platform_data);
 }
 #else
@@ -184,12 +194,14 @@ static inline void income_lcd_init(void) {}
  * Backlight
  ******************************************************************************/
 #if defined(CONFIG_BACKLIGHT_PWM) || defined(CONFIG_BACKLIGHT_PWM_MODULE)
+static struct pwm_lookup income_pwm_lookup[] = {
+	PWM_LOOKUP("pxa27x-pwm.0", 0, "pwm-backlight.0", NULL, 1000000,
+		   PWM_POLARITY_NORMAL),
+};
+
 static struct platform_pwm_backlight_data income_backlight_data = {
-	.pwm_id		= 0,
 	.max_brightness	= 0x3ff,
 	.dft_brightness	= 0x1ff,
-	.pwm_period_ns	= 1000000,
-	.enable_gpio	= -1,
 };
 
 static struct platform_device income_backlight = {
@@ -202,6 +214,7 @@ static struct platform_device income_backlight = {
 
 static void __init income_pwm_init(void)
 {
+	pwm_add_table(income_pwm_lookup, ARRAY_SIZE(income_pwm_lookup));
 	platform_device_register(&income_backlight);
 }
 #else

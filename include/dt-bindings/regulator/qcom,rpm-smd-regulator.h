@@ -1,14 +1,5 @@
-/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- */
+/* SPDX-License-Identifier: GPL-2.0-only */
+/* Copyright (c) 2015, 2017, 2019-2020, The Linux Foundation. All rights reserved. */
 
 #ifndef __QCOM_RPM_SMD_REGULATOR_H
 #define __QCOM_RPM_SMD_REGULATOR_H
@@ -23,6 +14,13 @@
 #define RPM_SMD_REGULATOR_LEVEL_NOM		256
 #define RPM_SMD_REGULATOR_LEVEL_NOM_PLUS	320
 #define RPM_SMD_REGULATOR_LEVEL_TURBO		384
+#define RPM_SMD_REGULATOR_LEVEL_TURBO_NO_CPR	416
 #define RPM_SMD_REGULATOR_LEVEL_BINNING		512
+
+#define RPM_SMD_REGULATOR_MODE_PASS		0
+#define RPM_SMD_REGULATOR_MODE_RET		1
+#define RPM_SMD_REGULATOR_MODE_LPM		2
+#define RPM_SMD_REGULATOR_MODE_AUTO		3
+#define RPM_SMD_REGULATOR_MODE_HPM		4
 
 #endif

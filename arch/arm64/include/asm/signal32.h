@@ -1,22 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2012 ARM Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef __ASM_SIGNAL32_H
 #define __ASM_SIGNAL32_H
 
-#ifdef __KERNEL__
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
 
@@ -52,18 +40,18 @@ struct compat_ucontext {
 	compat_stack_t			uc_stack;
 	struct compat_sigcontext	uc_mcontext;
 	compat_sigset_t			uc_sigmask;
-	int __unused[32 - (sizeof(compat_sigset_t) / sizeof(int))];
-	compat_ulong_t			uc_regspace[128] __aligned(8);
+	int 				__unused[32 - (sizeof(compat_sigset_t) / sizeof(int))];
+	compat_ulong_t			uc_regspace[128] __attribute__((__aligned__(8)));
 };
 
 struct compat_sigframe {
-	struct compat_ucontext		uc;
-	compat_ulong_t			retcode[2];
+	struct compat_ucontext	uc;
+	compat_ulong_t		retcode[2];
 };
 
 struct compat_rt_sigframe {
-	struct compat_siginfo		info;
-	struct compat_sigframe		sig;
+	struct compat_siginfo info;
+	struct compat_sigframe sig;
 };
 
 int compat_setup_frame(int usig, struct ksignal *ksig, sigset_t *set,
@@ -90,5 +78,4 @@ static inline void compat_setup_restart_syscall(struct pt_regs *regs)
 {
 }
 #endif /* CONFIG_COMPAT */
-#endif /* __KERNEL__ */
 #endif /* __ASM_SIGNAL32_H */

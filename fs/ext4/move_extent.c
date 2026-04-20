@@ -1,16 +1,8 @@
+// SPDX-License-Identifier: LGPL-2.1
 /*
  * Copyright (c) 2008,2009 NEC Software Tohoku, Ltd.
  * Written by Takashi Sato <t-sato@yk.jp.nec.com>
  *            Akira Fujita <a-fujita@rs.jp.nec.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2.1 of the GNU Lesser General Public License
- * as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/fs.h>
@@ -21,11 +13,10 @@
 #include "ext4_extents.h"
 
 /**
- * get_ext_path - Find an extent path for designated logical block number.
- *
- * @inode:	an inode which is searched
+ * get_ext_path() - Find an extent path for designated logical block number.
+ * @inode:	inode to be searched
  * @lblock:	logical block number to find an extent path
- * @path:	pointer to an extent path pointer (for output)
+ * @ppath:	pointer to an extent path pointer (for output)
  *
  * ext4_find_extent wrapper. Return 0 on success, or a negative error value
  * on failure.
@@ -50,8 +41,9 @@ get_ext_path(struct inode *inode, ext4_lblk_t lblock,
 }
 
 /**
- * ext4_double_down_write_data_sem - Acquire two inodes' write lock
- *                                   of i_data_sem
+ * ext4_double_down_write_data_sem() - write lock two inodes's i_data_sem
+ * @first: inode to be locked
+ * @second: inode to be locked
  *
  * Acquire write lock of i_data_sem of the two inodes
  */
@@ -60,10 +52,10 @@ ext4_double_down_write_data_sem(struct inode *first, struct inode *second)
 {
 	if (first < second) {
 		down_write(&EXT4_I(first)->i_data_sem);
-		down_write_nested(&EXT4_I(second)->i_data_sem, SINGLE_DEPTH_NESTING);
+		down_write_nested(&EXT4_I(second)->i_data_sem, I_DATA_SEM_OTHER);
 	} else {
 		down_write(&EXT4_I(second)->i_data_sem);
-		down_write_nested(&EXT4_I(first)->i_data_sem, SINGLE_DEPTH_NESTING);
+		down_write_nested(&EXT4_I(first)->i_data_sem, I_DATA_SEM_OTHER);
 
 	}
 }
@@ -142,9 +134,7 @@ mext_page_double_lock(struct inode *inode1, struct inode *inode2,
 		mapping[0] = inode1->i_mapping;
 		mapping[1] = inode2->i_mapping;
 	} else {
-		pgoff_t tmp = index1;
-		index1 = index2;
-		index2 = tmp;
+		swap(index1, index2);
 		mapping[0] = inode2->i_mapping;
 		mapping[1] = inode1->i_mapping;
 	}
@@ -156,7 +146,7 @@ mext_page_double_lock(struct inode *inode1, struct inode *inode2,
 	page[1] = grab_cache_page_write_begin(mapping[1], index2, fl);
 	if (!page[1]) {
 		unlock_page(page[0]);
-		page_cache_release(page[0]);
+		put_page(page[0]);
 		return -ENOMEM;
 	}
 	/*
@@ -166,12 +156,9 @@ mext_page_double_lock(struct inode *inode1, struct inode *inode2,
 	 */
 	wait_on_page_writeback(page[0]);
 	wait_on_page_writeback(page[1]);
-	if (inode1 > inode2) {
-		struct page *tmp;
-		tmp = page[0];
-		page[0] = page[1];
-		page[1] = tmp;
-	}
+	if (inode1 > inode2)
+		swap(page[0], page[1]);
+
 	return 0;
 }
 
@@ -190,12 +177,12 @@ mext_page_mkuptodate(struct page *page, unsigned from, unsigned to)
 	if (PageUptodate(page))
 		return 0;
 
-	blocksize = 1 << inode->i_blkbits;
+	blocksize = i_blocksize(inode);
 	if (!page_has_buffers(page))
 		create_empty_buffers(page, blocksize, 0);
 
 	head = page_buffers(page);
-	block = (sector_t)page->index << (PAGE_CACHE_SHIFT - inode->i_blkbits);
+	block = (sector_t)page->index << (PAGE_SHIFT - inode->i_blkbits);
 	for (bh = head, block_start = 0; bh != head || !block_start;
 	     block++, block_start = block_end, bh = bh->b_this_page) {
 		block_end = block_start + blocksize;
@@ -228,7 +215,7 @@ mext_page_mkuptodate(struct page *page, unsigned from, unsigned to)
 	for (i = 0; i < nr; i++) {
 		bh = arr[i];
 		if (!bh_uptodate_or_lock(bh)) {
-			err = bh_submit_read(bh);
+			err = ext4_read_bh(bh, 0, NULL);
 			if (err)
 				return err;
 		}
@@ -267,12 +254,11 @@ move_extent_per_page(struct file *o_filp, struct inode *donor_inode,
 	handle_t *handle;
 	ext4_lblk_t orig_blk_offset, donor_blk_offset;
 	unsigned long blocksize = orig_inode->i_sb->s_blocksize;
-	unsigned int w_flags = 0;
 	unsigned int tmp_data_size, data_size, replaced_size;
 	int i, err2, jblocks, retries = 0;
 	int replaced_count = 0;
 	int from = data_offset_in_page << orig_inode->i_blkbits;
-	int blocks_per_page = PAGE_CACHE_SIZE >> orig_inode->i_blkbits;
+	int blocks_per_page = PAGE_SIZE >> orig_inode->i_blkbits;
 	struct super_block *sb = orig_inode->i_sb;
 	struct buffer_head *bh = NULL;
 
@@ -288,9 +274,6 @@ again:
 		*err = PTR_ERR(handle);
 		return 0;
 	}
-
-	if (segment_eq(get_fs(), KERNEL_DS))
-		w_flags |= AOP_FLAG_UNINTERRUPTIBLE;
 
 	orig_blk_offset = orig_page_offset * blocks_per_page +
 		data_offset_in_page;
@@ -407,13 +390,14 @@ data_copy:
 
 	/* Even in case of data=writeback it is reasonable to pin
 	 * inode to transaction, to prevent unexpected data loss */
-	*err = ext4_jbd2_file_inode(handle, orig_inode);
+	*err = ext4_jbd2_inode_add_write(handle, orig_inode,
+			(loff_t)orig_page_offset << PAGE_SHIFT, replaced_size);
 
 unlock_pages:
 	unlock_page(pagep[0]);
-	page_cache_release(pagep[0]);
+	put_page(pagep[0]);
 	unlock_page(pagep[1]);
-	page_cache_release(pagep[1]);
+	put_page(pagep[1]);
 stop_journal:
 	ext4_journal_stop(handle);
 	if (*err == -ENOSPC &&
@@ -438,8 +422,8 @@ repair_branches:
 					   block_len_in_page, 0, &err2);
 	ext4_double_up_write_data_sem(orig_inode, donor_inode);
 	if (replaced_count != block_len_in_page) {
-		EXT4_ERROR_INODE_BLOCK(orig_inode, (sector_t)(orig_blk_offset),
-				       "Unable to copy data block,"
+		ext4_error_inode_block(orig_inode, (sector_t)(orig_blk_offset),
+				       EIO, "Unable to copy data block,"
 				       " data will be lost.");
 		*err = -EIO;
 	}
@@ -491,6 +475,13 @@ mext_check_arguments(struct inode *orig_inode,
 		return -EBUSY;
 	}
 
+	if (ext4_is_quota_file(orig_inode) && ext4_is_quota_file(donor_inode)) {
+		ext4_debug("ext4 move extent: The argument files should "
+			"not be quota files [ino:orig %lu, donor %lu]\n",
+			orig_inode->i_ino, donor_inode->i_ino);
+		return -EBUSY;
+	}
+
 	/* Ext4 move extent supports only extent based file */
 	if (!(ext4_test_inode_flag(orig_inode, EXT4_INODE_EXTENTS))) {
 		ext4_debug("ext4 move extent: orig file is not extents "
@@ -511,7 +502,7 @@ mext_check_arguments(struct inode *orig_inode,
 	if ((orig_start & ~(PAGE_MASK >> orig_inode->i_blkbits)) !=
 	    (donor_start & ~(PAGE_MASK >> orig_inode->i_blkbits))) {
 		ext4_debug("ext4 move extent: orig and donor's start "
-			"offset are not alligned [ino:orig %lu, donor %lu]\n",
+			"offsets are not aligned [ino:orig %lu, donor %lu]\n",
 			orig_inode->i_ino, donor_inode->i_ino);
 		return -EINVAL;
 	}
@@ -526,9 +517,13 @@ mext_check_arguments(struct inode *orig_inode,
 			orig_inode->i_ino, donor_inode->i_ino);
 		return -EINVAL;
 	}
-	if (orig_eof < orig_start + *len - 1)
+	if (orig_eof <= orig_start)
+		*len = 0;
+	else if (orig_eof < orig_start + *len - 1)
 		*len = orig_eof - orig_start;
-	if (donor_eof < donor_start + *len - 1)
+	if (donor_eof <= donor_start)
+		*len = 0;
+	else if (donor_eof < donor_start + *len - 1)
 		*len = donor_eof - donor_start;
 	if (!*len) {
 		ext4_debug("ext4 move extent: len should not be 0 "
@@ -561,7 +556,7 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 	struct inode *orig_inode = file_inode(o_filp);
 	struct inode *donor_inode = file_inode(d_filp);
 	struct ext4_ext_path *path = NULL;
-	int blocks_per_page = PAGE_CACHE_SIZE >> orig_inode->i_blkbits;
+	int blocks_per_page = PAGE_SIZE >> orig_inode->i_blkbits;
 	ext4_lblk_t o_end, o_start = orig_blk;
 	ext4_lblk_t d_start = donor_blk;
 	int ret;
@@ -588,15 +583,17 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 			orig_inode->i_ino, donor_inode->i_ino);
 		return -EINVAL;
 	}
-	/* TODO: This is non obvious task to swap blocks for inodes with full
-	   jornaling enabled */
+
+	/* TODO: it's not obvious how to swap blocks for inodes with full
+	   journaling enabled */
 	if (ext4_should_journal_data(orig_inode) ||
 	    ext4_should_journal_data(donor_inode)) {
-		return -EINVAL;
+		ext4_msg(orig_inode->i_sb, KERN_ERR,
+			 "Online defrag not supported with data journaling");
+		return -EOPNOTSUPP;
 	}
 
-	if (ext4_encrypted_inode(orig_inode) ||
-	    ext4_encrypted_inode(donor_inode)) {
+	if (IS_ENCRYPTED(orig_inode) || IS_ENCRYPTED(donor_inode)) {
 		ext4_msg(orig_inode->i_sb, KERN_ERR,
 			 "Online defrag not supported for encrypted files");
 		return -EOPNOTSUPP;
@@ -606,8 +603,6 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 	lock_two_nondirectories(orig_inode, donor_inode);
 
 	/* Wait for all existing dio workers */
-	ext4_inode_block_unlocked_dio(orig_inode);
-	ext4_inode_block_unlocked_dio(donor_inode);
 	inode_dio_wait(orig_inode);
 	inode_dio_wait(donor_inode);
 
@@ -620,6 +615,7 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 		goto out;
 	o_end = o_start + len;
 
+	*moved_len = 0;
 	while (o_start < o_end) {
 		struct ext4_extent *ex;
 		ext4_lblk_t cur_blk, next_blk;
@@ -659,9 +655,9 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 		if (o_end - o_start < cur_len)
 			cur_len = o_end - o_start;
 
-		orig_page_index = o_start >> (PAGE_CACHE_SHIFT -
+		orig_page_index = o_start >> (PAGE_SHIFT -
 					       orig_inode->i_blkbits);
-		donor_page_index = d_start >> (PAGE_CACHE_SHIFT -
+		donor_page_index = d_start >> (PAGE_SHIFT -
 					       donor_inode->i_blkbits);
 		offset_in_page = o_start % blocks_per_page;
 		if (cur_len > blocks_per_page- offset_in_page)
@@ -675,7 +671,7 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 		 */
 		ext4_double_up_write_data_sem(orig_inode, donor_inode);
 		/* Swap original branches with new branches */
-		move_extent_per_page(o_filp, donor_inode,
+		*moved_len += move_extent_per_page(o_filp, donor_inode,
 				     orig_page_index, donor_page_index,
 				     offset_in_page, cur_len,
 				     unwritten, &ret);
@@ -685,21 +681,16 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 		o_start += cur_len;
 		d_start += cur_len;
 	}
-	*moved_len = o_start - orig_blk;
-	if (*moved_len > len)
-		*moved_len = len;
 
 out:
 	if (*moved_len) {
-		ext4_discard_preallocations(orig_inode);
-		ext4_discard_preallocations(donor_inode);
+		ext4_discard_preallocations(orig_inode, 0);
+		ext4_discard_preallocations(donor_inode, 0);
 	}
 
 	ext4_ext_drop_refs(path);
 	kfree(path);
 	ext4_double_up_write_data_sem(orig_inode, donor_inode);
-	ext4_inode_resume_unlocked_dio(orig_inode);
-	ext4_inode_resume_unlocked_dio(donor_inode);
 	unlock_two_nondirectories(orig_inode, donor_inode);
 
 	return ret;

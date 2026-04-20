@@ -1,10 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /****************************************************************************
  * Driver for Solarflare network controllers and boards
  * Copyright 2010-2012 Solarflare Communications Inc.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation, incorporated herein by reference.
  */
 #ifndef _VFDI_H
 #define _VFDI_H
@@ -98,7 +95,7 @@ struct vfdi_endpoint {
  * @VFDI_OP_INIT_TXQ: Initialize SRAM entries and initialize a TXQ.
  * @VFDI_OP_FINI_ALL_QUEUES: Flush all queues, finalize all queues, then
  *	finalize the SRAM entries.
- * @VFDI_OP_INSERT_FILTER: Insert a MAC filter targetting the given RXQ.
+ * @VFDI_OP_INSERT_FILTER: Insert a MAC filter targeting the given RXQ.
  * @VFDI_OP_REMOVE_ALL_FILTERS: Remove all filters.
  * @VFDI_OP_SET_STATUS_PAGE: Set the DMA page(s) used for status updates
  *	from PF and write the initial status.
@@ -148,7 +145,7 @@ enum vfdi_op {
  * @u.init_txq.flags: Checksum offload flags.
  * @u.init_txq.addr: Array of length %u.init_txq.buf_count containing DMA
  *	address of each page backing the transmit queue.
- * @u.mac_filter.rxq: Insert MAC filter at VF local address/VLAN targetting
+ * @u.mac_filter.rxq: Insert MAC filter at VF local address/VLAN targeting
  *	all traffic at this receive queue.
  * @u.mac_filter.flags: MAC filter flags.
  * @u.set_status_page.dma_addr: Base address for the &struct vfdi_status.

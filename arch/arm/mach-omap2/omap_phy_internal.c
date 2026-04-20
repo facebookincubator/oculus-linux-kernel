@@ -1,25 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
   * This file configures the internal USB PHY in OMAP4430. Used
   * with TWL6030 transceiver and MUSB on OMAP4430.
   *
-  * Copyright (C) 2010 Texas Instruments Incorporated - http://www.ti.com
-  * This program is free software; you can redistribute it and/or modify
-  * it under the terms of the GNU General Public License as published by
-  * the Free Software Foundation; either version 2 of the License, or
-  * (at your option) any later version.
-  *
+  * Copyright (C) 2010 Texas Instruments Incorporated - https://www.ti.com
   * Author: Hema HK <hemahk@ti.com>
-  *
-  * This program is distributed in the hope that it will be useful,
-  * but WITHOUT ANY WARRANTY; without even the implied warranty of
-  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  * GNU General Public License for more details.
-  *
-  * You should have received a copy of the GNU General Public License
-  * along with this program; if not, write to the Free Software
-  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-  *
   */
+
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/types.h>
 #include <linux/delay.h>
@@ -97,13 +85,13 @@ void am35x_musb_phy_power(u8 on)
 
 		omap_ctrl_writel(devconf2, AM35XX_CONTROL_DEVCONF2);
 
-		pr_info(KERN_INFO "Waiting for PHY clock good...\n");
+		pr_info("Waiting for PHY clock good...\n");
 		while (!(omap_ctrl_readl(AM35XX_CONTROL_DEVCONF2)
 				& CONF2_PHYCLKGD)) {
 			cpu_relax();
 
 			if (time_after(jiffies, timeout)) {
-				pr_err(KERN_ERR "musb PHY clock good timed out\n");
+				pr_err("musb PHY clock good timed out\n");
 				break;
 			}
 		}
@@ -145,43 +133,8 @@ void am35x_set_mode(u8 musb_mode)
 		devconf2 |= CONF2_NO_OVERRIDE;
 		break;
 	default:
-		pr_info(KERN_INFO "Unsupported mode %u\n", musb_mode);
+		pr_info("Unsupported mode %u\n", musb_mode);
 	}
 
 	omap_ctrl_writel(devconf2, AM35XX_CONTROL_DEVCONF2);
-}
-
-void ti81xx_musb_phy_power(u8 on)
-{
-	void __iomem *scm_base = NULL;
-	u32 usbphycfg;
-
-	scm_base = ioremap(TI81XX_SCM_BASE, SZ_2K);
-	if (!scm_base) {
-		pr_err("system control module ioremap failed\n");
-		return;
-	}
-
-	usbphycfg = readl_relaxed(scm_base + USBCTRL0);
-
-	if (on) {
-		if (cpu_is_ti816x()) {
-			usbphycfg |= TI816X_USBPHY0_NORMAL_MODE;
-			usbphycfg &= ~TI816X_USBPHY_REFCLK_OSC;
-		} else if (cpu_is_ti814x()) {
-			usbphycfg &= ~(USBPHY_CM_PWRDN | USBPHY_OTG_PWRDN
-				| USBPHY_DPINPUT | USBPHY_DMINPUT);
-			usbphycfg |= (USBPHY_OTGVDET_EN | USBPHY_OTGSESSEND_EN
-				| USBPHY_DPOPBUFCTL | USBPHY_DMOPBUFCTL);
-		}
-	} else {
-		if (cpu_is_ti816x())
-			usbphycfg &= ~TI816X_USBPHY0_NORMAL_MODE;
-		else if (cpu_is_ti814x())
-			usbphycfg |= USBPHY_CM_PWRDN | USBPHY_OTG_PWRDN;
-
-	}
-	writel_relaxed(usbphycfg, scm_base + USBCTRL0);
-
-	iounmap(scm_base);
 }

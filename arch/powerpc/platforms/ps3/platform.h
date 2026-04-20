@@ -1,21 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  PS3 platform declarations.
  *
  *  Copyright (C) 2006 Sony Computer Entertainment Inc.
  *  Copyright 2006 Sony Corp.
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; version 2 of the License.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #if !defined(_PS3_PLATFORM_H)
@@ -57,7 +45,7 @@ static inline void ps3_smp_cleanup_cpu(int cpu) { }
 /* time */
 
 void __init ps3_calibrate_decr(void);
-unsigned long __init ps3_get_boot_time(void);
+time64_t __init ps3_get_boot_time(void);
 void ps3_get_rtc_time(struct rtc_time *time);
 int ps3_set_rtc_time(struct rtc_time *time);
 
@@ -196,6 +184,7 @@ int ps3_repository_read_highmem_size(unsigned int region_index,
 int ps3_repository_read_highmem_info(unsigned int region_index,
 	u64 *highmem_base, u64 *highmem_size);
 
+#if defined (CONFIG_PS3_REPOSITORY_WRITE)
 int ps3_repository_write_highmem_region_count(unsigned int region_count);
 int ps3_repository_write_highmem_base(unsigned int region_index,
 	u64 highmem_base);
@@ -204,6 +193,18 @@ int ps3_repository_write_highmem_size(unsigned int region_index,
 int ps3_repository_write_highmem_info(unsigned int region_index,
 	u64 highmem_base, u64 highmem_size);
 int ps3_repository_delete_highmem_info(unsigned int region_index);
+#else
+static inline int ps3_repository_write_highmem_region_count(
+	unsigned int region_count) {return 0;}
+static inline int ps3_repository_write_highmem_base(unsigned int region_index,
+	u64 highmem_base) {return 0;}
+static inline int ps3_repository_write_highmem_size(unsigned int region_index,
+	u64 highmem_size) {return 0;}
+static inline int ps3_repository_write_highmem_info(unsigned int region_index,
+	u64 highmem_base, u64 highmem_size) {return 0;}
+static inline int ps3_repository_delete_highmem_info(unsigned int region_index)
+	{return 0;}
+#endif
 
 /* repository pme info */
 

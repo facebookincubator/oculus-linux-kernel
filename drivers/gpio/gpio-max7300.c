@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2009 Wolfram Sang, Pengutronix
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * Check max730x.c for further details.
  */
@@ -35,7 +32,6 @@ static int max7300_probe(struct i2c_client *client,
 			 const struct i2c_device_id *id)
 {
 	struct max7301 *ts;
-	int ret;
 
 	if (!i2c_check_functionality(client->adapter,
 			I2C_FUNC_SMBUS_BYTE_DATA))
@@ -49,8 +45,7 @@ static int max7300_probe(struct i2c_client *client,
 	ts->write = max7300_i2c_write;
 	ts->dev = &client->dev;
 
-	ret = __max730x_probe(ts);
-	return ret;
+	return __max730x_probe(ts);
 }
 
 static int max7300_remove(struct i2c_client *client)
@@ -67,7 +62,6 @@ MODULE_DEVICE_TABLE(i2c, max7300_id);
 static struct i2c_driver max7300_driver = {
 	.driver = {
 		.name = "max7300",
-		.owner = THIS_MODULE,
 	},
 	.probe = max7300_probe,
 	.remove = max7300_remove,

@@ -1,11 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2014 Freescale Semiconductor, Inc.
  *
  * Author: Jun Li
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef __DRIVERS_USB_CHIPIDEA_OTG_FSM_H
@@ -62,34 +59,9 @@
 /* SSEND time before SRP */
 #define TB_SSEND_SRP         (1500)	/* minimum 1.5 sec, section:5.1.2 */
 
-#define TB_SESS_VLD          (1000)
+#define TB_AIDL_BDIS         (20)	/* 4ms ~ 150ms, section 5.2.1 */
 
-enum ci_otg_fsm_timer_index {
-	/*
-	 * CI specific timers, start from the end
-	 * of standard and auxiliary OTG timers
-	 */
-	B_DATA_PLS = NUM_OTG_FSM_TIMERS,
-	B_SSEND_SRP,
-	B_SESS_VLD,
-
-	NUM_CI_OTG_FSM_TIMERS,
-};
-
-struct ci_otg_fsm_timer {
-	unsigned long expires;  /* Number of count increase to timeout */
-	unsigned long count;    /* Tick counter */
-	void (*function)(void *, unsigned long);        /* Timeout function */
-	unsigned long data;     /* Data passed to function */
-	struct list_head list;
-};
-
-struct ci_otg_fsm_timer_list {
-	struct ci_otg_fsm_timer *timer_list[NUM_CI_OTG_FSM_TIMERS];
-	struct list_head active_timers;
-};
-
-#ifdef CONFIG_USB_OTG_FSM
+#if IS_ENABLED(CONFIG_USB_OTG_FSM)
 
 int ci_hdrc_otg_fsm_init(struct ci_hdrc *ci);
 int ci_otg_fsm_work(struct ci_hdrc *ci);

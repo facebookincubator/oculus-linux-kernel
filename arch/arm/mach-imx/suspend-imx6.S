@@ -1,12 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Copyright 2014 Freescale Semiconductor, Inc.
- *
- * The code contained herein is licensed under the GNU General Public
- * License. You may obtain a copy of the GNU General Public License
- * Version 2 or later at the following locations:
- *
- * http://www.opensource.org/licenses/gpl-license.html
- * http://www.gnu.org/copyleft/gpl.html
  */
 
 #include <linux/linkage.h>
@@ -45,7 +39,7 @@
  */
 #define PM_INFO_PBASE_OFFSET			0x0
 #define PM_INFO_RESUME_ADDR_OFFSET		0x4
-#define PM_INFO_CPU_TYPE_OFFSET			0x8
+#define PM_INFO_DDR_TYPE_OFFSET			0x8
 #define PM_INFO_PM_INFO_SIZE_OFFSET		0xC
 #define PM_INFO_MX6Q_MMDC_P_OFFSET		0x10
 #define PM_INFO_MX6Q_MMDC_V_OFFSET		0x14
@@ -73,18 +67,22 @@
 #define MX6Q_CCM_CCR	0x0
 
 	.align 3
+	.arm
 
 	.macro  sync_l2_cache
 
 	/* sync L2 cache to drain L2's buffers to DRAM. */
 #ifdef CONFIG_CACHE_L2X0
 	ldr	r11, [r0, #PM_INFO_MX6Q_L2_V_OFFSET]
+	teq	r11, #0
+	beq	6f
 	mov	r6, #0x0
 	str	r6, [r11, #L2X0_CACHE_SYNC]
 1:
 	ldr	r6, [r11, #L2X0_CACHE_SYNC]
 	ands	r6, r6, #0x1
 	bne	1b
+6:
 #endif
 
 	.endm
@@ -110,7 +108,7 @@
 	ldreq	r11, [r0, #PM_INFO_MX6Q_MMDC_V_OFFSET]
 	ldrne	r11, [r0, #PM_INFO_MX6Q_MMDC_P_OFFSET]
 
-	cmp 	r3, #MXC_CPU_IMX6SL
+	cmp	r3, #IMX_DDR_TYPE_LPDDR2
 	bne	4f
 
 	/* reset read FIFO, RST_RD_FIFO */
@@ -151,7 +149,7 @@
 ENTRY(imx6_suspend)
 	ldr	r1, [r0, #PM_INFO_PBASE_OFFSET]
 	ldr	r2, [r0, #PM_INFO_RESUME_ADDR_OFFSET]
-	ldr	r3, [r0, #PM_INFO_CPU_TYPE_OFFSET]
+	ldr	r3, [r0, #PM_INFO_DDR_TYPE_OFFSET]
 	ldr	r4, [r0, #PM_INFO_PM_INFO_SIZE_OFFSET]
 
 	/*
@@ -209,8 +207,8 @@ poll_dvfs_set:
 	ldr	r7, [r0, #PM_INFO_MMDC_IO_NUM_OFFSET]
 	ldr	r8, =PM_INFO_MMDC_IO_VAL_OFFSET
 	add	r8, r8, r0
-	/* i.MX6SL's last 3 IOs need special setting */
-	cmp	r3, #MXC_CPU_IMX6SL
+	/* LPDDR2's last 3 IOs need special setting */
+	cmp	r3, #IMX_DDR_TYPE_LPDDR2
 	subeq	r7, r7, #0x3
 set_mmdc_io_lpm:
 	ldr	r9, [r8], #0x8
@@ -218,7 +216,7 @@ set_mmdc_io_lpm:
 	subs	r7, r7, #0x1
 	bne	set_mmdc_io_lpm
 
-	cmp 	r3, #MXC_CPU_IMX6SL
+	cmp 	r3, #IMX_DDR_TYPE_LPDDR2
 	bne	set_mmdc_io_lpm_done
 	ldr	r6, =0x1000
 	ldr	r9, [r8], #0x8
@@ -324,23 +322,9 @@ resume:
 	str	r7, [r11, #MX6Q_SRC_GPR1]
 	str	r7, [r11, #MX6Q_SRC_GPR2]
 
-	ldr	r3, [r0, #PM_INFO_CPU_TYPE_OFFSET]
+	ldr	r3, [r0, #PM_INFO_DDR_TYPE_OFFSET]
 	mov	r5, #0x1
 	resume_mmdc
 
 	ret	lr
 ENDPROC(imx6_suspend)
-
-/*
- * The following code must assume it is running from physical address
- * where absolute virtual addresses to the data section have to be
- * turned into relative ones.
- */
-
-ENTRY(v7_cpu_resume)
-	bl	v7_invalidate_l1
-#ifdef CONFIG_CACHE_L2X0
-	bl	l2c310_early_resume
-#endif
-	b	cpu_resume
-ENDPROC(v7_cpu_resume)

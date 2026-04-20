@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright IBM Corp. 2007, 2007
  * Authors:	Peter Tiedemann (ptiedem@de.ibm.com)
@@ -38,14 +39,15 @@ static ssize_t ctcm_buffer_write(struct device *dev,
 	struct ctcm_priv *priv = dev_get_drvdata(dev);
 	int rc;
 
-	ndev = priv->channel[CTCM_READ]->netdev;
-	if (!(priv && priv->channel[CTCM_READ] && ndev)) {
+	if (!(priv && priv->channel[CTCM_READ] &&
+	      priv->channel[CTCM_READ]->netdev)) {
 		CTCM_DBF_TEXT(SETUP, CTC_DBF_ERROR, "bfnondev");
 		return -ENODEV;
 	}
+	ndev = priv->channel[CTCM_READ]->netdev;
 
-	rc = sscanf(buf, "%u", &bs1);
-	if (rc != 1)
+	rc = kstrtouint(buf, 0, &bs1);
+	if (rc)
 		goto einval;
 	if (bs1 > CTCM_BUFSIZE_LIMIT)
 					goto einval;
@@ -100,8 +102,8 @@ static void ctcm_print_statistics(struct ctcm_priv *priv)
 		     priv->channel[WRITE]->prof.doios_multi);
 	p += sprintf(p, "  Netto bytes written: %ld\n",
 		     priv->channel[WRITE]->prof.txlen);
-	p += sprintf(p, "  Max. TX IO-time: %ld\n",
-		     priv->channel[WRITE]->prof.tx_time);
+	p += sprintf(p, "  Max. TX IO-time: %u\n",
+		     jiffies_to_usecs(priv->channel[WRITE]->prof.tx_time));
 
 	printk(KERN_INFO "Statistics for %s:\n%s",
 				priv->channel[CTCM_WRITE]->netdev->name, sbuf);
@@ -151,8 +153,8 @@ static ssize_t ctcm_proto_store(struct device *dev,
 
 	if (!priv)
 		return -ENODEV;
-	rc = sscanf(buf, "%d", &value);
-	if ((rc != 1) ||
+	rc = kstrtoint(buf, 0, &value);
+	if (rc ||
 	    !((value == CTCM_PROTO_S390)  ||
 	      (value == CTCM_PROTO_LINUX) ||
 	      (value == CTCM_PROTO_MPC) ||

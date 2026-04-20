@@ -1,8 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * QLogic qlcnic NIC Driver
  * Copyright (c) 2009-2013 QLogic Corporation
- *
- * See LICENSE.qlcnic for copyright and licensing details.
  */
 
 #ifndef __QLCNIC_HW_H
@@ -109,6 +108,7 @@ enum qlcnic_regs {
 #define QLCNIC_CMD_GET_LED_CONFIG		0x6A
 #define QLCNIC_CMD_83XX_SET_DRV_VER		0x6F
 #define QLCNIC_CMD_ADD_RCV_RINGS		0x0B
+#define QLCNIC_CMD_83XX_EXTEND_ISCSI_DUMP_CAP	0x37
 
 #define QLCNIC_INTRPT_INTX			1
 #define QLCNIC_INTRPT_MSIX			3
@@ -172,7 +172,8 @@ int qlcnic_82xx_napi_add(struct qlcnic_adapter *adapter,
 			 struct net_device *netdev);
 void qlcnic_82xx_get_beacon_state(struct qlcnic_adapter *);
 void qlcnic_82xx_change_filter(struct qlcnic_adapter *adapter,
-			       u64 *uaddr, u16 vlan_id);
+			       u64 *uaddr, u16 vlan_id,
+			       struct qlcnic_host_tx_ring *tx_ring);
 int qlcnic_82xx_config_intr_coalesce(struct qlcnic_adapter *,
 				     struct ethtool_coalesce *);
 int qlcnic_82xx_set_rx_coalesce(struct qlcnic_adapter *);

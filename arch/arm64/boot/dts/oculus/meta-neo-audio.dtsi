@@ -1,0 +1,33 @@
+#include <dt-bindings/audio/qcom,audio-ext-clk.h>
+#include <dt-bindings/audio/qcom,lpass-cdc-clk-rsc.h>
+#include <dt-bindings/audio/audio-codec-port-types.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+&spf_core_platform  {
+	waipio_snd: sound {
+		qcom,model = "neo-idp-sg-snd-card";
+		qcom,mi2s-tdm-is-hw-vote-needed = <1>, <0>, <1>, <0>, <0>, <0>;
+    qcom,wcn-bt = <1>;
+		qcom,tdm-audio-intf = <1>;
+		qcom,tdm-max-slots = <8>;
+		qcom,tdm-clk-attribute = <0x1>, <0x1>, <0x1>, <0x1>, <0x1>, <0x1>;
+		qcom,mi2s-clk-attribute = <0x1>, <0x1>, <0x1>, <0x1>, <0x1>, <0x1>;
+		qcom,wcd-disabled = <1>;
+		qcom,disable-default-be-dai-links = <1>;
+		qcom,quat-mi2s-gpios = <&cdc_quat_tdm_gpios>;
+		asoc-codec  = <&stub_codec>;
+		asoc-codec-names = "msm-stub-codec.1";
+		qcom,msm_audio_ssr_devs = <&audio_gpr>, <&lpi_tlmm>;
+	};
+
+	cdc_quat_tdm_gpios: quat_tdm_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&quat_tdm_sck_active &quat_tdm_ws_active
+				&quat_tdm_sd0_active &quat_tdm_sd1_active>;
+		pinctrl-1 = <&quat_tdm_sck_sleep &quat_tdm_ws_sleep
+				&quat_tdm_sd0_sleep &quat_tdm_sd1_sleep>;
+		qcom,lpi-gpios;
+		#gpio-cells = <0>;
+	};
+};

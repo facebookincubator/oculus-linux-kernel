@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (c) Intel Corp. 2007.
  * All Rights Reserved.
@@ -6,21 +7,6 @@
  * develop this driver.
  *
  * This file is part of the Vermilion Range fb driver.
- * The Vermilion Range fb driver is free software;
- * you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * The Vermilion Range fb driver is distributed
- * in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this driver; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
  * Authors:
  *   Thomas Hellström <thomas-at-tungstengraphics-dot-com>
@@ -37,7 +23,7 @@
 #include <linux/mm.h>
 #include <linux/fb.h>
 #include <linux/pci.h>
-#include <asm/cacheflush.h>
+#include <asm/set_memory.h>
 #include <asm/tlbflush.h>
 #include <linux/mmzone.h>
 
@@ -55,7 +41,7 @@ static struct list_head global_has_mode;
 static struct fb_ops vmlfb_ops;
 static struct vml_sys *subsys = NULL;
 static char *vml_default_mode = "1024x768@60";
-static struct fb_videomode defaultmode = {
+static const struct fb_videomode defaultmode = {
 	NULL, 60, 1024, 768, 12896, 144, 24, 29, 3, 136, 6,
 	0, FB_VMODE_NONINTERLACED
 };
@@ -99,7 +85,7 @@ static int vmlfb_alloc_vram_area(struct vram_area *va, unsigned max_order,
 		 * below the first 16MB.
 		 */
 
-		flags = __GFP_DMA | __GFP_HIGH;
+		flags = __GFP_DMA | __GFP_HIGH | __GFP_KSWAPD_RECLAIM;
 		va->logical =
 			 __get_free_pages(flags, --max_order);
 	} while (va->logical == 0 && max_order > min_order);
@@ -291,8 +277,10 @@ static int vmlfb_get_gpu(struct vml_par *par)
 
 	mutex_unlock(&vml_mutex);
 
-	if (pci_enable_device(par->gpu) < 0)
+	if (pci_enable_device(par->gpu) < 0) {
+		pci_dev_put(par->gpu);
 		return -ENODEV;
+	}
 
 	return 0;
 }
@@ -331,7 +319,7 @@ static int vmlfb_enable_mmio(struct vml_par *par)
 		       ": Could not claim display controller MMIO.\n");
 		return -EBUSY;
 	}
-	par->vdc_mem = ioremap_nocache(par->vdc_mem_base, par->vdc_mem_size);
+	par->vdc_mem = ioremap(par->vdc_mem_base, par->vdc_mem_size);
 	if (par->vdc_mem == NULL) {
 		printk(KERN_ERR MODULE_NAME
 		       ": Could not map display controller MMIO.\n");
@@ -346,7 +334,7 @@ static int vmlfb_enable_mmio(struct vml_par *par)
 		err = -EBUSY;
 		goto out_err_1;
 	}
-	par->gpu_mem = ioremap_nocache(par->gpu_mem_base, par->gpu_mem_size);
+	par->gpu_mem = ioremap(par->gpu_mem_base, par->gpu_mem_size);
 	if (par->gpu_mem == NULL) {
 		printk(KERN_ERR MODULE_NAME ": Could not map GPU MMIO.\n");
 		err = -ENOMEM;
@@ -651,7 +639,7 @@ static int vmlfb_check_var_locked(struct fb_var_screeninfo *var,
 	}
 
 	pitch = ALIGN((var->xres * var->bits_per_pixel) >> 3, 0x40);
-	mem = pitch * var->yres_virtual;
+	mem = (u64)pitch * var->yres_virtual;
 	if (mem > vinfo->vram_contig_size) {
 		return -ENOMEM;
 	}
@@ -1003,13 +991,15 @@ static int vmlfb_mmap(struct fb_info *info, struct vm_area_struct *vma)
 	struct vml_info *vinfo = container_of(info, struct vml_info, info);
 	unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
 	int ret;
+	unsigned long prot;
 
 	ret = vmlfb_vram_offset(vinfo, offset);
 	if (ret)
 		return -EINVAL;
 
-	pgprot_val(vma->vm_page_prot) |= _PAGE_PCD;
-	pgprot_val(vma->vm_page_prot) &= ~_PAGE_PWT;
+	prot = pgprot_val(vma->vm_page_prot) & ~_PAGE_CACHE_MASK;
+	pgprot_val(vma->vm_page_prot) =
+		prot | cachemode2protval(_PAGE_CACHE_MODE_UC_MINUS);
 
 	return vm_iomap_memory(vma, vinfo->vram_start,
 			vinfo->vram_contig_size);
@@ -1042,7 +1032,7 @@ static struct fb_ops vmlfb_ops = {
 	.fb_setcolreg = vmlfb_setcolreg
 };
 
-static struct pci_device_id vml_ids[] = {
+static const struct pci_device_id vml_ids[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, VML_DEVICE_VDC)},
 	{0}
 };

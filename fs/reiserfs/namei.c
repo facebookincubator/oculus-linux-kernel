@@ -377,10 +377,13 @@ static struct dentry *reiserfs_lookup(struct inode *dir, struct dentry *dentry,
 
 		/*
 		 * Propagate the private flag so we know we're
-		 * in the priv tree
+		 * in the priv tree.  Also clear IOP_XATTR
+		 * since we don't have xattrs on xattr files.
 		 */
-		if (IS_PRIVATE(dir))
+		if (IS_PRIVATE(dir)) {
 			inode->i_flags |= S_PRIVATE;
+			inode->i_opflags &= ~IOP_XATTR;
+		}
 	}
 	reiserfs_write_unlock(dir->i_sb);
 	if (retval == IO_ERROR) {
@@ -400,7 +403,7 @@ struct dentry *reiserfs_get_parent(struct dentry *child)
 	struct inode *inode = NULL;
 	struct reiserfs_dir_entry de;
 	INITIALIZE_PATH(path_to_entry);
-	struct inode *dir = child->d_inode;
+	struct inode *dir = d_inode(child);
 
 	if (dir->i_nlink == 0) {
 		return ERR_PTR(-ENOENT);
@@ -570,7 +573,7 @@ static int reiserfs_add_entry(struct reiserfs_transaction_handle *th,
 	}
 
 	dir->i_size += paste_size;
-	dir->i_mtime = dir->i_ctime = CURRENT_TIME_SEC;
+	dir->i_mtime = dir->i_ctime = current_time(dir);
 	if (!S_ISDIR(inode->i_mode) && visible)
 		/* reiserfs_mkdir or reiserfs_rename will do that by itself */
 		reiserfs_update_sd(th, dir);
@@ -613,8 +616,7 @@ static int new_inode_init(struct inode *inode, struct inode *dir, umode_t mode)
 	 * we have to set uid and gid here
 	 */
 	inode_init_owner(inode, dir, mode);
-	dquot_initialize(inode);
-	return 0;
+	return dquot_initialize(inode);
 }
 
 static int reiserfs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
@@ -633,12 +635,18 @@ static int reiserfs_create(struct inode *dir, struct dentry *dentry, umode_t mod
 	struct reiserfs_transaction_handle th;
 	struct reiserfs_security_handle security;
 
-	dquot_initialize(dir);
+	retval = dquot_initialize(dir);
+	if (retval)
+		return retval;
 
 	if (!(inode = new_inode(dir->i_sb))) {
 		return -ENOMEM;
 	}
-	new_inode_init(inode, dir, mode);
+	retval = new_inode_init(inode, dir, mode);
+	if (retval) {
+		drop_new_inode(inode);
+		return retval;
+	}
 
 	jbegin_count += reiserfs_cache_default_acl(dir);
 	retval = reiserfs_security_init(dir, inode, &dentry->d_name, &security);
@@ -682,12 +690,12 @@ static int reiserfs_create(struct inode *dir, struct dentry *dentry, umode_t mod
 	reiserfs_update_inode_transaction(inode);
 	reiserfs_update_inode_transaction(dir);
 
-	unlock_new_inode(inode);
-	d_instantiate(dentry, inode);
+	d_instantiate_new(dentry, inode);
 	retval = journal_end(&th);
 
 out_failed:
 	reiserfs_write_unlock(dir->i_sb);
+	reiserfs_security_free(&security);
 	return retval;
 }
 
@@ -707,15 +715,18 @@ static int reiserfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode
 	    2 * (REISERFS_QUOTA_INIT_BLOCKS(dir->i_sb) +
 		 REISERFS_QUOTA_TRANS_BLOCKS(dir->i_sb));
 
-	if (!new_valid_dev(rdev))
-		return -EINVAL;
-
-	dquot_initialize(dir);
+	retval = dquot_initialize(dir);
+	if (retval)
+		return retval;
 
 	if (!(inode = new_inode(dir->i_sb))) {
 		return -ENOMEM;
 	}
-	new_inode_init(inode, dir, mode);
+	retval = new_inode_init(inode, dir, mode);
+	if (retval) {
+		drop_new_inode(inode);
+		return retval;
+	}
 
 	jbegin_count += reiserfs_cache_default_acl(dir);
 	retval = reiserfs_security_init(dir, inode, &dentry->d_name, &security);
@@ -763,12 +774,12 @@ static int reiserfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode
 		goto out_failed;
 	}
 
-	unlock_new_inode(inode);
-	d_instantiate(dentry, inode);
+	d_instantiate_new(dentry, inode);
 	retval = journal_end(&th);
 
 out_failed:
 	reiserfs_write_unlock(dir->i_sb);
+	reiserfs_security_free(&security);
 	return retval;
 }
 
@@ -787,7 +798,9 @@ static int reiserfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	    2 * (REISERFS_QUOTA_INIT_BLOCKS(dir->i_sb) +
 		 REISERFS_QUOTA_TRANS_BLOCKS(dir->i_sb));
 
-	dquot_initialize(dir);
+	retval = dquot_initialize(dir);
+	if (retval)
+		return retval;
 
 #ifdef DISPLACE_NEW_PACKING_LOCALITIES
 	/*
@@ -800,7 +813,11 @@ static int reiserfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	if (!(inode = new_inode(dir->i_sb))) {
 		return -ENOMEM;
 	}
-	new_inode_init(inode, dir, mode);
+	retval = new_inode_init(inode, dir, mode);
+	if (retval) {
+		drop_new_inode(inode);
+		return retval;
+	}
 
 	jbegin_count += reiserfs_cache_default_acl(dir);
 	retval = reiserfs_security_init(dir, inode, &dentry->d_name, &security);
@@ -823,10 +840,10 @@ static int reiserfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	 */
 	INC_DIR_INODE_NLINK(dir)
 
-	    retval = reiserfs_new_inode(&th, dir, mode, NULL /*symlink */ ,
-					old_format_only(dir->i_sb) ?
-					EMPTY_DIR_SIZE_V1 : EMPTY_DIR_SIZE,
-					dentry, inode, &security);
+	retval = reiserfs_new_inode(&th, dir, mode, NULL /*symlink */,
+				    old_format_only(dir->i_sb) ?
+				    EMPTY_DIR_SIZE_V1 : EMPTY_DIR_SIZE,
+				    dentry, inode, &security);
 	if (retval) {
 		DEC_DIR_INODE_NLINK(dir)
 		goto out_failed;
@@ -857,11 +874,11 @@ static int reiserfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode
 	/* the above add_entry did not update dir's stat data */
 	reiserfs_update_sd(&th, dir);
 
-	unlock_new_inode(inode);
-	d_instantiate(dentry, inode);
+	d_instantiate_new(dentry, inode);
 	retval = journal_end(&th);
 out_failed:
 	reiserfs_write_unlock(dir->i_sb);
+	reiserfs_security_free(&security);
 	return retval;
 }
 
@@ -899,7 +916,9 @@ static int reiserfs_rmdir(struct inode *dir, struct dentry *dentry)
 	    JOURNAL_PER_BALANCE_CNT * 2 + 2 +
 	    4 * REISERFS_QUOTA_TRANS_BLOCKS(dir->i_sb);
 
-	dquot_initialize(dir);
+	retval = dquot_initialize(dir);
+	if (retval)
+		return retval;
 
 	reiserfs_write_lock(dir->i_sb);
 	retval = journal_begin(&th, dir->i_sb, jbegin_count);
@@ -917,7 +936,7 @@ static int reiserfs_rmdir(struct inode *dir, struct dentry *dentry)
 		goto end_rmdir;
 	}
 
-	inode = dentry->d_inode;
+	inode = d_inode(dentry);
 
 	reiserfs_update_inode_transaction(inode);
 	reiserfs_update_inode_transaction(dir);
@@ -947,11 +966,11 @@ static int reiserfs_rmdir(struct inode *dir, struct dentry *dentry)
 			       inode->i_nlink);
 
 	clear_nlink(inode);
-	inode->i_ctime = dir->i_ctime = dir->i_mtime = CURRENT_TIME_SEC;
+	inode->i_ctime = dir->i_ctime = dir->i_mtime = current_time(dir);
 	reiserfs_update_sd(&th, inode);
 
 	DEC_DIR_INODE_NLINK(dir)
-	    dir->i_size -= (DEH_SIZE + de.de_entrylen);
+	dir->i_size -= (DEH_SIZE + de.de_entrylen);
 	reiserfs_update_sd(&th, dir);
 
 	/* prevent empty directory from getting lost */
@@ -985,9 +1004,11 @@ static int reiserfs_unlink(struct inode *dir, struct dentry *dentry)
 	int jbegin_count;
 	unsigned long savelink;
 
-	dquot_initialize(dir);
+	retval = dquot_initialize(dir);
+	if (retval)
+		return retval;
 
-	inode = dentry->d_inode;
+	inode = d_inode(dentry);
 
 	/*
 	 * in this transaction we can be doing at max two balancings and
@@ -1049,11 +1070,11 @@ static int reiserfs_unlink(struct inode *dir, struct dentry *dentry)
 		inc_nlink(inode);
 		goto end_unlink;
 	}
-	inode->i_ctime = CURRENT_TIME_SEC;
+	inode->i_ctime = current_time(inode);
 	reiserfs_update_sd(&th, inode);
 
 	dir->i_size -= (de.de_entrylen + DEH_SIZE);
-	dir->i_ctime = dir->i_mtime = CURRENT_TIME_SEC;
+	dir->i_ctime = dir->i_mtime = current_time(dir);
 	reiserfs_update_sd(&th, dir);
 
 	if (!savelink)
@@ -1095,12 +1116,18 @@ static int reiserfs_symlink(struct inode *parent_dir,
 	    2 * (REISERFS_QUOTA_INIT_BLOCKS(parent_dir->i_sb) +
 		 REISERFS_QUOTA_TRANS_BLOCKS(parent_dir->i_sb));
 
-	dquot_initialize(parent_dir);
+	retval = dquot_initialize(parent_dir);
+	if (retval)
+		return retval;
 
 	if (!(inode = new_inode(parent_dir->i_sb))) {
 		return -ENOMEM;
 	}
-	new_inode_init(inode, parent_dir, mode);
+	retval = new_inode_init(inode, parent_dir, mode);
+	if (retval) {
+		drop_new_inode(inode);
+		return retval;
+	}
 
 	retval = reiserfs_security_init(parent_dir, inode, &dentry->d_name,
 					&security);
@@ -1146,6 +1173,7 @@ static int reiserfs_symlink(struct inode *parent_dir,
 	reiserfs_update_inode_transaction(parent_dir);
 
 	inode->i_op = &reiserfs_symlink_inode_operations;
+	inode_nohighmem(inode);
 	inode->i_mapping->a_ops = &reiserfs_address_space_operations;
 
 	retval = reiserfs_add_entry(&th, parent_dir, dentry->d_name.name,
@@ -1162,11 +1190,11 @@ static int reiserfs_symlink(struct inode *parent_dir,
 		goto out_failed;
 	}
 
-	unlock_new_inode(inode);
-	d_instantiate(dentry, inode);
+	d_instantiate_new(dentry, inode);
 	retval = journal_end(&th);
 out_failed:
 	reiserfs_write_unlock(parent_dir->i_sb);
+	reiserfs_security_free(&security);
 	return retval;
 }
 
@@ -1174,7 +1202,7 @@ static int reiserfs_link(struct dentry *old_dentry, struct inode *dir,
 			 struct dentry *dentry)
 {
 	int retval;
-	struct inode *inode = old_dentry->d_inode;
+	struct inode *inode = d_inode(old_dentry);
 	struct reiserfs_transaction_handle th;
 	/*
 	 * We need blocks for transaction + update of quotas for
@@ -1184,7 +1212,9 @@ static int reiserfs_link(struct dentry *old_dentry, struct inode *dir,
 	    JOURNAL_PER_BALANCE_CNT * 3 +
 	    2 * REISERFS_QUOTA_TRANS_BLOCKS(dir->i_sb);
 
-	dquot_initialize(dir);
+	retval = dquot_initialize(dir);
+	if (retval)
+		return retval;
 
 	reiserfs_write_lock(dir->i_sb);
 	if (inode->i_nlink >= REISERFS_LINK_MAX) {
@@ -1219,7 +1249,7 @@ static int reiserfs_link(struct dentry *old_dentry, struct inode *dir,
 		return err ? err : retval;
 	}
 
-	inode->i_ctime = CURRENT_TIME_SEC;
+	inode->i_ctime = current_time(inode);
 	reiserfs_update_sd(&th, inode);
 
 	ihold(inode);
@@ -1279,7 +1309,8 @@ static void set_ino_in_dir_entry(struct reiserfs_dir_entry *de,
  * get_empty_nodes or its clones
  */
 static int reiserfs_rename(struct inode *old_dir, struct dentry *old_dentry,
-			   struct inode *new_dir, struct dentry *new_dentry)
+			   struct inode *new_dir, struct dentry *new_dentry,
+			   unsigned int flags)
 {
 	int retval;
 	INITIALIZE_PATH(old_entry_path);
@@ -1292,7 +1323,10 @@ static int reiserfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	int jbegin_count;
 	umode_t old_inode_mode;
 	unsigned long savelink = 1;
-	struct timespec ctime;
+	struct timespec64 ctime;
+
+	if (flags & ~RENAME_NOREPLACE)
+		return -EINVAL;
 
 	/*
 	 * three balancings: (1) old name removal, (2) new name insertion
@@ -1308,11 +1342,15 @@ static int reiserfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	    JOURNAL_PER_BALANCE_CNT * 3 + 5 +
 	    4 * REISERFS_QUOTA_TRANS_BLOCKS(old_dir->i_sb);
 
-	dquot_initialize(old_dir);
-	dquot_initialize(new_dir);
+	retval = dquot_initialize(old_dir);
+	if (retval)
+		return retval;
+	retval = dquot_initialize(new_dir);
+	if (retval)
+		return retval;
 
-	old_inode = old_dentry->d_inode;
-	new_dentry_inode = new_dentry->d_inode;
+	old_inode = d_inode(old_dentry);
+	new_dentry_inode = d_inode(new_dentry);
 
 	/*
 	 * make sure that oldname still exists and points to an object we
@@ -1536,7 +1574,7 @@ static int reiserfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 
 	mark_de_hidden(old_de.de_deh + old_de.de_entry_num);
 	journal_mark_dirty(&th, old_de.de_bh);
-	ctime = CURRENT_TIME_SEC;
+	ctime = current_time(old_dir);
 	old_dir->i_ctime = old_dir->i_mtime = ctime;
 	new_dir->i_ctime = new_dir->i_mtime = ctime;
 	/*
@@ -1619,10 +1657,7 @@ const struct inode_operations reiserfs_dir_inode_operations = {
 	.mknod = reiserfs_mknod,
 	.rename = reiserfs_rename,
 	.setattr = reiserfs_setattr,
-	.setxattr = reiserfs_setxattr,
-	.getxattr = reiserfs_getxattr,
 	.listxattr = reiserfs_listxattr,
-	.removexattr = reiserfs_removexattr,
 	.permission = reiserfs_permission,
 	.get_acl = reiserfs_get_acl,
 	.set_acl = reiserfs_set_acl,
@@ -1633,14 +1668,9 @@ const struct inode_operations reiserfs_dir_inode_operations = {
  * stuff added
  */
 const struct inode_operations reiserfs_symlink_inode_operations = {
-	.readlink = generic_readlink,
-	.follow_link = page_follow_link_light,
-	.put_link = page_put_link,
+	.get_link	= page_get_link,
 	.setattr = reiserfs_setattr,
-	.setxattr = reiserfs_setxattr,
-	.getxattr = reiserfs_getxattr,
 	.listxattr = reiserfs_listxattr,
-	.removexattr = reiserfs_removexattr,
 	.permission = reiserfs_permission,
 };
 
@@ -1649,10 +1679,7 @@ const struct inode_operations reiserfs_symlink_inode_operations = {
  */
 const struct inode_operations reiserfs_special_inode_operations = {
 	.setattr = reiserfs_setattr,
-	.setxattr = reiserfs_setxattr,
-	.getxattr = reiserfs_getxattr,
 	.listxattr = reiserfs_listxattr,
-	.removexattr = reiserfs_removexattr,
 	.permission = reiserfs_permission,
 	.get_acl = reiserfs_get_acl,
 	.set_acl = reiserfs_set_acl,

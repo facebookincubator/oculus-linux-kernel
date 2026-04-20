@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
@@ -7,7 +8,7 @@
 #include <linux/types.h>
 #include <linux/fs.h>
 #include <linux/buffer_head.h>
-#include <linux/amigaffs.h>
+#include "amigaffs.h"
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
 
@@ -30,6 +31,8 @@
 #define AFFS_AC_SIZE		(AFFS_CACHE_SIZE/sizeof(struct affs_ext_key)/2)
 #define AFFS_AC_MASK		(AFFS_AC_SIZE-1)
 
+#define AFFSNAMEMAX 30U
+
 struct affs_ext_key {
 	u32	ext;				/* idx of the extended block */
 	u32	key;				/* block number */
@@ -40,8 +43,8 @@ struct affs_ext_key {
  */
 struct affs_inode_info {
 	atomic_t i_opencnt;
-	struct semaphore i_link_lock;		/* Protects internal inode access. */
-	struct semaphore i_ext_lock;		/* Protects internal inode access. */
+	struct mutex i_link_lock;		/* Protects internal inode access. */
+	struct mutex i_ext_lock;		/* Protects internal inode access. */
 #define i_hash_lock i_ext_lock
 	u32	 i_blkcnt;			/* block count */
 	u32	 i_extcnt;			/* extended block count */
@@ -62,7 +65,7 @@ struct affs_inode_info {
 /* short cut to get to the affs specific inode data */
 static inline struct affs_inode_info *AFFS_I(struct inode *inode)
 {
-	return list_entry(inode, struct affs_inode_info, vfs_inode);
+	return container_of(inode, struct affs_inode_info, vfs_inode);
 }
 
 /*
@@ -104,18 +107,22 @@ struct affs_sb_info {
 	spinlock_t work_lock;		/* protects sb_work and work_queued */
 };
 
-#define SF_INTL		0x0001		/* International filesystem. */
-#define SF_BM_VALID	0x0002		/* Bitmap is valid. */
-#define SF_IMMUTABLE	0x0004		/* Protection bits cannot be changed */
-#define SF_QUIET	0x0008		/* chmod errors will be not reported */
-#define SF_SETUID	0x0010		/* Ignore Amiga uid */
-#define SF_SETGID	0x0020		/* Ignore Amiga gid */
-#define SF_SETMODE	0x0040		/* Ignore Amiga protection bits */
-#define SF_MUFS		0x0100		/* Use MUFS uid/gid mapping */
-#define SF_OFS		0x0200		/* Old filesystem */
-#define SF_PREFIX	0x0400		/* Buffer for prefix is allocated */
-#define SF_VERBOSE	0x0800		/* Talk about fs when mounting */
-#define SF_NO_TRUNCATE	0x1000		/* Don't truncate filenames */
+#define AFFS_MOUNT_SF_INTL		0x0001 /* International filesystem. */
+#define AFFS_MOUNT_SF_BM_VALID		0x0002 /* Bitmap is valid. */
+#define AFFS_MOUNT_SF_IMMUTABLE		0x0004 /* Protection bits cannot be changed */
+#define AFFS_MOUNT_SF_QUIET		0x0008 /* chmod errors will be not reported */
+#define AFFS_MOUNT_SF_SETUID		0x0010 /* Ignore Amiga uid */
+#define AFFS_MOUNT_SF_SETGID		0x0020 /* Ignore Amiga gid */
+#define AFFS_MOUNT_SF_SETMODE		0x0040 /* Ignore Amiga protection bits */
+#define AFFS_MOUNT_SF_MUFS		0x0100 /* Use MUFS uid/gid mapping */
+#define AFFS_MOUNT_SF_OFS		0x0200 /* Old filesystem */
+#define AFFS_MOUNT_SF_PREFIX		0x0400 /* Buffer for prefix is allocated */
+#define AFFS_MOUNT_SF_VERBOSE		0x0800 /* Talk about fs when mounting */
+#define AFFS_MOUNT_SF_NO_TRUNCATE	0x1000 /* Don't truncate filenames */
+
+#define affs_clear_opt(o, opt)    (o &= ~AFFS_MOUNT_##opt)
+#define affs_set_opt(o, opt)      (o |= AFFS_MOUNT_##opt)
+#define affs_test_opt(o, opt)     ((o) & AFFS_MOUNT_##opt)
 
 /* short cut to get to the affs specific sb data */
 static inline struct affs_sb_info *AFFS_SB(struct super_block *sb)
@@ -132,11 +139,13 @@ extern int	affs_remove_hash(struct inode *dir, struct buffer_head *rem_bh);
 extern int	affs_remove_header(struct dentry *dentry);
 extern u32	affs_checksum_block(struct super_block *sb, struct buffer_head *bh);
 extern void	affs_fix_checksum(struct super_block *sb, struct buffer_head *bh);
-extern void	secs_to_datestamp(time_t secs, struct affs_date *ds);
-extern umode_t	prot_to_mode(u32 prot);
-extern void	mode_to_prot(struct inode *inode);
+extern void	affs_secs_to_datestamp(time64_t secs, struct affs_date *ds);
+extern umode_t	affs_prot_to_mode(u32 prot);
+extern void	affs_mode_to_prot(struct inode *inode);
+__printf(3, 4)
 extern void	affs_error(struct super_block *sb, const char *function,
 			   const char *fmt, ...);
+__printf(3, 4)
 extern void	affs_warning(struct super_block *sb, const char *function,
 			     const char *fmt, ...);
 extern bool	affs_nofilenametruncate(const struct dentry *dentry);
@@ -154,6 +163,7 @@ extern void	affs_free_bitmap(struct super_block *sb);
 
 /* namei.c */
 
+extern const struct export_operations affs_export_ops;
 extern int	affs_hash_name(struct super_block *sb, const u8 *name, unsigned int len);
 extern struct dentry *affs_lookup(struct inode *dir, struct dentry *dentry, unsigned int);
 extern int	affs_unlink(struct inode *dir, struct dentry *dentry);
@@ -164,12 +174,12 @@ extern int	affs_link(struct dentry *olddentry, struct inode *dir,
 			  struct dentry *dentry);
 extern int	affs_symlink(struct inode *dir, struct dentry *dentry,
 			     const char *symname);
-extern int	affs_rename(struct inode *old_dir, struct dentry *old_dentry,
-			    struct inode *new_dir, struct dentry *new_dentry);
+extern int	affs_rename2(struct inode *old_dir, struct dentry *old_dentry,
+			    struct inode *new_dir, struct dentry *new_dentry,
+			    unsigned int flags);
 
 /* inode.c */
 
-extern unsigned long		 affs_parent_ino(struct inode *dir);
 extern struct inode		*affs_new_inode(struct inode *dir);
 extern int			 affs_notify_change(struct dentry *dentry, struct iattr *attr);
 extern void			 affs_evict_inode(struct inode *inode);
@@ -204,6 +214,12 @@ extern const struct address_space_operations	 affs_aops_ofs;
 extern const struct dentry_operations	 affs_dentry_operations;
 extern const struct dentry_operations	 affs_intl_dentry_operations;
 
+static inline bool affs_validblock(struct super_block *sb, int block)
+{
+	return(block >= AFFS_SB(sb)->s_reserved &&
+	       block < AFFS_SB(sb)->s_partition_size);
+}
+
 static inline void
 affs_set_blocksize(struct super_block *sb, int size)
 {
@@ -213,7 +229,7 @@ static inline struct buffer_head *
 affs_bread(struct super_block *sb, int block)
 {
 	pr_debug("%s: %d\n", __func__, block);
-	if (block >= AFFS_SB(sb)->s_reserved && block < AFFS_SB(sb)->s_partition_size)
+	if (affs_validblock(sb, block))
 		return sb_bread(sb, block);
 	return NULL;
 }
@@ -221,7 +237,7 @@ static inline struct buffer_head *
 affs_getblk(struct super_block *sb, int block)
 {
 	pr_debug("%s: %d\n", __func__, block);
-	if (block >= AFFS_SB(sb)->s_reserved && block < AFFS_SB(sb)->s_partition_size)
+	if (affs_validblock(sb, block))
 		return sb_getblk(sb, block);
 	return NULL;
 }
@@ -230,7 +246,7 @@ affs_getzeroblk(struct super_block *sb, int block)
 {
 	struct buffer_head *bh;
 	pr_debug("%s: %d\n", __func__, block);
-	if (block >= AFFS_SB(sb)->s_reserved && block < AFFS_SB(sb)->s_partition_size) {
+	if (affs_validblock(sb, block)) {
 		bh = sb_getblk(sb, block);
 		lock_buffer(bh);
 		memset(bh->b_data, 0 , sb->s_blocksize);
@@ -245,7 +261,7 @@ affs_getemptyblk(struct super_block *sb, int block)
 {
 	struct buffer_head *bh;
 	pr_debug("%s: %d\n", __func__, block);
-	if (block >= AFFS_SB(sb)->s_reserved && block < AFFS_SB(sb)->s_partition_size) {
+	if (affs_validblock(sb, block)) {
 		bh = sb_getblk(sb, block);
 		wait_on_buffer(bh);
 		set_buffer_uptodate(bh);
@@ -277,30 +293,30 @@ affs_adjust_bitmapchecksum(struct buffer_head *bh, u32 val)
 static inline void
 affs_lock_link(struct inode *inode)
 {
-	down(&AFFS_I(inode)->i_link_lock);
+	mutex_lock(&AFFS_I(inode)->i_link_lock);
 }
 static inline void
 affs_unlock_link(struct inode *inode)
 {
-	up(&AFFS_I(inode)->i_link_lock);
+	mutex_unlock(&AFFS_I(inode)->i_link_lock);
 }
 static inline void
 affs_lock_dir(struct inode *inode)
 {
-	down(&AFFS_I(inode)->i_hash_lock);
+	mutex_lock_nested(&AFFS_I(inode)->i_hash_lock, SINGLE_DEPTH_NESTING);
 }
 static inline void
 affs_unlock_dir(struct inode *inode)
 {
-	up(&AFFS_I(inode)->i_hash_lock);
+	mutex_unlock(&AFFS_I(inode)->i_hash_lock);
 }
 static inline void
 affs_lock_ext(struct inode *inode)
 {
-	down(&AFFS_I(inode)->i_ext_lock);
+	mutex_lock(&AFFS_I(inode)->i_ext_lock);
 }
 static inline void
 affs_unlock_ext(struct inode *inode)
 {
-	up(&AFFS_I(inode)->i_ext_lock);
+	mutex_unlock(&AFFS_I(inode)->i_ext_lock);
 }

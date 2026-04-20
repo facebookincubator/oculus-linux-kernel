@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * drivers/net/phy/et1011c.c
  *
@@ -6,12 +7,6 @@
  * Author: Chaithrika U S
  *
  * Copyright (c) 2008 Texas Instruments
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
- *
  */
 #include <linux/kernel.h>
 #include <linux/string.h>
@@ -87,29 +82,16 @@ static int et1011c_read_status(struct phy_device *phydev)
 	return ret;
 }
 
-static struct phy_driver et1011c_driver = {
+static struct phy_driver et1011c_driver[] = { {
 	.phy_id		= 0x0282f014,
 	.name		= "ET1011C",
 	.phy_id_mask	= 0xfffffff0,
-	.features	= (PHY_BASIC_FEATURES | SUPPORTED_1000baseT_Full),
-	.flags		= PHY_POLL,
+	/* PHY_GBIT_FEATURES */
 	.config_aneg	= et1011c_config_aneg,
 	.read_status	= et1011c_read_status,
-	.driver 	= { .owner = THIS_MODULE,},
-};
+} };
 
-static int __init et1011c_init(void)
-{
-	return phy_driver_register(&et1011c_driver);
-}
-
-static void __exit et1011c_exit(void)
-{
-	phy_driver_unregister(&et1011c_driver);
-}
-
-module_init(et1011c_init);
-module_exit(et1011c_exit);
+module_phy_driver(et1011c_driver);
 
 static struct mdio_device_id __maybe_unused et1011c_tbl[] = {
 	{ 0x0282f014, 0xfffffff0 },

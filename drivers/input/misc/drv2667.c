@@ -1,18 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * DRV2667 haptics driver family
  *
  * Author: Dan Murphy <dmurphy@ti.com>
  *
  * Copyright: (C) 2014 Texas Instruments, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
  */
 
 #include <linux/i2c.h>
@@ -116,7 +108,7 @@ struct drv2667_data {
 	u32 frequency;
 };
 
-static struct reg_default drv2667_reg_defs[] = {
+static const struct reg_default drv2667_reg_defs[] = {
 	{ DRV2667_STATUS, 0x02 },
 	{ DRV2667_CTRL_1, 0x28 },
 	{ DRV2667_CTRL_2, 0x40 },
@@ -177,9 +169,9 @@ static int drv2667_set_waveform_freq(struct drv2667_data *haptics)
 		error = regmap_write(haptics->regmap, DRV2667_PAGE, read_buf);
 		if (error) {
 			dev_err(&haptics->client->dev,
-					"Failed to set the page: %d\n", error);
-				return -EIO;
-			}
+				"Failed to set the page: %d\n", error);
+			return -EIO;
+		}
 	}
 
 	return error;
@@ -256,20 +248,20 @@ static void drv2667_close(struct input_dev *input)
 	cancel_work_sync(&haptics->work);
 
 	error = regmap_update_bits(haptics->regmap, DRV2667_CTRL_2,
-				DRV2667_STANDBY, 1);
+				   DRV2667_STANDBY, DRV2667_STANDBY);
 	if (error)
 		dev_err(&haptics->client->dev,
 			"Failed to enter standby mode: %d\n", error);
 }
 
-static const struct reg_default drv2667_init_regs[] = {
+static const struct reg_sequence drv2667_init_regs[] = {
 	{ DRV2667_CTRL_2, 0 },
 	{ DRV2667_CTRL_1, DRV2667_25_VPP_GAIN },
 	{ DRV2667_WV_SEQ_0, 1 },
 	{ DRV2667_WV_SEQ_1, 0 }
 };
 
-static const struct reg_default drv2667_page1_init[] = {
+static const struct reg_sequence drv2667_page1_init[] = {
 	{ DRV2667_RAM_HDR_SZ, 0x05 },
 	{ DRV2667_RAM_START_HI, 0x80 },
 	{ DRV2667_RAM_START_LO, 0x06 },
@@ -406,8 +398,7 @@ static int drv2667_probe(struct i2c_client *client,
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int drv2667_suspend(struct device *dev)
+static int __maybe_unused drv2667_suspend(struct device *dev)
 {
 	struct drv2667_data *haptics = dev_get_drvdata(dev);
 	int ret = 0;
@@ -416,7 +407,7 @@ static int drv2667_suspend(struct device *dev)
 
 	if (haptics->input_dev->users) {
 		ret = regmap_update_bits(haptics->regmap, DRV2667_CTRL_2,
-				DRV2667_STANDBY, 1);
+					 DRV2667_STANDBY, DRV2667_STANDBY);
 		if (ret) {
 			dev_err(dev, "Failed to set standby mode\n");
 			regulator_disable(haptics->regulator);
@@ -436,7 +427,7 @@ out:
 	return ret;
 }
 
-static int drv2667_resume(struct device *dev)
+static int __maybe_unused drv2667_resume(struct device *dev)
 {
 	struct drv2667_data *haptics = dev_get_drvdata(dev);
 	int ret = 0;
@@ -464,7 +455,6 @@ out:
 	mutex_unlock(&haptics->input_dev->mutex);
 	return ret;
 }
-#endif
 
 static SIMPLE_DEV_PM_OPS(drv2667_pm_ops, drv2667_suspend, drv2667_resume);
 
@@ -486,7 +476,6 @@ static struct i2c_driver drv2667_driver = {
 	.probe		= drv2667_probe,
 	.driver		= {
 		.name	= "drv2667-haptics",
-		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(drv2667_of_match),
 		.pm	= &drv2667_pm_ops,
 	},
@@ -494,7 +483,6 @@ static struct i2c_driver drv2667_driver = {
 };
 module_i2c_driver(drv2667_driver);
 
-MODULE_ALIAS("platform:drv2667-haptics");
 MODULE_DESCRIPTION("TI DRV2667 haptics driver");
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Dan Murphy <dmurphy@ti.com>");

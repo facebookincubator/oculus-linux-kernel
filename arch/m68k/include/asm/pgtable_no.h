@@ -1,7 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _M68KNOMMU_PGTABLE_H
 #define _M68KNOMMU_PGTABLE_H
 
-#include <asm-generic/4level-fixup.h>
+#include <asm-generic/pgtable-nopud.h>
 
 /*
  * (C) Copyright 2000-2002, Greg Ungerer <gerg@snapgear.com>
@@ -37,18 +38,12 @@ extern void paging_init(void);
 #define __pte_to_swp_entry(pte)	((swp_entry_t) { pte_val(pte) })
 #define __swp_entry_to_pte(x)	((pte_t) { (x).val })
 
-static inline int pte_file(pte_t pte) { return 0; }
-
 /*
  * ZERO_PAGE is a global shared page that is always zero: used
  * for zero-mapped memory areas etc..
  */
-#define ZERO_PAGE(vaddr)	(virt_to_page(0))
-
-/*
- * No page table caches to initialise.
- */
-#define pgtable_cache_init()	do { } while (0)
+extern void *empty_zero_page;
+#define ZERO_PAGE(vaddr)	(virt_to_page(empty_zero_page))
 
 /*
  * All 32bit addresses are effectively valid for vmalloc...
@@ -58,9 +53,5 @@ static inline int pte_file(pte_t pte) { return 0; }
 #define	VMALLOC_END	0xffffffff
 #define	KMAP_START	0
 #define	KMAP_END	0xffffffff
-
-#include <asm-generic/pgtable.h>
-
-#define check_pgt_cache()	do { } while (0)
 
 #endif /* _M68KNOMMU_PGTABLE_H */

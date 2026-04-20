@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *  arch/arm/plat-omap/include/mach/irqs.h
  *
@@ -6,20 +7,6 @@
  *
  * Copyright (C) 2009 Texas Instruments
  * Added OMAP4 support - Santosh Shilimkar <santosh.shilimkar@ti.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  *
  * NOTE: The interrupt vectors for the OMAP-1509, OMAP-1510, and OMAP-1610
  *	 are different.
@@ -34,84 +21,84 @@
  * NOTE: See also the OMAP-1510 and 1610 specific IRQ numbers below
  *
  */
-#define INT_CAMERA		1
-#define INT_FIQ			3
-#define INT_RTDX		6
-#define INT_DSP_MMU_ABORT	7
-#define INT_HOST		8
-#define INT_ABORT		9
-#define INT_BRIDGE_PRIV		13
-#define INT_GPIO_BANK1		14
-#define INT_UART3		15
-#define INT_TIMER3		16
-#define INT_DMA_CH0_6		19
-#define INT_DMA_CH1_7		20
-#define INT_DMA_CH2_8		21
-#define INT_DMA_CH3		22
-#define INT_DMA_CH4		23
-#define INT_DMA_CH5		24
-#define INT_TIMER1		26
-#define INT_WD_TIMER		27
-#define INT_BRIDGE_PUB		28
-#define INT_TIMER2		30
-#define INT_LCD_CTRL		31
+#define INT_CAMERA		(NR_IRQS_LEGACY + 1)
+#define INT_FIQ			(NR_IRQS_LEGACY + 3)
+#define INT_RTDX		(NR_IRQS_LEGACY + 6)
+#define INT_DSP_MMU_ABORT	(NR_IRQS_LEGACY + 7)
+#define INT_HOST		(NR_IRQS_LEGACY + 8)
+#define INT_ABORT		(NR_IRQS_LEGACY + 9)
+#define INT_BRIDGE_PRIV		(NR_IRQS_LEGACY + 13)
+#define INT_GPIO_BANK1		(NR_IRQS_LEGACY + 14)
+#define INT_UART3		(NR_IRQS_LEGACY + 15)
+#define INT_TIMER3		(NR_IRQS_LEGACY + 16)
+#define INT_DMA_CH0_6		(NR_IRQS_LEGACY + 19)
+#define INT_DMA_CH1_7		(NR_IRQS_LEGACY + 20)
+#define INT_DMA_CH2_8		(NR_IRQS_LEGACY + 21)
+#define INT_DMA_CH3		(NR_IRQS_LEGACY + 22)
+#define INT_DMA_CH4		(NR_IRQS_LEGACY + 23)
+#define INT_DMA_CH5		(NR_IRQS_LEGACY + 24)
+#define INT_TIMER1		(NR_IRQS_LEGACY + 26)
+#define INT_WD_TIMER		(NR_IRQS_LEGACY + 27)
+#define INT_BRIDGE_PUB		(NR_IRQS_LEGACY + 28)
+#define INT_TIMER2		(NR_IRQS_LEGACY + 30)
+#define INT_LCD_CTRL		(NR_IRQS_LEGACY + 31)
 
 /*
  * OMAP-1510 specific IRQ numbers for interrupt handler 1
  */
-#define INT_1510_IH2_IRQ	0
-#define INT_1510_RES2		2
-#define INT_1510_SPI_TX		4
-#define INT_1510_SPI_RX		5
-#define INT_1510_DSP_MAILBOX1	10
-#define INT_1510_DSP_MAILBOX2	11
-#define INT_1510_RES12		12
-#define INT_1510_LB_MMU		17
-#define INT_1510_RES18		18
-#define INT_1510_LOCAL_BUS	29
+#define INT_1510_IH2_IRQ	(NR_IRQS_LEGACY + 0)
+#define INT_1510_RES2		(NR_IRQS_LEGACY + 2)
+#define INT_1510_SPI_TX		(NR_IRQS_LEGACY + 4)
+#define INT_1510_SPI_RX		(NR_IRQS_LEGACY + 5)
+#define INT_1510_DSP_MAILBOX1	(NR_IRQS_LEGACY + 10)
+#define INT_1510_DSP_MAILBOX2	(NR_IRQS_LEGACY + 11)
+#define INT_1510_RES12		(NR_IRQS_LEGACY + 12)
+#define INT_1510_LB_MMU		(NR_IRQS_LEGACY + 17)
+#define INT_1510_RES18		(NR_IRQS_LEGACY + 18)
+#define INT_1510_LOCAL_BUS	(NR_IRQS_LEGACY + 29)
 
 /*
  * OMAP-1610 specific IRQ numbers for interrupt handler 1
  */
 #define INT_1610_IH2_IRQ	INT_1510_IH2_IRQ
-#define INT_1610_IH2_FIQ	2
-#define INT_1610_McBSP2_TX	4
-#define INT_1610_McBSP2_RX	5
-#define INT_1610_DSP_MAILBOX1	10
-#define INT_1610_DSP_MAILBOX2	11
-#define INT_1610_LCD_LINE	12
-#define INT_1610_GPTIMER1	17
-#define INT_1610_GPTIMER2	18
-#define INT_1610_SSR_FIFO_0	29
+#define INT_1610_IH2_FIQ	(NR_IRQS_LEGACY + 2)
+#define INT_1610_McBSP2_TX	(NR_IRQS_LEGACY + 4)
+#define INT_1610_McBSP2_RX	(NR_IRQS_LEGACY + 5)
+#define INT_1610_DSP_MAILBOX1	(NR_IRQS_LEGACY + 10)
+#define INT_1610_DSP_MAILBOX2	(NR_IRQS_LEGACY + 11)
+#define INT_1610_LCD_LINE	(NR_IRQS_LEGACY + 12)
+#define INT_1610_GPTIMER1	(NR_IRQS_LEGACY + 17)
+#define INT_1610_GPTIMER2	(NR_IRQS_LEGACY + 18)
+#define INT_1610_SSR_FIFO_0	(NR_IRQS_LEGACY + 29)
 
 /*
  * OMAP-7xx specific IRQ numbers for interrupt handler 1
  */
-#define INT_7XX_IH2_FIQ		0
-#define INT_7XX_IH2_IRQ		1
-#define INT_7XX_USB_NON_ISO	2
-#define INT_7XX_USB_ISO		3
-#define INT_7XX_ICR		4
-#define INT_7XX_EAC		5
-#define INT_7XX_GPIO_BANK1	6
-#define INT_7XX_GPIO_BANK2	7
-#define INT_7XX_GPIO_BANK3	8
-#define INT_7XX_McBSP2TX	10
-#define INT_7XX_McBSP2RX	11
-#define INT_7XX_McBSP2RX_OVF	12
-#define INT_7XX_LCD_LINE	14
-#define INT_7XX_GSM_PROTECT	15
-#define INT_7XX_TIMER3		16
-#define INT_7XX_GPIO_BANK5	17
-#define INT_7XX_GPIO_BANK6	18
-#define INT_7XX_SPGIO_WR	29
+#define INT_7XX_IH2_FIQ		(NR_IRQS_LEGACY + 0)
+#define INT_7XX_IH2_IRQ		(NR_IRQS_LEGACY + 1)
+#define INT_7XX_USB_NON_ISO	(NR_IRQS_LEGACY + 2)
+#define INT_7XX_USB_ISO		(NR_IRQS_LEGACY + 3)
+#define INT_7XX_ICR		(NR_IRQS_LEGACY + 4)
+#define INT_7XX_EAC		(NR_IRQS_LEGACY + 5)
+#define INT_7XX_GPIO_BANK1	(NR_IRQS_LEGACY + 6)
+#define INT_7XX_GPIO_BANK2	(NR_IRQS_LEGACY + 7)
+#define INT_7XX_GPIO_BANK3	(NR_IRQS_LEGACY + 8)
+#define INT_7XX_McBSP2TX	(NR_IRQS_LEGACY + 10)
+#define INT_7XX_McBSP2RX	(NR_IRQS_LEGACY + 11)
+#define INT_7XX_McBSP2RX_OVF	(NR_IRQS_LEGACY + 12)
+#define INT_7XX_LCD_LINE	(NR_IRQS_LEGACY + 14)
+#define INT_7XX_GSM_PROTECT	(NR_IRQS_LEGACY + 15)
+#define INT_7XX_TIMER3		(NR_IRQS_LEGACY + 16)
+#define INT_7XX_GPIO_BANK5	(NR_IRQS_LEGACY + 17)
+#define INT_7XX_GPIO_BANK6	(NR_IRQS_LEGACY + 18)
+#define INT_7XX_SPGIO_WR	(NR_IRQS_LEGACY + 29)
 
 /*
  * IRQ numbers for interrupt handler 2
  *
  * NOTE: See also the OMAP-1510 and 1610 specific IRQ numbers below
  */
-#define IH2_BASE		32
+#define IH2_BASE		(NR_IRQS_LEGACY + 32)
 
 #define INT_KEYBOARD		(1 + IH2_BASE)
 #define INT_uWireTX		(2 + IH2_BASE)
@@ -255,11 +242,7 @@
 #endif
 #define OMAP_FPGA_IRQ_END	(OMAP_FPGA_IRQ_BASE + OMAP_FPGA_NR_IRQS)
 
-#define NR_IRQS			OMAP_FPGA_IRQ_END
-
-#define OMAP_IRQ_BIT(irq)	(1 << ((irq) % 32))
-
-#include <mach/hardware.h>
+#define OMAP_IRQ_BIT(irq)	(1 << ((irq - NR_IRQS_LEGACY) % 32))
 
 #ifdef CONFIG_FIQ
 #define FIQ_START		1024

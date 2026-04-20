@@ -1,13 +1,6 @@
-/* Copyright (c) 2013-2014, 2017,  The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  */
 
 #define pr_fmt(fmt) "rpm-smd-debug: %s(): " fmt, __func__
@@ -94,7 +87,7 @@ static ssize_t rsc_ops_write(struct file *fp, const char __user *user_buffer,
 		}
 
 		if (strlen(key_str) > 4) {
-			pr_err("Key value cannot be more than 4 charecters");
+			pr_err("Key value cannot be more than 4 charecters\n");
 			goto err_request;
 		}
 		key = string_to_uint(key_str);
@@ -116,8 +109,6 @@ static ssize_t rsc_ops_write(struct file *fp, const char __user *user_buffer,
 
 	if (msm_rpm_wait_for_ack(msm_rpm_send_request(req)))
 		pr_err("Sending the RPM message failed\n");
-	else
-		pr_info("RPM message sent succesfully\n");
 
 err_request:
 	msm_rpm_free_request(req);
@@ -135,7 +126,7 @@ static int __init rpm_smd_debugfs_init(void)
 	if (!rpm_debugfs_dir)
 		return -ENOMEM;
 
-	if (!debugfs_create_file("message", S_IWUSR, rpm_debugfs_dir, NULL,
+	if (!debugfs_create_file("message", 0200, rpm_debugfs_dir, NULL,
 								&rsc_ops))
 		return -ENOMEM;
 
@@ -150,4 +141,4 @@ static void __exit rpm_smd_debugfs_exit(void)
 module_exit(rpm_smd_debugfs_exit);
 
 MODULE_DESCRIPTION("RPM SMD Debug Driver");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");

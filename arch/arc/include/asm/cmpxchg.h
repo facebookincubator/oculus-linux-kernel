@@ -1,9 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2004, 2007-2010, 2011-2012 Synopsys, Inc. (www.synopsys.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef __ASM_ARC_CMPXCHG_H
@@ -23,7 +20,7 @@ __cmpxchg(volatile void *ptr, unsigned long expected, unsigned long new)
 
 	/*
 	 * Explicit full memory barrier needed before/after as
-	 * LLOCK/SCOND thmeselves don't provide any such semantics
+	 * LLOCK/SCOND themselves don't provide any such semantics
 	 */
 	smp_mb();
 
@@ -44,7 +41,7 @@ __cmpxchg(volatile void *ptr, unsigned long expected, unsigned long new)
 	return prev;
 }
 
-#else
+#else /* !CONFIG_ARC_HAS_LLSC */
 
 static inline unsigned long
 __cmpxchg(volatile void *ptr, unsigned long expected, unsigned long new)
@@ -64,19 +61,19 @@ __cmpxchg(volatile void *ptr, unsigned long expected, unsigned long new)
 	return prev;
 }
 
-#endif /* CONFIG_ARC_HAS_LLSC */
+#endif
 
-#define cmpxchg(ptr, o, n) ((typeof(*(ptr)))__cmpxchg((ptr), \
-				(unsigned long)(o), (unsigned long)(n)))
+#define cmpxchg(ptr, o, n) ({				\
+	(typeof(*(ptr)))__cmpxchg((ptr),		\
+				  (unsigned long)(o),	\
+				  (unsigned long)(n));	\
+})
 
 /*
- * Since not supported natively, ARC cmpxchg() uses atomic_ops_lock (UP/SMP)
- * just to gaurantee semantics.
- * atomic_cmpxchg() needs to use the same locks as it's other atomic siblings
- * which also happens to be atomic_ops_lock.
- *
- * Thus despite semantically being different, implementation of atomic_cmpxchg()
- * is same as cmpxchg().
+ * atomic_cmpxchg is same as cmpxchg
+ *   LLSC: only different in data-type, semantics are exactly same
+ *  !LLSC: cmpxchg() has to use an external lock atomic_ops_lock to guarantee
+ *         semantics, and this lock also happens to be used by atomic_*()
  */
 #define atomic_cmpxchg(v, o, n) ((int)cmpxchg(&((v)->counter), (o), (n)))
 
@@ -110,18 +107,18 @@ static inline unsigned long __xchg(unsigned long val, volatile void *ptr,
 						 sizeof(*(ptr))))
 
 /*
- * On ARC700, EX insn is inherently atomic, so by default "vanilla" xchg() need
- * not require any locking. However there's a quirk.
- * ARC lacks native CMPXCHG, thus emulated (see above), using external locking -
- * incidently it "reuses" the same atomic_ops_lock used by atomic APIs.
- * Now, llist code uses cmpxchg() and xchg() on same data, so xchg() needs to
- * abide by same serializing rules, thus ends up using atomic_ops_lock as well.
+ * xchg() maps directly to ARC EX instruction which guarantees atomicity.
+ * However in !LLSC config, it also needs to be use @atomic_ops_lock spinlock
+ * due to a subtle reason:
+ *  - For !LLSC, cmpxchg() needs to use that lock (see above) and there is lot
+ *    of  kernel code which calls xchg()/cmpxchg() on same data (see llist.h)
+ *    Hence xchg() needs to follow same locking rules.
  *
- * This however is only relevant if SMP and/or ARC lacks LLSC
- *   if (UP or LLSC)
- *      xchg doesn't need serialization
- *   else <==> !(UP or LLSC) <==> (!UP and !LLSC) <==> (SMP and !LLSC)
- *      xchg needs serialization
+ * Technically the lock is also needed for UP (boils down to irq save/restore)
+ * but we can cheat a bit since cmpxchg() atomic_ops_lock() would cause irqs to
+ * be disabled thus can't possibly be interrpted/preempted/clobbered by xchg()
+ * Other way around, xchg is one instruction anyways, so can't be interrupted
+ * as such
  */
 
 #if !defined(CONFIG_ARC_HAS_LLSC) && defined(CONFIG_SMP)
@@ -149,7 +146,7 @@ static inline unsigned long __xchg(unsigned long val, volatile void *ptr,
  * Since xchg() doesn't always do that, it would seem that following defintion
  * is incorrect. But here's the rationale:
  *   SMP : Even xchg() takes the atomic_ops_lock, so OK.
- *   LLSC: atomic_ops_lock are not relevent at all (even if SMP, since LLSC
+ *   LLSC: atomic_ops_lock are not relevant at all (even if SMP, since LLSC
  *         is natively "SMP safe", no serialization required).
  *   UP  : other atomics disable IRQ, so no way a difft ctxt atomic_xchg()
  *         could clobber them. atomic_xchg() itself would be 1 insn, so it

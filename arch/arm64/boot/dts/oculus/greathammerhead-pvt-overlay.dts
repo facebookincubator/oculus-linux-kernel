@@ -1,0 +1,8 @@
+#include "greathammerhead.dtsi"
+
+/ {
+	model = "Greathammerhead PVT";
+	compatible = "meta,hammerhead", "meta,greathammerhead", "meta,greathammerhead-pvt";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <34 0x64>;
+};

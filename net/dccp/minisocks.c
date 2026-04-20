@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  net/dccp/minisocks.c
  *
  *  An implementation of the DCCP protocol
  *  Arnaldo Carvalho de Melo <acme@conectiva.com.br>
- *
- *	This program is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License
- *	as published by the Free Software Foundation; either version
- *	2 of the License, or (at your option) any later version.
  */
 
 #include <linux/dccp.h>
@@ -48,19 +44,25 @@ void dccp_time_wait(struct sock *sk, int state, int timeo)
 			tw->tw_ipv6only = sk->sk_ipv6only;
 		}
 #endif
-		/* Linkage updates. */
-		__inet_twsk_hashdance(tw, sk, &dccp_hashinfo);
 
 		/* Get the TIME_WAIT timeout firing. */
 		if (timeo < rto)
 			timeo = rto;
 
-		tw->tw_timeout = DCCP_TIMEWAIT_LEN;
 		if (state == DCCP_TIME_WAIT)
 			timeo = DCCP_TIMEWAIT_LEN;
 
+		/* tw_timer is pinned, so we need to make sure BH are disabled
+		 * in following section, otherwise timer handler could run before
+		 * we complete the initialization.
+		 */
+		local_bh_disable();
 		inet_twsk_schedule(tw, timeo);
-		inet_twsk_put(tw);
+		/* Linkage updates.
+		 * Note that access to tw after this point is illegal.
+		 */
+		inet_twsk_hashdance(tw, sk, &dccp_hashinfo);
+		local_bh_enable();
 	} else {
 		/* Sorry, if we're out of memory, just CLOSE this
 		 * socket up.  We've got bigger problems than
@@ -72,7 +74,7 @@ void dccp_time_wait(struct sock *sk, int state, int timeo)
 	dccp_done(sk);
 }
 
-struct sock *dccp_create_openreq_child(struct sock *sk,
+struct sock *dccp_create_openreq_child(const struct sock *sk,
 				       const struct request_sock *req,
 				       const struct sk_buff *skb)
 {
@@ -92,6 +94,8 @@ struct sock *dccp_create_openreq_child(struct sock *sk,
 		newdp->dccps_role	    = DCCP_ROLE_SERVER;
 		newdp->dccps_hc_rx_ackvec   = NULL;
 		newdp->dccps_service_list   = NULL;
+		newdp->dccps_hc_rx_ccid     = NULL;
+		newdp->dccps_hc_tx_ccid     = NULL;
 		newdp->dccps_service	    = dreq->dreq_service;
 		newdp->dccps_timestamp_echo = dreq->dreq_timestamp_echo;
 		newdp->dccps_timestamp_time = dreq->dreq_timestamp_time;
@@ -119,15 +123,12 @@ struct sock *dccp_create_openreq_child(struct sock *sk,
 		 * Activate features: initialise CCIDs, sequence windows etc.
 		 */
 		if (dccp_feat_activate_values(newsk, &dreq->dreq_featneg)) {
-			/* It is still raw copy of parent, so invalidate
-			 * destructor and make plain sk_free() */
-			newsk->sk_destruct = NULL;
-			sk_free(newsk);
+			sk_free_unlock_clone(newsk);
 			return NULL;
 		}
 		dccp_init_xmit_timers(newsk);
 
-		DCCP_INC_STATS_BH(DCCP_MIB_PASSIVEOPENS);
+		__DCCP_INC_STATS(DCCP_MIB_PASSIVEOPENS);
 	}
 	return newsk;
 }
@@ -139,11 +140,18 @@ EXPORT_SYMBOL_GPL(dccp_create_openreq_child);
  * as an request_sock.
  */
 struct sock *dccp_check_req(struct sock *sk, struct sk_buff *skb,
-			    struct request_sock *req,
-			    struct request_sock **prev)
+			    struct request_sock *req)
 {
 	struct sock *child = NULL;
 	struct dccp_request_sock *dreq = dccp_rsk(req);
+	bool own_req;
+
+	/* TCP/DCCP listeners became lockless.
+	 * DCCP stores complex state in its request_sock, so we need
+	 * a protection for them, now this code runs without being protected
+	 * by the parent (listener) lock.
+	 */
+	spin_lock_bh(&dreq->dreq_lock);
 
 	/* Check for retransmitted REQUEST */
 	if (dccp_hdr(skb)->dccph_type == DCCP_PKT_REQUEST) {
@@ -159,7 +167,7 @@ struct sock *dccp_check_req(struct sock *sk, struct sk_buff *skb,
 			inet_rtx_syn_ack(sk, req);
 		}
 		/* Network Duplicate, discard packet */
-		return NULL;
+		goto out;
 	}
 
 	DCCP_SKB_CB(skb)->dccpd_reset_code = DCCP_RESET_CODE_PACKET_ERROR;
@@ -183,24 +191,22 @@ struct sock *dccp_check_req(struct sock *sk, struct sk_buff *skb,
 	if (dccp_parse_options(sk, dreq, skb))
 		 goto drop;
 
-	child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL);
-	if (child == NULL)
-		goto listen_overflow;
+	child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL,
+							 req, &own_req);
+	if (child) {
+		child = inet_csk_complete_hashdance(sk, child, req, own_req);
+		goto out;
+	}
 
-	inet_csk_reqsk_queue_unlink(sk, req, prev);
-	inet_csk_reqsk_queue_removed(sk, req);
-	inet_csk_reqsk_queue_add(sk, req, child);
-out:
-	return child;
-listen_overflow:
-	dccp_pr_debug("listen_overflow!\n");
 	DCCP_SKB_CB(skb)->dccpd_reset_code = DCCP_RESET_CODE_TOO_BUSY;
 drop:
 	if (dccp_hdr(skb)->dccph_type != DCCP_PKT_RESET)
 		req->rsk_ops->send_reset(sk, skb);
 
-	inet_csk_reqsk_queue_drop(sk, req, prev);
-	goto out;
+	inet_csk_reqsk_queue_drop(sk, req);
+out:
+	spin_unlock_bh(&dreq->dreq_lock);
+	return child;
 }
 
 EXPORT_SYMBOL_GPL(dccp_check_req);
@@ -212,6 +218,7 @@ EXPORT_SYMBOL_GPL(dccp_check_req);
  */
 int dccp_child_process(struct sock *parent, struct sock *child,
 		       struct sk_buff *skb)
+	__releases(child)
 {
 	int ret = 0;
 	const int state = child->sk_state;
@@ -238,7 +245,7 @@ int dccp_child_process(struct sock *parent, struct sock *child,
 
 EXPORT_SYMBOL_GPL(dccp_child_process);
 
-void dccp_reqsk_send_ack(struct sock *sk, struct sk_buff *skb,
+void dccp_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 			 struct request_sock *rsk)
 {
 	DCCP_BUG("DCCP-ACK packets are never sent in LISTEN/RESPOND state");
@@ -251,6 +258,7 @@ int dccp_reqsk_init(struct request_sock *req,
 {
 	struct dccp_request_sock *dreq = dccp_rsk(req);
 
+	spin_lock_init(&dreq->dreq_lock);
 	inet_rsk(req)->ir_rmt_port = dccp_hdr(skb)->dccph_sport;
 	inet_rsk(req)->ir_num	   = ntohs(dccp_hdr(skb)->dccph_dport);
 	inet_rsk(req)->acked	   = 0;

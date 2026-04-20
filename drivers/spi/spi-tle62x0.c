@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Support Infineon TLE62x0 driver chips
  *
  * Copyright (c) 2007 Simtec Electronics
  *	Ben Dooks, <ben@simtec.co.uk>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/device.h>
@@ -307,7 +304,6 @@ static int tle62x0_remove(struct spi_device *spi)
 static struct spi_driver tle62x0_driver = {
 	.driver = {
 		.name	= "tle62x0",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= tle62x0_probe,
 	.remove		= tle62x0_remove,

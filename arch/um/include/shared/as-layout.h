@@ -1,6 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2007 Jeff Dike (jdike@{addtoit,linux.intel}.com)
- * Licensed under the GPL
  */
 
 #ifndef __START_H__
@@ -56,6 +56,7 @@ extern unsigned long brk_start;
 extern unsigned long host_task_size;
 
 extern int linux_main(int argc, char **argv);
+extern void uml_finishsetup(void);
 
 struct siginfo;
 extern void (*sig_info[])(int, struct siginfo *si, struct uml_pt_regs *);

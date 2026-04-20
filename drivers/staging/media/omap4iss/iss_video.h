@@ -1,14 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * TI OMAP4 ISS V4L2 Driver - Generic video node
  *
  * Copyright (C) 2012 Texas Instruments, Inc.
  *
  * Author: Sergio Aguirre <sergio.a.aguirre@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #ifndef OMAP4_ISS_VIDEO_H
@@ -18,7 +14,7 @@
 #include <media/media-entity.h>
 #include <media/v4l2-dev.h>
 #include <media/v4l2-fh.h>
-#include <media/videobuf2-core.h>
+#include <media/videobuf2-v4l2.h>
 #include <media/videobuf2-dma-contig.h>
 
 #define ISS_VIDEO_DRIVER_NAME		"issvideo"
@@ -40,16 +36,14 @@ struct v4l2_pix_format;
  *	shifted to be 8 bits per pixel. =0 if format is not shiftable.
  * @pixelformat: V4L2 pixel format FCC identifier
  * @bpp: Bits per pixel
- * @description: Human-readable format description
  */
 struct iss_format_info {
-	enum v4l2_mbus_pixelcode code;
-	enum v4l2_mbus_pixelcode truncated;
-	enum v4l2_mbus_pixelcode uncompressed;
-	enum v4l2_mbus_pixelcode flavor;
+	u32 code;
+	u32 truncated;
+	u32 uncompressed;
+	u32 flavor;
 	u32 pixelformat;
 	unsigned int bpp;
-	const char *description;
 };
 
 enum iss_pipeline_stream_state {
@@ -77,7 +71,7 @@ enum iss_pipeline_state {
 
 /*
  * struct iss_pipeline - An OMAP4 ISS hardware pipeline
- * @entities: Bitmask of entities in the pipeline (indexed by entity ID)
+ * @ent_enum: Entities in the pipeline
  * @error: A hardware error occurred during capture
  */
 struct iss_pipeline {
@@ -87,7 +81,7 @@ struct iss_pipeline {
 	enum iss_pipeline_stream_state stream_state;
 	struct iss_video *input;
 	struct iss_video *output;
-	unsigned int entities;
+	struct media_entity_enum ent_enum;
 	atomic_t frame_number;
 	bool do_propagation; /* of frame number */
 	bool error;
@@ -117,12 +111,12 @@ static inline int iss_pipeline_ready(struct iss_pipeline *pipe)
  */
 struct iss_buffer {
 	/* common v4l buffer stuff -- must be first */
-	struct vb2_buffer	vb;
+	struct vb2_v4l2_buffer	vb;
 	struct list_head	list;
 	dma_addr_t iss_addr;
 };
 
-#define to_iss_buffer(buf)	container_of(buf, struct iss_buffer, buffer)
+#define to_iss_buffer(buf)	container_of(buf, struct iss_buffer, vb)
 
 enum iss_video_dmaqueue_flags {
 	/* Set if DMA queue becomes empty when ISS_PIPELINE_STREAM_CONTINUOUS */
@@ -170,7 +164,6 @@ struct iss_video {
 	spinlock_t qlock;		/* protects dmaqueue and error */
 	struct list_head dmaqueue;
 	enum iss_video_dmaqueue_flags dmaqueue_flags;
-	struct vb2_alloc_ctx *alloc_ctx;
 
 	const struct iss_video_operations *ops;
 };
@@ -199,6 +192,6 @@ void omap4iss_video_cancel_stream(struct iss_video *video);
 struct media_pad *omap4iss_video_remote_pad(struct iss_video *video);
 
 const struct iss_format_info *
-omap4iss_video_format_info(enum v4l2_mbus_pixelcode code);
+omap4iss_video_format_info(u32 code);
 
 #endif /* OMAP4_ISS_VIDEO_H */

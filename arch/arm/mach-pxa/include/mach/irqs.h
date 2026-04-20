@@ -1,25 +1,18 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  arch/arm/mach-pxa/include/mach/irqs.h
  *
  *  Author:	Nicolas Pitre
  *  Created:	Jun 15, 2001
  *  Copyright:	MontaVista Software Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #ifndef __ASM_MACH_IRQS_H
 #define __ASM_MACH_IRQS_H
 
-#ifdef CONFIG_PXA_HAVE_ISA_IRQS
-#define PXA_ISA_IRQ(x)	(x)
-#define PXA_ISA_IRQ_NUM	(16)
-#else
-#define PXA_ISA_IRQ_NUM	(0)
-#endif
+#include <asm/irq.h>
 
-#define PXA_IRQ(x)	(PXA_ISA_IRQ_NUM + (x))
+#define PXA_ISA_IRQ(x)	(x)
+#define PXA_IRQ(x)	(NR_IRQS_LEGACY + (x))
 
 #define IRQ_SSP3	PXA_IRQ(0)	/* SSP3 service request */
 #define IRQ_MSL		PXA_IRQ(1)	/* MSL Interface interrupt */

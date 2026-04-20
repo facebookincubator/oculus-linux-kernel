@@ -1,30 +1,5 @@
-/*******************************************************************************
-
-  Intel 10 Gigabit PCI Express Linux driver
-  Copyright(c) 1999 - 2014 Intel Corporation.
-
-  This program is free software; you can redistribute it and/or modify it
-  under the terms and conditions of the GNU General Public License,
-  version 2, as published by the Free Software Foundation.
-
-  This program is distributed in the hope it will be useful, but WITHOUT
-  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-  more details.
-
-  You should have received a copy of the GNU General Public License along with
-  this program; if not, write to the Free Software Foundation, Inc.,
-  51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
-
-  The full GNU General Public License is included in this distribution in
-  the file called "COPYING".
-
-  Contact Information:
-  Linux NICS <linux.nics@intel.com>
-  e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
-  Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
-
-*******************************************************************************/
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright(c) 1999 - 2018 Intel Corporation. */
 
 #include <linux/types.h>
 #include <linux/module.h>
@@ -36,6 +11,7 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/ipv6.h>
+#include <linux/if_bridge.h>
 #ifdef NETIF_F_HW_VLAN_CTAG_TX
 #include <linux/if_vlan.h>
 #endif
@@ -45,87 +21,143 @@
 #include "ixgbe_sriov.h"
 
 #ifdef CONFIG_PCI_IOV
-static int __ixgbe_enable_sriov(struct ixgbe_adapter *adapter)
+static inline void ixgbe_alloc_vf_macvlans(struct ixgbe_adapter *adapter,
+					   unsigned int num_vfs)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
-	int num_vf_macvlans, i;
 	struct vf_macvlans *mv_list;
+	int num_vf_macvlans, i;
 
-	adapter->flags |= IXGBE_FLAG_SRIOV_ENABLED;
-	e_info(probe, "SR-IOV enabled with %d VFs\n", adapter->num_vfs);
-
-	/* Enable VMDq flag so device will be set in VM mode */
-	adapter->flags |= IXGBE_FLAG_VMDQ_ENABLED;
-	if (!adapter->ring_feature[RING_F_VMDQ].limit)
-		adapter->ring_feature[RING_F_VMDQ].limit = 1;
-	adapter->ring_feature[RING_F_VMDQ].offset = adapter->num_vfs;
+	/* Initialize list of VF macvlans */
+	INIT_LIST_HEAD(&adapter->vf_mvs.l);
 
 	num_vf_macvlans = hw->mac.num_rar_entries -
-	(IXGBE_MAX_PF_MACVLANS + 1 + adapter->num_vfs);
+			  (IXGBE_MAX_PF_MACVLANS + 1 + num_vfs);
+	if (!num_vf_macvlans)
+		return;
 
-	adapter->mv_list = mv_list = kcalloc(num_vf_macvlans,
-					     sizeof(struct vf_macvlans),
-					     GFP_KERNEL);
+	mv_list = kcalloc(num_vf_macvlans, sizeof(struct vf_macvlans),
+			  GFP_KERNEL);
 	if (mv_list) {
-		/* Initialize list of VF macvlans */
-		INIT_LIST_HEAD(&adapter->vf_mvs.l);
 		for (i = 0; i < num_vf_macvlans; i++) {
-			mv_list->vf = -1;
-			mv_list->free = true;
-			list_add(&mv_list->l, &adapter->vf_mvs.l);
-			mv_list++;
+			mv_list[i].vf = -1;
+			mv_list[i].free = true;
+			list_add(&mv_list[i].l, &adapter->vf_mvs.l);
 		}
+		adapter->mv_list = mv_list;
 	}
+}
+
+static int __ixgbe_enable_sriov(struct ixgbe_adapter *adapter,
+				unsigned int num_vfs)
+{
+	struct ixgbe_hw *hw = &adapter->hw;
+	int i;
+
+	if (adapter->xdp_prog) {
+		e_warn(probe, "SRIOV is not supported with XDP\n");
+		return -EINVAL;
+	}
+
+	/* Enable VMDq flag so device will be set in VM mode */
+	adapter->flags |= IXGBE_FLAG_SRIOV_ENABLED |
+			  IXGBE_FLAG_VMDQ_ENABLED;
+
+	/* Allocate memory for per VF control structures */
+	adapter->vfinfo = kcalloc(num_vfs, sizeof(struct vf_data_storage),
+				  GFP_KERNEL);
+	if (!adapter->vfinfo)
+		return -ENOMEM;
+
+	adapter->num_vfs = num_vfs;
+
+	ixgbe_alloc_vf_macvlans(adapter, num_vfs);
+	adapter->ring_feature[RING_F_VMDQ].offset = num_vfs;
 
 	/* Initialize default switching mode VEB */
 	IXGBE_WRITE_REG(hw, IXGBE_PFDTXGSWC, IXGBE_PFDTXGSWC_VT_LBEN);
-	adapter->flags2 |= IXGBE_FLAG2_BRIDGE_MODE_VEB;
+	adapter->bridge_mode = BRIDGE_MODE_VEB;
 
-	/* If call to enable VFs succeeded then allocate memory
-	 * for per VF control structures.
-	 */
-	adapter->vfinfo =
-		kcalloc(adapter->num_vfs,
-			sizeof(struct vf_data_storage), GFP_KERNEL);
-	if (adapter->vfinfo) {
-		/* limit trafffic classes based on VFs enabled */
-		if ((adapter->hw.mac.type == ixgbe_mac_82599EB) &&
-		    (adapter->num_vfs < 16)) {
-			adapter->dcb_cfg.num_tcs.pg_tcs = MAX_TRAFFIC_CLASS;
-			adapter->dcb_cfg.num_tcs.pfc_tcs = MAX_TRAFFIC_CLASS;
-		} else if (adapter->num_vfs < 32) {
-			adapter->dcb_cfg.num_tcs.pg_tcs = 4;
-			adapter->dcb_cfg.num_tcs.pfc_tcs = 4;
-		} else {
-			adapter->dcb_cfg.num_tcs.pg_tcs = 1;
-			adapter->dcb_cfg.num_tcs.pfc_tcs = 1;
-		}
-
-		/* We do not support RSS w/ SR-IOV */
-		adapter->ring_feature[RING_F_RSS].limit = 1;
-
-		/* Disable RSC when in SR-IOV mode */
-		adapter->flags2 &= ~(IXGBE_FLAG2_RSC_CAPABLE |
-				     IXGBE_FLAG2_RSC_ENABLED);
-
-		/* enable spoof checking for all VFs */
-		for (i = 0; i < adapter->num_vfs; i++)
-			adapter->vfinfo[i].spoofchk_enabled = true;
-		return 0;
+	/* limit trafffic classes based on VFs enabled */
+	if ((adapter->hw.mac.type == ixgbe_mac_82599EB) && (num_vfs < 16)) {
+		adapter->dcb_cfg.num_tcs.pg_tcs = MAX_TRAFFIC_CLASS;
+		adapter->dcb_cfg.num_tcs.pfc_tcs = MAX_TRAFFIC_CLASS;
+	} else if (num_vfs < 32) {
+		adapter->dcb_cfg.num_tcs.pg_tcs = 4;
+		adapter->dcb_cfg.num_tcs.pfc_tcs = 4;
+	} else {
+		adapter->dcb_cfg.num_tcs.pg_tcs = 1;
+		adapter->dcb_cfg.num_tcs.pfc_tcs = 1;
 	}
 
-	return -ENOMEM;
+	/* Disable RSC when in SR-IOV mode */
+	adapter->flags2 &= ~(IXGBE_FLAG2_RSC_CAPABLE |
+			     IXGBE_FLAG2_RSC_ENABLED);
+
+	for (i = 0; i < num_vfs; i++) {
+		/* enable spoof checking for all VFs */
+		adapter->vfinfo[i].spoofchk_enabled = true;
+
+		/* We support VF RSS querying only for 82599 and x540
+		 * devices at the moment. These devices share RSS
+		 * indirection table and RSS hash key with PF therefore
+		 * we want to disable the querying by default.
+		 */
+		adapter->vfinfo[i].rss_query_enabled = false;
+
+		/* Untrust all VFs */
+		adapter->vfinfo[i].trusted = false;
+
+		/* set the default xcast mode */
+		adapter->vfinfo[i].xcast_mode = IXGBEVF_XCAST_MODE_NONE;
+	}
+
+	e_info(probe, "SR-IOV enabled with %d VFs\n", num_vfs);
+	return 0;
+}
+
+/**
+ * ixgbe_get_vfs - Find and take references to all vf devices
+ * @adapter: Pointer to adapter struct
+ */
+static void ixgbe_get_vfs(struct ixgbe_adapter *adapter)
+{
+	struct pci_dev *pdev = adapter->pdev;
+	u16 vendor = pdev->vendor;
+	struct pci_dev *vfdev;
+	int vf = 0;
+	u16 vf_id;
+	int pos;
+
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_SRIOV);
+	if (!pos)
+		return;
+	pci_read_config_word(pdev, pos + PCI_SRIOV_VF_DID, &vf_id);
+
+	vfdev = pci_get_device(vendor, vf_id, NULL);
+	for (; vfdev; vfdev = pci_get_device(vendor, vf_id, vfdev)) {
+		if (!vfdev->is_virtfn)
+			continue;
+		if (vfdev->physfn != pdev)
+			continue;
+		if (vf >= adapter->num_vfs)
+			continue;
+		pci_dev_get(vfdev);
+		adapter->vfinfo[vf].vfdev = vfdev;
+		++vf;
+	}
 }
 
 /* Note this function is called when the user wants to enable SR-IOV
  * VFs using the now deprecated module parameter
  */
-void ixgbe_enable_sriov(struct ixgbe_adapter *adapter)
+void ixgbe_enable_sriov(struct ixgbe_adapter *adapter, unsigned int max_vfs)
 {
 	int pre_existing_vfs = 0;
+	unsigned int num_vfs;
 
 	pre_existing_vfs = pci_num_vf(adapter->pdev);
-	if (!pre_existing_vfs && !adapter->num_vfs)
+	if (!pre_existing_vfs && !max_vfs)
 		return;
 
 	/* If there are pre-existing VFs then we have to force
@@ -135,7 +167,7 @@ void ixgbe_enable_sriov(struct ixgbe_adapter *adapter)
 	 * have been created via the new PCI SR-IOV sysfs interface.
 	 */
 	if (pre_existing_vfs) {
-		adapter->num_vfs = pre_existing_vfs;
+		num_vfs = pre_existing_vfs;
 		dev_warn(&adapter->pdev->dev,
 			 "Virtual Functions already enabled for this device - Please reload all VF drivers to avoid spoofed packet errors\n");
 	} else {
@@ -144,21 +176,22 @@ void ixgbe_enable_sriov(struct ixgbe_adapter *adapter)
 		 * The 82599 supports up to 64 VFs per physical function
 		 * but this implementation limits allocation to 63 so that
 		 * basic networking resources are still available to the
-		 * physical function.  If the user requests greater thn
+		 * physical function.  If the user requests greater than
 		 * 63 VFs then it is an error - reset to default of zero.
 		 */
-		adapter->num_vfs = min_t(unsigned int, adapter->num_vfs, IXGBE_MAX_VFS_DRV_LIMIT);
+		num_vfs = min_t(unsigned int, max_vfs, IXGBE_MAX_VFS_DRV_LIMIT);
 
-		err = pci_enable_sriov(adapter->pdev, adapter->num_vfs);
+		err = pci_enable_sriov(adapter->pdev, num_vfs);
 		if (err) {
 			e_err(probe, "Failed to enable PCI sriov: %d\n", err);
-			adapter->num_vfs = 0;
 			return;
 		}
 	}
 
-	if (!__ixgbe_enable_sriov(adapter))
+	if (!__ixgbe_enable_sriov(adapter, num_vfs)) {
+		ixgbe_get_vfs(adapter);
 		return;
+	}
 
 	/* If we have gotten to this point then there is no memory available
 	 * to manage the VF devices - print message and bail.
@@ -171,13 +204,24 @@ void ixgbe_enable_sriov(struct ixgbe_adapter *adapter)
 #endif /* #ifdef CONFIG_PCI_IOV */
 int ixgbe_disable_sriov(struct ixgbe_adapter *adapter)
 {
-	struct ixgbe_hw *hw = &adapter->hw;
-	u32 gpie;
-	u32 vmdctl;
+	unsigned int num_vfs = adapter->num_vfs, vf;
+	unsigned long flags;
 	int rss;
 
+	spin_lock_irqsave(&adapter->vfs_lock, flags);
 	/* set num VFs to 0 to prevent access to vfinfo */
 	adapter->num_vfs = 0;
+	spin_unlock_irqrestore(&adapter->vfs_lock, flags);
+
+	/* put the reference to all of the vf devices */
+	for (vf = 0; vf < num_vfs; ++vf) {
+		struct pci_dev *vfdev = adapter->vfinfo[vf].vfdev;
+
+		if (!vfdev)
+			continue;
+		adapter->vfinfo[vf].vfdev = NULL;
+		pci_dev_put(vfdev);
+	}
 
 	/* free VF control structures */
 	kfree(adapter->vfinfo);
@@ -205,23 +249,12 @@ int ixgbe_disable_sriov(struct ixgbe_adapter *adapter)
 	pci_disable_sriov(adapter->pdev);
 #endif
 
-	/* turn off device IOV mode */
-	IXGBE_WRITE_REG(hw, IXGBE_GCR_EXT, 0);
-	gpie = IXGBE_READ_REG(hw, IXGBE_GPIE);
-	gpie &= ~IXGBE_GPIE_VTMODE_MASK;
-	IXGBE_WRITE_REG(hw, IXGBE_GPIE, gpie);
-
-	/* set default pool back to 0 */
-	vmdctl = IXGBE_READ_REG(hw, IXGBE_VT_CTL);
-	vmdctl &= ~IXGBE_VT_CTL_POOL_MASK;
-	IXGBE_WRITE_REG(hw, IXGBE_VT_CTL, vmdctl);
-	IXGBE_WRITE_FLUSH(hw);
-
 	/* Disable VMDq flag so device will be set in VM mode */
-	if (adapter->ring_feature[RING_F_VMDQ].limit == 1) {
+	if (bitmap_weight(adapter->fwd_bitmask, adapter->num_rx_pools) == 1) {
 		adapter->flags &= ~IXGBE_FLAG_VMDQ_ENABLED;
 		adapter->flags &= ~IXGBE_FLAG_SRIOV_ENABLED;
-		rss = min_t(int, IXGBE_MAX_RSS_INDICES, num_online_cpus());
+		rss = min_t(int, ixgbe_max_rss_indices(adapter),
+			    num_online_cpus());
 	} else {
 		rss = min_t(int, IXGBE_MAX_L2A_QUEUES, num_online_cpus());
 	}
@@ -238,9 +271,9 @@ static int ixgbe_pci_sriov_enable(struct pci_dev *dev, int num_vfs)
 {
 #ifdef CONFIG_PCI_IOV
 	struct ixgbe_adapter *adapter = pci_get_drvdata(dev);
-	int err = 0;
-	int i;
 	int pre_existing_vfs = pci_num_vf(dev);
+	int err = 0, num_rx_pools, i, limit;
+	u8 num_tc;
 
 	if (pre_existing_vfs && pre_existing_vfs != num_vfs)
 		err = ixgbe_disable_sriov(adapter);
@@ -251,31 +284,45 @@ static int ixgbe_pci_sriov_enable(struct pci_dev *dev, int num_vfs)
 		return err;
 
 	/* While the SR-IOV capability structure reports total VFs to be 64,
-	 * we have to limit the actual number allocated based on two factors.
+	 * we limit the actual number allocated as below based on two factors.
+	 *    Num_TCs	MAX_VFs
+	 *	1	  63
+	 *	<=4	  31
+	 *	>4	  15
 	 * First, we reserve some transmit/receive resources for the PF.
 	 * Second, VMDQ also uses the same pools that SR-IOV does. We need to
 	 * account for this, so that we don't accidentally allocate more VFs
 	 * than we have available pools. The PCI bus driver already checks for
 	 * other values out of range.
 	 */
-	if ((num_vfs + adapter->num_rx_pools) > IXGBE_MAX_VF_FUNCTIONS)
+	num_tc = adapter->hw_tcs;
+	num_rx_pools = bitmap_weight(adapter->fwd_bitmask,
+				     adapter->num_rx_pools);
+	limit = (num_tc > 4) ? IXGBE_MAX_VFS_8TC :
+		(num_tc > 1) ? IXGBE_MAX_VFS_4TC : IXGBE_MAX_VFS_1TC;
+
+	if (num_vfs > (limit - num_rx_pools)) {
+		e_dev_err("Currently configured with %d TCs, and %d offloaded macvlans. Creating more than %d VFs is not allowed\n",
+			  num_tc, num_rx_pools - 1, limit - num_rx_pools);
 		return -EPERM;
+	}
 
-	adapter->num_vfs = num_vfs;
-
-	err = __ixgbe_enable_sriov(adapter);
+	err = __ixgbe_enable_sriov(adapter, num_vfs);
 	if (err)
 		return  err;
 
-	for (i = 0; i < adapter->num_vfs; i++)
+	for (i = 0; i < num_vfs; i++)
 		ixgbe_vf_configuration(dev, (i | 0x10000000));
+
+	/* reset before enabling SRIOV to avoid mailbox issues */
+	ixgbe_sriov_reinit(adapter);
 
 	err = pci_enable_sriov(dev, num_vfs);
 	if (err) {
 		e_dev_warn("Failed to enable PCI sriov: %d\n", err);
 		return err;
 	}
-	ixgbe_sriov_reinit(adapter);
+	ixgbe_get_vfs(adapter);
 
 	return num_vfs;
 #else
@@ -289,13 +336,15 @@ static int ixgbe_pci_sriov_disable(struct pci_dev *dev)
 	int err;
 #ifdef CONFIG_PCI_IOV
 	u32 current_flags = adapter->flags;
+	int prev_num_vf = pci_num_vf(dev);
 #endif
 
 	err = ixgbe_disable_sriov(adapter);
 
 	/* Only reinit if no error and state changed */
 #ifdef CONFIG_PCI_IOV
-	if (!err && current_flags != adapter->flags)
+	if (!err && (current_flags != adapter->flags ||
+		     prev_num_vf != pci_num_vf(dev)))
 		ixgbe_sriov_reinit(adapter);
 #endif
 
@@ -346,7 +395,7 @@ static int ixgbe_set_vf_multicasts(struct ixgbe_adapter *adapter,
 		vector_reg = (vfinfo->vf_mc_hashes[i] >> 5) & 0x7F;
 		vector_bit = vfinfo->vf_mc_hashes[i] & 0x1F;
 		mta_reg = IXGBE_READ_REG(hw, IXGBE_MTA(vector_reg));
-		mta_reg |= (1 << vector_bit);
+		mta_reg |= BIT(vector_bit);
 		IXGBE_WRITE_REG(hw, IXGBE_MTA(vector_reg), mta_reg);
 	}
 	vmolr |= IXGBE_VMOLR_ROMPE;
@@ -373,7 +422,7 @@ void ixgbe_restore_vf_multicasts(struct ixgbe_adapter *adapter)
 			vector_reg = (vfinfo->vf_mc_hashes[j] >> 5) & 0x7F;
 			vector_bit = vfinfo->vf_mc_hashes[j] & 0x1F;
 			mta_reg = IXGBE_READ_REG(hw, IXGBE_MTA(vector_reg));
-			mta_reg |= (1 << vector_bit);
+			mta_reg |= BIT(vector_bit);
 			IXGBE_WRITE_REG(hw, IXGBE_MTA(vector_reg), mta_reg);
 		}
 
@@ -392,18 +441,45 @@ void ixgbe_restore_vf_multicasts(struct ixgbe_adapter *adapter)
 static int ixgbe_set_vf_vlan(struct ixgbe_adapter *adapter, int add, int vid,
 			     u32 vf)
 {
-	/* VLAN 0 is a special case, don't allow it to be removed */
-	if (!vid && !add)
-		return 0;
+	struct ixgbe_hw *hw = &adapter->hw;
+	int err;
 
-	return adapter->hw.mac.ops.set_vfta(&adapter->hw, vid, vf, (bool)add);
+	/* If VLAN overlaps with one the PF is currently monitoring make
+	 * sure that we are able to allocate a VLVF entry.  This may be
+	 * redundant but it guarantees PF will maintain visibility to
+	 * the VLAN.
+	 */
+	if (add && test_bit(vid, adapter->active_vlans)) {
+		err = hw->mac.ops.set_vfta(hw, vid, VMDQ_P(0), true, false);
+		if (err)
+			return err;
+	}
+
+	err = hw->mac.ops.set_vfta(hw, vid, vf, !!add, false);
+
+	if (add && !err)
+		return err;
+
+	/* If we failed to add the VF VLAN or we are removing the VF VLAN
+	 * we may need to drop the PF pool bit in order to allow us to free
+	 * up the VLVF resources.
+	 */
+	if (test_bit(vid, adapter->active_vlans) ||
+	    (adapter->flags2 & IXGBE_FLAG2_VLAN_PROMISC))
+		ixgbe_update_pf_promisc_vlvf(adapter, vid);
+
+	return err;
 }
 
-static s32 ixgbe_set_vf_lpe(struct ixgbe_adapter *adapter, u32 *msgbuf, u32 vf)
+static int ixgbe_set_vf_lpe(struct ixgbe_adapter *adapter, u32 max_frame, u32 vf)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
-	int max_frame = msgbuf[1];
 	u32 max_frs;
+
+	if (max_frame < ETH_MIN_MTU || max_frame > IXGBE_MAX_JUMBO_FRAME_SIZE) {
+		e_err(drv, "VF max_frame %d out of range\n", max_frame);
+		return -EINVAL;
+	}
 
 	/*
 	 * For 82599EB we have to keep all PFs and VFs operating with
@@ -426,16 +502,18 @@ static s32 ixgbe_set_vf_lpe(struct ixgbe_adapter *adapter, u32 *msgbuf, u32 vf)
 #endif /* CONFIG_FCOE */
 		switch (adapter->vfinfo[vf].vf_api) {
 		case ixgbe_mbox_api_11:
-			/*
-			 * Version 1.1 supports jumbo frames on VFs if PF has
+		case ixgbe_mbox_api_12:
+		case ixgbe_mbox_api_13:
+		case ixgbe_mbox_api_14:
+			/* Version 1.1 supports jumbo frames on VFs if PF has
 			 * jumbo frames enabled which means legacy VFs are
 			 * disabled
 			 */
 			if (pf_max_frame > ETH_FRAME_LEN)
 				break;
+			fallthrough;
 		default:
-			/*
-			 * If the PF or VF are running w/ jumbo frames enabled
+			/* If the PF or VF are running w/ jumbo frames enabled
 			 * we need to shut down the VF Rx path as we cannot
 			 * support jumbo frames on legacy VFs
 			 */
@@ -452,21 +530,15 @@ static s32 ixgbe_set_vf_lpe(struct ixgbe_adapter *adapter, u32 *msgbuf, u32 vf)
 		/* enable or disable receive depending on error */
 		vfre = IXGBE_READ_REG(hw, IXGBE_VFRE(reg_offset));
 		if (err)
-			vfre &= ~(1 << vf_shift);
+			vfre &= ~BIT(vf_shift);
 		else
-			vfre |= 1 << vf_shift;
+			vfre |= BIT(vf_shift);
 		IXGBE_WRITE_REG(hw, IXGBE_VFRE(reg_offset), vfre);
 
 		if (err) {
 			e_err(drv, "VF max_frame %d out of range\n", max_frame);
 			return err;
 		}
-	}
-
-	/* MTU < 68 is an error and causes problems on some kernels */
-	if (max_frame > IXGBE_MAX_JUMBO_FRAME_SIZE) {
-		e_err(drv, "VF max_frame %d out of range\n", max_frame);
-		return -EINVAL;
 	}
 
 	/* pull current max frame size from hardware */
@@ -501,60 +573,74 @@ static void ixgbe_clear_vmvir(struct ixgbe_adapter *adapter, u32 vf)
 
 	IXGBE_WRITE_REG(hw, IXGBE_VMVIR(vf), 0);
 }
-static inline void ixgbe_vf_reset_event(struct ixgbe_adapter *adapter, u32 vf)
+
+static void ixgbe_clear_vf_vlans(struct ixgbe_adapter *adapter, u32 vf)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
-	struct vf_data_storage *vfinfo = &adapter->vfinfo[vf];
-	u8 num_tcs = netdev_get_num_tc(adapter->netdev);
+	u32 vlvfb_mask, pool_mask, i;
 
-	/* add PF assigned VLAN or VLAN 0 */
-	ixgbe_set_vf_vlan(adapter, true, vfinfo->pf_vlan, vf);
+	/* create mask for VF and other pools */
+	pool_mask = ~BIT(VMDQ_P(0) % 32);
+	vlvfb_mask = BIT(vf % 32);
 
-	/* reset offloads to defaults */
-	ixgbe_set_vmolr(hw, vf, !vfinfo->pf_vlan);
+	/* post increment loop, covers VLVF_ENTRIES - 1 to 0 */
+	for (i = IXGBE_VLVF_ENTRIES; i--;) {
+		u32 bits[2], vlvfb, vid, vfta, vlvf;
+		u32 word = i * 2 + vf / 32;
+		u32 mask;
 
-	/* set outgoing tags for VFs */
-	if (!vfinfo->pf_vlan && !vfinfo->pf_qos && !num_tcs) {
-		ixgbe_clear_vmvir(adapter, vf);
-	} else {
-		if (vfinfo->pf_qos || !num_tcs)
-			ixgbe_set_vmvir(adapter, vfinfo->pf_vlan,
-					vfinfo->pf_qos, vf);
-		else
-			ixgbe_set_vmvir(adapter, vfinfo->pf_vlan,
-					adapter->default_up, vf);
+		vlvfb = IXGBE_READ_REG(hw, IXGBE_VLVFB(word));
 
-		if (vfinfo->spoofchk_enabled)
-			hw->mac.ops.set_vlan_anti_spoofing(hw, true, vf);
+		/* if our bit isn't set we can skip it */
+		if (!(vlvfb & vlvfb_mask))
+			continue;
+
+		/* clear our bit from vlvfb */
+		vlvfb ^= vlvfb_mask;
+
+		/* create 64b mask to chedk to see if we should clear VLVF */
+		bits[word % 2] = vlvfb;
+		bits[~word % 2] = IXGBE_READ_REG(hw, IXGBE_VLVFB(word ^ 1));
+
+		/* if other pools are present, just remove ourselves */
+		if (bits[(VMDQ_P(0) / 32) ^ 1] ||
+		    (bits[VMDQ_P(0) / 32] & pool_mask))
+			goto update_vlvfb;
+
+		/* if PF is present, leave VFTA */
+		if (bits[0] || bits[1])
+			goto update_vlvf;
+
+		/* if we cannot determine VLAN just remove ourselves */
+		vlvf = IXGBE_READ_REG(hw, IXGBE_VLVF(i));
+		if (!vlvf)
+			goto update_vlvfb;
+
+		vid = vlvf & VLAN_VID_MASK;
+		mask = BIT(vid % 32);
+
+		/* clear bit from VFTA */
+		vfta = IXGBE_READ_REG(hw, IXGBE_VFTA(vid / 32));
+		if (vfta & mask)
+			IXGBE_WRITE_REG(hw, IXGBE_VFTA(vid / 32), vfta ^ mask);
+update_vlvf:
+		/* clear POOL selection enable */
+		IXGBE_WRITE_REG(hw, IXGBE_VLVF(i), 0);
+
+		if (!(adapter->flags2 & IXGBE_FLAG2_VLAN_PROMISC))
+			vlvfb = 0;
+update_vlvfb:
+		/* clear pool bits */
+		IXGBE_WRITE_REG(hw, IXGBE_VLVFB(word), vlvfb);
 	}
-
-	/* reset multicast table array for vf */
-	adapter->vfinfo[vf].num_vf_mc_hashes = 0;
-
-	/* Flush and reset the mta with the new values */
-	ixgbe_set_rx_mode(adapter->netdev);
-
-	ixgbe_del_mac_filter(adapter, adapter->vfinfo[vf].vf_mac_addresses, vf);
-
-	/* reset VF api back to unknown */
-	adapter->vfinfo[vf].vf_api = ixgbe_mbox_api_10;
-}
-
-static int ixgbe_set_vf_mac(struct ixgbe_adapter *adapter,
-			    int vf, unsigned char *mac_addr)
-{
-	ixgbe_del_mac_filter(adapter, adapter->vfinfo[vf].vf_mac_addresses, vf);
-	memcpy(adapter->vfinfo[vf].vf_mac_addresses, mac_addr, ETH_ALEN);
-	ixgbe_add_mac_filter(adapter, adapter->vfinfo[vf].vf_mac_addresses, vf);
-
-	return 0;
 }
 
 static int ixgbe_set_vf_macvlan(struct ixgbe_adapter *adapter,
 				int vf, int index, unsigned char *mac_addr)
 {
-	struct list_head *pos;
 	struct vf_macvlans *entry;
+	struct list_head *pos;
+	int retval = 0;
 
 	if (index <= 1) {
 		list_for_each(pos, &adapter->vf_mvs.l) {
@@ -595,14 +681,113 @@ static int ixgbe_set_vf_macvlan(struct ixgbe_adapter *adapter,
 	if (!entry || !entry->free)
 		return -ENOSPC;
 
+	retval = ixgbe_add_mac_filter(adapter, mac_addr, vf);
+	if (retval < 0)
+		return retval;
+
 	entry->free = false;
 	entry->is_macvlan = true;
 	entry->vf = vf;
 	memcpy(entry->vf_macvlan, mac_addr, ETH_ALEN);
 
-	ixgbe_add_mac_filter(adapter, mac_addr, vf);
-
 	return 0;
+}
+
+static inline void ixgbe_vf_reset_event(struct ixgbe_adapter *adapter, u32 vf)
+{
+	struct ixgbe_hw *hw = &adapter->hw;
+	struct ixgbe_ring_feature *vmdq = &adapter->ring_feature[RING_F_VMDQ];
+	struct vf_data_storage *vfinfo = &adapter->vfinfo[vf];
+	u32 q_per_pool = __ALIGN_MASK(1, ~vmdq->mask);
+	u8 num_tcs = adapter->hw_tcs;
+	u32 reg_val;
+	u32 queue;
+
+	/* remove VLAN filters beloning to this VF */
+	ixgbe_clear_vf_vlans(adapter, vf);
+
+	/* add back PF assigned VLAN or VLAN 0 */
+	ixgbe_set_vf_vlan(adapter, true, vfinfo->pf_vlan, vf);
+
+	/* reset offloads to defaults */
+	ixgbe_set_vmolr(hw, vf, !vfinfo->pf_vlan);
+
+	/* set outgoing tags for VFs */
+	if (!vfinfo->pf_vlan && !vfinfo->pf_qos && !num_tcs) {
+		ixgbe_clear_vmvir(adapter, vf);
+	} else {
+		if (vfinfo->pf_qos || !num_tcs)
+			ixgbe_set_vmvir(adapter, vfinfo->pf_vlan,
+					vfinfo->pf_qos, vf);
+		else
+			ixgbe_set_vmvir(adapter, vfinfo->pf_vlan,
+					adapter->default_up, vf);
+
+		if (vfinfo->spoofchk_enabled) {
+			hw->mac.ops.set_vlan_anti_spoofing(hw, true, vf);
+			hw->mac.ops.set_mac_anti_spoofing(hw, true, vf);
+		}
+	}
+
+	/* reset multicast table array for vf */
+	adapter->vfinfo[vf].num_vf_mc_hashes = 0;
+
+	/* clear any ipsec table info */
+	ixgbe_ipsec_vf_clear(adapter, vf);
+
+	/* Flush and reset the mta with the new values */
+	ixgbe_set_rx_mode(adapter->netdev);
+
+	ixgbe_del_mac_filter(adapter, adapter->vfinfo[vf].vf_mac_addresses, vf);
+	ixgbe_set_vf_macvlan(adapter, vf, 0, NULL);
+
+	/* reset VF api back to unknown */
+	adapter->vfinfo[vf].vf_api = ixgbe_mbox_api_10;
+
+	/* Restart each queue for given VF */
+	for (queue = 0; queue < q_per_pool; queue++) {
+		unsigned int reg_idx = (vf * q_per_pool) + queue;
+
+		reg_val = IXGBE_READ_REG(hw, IXGBE_PVFTXDCTL(reg_idx));
+
+		/* Re-enabling only configured queues */
+		if (reg_val) {
+			reg_val |= IXGBE_TXDCTL_ENABLE;
+			IXGBE_WRITE_REG(hw, IXGBE_PVFTXDCTL(reg_idx), reg_val);
+			reg_val &= ~IXGBE_TXDCTL_ENABLE;
+			IXGBE_WRITE_REG(hw, IXGBE_PVFTXDCTL(reg_idx), reg_val);
+		}
+	}
+
+	IXGBE_WRITE_FLUSH(hw);
+}
+
+static void ixgbe_vf_clear_mbx(struct ixgbe_adapter *adapter, u32 vf)
+{
+	struct ixgbe_hw *hw = &adapter->hw;
+	u32 word;
+
+	/* Clear VF's mailbox memory */
+	for (word = 0; word < IXGBE_VFMAILBOX_SIZE; word++)
+		IXGBE_WRITE_REG_ARRAY(hw, IXGBE_PFMBMEM(vf), word, 0);
+
+	IXGBE_WRITE_FLUSH(hw);
+}
+
+static int ixgbe_set_vf_mac(struct ixgbe_adapter *adapter,
+			    int vf, unsigned char *mac_addr)
+{
+	s32 retval;
+
+	ixgbe_del_mac_filter(adapter, adapter->vfinfo[vf].vf_mac_addresses, vf);
+	retval = ixgbe_add_mac_filter(adapter, mac_addr, vf);
+	if (retval >= 0)
+		memcpy(adapter->vfinfo[vf].vf_mac_addresses, mac_addr,
+		       ETH_ALEN);
+	else
+		eth_zero_addr(adapter->vfinfo[vf].vf_mac_addresses);
+
+	return retval;
 }
 
 int ixgbe_vf_configuration(struct pci_dev *pdev, unsigned int event_mask)
@@ -616,6 +801,27 @@ int ixgbe_vf_configuration(struct pci_dev *pdev, unsigned int event_mask)
 		eth_zero_addr(adapter->vfinfo[vfn].vf_mac_addresses);
 
 	return 0;
+}
+
+static inline void ixgbe_write_qde(struct ixgbe_adapter *adapter, u32 vf,
+				   u32 qde)
+{
+	struct ixgbe_hw *hw = &adapter->hw;
+	struct ixgbe_ring_feature *vmdq = &adapter->ring_feature[RING_F_VMDQ];
+	u32 q_per_pool = __ALIGN_MASK(1, ~vmdq->mask);
+	int i;
+
+	for (i = vf * q_per_pool; i < ((vf + 1) * q_per_pool); i++) {
+		u32 reg;
+
+		/* flush previous write */
+		IXGBE_WRITE_FLUSH(hw);
+
+		/* indicate to hardware that we want to set drop enable */
+		reg = IXGBE_QDE_WRITE | qde;
+		reg |= i <<  IXGBE_QDE_IDX_SHIFT;
+		IXGBE_WRITE_REG(hw, IXGBE_QDE, reg);
+	}
 }
 
 static int ixgbe_vf_reset_msg(struct ixgbe_adapter *adapter, u32 vf)
@@ -634,6 +840,8 @@ static int ixgbe_vf_reset_msg(struct ixgbe_adapter *adapter, u32 vf)
 	/* reset the filters for the device */
 	ixgbe_vf_reset_event(adapter, vf);
 
+	ixgbe_vf_clear_mbx(adapter, vf);
+
 	/* set vf mac address */
 	if (!is_zero_ether_addr(vf_mac))
 		ixgbe_set_vf_mac(adapter, vf, vf_mac);
@@ -643,23 +851,19 @@ static int ixgbe_vf_reset_msg(struct ixgbe_adapter *adapter, u32 vf)
 
 	/* enable transmit for vf */
 	reg = IXGBE_READ_REG(hw, IXGBE_VFTE(reg_offset));
-	reg |= 1 << vf_shift;
+	reg |= BIT(vf_shift);
 	IXGBE_WRITE_REG(hw, IXGBE_VFTE(reg_offset), reg);
 
 	/* force drop enable for all VF Rx queues */
-	for (i = vf * q_per_pool; i < ((vf + 1) * q_per_pool); i++) {
-		/* flush previous write */
-		IXGBE_WRITE_FLUSH(hw);
+	reg = IXGBE_QDE_ENABLE;
+	if (adapter->vfinfo[vf].pf_vlan)
+		reg |= IXGBE_QDE_HIDE_VLAN;
 
-		/* indicate to hardware that we want to set drop enable */
-		reg = IXGBE_QDE_WRITE | IXGBE_QDE_ENABLE;
-		reg |= i <<  IXGBE_QDE_IDX_SHIFT;
-		IXGBE_WRITE_REG(hw, IXGBE_QDE, reg);
-	}
+	ixgbe_write_qde(adapter, vf, reg);
 
 	/* enable receive for vf */
 	reg = IXGBE_READ_REG(hw, IXGBE_VFRE(reg_offset));
-	reg |= 1 << vf_shift;
+	reg |= BIT(vf_shift);
 	/*
 	 * The 82599 cannot support a mix of jumbo and non-jumbo PF/VFs.
 	 * For more info take a look at ixgbe_set_vf_lpe
@@ -675,7 +879,7 @@ static int ixgbe_vf_reset_msg(struct ixgbe_adapter *adapter, u32 vf)
 
 #endif /* CONFIG_FCOE */
 		if (pf_max_frame > ETH_FRAME_LEN)
-			reg &= ~(1 << vf_shift);
+			reg &= ~BIT(vf_shift);
 	}
 	IXGBE_WRITE_REG(hw, IXGBE_VFRE(reg_offset), reg);
 
@@ -684,7 +888,7 @@ static int ixgbe_vf_reset_msg(struct ixgbe_adapter *adapter, u32 vf)
 
 	/* Enable counting of spoofed packets in the SSVPC register */
 	reg = IXGBE_READ_REG(hw, IXGBE_VMECM(reg_offset));
-	reg |= (1 << vf_shift);
+	reg |= BIT(vf_shift);
 	IXGBE_WRITE_REG(hw, IXGBE_VMECM(reg_offset), reg);
 
 	/*
@@ -698,14 +902,11 @@ static int ixgbe_vf_reset_msg(struct ixgbe_adapter *adapter, u32 vf)
 
 	/* reply to reset with ack and vf mac address */
 	msgbuf[0] = IXGBE_VF_RESET;
-	if (!is_zero_ether_addr(vf_mac)) {
+	if (!is_zero_ether_addr(vf_mac) && adapter->vfinfo[vf].pf_set_mac) {
 		msgbuf[0] |= IXGBE_VT_MSGTYPE_ACK;
 		memcpy(addr, vf_mac, ETH_ALEN);
 	} else {
 		msgbuf[0] |= IXGBE_VT_MSGTYPE_NACK;
-		dev_warn(&adapter->pdev->dev,
-			 "VF %d has no MAC address assigned, you may have to assign one manually\n",
-			 vf);
 	}
 
 	/*
@@ -728,7 +929,7 @@ static int ixgbe_set_vf_mac_addr(struct ixgbe_adapter *adapter,
 		return -1;
 	}
 
-	if (adapter->vfinfo[vf].pf_set_mac &&
+	if (adapter->vfinfo[vf].pf_set_mac && !adapter->vfinfo[vf].trusted &&
 	    !ether_addr_equal(adapter->vfinfo[vf].vf_mac_addresses, new_mac)) {
 		e_warn(drv,
 		       "VF %d attempted to override administratively set MAC address\n"
@@ -740,40 +941,12 @@ static int ixgbe_set_vf_mac_addr(struct ixgbe_adapter *adapter,
 	return ixgbe_set_vf_mac(adapter, vf, new_mac) < 0;
 }
 
-static int ixgbe_find_vlvf_entry(struct ixgbe_hw *hw, u32 vlan)
-{
-	u32 vlvf;
-	s32 regindex;
-
-	/* short cut the special case */
-	if (vlan == 0)
-		return 0;
-
-	/* Search for the vlan id in the VLVF entries */
-	for (regindex = 1; regindex < IXGBE_VLVF_ENTRIES; regindex++) {
-		vlvf = IXGBE_READ_REG(hw, IXGBE_VLVF(regindex));
-		if ((vlvf & VLAN_VID_MASK) == vlan)
-			break;
-	}
-
-	/* Return a negative value if not found */
-	if (regindex >= IXGBE_VLVF_ENTRIES)
-		regindex = -1;
-
-	return regindex;
-}
-
 static int ixgbe_set_vf_vlan_msg(struct ixgbe_adapter *adapter,
 				 u32 *msgbuf, u32 vf)
 {
-	struct ixgbe_hw *hw = &adapter->hw;
-	int add = (msgbuf[0] & IXGBE_VT_MSGINFO_MASK) >> IXGBE_VT_MSGINFO_SHIFT;
-	int vid = (msgbuf[1] & IXGBE_VLVF_VLANID_MASK);
-	int err;
-	s32 reg_ndx;
-	u32 vlvf;
-	u32 bits;
-	u8 tcs = netdev_get_num_tc(adapter->netdev);
+	u32 add = (msgbuf[0] & IXGBE_VT_MSGINFO_MASK) >> IXGBE_VT_MSGINFO_SHIFT;
+	u32 vid = (msgbuf[1] & IXGBE_VLVF_VLANID_MASK);
+	u8 tcs = adapter->hw_tcs;
 
 	if (adapter->vfinfo[vf].pf_vlan || tcs) {
 		e_warn(drv,
@@ -783,54 +956,11 @@ static int ixgbe_set_vf_vlan_msg(struct ixgbe_adapter *adapter,
 		return -1;
 	}
 
-	if (add)
-		adapter->vfinfo[vf].vlan_count++;
-	else if (adapter->vfinfo[vf].vlan_count)
-		adapter->vfinfo[vf].vlan_count--;
+	/* VLAN 0 is a special case, don't allow it to be removed */
+	if (!vid && !add)
+		return 0;
 
-	/* in case of promiscuous mode any VLAN filter set for a VF must
-	 * also have the PF pool added to it.
-	 */
-	if (add && adapter->netdev->flags & IFF_PROMISC)
-		err = ixgbe_set_vf_vlan(adapter, add, vid, VMDQ_P(0));
-
-	err = ixgbe_set_vf_vlan(adapter, add, vid, vf);
-	if (!err && adapter->vfinfo[vf].spoofchk_enabled)
-		hw->mac.ops.set_vlan_anti_spoofing(hw, true, vf);
-
-	/* Go through all the checks to see if the VLAN filter should
-	 * be wiped completely.
-	 */
-	if (!add && adapter->netdev->flags & IFF_PROMISC) {
-		reg_ndx = ixgbe_find_vlvf_entry(hw, vid);
-		if (reg_ndx < 0)
-			return err;
-		vlvf = IXGBE_READ_REG(hw, IXGBE_VLVF(reg_ndx));
-		/* See if any other pools are set for this VLAN filter
-		 * entry other than the PF.
-		 */
-		if (VMDQ_P(0) < 32) {
-			bits = IXGBE_READ_REG(hw, IXGBE_VLVFB(reg_ndx * 2));
-			bits &= ~(1 << VMDQ_P(0));
-			bits |= IXGBE_READ_REG(hw,
-					       IXGBE_VLVFB(reg_ndx * 2) + 1);
-		} else {
-			bits = IXGBE_READ_REG(hw,
-					      IXGBE_VLVFB(reg_ndx * 2) + 1);
-			bits &= ~(1 << (VMDQ_P(0) - 32));
-			bits |= IXGBE_READ_REG(hw, IXGBE_VLVFB(reg_ndx * 2));
-		}
-
-		/* If the filter was removed then ensure PF pool bit
-		 * is cleared if the PF only added itself to the pool
-		 * because the PF is in promiscuous mode.
-		 */
-		if ((vlvf & VLAN_VID_MASK) == vid &&
-		    !test_bit(vid, adapter->active_vlans) && !bits)
-			ixgbe_set_vf_vlan(adapter, add, vid, VMDQ_P(0));
-	}
-
-	return err;
+	return ixgbe_set_vf_vlan(adapter, add, vid, vf);
 }
 
 static int ixgbe_set_vf_macvlan_msg(struct ixgbe_adapter *adapter,
@@ -841,7 +971,8 @@ static int ixgbe_set_vf_macvlan_msg(struct ixgbe_adapter *adapter,
 		    IXGBE_VT_MSGINFO_SHIFT;
 	int err;
 
-	if (adapter->vfinfo[vf].pf_set_mac && index > 0) {
+	if (adapter->vfinfo[vf].pf_set_mac && !adapter->vfinfo[vf].trusted &&
+	    index > 0) {
 		e_warn(drv,
 		       "VF %d requested MACVLAN filter but is administratively denied\n",
 		       vf);
@@ -859,8 +990,12 @@ static int ixgbe_set_vf_macvlan_msg(struct ixgbe_adapter *adapter,
 		 * If the VF is allowed to set MAC filters then turn off
 		 * anti-spoofing to avoid false positives.
 		 */
-		if (adapter->vfinfo[vf].spoofchk_enabled)
-			ixgbe_ndo_set_vf_spoofchk(adapter->netdev, vf, false);
+		if (adapter->vfinfo[vf].spoofchk_enabled) {
+			struct ixgbe_hw *hw = &adapter->hw;
+
+			hw->mac.ops.set_mac_anti_spoofing(hw, false, vf);
+			hw->mac.ops.set_vlan_anti_spoofing(hw, false, vf);
+		}
 	}
 
 	err = ixgbe_set_vf_macvlan(adapter, vf, index, new_mac);
@@ -880,6 +1015,9 @@ static int ixgbe_negotiate_vf_api(struct ixgbe_adapter *adapter,
 	switch (api) {
 	case ixgbe_mbox_api_10:
 	case ixgbe_mbox_api_11:
+	case ixgbe_mbox_api_12:
+	case ixgbe_mbox_api_13:
+	case ixgbe_mbox_api_14:
 		adapter->vfinfo[vf].vf_api = api;
 		return 0;
 	default:
@@ -897,12 +1035,15 @@ static int ixgbe_get_vf_queues(struct ixgbe_adapter *adapter,
 	struct net_device *dev = adapter->netdev;
 	struct ixgbe_ring_feature *vmdq = &adapter->ring_feature[RING_F_VMDQ];
 	unsigned int default_tc = 0;
-	u8 num_tcs = netdev_get_num_tc(dev);
+	u8 num_tcs = adapter->hw_tcs;
 
 	/* verify the PF is supporting the correct APIs */
 	switch (adapter->vfinfo[vf].vf_api) {
 	case ixgbe_mbox_api_20:
 	case ixgbe_mbox_api_11:
+	case ixgbe_mbox_api_12:
+	case ixgbe_mbox_api_13:
+	case ixgbe_mbox_api_14:
 		break;
 	default:
 		return -1;
@@ -926,6 +1067,141 @@ static int ixgbe_get_vf_queues(struct ixgbe_adapter *adapter,
 
 	/* notify VF of default queue */
 	msgbuf[IXGBE_VF_DEF_QUEUE] = default_tc;
+
+	return 0;
+}
+
+static int ixgbe_get_vf_reta(struct ixgbe_adapter *adapter, u32 *msgbuf, u32 vf)
+{
+	u32 i, j;
+	u32 *out_buf = &msgbuf[1];
+	const u8 *reta = adapter->rss_indir_tbl;
+	u32 reta_size = ixgbe_rss_indir_tbl_entries(adapter);
+
+	/* Check if operation is permitted */
+	if (!adapter->vfinfo[vf].rss_query_enabled)
+		return -EPERM;
+
+	/* verify the PF is supporting the correct API */
+	switch (adapter->vfinfo[vf].vf_api) {
+	case ixgbe_mbox_api_14:
+	case ixgbe_mbox_api_13:
+	case ixgbe_mbox_api_12:
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	/* This mailbox command is supported (required) only for 82599 and x540
+	 * VFs which support up to 4 RSS queues. Therefore we will compress the
+	 * RETA by saving only 2 bits from each entry. This way we will be able
+	 * to transfer the whole RETA in a single mailbox operation.
+	 */
+	for (i = 0; i < reta_size / 16; i++) {
+		out_buf[i] = 0;
+		for (j = 0; j < 16; j++)
+			out_buf[i] |= (u32)(reta[16 * i + j] & 0x3) << (2 * j);
+	}
+
+	return 0;
+}
+
+static int ixgbe_get_vf_rss_key(struct ixgbe_adapter *adapter,
+				u32 *msgbuf, u32 vf)
+{
+	u32 *rss_key = &msgbuf[1];
+
+	/* Check if the operation is permitted */
+	if (!adapter->vfinfo[vf].rss_query_enabled)
+		return -EPERM;
+
+	/* verify the PF is supporting the correct API */
+	switch (adapter->vfinfo[vf].vf_api) {
+	case ixgbe_mbox_api_14:
+	case ixgbe_mbox_api_13:
+	case ixgbe_mbox_api_12:
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	memcpy(rss_key, adapter->rss_key, IXGBE_RSS_KEY_SIZE);
+
+	return 0;
+}
+
+static int ixgbe_update_vf_xcast_mode(struct ixgbe_adapter *adapter,
+				      u32 *msgbuf, u32 vf)
+{
+	struct ixgbe_hw *hw = &adapter->hw;
+	int xcast_mode = msgbuf[1];
+	u32 vmolr, fctrl, disable, enable;
+
+	/* verify the PF is supporting the correct APIs */
+	switch (adapter->vfinfo[vf].vf_api) {
+	case ixgbe_mbox_api_12:
+		/* promisc introduced in 1.3 version */
+		if (xcast_mode == IXGBEVF_XCAST_MODE_PROMISC)
+			return -EOPNOTSUPP;
+		fallthrough;
+	case ixgbe_mbox_api_13:
+	case ixgbe_mbox_api_14:
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	if (xcast_mode > IXGBEVF_XCAST_MODE_MULTI &&
+	    !adapter->vfinfo[vf].trusted) {
+		xcast_mode = IXGBEVF_XCAST_MODE_MULTI;
+	}
+
+	if (adapter->vfinfo[vf].xcast_mode == xcast_mode)
+		goto out;
+
+	switch (xcast_mode) {
+	case IXGBEVF_XCAST_MODE_NONE:
+		disable = IXGBE_VMOLR_ROMPE |
+			  IXGBE_VMOLR_MPE | IXGBE_VMOLR_UPE | IXGBE_VMOLR_VPE;
+		enable = IXGBE_VMOLR_BAM;
+		break;
+	case IXGBEVF_XCAST_MODE_MULTI:
+		disable = IXGBE_VMOLR_MPE | IXGBE_VMOLR_UPE | IXGBE_VMOLR_VPE;
+		enable = IXGBE_VMOLR_BAM | IXGBE_VMOLR_ROMPE;
+		break;
+	case IXGBEVF_XCAST_MODE_ALLMULTI:
+		disable = IXGBE_VMOLR_UPE | IXGBE_VMOLR_VPE;
+		enable = IXGBE_VMOLR_BAM | IXGBE_VMOLR_ROMPE | IXGBE_VMOLR_MPE;
+		break;
+	case IXGBEVF_XCAST_MODE_PROMISC:
+		if (hw->mac.type <= ixgbe_mac_82599EB)
+			return -EOPNOTSUPP;
+
+		fctrl = IXGBE_READ_REG(hw, IXGBE_FCTRL);
+		if (!(fctrl & IXGBE_FCTRL_UPE)) {
+			/* VF promisc requires PF in promisc */
+			e_warn(drv,
+			       "Enabling VF promisc requires PF in promisc\n");
+			return -EPERM;
+		}
+
+		disable = IXGBE_VMOLR_VPE;
+		enable = IXGBE_VMOLR_BAM | IXGBE_VMOLR_ROMPE |
+			 IXGBE_VMOLR_MPE | IXGBE_VMOLR_UPE;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	vmolr = IXGBE_READ_REG(hw, IXGBE_VMOLR(vf));
+	vmolr &= ~disable;
+	vmolr |= enable;
+	IXGBE_WRITE_REG(hw, IXGBE_VMOLR(vf), vmolr);
+
+	adapter->vfinfo[vf].xcast_mode = xcast_mode;
+
+out:
+	msgbuf[1] = xcast_mode;
 
 	return 0;
 }
@@ -975,7 +1251,7 @@ static int ixgbe_rcv_msg_from_vf(struct ixgbe_adapter *adapter, u32 vf)
 		retval = ixgbe_set_vf_vlan_msg(adapter, msgbuf, vf);
 		break;
 	case IXGBE_VF_SET_LPE:
-		retval = ixgbe_set_vf_lpe(adapter, msgbuf, vf);
+		retval = ixgbe_set_vf_lpe(adapter, msgbuf[1], vf);
 		break;
 	case IXGBE_VF_SET_MACVLAN:
 		retval = ixgbe_set_vf_macvlan_msg(adapter, msgbuf, vf);
@@ -986,9 +1262,24 @@ static int ixgbe_rcv_msg_from_vf(struct ixgbe_adapter *adapter, u32 vf)
 	case IXGBE_VF_GET_QUEUES:
 		retval = ixgbe_get_vf_queues(adapter, msgbuf, vf);
 		break;
+	case IXGBE_VF_GET_RETA:
+		retval = ixgbe_get_vf_reta(adapter, msgbuf, vf);
+		break;
+	case IXGBE_VF_GET_RSS_KEY:
+		retval = ixgbe_get_vf_rss_key(adapter, msgbuf, vf);
+		break;
+	case IXGBE_VF_UPDATE_XCAST_MODE:
+		retval = ixgbe_update_vf_xcast_mode(adapter, msgbuf, vf);
+		break;
+	case IXGBE_VF_IPSEC_ADD:
+		retval = ixgbe_ipsec_vf_add_sa(adapter, msgbuf, vf);
+		break;
+	case IXGBE_VF_IPSEC_DEL:
+		retval = ixgbe_ipsec_vf_del_sa(adapter, msgbuf, vf);
+		break;
 	default:
 		e_err(drv, "Unhandled Msg %8.8x\n", msgbuf[0]);
-		retval = IXGBE_ERR_MBX;
+		retval = -EIO;
 		break;
 	}
 
@@ -1018,8 +1309,10 @@ static void ixgbe_rcv_ack_from_vf(struct ixgbe_adapter *adapter, u32 vf)
 void ixgbe_msg_task(struct ixgbe_adapter *adapter)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
+	unsigned long flags;
 	u32 vf;
 
+	spin_lock_irqsave(&adapter->vfs_lock, flags);
 	for (vf = 0; vf < adapter->num_vfs; vf++) {
 		/* process any reset requests */
 		if (!ixgbe_check_for_rst(hw, vf))
@@ -1033,6 +1326,7 @@ void ixgbe_msg_task(struct ixgbe_adapter *adapter)
 		if (!ixgbe_check_for_ack(hw, vf))
 			ixgbe_rcv_ack_from_vf(adapter, vf);
 	}
+	spin_unlock_irqrestore(&adapter->vfs_lock, flags);
 }
 
 void ixgbe_disable_tx_rx(struct ixgbe_adapter *adapter)
@@ -1045,6 +1339,17 @@ void ixgbe_disable_tx_rx(struct ixgbe_adapter *adapter)
 
 	IXGBE_WRITE_REG(hw, IXGBE_VFRE(0), 0);
 	IXGBE_WRITE_REG(hw, IXGBE_VFRE(1), 0);
+}
+
+static inline void ixgbe_ping_vf(struct ixgbe_adapter *adapter, int vf)
+{
+	struct ixgbe_hw *hw = &adapter->hw;
+	u32 ping;
+
+	ping = IXGBE_PF_CONTROL_MSG;
+	if (adapter->vfinfo[vf].clear_to_send)
+		ping |= IXGBE_VT_MSGTYPE_CTS;
+	ixgbe_write_mbx(hw, &ping, 1, vf);
 }
 
 void ixgbe_ping_all_vfs(struct ixgbe_adapter *adapter)
@@ -1064,72 +1369,141 @@ void ixgbe_ping_all_vfs(struct ixgbe_adapter *adapter)
 int ixgbe_ndo_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 {
 	struct ixgbe_adapter *adapter = netdev_priv(netdev);
-	if (!is_valid_ether_addr(mac) || (vf >= adapter->num_vfs))
-		return -EINVAL;
-	adapter->vfinfo[vf].pf_set_mac = true;
-	dev_info(&adapter->pdev->dev, "setting MAC %pM on VF %d\n", mac, vf);
-	dev_info(&adapter->pdev->dev, "Reload the VF driver to make this"
-				      " change effective.");
-	if (test_bit(__IXGBE_DOWN, &adapter->state)) {
-		dev_warn(&adapter->pdev->dev, "The VF MAC address has been set,"
-			 " but the PF device is not up.\n");
-		dev_warn(&adapter->pdev->dev, "Bring the PF device up before"
-			 " attempting to use the VF device.\n");
-	}
-	return ixgbe_set_vf_mac(adapter, vf, mac);
-}
+	s32 retval;
 
-int ixgbe_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos)
-{
-	int err = 0;
-	struct ixgbe_adapter *adapter = netdev_priv(netdev);
-	struct ixgbe_hw *hw = &adapter->hw;
-
-	if ((vf >= adapter->num_vfs) || (vlan > 4095) || (qos > 7))
+	if (vf >= adapter->num_vfs)
 		return -EINVAL;
-	if (vlan || qos) {
-		if (adapter->vfinfo[vf].pf_vlan)
-			err = ixgbe_set_vf_vlan(adapter, false,
-						adapter->vfinfo[vf].pf_vlan,
-						vf);
-		if (err)
-			goto out;
-		err = ixgbe_set_vf_vlan(adapter, true, vlan, vf);
-		if (err)
-			goto out;
-		ixgbe_set_vmvir(adapter, vlan, qos, vf);
-		ixgbe_set_vmolr(hw, vf, false);
-		if (adapter->vfinfo[vf].spoofchk_enabled)
-			hw->mac.ops.set_vlan_anti_spoofing(hw, true, vf);
-		adapter->vfinfo[vf].vlan_count++;
-		adapter->vfinfo[vf].pf_vlan = vlan;
-		adapter->vfinfo[vf].pf_qos = qos;
-		dev_info(&adapter->pdev->dev,
-			 "Setting VLAN %d, QOS 0x%x on VF %d\n", vlan, qos, vf);
-		if (test_bit(__IXGBE_DOWN, &adapter->state)) {
-			dev_warn(&adapter->pdev->dev,
-				 "The VF VLAN has been set,"
-				 " but the PF device is not up.\n");
-			dev_warn(&adapter->pdev->dev,
-				 "Bring the PF device up before"
-				 " attempting to use the VF device.\n");
+
+	if (is_valid_ether_addr(mac)) {
+		dev_info(&adapter->pdev->dev, "setting MAC %pM on VF %d\n",
+			 mac, vf);
+		dev_info(&adapter->pdev->dev, "Reload the VF driver to make this change effective.");
+
+		retval = ixgbe_set_vf_mac(adapter, vf, mac);
+		if (retval >= 0) {
+			adapter->vfinfo[vf].pf_set_mac = true;
+
+			if (test_bit(__IXGBE_DOWN, &adapter->state)) {
+				dev_warn(&adapter->pdev->dev, "The VF MAC address has been set, but the PF device is not up.\n");
+				dev_warn(&adapter->pdev->dev, "Bring the PF device up before attempting to use the VF device.\n");
+			}
+		} else {
+			dev_warn(&adapter->pdev->dev, "The VF MAC address was NOT set due to invalid or duplicate MAC address.\n");
+		}
+	} else if (is_zero_ether_addr(mac)) {
+		unsigned char *vf_mac_addr =
+					   adapter->vfinfo[vf].vf_mac_addresses;
+
+		/* nothing to do */
+		if (is_zero_ether_addr(vf_mac_addr))
+			return 0;
+
+		dev_info(&adapter->pdev->dev, "removing MAC on VF %d\n", vf);
+
+		retval = ixgbe_del_mac_filter(adapter, vf_mac_addr, vf);
+		if (retval >= 0) {
+			adapter->vfinfo[vf].pf_set_mac = false;
+			memcpy(vf_mac_addr, mac, ETH_ALEN);
+		} else {
+			dev_warn(&adapter->pdev->dev, "Could NOT remove the VF MAC address.\n");
 		}
 	} else {
-		err = ixgbe_set_vf_vlan(adapter, false,
-					adapter->vfinfo[vf].pf_vlan, vf);
-		ixgbe_clear_vmvir(adapter, vf);
-		ixgbe_set_vmolr(hw, vf, true);
-		hw->mac.ops.set_vlan_anti_spoofing(hw, false, vf);
-		if (adapter->vfinfo[vf].vlan_count)
-			adapter->vfinfo[vf].vlan_count--;
-		adapter->vfinfo[vf].pf_vlan = 0;
-		adapter->vfinfo[vf].pf_qos = 0;
+		retval = -EINVAL;
 	}
+
+	return retval;
+}
+
+static int ixgbe_enable_port_vlan(struct ixgbe_adapter *adapter, int vf,
+				  u16 vlan, u8 qos)
+{
+	struct ixgbe_hw *hw = &adapter->hw;
+	int err;
+
+	err = ixgbe_set_vf_vlan(adapter, true, vlan, vf);
+	if (err)
+		goto out;
+
+	/* Revoke tagless access via VLAN 0 */
+	ixgbe_set_vf_vlan(adapter, false, 0, vf);
+
+	ixgbe_set_vmvir(adapter, vlan, qos, vf);
+	ixgbe_set_vmolr(hw, vf, false);
+
+	/* enable hide vlan on X550 */
+	if (hw->mac.type >= ixgbe_mac_X550)
+		ixgbe_write_qde(adapter, vf, IXGBE_QDE_ENABLE |
+				IXGBE_QDE_HIDE_VLAN);
+
+	adapter->vfinfo[vf].pf_vlan = vlan;
+	adapter->vfinfo[vf].pf_qos = qos;
+	dev_info(&adapter->pdev->dev,
+		 "Setting VLAN %d, QOS 0x%x on VF %d\n", vlan, qos, vf);
+	if (test_bit(__IXGBE_DOWN, &adapter->state)) {
+		dev_warn(&adapter->pdev->dev,
+			 "The VF VLAN has been set, but the PF device is not up.\n");
+		dev_warn(&adapter->pdev->dev,
+			 "Bring the PF device up before attempting to use the VF device.\n");
+	}
+
 out:
 	return err;
 }
 
-static int ixgbe_link_mbps(struct ixgbe_adapter *adapter)
+static int ixgbe_disable_port_vlan(struct ixgbe_adapter *adapter, int vf)
+{
+	struct ixgbe_hw *hw = &adapter->hw;
+	int err;
+
+	err = ixgbe_set_vf_vlan(adapter, false,
+				adapter->vfinfo[vf].pf_vlan, vf);
+	/* Restore tagless access via VLAN 0 */
+	ixgbe_set_vf_vlan(adapter, true, 0, vf);
+	ixgbe_clear_vmvir(adapter, vf);
+	ixgbe_set_vmolr(hw, vf, true);
+
+	/* disable hide VLAN on X550 */
+	if (hw->mac.type >= ixgbe_mac_X550)
+		ixgbe_write_qde(adapter, vf, IXGBE_QDE_ENABLE);
+
+	adapter->vfinfo[vf].pf_vlan = 0;
+	adapter->vfinfo[vf].pf_qos = 0;
+
+	return err;
+}
+
+int ixgbe_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan,
+			  u8 qos, __be16 vlan_proto)
+{
+	int err = 0;
+	struct ixgbe_adapter *adapter = netdev_priv(netdev);
+
+	if ((vf >= adapter->num_vfs) || (vlan > 4095) || (qos > 7))
+		return -EINVAL;
+	if (vlan_proto != htons(ETH_P_8021Q))
+		return -EPROTONOSUPPORT;
+	if (vlan || qos) {
+		/* Check if there is already a port VLAN set, if so
+		 * we have to delete the old one first before we
+		 * can set the new one.  The usage model had
+		 * previously assumed the user would delete the
+		 * old port VLAN before setting a new one but this
+		 * is not necessarily the case.
+		 */
+		if (adapter->vfinfo[vf].pf_vlan)
+			err = ixgbe_disable_port_vlan(adapter, vf);
+		if (err)
+			goto out;
+		err = ixgbe_enable_port_vlan(adapter, vf, vlan, qos);
+	} else {
+		err = ixgbe_disable_port_vlan(adapter, vf);
+	}
+
+out:
+	return err;
+}
+
+int ixgbe_link_mbps(struct ixgbe_adapter *adapter)
 {
 	switch (adapter->link_speed) {
 	case IXGBE_LINK_SPEED_100_FULL:
@@ -1256,28 +1630,77 @@ int ixgbe_ndo_set_vf_bw(struct net_device *netdev, int vf, int min_tx_rate,
 int ixgbe_ndo_set_vf_spoofchk(struct net_device *netdev, int vf, bool setting)
 {
 	struct ixgbe_adapter *adapter = netdev_priv(netdev);
-	int vf_target_reg = vf >> 3;
-	int vf_target_shift = vf % 8;
 	struct ixgbe_hw *hw = &adapter->hw;
-	u32 regval;
 
 	if (vf >= adapter->num_vfs)
 		return -EINVAL;
 
 	adapter->vfinfo[vf].spoofchk_enabled = setting;
 
-	regval = IXGBE_READ_REG(hw, IXGBE_PFVFSPOOF(vf_target_reg));
-	regval &= ~(1 << vf_target_shift);
-	regval |= (setting << vf_target_shift);
-	IXGBE_WRITE_REG(hw, IXGBE_PFVFSPOOF(vf_target_reg), regval);
+	/* configure MAC spoofing */
+	hw->mac.ops.set_mac_anti_spoofing(hw, setting, vf);
 
-	if (adapter->vfinfo[vf].vlan_count) {
-		vf_target_shift += IXGBE_SPOOF_VLANAS_SHIFT;
-		regval = IXGBE_READ_REG(hw, IXGBE_PFVFSPOOF(vf_target_reg));
-		regval &= ~(1 << vf_target_shift);
-		regval |= (setting << vf_target_shift);
-		IXGBE_WRITE_REG(hw, IXGBE_PFVFSPOOF(vf_target_reg), regval);
+	/* configure VLAN spoofing */
+	hw->mac.ops.set_vlan_anti_spoofing(hw, setting, vf);
+
+	/* Ensure LLDP and FC is set for Ethertype Antispoofing if we will be
+	 * calling set_ethertype_anti_spoofing for each VF in loop below
+	 */
+	if (hw->mac.ops.set_ethertype_anti_spoofing) {
+		IXGBE_WRITE_REG(hw, IXGBE_ETQF(IXGBE_ETQF_FILTER_LLDP),
+				(IXGBE_ETQF_FILTER_EN    |
+				 IXGBE_ETQF_TX_ANTISPOOF |
+				 ETH_P_LLDP));
+
+		IXGBE_WRITE_REG(hw, IXGBE_ETQF(IXGBE_ETQF_FILTER_FC),
+				(IXGBE_ETQF_FILTER_EN |
+				 IXGBE_ETQF_TX_ANTISPOOF |
+				 ETH_P_PAUSE));
+
+		hw->mac.ops.set_ethertype_anti_spoofing(hw, setting, vf);
 	}
+
+	return 0;
+}
+
+int ixgbe_ndo_set_vf_rss_query_en(struct net_device *netdev, int vf,
+				  bool setting)
+{
+	struct ixgbe_adapter *adapter = netdev_priv(netdev);
+
+	/* This operation is currently supported only for 82599 and x540
+	 * devices.
+	 */
+	if (adapter->hw.mac.type < ixgbe_mac_82599EB ||
+	    adapter->hw.mac.type >= ixgbe_mac_X550)
+		return -EOPNOTSUPP;
+
+	if (vf >= adapter->num_vfs)
+		return -EINVAL;
+
+	adapter->vfinfo[vf].rss_query_enabled = setting;
+
+	return 0;
+}
+
+int ixgbe_ndo_set_vf_trust(struct net_device *netdev, int vf, bool setting)
+{
+	struct ixgbe_adapter *adapter = netdev_priv(netdev);
+
+	if (vf >= adapter->num_vfs)
+		return -EINVAL;
+
+	/* nothing to do */
+	if (adapter->vfinfo[vf].trusted == setting)
+		return 0;
+
+	adapter->vfinfo[vf].trusted = setting;
+
+	/* reset VF to reconfigure features */
+	adapter->vfinfo[vf].clear_to_send = false;
+	ixgbe_ping_vf(adapter, vf);
+
+	e_info(drv, "VF %u is %strusted\n", vf, setting ? "" : "not ");
 
 	return 0;
 }
@@ -1295,5 +1718,7 @@ int ixgbe_ndo_get_vf_config(struct net_device *netdev,
 	ivi->vlan = adapter->vfinfo[vf].pf_vlan;
 	ivi->qos = adapter->vfinfo[vf].pf_qos;
 	ivi->spoofchk = adapter->vfinfo[vf].spoofchk_enabled;
+	ivi->rss_query_en = adapter->vfinfo[vf].rss_query_enabled;
+	ivi->trusted = adapter->vfinfo[vf].trusted;
 	return 0;
 }

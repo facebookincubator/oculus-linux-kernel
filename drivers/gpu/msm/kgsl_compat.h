@@ -1,22 +1,14 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2013-2017,2019,2021 The Linux Foundation. All rights reserved.
  */
 #ifndef __KGSL_COMPAT_H
 #define __KGSL_COMPAT_H
 
-#ifdef CONFIG_COMPAT
 #include <linux/compat.h>
-#include "kgsl.h"
-#include "kgsl_device.h"
+#include <uapi/linux/msm_kgsl.h>
+
+#ifdef CONFIG_COMPAT
 
 struct kgsl_ibdesc_compat {
 	compat_ulong_t gpuaddr;
@@ -236,27 +228,15 @@ static inline compat_size_t sizet_to_compat(size_t size)
 	return (compat_size_t)size;
 }
 
-int kgsl_cmdbatch_create_compat(struct kgsl_device *device, unsigned int flags,
-			struct kgsl_cmdbatch *cmdbatch, void __user *cmdlist,
-			unsigned int numcmds, void __user *synclist,
-			unsigned int numsyncs);
-
 long kgsl_compat_ioctl(struct file *filep, unsigned int cmd,
 			unsigned long arg);
 
 #else
-static inline int kgsl_cmdbatch_create_compat(struct kgsl_device *device,
-			unsigned int flags, struct kgsl_cmdbatch *cmdbatch,
-			void __user *cmdlist, unsigned int numcmds,
-			void __user *synclist, unsigned int numsyncs)
-{
-	BUG();
-}
 
 static inline long kgsl_compat_ioctl(struct file *filep, unsigned int cmd,
 			unsigned long arg)
 {
-	BUG();
+	return -EINVAL;
 }
 
 #endif /* CONFIG_COMPAT */

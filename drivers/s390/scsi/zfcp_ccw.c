@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * zfcp device driver
  *
@@ -56,8 +57,22 @@ static int zfcp_ccw_activate(struct ccw_device *cdev, int clear, char *tag)
 	zfcp_erp_set_adapter_status(adapter, ZFCP_STATUS_COMMON_RUNNING);
 	zfcp_erp_adapter_reopen(adapter, ZFCP_STATUS_COMMON_ERP_FAILED,
 				tag);
+
+	/*
+	 * We want to scan ports here, with some random backoff and without
+	 * rate limit. Recovery has already scheduled a port scan for us,
+	 * but with both random delay and rate limit. Nevertheless we get
+	 * what we want here by flushing the scheduled work after sleeping
+	 * an equivalent random time.
+	 * Let the port scan random delay elapse first. If recovery finishes
+	 * up to that point in time, that would be perfect for both recovery
+	 * and port scan. If not, i.e. recovery takes ages, there was no
+	 * point in waiting a random delay on top of the time consumed by
+	 * recovery.
+	 */
+	msleep(zfcp_fc_port_scan_backoff());
 	zfcp_erp_wait(adapter);
-	flush_work(&adapter->scan_work); /* ok to call even if nothing queued */
+	flush_delayed_work(&adapter->scan_work);
 
 	zfcp_ccw_adapter_put(adapter);
 
@@ -109,13 +124,12 @@ static void zfcp_ccw_remove(struct ccw_device *cdev)
 		return;
 
 	write_lock_irq(&adapter->port_list_lock);
-	list_for_each_entry_safe(port, p, &adapter->port_list, list) {
+	list_for_each_entry(port, &adapter->port_list, list) {
 		write_lock(&port->unit_list_lock);
-		list_for_each_entry_safe(unit, u, &port->unit_list, list)
-			list_move(&unit->list, &unit_remove_lh);
+		list_splice_init(&port->unit_list, &unit_remove_lh);
 		write_unlock(&port->unit_list_lock);
-		list_move(&port->list, &port_remove_lh);
 	}
+	list_splice_init(&adapter->port_list, &port_remove_lh);
 	write_unlock_irq(&adapter->port_list_lock);
 	zfcp_ccw_adapter_put(adapter); /* put from zfcp_ccw_adapter_by_cdev */
 
@@ -162,11 +176,19 @@ static int zfcp_ccw_set_online(struct ccw_device *cdev)
 	adapter->req_no = 0;
 
 	zfcp_ccw_activate(cdev, 0, "ccsonl1");
-	/* scan for remote ports
-	   either at the end of any successful adapter recovery
-	   or only after the adapter recovery for setting a device online */
+
+	/*
+	 * We want to scan ports here, always, with some random delay and
+	 * without rate limit - basically what zfcp_ccw_activate() has
+	 * achieved for us. Not quite! That port scan depended on
+	 * !no_auto_port_rescan. So let's cover the no_auto_port_rescan
+	 * case here to make sure a port scan is done unconditionally.
+	 * Since zfcp_ccw_activate() has waited the desired random time,
+	 * we can immediately schedule and flush a port scan for the
+	 * remaining cases.
+	 */
 	zfcp_fc_inverse_conditional_port_scan(adapter);
-	flush_work(&adapter->scan_work); /* ok to call even if nothing queued */
+	flush_delayed_work(&adapter->scan_work);
 	zfcp_ccw_adapter_put(adapter);
 	return 0;
 }

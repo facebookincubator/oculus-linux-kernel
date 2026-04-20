@@ -1,10 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2013 Pengutronix
  * Uwe Kleine-Koenig <u.kleine-koenig@pengutronix.de>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #define UARTn_CMD		0x000c
@@ -16,7 +13,7 @@
 
 #define	UARTn_TXDATA		0x0034
 
-		.macro	addruart, rx, tmp
+		.macro	addruart, rx, tmp, tmp2
 		ldr	\rx, =(CONFIG_DEBUG_UART_PHYS)
 
 		/*
@@ -32,7 +29,10 @@
 		strb	\rd, [\rx, #UARTn_TXDATA]
 		.endm
 
-		.macro	waituart,rd,rx
+		.macro	waituartcts,rd,rx
+		.endm
+
+		.macro	waituarttxrdy,rd,rx
 1001:		ldr	\rd, [\rx, #UARTn_STATUS]
 		tst	\rd, #UARTn_STATUS_TXBL
 		beq	1001b

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/fs/binfmt_em86.c
  *
@@ -24,7 +25,8 @@
 
 static int load_em86(struct linux_binprm *bprm)
 {
-	char *interp, *i_name, *i_arg;
+	const char *i_name, *i_arg;
+	char *interp;
 	struct file * file;
 	int retval;
 	struct elfhdr	elf_ex;
@@ -42,9 +44,9 @@ static int load_em86(struct linux_binprm *bprm)
 			return -ENOEXEC;
 	}
 
-	allow_write_access(bprm->file);
-	fput(bprm->file);
-	bprm->file = NULL;
+	/* Need to be able to load the file after exec */
+	if (bprm->interp_flags & BINPRM_FLAGS_PATH_INACCESSIBLE)
+		return -ENOENT;
 
 	/* Unlike in the script case, we don't have to do any hairy
 	 * parsing to find our interpreter... it's hardcoded!
@@ -62,15 +64,15 @@ static int load_em86(struct linux_binprm *bprm)
 	 * user environment and arguments are stored.
 	 */
 	remove_arg_zero(bprm);
-	retval = copy_strings_kernel(1, &bprm->filename, bprm);
+	retval = copy_string_kernel(bprm->filename, bprm);
 	if (retval < 0) return retval; 
 	bprm->argc++;
 	if (i_arg) {
-		retval = copy_strings_kernel(1, &i_arg, bprm);
+		retval = copy_string_kernel(i_arg, bprm);
 		if (retval < 0) return retval; 
 		bprm->argc++;
 	}
-	retval = copy_strings_kernel(1, &i_name, bprm);
+	retval = copy_string_kernel(i_name, bprm);
 	if (retval < 0)	return retval;
 	bprm->argc++;
 
@@ -83,13 +85,8 @@ static int load_em86(struct linux_binprm *bprm)
 	if (IS_ERR(file))
 		return PTR_ERR(file);
 
-	bprm->file = file;
-
-	retval = prepare_binprm(bprm);
-	if (retval < 0)
-		return retval;
-
-	return search_binary_handler(bprm);
+	bprm->interpreter = file;
+	return 0;
 }
 
 static struct linux_binfmt em86_format = {

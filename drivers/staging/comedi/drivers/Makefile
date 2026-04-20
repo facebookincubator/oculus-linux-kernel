@@ -1,14 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0
 # Makefile for individual comedi drivers
 #
 ccflags-$(CONFIG_COMEDI_DEBUG)		:= -DDEBUG
 
 # Comedi "helper" modules
+obj-$(CONFIG_COMEDI_8254)		+= comedi_8254.o
+obj-$(CONFIG_COMEDI_ISADMA)		+= comedi_isadma.o
 
 # Comedi misc drivers
 obj-$(CONFIG_COMEDI_BOND)		+= comedi_bond.o
 obj-$(CONFIG_COMEDI_TEST)		+= comedi_test.o
 obj-$(CONFIG_COMEDI_PARPORT)		+= comedi_parport.o
-obj-$(CONFIG_COMEDI_SERIAL2002)		+= serial2002.o
 
 # Comedi ISA drivers
 obj-$(CONFIG_COMEDI_AMPLC_DIO200_ISA)	+= amplc_dio200.o
@@ -60,7 +62,6 @@ obj-$(CONFIG_COMEDI_S526)		+= s526.o
 # Comedi PCI drivers
 obj-$(CONFIG_COMEDI_8255_PCI)		+= 8255_pci.o
 obj-$(CONFIG_COMEDI_ADDI_WATCHDOG)	+= addi_watchdog.o
-obj-$(CONFIG_COMEDI_ADDI_APCI_035)	+= addi_apci_035.o
 obj-$(CONFIG_COMEDI_ADDI_APCI_1032)	+= addi_apci_1032.o
 obj-$(CONFIG_COMEDI_ADDI_APCI_1500)	+= addi_apci_1500.o
 obj-$(CONFIG_COMEDI_ADDI_APCI_1516)	+= addi_apci_1516.o
@@ -77,8 +78,10 @@ obj-$(CONFIG_COMEDI_ADL_PCI8164)	+= adl_pci8164.o
 obj-$(CONFIG_COMEDI_ADL_PCI9111)	+= adl_pci9111.o
 obj-$(CONFIG_COMEDI_ADL_PCI9118)	+= adl_pci9118.o
 obj-$(CONFIG_COMEDI_ADV_PCI1710)	+= adv_pci1710.o
+obj-$(CONFIG_COMEDI_ADV_PCI1720)	+= adv_pci1720.o
 obj-$(CONFIG_COMEDI_ADV_PCI1723)	+= adv_pci1723.o
 obj-$(CONFIG_COMEDI_ADV_PCI1724)	+= adv_pci1724.o
+obj-$(CONFIG_COMEDI_ADV_PCI1760)	+= adv_pci1760.o
 obj-$(CONFIG_COMEDI_ADV_PCI_DIO)	+= adv_pci_dio.o
 obj-$(CONFIG_COMEDI_AMPLC_DIO200_PCI)	+= amplc_dio200_pci.o
 obj-$(CONFIG_COMEDI_AMPLC_PC236_PCI)	+= amplc_pci236.o
@@ -89,7 +92,6 @@ obj-$(CONFIG_COMEDI_CONTEC_PCI_DIO)	+= contec_pci_dio.o
 obj-$(CONFIG_COMEDI_DAS08_PCI)		+= das08_pci.o
 obj-$(CONFIG_COMEDI_DT3000)		+= dt3000.o
 obj-$(CONFIG_COMEDI_DYNA_PCI10XX)	+= dyna_pci10xx.o
-obj-$(CONFIG_COMEDI_UNIOXX5)		+= unioxx5.o
 obj-$(CONFIG_COMEDI_GSC_HPDI)		+= gsc_hpdi.o
 obj-$(CONFIG_COMEDI_ICP_MULTI)		+= icp_multi.o
 obj-$(CONFIG_COMEDI_DAQBOARD2000)	+= daqboard2000.o
@@ -135,10 +137,39 @@ obj-$(CONFIG_COMEDI_VMK80XX)		+= vmk80xx.o
 obj-$(CONFIG_COMEDI_MITE)		+= mite.o
 obj-$(CONFIG_COMEDI_NI_TIO)		+= ni_tio.o
 obj-$(CONFIG_COMEDI_NI_TIOCMD)		+= ni_tiocmd.o
+obj-$(CONFIG_COMEDI_NI_ROUTING)		+= ni_routing.o
+ni_routing-objs				+= ni_routes.o \
+					   ni_routing/ni_route_values.o \
+					   ni_routing/ni_route_values/ni_660x.o \
+					   ni_routing/ni_route_values/ni_eseries.o \
+					   ni_routing/ni_route_values/ni_mseries.o \
+					   ni_routing/ni_device_routes.o \
+					   ni_routing/ni_device_routes/pxi-6030e.o \
+					   ni_routing/ni_device_routes/pci-6070e.o \
+					   ni_routing/ni_device_routes/pci-6220.o \
+					   ni_routing/ni_device_routes/pci-6221.o \
+					   ni_routing/ni_device_routes/pxi-6224.o \
+					   ni_routing/ni_device_routes/pxi-6225.o \
+					   ni_routing/ni_device_routes/pci-6229.o \
+					   ni_routing/ni_device_routes/pci-6251.o \
+					   ni_routing/ni_device_routes/pxi-6251.o \
+					   ni_routing/ni_device_routes/pxie-6251.o \
+					   ni_routing/ni_device_routes/pci-6254.o \
+					   ni_routing/ni_device_routes/pci-6259.o \
+					   ni_routing/ni_device_routes/pci-6534.o \
+					   ni_routing/ni_device_routes/pxie-6535.o \
+					   ni_routing/ni_device_routes/pci-6602.o \
+					   ni_routing/ni_device_routes/pci-6713.o \
+					   ni_routing/ni_device_routes/pci-6723.o \
+					   ni_routing/ni_device_routes/pci-6733.o \
+					   ni_routing/ni_device_routes/pxi-6733.o \
+					   ni_routing/ni_device_routes/pxie-6738.o
 obj-$(CONFIG_COMEDI_NI_LABPC)		+= ni_labpc_common.o
 obj-$(CONFIG_COMEDI_NI_LABPC_ISADMA)	+= ni_labpc_isadma.o
 
-obj-$(CONFIG_COMEDI_8255)		+= 8255.o
+obj-$(CONFIG_COMEDI_8255)		+= comedi_8255.o
+obj-$(CONFIG_COMEDI_8255_SA)		+= 8255.o
 obj-$(CONFIG_COMEDI_AMPLC_DIO200)	+= amplc_dio200_common.o
 obj-$(CONFIG_COMEDI_AMPLC_PC236)	+= amplc_pc236_common.o
 obj-$(CONFIG_COMEDI_DAS08)		+= das08.o
+obj-$(CONFIG_COMEDI_TESTS)		+= tests/

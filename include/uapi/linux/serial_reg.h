@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-1.0+ WITH Linux-syscall-note */
 /*
  * include/linux/serial_reg.h
  *
@@ -61,6 +62,7 @@
  * ST16C654:	 8  16  56  60		 8  16  32  56	PORT_16654
  * TI16C750:	 1  16  32  56		xx  xx  xx  xx	PORT_16750
  * TI16C752:	 8  16  56  60		 8  16  32  56
+ * OX16C950:	16  32 112 120		16  32  64 112	PORT_16C950
  * Tegra:	 1   4   8  14		16   8   4   1	PORT_TEGRA
  */
 #define UART_FCR_R_TRIG_00	0x00
@@ -86,7 +88,8 @@
 #define UART_FCR6_T_TRIGGER_8	0x10 /* Mask for transmit trigger set at 8 */
 #define UART_FCR6_T_TRIGGER_24  0x20 /* Mask for transmit trigger set at 24 */
 #define UART_FCR6_T_TRIGGER_30	0x30 /* Mask for transmit trigger set at 30 */
-#define UART_FCR7_64BYTE	0x20 /* Go into 64 byte mode (TI16C750) */
+#define UART_FCR7_64BYTE	0x20 /* Go into 64 byte mode (TI16C750 and
+					some Freescale UARTs) */
 
 #define UART_FCR_R_TRIG_SHIFT		6
 #define UART_FCR_R_TRIG_BITS(x)		\
@@ -156,6 +159,7 @@
  */
 #define UART_DLL	0	/* Out: Divisor Latch Low */
 #define UART_DLM	1	/* Out: Divisor Latch High */
+#define UART_DIV_MAX	0xFFFF	/* Max divisor value */
 
 /*
  * LCR=0xBF (or DLAB=1 for 16C660)
@@ -239,25 +243,6 @@
 #define UART_FCR_PXAR8	0x40	/* receive FIFO threshold = 8 */
 #define UART_FCR_PXAR16	0x80	/* receive FIFO threshold = 16 */
 #define UART_FCR_PXAR32	0xc0	/* receive FIFO threshold = 32 */
-
-/*
- * Intel MID on-chip HSU (High Speed UART) defined bits
- */
-#define UART_FCR_HSU_64_1B	0x00	/* receive FIFO treshold = 1 */
-#define UART_FCR_HSU_64_16B	0x40	/* receive FIFO treshold = 16 */
-#define UART_FCR_HSU_64_32B	0x80	/* receive FIFO treshold = 32 */
-#define UART_FCR_HSU_64_56B	0xc0	/* receive FIFO treshold = 56 */
-
-#define UART_FCR_HSU_16_1B	0x00	/* receive FIFO treshold = 1 */
-#define UART_FCR_HSU_16_4B	0x40	/* receive FIFO treshold = 4 */
-#define UART_FCR_HSU_16_8B	0x80	/* receive FIFO treshold = 8 */
-#define UART_FCR_HSU_16_14B	0xc0	/* receive FIFO treshold = 14 */
-
-#define UART_FCR_HSU_64B_FIFO	0x20	/* chose 64 bytes FIFO */
-#define UART_FCR_HSU_16B_FIFO	0x00	/* chose 16 bytes FIFO */
-
-#define UART_FCR_HALF_EMPT_TXI	0x00	/* trigger TX_EMPT IRQ for half empty */
-#define UART_FCR_FULL_EMPT_TXI	0x08	/* trigger TX_EMPT IRQ for full empty */
 
 /*
  * These register definitions are for the 16C950
@@ -345,10 +330,21 @@
 #define SERIAL_RSA_BAUD_BASE (921600)
 #define SERIAL_RSA_BAUD_BASE_LO (SERIAL_RSA_BAUD_BASE / 8)
 
+/* Extra registers for TI DA8xx/66AK2x */
+#define UART_DA830_PWREMU_MGMT	12
+
+/* PWREMU_MGMT register bits */
+#define UART_DA830_PWREMU_MGMT_FREE	(1 << 0)  /* Free-running mode */
+#define UART_DA830_PWREMU_MGMT_URRST	(1 << 13) /* Receiver reset/enable */
+#define UART_DA830_PWREMU_MGMT_UTRST	(1 << 14) /* Transmitter reset/enable */
+
 /*
  * Extra serial register definitions for the internal UARTs
  * in TI OMAP processors.
  */
+#define OMAP1_UART1_BASE	0xfffb0000
+#define OMAP1_UART2_BASE	0xfffb0800
+#define OMAP1_UART3_BASE	0xfffb9800
 #define UART_OMAP_MDR1		0x08	/* Mode definition register */
 #define UART_OMAP_MDR2		0x09	/* Mode definition register 2 */
 #define UART_OMAP_SCR		0x10	/* Supplementary control register */
@@ -359,6 +355,7 @@
 #define UART_OMAP_SYSC		0x15	/* System configuration register */
 #define UART_OMAP_SYSS		0x16	/* System status register */
 #define UART_OMAP_WER		0x17	/* Wake-up enable register */
+#define UART_OMAP_TX_LVL	0x1a	/* TX FIFO level register */
 
 /*
  * These are the definitions for the MDR1 register
@@ -373,22 +370,12 @@
 #define UART_OMAP_MDR1_DISABLE		0x07	/* Disable (default state) */
 
 /*
- * These are definitions for the Exar XR17V35X and XR17(C|D)15X
+ * These are definitions for the Altera ALTR_16550_F32/F64/F128
+ * Normalized from 0x100 to 0x40 because of shift by 2 (32 bit regs).
  */
-#define UART_EXAR_8XMODE	0x88	/* 8X sampling rate select */
-#define UART_EXAR_SLEEP		0x8b	/* Sleep mode */
-#define UART_EXAR_DVID		0x8d	/* Device identification */
-
-#define UART_EXAR_FCTR		0x08	/* Feature Control Register */
-#define UART_FCTR_EXAR_IRDA	0x08	/* IrDa data encode select */
-#define UART_FCTR_EXAR_485	0x10	/* Auto 485 half duplex dir ctl */
-#define UART_FCTR_EXAR_TRGA	0x00	/* FIFO trigger table A */
-#define UART_FCTR_EXAR_TRGB	0x60	/* FIFO trigger table B */
-#define UART_FCTR_EXAR_TRGC	0x80	/* FIFO trigger table C */
-#define UART_FCTR_EXAR_TRGD	0xc0	/* FIFO trigger table D programmable */
-
-#define UART_EXAR_TXTRG		0x0a	/* Tx FIFO trigger level write-only */
-#define UART_EXAR_RXTRG		0x0b	/* Rx FIFO trigger level write-only */
+#define UART_ALTR_AFR		0x40	/* Additional Features Register */
+#define UART_ALTR_EN_TXFIFO_LW	0x01	/* Enable the TX FIFO Low Watermark */
+#define UART_ALTR_TX_LOW	0x41	/* Tx FIFO Low Watermark */
 
 #endif /* _LINUX_SERIAL_REG_H */
 

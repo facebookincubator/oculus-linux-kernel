@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/mm.h>
-#include <asm/page.h>
-#include <asm/mman.h>
+#include <asm/elf.h>
 
 const char *arch_vma_name(struct vm_area_struct *vma)
 {

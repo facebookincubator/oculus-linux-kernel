@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for AUO in-cell touchscreens
  *
@@ -7,17 +8,6 @@
  *
  * Copyright (c) 2008 QUALCOMM Incorporated.
  * Copyright (c) 2008 QUALCOMM USA, INC.
- *
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
  */
 
 #include <linux/kernel.h>
@@ -399,13 +389,8 @@ static int auo_pixcir_stop(struct auo_pixcir_ts *ts)
 static int auo_pixcir_input_open(struct input_dev *dev)
 {
 	struct auo_pixcir_ts *ts = input_get_drvdata(dev);
-	int ret;
 
-	ret = auo_pixcir_start(ts);
-	if (ret)
-		return ret;
-
-	return 0;
+	return auo_pixcir_start(ts);
 }
 
 static void auo_pixcir_input_close(struct input_dev *dev)
@@ -413,12 +398,9 @@ static void auo_pixcir_input_close(struct input_dev *dev)
 	struct auo_pixcir_ts *ts = input_get_drvdata(dev);
 
 	auo_pixcir_stop(ts);
-
-	return;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int auo_pixcir_suspend(struct device *dev)
+static int __maybe_unused auo_pixcir_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct auo_pixcir_ts *ts = i2c_get_clientdata(client);
@@ -450,7 +432,7 @@ unlock:
 	return ret;
 }
 
-static int auo_pixcir_resume(struct device *dev)
+static int __maybe_unused auo_pixcir_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct auo_pixcir_ts *ts = i2c_get_clientdata(client);
@@ -479,7 +461,6 @@ unlock:
 
 	return ret;
 }
-#endif
 
 static SIMPLE_DEV_PM_OPS(auo_pixcir_pm_ops,
 			 auo_pixcir_suspend, auo_pixcir_resume);
@@ -494,10 +475,8 @@ static struct auo_pixcir_ts_platdata *auo_pixcir_parse_dt(struct device *dev)
 		return ERR_PTR(-ENOENT);
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
-	if (!pdata) {
-		dev_err(dev, "failed to allocate platform data\n");
+	if (!pdata)
 		return ERR_PTR(-ENOMEM);
-	}
 
 	pdata->gpio_int = of_get_gpio(np, 0);
 	if (!gpio_is_valid(pdata->gpio_int)) {
@@ -623,9 +602,8 @@ static int auo_pixcir_probe(struct i2c_client *client,
 		return error;
 	}
 
-	error = devm_add_action(&client->dev, auo_pixcir_reset, ts);
+	error = devm_add_action_or_reset(&client->dev, auo_pixcir_reset, ts);
 	if (error) {
-		auo_pixcir_reset(ts);
 		dev_err(&client->dev, "failed to register reset action, %d\n",
 			error);
 		return error;
@@ -688,7 +666,6 @@ MODULE_DEVICE_TABLE(of, auo_pixcir_ts_dt_idtable);
 
 static struct i2c_driver auo_pixcir_driver = {
 	.driver = {
-		.owner	= THIS_MODULE,
 		.name	= "auo_pixcir_ts",
 		.pm	= &auo_pixcir_pm_ops,
 		.of_match_table	= of_match_ptr(auo_pixcir_ts_dt_idtable),

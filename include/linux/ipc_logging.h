@@ -1,19 +1,12 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2012-2015,2017,2020 The Linux Foundation. All rights reserved.
  */
 
 #ifndef _IPC_LOGGING_H
 #define _IPC_LOGGING_H
 
-#include <linux/err.h>
+#include <linux/errno.h>
 #include <linux/types.h>
 
 #define MAX_MSG_SIZE 255
@@ -42,19 +35,20 @@ struct decode_context {
 	int size;               /* size of output buffer */
 };
 
-#if defined(CONFIG_IPC_LOGGING)
+#if IS_ENABLED(CONFIG_IPC_LOGGING)
 /*
  * ipc_log_context_create: Create a debug log context
  *                         Should not be called from atomic context
  *
  * @max_num_pages: Number of pages of logging space required (max. 10)
  * @mod_name     : Name of the directory entry under DEBUGFS
- * @user_version : Version number of user-defined message formats
+ * @feature_version : First 16 bit for version number of user-defined message
+ *		      formats and next 16 bit for enabling minidump
  *
  * returns context id on success, NULL on failure
  */
 void *ipc_log_context_create(int max_num_pages, const char *modname,
-		uint16_t user_version);
+		uint32_t feature_version);
 
 /*
  * msg_encode_start: Start encoding a log message
@@ -95,10 +89,11 @@ int tsv_pointer_write(struct encode_context *ectxt, void *pointer);
 int tsv_int32_write(struct encode_context *ectxt, int32_t n);
 
 /*
- * tsv_int32_write: Writes a 32-bit integer value
+ * tsv_byte_array_write: Writes a byte array
  *
- * @ectxt: Context initialized by calling msg_encode_start()
- * @n:     Integer to write
+ * @ectxt:     Context initialized by calling msg_encode_start()
+ * @data:      Pointer to byte array
+ * @data_size: Size of byte array
  */
 int tsv_byte_array_write(struct encode_context *ectxt,
 			 void *data, int data_size);
@@ -111,8 +106,9 @@ int tsv_byte_array_write(struct encode_context *ectxt,
 void msg_encode_end(struct encode_context *ectxt);
 
 /*
- * msg_encode_end: Complete the message encode process
+ * ipc_log_write: Commits message to logging ring buffer
  *
+ * @ctxt:  Logging context
  * @ectxt: Temporary storage which holds the encoded message
  */
 void ipc_log_write(void *ctxt, struct encode_context *ectxt);
@@ -193,7 +189,7 @@ int32_t tsv_int32_read(struct encode_context *ectxt,
 		       struct decode_context *dctxt, const char *format);
 
 /*
- * tsv_int32_read: Reads a 32-bit integer value
+ * tsv_byte_array_read: Reads a byte array
  *
  * @ectxt:  Context retrieved by reading from log space
  * @dctxt:  Temporary storage to hold the decoded message
@@ -228,7 +224,7 @@ int ipc_log_context_destroy(void *ctxt);
 #else
 
 static inline void *ipc_log_context_create(int max_num_pages,
-	const char *modname, uint16_t user_version)
+	const char *modname, uint32_t feature_version)
 { return NULL; }
 
 static inline void msg_encode_start(struct encode_context *ectxt,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 
 target_core_mod-y		:= target_core_configfs.o \
 				   target_core_device.o \
@@ -22,7 +23,7 @@ obj-$(CONFIG_TARGET_CORE)	+= target_core_mod.o
 obj-$(CONFIG_TCM_IBLOCK)	+= target_core_iblock.o
 obj-$(CONFIG_TCM_FILEIO)	+= target_core_file.o
 obj-$(CONFIG_TCM_PSCSI)		+= target_core_pscsi.o
-obj-$(CONFIG_TCM_USER)		+= target_core_user.o
+obj-$(CONFIG_TCM_USER2)		+= target_core_user.o
 
 # Fabric modules
 obj-$(CONFIG_LOOPBACK_TARGET)	+= loopback/

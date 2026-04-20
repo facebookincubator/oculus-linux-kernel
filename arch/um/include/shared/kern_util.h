@@ -1,6 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2000 - 2007 Jeff Dike (jdike@{addtoit,linux.intel}.com)
- * Licensed under the GPL
  */
 
 #ifndef __KERN_UTIL_H__
@@ -22,7 +22,8 @@ extern int kmalloc_ok;
 extern unsigned long alloc_stack(int order, int atomic);
 extern void free_stack(unsigned long stack, int order);
 
-extern int do_signal(void);
+struct pt_regs;
+extern void do_signal(struct pt_regs *regs);
 extern void interrupt_end(void);
 extern void relay_signal(int sig, struct siginfo *si, struct uml_pt_regs *regs);
 
@@ -38,6 +39,8 @@ extern int is_syscall(unsigned long addr);
 
 extern void timer_handler(int sig, struct siginfo *unused_si, struct uml_pt_regs *regs);
 
+extern void uml_pm_wake(void);
+
 extern int start_uml(void);
 extern void paging_init(void);
 
@@ -48,7 +51,7 @@ extern void do_uml_exitcalls(void);
  * Are we disallowed to sleep? Used to choose between GFP_KERNEL and
  * GFP_ATOMIC.
  */
-extern int __cant_sleep(void);
+extern int __uml_cant_sleep(void);
 extern int get_current_pid(void);
 extern int copy_from_user_proc(void *to, void *from, int size);
 extern int cpu(void);

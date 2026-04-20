@@ -10,7 +10,6 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
-#include <linux/module.h>
 #include <linux/irq.h>
 #include <linux/spinlock.h>
 #include <asm/irq_cpu.h>
@@ -58,9 +57,9 @@ static inline int enable_irq_for_cpu(int cpu, struct irq_data *d,
 
 #ifdef CONFIG_SMP
 	if (m)
-		enable &= cpu_isset(cpu, *m);
+		enable &= cpumask_test_cpu(cpu, m);
 	else if (irqd_affinity_was_set(d))
-		enable &= cpu_isset(cpu, *d->affinity);
+		enable &= cpumask_test_cpu(cpu, irq_data_get_affinity_mask(d));
 #endif
 	return enable;
 }
@@ -311,7 +310,7 @@ static int bcm63xx_external_irq_set_type(struct irq_data *d,
 		break;
 
 	default:
-		printk(KERN_ERR "bogus flow type combination given !\n");
+		pr_err("bogus flow type combination given !\n");
 		return -EINVAL;
 	}
 
@@ -365,9 +364,9 @@ static int bcm63xx_external_irq_set_type(struct irq_data *d,
 
 	irqd_set_trigger_type(d, flow_type);
 	if (flow_type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH))
-		__irq_set_handler_locked(d->irq, handle_level_irq);
+		irq_set_handler_locked(d, handle_level_irq);
 	else
-		__irq_set_handler_locked(d->irq, handle_edge_irq);
+		irq_set_handler_locked(d, handle_edge_irq);
 
 	return IRQ_SET_MASK_OK_NOCOPY;
 }
@@ -398,26 +397,6 @@ static struct irq_chip bcm63xx_external_irq_chip = {
 	.irq_unmask	= bcm63xx_external_irq_unmask,
 
 	.irq_set_type	= bcm63xx_external_irq_set_type,
-};
-
-static struct irqaction cpu_ip2_cascade_action = {
-	.handler	= no_action,
-	.name		= "cascade_ip2",
-	.flags		= IRQF_NO_THREAD,
-};
-
-#ifdef CONFIG_SMP
-static struct irqaction cpu_ip3_cascade_action = {
-	.handler	= no_action,
-	.name		= "cascade_ip3",
-	.flags		= IRQF_NO_THREAD,
-};
-#endif
-
-static struct irqaction cpu_ext_cascade_action = {
-	.handler	= no_action,
-	.name		= "cascade_extirq",
-	.flags		= IRQF_NO_THREAD,
 };
 
 static void bcm63xx_init_irq(void)
@@ -532,7 +511,7 @@ static void bcm63xx_init_irq(void)
 
 void __init arch_init_irq(void)
 {
-	int i;
+	int i, irq;
 
 	bcm63xx_init_irq();
 	mips_cpu_irq_init();
@@ -545,14 +524,25 @@ void __init arch_init_irq(void)
 					 handle_edge_irq);
 
 	if (!is_ext_irq_cascaded) {
-		for (i = 3; i < 3 + ext_irq_count; ++i)
-			setup_irq(MIPS_CPU_IRQ_BASE + i, &cpu_ext_cascade_action);
+		for (i = 3; i < 3 + ext_irq_count; ++i) {
+			irq = MIPS_CPU_IRQ_BASE + i;
+			if (request_irq(irq, no_action, IRQF_NO_THREAD,
+					"cascade_extirq", NULL)) {
+				pr_err("Failed to request irq %d (cascade_extirq)\n",
+				       irq);
+			}
+		}
 	}
 
-	setup_irq(MIPS_CPU_IRQ_BASE + 2, &cpu_ip2_cascade_action);
+	irq = MIPS_CPU_IRQ_BASE + 2;
+	if (request_irq(irq, no_action, IRQF_NO_THREAD,	"cascade_ip2", NULL))
+		pr_err("Failed to request irq %d (cascade_ip2)\n", irq);
 #ifdef CONFIG_SMP
 	if (is_ext_irq_cascaded) {
-		setup_irq(MIPS_CPU_IRQ_BASE + 3, &cpu_ip3_cascade_action);
+		irq = MIPS_CPU_IRQ_BASE + 3;
+		if (request_irq(irq, no_action,	IRQF_NO_THREAD, "cascade_ip3",
+				NULL))
+			pr_err("Failed to request irq %d (cascade_ip3)\n", irq);
 		bcm63xx_internal_irq_chip.irq_set_affinity =
 			bcm63xx_internal_set_affinity;
 

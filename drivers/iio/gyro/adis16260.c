@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * ADIS16260/ADIS16265 Programmable Digital Gyroscope Sensor Driver
  *
  * Copyright 2010 Analog Devices Inc.
- *
- * Licensed under the GPL-2 or later.
  */
 
 #include <linux/interrupt.h>
@@ -101,19 +100,24 @@
 #define ADIS16260_SCAN_TEMP	3
 #define ADIS16260_SCAN_ANGL	4
 
-/* Power down the device */
-static int adis16260_stop_device(struct iio_dev *indio_dev)
-{
-	struct adis *adis = iio_priv(indio_dev);
-	int ret;
-	u16 val = ADIS16260_SLP_CNT_POWER_OFF;
+struct adis16260_chip_info {
+	unsigned int gyro_max_val;
+	unsigned int gyro_max_scale;
+	const struct iio_chan_spec *channels;
+	unsigned int num_channels;
+};
 
-	ret = adis_write_reg_16(adis, ADIS16260_SLP_CNT, val);
-	if (ret)
-		dev_err(&indio_dev->dev, "problem with turning device off: SLP_CNT");
+struct adis16260 {
+	const struct adis16260_chip_info *info;
 
-	return ret;
-}
+	struct adis adis;
+};
+
+enum adis16260_type {
+	ADIS16251,
+	ADIS16260,
+	ADIS16266,
+};
 
 static const struct iio_chan_spec adis16260_channels[] = {
 	ADIS_GYRO_CHAN(X, ADIS16260_GYRO_OUT, ADIS16260_SCAN_GYRO,
@@ -131,6 +135,55 @@ static const struct iio_chan_spec adis16260_channels[] = {
 	IIO_CHAN_SOFT_TIMESTAMP(5),
 };
 
+static const struct iio_chan_spec adis16266_channels[] = {
+	ADIS_GYRO_CHAN(X, ADIS16260_GYRO_OUT, ADIS16260_SCAN_GYRO,
+		BIT(IIO_CHAN_INFO_CALIBBIAS) |
+		BIT(IIO_CHAN_INFO_CALIBSCALE),
+		BIT(IIO_CHAN_INFO_SAMP_FREQ), 14),
+	ADIS_TEMP_CHAN(ADIS16260_TEMP_OUT, ADIS16260_SCAN_TEMP,
+		BIT(IIO_CHAN_INFO_SAMP_FREQ), 12),
+	ADIS_SUPPLY_CHAN(ADIS16260_SUPPLY_OUT, ADIS16260_SCAN_SUPPLY,
+		BIT(IIO_CHAN_INFO_SAMP_FREQ), 12),
+	ADIS_AUX_ADC_CHAN(ADIS16260_AUX_ADC, ADIS16260_SCAN_AUX_ADC,
+		BIT(IIO_CHAN_INFO_SAMP_FREQ), 12),
+	IIO_CHAN_SOFT_TIMESTAMP(4),
+};
+
+static const struct adis16260_chip_info adis16260_chip_info_table[] = {
+	[ADIS16251] = {
+		.gyro_max_scale = 80,
+		.gyro_max_val = IIO_RAD_TO_DEGREE(4368),
+		.channels = adis16260_channels,
+		.num_channels = ARRAY_SIZE(adis16260_channels),
+	},
+	[ADIS16260] = {
+		.gyro_max_scale = 320,
+		.gyro_max_val = IIO_RAD_TO_DEGREE(4368),
+		.channels = adis16260_channels,
+		.num_channels = ARRAY_SIZE(adis16260_channels),
+	},
+	[ADIS16266] = {
+		.gyro_max_scale = 14000,
+		.gyro_max_val = IIO_RAD_TO_DEGREE(3357),
+		.channels = adis16266_channels,
+		.num_channels = ARRAY_SIZE(adis16266_channels),
+	},
+};
+
+/* Power down the device */
+static int adis16260_stop_device(struct iio_dev *indio_dev)
+{
+	struct adis16260 *adis16260 = iio_priv(indio_dev);
+	int ret;
+	u16 val = ADIS16260_SLP_CNT_POWER_OFF;
+
+	ret = adis_write_reg_16(&adis16260->adis, ADIS16260_SLP_CNT, val);
+	if (ret)
+		dev_err(&indio_dev->dev, "problem with turning device off: SLP_CNT");
+
+	return ret;
+}
+
 static const u8 adis16260_addresses[][2] = {
 	[ADIS16260_SCAN_GYRO] = { ADIS16260_GYRO_OFF, ADIS16260_GYRO_SCALE },
 };
@@ -140,7 +193,9 @@ static int adis16260_read_raw(struct iio_dev *indio_dev,
 			      int *val, int *val2,
 			      long mask)
 {
-	struct adis *adis = iio_priv(indio_dev);
+	struct adis16260 *adis16260 = iio_priv(indio_dev);
+	const struct adis16260_chip_info *info = adis16260->info;
+	struct adis *adis = &adis16260->adis;
 	int ret;
 	u8 addr;
 	s16 val16;
@@ -152,15 +207,9 @@ static int adis16260_read_raw(struct iio_dev *indio_dev,
 	case IIO_CHAN_INFO_SCALE:
 		switch (chan->type) {
 		case IIO_ANGL_VEL:
-			*val = 0;
-			if (spi_get_device_id(adis->spi)->driver_data) {
-				/* 0.01832 degree / sec */
-				*val2 = IIO_DEGREE_TO_RAD(18320);
-			} else {
-				/* 0.07326 degree / sec */
-				*val2 = IIO_DEGREE_TO_RAD(73260);
-			}
-			return IIO_VAL_INT_PLUS_MICRO;
+			*val = info->gyro_max_scale;
+			*val2 = info->gyro_max_val;
+			return IIO_VAL_FRACTIONAL;
 		case IIO_INCLI:
 			*val = 0;
 			*val2 = IIO_DEGREE_TO_RAD(36630);
@@ -224,7 +273,8 @@ static int adis16260_write_raw(struct iio_dev *indio_dev,
 			       int val2,
 			       long mask)
 {
-	struct adis *adis = iio_priv(indio_dev);
+	struct adis16260 *adis16260 = iio_priv(indio_dev);
+	struct adis *adis = &adis16260->adis;
 	int ret;
 	u8 addr;
 	u8 t;
@@ -243,7 +293,7 @@ static int adis16260_write_raw(struct iio_dev *indio_dev,
 		addr = adis16260_addresses[chan->scan_index][1];
 		return adis_write_reg_16(adis, addr, val);
 	case IIO_CHAN_INFO_SAMP_FREQ:
-		mutex_lock(&indio_dev->mlock);
+		mutex_lock(&adis->state_lock);
 		if (spi_get_device_id(adis->spi)->driver_data)
 			t = 256 / val;
 		else
@@ -258,9 +308,9 @@ static int adis16260_write_raw(struct iio_dev *indio_dev,
 			adis->spi->max_speed_hz = ADIS16260_SPI_SLOW;
 		else
 			adis->spi->max_speed_hz = ADIS16260_SPI_FAST;
-		ret = adis_write_reg_8(adis, ADIS16260_SMPL_PRD, t);
+		ret = __adis_write_reg_8(adis, ADIS16260_SMPL_PRD, t);
 
-		mutex_unlock(&indio_dev->mlock);
+		mutex_unlock(&adis->state_lock);
 		return ret;
 	}
 	return -EINVAL;
@@ -270,7 +320,6 @@ static const struct iio_info adis16260_info = {
 	.read_raw = &adis16260_read_raw,
 	.write_raw = &adis16260_write_raw,
 	.update_scan_mode = adis_update_scan_mode,
-	.driver_module = THIS_MODULE,
 };
 
 static const char * const adis1620_status_error_msgs[] = {
@@ -283,6 +332,12 @@ static const char * const adis1620_status_error_msgs[] = {
 	[ADIS16260_DIAG_STAT_POWER_LOW_BIT] = "Power supply below 4.75",
 };
 
+static const struct adis_timeout adis16260_timeouts = {
+	.reset_ms = ADIS16260_STARTUP_DELAY,
+	.sw_reset_ms = ADIS16260_STARTUP_DELAY,
+	.self_test_ms = ADIS16260_STARTUP_DELAY,
+};
+
 static const struct adis_data adis16260_data = {
 	.write_delay = 30,
 	.read_delay = 30,
@@ -291,7 +346,8 @@ static const struct adis_data adis16260_data = {
 	.diag_stat_reg = ADIS16260_DIAG_STAT,
 
 	.self_test_mask = ADIS16260_MSC_CTRL_MEM_TEST,
-	.startup_delay = ADIS16260_STARTUP_DELAY,
+	.self_test_reg = ADIS16260_MSC_CTRL,
+	.timeouts = &adis16260_timeouts,
 
 	.status_error_msgs = adis1620_status_error_msgs,
 	.status_error_mask = BIT(ADIS16260_DIAG_STAT_FLASH_CHK_BIT) |
@@ -303,60 +359,56 @@ static const struct adis_data adis16260_data = {
 		BIT(ADIS16260_DIAG_STAT_POWER_LOW_BIT),
 };
 
+static void adis16260_stop(void *data)
+{
+	adis16260_stop_device(data);
+}
+
 static int adis16260_probe(struct spi_device *spi)
 {
+	const struct spi_device_id *id;
+	struct adis16260 *adis16260;
 	struct iio_dev *indio_dev;
-	struct adis *adis;
 	int ret;
 
+	id = spi_get_device_id(spi);
+	if (!id)
+		return -ENODEV;
+
 	/* setup the industrialio driver allocated elements */
-	indio_dev = devm_iio_device_alloc(&spi->dev, sizeof(*adis));
+	indio_dev = devm_iio_device_alloc(&spi->dev, sizeof(*adis16260));
 	if (!indio_dev)
 		return -ENOMEM;
-	adis = iio_priv(indio_dev);
+	adis16260 = iio_priv(indio_dev);
 	/* this is only used for removal purposes */
 	spi_set_drvdata(spi, indio_dev);
 
-	indio_dev->name = spi_get_device_id(spi)->name;
-	indio_dev->dev.parent = &spi->dev;
+	adis16260->info = &adis16260_chip_info_table[id->driver_data];
+
+	indio_dev->name = id->name;
 	indio_dev->info = &adis16260_info;
-	indio_dev->channels = adis16260_channels;
-	indio_dev->num_channels = ARRAY_SIZE(adis16260_channels);
+	indio_dev->channels = adis16260->info->channels;
+	indio_dev->num_channels = adis16260->info->num_channels;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 
-	ret = adis_init(adis, indio_dev, spi, &adis16260_data);
+	ret = adis_init(&adis16260->adis, indio_dev, spi, &adis16260_data);
 	if (ret)
 		return ret;
 
-	ret = adis_setup_buffer_and_trigger(adis, indio_dev, NULL);
+	ret = devm_adis_setup_buffer_and_trigger(&adis16260->adis, indio_dev, NULL);
 	if (ret)
 		return ret;
 
 	/* Get the device into a sane initial state */
-	ret = adis_initial_startup(adis);
+	ret = adis_initial_startup(&adis16260->adis);
 	if (ret)
-		goto error_cleanup_buffer_trigger;
-	ret = iio_device_register(indio_dev);
+		return ret;
+
+	ret = devm_add_action_or_reset(&spi->dev, adis16260_stop, indio_dev);
 	if (ret)
-		goto error_cleanup_buffer_trigger;
+		return ret;
 
-	return 0;
-
-error_cleanup_buffer_trigger:
-	adis_cleanup_buffer_and_trigger(adis, indio_dev);
-	return ret;
-}
-
-static int adis16260_remove(struct spi_device *spi)
-{
-	struct iio_dev *indio_dev = spi_get_drvdata(spi);
-	struct adis *adis = iio_priv(indio_dev);
-
-	iio_device_unregister(indio_dev);
-	adis16260_stop_device(indio_dev);
-	adis_cleanup_buffer_and_trigger(adis, indio_dev);
-
-	return 0;
+	return devm_iio_device_register(&spi->dev, indio_dev);
 }
 
 /*
@@ -364,11 +416,12 @@ static int adis16260_remove(struct spi_device *spi)
  * support for the on chip filtering.
  */
 static const struct spi_device_id adis16260_id[] = {
-	{"adis16260", 0},
-	{"adis16265", 0},
-	{"adis16250", 0},
-	{"adis16255", 0},
-	{"adis16251", 1},
+	{"adis16260", ADIS16260},
+	{"adis16265", ADIS16260},
+	{"adis16266", ADIS16266},
+	{"adis16250", ADIS16260},
+	{"adis16255", ADIS16260},
+	{"adis16251", ADIS16251},
 	{}
 };
 MODULE_DEVICE_TABLE(spi, adis16260_id);
@@ -376,10 +429,8 @@ MODULE_DEVICE_TABLE(spi, adis16260_id);
 static struct spi_driver adis16260_driver = {
 	.driver = {
 		.name = "adis16260",
-		.owner = THIS_MODULE,
 	},
 	.probe = adis16260_probe,
-	.remove = adis16260_remove,
 	.id_table = adis16260_id,
 };
 module_spi_driver(adis16260_driver);
@@ -387,3 +438,4 @@ module_spi_driver(adis16260_driver);
 MODULE_AUTHOR("Barry Song <21cnbao@gmail.com>");
 MODULE_DESCRIPTION("Analog Devices ADIS16260/5 Digital Gyroscope Sensor");
 MODULE_LICENSE("GPL v2");
+MODULE_IMPORT_NS(IIO_ADISLIB);

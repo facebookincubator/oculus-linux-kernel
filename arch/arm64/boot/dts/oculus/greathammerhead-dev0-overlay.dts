@@ -1,0 +1,12 @@
+#include "greathammerhead.dtsi"
+
+/ {
+	model = "Greathammerhead DEV0";
+	compatible = "meta,hammerhead", "meta,greathammerhead", "meta,greathammerhead-dev0";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <34 0x60>;
+};
+
+&rt600_ctrl {
+	nirq-mcu-map = <0 24>;
+};

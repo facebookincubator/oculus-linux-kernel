@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) AND MIT) */
 /*
  *  compress_params.h - codec types and parameters for compressed data
  *  streaming interface
@@ -53,22 +54,11 @@
 
 #include <linux/types.h>
 
-#define SND_DEC_DDP_MAX_PARAMS 18
-
 /* AUDIO CODECS SUPPORTED */
 #define MAX_NUM_CODECS 32
 #define MAX_NUM_CODEC_DESCRIPTORS 32
 #define MAX_NUM_BITRATES 32
 #define MAX_NUM_SAMPLE_RATES 32
-
-/* compressed TX */
-#define MAX_NUM_FRAMES_PER_BUFFER 1
-#define COMPRESSED_META_DATA_MODE 0x10
-#define META_DATA_LEN_BYTES 36
-#define Q6_AC3_DECODER	0x00010BF6
-#define Q6_EAC3_DECODER 0x00010C3C
-#define Q6_DTS		0x00010D88
-#define Q6_DTS_LBR	0x00010DBB
 
 /* Codecs are listed linearly to allow for extensibility */
 #define SND_AUDIOCODEC_PCM                   ((__u32) 0x00000001)
@@ -84,20 +74,11 @@
 #define SND_AUDIOCODEC_IEC61937              ((__u32) 0x0000000B)
 #define SND_AUDIOCODEC_G723_1                ((__u32) 0x0000000C)
 #define SND_AUDIOCODEC_G729                  ((__u32) 0x0000000D)
-#define SND_AUDIOCODEC_DTS_PASS_THROUGH      ((__u32) 0x0000000E)
-#define SND_AUDIOCODEC_DTS_LBR               ((__u32) 0x0000000F)
-#define SND_AUDIOCODEC_DTS_TRANSCODE_LOOPBACK ((__u32) 0x00000010)
-#define SND_AUDIOCODEC_PASS_THROUGH          ((__u32) 0x00000011)
-#define SND_AUDIOCODEC_MP2                   ((__u32) 0x00000012)
-#define SND_AUDIOCODEC_DTS_LBR_PASS_THROUGH  ((__u32) 0x00000013)
-#define SND_AUDIOCODEC_AC3                   ((__u32) 0x00000014)
-#define SND_AUDIOCODEC_AC3_PASS_THROUGH      ((__u32) 0x00000015)
-#define SND_AUDIOCODEC_WMA_PRO               ((__u32) 0x00000016)
-#define SND_AUDIOCODEC_DTS             	     ((__u32) 0x00000017)
-#define SND_AUDIOCODEC_EAC3                  ((__u32) 0x00000018)
-#define SND_AUDIOCODEC_ALAC                  ((__u32) 0x00000019)
-#define SND_AUDIOCODEC_APE                   ((__u32) 0x00000020)
+#define SND_AUDIOCODEC_BESPOKE               ((__u32) 0x0000000E)
+#define SND_AUDIOCODEC_ALAC                  ((__u32) 0x0000000F)
+#define SND_AUDIOCODEC_APE                   ((__u32) 0x00000010)
 #define SND_AUDIOCODEC_MAX                   SND_AUDIOCODEC_APE
+
 /*
  * Profile and modes are listed with bit masks. This allows for a
  * more compact representation of fields that will not evolve
@@ -163,6 +144,9 @@
 #define SND_AUDIOPROFILE_WMA8                ((__u32) 0x00000002)
 #define SND_AUDIOPROFILE_WMA9                ((__u32) 0x00000004)
 #define SND_AUDIOPROFILE_WMA10               ((__u32) 0x00000008)
+#define SND_AUDIOPROFILE_WMA9_PRO            ((__u32) 0x00000010)
+#define SND_AUDIOPROFILE_WMA9_LOSSLESS       ((__u32) 0x00000020)
+#define SND_AUDIOPROFILE_WMA10_LOSSLESS      ((__u32) 0x00000040)
 
 #define SND_AUDIOMODE_WMA_LEVEL1             ((__u32) 0x00000001)
 #define SND_AUDIOMODE_WMA_LEVEL2             ((__u32) 0x00000002)
@@ -262,12 +246,6 @@
 
 struct snd_enc_wma {
 	__u32 super_block_align; /* WMA Type-specific data */
-	__u32 bits_per_sample;
-	__u32 channelmask;
-	__u32 encodeopt;
-	__u32 encodeopt1;
-	__u32 encodeopt2;
-	__u32 avg_bit_rate;
 };
 
 
@@ -341,13 +319,7 @@ struct snd_enc_flac {
 
 struct snd_enc_generic {
 	__u32 bw;	/* encoder bandwidth */
-	__s32 reserved[15];
-} __attribute__((packed, aligned(4)));
-
-struct snd_dec_ddp {
-	__u32 params_length;
-	__u32 params_id[SND_DEC_DDP_MAX_PARAMS];
-	__u32 params_value[SND_DEC_DDP_MAX_PARAMS];
+	__s32 reserved[15];	/* Can be used for SND_AUDIOCODEC_BESPOKE */
 } __attribute__((packed, aligned(4)));
 
 struct snd_dec_flac {
@@ -356,26 +328,25 @@ struct snd_dec_flac {
 	__u16 max_blk_size;
 	__u16 min_frame_size;
 	__u16 max_frame_size;
+	__u16 reserved;
 } __attribute__((packed, aligned(4)));
 
-struct snd_dec_vorbis {
-	__u32 bit_stream_fmt;
-};
+struct snd_dec_wma {
+	__u32 encoder_option;
+	__u32 adv_encoder_option;
+	__u32 adv_encoder_option2;
+	__u32 reserved;
+} __attribute__((packed, aligned(4)));
 
 struct snd_dec_alac {
 	__u32 frame_length;
 	__u8 compatible_version;
-	__u8 bit_depth;
 	__u8 pb;
 	__u8 mb;
 	__u8 kb;
-	__u8 num_channels;
-	__u16 max_run;
+	__u32 max_run;
 	__u32 max_frame_bytes;
-	__u32 avg_bit_rate;
-	__u32 sample_rate;
-	__u32 channel_layout_tag;
-};
+} __attribute__((packed, aligned(4)));
 
 struct snd_dec_ape {
 	__u16 compatible_version;
@@ -384,11 +355,8 @@ struct snd_dec_ape {
 	__u32 blocks_per_frame;
 	__u32 final_frame_blocks;
 	__u32 total_frames;
-	__u16 bits_per_sample;
-	__u16 num_channels;
-	__u32 sample_rate;
 	__u32 seek_table_present;
-};
+} __attribute__((packed, aligned(4)));
 
 union snd_codec_options {
 	struct snd_enc_wma wma;
@@ -396,11 +364,10 @@ union snd_codec_options {
 	struct snd_enc_real real;
 	struct snd_enc_flac flac;
 	struct snd_enc_generic generic;
-	struct snd_dec_ddp ddp;
-	struct snd_dec_flac flac_dec;
-	struct snd_dec_vorbis vorbis_dec;
-	struct snd_dec_alac alac;
-	struct snd_dec_ape ape;
+	struct snd_dec_flac flac_d;
+	struct snd_dec_wma wma_d;
+	struct snd_dec_alac alac_d;
+	struct snd_dec_ape ape_d;
 } __attribute__((packed, aligned(4)));
 
 /** struct snd_codec_desc - description of codec capabilities
@@ -477,7 +444,6 @@ struct snd_codec {
 	__u32 ch_mode;
 	__u32 format;
 	__u32 align;
-	__u32 compr_passthr;
 	union snd_codec_options options;
 	__u32 reserved[3];
 } __attribute__((packed, aligned(4)));

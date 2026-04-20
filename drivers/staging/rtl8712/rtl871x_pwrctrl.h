@@ -1,19 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2010 Realtek Corporation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * Modifications for inclusion into the Linux staging tree are
  * Copyright(c) 2010 Larry Finger. All rights reserved.
@@ -33,26 +21,26 @@
 #define CMD_ALIVE	BIT(2)
 
 enum Power_Mgnt {
-	PS_MODE_ACTIVE	= 0	,
-	PS_MODE_MIN			,
-	PS_MODE_MAX			,
-	PS_MODE_DTIM			,
-	PS_MODE_VOIP			,
-	PS_MODE_UAPSD_WMM	,
-	PS_MODE_UAPSD			,
-	PS_MODE_IBSS			,
-	PS_MODE_WWLAN		,
-	PM_Radio_Off			,
-	PM_Card_Disable		,
+	PS_MODE_ACTIVE	= 0,
+	PS_MODE_MIN,
+	PS_MODE_MAX,
+	PS_MODE_DTIM,
+	PS_MODE_VOIP,
+	PS_MODE_UAPSD_WMM,
+	PS_MODE_UAPSD,
+	PS_MODE_IBSS,
+	PS_MODE_WWLAN,
+	PM_Radio_Off,
+	PM_Card_Disable,
 	PS_MODE_NUM
 };
 
 /*
-	BIT[2:0] = HW state
-	BIT[3] = Protocol PS state, 0: register active state,
-				    1: register sleep state
-	BIT[4] = sub-state
-*/
+ * BIT[2:0] = HW state
+ * BIT[3] = Protocol PS state, 0: register active state,
+ *				1: register sleep state
+ * BIT[4] = sub-state
+ */
 
 #define		PS_DPS				BIT(0)
 #define		PS_LCLK				(PS_DPS)
@@ -87,16 +75,12 @@ struct reportpwrstate_parm {
 	unsigned short rsvd;
 };
 
-static inline void _enter_pwrlock(struct semaphore *plock)
-{
-	_down_sema(plock);
-}
-
 struct	pwrctrl_priv {
-	struct semaphore lock;
+	struct mutex mutex_lock;
 	/*volatile*/ u8 rpwm; /* requested power state for fw */
 	/* fw current power state. updated when 1. read from HCPWM or
-	 * 2. driver lowers power level */
+	 * 2. driver lowers power level
+	 */
 	/*volatile*/ u8 cpwm;
 	/*volatile*/ u8 tog; /* toggling */
 	/*volatile*/ u8 cpwm_tog; /* toggling */
@@ -120,12 +104,13 @@ struct	pwrctrl_priv {
 };
 
 void r8712_init_pwrctrl_priv(struct _adapter *adapter);
-sint r8712_register_cmd_alive(struct _adapter *padapter);
+int r8712_register_cmd_alive(struct _adapter *padapter);
 void r8712_unregister_cmd_alive(struct _adapter *padapter);
 void r8712_cpwm_int_hdl(struct _adapter *padapter,
 			struct reportpwrstate_parm *preportpwrstate);
 void r8712_set_ps_mode(struct _adapter *padapter, uint ps_mode,
 			uint smart_ps);
 void r8712_set_rpwm(struct _adapter *padapter, u8 val8);
+void r8712_flush_rwctrl_works(struct _adapter *padapter);
 
 #endif  /* __RTL871X_PWRCTRL_H_ */

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * comedi/drivers/pcl730.c
  * Driver for Advantech PCL-730 and clones
@@ -7,19 +8,12 @@
 /*
  * Driver: pcl730
  * Description: Advantech PCL-730 (& compatibles)
- * Devices: (Advantech) PCL-730 [pcl730]
- *	    (ICP) ISO-730 [iso730]
- *	    (Adlink) ACL-7130 [acl7130]
- *	    (Advantech) PCM-3730 [pcm3730]
- *	    (Advantech) PCL-725 [pcl725]
- *	    (ICP) P8R8-DIO [p16r16dio]
- *	    (Adlink) ACL-7225b [acl7225b]
- *	    (ICP) P16R16-DIO [p16r16dio]
- *	    (Advantech) PCL-733 [pcl733]
- *	    (Advantech) PCL-734 [pcl734]
- *	    (Diamond Systems) OPMM-1616-XT [opmm-1616-xt]
- *	    (Diamond Systems) PEARL-MM-P [prearl-mm-p]
- *	    (Diamond Systems) IR104-PBF [ir104-pbf]
+ * Devices: [Advantech] PCL-730 (pcl730), PCM-3730 (pcm3730), PCL-725 (pcl725),
+ *   PCL-733 (pcl733), PCL-734 (pcl734),
+ *   [ADLink] ACL-7130 (acl7130), ACL-7225b (acl7225b),
+ *   [ICP] ISO-730 (iso730), P8R8-DIO (p8r8dio), P16R16-DIO (p16r16dio),
+ *   [Diamond Systems] OPMM-1616-XT (opmm-1616-xt), PEARL-MM-P (pearl-mm-p),
+ *   IR104-PBF (ir104-pbf),
  * Author: José Luis Sánchez (jsanchezv@teleline.es)
  * Status: untested
  *
@@ -351,6 +345,6 @@ static struct comedi_driver pcl730_driver = {
 };
 module_comedi_driver(pcl730_driver);
 
-MODULE_AUTHOR("Comedi http://www.comedi.org");
+MODULE_AUTHOR("Comedi https://www.comedi.org");
 MODULE_DESCRIPTION("Comedi low-level driver");
 MODULE_LICENSE("GPL");

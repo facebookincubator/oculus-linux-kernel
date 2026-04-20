@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * OMAP44xx CM2 instance offset macros
  *
@@ -14,18 +15,12 @@
  * authors above to ensure that the autogeneration scripts are kept
  * up-to-date with the file contents.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  * XXX This file needs to be updated to align on one of "OMAP4", "OMAP44XX",
  *     or "OMAP4430".
  */
 
 #ifndef __ARCH_ARM_MACH_OMAP2_CM2_44XX_H
 #define __ARCH_ARM_MACH_OMAP2_CM2_44XX_H
-
-#include "cm_44xx_54xx.h"
 
 /* CM2 base address */
 #define OMAP4430_CM2_BASE		0x4a008000

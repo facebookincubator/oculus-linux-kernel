@@ -1,21 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * PS3 BD/DVD/CD-ROM Storage Driver
  *
  * Copyright (C) 2007 Sony Computer Entertainment Inc.
  * Copyright 2007 Sony Corp.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published
- * by the Free Software Foundation; version 2 of the License.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #include <linux/cdrom.h>
@@ -220,10 +208,6 @@ static int ps3rom_queuecommand_lck(struct scsi_cmnd *cmd,
 	unsigned char opcode;
 	int res;
 
-#ifdef DEBUG
-	scsi_print_command(cmd);
-#endif
-
 	priv->curr_cmd = cmd;
 	cmd->scsi_done = done;
 
@@ -351,10 +335,8 @@ static struct scsi_host_template ps3rom_host_template = {
 	.can_queue =		1,
 	.this_id =		7,
 	.sg_tablesize =		SG_ALL,
-	.cmd_per_lun =		1,
 	.emulated =             1,		/* only sg driver uses this */
 	.max_sectors =		PS3ROM_MAX_SECTORS,
-	.use_clustering =	ENABLE_CLUSTERING,
 	.module =		THIS_MODULE,
 };
 
@@ -387,6 +369,7 @@ static int ps3rom_probe(struct ps3_system_bus_device *_dev)
 	if (!host) {
 		dev_err(&dev->sbd.core, "%s:%u: scsi_host_alloc failed\n",
 			__func__, __LINE__);
+		error = -ENOMEM;
 		goto fail_teardown;
 	}
 

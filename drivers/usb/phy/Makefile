@@ -1,10 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for physical layer USB drivers
 #
 obj-$(CONFIG_USB_PHY)			+= phy.o
 obj-$(CONFIG_OF)			+= of.o
-obj-$(CONFIG_USB_OTG_WAKELOCK)		+= otg-wakelock.o
-obj-$(CONFIG_DUAL_ROLE_USB_INTF)	+= class-dual-role.o
 
 # transceiver drivers, keep the list sorted
 
@@ -16,20 +15,18 @@ obj-$(CONFIG_TAHVO_USB)			+= phy-tahvo.o
 obj-$(CONFIG_AM335X_CONTROL_USB)	+= phy-am335x-control.o
 obj-$(CONFIG_AM335X_PHY_USB)		+= phy-am335x.o
 obj-$(CONFIG_OMAP_OTG)			+= phy-omap-otg.o
-obj-$(CONFIG_SAMSUNG_USBPHY)		+= phy-samsung-usb.o
 obj-$(CONFIG_TWL6030_USB)		+= phy-twl6030-usb.o
-obj-$(CONFIG_USB_EHCI_TEGRA)		+= phy-tegra-usb.o
+obj-$(CONFIG_USB_TEGRA_PHY)		+= phy-tegra-usb.o
 obj-$(CONFIG_USB_GPIO_VBUS)		+= phy-gpio-vbus-usb.o
 obj-$(CONFIG_USB_ISP1301)		+= phy-isp1301.o
-obj-$(CONFIG_USB_MSM_OTG)		+= phy-msm-usb.o
-obj-$(CONFIG_USB_MSM_HSPHY)     	+= phy-msm-hsusb.o
-obj-$(CONFIG_USB_MSM_SSPHY)     	+= phy-msm-ssusb.o
-obj-$(CONFIG_USB_MSM_SSPHY_QMP)     	+= phy-msm-ssusb-qmp.o
-obj-$(CONFIG_MSM_QUSB_PHY)              += phy-msm-qusb.o
+obj-$(CONFIG_USB_QCOM_EMU_PHY)		+= phy-qcom-emu.o
 obj-$(CONFIG_USB_MV_OTG)		+= phy-mv-usb.o
 obj-$(CONFIG_USB_MXS_PHY)		+= phy-mxs-usb.o
-obj-$(CONFIG_USB_RCAR_PHY)		+= phy-rcar-usb.o
-obj-$(CONFIG_USB_RCAR_GEN2_PHY)		+= phy-rcar-gen2-usb.o
 obj-$(CONFIG_USB_ULPI)			+= phy-ulpi.o
 obj-$(CONFIG_USB_ULPI_VIEWPORT)		+= phy-ulpi-viewport.o
 obj-$(CONFIG_KEYSTONE_USB_PHY)		+= phy-keystone.o
+obj-$(CONFIG_MSM_QUSB_PHY)		+= phy-msm-qusb-v2.o
+obj-$(CONFIG_USB_MSM_SSPHY_QMP)		+= phy-msm-ssusb-qmp.o
+obj-$(CONFIG_MSM_HSUSB_PHY)		+= phy-msm-snps-hs.o
+obj-$(CONFIG_JZ4770_PHY)		+= phy-jz4770.o
+obj-$(CONFIG_USB_MSM_EUSB2_PHY)		+= phy-msm-snps-eusb2.o

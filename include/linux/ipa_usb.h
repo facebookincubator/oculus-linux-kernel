@@ -1,17 +1,16 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _IPA_USB_H_
 #define _IPA_USB_H_
+
+#include <linux/if_ether.h>
+#include <linux/ipa.h>
+#include <linux/msm_gsi.h>
+#include <linux/msm_ipa.h>
+#include <linux/types.h>
 
 enum ipa_usb_teth_prot {
 	IPA_USB_RNDIS = 0,
@@ -19,7 +18,14 @@ enum ipa_usb_teth_prot {
 	IPA_USB_RMNET = 2,
 	IPA_USB_MBIM = 3,
 	IPA_USB_DIAG = 4,
+	IPA_USB_RMNET_CV2X = 5,
 	IPA_USB_MAX_TETH_PROT_SIZE
+};
+
+enum teth_bridge_params {
+	IPA_TETH_BRIDGE_1 = 0,
+	IPA_TETH_BRIDGE_2 = 1,
+	IPA_TETH_BRIDGE_MAX
 };
 
 /**
@@ -40,6 +46,7 @@ enum ipa_usb_notify_event {
 };
 
 enum ipa_usb_max_usb_packet_size {
+	IPA_USB_FULL_SPEED_64B = 64,
 	IPA_USB_HIGH_SPEED_512B = 512,
 	IPA_USB_SUPER_SPEED_1024B = 1024
 };
@@ -62,7 +69,7 @@ struct ipa_usb_teth_prot_params {
  * ipa_usb_xdci_connect_params - parameters required to start IN, OUT
  * channels, and connect RNDIS/ECM/teth_bridge
  *
- * @max_pkt_size:          high speed or full speed
+ * @max_pkt_size:          USB speed (full/high/super/super-speed plus)
  * @ipa_to_usb_xferrscidx: Transfer Resource Index (XferRscIdx) for IN channel.
  *                         The hardware-assigned transfer resource index for the
  *                         transfer, which was returned in response to the
@@ -121,14 +128,16 @@ struct ipa_usb_xdci_chan_scratch {
  * @dir:                 channel direction
  * @xfer_ring_len:       length of transfer ring in bytes (must be integral
  *                       multiple of transfer element size - 16B for xDCI)
- * @xfer_ring_base_addr: physical base address of transfer ring. Address must be
- *                       aligned to xfer_ring_len rounded to power of two
  * @xfer_scratch:        parameters for xDCI channel scratch
- * @xfer_ring_base_addr_iova: IO virtual address mapped to xfer_ring_base_addr
+ * @xfer_ring_base_addr_iova: IO virtual address mapped to pysical base address
  * @data_buff_base_len:  length of data buffer allocated by USB driver
- * @data_buff_base_addr: physical base address for the data buffer (where TRBs
- *                       points)
- * @data_buff_base_addr_iova:  IO virtual address mapped to data_buff_base_addr
+ * @data_buff_base_addr_iova:  IO virtual address mapped to pysical base address
+ * @sgt_xfer_rings:      Scatter table for Xfer rings,contains valid non NULL
+ *			 value
+ *                       when USB S1-SMMU enabed, else NULL.
+ * @sgt_data_buff:       Scatter table for data buffs,contains valid non NULL
+ *			 value
+ *                       when USB S1-SMMU enabed, else NULL.
  *
  */
 struct ipa_usb_xdci_chan_params {
@@ -143,12 +152,12 @@ struct ipa_usb_xdci_chan_params {
 	/* transfer ring params */
 	enum gsi_chan_dir dir;
 	u16 xfer_ring_len;
-	u64 xfer_ring_base_addr;
 	struct ipa_usb_xdci_chan_scratch xfer_scratch;
 	u64 xfer_ring_base_addr_iova;
 	u32 data_buff_base_len;
-	u64 data_buff_base_addr;
 	u64 data_buff_base_addr_iova;
+	struct sg_table *sgt_xfer_rings;
+	struct sg_table *sgt_data_buff;
 };
 
 /**
@@ -167,7 +176,7 @@ struct ipa_req_chan_out_params {
 	u32 db_reg_phs_addr_msb;
 };
 
-#ifdef CONFIG_IPA3
+#if IS_ENABLED(CONFIG_IPA3)
 
 /**
  * ipa_usb_init_teth_prot - Peripheral should call this function to initialize
@@ -253,6 +262,7 @@ int ipa_usb_deinit_teth_prot(enum ipa_usb_teth_prot teth_prot);
  * @dl_clnt_hdl: client handle previously obtained from
  *               ipa_usb_xdci_connect() for IN channel
  * @teth_prot:   tethering protocol
+ * @with_remote_wakeup: Does host support remote wakeup?
  *
  * Note: Should not be called from atomic context
  * Note: for DPL, the ul will be ignored as irrelevant
@@ -260,7 +270,8 @@ int ipa_usb_deinit_teth_prot(enum ipa_usb_teth_prot teth_prot);
  * @Return 0 on success, negative on failure
  */
 int ipa_usb_xdci_suspend(u32 ul_clnt_hdl, u32 dl_clnt_hdl,
-			 enum ipa_usb_teth_prot teth_prot);
+			 enum ipa_usb_teth_prot teth_prot,
+			 bool with_remote_wakeup);
 
 /**
  * ipa_usb_xdci_resume - Peripheral should call this function to resume
@@ -280,7 +291,16 @@ int ipa_usb_xdci_suspend(u32 ul_clnt_hdl, u32 dl_clnt_hdl,
 int ipa_usb_xdci_resume(u32 ul_clnt_hdl, u32 dl_clnt_hdl,
 			enum ipa_usb_teth_prot teth_prot);
 
-#else /* CONFIG_IPA3 */
+/**
+ * ipa_usb_is_teth_prot_connected - Internal API for checking USB
+ *		protocol is connected
+ *
+ * @usb_teth_prot:   USB tethering protocol
+ * @Return true if connected, false if not
+ */
+bool ipa_usb_is_teth_prot_connected(enum ipa_usb_teth_prot usb_teth_prot);
+
+#else /* IS_ENABLED(CONFIG_IPA3) */
 
 static inline int ipa_usb_init_teth_prot(enum ipa_usb_teth_prot teth_prot,
 			   struct ipa_usb_teth_params *teth_params,
@@ -313,7 +333,8 @@ static inline int ipa_usb_deinit_teth_prot(enum ipa_usb_teth_prot teth_prot)
 }
 
 static inline int ipa_usb_xdci_suspend(u32 ul_clnt_hdl, u32 dl_clnt_hdl,
-			 enum ipa_usb_teth_prot teth_prot)
+			 enum ipa_usb_teth_prot teth_prot,
+			 bool with_remote_wakeup)
 {
 	return -EPERM;
 }
@@ -324,7 +345,12 @@ static inline int ipa_usb_xdci_resume(u32 ul_clnt_hdl, u32 dl_clnt_hdl,
 	return -EPERM;
 }
 
+static inline int ipa_usb_is_teth_prot_connected(enum ipa_usb_teth_prot usb_teth_prot)
+{
+	return -EPERM;
+}
 
-#endif /* CONFIG_IPA3 */
+
+#endif /* IS_ENABLED(CONFIG_IPA3) */
 
 #endif /* _IPA_USB_H_ */

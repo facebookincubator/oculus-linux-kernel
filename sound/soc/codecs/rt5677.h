@@ -1,18 +1,16 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * rt5677.h  --  RT5677 ALSA SoC audio driver
  *
  * Copyright 2013 Realtek Semiconductor Corp.
  * Author: Oder Chiou <oder_chiou@realtek.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef __RT5677_H__
 #define __RT5677_H__
 
-#include <sound/rt5677.h>
+#include <linux/gpio/driver.h>
+#include <linux/gpio/consumer.h>
 
 /* Info */
 #define RT5677_RESET				0x00
@@ -305,10 +303,10 @@
 #define RT5677_R_MUTE_SFT			7
 #define RT5677_VOL_R_MUTE			(0x1 << 6)
 #define RT5677_VOL_R_SFT			6
-#define RT5677_L_VOL_MASK			(0x3f << 8)
-#define RT5677_L_VOL_SFT			8
-#define RT5677_R_VOL_MASK			(0x3f)
-#define RT5677_R_VOL_SFT			0
+#define RT5677_L_VOL_MASK			(0x7f << 9)
+#define RT5677_L_VOL_SFT			9
+#define RT5677_R_VOL_MASK			(0x7f << 1)
+#define RT5677_R_VOL_SFT			1
 
 /* LOUT1 Control (0x01) */
 #define RT5677_LOUT1_L_MUTE			(0x1 << 15)
@@ -446,16 +444,16 @@
 #define RT5677_SEL_DAC2_R_SRC_SFT		0
 
 /* Stereo1 ADC Digital Volume Control (0x1c) */
-#define RT5677_STO1_ADC_L_VOL_MASK		(0x7f << 8)
-#define RT5677_STO1_ADC_L_VOL_SFT		8
-#define RT5677_STO1_ADC_R_VOL_MASK		(0x7f)
-#define RT5677_STO1_ADC_R_VOL_SFT		0
+#define RT5677_STO1_ADC_L_VOL_MASK		(0x3f << 9)
+#define RT5677_STO1_ADC_L_VOL_SFT		9
+#define RT5677_STO1_ADC_R_VOL_MASK		(0x3f << 1)
+#define RT5677_STO1_ADC_R_VOL_SFT		1
 
 /* Mono ADC Digital Volume Control (0x1d) */
-#define RT5677_MONO_ADC_L_VOL_MASK		(0x7f << 8)
-#define RT5677_MONO_ADC_L_VOL_SFT		8
-#define RT5677_MONO_ADC_R_VOL_MASK		(0x7f)
-#define RT5677_MONO_ADC_R_VOL_SFT		0
+#define RT5677_MONO_ADC_L_VOL_MASK		(0x3f << 9)
+#define RT5677_MONO_ADC_L_VOL_SFT		9
+#define RT5677_MONO_ADC_R_VOL_MASK		(0x3f << 1)
+#define RT5677_MONO_ADC_R_VOL_SFT		1
 
 /* Stereo 1/2 ADC Boost Gain Control (0x1e) */
 #define RT5677_STO1_ADC_L_BST_MASK		(0x3 << 14)
@@ -798,7 +796,21 @@
 #define RT5677_PDM2_I2C_EXE			(0x1 << 1)
 #define RT5677_PDM2_I2C_BUSY			(0x1 << 0)
 
-/* MX3C TDM1 control 1 (0x3c) */
+/* TDM1 control 1 (0x3b) */
+#define RT5677_IF1_ADC_MODE_MASK		(0x1 << 12)
+#define RT5677_IF1_ADC_MODE_SFT			12
+#define RT5677_IF1_ADC_MODE_I2S			(0x0 << 12)
+#define RT5677_IF1_ADC_MODE_TDM			(0x1 << 12)
+#define RT5677_IF1_ADC1_SWAP_MASK		(0x3 << 6)
+#define RT5677_IF1_ADC1_SWAP_SFT		6
+#define RT5677_IF1_ADC2_SWAP_MASK		(0x3 << 4)
+#define RT5677_IF1_ADC2_SWAP_SFT		4
+#define RT5677_IF1_ADC3_SWAP_MASK		(0x3 << 2)
+#define RT5677_IF1_ADC3_SWAP_SFT		2
+#define RT5677_IF1_ADC4_SWAP_MASK		(0x3 << 0)
+#define RT5677_IF1_ADC4_SWAP_SFT		0
+
+/* TDM1 control 2 (0x3c) */
 #define RT5677_IF1_ADC4_MASK			(0x3 << 10)
 #define RT5677_IF1_ADC4_SFT			10
 #define RT5677_IF1_ADC3_MASK			(0x3 << 8)
@@ -807,8 +819,44 @@
 #define RT5677_IF1_ADC2_SFT			6
 #define RT5677_IF1_ADC1_MASK			(0x3 << 4)
 #define RT5677_IF1_ADC1_SFT			4
+#define RT5677_IF1_ADC_CTRL_MASK		(0x7 << 0)
+#define RT5677_IF1_ADC_CTRL_SFT			0
 
-/* MX41 TDM2 control 1 (0x41) */
+/* TDM1 control 4 (0x3e) */
+#define RT5677_IF1_DAC0_MASK			(0x7 << 12)
+#define RT5677_IF1_DAC0_SFT			12
+#define RT5677_IF1_DAC1_MASK			(0x7 << 8)
+#define RT5677_IF1_DAC1_SFT			8
+#define RT5677_IF1_DAC2_MASK			(0x7 << 4)
+#define RT5677_IF1_DAC2_SFT			4
+#define RT5677_IF1_DAC3_MASK			(0x7 << 0)
+#define RT5677_IF1_DAC3_SFT			0
+
+/* TDM1 control 5 (0x3f) */
+#define RT5677_IF1_DAC4_MASK			(0x7 << 12)
+#define RT5677_IF1_DAC4_SFT			12
+#define RT5677_IF1_DAC5_MASK			(0x7 << 8)
+#define RT5677_IF1_DAC5_SFT			8
+#define RT5677_IF1_DAC6_MASK			(0x7 << 4)
+#define RT5677_IF1_DAC6_SFT			4
+#define RT5677_IF1_DAC7_MASK			(0x7 << 0)
+#define RT5677_IF1_DAC7_SFT			0
+
+/* TDM2 control 1 (0x40) */
+#define RT5677_IF2_ADC_MODE_MASK		(0x1 << 12)
+#define RT5677_IF2_ADC_MODE_SFT			12
+#define RT5677_IF2_ADC_MODE_I2S			(0x0 << 12)
+#define RT5677_IF2_ADC_MODE_TDM			(0x1 << 12)
+#define RT5677_IF2_ADC1_SWAP_MASK		(0x3 << 6)
+#define RT5677_IF2_ADC1_SWAP_SFT		6
+#define RT5677_IF2_ADC2_SWAP_MASK		(0x3 << 4)
+#define RT5677_IF2_ADC2_SWAP_SFT		4
+#define RT5677_IF2_ADC3_SWAP_MASK		(0x3 << 2)
+#define RT5677_IF2_ADC3_SWAP_SFT		2
+#define RT5677_IF2_ADC4_SWAP_MASK		(0x3 << 0)
+#define RT5677_IF2_ADC4_SWAP_SFT		0
+
+/* TDM2 control 2 (0x41) */
 #define RT5677_IF2_ADC4_MASK			(0x3 << 10)
 #define RT5677_IF2_ADC4_SFT			10
 #define RT5677_IF2_ADC3_MASK			(0x3 << 8)
@@ -817,6 +865,28 @@
 #define RT5677_IF2_ADC2_SFT			6
 #define RT5677_IF2_ADC1_MASK			(0x3 << 4)
 #define RT5677_IF2_ADC1_SFT			4
+#define RT5677_IF2_ADC_CTRL_MASK		(0x7 << 0)
+#define RT5677_IF2_ADC_CTRL_SFT			0
+
+/* TDM2 control 4 (0x43) */
+#define RT5677_IF2_DAC0_MASK			(0x7 << 12)
+#define RT5677_IF2_DAC0_SFT			12
+#define RT5677_IF2_DAC1_MASK			(0x7 << 8)
+#define RT5677_IF2_DAC1_SFT			8
+#define RT5677_IF2_DAC2_MASK			(0x7 << 4)
+#define RT5677_IF2_DAC2_SFT			4
+#define RT5677_IF2_DAC3_MASK			(0x7 << 0)
+#define RT5677_IF2_DAC3_SFT			0
+
+/* TDM2 control 5 (0x44) */
+#define RT5677_IF2_DAC4_MASK			(0x7 << 12)
+#define RT5677_IF2_DAC4_SFT			12
+#define RT5677_IF2_DAC5_MASK			(0x7 << 8)
+#define RT5677_IF2_DAC5_SFT			8
+#define RT5677_IF2_DAC6_MASK			(0x7 << 4)
+#define RT5677_IF2_DAC6_SFT			4
+#define RT5677_IF2_DAC7_MASK			(0x7 << 0)
+#define RT5677_IF2_DAC7_SFT			0
 
 /* Digital Microphone Control 1 (0x50) */
 #define RT5677_DMIC_1_EN_MASK			(0x1 << 15)
@@ -1266,6 +1336,8 @@
 #define RT5677_PLL_M_SFT			12
 #define RT5677_PLL_M_BP				(0x1 << 11)
 #define RT5677_PLL_M_BP_SFT			11
+#define RT5677_PLL_UPDATE_PLL1			(0x1 << 1)
+#define RT5677_PLL_UPDATE_PLL1_SFT		1
 
 /* Global Clock Control 1 (0x80) */
 #define RT5677_SCLK_SRC_MASK			(0x3 << 14)
@@ -1333,9 +1405,87 @@
 #define RT5677_DSP_CLK_SRC_PLL2			(0x0 << 7)
 #define RT5677_DSP_CLK_SRC_BYPASS		(0x1 << 7)
 
+/* ASRC Control 3 (0x85) */
+#define RT5677_DA_STO_CLK_SEL_MASK		(0xf << 12)
+#define RT5677_DA_STO_CLK_SEL_SFT		12
+#define RT5677_DA_MONO2L_CLK_SEL_MASK		(0xf << 4)
+#define RT5677_DA_MONO2L_CLK_SEL_SFT		4
+#define RT5677_DA_MONO2R_CLK_SEL_MASK		(0xf << 0)
+#define RT5677_DA_MONO2R_CLK_SEL_SFT		0
+
+/* ASRC Control 4 (0x86) */
+#define RT5677_DA_MONO3L_CLK_SEL_MASK		(0xf << 12)
+#define RT5677_DA_MONO3L_CLK_SEL_SFT		12
+#define RT5677_DA_MONO3R_CLK_SEL_MASK		(0xf << 8)
+#define RT5677_DA_MONO3R_CLK_SEL_SFT		8
+#define RT5677_DA_MONO4L_CLK_SEL_MASK		(0xf << 4)
+#define RT5677_DA_MONO4L_CLK_SEL_SFT		4
+#define RT5677_DA_MONO4R_CLK_SEL_MASK		(0xf << 0)
+#define RT5677_DA_MONO4R_CLK_SEL_SFT		0
+
+/* ASRC Control 5 (0x87) */
+#define RT5677_AD_STO1_CLK_SEL_MASK		(0xf << 12)
+#define RT5677_AD_STO1_CLK_SEL_SFT		12
+#define RT5677_AD_STO2_CLK_SEL_MASK		(0xf << 8)
+#define RT5677_AD_STO2_CLK_SEL_SFT		8
+#define RT5677_AD_STO3_CLK_SEL_MASK		(0xf << 4)
+#define RT5677_AD_STO3_CLK_SEL_SFT		4
+#define RT5677_AD_STO4_CLK_SEL_MASK		(0xf << 0)
+#define RT5677_AD_STO4_CLK_SEL_SFT		0
+
+/* ASRC Control 6 (0x88) */
+#define RT5677_AD_MONOL_CLK_SEL_MASK		(0xf << 12)
+#define RT5677_AD_MONOL_CLK_SEL_SFT		12
+#define RT5677_AD_MONOR_CLK_SEL_MASK		(0xf << 8)
+#define RT5677_AD_MONOR_CLK_SEL_SFT		8
+
+/* ASRC Control 7 (0x89) */
+#define RT5677_DSP_OB_0_3_CLK_SEL_MASK		(0xf << 12)
+#define RT5677_DSP_OB_0_3_CLK_SEL_SFT		12
+#define RT5677_DSP_OB_4_7_CLK_SEL_MASK		(0xf << 8)
+#define RT5677_DSP_OB_4_7_CLK_SEL_SFT		8
+
+/* ASRC Control 8 (0x8a) */
+#define RT5677_I2S1_CLK_SEL_MASK		(0xf << 12)
+#define RT5677_I2S1_CLK_SEL_SFT			12
+#define RT5677_I2S2_CLK_SEL_MASK		(0xf << 8)
+#define RT5677_I2S2_CLK_SEL_SFT			8
+#define RT5677_I2S3_CLK_SEL_MASK		(0xf << 4)
+#define RT5677_I2S3_CLK_SEL_SFT			4
+#define RT5677_I2S4_CLK_SEL_MASK		(0xf)
+#define RT5677_I2S4_CLK_SEL_SFT			0
+
+/* VAD Function Control 1 (0x9c) */
+#define RT5677_VAD_MIN_DUR_MASK			(0x3 << 13)
+#define RT5677_VAD_MIN_DUR_SFT			13
+#define RT5677_VAD_ADPCM_BYPASS			(1 << 10)
+#define RT5677_VAD_ADPCM_BYPASS_BIT		10
+#define RT5677_VAD_FG2ENC			(1 << 9)
+#define RT5677_VAD_FG2ENC_BIT			9
+#define RT5677_VAD_BUF_OW			(1 << 8)
+#define RT5677_VAD_BUF_OW_BIT			8
+#define RT5677_VAD_CLR_FLAG			(1 << 7)
+#define RT5677_VAD_CLR_FLAG_BIT			7
+#define RT5677_VAD_BUF_POP			(1 << 6)
+#define RT5677_VAD_BUF_POP_BIT			6
+#define RT5677_VAD_BUF_PUSH			(1 << 5)
+#define RT5677_VAD_BUF_PUSH_BIT			5
+#define RT5677_VAD_DET_ENABLE			(1 << 4)
+#define RT5677_VAD_DET_ENABLE_BIT		4
+#define RT5677_VAD_FUNC_ENABLE			(1 << 3)
+#define RT5677_VAD_FUNC_ENABLE_BIT		3
+#define RT5677_VAD_FUNC_RESET			(1 << 2)
+#define RT5677_VAD_FUNC_RESET_BIT		2
+
 /* VAD Function Control 4 (0x9f) */
-#define RT5677_VAD_SRC_MASK			(0x7 << 8)
+#define RT5677_VAD_OUT_SRC_RATE_MASK		(0x1 << 11)
+#define RT5677_VAD_OUT_SRC_RATE_SFT		11
+#define RT5677_VAD_OUT_SRC_MASK			(0x1 << 10)
+#define RT5677_VAD_OUT_SRC_SFT			10
+#define RT5677_VAD_SRC_MASK			(0x3 << 8)
 #define RT5677_VAD_SRC_SFT			8
+#define RT5677_VAD_LV_DIFF_MASK			(0xff << 0)
+#define RT5677_VAD_LV_DIFF_SFT			0
 
 /* DSP InBound Control (0xa3) */
 #define RT5677_IB01_SRC_MASK			(0x7 << 12)
@@ -1366,6 +1516,48 @@
 #define RT5677_SEL_SRC_IB23_SFT			1
 #define RT5677_SEL_SRC_IB01			(0x1 << 0)
 #define RT5677_SEL_SRC_IB01_SFT			0
+
+/* Jack Detect Control 1 (0xb5) */
+#define RT5677_SEL_GPIO_JD1_MASK		(0x3 << 14)
+#define RT5677_SEL_GPIO_JD1_SFT			14
+#define RT5677_SEL_GPIO_JD2_MASK		(0x3 << 12)
+#define RT5677_SEL_GPIO_JD2_SFT			12
+#define RT5677_SEL_GPIO_JD3_MASK		(0x3 << 10)
+#define RT5677_SEL_GPIO_JD3_SFT			10
+
+/* IRQ Control 1 (0xbd) */
+#define RT5677_STA_GPIO_JD1			(0x1 << 15)
+#define RT5677_STA_GPIO_JD1_SFT			15
+#define RT5677_EN_IRQ_GPIO_JD1			(0x1 << 14)
+#define RT5677_EN_IRQ_GPIO_JD1_SFT		14
+#define RT5677_EN_GPIO_JD1_STICKY		(0x1 << 13)
+#define RT5677_EN_GPIO_JD1_STICKY_SFT		13
+#define RT5677_INV_GPIO_JD1			(0x1 << 12)
+#define RT5677_INV_GPIO_JD1_SFT			12
+#define RT5677_STA_GPIO_JD2			(0x1 << 11)
+#define RT5677_STA_GPIO_JD2_SFT			11
+#define RT5677_EN_IRQ_GPIO_JD2			(0x1 << 10)
+#define RT5677_EN_IRQ_GPIO_JD2_SFT		10
+#define RT5677_EN_GPIO_JD2_STICKY		(0x1 << 9)
+#define RT5677_EN_GPIO_JD2_STICKY_SFT		9
+#define RT5677_INV_GPIO_JD2			(0x1 << 8)
+#define RT5677_INV_GPIO_JD2_SFT			8
+#define RT5677_STA_MICBIAS1_OVCD		(0x1 << 7)
+#define RT5677_STA_MICBIAS1_OVCD_SFT		7
+#define RT5677_EN_IRQ_MICBIAS1_OVCD		(0x1 << 6)
+#define RT5677_EN_IRQ_MICBIAS1_OVCD_SFT		6
+#define RT5677_EN_MICBIAS1_OVCD_STICKY		(0x1 << 5)
+#define RT5677_EN_MICBIAS1_OVCD_STICKY_SFT	5
+#define RT5677_INV_MICBIAS1_OVCD		(0x1 << 4)
+#define RT5677_INV_MICBIAS1_OVCD_SFT		4
+#define RT5677_STA_GPIO_JD3			(0x1 << 3)
+#define RT5677_STA_GPIO_JD3_SFT			3
+#define RT5677_EN_IRQ_GPIO_JD3			(0x1 << 2)
+#define RT5677_EN_IRQ_GPIO_JD3_SFT		2
+#define RT5677_EN_GPIO_JD3_STICKY		(0x1 << 1)
+#define RT5677_EN_GPIO_JD3_STICKY_SFT		1
+#define RT5677_INV_GPIO_JD3			(0x1 << 0)
+#define RT5677_INV_GPIO_JD3_SFT			0
 
 /* GPIO status (0xbf) */
 #define RT5677_GPIO6_STATUS_MASK		(0x1 << 5)
@@ -1471,6 +1663,12 @@
 #define RT5677_GPIO6_P_NOR			(0x0 << 0)
 #define RT5677_GPIO6_P_INV			(0x1 << 0)
 
+/* General Control (0xfa) */
+#define RT5677_IRQ_DEBOUNCE_SEL_MASK		(0x3 << 3)
+#define RT5677_IRQ_DEBOUNCE_SEL_MCLK		(0x0 << 3)
+#define RT5677_IRQ_DEBOUNCE_SEL_RC		(0x1 << 3)
+#define RT5677_IRQ_DEBOUNCE_SEL_SLIM		(0x2 << 3)
+
 /* Virtual DSP Mixer Control (0xf7 0xf8 0xf9) */
 #define RT5677_DSP_IB_01_H			(0x1 << 15)
 #define RT5677_DSP_IB_01_H_SFT			15
@@ -1506,6 +1704,11 @@
 #define RT5677_GPIO5_FUNC_GPIO			(0x0 << 9)
 #define RT5677_GPIO5_FUNC_DMIC			(0x1 << 9)
 
+#define RT5677_FIRMWARE1	"rt5677_dsp_fw1.bin"
+#define RT5677_FIRMWARE2	"rt5677_dsp_fw2.bin"
+
+#define RT5677_DRV_NAME		"rt5677"
+
 /* System Clock Source */
 enum {
 	RT5677_SCLK_S_MCLK,
@@ -1529,6 +1732,7 @@ enum {
 	RT5677_AIF4,
 	RT5677_AIF5,
 	RT5677_AIFS,
+	RT5677_DSPBUFF,
 };
 
 enum {
@@ -1541,10 +1745,94 @@ enum {
 	RT5677_GPIO_NUM,
 };
 
+enum {
+	RT5677_IRQ_JD1,
+	RT5677_IRQ_JD2,
+	RT5677_IRQ_JD3,
+	RT5677_IRQ_NUM,
+};
+
+enum rt5677_type {
+	RT5677,
+	RT5676,
+};
+
+/* ASRC clock source selection */
+enum {
+	RT5677_CLK_SEL_SYS,
+	RT5677_CLK_SEL_I2S1_ASRC,
+	RT5677_CLK_SEL_I2S2_ASRC,
+	RT5677_CLK_SEL_I2S3_ASRC,
+	RT5677_CLK_SEL_I2S4_ASRC,
+	RT5677_CLK_SEL_I2S5_ASRC,
+	RT5677_CLK_SEL_I2S6_ASRC,
+	RT5677_CLK_SEL_SYS2,
+	RT5677_CLK_SEL_SYS3,
+	RT5677_CLK_SEL_SYS4,
+	RT5677_CLK_SEL_SYS5,
+	RT5677_CLK_SEL_SYS6,
+	RT5677_CLK_SEL_SYS7,
+};
+
+/* filter mask */
+enum {
+	RT5677_DA_STEREO_FILTER = 0x1,
+	RT5677_DA_MONO2_L_FILTER = (0x1 << 1),
+	RT5677_DA_MONO2_R_FILTER = (0x1 << 2),
+	RT5677_DA_MONO3_L_FILTER = (0x1 << 3),
+	RT5677_DA_MONO3_R_FILTER = (0x1 << 4),
+	RT5677_DA_MONO4_L_FILTER = (0x1 << 5),
+	RT5677_DA_MONO4_R_FILTER = (0x1 << 6),
+	RT5677_AD_STEREO1_FILTER = (0x1 << 7),
+	RT5677_AD_STEREO2_FILTER = (0x1 << 8),
+	RT5677_AD_STEREO3_FILTER = (0x1 << 9),
+	RT5677_AD_STEREO4_FILTER = (0x1 << 10),
+	RT5677_AD_MONO_L_FILTER = (0x1 << 11),
+	RT5677_AD_MONO_R_FILTER = (0x1 << 12),
+	RT5677_DSP_OB_0_3_FILTER = (0x1 << 13),
+	RT5677_DSP_OB_4_7_FILTER = (0x1 << 14),
+	RT5677_I2S1_SOURCE = (0x1 << 15),
+	RT5677_I2S2_SOURCE = (0x1 << 16),
+	RT5677_I2S3_SOURCE = (0x1 << 17),
+	RT5677_I2S4_SOURCE = (0x1 << 18),
+};
+
+enum rt5677_dmic2_clk {
+	RT5677_DMIC_CLK1 = 0,
+	RT5677_DMIC_CLK2 = 1,
+};
+
+struct rt5677_platform_data {
+	/* IN1/IN2/LOUT1/LOUT2/LOUT3 can optionally be differential */
+	bool in1_diff;
+	bool in2_diff;
+	bool lout1_diff;
+	bool lout2_diff;
+	bool lout3_diff;
+	/* DMIC2 clock source selection */
+	enum rt5677_dmic2_clk dmic2_clk_pin;
+
+	/* configures GPIO, 0 - floating, 1 - pulldown, 2 - pullup */
+	u8 gpio_config[6];
+
+	/* jd1 can select 0 ~ 3 as OFF, GPIO1, GPIO2 and GPIO3 respectively */
+	unsigned int jd1_gpio;
+	/* jd2 and jd3 can select 0 ~ 3 as
+		OFF, GPIO4, GPIO5 and GPIO6 respectively */
+	unsigned int jd2_gpio;
+	unsigned int jd3_gpio;
+
+	/* Set MICBIAS1 VDD 1v8 or 3v3 */
+	bool micbias1_vdd_3v3;
+};
+
 struct rt5677_priv {
-	struct snd_soc_codec *codec;
+	struct snd_soc_component *component;
+	struct device *dev;
 	struct rt5677_platform_data pdata;
-	struct regmap *regmap;
+	struct regmap *regmap, *regmap_physical;
+	const struct firmware *fw1, *fw2;
+	struct mutex dsp_cmd_lock, dsp_pri_lock;
 
 	int sysclk;
 	int sysclk_src;
@@ -1554,10 +1842,29 @@ struct rt5677_priv {
 	int pll_src;
 	int pll_in;
 	int pll_out;
-	int pow_ldo2; /* POW_LDO2 pin */
+	struct gpio_desc *pow_ldo2; /* POW_LDO2 pin */
+	struct gpio_desc *reset_pin; /* RESET pin */
+	enum rt5677_type type;
 #ifdef CONFIG_GPIOLIB
 	struct gpio_chip gpio_chip;
 #endif
+	bool dsp_vad_en_request; /* DSP VAD enable/disable request */
+	bool dsp_vad_en; /* dsp_work parameter */
+	bool is_dsp_mode;
+	bool is_vref_slow;
+	struct delayed_work dsp_work;
+
+	/* Interrupt handling */
+	struct irq_domain *domain;
+	struct mutex irq_lock;
+	unsigned int irq_en;
+	struct delayed_work resume_irq_check;
+	int irq;
+
+	int (*set_dsp_vad)(struct snd_soc_component *component, bool on);
 };
+
+int rt5677_sel_asrc_clk_src(struct snd_soc_component *component,
+		unsigned int filter_mask, unsigned int clk_src);
 
 #endif /* __RT5677_H__ */

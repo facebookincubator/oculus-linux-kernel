@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  User-space Probes (UProbes) for s390
  *
@@ -9,6 +10,8 @@
 #include <linux/uprobes.h>
 #include <linux/compat.h>
 #include <linux/kdebug.h>
+#include <linux/sched/task_stack.h>
+
 #include <asm/switch_to.h>
 #include <asm/facility.h>
 #include <asm/kprobes.h>
@@ -25,12 +28,12 @@ int arch_uprobe_analyze_insn(struct arch_uprobe *auprobe, struct mm_struct *mm,
 
 int arch_uprobe_pre_xol(struct arch_uprobe *auprobe, struct pt_regs *regs)
 {
-	if (psw_bits(regs->psw).eaba == PSW_AMODE_24BIT)
+	if (psw_bits(regs->psw).eaba == PSW_BITS_AMODE_24BIT)
 		return -EINVAL;
-	if (!is_compat_task() && psw_bits(regs->psw).eaba == PSW_AMODE_31BIT)
+	if (!is_compat_task() && psw_bits(regs->psw).eaba == PSW_BITS_AMODE_31BIT)
 		return -EINVAL;
 	clear_pt_regs_flag(regs, PIF_PER_TRAP);
-	auprobe->saved_per = psw_bits(regs->psw).r;
+	auprobe->saved_per = psw_bits(regs->psw).per;
 	auprobe->saved_int_code = regs->int_code;
 	regs->int_code = UPROBE_TRAP_NR;
 	regs->psw.addr = current->utask->xol_vaddr;
@@ -48,6 +51,30 @@ bool arch_uprobe_xol_was_trapped(struct task_struct *tsk)
 	return false;
 }
 
+static int check_per_event(unsigned short cause, unsigned long control,
+			   struct pt_regs *regs)
+{
+	if (!(regs->psw.mask & PSW_MASK_PER))
+		return 0;
+	/* user space single step */
+	if (control == 0)
+		return 1;
+	/* over indication for storage alteration */
+	if ((control & 0x20200000) && (cause & 0x2000))
+		return 1;
+	if (cause & 0x8000) {
+		/* all branches */
+		if ((control & 0x80800000) == 0x80000000)
+			return 1;
+		/* branch into selected range */
+		if (((control & 0x80800000) == 0x80800000) &&
+		    regs->psw.addr >= current->thread.per_user.start &&
+		    regs->psw.addr <= current->thread.per_user.end)
+			return 1;
+	}
+	return 0;
+}
+
 int arch_uprobe_post_xol(struct arch_uprobe *auprobe, struct pt_regs *regs)
 {
 	int fixup = probe_get_fixup_type(auprobe->insn);
@@ -55,7 +82,7 @@ int arch_uprobe_post_xol(struct arch_uprobe *auprobe, struct pt_regs *regs)
 
 	clear_tsk_thread_flag(current, TIF_UPROBE_SINGLESTEP);
 	update_cr_regs(current);
-	psw_bits(regs->psw).r = auprobe->saved_per;
+	psw_bits(regs->psw).per = auprobe->saved_per;
 	regs->int_code = auprobe->saved_int_code;
 
 	if (fixup & FIXUP_PSW_NORMAL)
@@ -71,9 +98,13 @@ int arch_uprobe_post_xol(struct arch_uprobe *auprobe, struct pt_regs *regs)
 		if (regs->psw.addr - utask->xol_vaddr == ilen)
 			regs->psw.addr = utask->vaddr + ilen;
 	}
-	/* If per tracing was active generate trap */
-	if (regs->psw.mask & PSW_MASK_PER)
-		do_per_trap(regs);
+	if (check_per_event(current->thread.per_event.cause,
+			    current->thread.per_user.control, regs)) {
+		/* fix per address */
+		current->thread.per_event.address = utask->vaddr;
+		/* trigger per event */
+		set_pt_regs_flag(regs, PIF_PER_TRAP);
+	}
 	return 0;
 }
 
@@ -106,6 +137,7 @@ void arch_uprobe_abort_xol(struct arch_uprobe *auprobe, struct pt_regs *regs)
 	clear_thread_flag(TIF_UPROBE_SINGLESTEP);
 	regs->int_code = auprobe->saved_int_code;
 	regs->psw.addr = current->utask->vaddr;
+	current->thread.per_event.address = current->utask->vaddr;
 }
 
 unsigned long arch_uretprobe_hijack_return_addr(unsigned long trampoline,
@@ -116,6 +148,15 @@ unsigned long arch_uretprobe_hijack_return_addr(unsigned long trampoline,
 	orig = regs->gprs[14];
 	regs->gprs[14] = trampoline;
 	return orig;
+}
+
+bool arch_uretprobe_is_alive(struct return_instance *ret, enum rp_check ctx,
+			     struct pt_regs *regs)
+{
+	if (ctx == RP_CHECK_CHAIN_CALL)
+		return user_stack_pointer(regs) <= ret->stack;
+	else
+		return user_stack_pointer(regs) < ret->stack;
 }
 
 /* Instruction Emulation */
@@ -146,17 +187,22 @@ static void adjust_psw_addr(psw_t *psw, unsigned long len)
 	__rc;						\
 })
 
-#define emu_store_ril(ptr, input)			\
+#define emu_store_ril(regs, ptr, input)			\
 ({							\
 	unsigned int mask = sizeof(*(ptr)) - 1;		\
+	__typeof__(ptr) __ptr = (ptr);			\
 	int __rc = 0;					\
 							\
 	if (!test_facility(34))				\
 		__rc = EMU_ILLEGAL_OP;			\
-	else if ((u64 __force)ptr & mask)		\
+	else if ((u64 __force)__ptr & mask)		\
 		__rc = EMU_SPECIFICATION;		\
-	else if (put_user(*(input), ptr))		\
+	else if (put_user(*(input), __ptr))		\
 		__rc = EMU_ADDRESSING;			\
+	if (__rc == 0)					\
+		sim_stor_event(regs,			\
+			       (void __force *)__ptr,	\
+			       mask + 1);		\
 	__rc;						\
 })
 
@@ -196,6 +242,25 @@ union split_register {
 	s32 s32[2];
 	s16 s16[4];
 };
+
+/*
+ * If user per registers are setup to trace storage alterations and an
+ * emulated store took place on a fitting address a user trap is generated.
+ */
+static void sim_stor_event(struct pt_regs *regs, void *addr, int len)
+{
+	if (!(regs->psw.mask & PSW_MASK_PER))
+		return;
+	if (!(current->thread.per_user.control & PER_EVENT_STORE))
+		return;
+	if ((void *)current->thread.per_user.start > (addr + len))
+		return;
+	if ((void *)current->thread.per_user.end < addr)
+		return;
+	current->thread.per_event.address = regs->psw.addr;
+	current->thread.per_event.cause = PER_EVENT_STORE >> 16;
+	set_pt_regs_flag(regs, PIF_PER_TRAP);
+}
 
 /*
  * pc relative instructions are emulated, since parameters may not be
@@ -249,13 +314,13 @@ static void handle_insn_ril(struct arch_uprobe *auprobe, struct pt_regs *regs)
 			rc = emu_load_ril((u32 __user *)uptr, &rx->u64);
 			break;
 		case 0x07: /* sthrl */
-			rc = emu_store_ril((u16 __user *)uptr, &rx->u16[3]);
+			rc = emu_store_ril(regs, (u16 __user *)uptr, &rx->u16[3]);
 			break;
 		case 0x0b: /* stgrl */
-			rc = emu_store_ril((u64 __user *)uptr, &rx->u64);
+			rc = emu_store_ril(regs, (u64 __user *)uptr, &rx->u64);
 			break;
 		case 0x0f: /* strl */
-			rc = emu_store_ril((u32 __user *)uptr, &rx->u32[1]);
+			rc = emu_store_ril(regs, (u32 __user *)uptr, &rx->u32[1]);
 			break;
 		}
 		break;
@@ -317,8 +382,8 @@ static void handle_insn_ril(struct arch_uprobe *auprobe, struct pt_regs *regs)
 
 bool arch_uprobe_skip_sstep(struct arch_uprobe *auprobe, struct pt_regs *regs)
 {
-	if ((psw_bits(regs->psw).eaba == PSW_AMODE_24BIT) ||
-	    ((psw_bits(regs->psw).eaba == PSW_AMODE_31BIT) &&
+	if ((psw_bits(regs->psw).eaba == PSW_BITS_AMODE_24BIT) ||
+	    ((psw_bits(regs->psw).eaba == PSW_BITS_AMODE_31BIT) &&
 	     !is_compat_task())) {
 		regs->psw.addr = __rewind_psw(regs->psw, UPROBE_SWBP_INSN_SIZE);
 		do_report_trap(regs, SIGILL, ILL_ILLADR, NULL);

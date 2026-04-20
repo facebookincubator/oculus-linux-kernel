@@ -1,14 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/proc_fs.h>
 #include <linux/export.h>
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
-#include "bonding.h"
+#include <net/bonding.h>
 
+#include "bonding_priv.h"
 
 static void *bond_info_seq_start(struct seq_file *seq, loff_t *pos)
 	__acquires(RCU)
 {
-	struct bonding *bond = seq->private;
+	struct bonding *bond = PDE_DATA(file_inode(seq->file));
 	struct list_head *iter;
 	struct slave *slave;
 	loff_t off = 0;
@@ -27,7 +29,7 @@ static void *bond_info_seq_start(struct seq_file *seq, loff_t *pos)
 
 static void *bond_info_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
-	struct bonding *bond = seq->private;
+	struct bonding *bond = PDE_DATA(file_inode(seq->file));
 	struct list_head *iter;
 	struct slave *slave;
 	bool found = false;
@@ -54,7 +56,7 @@ static void bond_info_seq_stop(struct seq_file *seq, void *v)
 
 static void bond_info_show_master(struct seq_file *seq)
 {
-	struct bonding *bond = seq->private;
+	struct bonding *bond = PDE_DATA(file_inode(seq->file));
 	const struct bond_opt_value *optval;
 	struct slave *curr, *primary;
 	int i;
@@ -102,6 +104,8 @@ static void bond_info_show_master(struct seq_file *seq)
 		   bond->params.updelay * bond->params.miimon);
 	seq_printf(seq, "Down Delay (ms): %d\n",
 		   bond->params.downdelay * bond->params.miimon);
+	seq_printf(seq, "Peer Notification Delay (ms): %d\n",
+		   bond->params.peer_notif_delay * bond->params.miimon);
 
 
 	/* ARP information */
@@ -134,23 +138,30 @@ static void bond_info_show_master(struct seq_file *seq)
 					  bond->params.ad_select);
 		seq_printf(seq, "Aggregator selection policy (ad_select): %s\n",
 			   optval->string);
+		if (capable(CAP_NET_ADMIN)) {
+			seq_printf(seq, "System priority: %d\n",
+				   BOND_AD_INFO(bond).system.sys_priority);
+			seq_printf(seq, "System MAC address: %pM\n",
+				   &BOND_AD_INFO(bond).system.sys_mac_addr);
 
-		if (__bond_3ad_get_active_agg_info(bond, &ad_info)) {
-			seq_printf(seq, "bond %s has no active aggregator\n",
-				   bond->dev->name);
-		} else {
-			seq_printf(seq, "Active Aggregator Info:\n");
+			if (__bond_3ad_get_active_agg_info(bond, &ad_info)) {
+				seq_printf(seq,
+					   "bond %s has no active aggregator\n",
+					   bond->dev->name);
+			} else {
+				seq_printf(seq, "Active Aggregator Info:\n");
 
-			seq_printf(seq, "\tAggregator ID: %d\n",
-				   ad_info.aggregator_id);
-			seq_printf(seq, "\tNumber of ports: %d\n",
-				   ad_info.ports);
-			seq_printf(seq, "\tActor Key: %d\n",
-				   ad_info.actor_key);
-			seq_printf(seq, "\tPartner Key: %d\n",
-				   ad_info.partner_key);
-			seq_printf(seq, "\tPartner Mac Address: %pM\n",
-				   ad_info.partner_system);
+				seq_printf(seq, "\tAggregator ID: %d\n",
+					   ad_info.aggregator_id);
+				seq_printf(seq, "\tNumber of ports: %d\n",
+					   ad_info.ports);
+				seq_printf(seq, "\tActor Key: %d\n",
+					   ad_info.actor_key);
+				seq_printf(seq, "\tPartner Key: %d\n",
+					   ad_info.partner_key);
+				seq_printf(seq, "\tPartner Mac Address: %pM\n",
+					   ad_info.partner_system);
+			}
 		}
 	}
 }
@@ -158,7 +169,7 @@ static void bond_info_show_master(struct seq_file *seq)
 static void bond_info_show_slave(struct seq_file *seq,
 				 const struct slave *slave)
 {
-	struct bonding *bond = seq->private;
+	struct bonding *bond = PDE_DATA(file_inode(seq->file));
 
 	seq_printf(seq, "\nSlave Interface: %s\n", slave->dev->name);
 	seq_printf(seq, "MII Status: %s\n", bond_slave_link_status(slave->link));
@@ -175,19 +186,59 @@ static void bond_info_show_slave(struct seq_file *seq,
 	seq_printf(seq, "Link Failure Count: %u\n",
 		   slave->link_failure_count);
 
-	seq_printf(seq, "Permanent HW addr: %pM\n", slave->perm_hwaddr);
+	seq_printf(seq, "Permanent HW addr: %*phC\n",
+		   slave->dev->addr_len, slave->perm_hwaddr);
+	seq_printf(seq, "Slave queue ID: %d\n", slave->queue_id);
 
 	if (BOND_MODE(bond) == BOND_MODE_8023AD) {
-		const struct aggregator *agg
-			= SLAVE_AD_INFO(slave)->port.aggregator;
+		const struct port *port = &SLAVE_AD_INFO(slave)->port;
+		const struct aggregator *agg = port->aggregator;
 
-		if (agg)
+		if (agg) {
 			seq_printf(seq, "Aggregator ID: %d\n",
 				   agg->aggregator_identifier);
-		else
+			seq_printf(seq, "Actor Churn State: %s\n",
+				   bond_3ad_churn_desc(port->sm_churn_actor_state));
+			seq_printf(seq, "Partner Churn State: %s\n",
+				   bond_3ad_churn_desc(port->sm_churn_partner_state));
+			seq_printf(seq, "Actor Churned Count: %d\n",
+				   port->churn_actor_count);
+			seq_printf(seq, "Partner Churned Count: %d\n",
+				   port->churn_partner_count);
+
+			if (capable(CAP_NET_ADMIN)) {
+				seq_puts(seq, "details actor lacp pdu:\n");
+				seq_printf(seq, "    system priority: %d\n",
+					   port->actor_system_priority);
+				seq_printf(seq, "    system mac address: %pM\n",
+					   &port->actor_system);
+				seq_printf(seq, "    port key: %d\n",
+					   port->actor_oper_port_key);
+				seq_printf(seq, "    port priority: %d\n",
+					   port->actor_port_priority);
+				seq_printf(seq, "    port number: %d\n",
+					   port->actor_port_number);
+				seq_printf(seq, "    port state: %d\n",
+					   port->actor_oper_port_state);
+
+				seq_puts(seq, "details partner lacp pdu:\n");
+				seq_printf(seq, "    system priority: %d\n",
+					   port->partner_oper.system_priority);
+				seq_printf(seq, "    system mac address: %pM\n",
+					   &port->partner_oper.system);
+				seq_printf(seq, "    oper key: %d\n",
+					   port->partner_oper.key);
+				seq_printf(seq, "    port priority: %d\n",
+					   port->partner_oper.port_priority);
+				seq_printf(seq, "    port number: %d\n",
+					   port->partner_oper.port_number);
+				seq_printf(seq, "    port state: %d\n",
+					   port->partner_oper.port_state);
+			}
+		} else {
 			seq_puts(seq, "Aggregator ID: N/A\n");
+		}
 	}
-	seq_printf(seq, "Slave queue ID: %d\n", slave->queue_id);
 }
 
 static int bond_info_seq_show(struct seq_file *seq, void *v)
@@ -208,38 +259,14 @@ static const struct seq_operations bond_info_seq_ops = {
 	.show  = bond_info_seq_show,
 };
 
-static int bond_info_open(struct inode *inode, struct file *file)
-{
-	struct seq_file *seq;
-	int res;
-
-	res = seq_open(file, &bond_info_seq_ops);
-	if (!res) {
-		/* recover the pointer buried in proc_dir_entry data */
-		seq = file->private_data;
-		seq->private = PDE_DATA(inode);
-	}
-
-	return res;
-}
-
-static const struct file_operations bond_info_fops = {
-	.owner   = THIS_MODULE,
-	.open    = bond_info_open,
-	.read    = seq_read,
-	.llseek  = seq_lseek,
-	.release = seq_release,
-};
-
 void bond_create_proc_entry(struct bonding *bond)
 {
 	struct net_device *bond_dev = bond->dev;
 	struct bond_net *bn = net_generic(dev_net(bond_dev), bond_net_id);
 
 	if (bn->proc_dir) {
-		bond->proc_entry = proc_create_data(bond_dev->name,
-						    S_IRUGO, bn->proc_dir,
-						    &bond_info_fops, bond);
+		bond->proc_entry = proc_create_seq_data(bond_dev->name, 0444,
+				bn->proc_dir, &bond_info_seq_ops, bond);
 		if (bond->proc_entry == NULL)
 			netdev_warn(bond_dev, "Cannot create /proc/net/%s/%s\n",
 				    DRV_NAME, bond_dev->name);

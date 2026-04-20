@@ -22,13 +22,14 @@
  * Authors: Alex Deucher
  */
 
-#include "drmP.h"
-#include "radeon.h"
-#include "radeon_asic.h"
+#include <linux/pci.h>
+
+#include "atom.h"
+#include "cypress_dpm.h"
 #include "evergreend.h"
 #include "r600_dpm.h"
-#include "cypress_dpm.h"
-#include "atom.h"
+#include "radeon.h"
+#include "radeon_asic.h"
 
 #define SMC_RAM_END 0x8000
 
@@ -558,8 +559,12 @@ static int cypress_populate_mclk_value(struct radeon_device *rdev,
 						     ASIC_INTERNAL_MEMORY_SS, vco_freq)) {
 			u32 reference_clock = rdev->clock.mpll.reference_freq;
 			u32 decoded_ref = rv740_get_decoded_reference_divider(dividers.ref_div);
-			u32 clk_s = reference_clock * 5 / (decoded_ref * ss.rate);
-			u32 clk_v = ss.percentage *
+			u32 clk_s, clk_v;
+
+			if (!decoded_ref)
+				return -EINVAL;
+			clk_s = reference_clock * 5 / (decoded_ref * ss.rate);
+			clk_v = ss.percentage *
 				(0x4000 * dividers.whole_fb_div + 0x800 * dividers.frac_fb_div) / (clk_s * 625);
 
 			mpll_ss1 &= ~CLKV_MASK;
@@ -1620,14 +1625,14 @@ static int cypress_init_smc_table(struct radeon_device *rdev,
 	cypress_populate_smc_voltage_tables(rdev, table);
 
 	switch (rdev->pm.int_thermal_type) {
-        case THERMAL_TYPE_EVERGREEN:
-        case THERMAL_TYPE_EMC2103_WITH_INTERNAL:
+	case THERMAL_TYPE_EVERGREEN:
+	case THERMAL_TYPE_EMC2103_WITH_INTERNAL:
 		table->thermalProtectType = PPSMC_THERMAL_PROTECT_TYPE_INTERNAL;
 		break;
-        case THERMAL_TYPE_NONE:
+	case THERMAL_TYPE_NONE:
 		table->thermalProtectType = PPSMC_THERMAL_PROTECT_TYPE_NONE;
 		break;
-        default:
+	default:
 		table->thermalProtectType = PPSMC_THERMAL_PROTECT_TYPE_EXTERNAL;
 		break;
 	}
@@ -2005,11 +2010,13 @@ int cypress_dpm_set_power_state(struct radeon_device *rdev)
 	return 0;
 }
 
+#if 0
 void cypress_dpm_reset_asic(struct radeon_device *rdev)
 {
 	rv770_restrict_performance_levels_before_switch(rdev);
 	rv770_set_boot_state(rdev);
 }
+#endif
 
 void cypress_dpm_display_configuration_changed(struct radeon_device *rdev)
 {

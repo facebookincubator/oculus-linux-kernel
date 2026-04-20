@@ -1,14 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Device access for Dialog DA9055 PMICs.
  *
  * Copyright(c) 2012 Dialog Semiconductor Ltd.
  *
  * Author: David Dajun Chen <dchen@diasemi.com>
- *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
  */
 
 #include <linux/module.h>
@@ -222,7 +218,7 @@ static bool da9055_register_volatile(struct device *dev, unsigned int reg)
 	}
 }
 
-static struct regmap_irq da9055_irqs[] = {
+static const struct regmap_irq da9055_irqs[] = {
 	[DA9055_IRQ_NONKEY] = {
 		.reg_offset = 0,
 		.mask = DA9055_IRQ_NONKEY_MASK,
@@ -245,7 +241,7 @@ static struct regmap_irq da9055_irqs[] = {
 	},
 };
 
-struct regmap_config da9055_regmap_config = {
+const struct regmap_config da9055_regmap_config = {
 	.reg_bits = 8,
 	.val_bits = 8,
 
@@ -367,7 +363,7 @@ static const struct mfd_cell da9055_devs[] = {
 	},
 };
 
-static struct regmap_irq_chip da9055_regmap_irq_chip = {
+static const struct regmap_irq_chip da9055_regmap_irq_chip = {
 	.name = "da9055_irq",
 	.status_base = DA9055_REG_EVENT_A,
 	.mask_base = DA9055_REG_IRQ_MASK_A,

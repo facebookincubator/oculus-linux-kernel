@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * CIMaX SP2/SP2HF (Atmel T90FJR) CI driver
  *
@@ -9,16 +10,6 @@
  *  Copyright (C) 2009 NetUP Inc.
  *  Copyright (C) 2009 Igor M. Liplianin <liplianin@netup.ru>
  *  Copyright (C) 2009 Abylay Ospan <aospan@netup.ru>
- *
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License as published by
- *    the Free Software Foundation; either version 2 of the License, or
- *    (at your option) any later version.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
  */
 
 #include "sp2_priv.h"
@@ -92,6 +83,9 @@ static int sp2_write_i2c(struct sp2 *s, u8 reg, u8 *buf, int len)
 			return -EIO;
 	}
 
+	dev_dbg(&s->client->dev, "addr=0x%04x, reg = 0x%02x, data = %*ph\n",
+				client->addr, reg, len, buf);
+
 	return 0;
 }
 
@@ -102,9 +96,6 @@ static int sp2_ci_op_cam(struct dvb_ca_en50221 *en50221, int slot, u8 acs,
 	u8 store;
 	int mem, ret;
 	int (*ci_op_cam)(void*, u8, int, u8, int*) = s->ci_control;
-
-	dev_dbg(&s->client->dev, "slot=%d, acs=0x%02x, addr=0x%04x, data = 0x%02x",
-			slot, acs, addr, data);
 
 	if (slot != 0)
 		return -EINVAL;
@@ -140,13 +131,16 @@ static int sp2_ci_op_cam(struct dvb_ca_en50221 *en50221, int slot, u8 acs,
 	if (ret)
 		return ret;
 
-	if (read) {
-		dev_dbg(&s->client->dev, "cam read, addr=0x%04x, data = 0x%04x",
-				addr, mem);
+	dev_dbg(&s->client->dev, "%s: slot=%d, addr=0x%04x, %s, data=%x",
+			(read) ? "read" : "write", slot, addr,
+			(acs == SP2_CI_ATTR_ACS) ? "attr" : "io",
+			(read) ? mem : data);
+
+	if (read)
 		return mem;
-	} else {
+	else
 		return 0;
-	}
+
 }
 
 int sp2_ci_read_attribute_mem(struct dvb_ca_en50221 *en50221,
@@ -354,14 +348,14 @@ static int sp2_exit(struct i2c_client *client)
 
 	dev_dbg(&client->dev, "\n");
 
-	if (client == NULL)
+	if (!client)
 		return 0;
 
 	s = i2c_get_clientdata(client);
-	if (s == NULL)
+	if (!s)
 		return 0;
 
-	if (s->ca.data == NULL)
+	if (!s->ca.data)
 		return 0;
 
 	dvb_ca_en50221_release(&s->ca);
@@ -378,10 +372,9 @@ static int sp2_probe(struct i2c_client *client,
 
 	dev_dbg(&client->dev, "\n");
 
-	s = kzalloc(sizeof(struct sp2), GFP_KERNEL);
+	s = kzalloc(sizeof(*s), GFP_KERNEL);
 	if (!s) {
 		ret = -ENOMEM;
-		dev_err(&client->dev, "kzalloc() failed\n");
 		goto err;
 	}
 
@@ -407,14 +400,11 @@ err:
 
 static int sp2_remove(struct i2c_client *client)
 {
-	struct si2157 *s = i2c_get_clientdata(client);
+	struct sp2 *s = i2c_get_clientdata(client);
 
 	dev_dbg(&client->dev, "\n");
-
 	sp2_exit(client);
-	if (s != NULL)
-		kfree(s);
-
+	kfree(s);
 	return 0;
 }
 
@@ -426,7 +416,6 @@ MODULE_DEVICE_TABLE(i2c, sp2_id);
 
 static struct i2c_driver sp2_driver = {
 	.driver = {
-		.owner	= THIS_MODULE,
 		.name	= "sp2",
 	},
 	.probe		= sp2_probe,

@@ -34,6 +34,7 @@
 
 #include <linux/kernel.h>
 #include <linux/of_fdt.h>
+#include <linux/memblock.h>
 
 #include <asm/idle.h>
 #include <asm/reboot.h>
@@ -51,7 +52,6 @@ uint64_t nlm_io_base;
 struct nlm_soc_info nlm_nodes[NLM_NR_NODES];
 cpumask_t nlm_cpumask = CPU_MASK_CPU0;
 unsigned int nlm_threads_per_core;
-unsigned int xlp_cores_per_node;
 
 static void nlm_linux_exit(void)
 {
@@ -68,12 +68,11 @@ static void nlm_linux_exit(void)
 static void nlm_fixup_mem(void)
 {
 	const int pref_backup = 512;
-	int i;
+	struct memblock_region *mem;
 
-	for (i = 0; i < boot_mem_map.nr_map; i++) {
-		if (boot_mem_map.map[i].type != BOOT_MEM_RAM)
-			continue;
-		boot_mem_map.map[i].size -= pref_backup;
+	for_each_mem_region(mem) {
+		memblock_remove(mem->base + mem->size - pref_backup,
+			pref_backup);
 	}
 }
 
@@ -82,7 +81,7 @@ static void __init xlp_init_mem_from_bars(void)
 	uint64_t map[16];
 	int i, n;
 
-	n = xlp_get_dram_map(-1, map);	/* -1: info for all nodes */
+	n = nlm_get_dram_map(-1, map, ARRAY_SIZE(map));	/* -1 : all nodes */
 	for (i = 0; i < n; i += 2) {
 		/* exclude 0x1000_0000-0x2000_0000, u-boot device */
 		if (map[i] <= 0x10000000 && map[i+1] > 0x10000000)
@@ -90,7 +89,7 @@ static void __init xlp_init_mem_from_bars(void)
 		if (map[i] > 0x10000000 && map[i] < 0x20000000)
 			map[i] = 0x20000000;
 
-		add_memory_region(map[i], map[i+1] - map[i], BOOT_MEM_RAM);
+		memblock_add(map[i], map[i+1] - map[i]);
 	}
 }
 
@@ -111,7 +110,7 @@ void __init plat_mem_setup(void)
 	/* memory and bootargs from DT */
 	xlp_early_init_devtree();
 
-	if (boot_mem_map.nr_map == 0) {
+	if (memblock_end_of_DRAM() == 0) {
 		pr_info("Using DRAM BARs for memory map.\n");
 		xlp_init_mem_from_bars();
 	}
@@ -163,10 +162,6 @@ void __init prom_init(void)
 	void *reset_vec;
 
 	nlm_io_base = CKSEG1ADDR(XLP_DEFAULT_IO_BASE);
-	if (cpu_is_xlp9xx())
-		xlp_cores_per_node = 32;
-	else
-		xlp_cores_per_node = 8;
 	nlm_init_boot_cpu();
 	xlp_mmu_init();
 	nlm_node_init(0);

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /***************************************************************************/
 
 /*
@@ -36,6 +37,7 @@ DEFINE_CLK(mcfuart2, "mcfuart.2", MCF_BUSCLK);
 DEFINE_CLK(mcfqspi0, "mcfqspi.0", MCF_BUSCLK);
 DEFINE_CLK(fec0, "fec.0", MCF_BUSCLK);
 DEFINE_CLK(fec1, "fec.1", MCF_BUSCLK);
+DEFINE_CLK(mcfi2c0, "imx1-i2c.0", MCF_BUSCLK);
 
 struct clk *mcf_clks[] = {
 	&clk_pll,
@@ -50,6 +52,7 @@ struct clk *mcf_clks[] = {
 	&clk_mcfqspi0,
 	&clk_fec0,
 	&clk_fec1,
+	&clk_mcfi2c0,
 	NULL
 };
 
@@ -76,6 +79,31 @@ static void __init m527x_qspi_init(void)
 
 /***************************************************************************/
 
+static void __init m527x_i2c_init(void)
+{
+#if IS_ENABLED(CONFIG_I2C_IMX)
+#if defined(CONFIG_M5271)
+	u8 par;
+
+	/* setup Port FECI2C Pin Assignment Register for I2C */
+	/*  set PAR_SCL to SCL and PAR_SDA to SDA */
+	par = readb(MCFGPIO_PAR_FECI2C);
+	par |= 0x0f;
+	writeb(par, MCFGPIO_PAR_FECI2C);
+#elif defined(CONFIG_M5275)
+	u16 par;
+
+	/* setup Port FECI2C Pin Assignment Register for I2C */
+	/*  set PAR_SCL to SCL and PAR_SDA to SDA */
+	par = readw(MCFGPIO_PAR_FECI2C);
+	par |= 0x0f;
+	writew(par, MCFGPIO_PAR_FECI2C);
+#endif
+#endif /* IS_ENABLED(CONFIG_I2C_IMX) */
+}
+
+/***************************************************************************/
+
 static void __init m527x_uarts_init(void)
 {
 	u16 sepmask;
@@ -92,7 +120,6 @@ static void __init m527x_uarts_init(void)
 
 static void __init m527x_fec_init(void)
 {
-	u16 par;
 	u8 v;
 
 	/* Set multi-function pins to ethernet mode for fec0 */
@@ -100,6 +127,8 @@ static void __init m527x_fec_init(void)
 	v = readb(MCFGPIO_PAR_FECI2C);
 	writeb(v | 0xf0, MCFGPIO_PAR_FECI2C);
 #else
+	u16 par;
+
 	par = readw(MCFGPIO_PAR_FECI2C);
 	writew(par | 0xf00, MCFGPIO_PAR_FECI2C);
 	v = readb(MCFGPIO_PAR_FEC0HL);
@@ -121,6 +150,7 @@ void __init config_BSP(char *commandp, int size)
 	m527x_uarts_init();
 	m527x_fec_init();
 	m527x_qspi_init();
+	m527x_i2c_init();
 }
 
 /***************************************************************************/

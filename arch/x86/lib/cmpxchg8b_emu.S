@@ -1,13 +1,7 @@
-/*
- *	This program is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License
- *	as published by the Free Software Foundation; version 2
- *	of the License.
- *
- */
+/* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <linux/linkage.h>
-#include <asm/dwarf2.h>
+#include <asm/export.h>
 
 .text
 
@@ -19,15 +13,14 @@
  * %ebx : low 32 bits of new value
  * %ecx : high 32 bits of new value
  */
-ENTRY(cmpxchg8b_emu)
-CFI_STARTPROC
+SYM_FUNC_START(cmpxchg8b_emu)
 
 #
 # Emulate 'cmpxchg8b (%esi)' on UP except we don't
 # set the whole ZF thing (caller will just compare
 # eax:edx with the expected value)
 #
-	pushfl_cfi
+	pushfl
 	cli
 
 	cmpl  (%esi), %eax
@@ -38,18 +31,16 @@ CFI_STARTPROC
 	movl %ebx,  (%esi)
 	movl %ecx, 4(%esi)
 
-	CFI_REMEMBER_STATE
-	popfl_cfi
-	ret
+	popfl
+	RET
 
-	CFI_RESTORE_STATE
 .Lnot_same:
 	movl  (%esi), %eax
 .Lhalf_same:
 	movl 4(%esi), %edx
 
-	popfl_cfi
-	ret
+	popfl
+	RET
 
-CFI_ENDPROC
-ENDPROC(cmpxchg8b_emu)
+SYM_FUNC_END(cmpxchg8b_emu)
+EXPORT_SYMBOL(cmpxchg8b_emu)

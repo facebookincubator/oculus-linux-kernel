@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Watchdog driver for z/VM and LPAR using the diag 288 interface.
  *
@@ -25,12 +26,11 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/slab.h>
-#include <linux/miscdevice.h>
 #include <linux/watchdog.h>
 #include <linux/suspend.h>
 #include <asm/ebcdic.h>
+#include <asm/diag.h>
 #include <linux/io.h>
-#include <linux/uaccess.h>
 
 #define MAX_CMDLEN 240
 #define DEFAULT_CMD "SYSTEM RESTART"
@@ -68,7 +68,6 @@ MODULE_PARM_DESC(conceal, "Enable the CONCEAL CP option while the watchdog is ac
 module_param_named(nowayout, nowayout_info, bool, 0444);
 MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default = CONFIG_WATCHDOG_NOWAYOUT)");
 
-MODULE_ALIAS_MISCDEV(WATCHDOG_MINOR);
 MODULE_ALIAS("vmwatchdog");
 
 static int __diag288(unsigned int func, unsigned int timeout,
@@ -87,21 +86,27 @@ static int __diag288(unsigned int func, unsigned int timeout,
 		"1:\n"
 		EX_TABLE(0b, 1b)
 		: "+d" (err) : "d"(__func), "d"(__timeout),
-		  "d"(__action), "d"(__len) : "1", "cc");
+		  "d"(__action), "d"(__len) : "1", "cc", "memory");
 	return err;
 }
 
 static int __diag288_vm(unsigned int  func, unsigned int timeout,
 			char *cmd, size_t len)
 {
+	diag_stat_inc(DIAG_STAT_X288);
 	return __diag288(func, timeout, virt_to_phys(cmd), len);
 }
 
 static int __diag288_lpar(unsigned int func, unsigned int timeout,
 			  unsigned long action)
 {
+	diag_stat_inc(DIAG_STAT_X288);
 	return __diag288(func, timeout, action, 0);
 }
+
+static unsigned long wdt_status;
+
+#define DIAG_WDOG_BUSY	0
 
 static int wdt_start(struct watchdog_device *dev)
 {
@@ -110,12 +115,17 @@ static int wdt_start(struct watchdog_device *dev)
 	int ret;
 	unsigned int func;
 
+	if (test_and_set_bit(DIAG_WDOG_BUSY, &wdt_status))
+		return -EBUSY;
+
 	ret = -ENODEV;
 
 	if (MACHINE_IS_VM) {
 		ebc_cmd = kmalloc(MAX_CMDLEN, GFP_KERNEL);
-		if (!ebc_cmd)
+		if (!ebc_cmd) {
+			clear_bit(DIAG_WDOG_BUSY, &wdt_status);
 			return -ENOMEM;
+		}
 		len = strlcpy(ebc_cmd, wdt_cmd, MAX_CMDLEN);
 		ASCEBC(ebc_cmd, MAX_CMDLEN);
 		EBC_TOUPPER(ebc_cmd, MAX_CMDLEN);
@@ -125,18 +135,16 @@ static int wdt_start(struct watchdog_device *dev)
 		ret = __diag288_vm(func, dev->timeout, ebc_cmd, len);
 		WARN_ON(ret != 0);
 		kfree(ebc_cmd);
-	}
-
-	if (MACHINE_IS_LPAR) {
+	} else {
 		ret = __diag288_lpar(WDT_FUNC_INIT,
 				     dev->timeout, LPARWDT_RESTART);
 	}
 
 	if (ret) {
 		pr_err("The watchdog cannot be activated\n");
+		clear_bit(DIAG_WDOG_BUSY, &wdt_status);
 		return ret;
 	}
-	pr_info("The watchdog was activated\n");
 	return 0;
 }
 
@@ -144,8 +152,11 @@ static int wdt_stop(struct watchdog_device *dev)
 {
 	int ret;
 
+	diag_stat_inc(DIAG_STAT_X288);
 	ret = __diag288(WDT_FUNC_CANCEL, 0, 0, 0);
-	pr_info("The watchdog was deactivated\n");
+
+	clear_bit(DIAG_WDOG_BUSY, &wdt_status);
+
 	return ret;
 }
 
@@ -177,10 +188,9 @@ static int wdt_ping(struct watchdog_device *dev)
 		ret = __diag288_vm(func, dev->timeout, ebc_cmd, len);
 		WARN_ON(ret != 0);
 		kfree(ebc_cmd);
-	}
-
-	if (MACHINE_IS_LPAR)
+	} else {
 		ret = __diag288_lpar(WDT_FUNC_CHANGE, dev->timeout, 0);
+	}
 
 	if (ret)
 		pr_err("The watchdog timer cannot be started or reset\n");
@@ -193,7 +203,7 @@ static int wdt_set_timeout(struct watchdog_device * dev, unsigned int new_to)
 	return wdt_ping(dev);
 }
 
-static struct watchdog_ops wdt_ops = {
+static const struct watchdog_ops wdt_ops = {
 	.owner = THIS_MODULE,
 	.start = wdt_start,
 	.stop = wdt_stop,
@@ -201,8 +211,8 @@ static struct watchdog_ops wdt_ops = {
 	.set_timeout = wdt_set_timeout,
 };
 
-static struct watchdog_info wdt_info = {
-	.options = WDIOF_SETTIMEOUT | WDIOF_MAGICCLOSE,
+static const struct watchdog_info wdt_info = {
+	.options = WDIOF_SETTIMEOUT | WDIOF_KEEPALIVEPING | WDIOF_MAGICCLOSE,
 	.firmware_version = 0,
 	.identity = "z Watchdog",
 };
@@ -221,17 +231,10 @@ static struct watchdog_device wdt_dev = {
  * It makes no sense to go into suspend while the watchdog is running.
  * Depending on the memory size, the watchdog might trigger, while we
  * are still saving the memory.
- * We reuse the open flag to ensure that suspend and watchdog open are
- * exclusive operations
  */
 static int wdt_suspend(void)
 {
-	if (test_and_set_bit(WDOG_DEV_OPEN, &wdt_dev.status)) {
-		pr_err("Linux cannot be suspended while the watchdog is in use\n");
-		return notifier_from_errno(-EBUSY);
-	}
-	if (test_bit(WDOG_ACTIVE, &wdt_dev.status)) {
-		clear_bit(WDOG_DEV_OPEN, &wdt_dev.status);
+	if (test_and_set_bit(DIAG_WDOG_BUSY, &wdt_status)) {
 		pr_err("Linux cannot be suspended while the watchdog is in use\n");
 		return notifier_from_errno(-EBUSY);
 	}
@@ -240,7 +243,7 @@ static int wdt_suspend(void)
 
 static int wdt_resume(void)
 {
-	clear_bit(WDOG_DEV_OPEN, &wdt_dev.status);
+	clear_bit(DIAG_WDOG_BUSY, &wdt_status);
 	return NOTIFY_DONE;
 }
 
@@ -269,25 +272,29 @@ static int __init diag288_init(void)
 	char ebc_begin[] = {
 		194, 197, 199, 201, 213
 	};
+	char *ebc_cmd;
 
 	watchdog_set_nowayout(&wdt_dev, nowayout_info);
 
 	if (MACHINE_IS_VM) {
-		pr_info("The watchdog device driver detected a z/VM environment\n");
-		if (__diag288_vm(WDT_FUNC_INIT, 15,
-				 ebc_begin, sizeof(ebc_begin)) != 0) {
+		ebc_cmd = kmalloc(sizeof(ebc_begin), GFP_KERNEL);
+		if (!ebc_cmd) {
 			pr_err("The watchdog cannot be initialized\n");
-			return -EINVAL;
+			return -ENOMEM;
 		}
-	} else if (MACHINE_IS_LPAR) {
-		pr_info("The watchdog device driver detected an LPAR environment\n");
-		if (__diag288_lpar(WDT_FUNC_INIT, 30, LPARWDT_RESTART)) {
+		memcpy(ebc_cmd, ebc_begin, sizeof(ebc_begin));
+		ret = __diag288_vm(WDT_FUNC_INIT, 15,
+				   ebc_cmd, sizeof(ebc_begin));
+		kfree(ebc_cmd);
+		if (ret != 0) {
 			pr_err("The watchdog cannot be initialized\n");
 			return -EINVAL;
 		}
 	} else {
-		pr_err("Linux runs in an environment that does not support the diag288 watchdog\n");
-		return -ENODEV;
+		if (__diag288_lpar(WDT_FUNC_INIT, 30, LPARWDT_RESTART)) {
+			pr_err("The watchdog cannot be initialized\n");
+			return -EINVAL;
+		}
 	}
 
 	if (__diag288_lpar(WDT_FUNC_CANCEL, 0, 0)) {

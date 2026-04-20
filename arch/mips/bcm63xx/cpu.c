@@ -8,7 +8,7 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/cpu.h>
 #include <asm/cpu.h>
 #include <asm/cpu-info.h>
@@ -263,7 +263,7 @@ static unsigned int detect_memory_size(void)
 
 	if (BCMCPU_IS_6345()) {
 		val = bcm_sdram_readl(SDRAM_MBASE_REG);
-		return (val * 8 * 1024 * 1024);
+		return val * 8 * 1024 * 1024;
 	}
 
 	if (BCMCPU_IS_6338() || BCMCPU_IS_6348()) {
@@ -304,7 +304,7 @@ void __init bcm63xx_cpu_init(void)
 	case CPU_BMIPS3300:
 		if ((read_c0_prid() & PRID_IMP_MASK) != PRID_IMP_BMIPS3300_ALT)
 			__cpu_name[cpu] = "Broadcom BCM6338";
-		/* fall-through */
+		fallthrough;
 	case CPU_BMIPS32:
 		chipid_reg = BCM_6345_PERF_BASE;
 		break;
@@ -376,10 +376,10 @@ void __init bcm63xx_cpu_init(void)
 	bcm63xx_cpu_freq = detect_cpu_clock();
 	bcm63xx_memory_size = detect_memory_size();
 
-	printk(KERN_INFO "Detected Broadcom 0x%04x CPU revision %02x\n",
-	       bcm63xx_cpu_id, bcm63xx_cpu_rev);
-	printk(KERN_INFO "CPU frequency is %u MHz\n",
-	       bcm63xx_cpu_freq / 1000000);
-	printk(KERN_INFO "%uMB of RAM installed\n",
-	       bcm63xx_memory_size >> 20);
+	pr_info("Detected Broadcom 0x%04x CPU revision %02x\n",
+		bcm63xx_cpu_id, bcm63xx_cpu_rev);
+	pr_info("CPU frequency is %u MHz\n",
+		bcm63xx_cpu_freq / 1000000);
+	pr_info("%uMB of RAM installed\n",
+		bcm63xx_memory_size >> 20);
 }

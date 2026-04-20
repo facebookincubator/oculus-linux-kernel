@@ -1,15 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Implementation of the Xen vTPM device frontend
  *
  * Author:  Daniel De Graaf <dgdegra@tycho.nsa.gov>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2,
- * as published by the Free Software Foundation.
  */
 #include <linux/errno.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
+#include <linux/freezer.h>
 #include <xen/xen.h>
 #include <xen/events.h>
 #include <xen/interface/io/tpmif.h>
@@ -28,6 +26,8 @@ struct tpm_private {
 	unsigned int evtchn;
 	int ring_ref;
 	domid_t backend_id;
+	int irq;
+	wait_queue_head_t read_queue;
 };
 
 enum status_bits {
@@ -37,9 +37,69 @@ enum status_bits {
 	VTPM_STATUS_CANCELED = 0x8,
 };
 
+static bool wait_for_tpm_stat_cond(struct tpm_chip *chip, u8 mask,
+					bool check_cancel, bool *canceled)
+{
+	u8 status = chip->ops->status(chip);
+
+	*canceled = false;
+	if ((status & mask) == mask)
+		return true;
+	if (check_cancel && chip->ops->req_canceled(chip, status)) {
+		*canceled = true;
+		return true;
+	}
+	return false;
+}
+
+static int wait_for_tpm_stat(struct tpm_chip *chip, u8 mask,
+		unsigned long timeout, wait_queue_head_t *queue,
+		bool check_cancel)
+{
+	unsigned long stop;
+	long rc;
+	u8 status;
+	bool canceled = false;
+
+	/* check current status */
+	status = chip->ops->status(chip);
+	if ((status & mask) == mask)
+		return 0;
+
+	stop = jiffies + timeout;
+
+	if (chip->flags & TPM_CHIP_FLAG_IRQ) {
+again:
+		timeout = stop - jiffies;
+		if ((long)timeout <= 0)
+			return -ETIME;
+		rc = wait_event_interruptible_timeout(*queue,
+			wait_for_tpm_stat_cond(chip, mask, check_cancel,
+					       &canceled),
+			timeout);
+		if (rc > 0) {
+			if (canceled)
+				return -ECANCELED;
+			return 0;
+		}
+		if (rc == -ERESTARTSYS && freezing(current)) {
+			clear_thread_flag(TIF_SIGPENDING);
+			goto again;
+		}
+	} else {
+		do {
+			tpm_msleep(TPM_TIMEOUT);
+			status = chip->ops->status(chip);
+			if ((status & mask) == mask)
+				return 0;
+		} while (time_before(jiffies, stop));
+	}
+	return -ETIME;
+}
+
 static u8 vtpm_status(struct tpm_chip *chip)
 {
-	struct tpm_private *priv = TPM_VPRIV(chip);
+	struct tpm_private *priv = dev_get_drvdata(&chip->dev);
 	switch (priv->shr->state) {
 	case VTPM_STATE_IDLE:
 		return VTPM_STATUS_IDLE | VTPM_STATUS_CANCELED;
@@ -60,7 +120,7 @@ static bool vtpm_req_canceled(struct tpm_chip *chip, u8 status)
 
 static void vtpm_cancel(struct tpm_chip *chip)
 {
-	struct tpm_private *priv = TPM_VPRIV(chip);
+	struct tpm_private *priv = dev_get_drvdata(&chip->dev);
 	priv->shr->state = VTPM_STATE_CANCEL;
 	wmb();
 	notify_remote_via_evtchn(priv->evtchn);
@@ -73,7 +133,7 @@ static unsigned int shr_data_offset(struct vtpm_shared_page *shr)
 
 static int vtpm_send(struct tpm_chip *chip, u8 *buf, size_t count)
 {
-	struct tpm_private *priv = TPM_VPRIV(chip);
+	struct tpm_private *priv = dev_get_drvdata(&chip->dev);
 	struct vtpm_shared_page *shr = priv->shr;
 	unsigned int offset = shr_data_offset(shr);
 
@@ -87,8 +147,8 @@ static int vtpm_send(struct tpm_chip *chip, u8 *buf, size_t count)
 		return -EINVAL;
 
 	/* Wait for completion of any existing command or cancellation */
-	if (wait_for_tpm_stat(chip, VTPM_STATUS_IDLE, chip->vendor.timeout_c,
-			&chip->vendor.read_queue, true) < 0) {
+	if (wait_for_tpm_stat(chip, VTPM_STATUS_IDLE, chip->timeout_c,
+			&priv->read_queue, true) < 0) {
 		vtpm_cancel(chip);
 		return -ETIME;
 	}
@@ -100,22 +160,22 @@ static int vtpm_send(struct tpm_chip *chip, u8 *buf, size_t count)
 	wmb();
 	notify_remote_via_evtchn(priv->evtchn);
 
-	ordinal = be32_to_cpu(((struct tpm_input_header*)buf)->ordinal);
+	ordinal = be32_to_cpu(((struct tpm_header *)buf)->ordinal);
 	duration = tpm_calc_ordinal_duration(chip, ordinal);
 
 	if (wait_for_tpm_stat(chip, VTPM_STATUS_IDLE, duration,
-			&chip->vendor.read_queue, true) < 0) {
+			&priv->read_queue, true) < 0) {
 		/* got a signal or timeout, try to cancel */
 		vtpm_cancel(chip);
 		return -ETIME;
 	}
 
-	return count;
+	return 0;
 }
 
 static int vtpm_recv(struct tpm_chip *chip, u8 *buf, size_t count)
 {
-	struct tpm_private *priv = TPM_VPRIV(chip);
+	struct tpm_private *priv = dev_get_drvdata(&chip->dev);
 	struct vtpm_shared_page *shr = priv->shr;
 	unsigned int offset = shr_data_offset(shr);
 	size_t length = shr->length;
@@ -124,8 +184,8 @@ static int vtpm_recv(struct tpm_chip *chip, u8 *buf, size_t count)
 		return -ECANCELED;
 
 	/* In theory the wait at the end of _send makes this one unnecessary */
-	if (wait_for_tpm_stat(chip, VTPM_STATUS_RESULT, chip->vendor.timeout_c,
-			&chip->vendor.read_queue, true) < 0) {
+	if (wait_for_tpm_stat(chip, VTPM_STATUS_RESULT, chip->timeout_c,
+			&priv->read_queue, true) < 0) {
 		vtpm_cancel(chip);
 		return -ETIME;
 	}
@@ -161,7 +221,7 @@ static irqreturn_t tpmif_interrupt(int dummy, void *dev_id)
 	switch (priv->shr->state) {
 	case VTPM_STATE_IDLE:
 	case VTPM_STATE_FINISH:
-		wake_up_interruptible(&priv->chip->vendor.read_queue);
+		wake_up_interruptible(&priv->read_queue);
 		break;
 	case VTPM_STATE_SUBMIT:
 	case VTPM_STATE_CANCEL:
@@ -175,14 +235,14 @@ static int setup_chip(struct device *dev, struct tpm_private *priv)
 {
 	struct tpm_chip *chip;
 
-	chip = tpm_register_hardware(dev, &tpm_vtpm);
-	if (!chip)
-		return -ENODEV;
+	chip = tpmm_chip_alloc(dev, &tpm_vtpm);
+	if (IS_ERR(chip))
+		return PTR_ERR(chip);
 
-	init_waitqueue_head(&chip->vendor.read_queue);
+	init_waitqueue_head(&priv->read_queue);
 
 	priv->chip = chip;
-	TPM_VPRIV(chip) = priv;
+	dev_set_drvdata(&chip->dev, priv);
 
 	return 0;
 }
@@ -193,6 +253,7 @@ static int setup_ring(struct xenbus_device *dev, struct tpm_private *priv)
 	struct xenbus_transaction xbt;
 	const char *message = NULL;
 	int rv;
+	grant_ref_t gref;
 
 	priv->shr = (void *)__get_free_page(GFP_KERNEL|__GFP_ZERO);
 	if (!priv->shr) {
@@ -200,11 +261,11 @@ static int setup_ring(struct xenbus_device *dev, struct tpm_private *priv)
 		return -ENOMEM;
 	}
 
-	rv = xenbus_grant_ring(dev, virt_to_mfn(priv->shr));
+	rv = xenbus_grant_ring(dev, priv->shr, 1, &gref);
 	if (rv < 0)
 		return rv;
 
-	priv->ring_ref = rv;
+	priv->ring_ref = gref;
 
 	rv = xenbus_alloc_evtchn(dev, &priv->evtchn);
 	if (rv)
@@ -216,7 +277,7 @@ static int setup_ring(struct xenbus_device *dev, struct tpm_private *priv)
 		xenbus_dev_fatal(dev, rv, "allocating TPM irq");
 		return rv;
 	}
-	priv->chip->vendor.irq = rv;
+	priv->irq = rv;
 
  again:
 	rv = xenbus_transaction_start(&xbt);
@@ -276,8 +337,8 @@ static void ring_free(struct tpm_private *priv)
 	else
 		free_page((unsigned long)priv->shr);
 
-	if (priv->chip && priv->chip->vendor.irq)
-		unbind_from_irqhandler(priv->chip->vendor.irq, priv);
+	if (priv->irq)
+		unbind_from_irqhandler(priv->irq, priv);
 
 	kfree(priv);
 }
@@ -302,23 +363,22 @@ static int tpmfront_probe(struct xenbus_device *dev,
 
 	rv = setup_ring(dev, priv);
 	if (rv) {
-		tpm_remove_hardware(&dev->dev);
 		ring_free(priv);
 		return rv;
 	}
 
 	tpm_get_timeouts(priv->chip);
 
-	return rv;
+	return tpm_chip_register(priv->chip);
 }
 
 static int tpmfront_remove(struct xenbus_device *dev)
 {
 	struct tpm_chip *chip = dev_get_drvdata(&dev->dev);
-	struct tpm_private *priv = TPM_VPRIV(chip);
-	tpm_remove_hardware(&dev->dev);
+	struct tpm_private *priv = dev_get_drvdata(&chip->dev);
+	tpm_chip_unregister(chip);
 	ring_free(priv);
-	TPM_VPRIV(chip) = NULL;
+	dev_set_drvdata(&chip->dev, NULL);
 	return 0;
 }
 
@@ -332,18 +392,14 @@ static int tpmfront_resume(struct xenbus_device *dev)
 static void backend_changed(struct xenbus_device *dev,
 		enum xenbus_state backend_state)
 {
-	int val;
-
 	switch (backend_state) {
 	case XenbusStateInitialised:
 	case XenbusStateConnected:
 		if (dev->state == XenbusStateConnected)
 			break;
 
-		if (xenbus_scanf(XBT_NIL, dev->otherend,
-				"feature-protocol-v2", "%d", &val) < 0)
-			val = 0;
-		if (!val) {
+		if (!xenbus_read_unsigned(dev->otherend, "feature-protocol-v2",
+					  0)) {
 			xenbus_dev_fatal(dev, -EINVAL,
 					"vTPM protocol 2 required");
 			return;

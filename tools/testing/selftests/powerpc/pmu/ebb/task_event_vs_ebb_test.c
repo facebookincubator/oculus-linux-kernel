@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2014, Michael Ellerman, IBM Corp.
- * Licensed under GPLv2.
  */
 
 #include <signal.h>
@@ -39,6 +39,8 @@ int task_event_vs_ebb(void)
 	struct event event;
 	pid_t pid;
 	int rc;
+
+	SKIP_IF(!ebb_is_supported());
 
 	FAIL_IF(pipe(read_pipe.fds) == -1);
 	FAIL_IF(pipe(write_pipe.fds) == -1);

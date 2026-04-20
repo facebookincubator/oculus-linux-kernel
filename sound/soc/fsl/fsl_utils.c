@@ -1,14 +1,10 @@
-/**
- * Freescale ALSA SoC Machine driver utility
- *
- * Author: Timur Tabi <timur@freescale.com>
- *
- * Copyright 2010 Freescale Semiconductor, Inc.
- *
- * This file is licensed under the terms of the GNU General Public License
- * version 2.  This program is licensed "as is" without any warranty of any
- * kind, whether express or implied.
- */
+// SPDX-License-Identifier: GPL-2.0
+//
+// Freescale ALSA SoC Machine driver utility
+//
+// Author: Timur Tabi <timur@freescale.com>
+//
+// Copyright 2010 Freescale Semiconductor, Inc.
 
 #include <linux/module.h>
 #include <linux/of_address.h>
@@ -36,7 +32,7 @@ int fsl_asoc_get_dma_channel(struct device_node *ssi_np,
 {
 	struct resource res;
 	struct device_node *dma_channel_np, *dma_np;
-	const u32 *iprop;
+	const __be32 *iprop;
 	int ret;
 
 	dma_channel_np = of_parse_phandle(ssi_np, name, 0);
@@ -61,8 +57,8 @@ int fsl_asoc_get_dma_channel(struct device_node *ssi_np,
 		of_node_put(dma_channel_np);
 		return ret;
 	}
-	snprintf((char *)dai->platform_name, DAI_NAME_SIZE, "%llx.%s",
-		 (unsigned long long) res.start, dma_channel_np->name);
+	snprintf((char *)dai->platforms->name, DAI_NAME_SIZE, "%llx.%pOFn",
+		 (unsigned long long) res.start, dma_channel_np);
 
 	iprop = of_get_property(dma_channel_np, "cell-index", NULL);
 	if (!iprop) {
@@ -75,6 +71,7 @@ int fsl_asoc_get_dma_channel(struct device_node *ssi_np,
 	iprop = of_get_property(dma_np, "cell-index", NULL);
 	if (!iprop) {
 		of_node_put(dma_np);
+		of_node_put(dma_channel_np);
 		return -EINVAL;
 	}
 	*dma_id = be32_to_cpup(iprop);
@@ -85,33 +82,6 @@ int fsl_asoc_get_dma_channel(struct device_node *ssi_np,
 	return 0;
 }
 EXPORT_SYMBOL(fsl_asoc_get_dma_channel);
-
-/**
- * fsl_asoc_xlate_tdm_slot_mask - generate TDM slot TX/RX mask.
- *
- * @slots: Number of slots in use.
- * @tx_mask: bitmask representing active TX slots.
- * @rx_mask: bitmask representing active RX slots.
- *
- * This function used to generate the TDM slot TX/RX mask. And the TX/RX
- * mask will use a 0 bit for an active slot as default, and the default
- * active bits are at the LSB of the mask value.
- */
-int fsl_asoc_xlate_tdm_slot_mask(unsigned int slots,
-				    unsigned int *tx_mask,
-				    unsigned int *rx_mask)
-{
-	if (!slots)
-		return -EINVAL;
-
-	if (tx_mask)
-		*tx_mask = ~((1 << slots) - 1);
-	if (rx_mask)
-		*rx_mask = ~((1 << slots) - 1);
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(fsl_asoc_xlate_tdm_slot_mask);
 
 MODULE_AUTHOR("Timur Tabi <timur@freescale.com>");
 MODULE_DESCRIPTION("Freescale ASoC utility code");

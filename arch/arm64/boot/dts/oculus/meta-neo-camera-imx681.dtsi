@@ -1,0 +1,149 @@
+#include <dt-bindings/clock/qcom,camcc-neo.h>
+#include <dt-bindings/camera/msm-camera.h>
+#include <dt-bindings/interconnect/qcom,neo.h>
+
+&soc {
+	qcom,cam-res-mgr {
+		compatible = "qcom,cam-res-mgr";
+		status = "ok";
+	};
+};
+
+&cam_cci0 {
+	eeprom_imx681: qcom,eeprom0 {
+		cell-index = <0>;
+		compatible = "qcom,eeprom";
+		cam_vio-supply  = <&L14A>;
+		cam_clk-supply  = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vio",
+			"cam_clk" ;
+		rgltr-cntrl-support;
+		rgltr-min-voltage  = <1800000 0>;
+		rgltr-max-voltage  = <1800000 0>;
+		rgltr-load-current = <2700  0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk1_active
+			&cam_sensor_active_rst0>;
+		pinctrl-1 = <&cam_sensor_mclk1_suspend
+			&cam_sensor_suspend_rst0>;
+		gpios = <&tlmm 70 0>,
+			<&tlmm 65 0>;
+		gpio-reset = <1>;
+		gpio-req-tbl-num = <0 1>;
+		gpio-req-tbl-flags = <1 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK1",
+					"CAM_RESET0";
+		cci-master = <0>;
+		clocks = <&camcc CAM_CC_MCLK1_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "nominal";
+		clock-rates = <24000000>;
+		status = "ok";
+	};
+
+	sg_camera_sensor: qcom,cam-sensor0 {
+		cell-index = <0>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <2>;
+		eeprom-src = <&eeprom_imx681>;
+		sensor-position-roll = <90>;
+		sensor-position-pitch = <0>;
+		sensor-position-yaw = <180>;
+		cam_vio-supply  = <&L14A>;
+		cam_clk-supply  = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vio",
+			"cam_clk" ;
+		rgltr-cntrl-support;
+		rgltr-min-voltage  = <1800000 0>;
+		rgltr-max-voltage  = <1800000 0>;
+		rgltr-load-current = <2700  0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend", "cam_suspend_ao";
+		pinctrl-0 = <&cam_sensor_mclk1_active
+			&cam_sensor_active_rst0>;
+		pinctrl-1 = <&cam_sensor_mclk1_suspend
+			&cam_sensor_suspend_rst0>;
+		pinctrl-2 = <&cam_sensor_mclk1_suspend>;
+		gpios = <&tlmm 70 0>,
+			<&tlmm 65 0>;
+		gpio-reset = <1>;
+		gpio-req-tbl-num = <0 1>;
+		gpio-req-tbl-flags = <1 0>;
+		gpio-req-tbl-aoflags = <0 2>; // Set 2 (GPIOF_INIT_HIGH) for reset to preserve siginal in always on
+		gpio-req-tbl-label = "CAMIF_MCLK1",
+					"CAM_RESET0";
+		cci-master = <0>;
+		clocks = <&camcc CAM_CC_MCLK1_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "nominal";
+		clock-rates = <24000000>;
+		interconnect-names = "cam-snoc";
+		interconnects = <&system_noc SLAVE_A2NOC_SNOC &mc_virt SLAVE_EBI1>;
+		sensor-id = <0x0aff>;
+		sensor-temperature-en-reg = <0x04ce>;
+		sensor-temperature-stat-reg = <0x04cc>;
+		sensor-temperature-val-reg = <0x04cd>;
+		status = "ok";
+	};
+};
+
+&tlmm {
+	fsync_input_mode: fsync_input_mode {
+		mux {
+			pins = "gpio77";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio77";
+			drive-strength = <2>;
+			bias-pull-down;
+			input-enable;
+		};
+	};
+};
+
+&soc {
+	oculus,cam_fsync {
+		compatible = "oculus,cam_fsync";
+		pinctrl-names = "input";
+		pinctrl-0 = <&fsync_input_mode>;
+		fsync-gpio  = <&tlmm 77 0>;
+		cam-fsync-cdev-support;
+		status = "ok";
+	};
+};
+
+&tlmm {
+	camera_defaults: camera_defaults {
+		mux {
+			pins = "gpio40";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio40";
+			bias-pull-down;
+			input-enable;
+		};
+	};
+};
+
+&soc {
+	camera_key {
+		compatible = "gpio-keys";
+		input-name = "camera-key";
+		pinctrl-0 = <&camera_defaults>;
+		status = "ok";
+
+		camera_dnn {
+			label = "Camera DNN";
+			linux,code = <KEY_CAMERA>;
+			gpios = <&tlmm 40 GPIO_ACTIVE_HIGH>;
+			linux,input-type = <EV_KEY>;
+			debounce-interval = <0>;
+			wakeup-source;
+		};
+	};
+};

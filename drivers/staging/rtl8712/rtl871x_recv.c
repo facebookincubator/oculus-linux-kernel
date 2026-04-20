@@ -1,21 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /******************************************************************************
  * rtl871x_recv.c
  *
  * Copyright(c) 2007 - 2010 Realtek Corporation. All rights reserved.
  * Linux device driver for RTL8192SU
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * Modifications for inclusion into the Linux staging tree are
  * Copyright(c) 2010 Larry Finger. All rights reserved.
@@ -33,6 +21,7 @@
 #include <linux/if_ether.h>
 #include <linux/kmemleak.h>
 #include <linux/etherdevice.h>
+#include <net/cfg80211.h>
 
 #include "osdep_service.h"
 #include "drv_types.h"
@@ -47,12 +36,6 @@ static const u8 SNAP_ETH_TYPE_IPX[2] = {0x81, 0x37};
 /* Datagram Delivery Protocol */
 static const u8 SNAP_ETH_TYPE_APPLETALK_AARP[2] = {0x80, 0xf3};
 
-/* Bridge-Tunnel header (for EtherTypes ETH_P_AARP and ETH_P_IPX) */
-static const u8 bridge_tunnel_header[] = {0xaa, 0xaa, 0x03, 0x00, 0x00, 0xf8};
-
-/* Ethernet-II snap header (RFC1042 for most EtherTypes) */
-static const u8 rfc1042_header[] = {0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00};
-
 void _r8712_init_sta_recv_priv(struct sta_recv_priv *psta_recvpriv)
 {
 	memset((u8 *)psta_recvpriv, 0, sizeof(struct sta_recv_priv));
@@ -60,30 +43,28 @@ void _r8712_init_sta_recv_priv(struct sta_recv_priv *psta_recvpriv)
 	_init_queue(&psta_recvpriv->defrag_q);
 }
 
-sint _r8712_init_recv_priv(struct recv_priv *precvpriv,
+void _r8712_init_recv_priv(struct recv_priv *precvpriv,
 			   struct _adapter *padapter)
 {
 	sint i;
 	union recv_frame *precvframe;
 
-	 memset((unsigned char *)precvpriv, 0, sizeof(struct  recv_priv));
+	memset((unsigned char *)precvpriv, 0, sizeof(struct  recv_priv));
 	spin_lock_init(&precvpriv->lock);
 	_init_queue(&precvpriv->free_recv_queue);
 	_init_queue(&precvpriv->recv_pending_queue);
 	precvpriv->adapter = padapter;
 	precvpriv->free_recvframe_cnt = NR_RECVFRAME;
-	precvpriv->pallocated_frame_buf = kmalloc(NR_RECVFRAME *
+	precvpriv->pallocated_frame_buf = kzalloc(NR_RECVFRAME *
 				sizeof(union recv_frame) + RXFRAME_ALIGN_SZ,
 				GFP_ATOMIC);
-	if (precvpriv->pallocated_frame_buf == NULL)
-		return _FAIL;
+	if (!precvpriv->pallocated_frame_buf)
+		return;
 	kmemleak_not_leak(precvpriv->pallocated_frame_buf);
-	memset(precvpriv->pallocated_frame_buf, 0, NR_RECVFRAME *
-		sizeof(union recv_frame) + RXFRAME_ALIGN_SZ);
 	precvpriv->precv_frame_buf = precvpriv->pallocated_frame_buf +
 				    RXFRAME_ALIGN_SZ -
 				    ((addr_t)(precvpriv->pallocated_frame_buf) &
-				    (RXFRAME_ALIGN_SZ-1));
+				    (RXFRAME_ALIGN_SZ - 1));
 	precvframe = (union recv_frame *)precvpriv->precv_frame_buf;
 	for (i = 0; i < NR_RECVFRAME; i++) {
 		INIT_LIST_HEAD(&(precvframe->u.list));
@@ -94,7 +75,7 @@ sint _r8712_init_recv_priv(struct recv_priv *precvpriv,
 		precvframe++;
 	}
 	precvpriv->rx_pending_cnt = 1;
-	return r8712_init_recv_priv(precvpriv, padapter);
+	r8712_init_recv_priv(precvpriv, padapter);
 }
 
 void _r8712_free_recv_priv(struct recv_priv *precvpriv)
@@ -103,24 +84,20 @@ void _r8712_free_recv_priv(struct recv_priv *precvpriv)
 	r8712_free_recv_priv(precvpriv);
 }
 
-union recv_frame *r8712_alloc_recvframe(struct  __queue *pfree_recv_queue)
+union recv_frame *r8712_alloc_recvframe(struct __queue *pfree_recv_queue)
 {
 	unsigned long irqL;
 	union recv_frame  *precvframe;
-	struct list_head *plist, *phead;
 	struct _adapter *padapter;
 	struct recv_priv *precvpriv;
 
 	spin_lock_irqsave(&pfree_recv_queue->lock, irqL);
-	if (list_empty(&pfree_recv_queue->queue))
-		precvframe = NULL;
-	else {
-		phead = &pfree_recv_queue->queue;
-		plist = phead->next;
-		precvframe = LIST_CONTAINOR(plist, union recv_frame, u);
+	precvframe = list_first_entry_or_null(&pfree_recv_queue->queue,
+					      union recv_frame, u.hdr.list);
+	if (precvframe) {
 		list_del_init(&precvframe->u.hdr.list);
 		padapter = precvframe->u.hdr.adapter;
-		if (padapter != NULL) {
+		if (padapter) {
 			precvpriv = &padapter->recvpriv;
 			if (pfree_recv_queue == &precvpriv->free_recv_queue)
 				precvpriv->free_recvframe_cnt--;
@@ -131,13 +108,10 @@ union recv_frame *r8712_alloc_recvframe(struct  __queue *pfree_recv_queue)
 }
 
 /*
-caller : defrag; recvframe_chk_defrag in recv_thread  (passive)
-pframequeue: defrag_queue : will be accessed in recv_thread  (passive)
-
-using spin_lock to protect
-
-*/
-
+ * caller : defrag; recvframe_chk_defrag in recv_thread  (passive)
+ * pframequeue: defrag_queue : will be accessed in recv_thread  (passive)
+ * using spin_lock to protect
+ */
 void r8712_free_recvframe_queue(struct  __queue *pframequeue,
 				struct  __queue *pfree_recv_queue)
 {
@@ -147,8 +121,8 @@ void r8712_free_recvframe_queue(struct  __queue *pframequeue,
 	spin_lock(&pframequeue->lock);
 	phead = &pframequeue->queue;
 	plist = phead->next;
-	while (end_of_queue_search(phead, plist) == false) {
-		precvframe = LIST_CONTAINOR(plist, union recv_frame, u);
+	while (!end_of_queue_search(phead, plist)) {
+		precvframe = container_of(plist, union recv_frame, u.list);
 		plist = plist->next;
 		r8712_free_recvframe(precvframe, pfree_recv_queue);
 	}
@@ -171,17 +145,18 @@ sint r8712_recvframe_chkmic(struct _adapter *adapter,
 	stainfo = r8712_get_stainfo(&adapter->stapriv, &prxattrib->ta[0]);
 	if (prxattrib->encrypt == _TKIP_) {
 		/* calculate mic code */
-		if (stainfo != NULL) {
-			if (IS_MCAST(prxattrib->ra)) {
+		if (stainfo) {
+			if (is_multicast_ether_addr(prxattrib->ra)) {
 				iv = precvframe->u.hdr.rx_data +
 				     prxattrib->hdrlen;
 				idx = iv[3];
 				mickey = &psecuritypriv->XGrprxmickey[(((idx >>
 					 6) & 0x3)) - 1].skey[0];
-				if (psecuritypriv->binstallGrpkey == false)
+				if (!psecuritypriv->binstallGrpkey)
 					return _FAIL;
-			} else
+			} else {
 				mickey = &stainfo->tkiprxmickey.skey[0];
+			}
 			/*icv_len included the mic code*/
 			datalen = precvframe->u.hdr.len - prxattrib->hdrlen -
 				  prxattrib->iv_len - prxattrib->icv_len - 8;
@@ -197,16 +172,15 @@ sint r8712_recvframe_chkmic(struct _adapter *adapter,
 				if (miccode[i] != *(pframemic + i))
 					bmic_err = true;
 			}
-			if (bmic_err == true) {
-				if (prxattrib->bdecrypted == true)
+			if (bmic_err) {
+				if (prxattrib->bdecrypted)
 					r8712_handle_tkip_mic_err(adapter,
-						(u8)IS_MCAST(prxattrib->ra));
+						(u8)is_multicast_ether_addr(prxattrib->ra));
 				res = _FAIL;
 			} else {
 				/* mic checked ok */
-				if ((psecuritypriv->bcheck_grpkey ==
-				     false) && (IS_MCAST(prxattrib->ra) ==
-				     true))
+				if (!psecuritypriv->bcheck_grpkey &&
+				    is_multicast_ether_addr(prxattrib->ra))
 					psecuritypriv->bcheck_grpkey = true;
 			}
 			recvframe_pull_tail(precvframe, 8);
@@ -224,7 +198,7 @@ union recv_frame *r8712_decryptor(struct _adapter *padapter,
 	union recv_frame *return_packet = precv_frame;
 
 	if ((prxattrib->encrypt > 0) && ((prxattrib->bdecrypted == 0) ||
-	   (psecuritypriv->sw_decrypt == true))) {
+	    psecuritypriv->sw_decrypt)) {
 		psecuritypriv->hw_decrypted = false;
 		switch (prxattrib->encrypt) {
 		case _WEP40_:
@@ -240,8 +214,9 @@ union recv_frame *r8712_decryptor(struct _adapter *padapter,
 		default:
 				break;
 		}
-	} else if (prxattrib->bdecrypted == 1)
+	} else if (prxattrib->bdecrypted == 1) {
 		psecuritypriv->hw_decrypted = true;
+	}
 	return return_packet;
 }
 /*###set the security information in the recv_frame */
@@ -265,15 +240,15 @@ union recv_frame *r8712_portctrl(struct _adapter *adapter,
 	if (auth_alg == 2) {
 		/* get ether_type */
 		ptr = ptr + pfhdr->attrib.hdrlen + LLC_HEADER_SIZE;
-		memcpy(&ether_type, ptr, 2);
-		ether_type = ntohs((unsigned short)ether_type);
+		ether_type = get_unaligned_be16(ptr);
 
-		if ((psta != NULL) && (psta->ieee8021x_blocked)) {
+		if (psta && psta->ieee8021x_blocked) {
 			/* blocked
-			 * only accept EAPOL frame */
-			if (ether_type == 0x888e)
+			 * only accept EAPOL frame
+			 */
+			if (ether_type == 0x888e) {
 				prtnframe = precv_frame;
-			else {
+			} else {
 				/*free this frame*/
 				r8712_free_recvframe(precv_frame,
 					 &adapter->recvpriv.free_recv_queue);
@@ -282,7 +257,8 @@ union recv_frame *r8712_portctrl(struct _adapter *adapter,
 		} else {
 			/* allowed
 			 * check decryption status, and decrypt the
-			 * frame if needed */
+			 * frame if needed
+			 */
 			prtnframe = precv_frame;
 			/* check is the EAPOL frame or not (Rekey) */
 			if (ether_type == 0x888e) {
@@ -290,8 +266,9 @@ union recv_frame *r8712_portctrl(struct _adapter *adapter,
 				prtnframe = precv_frame;
 			}
 		}
-	} else
+	} else {
 		prtnframe = precv_frame;
+	}
 	return prtnframe;
 }
 
@@ -299,7 +276,7 @@ static sint recv_decache(union recv_frame *precv_frame, u8 bretry,
 		  struct stainfo_rxcache *prxcache)
 {
 	sint tid = precv_frame->u.hdr.attrib.priority;
-	u16 seq_ctrl = ((precv_frame->u.hdr.attrib.seq_num&0xffff) << 4) |
+	u16 seq_ctrl = ((precv_frame->u.hdr.attrib.seq_num & 0xffff) << 4) |
 			(precv_frame->u.hdr.attrib.frag_num & 0xf);
 
 	if (tid > 15)
@@ -322,10 +299,10 @@ static sint sta2sta_data_frame(struct _adapter *adapter,
 	u8 *mybssid  = get_bssid(pmlmepriv);
 	u8 *myhwaddr = myid(&adapter->eeprompriv);
 	u8 *sta_addr = NULL;
-	sint bmcast = IS_MCAST(pattrib->dst);
+	bool bmcast = is_multicast_ether_addr(pattrib->dst);
 
-	if ((check_fwstate(pmlmepriv, WIFI_ADHOC_STATE) == true) ||
-	    (check_fwstate(pmlmepriv, WIFI_ADHOC_MASTER_STATE) == true)) {
+	if (check_fwstate(pmlmepriv, WIFI_ADHOC_STATE) ||
+	    check_fwstate(pmlmepriv, WIFI_ADHOC_MASTER_STATE)) {
 		/* filter packets that SA is myself or multicast or broadcast */
 		if (!memcmp(myhwaddr, pattrib->src, ETH_ALEN))
 			return _FAIL;
@@ -336,40 +313,44 @@ static sint sta2sta_data_frame(struct _adapter *adapter,
 		    (memcmp(pattrib->bssid, mybssid, ETH_ALEN)))
 			return _FAIL;
 		sta_addr = pattrib->src;
-	} else if (check_fwstate(pmlmepriv, WIFI_STATION_STATE) == true) {
+	} else if (check_fwstate(pmlmepriv, WIFI_STATION_STATE)) {
 		/* For Station mode, sa and bssid should always be BSSID,
-		 * and DA is my mac-address */
+		 * and DA is my mac-address
+		 */
 		if (memcmp(pattrib->bssid, pattrib->src, ETH_ALEN))
 			return _FAIL;
-	       sta_addr = pattrib->bssid;
-	 } else if (check_fwstate(pmlmepriv, WIFI_AP_STATE) == true) {
+		sta_addr = pattrib->bssid;
+	} else if (check_fwstate(pmlmepriv, WIFI_AP_STATE)) {
 		if (bmcast) {
 			/* For AP mode, if DA == MCAST, then BSSID should
-			 * be also MCAST */
-			if (!IS_MCAST(pattrib->bssid))
+			 * be also MCAST
+			 */
+			if (!is_multicast_ether_addr(pattrib->bssid))
 				return _FAIL;
 		} else { /* not mc-frame */
 			/* For AP mode, if DA is non-MCAST, then it must be
-			 *  BSSID, and bssid == BSSID */
+			 * BSSID, and bssid == BSSID
+			 */
 			if (memcmp(pattrib->bssid, pattrib->dst, ETH_ALEN))
 				return _FAIL;
 			sta_addr = pattrib->src;
 		}
-	  } else if (check_fwstate(pmlmepriv, WIFI_MP_STATE) == true) {
+	} else if (check_fwstate(pmlmepriv, WIFI_MP_STATE)) {
 		memcpy(pattrib->dst, GetAddr1Ptr(ptr), ETH_ALEN);
 		memcpy(pattrib->src, GetAddr2Ptr(ptr), ETH_ALEN);
 		memcpy(pattrib->bssid, GetAddr3Ptr(ptr), ETH_ALEN);
 		memcpy(pattrib->ra, pattrib->dst, ETH_ALEN);
 		memcpy(pattrib->ta, pattrib->src, ETH_ALEN);
 		sta_addr = mybssid;
-	  } else
+	} else {
 		ret  = _FAIL;
+	}
 	if (bmcast)
 		*psta = r8712_get_bcmc_stainfo(adapter);
 	else
 		*psta = r8712_get_stainfo(pstapriv, sta_addr); /* get ap_info */
-	if (*psta == NULL) {
-		if (check_fwstate(pmlmepriv, WIFI_MP_STATE) == true)
+	if (!*psta) {
+		if (check_fwstate(pmlmepriv, WIFI_MP_STATE))
 			adapter->mppriv.rx_pktloss++;
 		return _FAIL;
 	}
@@ -386,15 +367,16 @@ static sint ap2sta_data_frame(struct _adapter *adapter,
 	struct	mlme_priv *pmlmepriv = &adapter->mlmepriv;
 	u8 *mybssid  = get_bssid(pmlmepriv);
 	u8 *myhwaddr = myid(&adapter->eeprompriv);
-	sint bmcast = IS_MCAST(pattrib->dst);
+	bool bmcast = is_multicast_ether_addr(pattrib->dst);
 
-	if ((check_fwstate(pmlmepriv, WIFI_STATION_STATE) == true)
-	     && (check_fwstate(pmlmepriv, _FW_LINKED) == true)) {
+	if (check_fwstate(pmlmepriv, WIFI_STATION_STATE) &&
+	    check_fwstate(pmlmepriv, _FW_LINKED)) {
 		/* if NULL-frame, drop packet */
 		if ((GetFrameSubType(ptr)) == WIFI_DATA_NULL)
 			return _FAIL;
 		/* drop QoS-SubType Data, including QoS NULL,
-		 * excluding QoS-Data */
+		 * excluding QoS-Data
+		 */
 		if ((GetFrameSubType(ptr) & WIFI_QOS_DATA_TYPE) ==
 		     WIFI_QOS_DATA_TYPE) {
 			if (GetFrameSubType(ptr) & (BIT(4) | BIT(5) | BIT(6)))
@@ -402,7 +384,7 @@ static sint ap2sta_data_frame(struct _adapter *adapter,
 		}
 
 		/* filter packets that SA is myself or multicast or broadcast */
-	       if (!memcmp(myhwaddr, pattrib->src, ETH_ALEN))
+		if (!memcmp(myhwaddr, pattrib->src, ETH_ALEN))
 			return _FAIL;
 
 		/* da should be for me */
@@ -416,11 +398,11 @@ static sint ap2sta_data_frame(struct _adapter *adapter,
 		if (bmcast)
 			*psta = r8712_get_bcmc_stainfo(adapter);
 		else
-		       *psta = r8712_get_stainfo(pstapriv, pattrib->bssid);
-		if (*psta == NULL)
+			*psta = r8712_get_stainfo(pstapriv, pattrib->bssid);
+		if (!*psta)
 			return _FAIL;
-	} else if ((check_fwstate(pmlmepriv, WIFI_MP_STATE) == true) &&
-		   (check_fwstate(pmlmepriv, _FW_LINKED) == true)) {
+	} else if (check_fwstate(pmlmepriv, WIFI_MP_STATE) &&
+		   check_fwstate(pmlmepriv, _FW_LINKED)) {
 		memcpy(pattrib->dst, GetAddr1Ptr(ptr), ETH_ALEN);
 		memcpy(pattrib->src, GetAddr2Ptr(ptr), ETH_ALEN);
 		memcpy(pattrib->bssid, GetAddr3Ptr(ptr), ETH_ALEN);
@@ -428,10 +410,11 @@ static sint ap2sta_data_frame(struct _adapter *adapter,
 		memcpy(pattrib->ta, pattrib->src, ETH_ALEN);
 		memcpy(pattrib->bssid,  mybssid, ETH_ALEN);
 		*psta = r8712_get_stainfo(pstapriv, pattrib->bssid);
-		if (*psta == NULL)
+		if (!*psta)
 			return _FAIL;
-	} else
+	} else {
 		return _FAIL;
+	}
 	return _SUCCESS;
 }
 
@@ -444,14 +427,15 @@ static sint sta2ap_data_frame(struct _adapter *adapter,
 	struct	mlme_priv *pmlmepriv = &adapter->mlmepriv;
 	unsigned char *mybssid  = get_bssid(pmlmepriv);
 
-	if (check_fwstate(pmlmepriv, WIFI_AP_STATE) == true) {
+	if (check_fwstate(pmlmepriv, WIFI_AP_STATE)) {
 		/* For AP mode, if DA is non-MCAST, then it must be BSSID,
 		 * and bssid == BSSID
-		 * For AP mode, RA=BSSID, TX=STA(SRC_ADDR), A3=DST_ADDR */
+		 * For AP mode, RA=BSSID, TX=STA(SRC_ADDR), A3=DST_ADDR
+		 */
 		if (memcmp(pattrib->bssid, mybssid, ETH_ALEN))
 			return _FAIL;
 		*psta = r8712_get_stainfo(pstapriv, pattrib->src);
-		if (*psta == NULL)
+		if (!*psta)
 			return _FAIL;
 	}
 	return _SUCCESS;
@@ -485,7 +469,7 @@ static sint validate_recv_data_frame(struct _adapter *adapter,
 	pda = get_da(ptr);
 	psa = get_sa(ptr);
 	pbssid = get_hdr_bssid(ptr);
-	if (pbssid == NULL)
+	if (!pbssid)
 		return _FAIL;
 	memcpy(pattrib->dst, pda, ETH_ALEN);
 	memcpy(pattrib->src, psa, ETH_ALEN);
@@ -515,10 +499,9 @@ static sint validate_recv_data_frame(struct _adapter *adapter,
 	}
 	if (res == _FAIL)
 		return _FAIL;
-	if (psta == NULL)
+	if (!psta)
 		return _FAIL;
-	else
-		precv_frame->u.hdr.psta = psta;
+	precv_frame->u.hdr.psta = psta;
 	pattrib->amsdu = 0;
 	/* parsing QC field */
 	if (pattrib->qos == 1) {
@@ -543,7 +526,7 @@ static sint validate_recv_data_frame(struct _adapter *adapter,
 
 	if (pattrib->privacy) {
 		GET_ENCRY_ALGO(psecuritypriv, psta, pattrib->encrypt,
-			       IS_MCAST(pattrib->ra));
+			       is_multicast_ether_addr(pattrib->ra));
 		SET_ICE_IV_LEN(pattrib->iv_len, pattrib->icv_len,
 			       pattrib->encrypt);
 	} else {
@@ -597,11 +580,11 @@ sint r8712_validate_recv_frame(struct _adapter *adapter,
 	return retval;
 }
 
-sint r8712_wlanhdr_to_ethhdr(union recv_frame *precvframe)
+int r8712_wlanhdr_to_ethhdr(union recv_frame *precvframe)
 {
 	/*remove the wlanhdr and add the eth_hdr*/
 	sint	rmv_len;
-	u16	eth_type, len;
+	u16	len;
 	u8	bsnaphdr;
 	u8	*psnap_type;
 	struct ieee80211_snap_hdr *psnap;
@@ -622,7 +605,8 @@ sint r8712_wlanhdr_to_ethhdr(union recv_frame *precvframe)
 	    (memcmp(psnap_type, (void *)SNAP_ETH_TYPE_APPLETALK_AARP, 2))) ||
 	     !memcmp(psnap, (void *)bridge_tunnel_header, SNAP_SIZE)) {
 		/* remove RFC1042 or Bridge-Tunnel encapsulation and
-		 * replace EtherType */
+		 * replace EtherType
+		 */
 		bsnaphdr = true;
 	} else {
 		/* Leave Ethernet header part of hdr and full payload */
@@ -631,54 +615,43 @@ sint r8712_wlanhdr_to_ethhdr(union recv_frame *precvframe)
 	rmv_len = pattrib->hdrlen + pattrib->iv_len +
 		  (bsnaphdr ? SNAP_SIZE : 0);
 	len = precvframe->u.hdr.len - rmv_len;
-	if (check_fwstate(pmlmepriv, WIFI_MP_STATE) == true) {
+	if (check_fwstate(pmlmepriv, WIFI_MP_STATE)) {
 		ptr += rmv_len;
 		*ptr = 0x87;
-		*(ptr+1) = 0x12;
-		eth_type = 0x8712;
+		*(ptr + 1) = 0x12;
 		/* append rx status for mp test packets */
 		ptr = recvframe_pull(precvframe, (rmv_len -
 		      sizeof(struct ethhdr) + 2) - 24);
+		if (!ptr)
+			return -ENOMEM;
 		memcpy(ptr, get_rxmem(precvframe), 24);
 		ptr += 24;
-	} else
+	} else {
 		ptr = recvframe_pull(precvframe, (rmv_len -
 		      sizeof(struct ethhdr) + (bsnaphdr ? 2 : 0)));
+		if (!ptr)
+			return -ENOMEM;
+	}
 
 	memcpy(ptr, pattrib->dst, ETH_ALEN);
-	memcpy(ptr+ETH_ALEN, pattrib->src, ETH_ALEN);
+	memcpy(ptr + ETH_ALEN, pattrib->src, ETH_ALEN);
 	if (!bsnaphdr) {
-		len = htons(len);
-		memcpy(ptr + 12, &len, 2);
+		__be16 be_tmp = htons(len);
+
+		memcpy(ptr + 12, &be_tmp, 2);
 	}
-	return _SUCCESS;
+	return 0;
 }
 
-s32 r8712_recv_entry(union recv_frame *precvframe)
+void r8712_recv_entry(union recv_frame *precvframe)
 {
 	struct _adapter *padapter;
 	struct recv_priv *precvpriv;
-	struct	mlme_priv *pmlmepriv;
-	struct recv_stat *prxstat;
-	struct dvobj_priv *pdev;
-	u8 *phead, *pdata, *ptail, *pend;
 
-	struct  __queue *pfree_recv_queue, *ppending_recv_queue;
 	s32 ret = _SUCCESS;
-	struct intf_hdl *pintfhdl;
 
 	padapter = precvframe->u.hdr.adapter;
-	pintfhdl = &padapter->pio_queue->intf;
-	pmlmepriv = &padapter->mlmepriv;
 	precvpriv = &(padapter->recvpriv);
-	pdev = &padapter->dvobjpriv;
-	pfree_recv_queue = &(precvpriv->free_recv_queue);
-	ppending_recv_queue = &(precvpriv->recv_pending_queue);
-	phead = precvframe->u.hdr.rx_head;
-	pdata = precvframe->u.hdr.rx_data;
-	ptail = precvframe->u.hdr.rx_tail;
-	pend = precvframe->u.hdr.rx_end;
-	prxstat = (struct recv_stat *)phead;
 
 	padapter->ledpriv.LedControlHandler(padapter, LED_CTL_RX);
 
@@ -688,9 +661,8 @@ s32 r8712_recv_entry(union recv_frame *precvframe)
 	precvpriv->rx_pkts++;
 	precvpriv->rx_bytes += (uint)(precvframe->u.hdr.rx_tail -
 				precvframe->u.hdr.rx_data);
-	return ret;
+	return;
 _recv_entry_drop:
 	precvpriv->rx_drop++;
 	padapter->mppriv.rx_pktloss = precvpriv->rx_drop;
-	return ret;
 }

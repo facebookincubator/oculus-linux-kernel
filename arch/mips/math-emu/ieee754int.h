@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * IEEE754 floating point
  * common internal header file
@@ -5,19 +6,6 @@
 /*
  * MIPS floating point support
  * Copyright (C) 1994-2000 Algorithmics Ltd.
- *
- *  This program is free software; you can distribute it and/or modify it
- *  under the terms of the GNU General Public License (Version 2) as
- *  published by the Free Software Foundation.
- *
- *  This program is distributed in the hope it will be useful, but WITHOUT
- *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- *  for more details.
- *
- *  You should have received a copy of the GNU General Public License along
- *  with this program; if not, write to the Free Software Foundation, Inc.,
- *  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  */
 #ifndef __IEEE754INT_H
 #define __IEEE754INT_H
@@ -25,6 +13,11 @@
 #include "ieee754.h"
 
 #define CLPAIR(x, y)	((x)*6+(y))
+
+enum maddf_flags {
+	MADDF_NEGATE_PRODUCT	= 1 << 0,
+	MADDF_NEGATE_ADDITION	= 1 << 1,
+};
 
 static inline void ieee754_clearcx(void)
 {
@@ -44,11 +37,19 @@ static inline int ieee754_setandtestcx(const unsigned int x)
 	return ieee754_csr.mx & x;
 }
 
+static inline int ieee754_class_nan(int xc)
+{
+	return xc >= IEEE754_CLASS_SNAN;
+}
+
 #define COMPXSP \
-	unsigned xm; int xe; int xs __maybe_unused; int xc
+	unsigned int xm; int xe; int xs __maybe_unused; int xc
 
 #define COMPYSP \
-	unsigned ym; int ye; int ys; int yc
+	unsigned int ym; int ye; int ys; int yc
+
+#define COMPZSP \
+	unsigned int zm; int ze; int zs; int zc
 
 #define EXPLODESP(v, vc, vs, ve, vm)					\
 {									\
@@ -58,10 +59,10 @@ static inline int ieee754_setandtestcx(const unsigned int x)
 	if (ve == SP_EMAX+1+SP_EBIAS) {					\
 		if (vm == 0)						\
 			vc = IEEE754_CLASS_INF;				\
-		else if (vm & SP_MBIT(SP_FBITS-1))			\
+		else if (ieee754_csr.nan2008 ^ !(vm & SP_MBIT(SP_FBITS - 1))) \
+			vc = IEEE754_CLASS_QNAN;			\
+		else							\
 			vc = IEEE754_CLASS_SNAN;			\
-	else								\
-		vc = IEEE754_CLASS_QNAN;				\
 	} else if (ve == SP_EMIN-1+SP_EBIAS) {				\
 		if (vm) {						\
 			ve = SP_EMIN;					\
@@ -76,6 +77,7 @@ static inline int ieee754_setandtestcx(const unsigned int x)
 }
 #define EXPLODEXSP EXPLODESP(x, xc, xs, xe, xm)
 #define EXPLODEYSP EXPLODESP(y, yc, ys, ye, ym)
+#define EXPLODEZSP EXPLODESP(z, zc, zs, ze, zm)
 
 
 #define COMPXDP \
@@ -83,6 +85,9 @@ static inline int ieee754_setandtestcx(const unsigned int x)
 
 #define COMPYDP \
 	u64 ym; int ye; int ys; int yc
+
+#define COMPZDP \
+	u64 zm; int ze; int zs; int zc
 
 #define EXPLODEDP(v, vc, vs, ve, vm)					\
 {									\
@@ -92,16 +97,16 @@ static inline int ieee754_setandtestcx(const unsigned int x)
 	if (ve == DP_EMAX+1+DP_EBIAS) {					\
 		if (vm == 0)						\
 			vc = IEEE754_CLASS_INF;				\
-		else if (vm & DP_MBIT(DP_FBITS-1))			\
-			vc = IEEE754_CLASS_SNAN;			\
-		else							\
+		else if (ieee754_csr.nan2008 ^ !(vm & DP_MBIT(DP_FBITS - 1))) \
 			vc = IEEE754_CLASS_QNAN;			\
+		else							\
+			vc = IEEE754_CLASS_SNAN;			\
 	} else if (ve == DP_EMIN-1+DP_EBIAS) {				\
 		if (vm) {						\
 			ve = DP_EMIN;					\
 			vc = IEEE754_CLASS_DNORM;			\
-	} else								\
-		vc = IEEE754_CLASS_ZERO;				\
+		} else							\
+			vc = IEEE754_CLASS_ZERO;			\
 	} else {							\
 		ve -= DP_EBIAS;						\
 		vm |= DP_HIDDEN_BIT;					\
@@ -110,6 +115,7 @@ static inline int ieee754_setandtestcx(const unsigned int x)
 }
 #define EXPLODEXDP EXPLODEDP(x, xc, xs, xe, xm)
 #define EXPLODEYDP EXPLODEDP(y, yc, ys, ye, ym)
+#define EXPLODEZDP EXPLODEDP(z, zc, zs, ze, zm)
 
 #define FLUSHDP(v, vc, vs, ve, vm)					\
 	if (vc==IEEE754_CLASS_DNORM) {					\
@@ -135,7 +141,9 @@ static inline int ieee754_setandtestcx(const unsigned int x)
 
 #define FLUSHXDP FLUSHDP(x, xc, xs, xe, xm)
 #define FLUSHYDP FLUSHDP(y, yc, ys, ye, ym)
+#define FLUSHZDP FLUSHDP(z, zc, zs, ze, zm)
 #define FLUSHXSP FLUSHSP(x, xc, xs, xe, xm)
 #define FLUSHYSP FLUSHSP(y, yc, ys, ye, ym)
+#define FLUSHZSP FLUSHSP(z, zc, zs, ze, zm)
 
 #endif /* __IEEE754INT_H  */

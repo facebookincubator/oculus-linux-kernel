@@ -1,21 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright (C) 2010-2013 Bluecherry, LLC <http://www.bluecherrydvr.com>
+ * Copyright (C) 2010-2013 Bluecherry, LLC <https://www.bluecherrydvr.com>
  *
  * Original author:
  * Ben Collins <bcollins@ubuntu.com>
  *
  * Additional work by:
  * John Brooks <john.brooks@bluecherry.net>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -136,11 +127,11 @@ static void solo_capture_config(struct solo_dev *solo_dev)
 int solo_osd_print(struct solo_enc_dev *solo_enc)
 {
 	struct solo_dev *solo_dev = solo_enc->solo_dev;
-	unsigned char *str = solo_enc->osd_text;
+	u8 *str = solo_enc->osd_text;
 	u8 *buf = solo_enc->osd_buf;
 	u32 reg;
 	const struct font_desc *vga = find_font("VGA8x16");
-	const unsigned char *vga_data;
+	const u8 *vga_data;
 	int i, j;
 
 	if (WARN_ON_ONCE(!vga))
@@ -154,7 +145,7 @@ int solo_osd_print(struct solo_enc_dev *solo_enc)
 	}
 
 	memset(buf, 0, SOLO_OSD_WRITE_SIZE);
-	vga_data = (const unsigned char *)vga->data;
+	vga_data = (const u8 *)vga->data;
 
 	for (i = 0; *str; i++, str++) {
 		for (j = 0; j < 16; j++) {
@@ -175,7 +166,7 @@ out:
 	return 0;
 }
 
-/**
+/*
  * Set channel Quality Profile (0-3).
  */
 void solo_s_jpeg_qp(struct solo_dev *solo_dev, unsigned int ch,

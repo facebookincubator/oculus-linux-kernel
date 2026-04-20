@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * twl6030-irq.c - TWL6030 irq support
  *
@@ -15,27 +16,13 @@
  * TWL6030 specific code and IRQ handling changes by
  * Jagadeesh Bhaskar Pakaravoor <j-pakaravoor@ti.com>
  * Balaji T K <balajitk@ti.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #include <linux/export.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/kthread.h>
-#include <linux/i2c/twl.h>
+#include <linux/mfd/twl.h>
 #include <linux/platform_device.h>
 #include <linux/suspend.h>
 #include <linux/of.h>
@@ -231,7 +218,7 @@ static irqreturn_t twl6030_irq_thread(int irq, void *data)
 
 static int twl6030_irq_set_wake(struct irq_data *d, unsigned int on)
 {
-	struct twl6030_irq *pdata = irq_get_chip_data(d->irq);
+	struct twl6030_irq *pdata = irq_data_get_irq_chip_data(d);
 
 	if (on)
 		atomic_inc(&pdata->wakeirqs);
@@ -352,31 +339,18 @@ static int twl6030_irq_map(struct irq_domain *d, unsigned int virq,
 	irq_set_chip_and_handler(virq,  &pdata->irq_chip, handle_simple_irq);
 	irq_set_nested_thread(virq, true);
 	irq_set_parent(virq, pdata->twl_irq);
-
-#ifdef CONFIG_ARM
-	/*
-	 * ARM requires an extra step to clear IRQ_NOREQUEST, which it
-	 * sets on behalf of every irq_chip.  Also sets IRQ_NOPROBE.
-	 */
-	set_irq_flags(virq, IRQF_VALID);
-#else
-	/* same effect on other architectures */
 	irq_set_noprobe(virq);
-#endif
 
 	return 0;
 }
 
 static void twl6030_irq_unmap(struct irq_domain *d, unsigned int virq)
 {
-#ifdef CONFIG_ARM
-	set_irq_flags(virq, 0);
-#endif
 	irq_set_chip_and_handler(virq, NULL, NULL);
 	irq_set_chip_data(virq, NULL);
 }
 
-static struct irq_domain_ops twl6030_irq_domain_ops = {
+static const struct irq_domain_ops twl6030_irq_domain_ops = {
 	.map	= twl6030_irq_map,
 	.unmap	= twl6030_irq_unmap,
 	.xlate	= irq_domain_xlate_onetwocell,
@@ -405,10 +379,8 @@ int twl6030_init_irq(struct device *dev, int irq_num)
 	nr_irqs = TWL6030_NR_IRQS;
 
 	twl6030_irq = devm_kzalloc(dev, sizeof(*twl6030_irq), GFP_KERNEL);
-	if (!twl6030_irq) {
-		dev_err(dev, "twl6030_irq: Memory allocation failed\n");
+	if (!twl6030_irq)
 		return -ENOMEM;
-	}
 
 	mask[0] = 0xFF;
 	mask[1] = 0xFF;

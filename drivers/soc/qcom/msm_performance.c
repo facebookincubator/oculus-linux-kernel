@@ -1,14 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -25,111 +18,286 @@
 #include <linux/module.h>
 #include <linux/input.h>
 #include <linux/kthread.h>
+#include <linux/sched/walt.h>
+#include <soc/qcom/msm_performance.h>
+#include <soc/qcom/pmu_lib.h>
+#include <linux/spinlock.h>
+#include <linux/circ_buf.h>
+#include <linux/ktime.h>
+#include <linux/perf_event.h>
+#include <linux/errno.h>
+#include <linux/topology.h>
 
-static unsigned int use_input_evts_with_hi_slvt_detect;
-static struct mutex managed_cpus_lock;
+#include <linux/scmi_protocol.h>
+#include <linux/scmi_plh.h>
+#include <linux/scmi_gplaf.h>
+#include <linux/scmi_shared_rail.h>
+#include <trace/events/power.h>
 
+#define POLL_INT 25
+#define NODE_NAME_MAX_CHARS 16
 
-/* Maximum number to clusters that this module will manage*/
-static unsigned int num_clusters;
-struct cluster {
-	cpumask_var_t cpus;
-	/* Number of CPUs to maintain online */
-	int max_cpu_request;
-	/* To track CPUs that the module decides to offline */
-	cpumask_var_t offlined_cpus;
-	/* stats for load detection */
-	/* IO */
-	u64 last_io_check_ts;
-	unsigned int iowait_enter_cycle_cnt;
-	unsigned int iowait_exit_cycle_cnt;
-	spinlock_t iowait_lock;
-	unsigned int cur_io_busy;
-	bool io_change;
-	/* CPU */
-	unsigned int mode;
-	bool mode_change;
-	u64 last_mode_check_ts;
-	unsigned int single_enter_cycle_cnt;
-	unsigned int single_exit_cycle_cnt;
-	unsigned int multi_enter_cycle_cnt;
-	unsigned int multi_exit_cycle_cnt;
-	spinlock_t mode_lock;
-	/* Perf Cluster Peak Loads */
-	unsigned int perf_cl_peak;
-	u64 last_perf_cl_check_ts;
-	bool perf_cl_detect_state_change;
-	unsigned int perf_cl_peak_enter_cycle_cnt;
-	unsigned int perf_cl_peak_exit_cycle_cnt;
-	spinlock_t perf_cl_peak_lock;
-	/* Tunables */
-	unsigned int single_enter_load;
-	unsigned int pcpu_multi_enter_load;
-	unsigned int perf_cl_peak_enter_load;
-	unsigned int single_exit_load;
-	unsigned int pcpu_multi_exit_load;
-	unsigned int perf_cl_peak_exit_load;
-	unsigned int single_enter_cycles;
-	unsigned int single_exit_cycles;
-	unsigned int multi_enter_cycles;
-	unsigned int multi_exit_cycles;
-	unsigned int perf_cl_peak_enter_cycles;
-	unsigned int perf_cl_peak_exit_cycles;
-	unsigned int current_freq;
-	spinlock_t timer_lock;
-	unsigned int timer_rate;
-	struct timer_list mode_exit_timer;
-	struct timer_list perf_cl_peak_mode_exit_timer;
+#define QUEUE_POOL_SIZE 512 /*2^8 always keep in 2^x */
+#define INST_EV 0x08 /* 0th event*/
+#define CYC_EV 0x11 /* 1st event*/
+#define INIT "Init"
+#define CPU_CYCLE_THRESHOLD 650000
+
+#define CPUCP_MIN_LOG_LEVEL			0
+#define CPUCP_MAX_LOG_LEVEL			0xF
+
+#define GPLAF_SP_ADDR			0x17D09A00 //Start of gplaf shared mem region
+#define GPLAF_SP_SIZE			0x200
+#define GPLAF_ELEM_SIZE         (GPLAF_SP_SIZE/8)
+#define MAX_GFX_STR_ELEMENTS    5
+#define FAILED					-1
+#define RETRY					-2
+
+static int gplaf_notif;
+uint32_t gfx_data[GPLAF_ELEM_SIZE] = {0};
+
+static DEFINE_PER_CPU(bool, cpu_is_hp);
+static DEFINE_MUTEX(perfevent_lock);
+
+enum event_idx {
+	INST_EVENT,
+	CYC_EVENT,
+	NO_OF_EVENT
 };
 
-struct input_events {
-	unsigned int evt_x_cnt;
-	unsigned int evt_y_cnt;
-	unsigned int evt_pres_cnt;
-	unsigned int evt_dist_cnt;
+enum cpu_clusters {
+	MIN = 0,
+	MID = 1,
+	MAX = 2,
+	CLUSTER_MAX
 };
 
-struct trig_thr {
-	unsigned int pwr_cl_trigger_threshold;
-	unsigned int perf_cl_trigger_threshold;
-	unsigned int ip_evt_threshold;
+static struct kset *msm_perf_kset;
+static struct kobject *param_kobj;
+
+static ssize_t get_cpu_min_freq(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_cpu_min_freq(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_cpu_max_freq(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_cpu_max_freq(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_cpu_total_instruction(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t get_core_ctl_register(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_core_ctl_register(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_game_start_pid(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_game_start_pid(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_splh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_splh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_splh_sample_ms(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_splh_sample_ms(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_splh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_splh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_lplh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_lplh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_lplh_sample_ms(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_lplh_sample_ms(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_lplh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_lplh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_gplaf_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_gplaf_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_gplaf_data(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_gplaf_data(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_gplaf_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_gplaf_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_gplaf_health(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_gplaf_health(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_dplh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_dplh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_dplh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_dplh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_l3_boost(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_l3_boost(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+static ssize_t get_silver_core_boost(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf);
+static ssize_t set_silver_core_boost(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count);
+
+static struct kobj_attribute cpu_min_freq_attr =
+	__ATTR(cpu_min_freq, 0644, get_cpu_min_freq, set_cpu_min_freq);
+static struct kobj_attribute cpu_max_freq_attr =
+	__ATTR(cpu_max_freq, 0644, get_cpu_max_freq, set_cpu_max_freq);
+static struct kobj_attribute inst_attr =
+	__ATTR(inst, 0444, get_cpu_total_instruction, NULL);
+static struct kobj_attribute core_ctl_register_attr =
+	__ATTR(core_ctl_register, 0644, get_core_ctl_register,
+	set_core_ctl_register);
+static struct kobj_attribute evnt_gplaf_pid_attr =
+	__ATTR(evnt_gplaf_pid, 0644, get_game_start_pid, set_game_start_pid);
+static struct kobj_attribute splh_notif_attr =
+	__ATTR(splh_notif, 0644, get_splh_notif, set_splh_notif);
+static struct kobj_attribute splh_sample_ms_attr =
+	__ATTR(splh_sample_ms, 0644, get_splh_sample_ms, set_splh_sample_ms);
+static struct kobj_attribute splh_log_level_attr =
+	__ATTR(splh_log_level, 0644, get_splh_log_level, set_splh_log_level);
+static struct kobj_attribute lplh_notif_attr =
+	__ATTR(lplh_notif, 0644, get_lplh_notif, set_lplh_notif);
+static struct kobj_attribute lplh_sample_ms_attr =
+	__ATTR(lplh_sample_ms, 0644, get_lplh_sample_ms, set_lplh_sample_ms);
+static struct kobj_attribute lplh_log_level_attr =
+	__ATTR(lplh_log_level, 0644, get_lplh_log_level, set_lplh_log_level);
+static struct kobj_attribute gplaf_notif_attr =
+	__ATTR(gplaf_notify, 0644, get_gplaf_notif, set_gplaf_notif);
+static struct kobj_attribute gplaf_data_node_attr =
+	__ATTR(gplaf_data_node, 0644, get_gplaf_data, set_gplaf_data);
+static struct kobj_attribute gplaf_log_level_attr =
+	__ATTR(gplaf_log_level, 0644, get_gplaf_log_level, set_gplaf_log_level);
+static struct kobj_attribute gplaf_health_attr =
+	__ATTR(gplaf_health, 0644, get_gplaf_health, set_gplaf_health);
+static struct kobj_attribute dplh_notif_attr =
+	__ATTR(dplh_notif, 0644, get_dplh_notif, set_dplh_notif);
+static struct kobj_attribute dplh_log_level_attr =
+	__ATTR(dplh_log_level, 0644, get_dplh_log_level, set_dplh_log_level);
+static struct kobj_attribute l3_boost_attr =
+	__ATTR(l3_boost, 0644, get_l3_boost, set_l3_boost);
+static struct kobj_attribute silver_core_boost_attr =
+	__ATTR(silver_core_boost, 0644, get_silver_core_boost, set_silver_core_boost);
+
+static struct attribute *param_attrs[] = {
+	&cpu_min_freq_attr.attr,
+	&cpu_max_freq_attr.attr,
+	&inst_attr.attr,
+	&core_ctl_register_attr.attr,
+	&evnt_gplaf_pid_attr.attr,
+	&splh_notif_attr.attr,
+	&splh_sample_ms_attr.attr,
+	&splh_log_level_attr.attr,
+	&lplh_notif_attr.attr,
+	&lplh_sample_ms_attr.attr,
+	&lplh_log_level_attr.attr,
+	&gplaf_notif_attr.attr,
+	&gplaf_data_node_attr.attr,
+	&gplaf_log_level_attr.attr,
+	&gplaf_health_attr.attr,
+	&dplh_notif_attr.attr,
+	&dplh_log_level_attr.attr,
+	&l3_boost_attr.attr,
+	&silver_core_boost_attr.attr,
+	NULL,
 };
-static struct cluster **managed_clusters;
-static bool clusters_inited;
-static bool input_events_handler_registered;
-static struct input_events *ip_evts;
-static struct trig_thr thr;
-/* Work to evaluate the onlining/offlining CPUs */
-struct delayed_work evaluate_hotplug_work;
+
+static struct attribute_group param_attr_group = {
+	.attrs = param_attrs,
+};
+
+static int add_module_params(void)
+{
+	int ret;
+	struct kobject *module_kobj;
+
+	module_kobj = &msm_perf_kset->kobj;
+
+	param_kobj = kobject_create_and_add("parameters", module_kobj);
+	if (!param_kobj) {
+		pr_err("msm_perf: Failed to add param_kobj\n");
+		return -ENOMEM;
+	}
+
+	ret = sysfs_create_group(param_kobj, &param_attr_group);
+	if (ret) {
+		pr_err("msm_perf: Failed to create sysfs\n");
+		return ret;
+	}
+	return 0;
+}
 
 /* To handle cpufreq min/max request */
 struct cpu_status {
 	unsigned int min;
 	unsigned int max;
 };
-static DEFINE_PER_CPU(struct cpu_status, cpu_stats);
+static DEFINE_PER_CPU(struct cpu_status, msm_perf_cpu_stats);
+static DEFINE_PER_CPU(struct freq_qos_request, qos_req_min);
+static DEFINE_PER_CPU(struct freq_qos_request, qos_req_max);
 
-static unsigned int num_online_managed(struct cpumask *mask);
-static int init_cluster_control(void);
-static int rm_high_pwr_cost_cpus(struct cluster *cl);
-static int init_events_group(void);
-static int register_input_handler(void);
-static void unregister_input_handler(void);
+static cpumask_var_t limit_mask_min;
+static cpumask_var_t limit_mask_max;
 
+static DECLARE_COMPLETION(gfx_evt_arrival);
+static void gfx_data_notify_cpucp(struct work_struct *dummy);
+static DECLARE_WORK(gfx_notify_work, gfx_data_notify_cpucp);
 
-static DEFINE_PER_CPU(unsigned int, cpu_power_cost);
-
-struct load_stats {
-	u64 last_wallclock;
-	/* IO wait related */
-	u64 last_iowait;
-	unsigned int last_iopercent;
-	/* CPU load related */
-	unsigned int cpu_load;
-	/*CPU Freq*/
-	unsigned int freq;
+struct gpu_data {
+	pid_t pid;
+	int ctx_id;
+	unsigned int timestamp;
+	ktime_t arrive_ts;
+	int evt_typ;
 };
-static DEFINE_PER_CPU(struct load_stats, cpu_load_stats);
+
+static struct gpu_data gpu_circ_buff[QUEUE_POOL_SIZE];
+
+struct queue_indicies {
+	int head;
+	int tail;
+};
+static struct queue_indicies curr_pos;
+
+static DEFINE_SPINLOCK(gfx_circ_buff_lock);
+
+struct event_data {
+	u32 event_id;
+	u64 prev_count;
+	u64 cur_delta;
+	u64 cached_total_count;
+};
+static struct event_data **pmu_events;
+static unsigned long min_cpu_capacity = ULONG_MAX;
 
 struct events {
 	spinlock_t cpu_hotplug_lock;
@@ -139,245 +307,181 @@ struct events {
 static struct events events_group;
 static struct task_struct *events_notify_thread;
 
-#define LAST_UPDATE_TOL		USEC_PER_MSEC
+static unsigned int aggr_big_nr;
+static unsigned int aggr_top_load;
+static unsigned int top_load[CLUSTER_MAX];
+static unsigned int curr_cap[CLUSTER_MAX];
+static atomic_t game_status_pid;
+static bool ready_for_freq_updates;
 
-/* Bitmask to keep track of the workloads being detected */
-static unsigned int workload_detect;
-#define IO_DETECT	1
-#define MODE_DETECT	2
-#define PERF_CL_PEAK_DETECT	4
+static void __iomem *dest;
+typedef uint32_t atomic_flag_t;
 
-
-/* IOwait related tunables */
-static unsigned int io_enter_cycles = 4;
-static unsigned int io_exit_cycles = 4;
-static u64 iowait_ceiling_pct = 25;
-static u64 iowait_floor_pct = 8;
-#define LAST_IO_CHECK_TOL	(3 * USEC_PER_MSEC)
-
-static unsigned int aggr_iobusy;
-static unsigned int aggr_mode;
-
-static struct task_struct *notify_thread;
-
-static struct input_handler *handler;
-
-/* CPU workload detection related */
-#define NO_MODE		(0)
-#define SINGLE		(1)
-#define MULTI		(2)
-#define MIXED		(3)
-#define PERF_CL_PEAK		(4)
-#define DEF_SINGLE_ENT		90
-#define DEF_PCPU_MULTI_ENT	85
-#define DEF_PERF_CL_PEAK_ENT	80
-#define DEF_SINGLE_EX		60
-#define DEF_PCPU_MULTI_EX	50
-#define DEF_PERF_CL_PEAK_EX		70
-#define DEF_SINGLE_ENTER_CYCLE	4
-#define DEF_SINGLE_EXIT_CYCLE	4
-#define DEF_MULTI_ENTER_CYCLE	4
-#define DEF_MULTI_EXIT_CYCLE	4
-#define DEF_PERF_CL_PEAK_ENTER_CYCLE	100
-#define DEF_PERF_CL_PEAK_EXIT_CYCLE	20
-#define LAST_LD_CHECK_TOL	(2 * USEC_PER_MSEC)
-#define CLUSTER_0_THRESHOLD_FREQ	147000
-#define CLUSTER_1_THRESHOLD_FREQ	190000
-#define INPUT_EVENT_CNT_THRESHOLD	15
-
-
-
-/**************************sysfs start********************************/
-
-static int set_num_clusters(const char *buf, const struct kernel_param *kp)
+static int msm_perf_atomic_buf_write(void __iomem *dest, uint64_t *src, size_t sz)
 {
-	unsigned int val;
+	void __iomem *first_shared_mem_word_addr;
+	uint32_t i, j;
+	uintptr_t lmt = sz;
+	uint32_t flag = 0;
+	uint32_t val = 0;
 
-	if (sscanf(buf, "%u\n", &val) != 1)
-		return -EINVAL;
-	if (num_clusters)
-		return -EINVAL;
-
-	num_clusters = val;
-
-	if (init_cluster_control()) {
-		num_clusters = 0;
-		return -ENOMEM;
+	if (!dest || !src) {
+		pr_err("msm_perf: src or dest pointer is null\n");
+		return FAILED;
 	}
 
-	return 0;
-}
+	first_shared_mem_word_addr =
+		(dest) + 4; // First word is for atomic var
 
-static int get_num_clusters(char *buf, const struct kernel_param *kp)
-{
-	return snprintf(buf, PAGE_SIZE, "%u", num_clusters);
-}
+	// Increment flag
+	flag = readl_relaxed(dest);
+	flag += 1;
+	writel_relaxed(flag, dest);
 
-static const struct kernel_param_ops param_ops_num_clusters = {
-	.set = set_num_clusters,
-	.get = get_num_clusters,
-};
-device_param_cb(num_clusters, &param_ops_num_clusters, NULL, 0644);
-
-static int set_max_cpus(const char *buf, const struct kernel_param *kp)
-{
-	unsigned int i, ntokens = 0;
-	const char *cp = buf;
-	int val;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%d\n", &val) != 1)
-			return -EINVAL;
-		if (val > (int)cpumask_weight(managed_clusters[i]->cpus))
-			return -EINVAL;
-
-		managed_clusters[i]->max_cpu_request = val;
-
-		cp = strnchr(cp, strlen(cp), ':');
-		cp++;
-		trace_set_max_cpus(cpumask_bits(managed_clusters[i]->cpus)[0],
-								val);
+	// Update shared memory region
+	for (i = 0, j = 0; j <= lmt && j < GPLAF_ELEM_SIZE; i += 4, j++) {
+		val = (uint32_t)((src[j] & 0xFFFFFFFF00000000) >> 32);
+		writel_relaxed(val, first_shared_mem_word_addr + i);
+		i += 4;
+		val = (uint32_t)(src[j] & 0xFFFFFFFF);
+		writel_relaxed(val, first_shared_mem_word_addr + i);
 	}
 
-	schedule_delayed_work(&evaluate_hotplug_work, 0);
+	// Increment flag
+	// We don't perform a read here since no other entity
+	// will change the flag value (only one producer)
+	// Second increment ensure write complete. On read
+	// we check even value for flag before start.
+	flag += 1;
+	writel_relaxed(flag, dest);
 
-	return 0;
+	return 0; // Success
 }
 
-static int get_max_cpus(char *buf, const struct kernel_param *kp)
+#ifdef ENABLE_ATOMIC_READ
+static int msm_perf_atomic_try_buf_read(char *dest, void __iomem *src, size_t sz)
 {
-	int i, cnt = 0;
+	uint32_t flag_val_1, flag_val_2;
+	void __iomem *first_shared_mem_word_addr;
+	//uintptr_t lmt = ((sz + 3) & (-4));
+	uintptr_t lmt = sz;
+	uint32_t i, j;
+	uint32_t *addr;
 
-	if (!clusters_inited)
-		return cnt;
+	if (!dest || !src) {
+		pr_err("msm_perf: src or dest pointer is null\n");
+		return FAILED;
+	}
+	first_shared_mem_word_addr =
+		(src) + 4; // First word is for atomic var
 
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-				"%d:", managed_clusters[i]->max_cpu_request);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
+	// Store flag_val for later use
+	flag_val_1 = readl_relaxed(src);
+
+	// If flag_val is odd, retry later
+	if (flag_val_1 % 2)
+		return RETRY;
+
+	// Read shared memory region
+	//for (i = 0; i < lmt; i += 4)
+	for (i = 0, j = 0; j <= lmt && j < GPLAF_ELEM_SIZE; i += 4, j++) {
+		addr = (uint32_t *)(dest + i);
+		*addr = readl_relaxed(first_shared_mem_word_addr + i);
+		i += 4;
+		addr = (uint32_t *)(dest + i);
+		*addr = readl_relaxed(first_shared_mem_word_addr + i);
+	}
+
+	// Check if flag is even again before proceeding
+	// Also check if flag_val changed since the first read
+	flag_val_2 = readl_relaxed(src);
+	if ((flag_val_2 % 2) || (flag_val_2 != flag_val_1))	{
+		return FAILED; // Update was in progress; retry again
+	} else
+		return 0; // Consumption from shared memory success, caller can use that value
 }
-
-static const struct kernel_param_ops param_ops_max_cpus = {
-	.set = set_max_cpus,
-	.get = get_max_cpus,
-};
-
-#ifdef CONFIG_MSM_PERFORMANCE_HOTPLUG_ON
-device_param_cb(max_cpus, &param_ops_max_cpus, NULL, 0644);
 #endif
 
-static int set_managed_cpus(const char *buf, const struct kernel_param *kp)
+static int freq_qos_request_init(void)
 {
-	int i, ret;
-	struct cpumask tmp_mask;
+	unsigned int cpu;
+	int ret;
 
-	if (!clusters_inited)
-		return -EINVAL;
+	struct cpufreq_policy *policy;
+	struct freq_qos_request *req;
 
-	ret = cpulist_parse(buf, &tmp_mask);
-
-	if (ret)
-		return ret;
-
-	for (i = 0; i < num_clusters; i++) {
-		if (cpumask_empty(managed_clusters[i]->cpus)) {
-			mutex_lock(&managed_cpus_lock);
-			cpumask_copy(managed_clusters[i]->cpus, &tmp_mask);
-			cpumask_clear(managed_clusters[i]->offlined_cpus);
-			mutex_unlock(&managed_cpus_lock);
-			break;
+	for_each_present_cpu(cpu) {
+		policy = cpufreq_cpu_get(cpu);
+		if (!policy) {
+			pr_err("%s: Failed to get cpufreq policy for cpu%d\n",
+				__func__, cpu);
+			ret = -EAGAIN;
+			goto cleanup;
 		}
-	}
+		per_cpu(msm_perf_cpu_stats, cpu).min = 0;
+		req = &per_cpu(qos_req_min, cpu);
+		ret = freq_qos_add_request(&policy->constraints, req,
+			FREQ_QOS_MIN, FREQ_QOS_MIN_DEFAULT_VALUE);
+		if (ret < 0) {
+			pr_err("%s: Failed to add min freq constraint (%d)\n",
+				__func__, ret);
+			cpufreq_cpu_put(policy);
+			goto cleanup;
+		}
 
+		per_cpu(msm_perf_cpu_stats, cpu).max = FREQ_QOS_MAX_DEFAULT_VALUE;
+		req = &per_cpu(qos_req_max, cpu);
+		ret = freq_qos_add_request(&policy->constraints, req,
+			FREQ_QOS_MAX, FREQ_QOS_MAX_DEFAULT_VALUE);
+		if (ret < 0) {
+			pr_err("%s: Failed to add max freq constraint (%d)\n",
+				__func__, ret);
+			cpufreq_cpu_put(policy);
+			goto cleanup;
+		}
+
+		cpufreq_cpu_put(policy);
+	}
+	return 0;
+
+cleanup:
+	for_each_present_cpu(cpu) {
+		req = &per_cpu(qos_req_min, cpu);
+		if (req && freq_qos_request_active(req))
+			freq_qos_remove_request(req);
+
+
+		req = &per_cpu(qos_req_max, cpu);
+		if (req && freq_qos_request_active(req))
+			freq_qos_remove_request(req);
+
+		per_cpu(msm_perf_cpu_stats, cpu).min = 0;
+		per_cpu(msm_perf_cpu_stats, cpu).max = FREQ_QOS_MAX_DEFAULT_VALUE;
+	}
 	return ret;
 }
 
-static int get_managed_cpus(char *buf, const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++) {
-		cnt += cpulist_scnprintf(buf + cnt, PAGE_SIZE - cnt,
-						managed_clusters[i]->cpus);
-		if ((i + 1) >= num_clusters)
-			break;
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, ":");
-	}
-
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_managed_cpus = {
-	.set = set_managed_cpus,
-	.get = get_managed_cpus,
-};
-device_param_cb(managed_cpus, &param_ops_managed_cpus, NULL, 0644);
-
-/* Read-only node: To display all the online managed CPUs */
-static int get_managed_online_cpus(char *buf, const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-	struct cpumask tmp_mask;
-	struct cluster *i_cl;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++) {
-		i_cl = managed_clusters[i];
-
-		cpumask_clear(&tmp_mask);
-		cpumask_complement(&tmp_mask, i_cl->offlined_cpus);
-		cpumask_and(&tmp_mask, i_cl->cpus, &tmp_mask);
-
-		cnt += cpulist_scnprintf(buf + cnt, PAGE_SIZE - cnt,
-								&tmp_mask);
-
-		if ((i + 1) >= num_clusters)
-			break;
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, ":");
-	}
-
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_managed_online_cpus = {
-	.get = get_managed_online_cpus,
-};
-
-#ifdef CONFIG_MSM_PERFORMANCE_HOTPLUG_ON
-device_param_cb(managed_online_cpus, &param_ops_managed_online_cpus,
-							NULL, 0444);
-#endif
-/*
- * Userspace sends cpu#:min_freq_value to vote for min_freq_value as the new
- * scaling_min. To withdraw its vote it needs to enter cpu#:0
- */
-static int set_cpu_min_freq(const char *buf, const struct kernel_param *kp)
+/*******************************sysfs start************************************/
+static ssize_t set_cpu_min_freq(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	int i, j, ntokens = 0;
 	unsigned int val, cpu;
 	const char *cp = buf;
 	struct cpu_status *i_cpu_stats;
 	struct cpufreq_policy policy;
-	cpumask_var_t limit_mask;
-	int ret;
+	struct freq_qos_request *req;
+	int ret = 0;
+
+	if (!ready_for_freq_updates) {
+		ret = freq_qos_request_init();
+		if (ret) {
+			pr_err("%s: Failed to init qos requests policy for ret=%d\n",
+				__func__, ret);
+			return ret;
+		}
+		ready_for_freq_updates = true;
+	}
 
 	while ((cp = strpbrk(cp + 1, " :")))
 		ntokens++;
@@ -387,17 +491,19 @@ static int set_cpu_min_freq(const char *buf, const struct kernel_param *kp)
 		return -EINVAL;
 
 	cp = buf;
-	cpumask_clear(limit_mask);
+	cpumask_clear(limit_mask_min);
 	for (i = 0; i < ntokens; i += 2) {
 		if (sscanf(cp, "%u:%u", &cpu, &val) != 2)
 			return -EINVAL;
-		if (cpu > (num_present_cpus() - 1))
-			return -EINVAL;
+		if (cpu >= nr_cpu_ids)
+			break;
 
-		i_cpu_stats = &per_cpu(cpu_stats, cpu);
+		if (cpu_possible(cpu)) {
+			i_cpu_stats = &per_cpu(msm_perf_cpu_stats, cpu);
 
-		i_cpu_stats->min = val;
-		cpumask_set_cpu(cpu, limit_mask);
+			i_cpu_stats->min = val;
+			cpumask_set_cpu(cpu, limit_mask_min);
+		}
 
 		cp = strnchr(cp, strlen(cp), ' ');
 		cp++;
@@ -411,56 +517,60 @@ static int set_cpu_min_freq(const char *buf, const struct kernel_param *kp)
 	 * in the cluster
 	 */
 	get_online_cpus();
-	for_each_cpu(i, limit_mask) {
-		i_cpu_stats = &per_cpu(cpu_stats, i);
+	for_each_cpu(i, limit_mask_min) {
+		i_cpu_stats = &per_cpu(msm_perf_cpu_stats, i);
 
 		if (cpufreq_get_policy(&policy, i))
 			continue;
 
-		if (cpu_online(i) && (policy.min != i_cpu_stats->min)) {
-			ret = cpufreq_update_policy(i);
-			if (ret)
-				continue;
+		if (cpu_online(i)) {
+			req = &per_cpu(qos_req_min, i);
+			if (freq_qos_update_request(req, i_cpu_stats->min) < 0)
+				break;
 		}
+
 		for_each_cpu(j, policy.related_cpus)
-			cpumask_clear_cpu(j, limit_mask);
+			cpumask_clear_cpu(j, limit_mask_min);
 	}
 	put_online_cpus();
 
-	return 0;
+	return count;
 }
 
-static int get_cpu_min_freq(char *buf, const struct kernel_param *kp)
+static ssize_t get_cpu_min_freq(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
 {
 	int cnt = 0, cpu;
 
 	for_each_present_cpu(cpu) {
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-				"%d:%u ", cpu, per_cpu(cpu_stats, cpu).min);
+		cnt += scnprintf(buf + cnt, PAGE_SIZE - cnt,
+				"%d:%u ", cpu,
+				per_cpu(msm_perf_cpu_stats, cpu).min);
 	}
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, "\n");
+	cnt += scnprintf(buf + cnt, PAGE_SIZE - cnt, "\n");
 	return cnt;
 }
 
-static const struct kernel_param_ops param_ops_cpu_min_freq = {
-	.set = set_cpu_min_freq,
-	.get = get_cpu_min_freq,
-};
-module_param_cb(cpu_min_freq, &param_ops_cpu_min_freq, NULL, 0644);
-
-/*
- * Userspace sends cpu#:max_freq_value to vote for max_freq_value as the new
- * scaling_max. To withdraw its vote it needs to enter cpu#:UINT_MAX
- */
-static int set_cpu_max_freq(const char *buf, const struct kernel_param *kp)
+static ssize_t set_cpu_max_freq(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	int i, j, ntokens = 0;
 	unsigned int val, cpu;
 	const char *cp = buf;
 	struct cpu_status *i_cpu_stats;
 	struct cpufreq_policy policy;
-	cpumask_var_t limit_mask;
-	int ret;
+	struct freq_qos_request *req;
+	int ret = 0;
+
+	if (!ready_for_freq_updates) {
+		ret = freq_qos_request_init();
+		if (ret) {
+			pr_err("%s: Failed to init qos requests policy for ret=%d\n",
+				__func__, ret);
+			return ret;
+		}
+		ready_for_freq_updates = true;
+	}
 
 	while ((cp = strpbrk(cp + 1, " :")))
 		ntokens++;
@@ -470,1065 +580,65 @@ static int set_cpu_max_freq(const char *buf, const struct kernel_param *kp)
 		return -EINVAL;
 
 	cp = buf;
-	cpumask_clear(limit_mask);
+	cpumask_clear(limit_mask_max);
 	for (i = 0; i < ntokens; i += 2) {
 		if (sscanf(cp, "%u:%u", &cpu, &val) != 2)
 			return -EINVAL;
-		if (cpu > (num_present_cpus() - 1))
-			return -EINVAL;
+		if (cpu >= nr_cpu_ids)
+			break;
 
-		i_cpu_stats = &per_cpu(cpu_stats, cpu);
+		if (cpu_possible(cpu)) {
+			i_cpu_stats = &per_cpu(msm_perf_cpu_stats, cpu);
 
-		i_cpu_stats->max = val;
-		cpumask_set_cpu(cpu, limit_mask);
+			i_cpu_stats->max = min_t(uint, val,
+				(unsigned int)FREQ_QOS_MAX_DEFAULT_VALUE);
+			cpumask_set_cpu(cpu, limit_mask_max);
+		}
 
 		cp = strnchr(cp, strlen(cp), ' ');
 		cp++;
 	}
 
 	get_online_cpus();
-	for_each_cpu(i, limit_mask) {
-		i_cpu_stats = &per_cpu(cpu_stats, i);
+	for_each_cpu(i, limit_mask_max) {
+		i_cpu_stats = &per_cpu(msm_perf_cpu_stats, i);
 		if (cpufreq_get_policy(&policy, i))
 			continue;
 
-		if (cpu_online(i) && (policy.max != i_cpu_stats->max)) {
-			ret = cpufreq_update_policy(i);
-			if (ret)
-				continue;
+		if (cpu_online(i)) {
+			req = &per_cpu(qos_req_max, i);
+			if (freq_qos_update_request(req, i_cpu_stats->max) < 0)
+				break;
 		}
+
 		for_each_cpu(j, policy.related_cpus)
-			cpumask_clear_cpu(j, limit_mask);
+			cpumask_clear_cpu(j, limit_mask_max);
 	}
 	put_online_cpus();
 
-	return 0;
+	return count;
 }
 
-static int get_cpu_max_freq(char *buf, const struct kernel_param *kp)
+static ssize_t get_cpu_max_freq(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
 {
 	int cnt = 0, cpu;
 
 	for_each_present_cpu(cpu) {
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-				"%d:%u ", cpu, per_cpu(cpu_stats, cpu).max);
+		cnt += scnprintf(buf + cnt, PAGE_SIZE - cnt,
+				"%d:%u ", cpu,
+				per_cpu(msm_perf_cpu_stats, cpu).max);
 	}
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, "\n");
+	cnt += scnprintf(buf + cnt, PAGE_SIZE - cnt, "\n");
 	return cnt;
 }
 
-static const struct kernel_param_ops param_ops_cpu_max_freq = {
-	.set = set_cpu_max_freq,
-	.get = get_cpu_max_freq,
-};
-module_param_cb(cpu_max_freq, &param_ops_cpu_max_freq, NULL, 0644);
-
-static int set_ip_evt_trigger_threshold(const char *buf,
-		const struct kernel_param *kp)
-{
-	unsigned int val;
-
-	if (sscanf(buf, "%u\n", &val) != 1)
-		return -EINVAL;
-
-	thr.ip_evt_threshold = val;
-	return 0;
-}
-
-static int get_ip_evt_trigger_threshold(char *buf,
-		const struct kernel_param *kp)
-{
-	return snprintf(buf, PAGE_SIZE, "%u", thr.ip_evt_threshold);
-}
-
-static const struct kernel_param_ops param_ops_ip_evt_trig_thr = {
-	.set = set_ip_evt_trigger_threshold,
-	.get = get_ip_evt_trigger_threshold,
-};
-device_param_cb(ip_evt_trig_thr, &param_ops_ip_evt_trig_thr, NULL, 0644);
-
-
-static int set_perf_cl_trigger_threshold(const char *buf,
-		 const struct kernel_param *kp)
-{
-	unsigned int val;
-
-	if (sscanf(buf, "%u\n", &val) != 1)
-		return -EINVAL;
-
-	thr.perf_cl_trigger_threshold = val;
-	return 0;
-}
-
-static int get_perf_cl_trigger_threshold(char *buf,
-		const struct kernel_param *kp)
-{
-	return snprintf(buf, PAGE_SIZE, "%u", thr.perf_cl_trigger_threshold);
-}
-
-static const struct kernel_param_ops param_ops_perf_trig_thr = {
-	.set = set_perf_cl_trigger_threshold,
-	.get = get_perf_cl_trigger_threshold,
-};
-device_param_cb(perf_cl_trig_thr, &param_ops_perf_trig_thr, NULL, 0644);
-
-
-static int set_pwr_cl_trigger_threshold(const char *buf,
-		const struct kernel_param *kp)
-{
-	unsigned int val;
-
-	if (sscanf(buf, "%u\n", &val) != 1)
-		return -EINVAL;
-
-	thr.pwr_cl_trigger_threshold = val;
-	return 0;
-}
-
-static int get_pwr_cl_trigger_threshold(char *buf,
-		const struct kernel_param *kp)
-{
-	return snprintf(buf, PAGE_SIZE, "%u", thr.pwr_cl_trigger_threshold);
-}
-
-static const struct kernel_param_ops param_ops_pwr_trig_thr = {
-	.set = set_pwr_cl_trigger_threshold,
-	.get = get_pwr_cl_trigger_threshold,
-};
-device_param_cb(pwr_cl_trig_thr, &param_ops_pwr_trig_thr, NULL, 0644);
-
-
-static int freq_greater_than_threshold(struct cluster *cl, int idx)
-{
-	int rc = 0;
-	/*Check for Cluster 0*/
-	if (!idx && cl->current_freq >= thr.pwr_cl_trigger_threshold)
-		rc = 1;
-	/*Check for Cluster 1*/
-	if (idx && cl->current_freq >= thr.perf_cl_trigger_threshold)
-		rc = 1;
-	return rc;
-}
-
-static int input_events_greater_than_threshold(void)
-{
-
-	int rc = 0;
-
-	if ((ip_evts->evt_x_cnt >= thr.ip_evt_threshold) ||
-		(ip_evts->evt_y_cnt >= thr.ip_evt_threshold) ||
-		!use_input_evts_with_hi_slvt_detect)
-			rc = 1;
-
-	return rc;
-}
-static int set_single_enter_load(const char *buf, const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		if (val < managed_clusters[i]->single_exit_load)
-			return -EINVAL;
-
-		managed_clusters[i]->single_enter_load = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_single_enter_load(char *buf, const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-				"%u:", managed_clusters[i]->single_enter_load);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_single_enter_load = {
-	.set = set_single_enter_load,
-	.get = get_single_enter_load,
-};
-device_param_cb(single_enter_load, &param_ops_single_enter_load, NULL, 0644);
-
-static int set_single_exit_load(const char *buf, const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		if (val > managed_clusters[i]->single_enter_load)
-			return -EINVAL;
-
-		managed_clusters[i]->single_exit_load = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_single_exit_load(char *buf, const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-				"%u:", managed_clusters[i]->single_exit_load);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_single_exit_load = {
-	.set = set_single_exit_load,
-	.get = get_single_exit_load,
-};
-device_param_cb(single_exit_load, &param_ops_single_exit_load, NULL, 0644);
-
-static int set_pcpu_multi_enter_load(const char *buf,
-					const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		if (val < managed_clusters[i]->pcpu_multi_exit_load)
-			return -EINVAL;
-
-		managed_clusters[i]->pcpu_multi_enter_load = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_pcpu_multi_enter_load(char *buf, const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-			"%u:", managed_clusters[i]->pcpu_multi_enter_load);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_pcpu_multi_enter_load = {
-	.set = set_pcpu_multi_enter_load,
-	.get = get_pcpu_multi_enter_load,
-};
-device_param_cb(pcpu_multi_enter_load, &param_ops_pcpu_multi_enter_load,
-								NULL, 0644);
-
-static int set_pcpu_multi_exit_load(const char *buf,
-						const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		if (val > managed_clusters[i]->pcpu_multi_enter_load)
-			return -EINVAL;
-
-		managed_clusters[i]->pcpu_multi_exit_load = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_pcpu_multi_exit_load(char *buf, const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-			"%u:", managed_clusters[i]->pcpu_multi_exit_load);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_pcpu_multi_exit_load = {
-	.set = set_pcpu_multi_exit_load,
-	.get = get_pcpu_multi_exit_load,
-};
-device_param_cb(pcpu_multi_exit_load, &param_ops_pcpu_multi_exit_load,
-		NULL, 0644);
-static int set_perf_cl_peak_enter_load(const char *buf,
-				const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		if (val < managed_clusters[i]->perf_cl_peak_exit_load)
-			return -EINVAL;
-
-		managed_clusters[i]->perf_cl_peak_enter_load = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_perf_cl_peak_enter_load(char *buf,
-				const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-			"%u:", managed_clusters[i]->perf_cl_peak_enter_load);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_perf_cl_peak_enter_load = {
-	.set = set_perf_cl_peak_enter_load,
-	.get = get_perf_cl_peak_enter_load,
-};
-device_param_cb(perf_cl_peak_enter_load, &param_ops_perf_cl_peak_enter_load,
-		 NULL, 0644);
-
-static int set_perf_cl_peak_exit_load(const char *buf,
-				const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		if (val > managed_clusters[i]->perf_cl_peak_enter_load)
-			return -EINVAL;
-
-		managed_clusters[i]->perf_cl_peak_exit_load = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_perf_cl_peak_exit_load(char *buf,
-				const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-			"%u:", managed_clusters[i]->perf_cl_peak_exit_load);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_perf_cl_peak_exit_load = {
-	.set = set_perf_cl_peak_exit_load,
-	.get = get_perf_cl_peak_exit_load,
-};
-device_param_cb(perf_cl_peak_exit_load, &param_ops_perf_cl_peak_exit_load,
-		 NULL, 0644);
-
-static int set_perf_cl_peak_enter_cycles(const char *buf,
-				const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		managed_clusters[i]->perf_cl_peak_enter_cycles = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_perf_cl_peak_enter_cycles(char *buf,
-				const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, "%u:",
-				managed_clusters[i]->perf_cl_peak_enter_cycles);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_perf_cl_peak_enter_cycles = {
-	.set = set_perf_cl_peak_enter_cycles,
-	.get = get_perf_cl_peak_enter_cycles,
-};
-device_param_cb(perf_cl_peak_enter_cycles, &param_ops_perf_cl_peak_enter_cycles,
-		NULL, 0644);
-
-
-static int set_perf_cl_peak_exit_cycles(const char *buf,
-				const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		managed_clusters[i]->perf_cl_peak_exit_cycles = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_perf_cl_peak_exit_cycles(char *buf,
-			const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-			"%u:", managed_clusters[i]->perf_cl_peak_exit_cycles);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_perf_cl_peak_exit_cycles = {
-	.set = set_perf_cl_peak_exit_cycles,
-	.get = get_perf_cl_peak_exit_cycles,
-};
-device_param_cb(perf_cl_peak_exit_cycles, &param_ops_perf_cl_peak_exit_cycles,
-		 NULL, 0644);
-
-
-static int set_single_enter_cycles(const char *buf,
-				const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		managed_clusters[i]->single_enter_cycles = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_single_enter_cycles(char *buf, const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, "%u:",
-				managed_clusters[i]->single_enter_cycles);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_single_enter_cycles = {
-	.set = set_single_enter_cycles,
-	.get = get_single_enter_cycles,
-};
-device_param_cb(single_enter_cycles, &param_ops_single_enter_cycles,
-		NULL, 0644);
-
-
-static int set_single_exit_cycles(const char *buf,
-				const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		managed_clusters[i]->single_exit_cycles = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_single_exit_cycles(char *buf, const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-				"%u:", managed_clusters[i]->single_exit_cycles);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_single_exit_cycles = {
-	.set = set_single_exit_cycles,
-	.get = get_single_exit_cycles,
-};
-device_param_cb(single_exit_cycles, &param_ops_single_exit_cycles, NULL, 0644);
-
-static int set_multi_enter_cycles(const char *buf,
-				const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		managed_clusters[i]->multi_enter_cycles = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_multi_enter_cycles(char *buf, const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-				"%u:", managed_clusters[i]->multi_enter_cycles);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_multi_enter_cycles = {
-	.set = set_multi_enter_cycles,
-	.get = get_multi_enter_cycles,
-};
-device_param_cb(multi_enter_cycles, &param_ops_multi_enter_cycles, NULL, 0644);
-
-static int set_multi_exit_cycles(const char *buf, const struct kernel_param *kp)
-{
-	unsigned int val, i, ntokens = 0;
-	const char *cp = buf;
-	unsigned int bytes_left;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	while ((cp = strpbrk(cp + 1, ":")))
-		ntokens++;
-
-	if (ntokens != (num_clusters - 1))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < num_clusters; i++) {
-
-		if (sscanf(cp, "%u\n", &val) != 1)
-			return -EINVAL;
-
-		managed_clusters[i]->multi_exit_cycles = val;
-
-		bytes_left = PAGE_SIZE - (cp - buf);
-		cp = strnchr(cp, bytes_left, ':');
-		cp++;
-	}
-
-	return 0;
-}
-
-static int get_multi_exit_cycles(char *buf, const struct kernel_param *kp)
-{
-	int i, cnt = 0;
-
-	if (!clusters_inited)
-		return cnt;
-
-	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-				"%u:", managed_clusters[i]->multi_exit_cycles);
-	cnt--;
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_multi_exit_cycles = {
-	.set = set_multi_exit_cycles,
-	.get = get_multi_exit_cycles,
-};
-device_param_cb(multi_exit_cycles, &param_ops_multi_exit_cycles, NULL, 0644);
-
-static int set_io_enter_cycles(const char *buf, const struct kernel_param *kp)
-{
-	unsigned int val;
-
-	if (sscanf(buf, "%u\n", &val) != 1)
-		return -EINVAL;
-
-	io_enter_cycles = val;
-
-	return 0;
-}
-
-static int get_io_enter_cycles(char *buf, const struct kernel_param *kp)
-{
-	return snprintf(buf, PAGE_SIZE, "%u", io_enter_cycles);
-}
-
-static const struct kernel_param_ops param_ops_io_enter_cycles = {
-	.set = set_io_enter_cycles,
-	.get = get_io_enter_cycles,
-};
-device_param_cb(io_enter_cycles, &param_ops_io_enter_cycles, NULL, 0644);
-
-static int set_io_exit_cycles(const char *buf, const struct kernel_param *kp)
-{
-	unsigned int val;
-
-	if (sscanf(buf, "%u\n", &val) != 1)
-		return -EINVAL;
-
-	io_exit_cycles = val;
-
-	return 0;
-}
-
-static int get_io_exit_cycles(char *buf, const struct kernel_param *kp)
-{
-	return snprintf(buf, PAGE_SIZE, "%u", io_exit_cycles);
-}
-
-static const struct kernel_param_ops param_ops_io_exit_cycles = {
-	.set = set_io_exit_cycles,
-	.get = get_io_exit_cycles,
-};
-device_param_cb(io_exit_cycles, &param_ops_io_exit_cycles, NULL, 0644);
-
-static int set_iowait_floor_pct(const char *buf, const struct kernel_param *kp)
-{
-	u64 val;
-
-	if (sscanf(buf, "%llu\n", &val) != 1)
-		return -EINVAL;
-	if (val > iowait_ceiling_pct)
-		return -EINVAL;
-
-	iowait_floor_pct = val;
-
-	return 0;
-}
-
-static int get_iowait_floor_pct(char *buf, const struct kernel_param *kp)
-{
-	return snprintf(buf, PAGE_SIZE, "%llu", iowait_floor_pct);
-}
-
-static const struct kernel_param_ops param_ops_iowait_floor_pct = {
-	.set = set_iowait_floor_pct,
-	.get = get_iowait_floor_pct,
-};
-device_param_cb(iowait_floor_pct, &param_ops_iowait_floor_pct, NULL, 0644);
-
-static int set_iowait_ceiling_pct(const char *buf,
-						const struct kernel_param *kp)
-{
-	u64 val;
-
-	if (sscanf(buf, "%llu\n", &val) != 1)
-		return -EINVAL;
-	if (val < iowait_floor_pct)
-		return -EINVAL;
-
-	iowait_ceiling_pct = val;
-
-	return 0;
-}
-
-static int get_iowait_ceiling_pct(char *buf, const struct kernel_param *kp)
-{
-	return snprintf(buf, PAGE_SIZE, "%llu", iowait_ceiling_pct);
-}
-
-static const struct kernel_param_ops param_ops_iowait_ceiling_pct = {
-	.set = set_iowait_ceiling_pct,
-	.get = get_iowait_ceiling_pct,
-};
-device_param_cb(iowait_ceiling_pct, &param_ops_iowait_ceiling_pct, NULL, 0644);
-
-static int set_workload_detect(const char *buf, const struct kernel_param *kp)
-{
-	unsigned int val, i;
-	struct cluster *i_cl;
-	unsigned long flags;
-
-	if (!clusters_inited)
-		return -EINVAL;
-
-	if (sscanf(buf, "%u\n", &val) != 1)
-		return -EINVAL;
-
-	if (val == workload_detect)
-		return 0;
-
-	workload_detect = val;
-	if (!(workload_detect & IO_DETECT)) {
-		for (i = 0; i < num_clusters; i++) {
-			i_cl = managed_clusters[i];
-			spin_lock_irqsave(&i_cl->iowait_lock, flags);
-			i_cl->iowait_enter_cycle_cnt = 0;
-			i_cl->iowait_exit_cycle_cnt = 0;
-			i_cl->cur_io_busy = 0;
-			i_cl->io_change = true;
-			spin_unlock_irqrestore(&i_cl->iowait_lock, flags);
-		}
-	}
-	if (!(workload_detect & MODE_DETECT)) {
-		for (i = 0; i < num_clusters; i++) {
-			i_cl = managed_clusters[i];
-			spin_lock_irqsave(&i_cl->mode_lock, flags);
-			i_cl->single_enter_cycle_cnt = 0;
-			i_cl->single_exit_cycle_cnt = 0;
-			i_cl->multi_enter_cycle_cnt = 0;
-			i_cl->multi_exit_cycle_cnt = 0;
-			i_cl->mode = 0;
-			i_cl->mode_change = true;
-			spin_unlock_irqrestore(&i_cl->mode_lock, flags);
-		}
-	}
-
-	if (!(workload_detect & PERF_CL_PEAK_DETECT)) {
-		for (i = 0; i < num_clusters; i++) {
-			i_cl = managed_clusters[i];
-			spin_lock_irqsave(&i_cl->perf_cl_peak_lock, flags);
-			i_cl->perf_cl_peak_enter_cycle_cnt = 0;
-			i_cl->perf_cl_peak_exit_cycle_cnt = 0;
-			i_cl->perf_cl_peak = 0;
-			spin_unlock_irqrestore(&i_cl->perf_cl_peak_lock, flags);
-		}
-	}
-
-	wake_up_process(notify_thread);
-	return 0;
-}
-
-static int get_workload_detect(char *buf, const struct kernel_param *kp)
-{
-	return snprintf(buf, PAGE_SIZE, "%u", workload_detect);
-}
-
-static const struct kernel_param_ops param_ops_workload_detect = {
-	.set = set_workload_detect,
-	.get = get_workload_detect,
-};
-device_param_cb(workload_detect, &param_ops_workload_detect, NULL, 0644);
-
-
-static int set_input_evts_with_hi_slvt_detect(const char *buf,
-					const struct kernel_param *kp)
-{
-
-	unsigned int val;
-
-	if (sscanf(buf, "%u\n", &val) != 1)
-		return -EINVAL;
-
-	if (val == use_input_evts_with_hi_slvt_detect)
-		return 0;
-
-	use_input_evts_with_hi_slvt_detect = val;
-
-	if ((workload_detect & PERF_CL_PEAK_DETECT) &&
-		!input_events_handler_registered &&
-		use_input_evts_with_hi_slvt_detect) {
-		if (register_input_handler() == -ENOMEM) {
-			use_input_evts_with_hi_slvt_detect = 0;
-			return -ENOMEM;
-		}
-	} else if ((workload_detect & PERF_CL_PEAK_DETECT) &&
-				input_events_handler_registered &&
-				!use_input_evts_with_hi_slvt_detect) {
-		unregister_input_handler();
-	}
-	return 0;
-}
-
-static int get_input_evts_with_hi_slvt_detect(char *buf,
-					const struct kernel_param *kp)
-{
-	return snprintf(buf, PAGE_SIZE, "%u",
-			use_input_evts_with_hi_slvt_detect);
-}
-
-static const struct kernel_param_ops param_ops_ip_evts_with_hi_slvt_detect = {
-	.set = set_input_evts_with_hi_slvt_detect,
-	.get = get_input_evts_with_hi_slvt_detect,
-};
-device_param_cb(input_evts_with_hi_slvt_detect,
-	&param_ops_ip_evts_with_hi_slvt_detect, NULL, 0644);
-
-static struct kobject *mode_kobj;
-
-static ssize_t show_aggr_mode(struct kobject *kobj,
-					struct kobj_attribute *attr, char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "%u\n", aggr_mode);
-}
-static struct kobj_attribute aggr_mode_attr =
-__ATTR(aggr_mode, 0444, show_aggr_mode, NULL);
-
-static ssize_t show_aggr_iobusy(struct kobject *kobj,
-					struct kobj_attribute *attr, char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "%u\n", aggr_iobusy);
-}
-static struct kobj_attribute aggr_iobusy_attr =
-__ATTR(aggr_iobusy, 0444, show_aggr_iobusy, NULL);
-
-static struct attribute *attrs[] = {
-	&aggr_mode_attr.attr,
-	&aggr_iobusy_attr.attr,
-	NULL,
-};
-
-static struct attribute_group attr_group = {
-	.attrs = attrs,
-};
-
-/* CPU Hotplug */
 static struct kobject *events_kobj;
 
 static ssize_t show_cpu_hotplug(struct kobject *kobj,
 					struct kobj_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "\n");
+	return scnprintf(buf, PAGE_SIZE, "\n");
 }
 static struct kobj_attribute cpu_hotplug_attr =
 __ATTR(cpu_hotplug, 0444, show_cpu_hotplug, NULL);
@@ -1541,137 +651,279 @@ static struct attribute *events_attrs[] = {
 static struct attribute_group events_attr_group = {
 	.attrs = events_attrs,
 };
-/*******************************sysfs ends************************************/
 
-static unsigned int num_online_managed(struct cpumask *mask)
+static ssize_t show_perf_gfx_evts(struct kobject *kobj,
+			   struct kobj_attribute *attr,
+			   char *buf)
 {
-	struct cpumask tmp_mask;
+	struct queue_indicies updated_pos;
+	unsigned long flags;
+	ssize_t retval = 0;
+	int idx = 0, size, act_idx, ret = -1;
 
-	cpumask_clear(&tmp_mask);
-	cpumask_and(&tmp_mask, mask, cpu_online_mask);
+	if (gplaf_notif > 0)
+		return 0;
 
-	return cpumask_weight(&tmp_mask);
+	ret = wait_for_completion_interruptible(&gfx_evt_arrival);
+	if (ret)
+		return 0;
+	spin_lock_irqsave(&gfx_circ_buff_lock, flags);
+	updated_pos.head = curr_pos.head;
+	updated_pos.tail = curr_pos.tail;
+	size = CIRC_CNT(updated_pos.head, updated_pos.tail, QUEUE_POOL_SIZE);
+	curr_pos.tail = (curr_pos.tail + size) % QUEUE_POOL_SIZE;
+	spin_unlock_irqrestore(&gfx_circ_buff_lock, flags);
+
+	for (idx = 0; idx < size; idx++) {
+		act_idx = (updated_pos.tail + idx) % QUEUE_POOL_SIZE;
+		retval += scnprintf(buf + retval, PAGE_SIZE - retval,
+			  "%d %d %u %d %lu :",
+			  gpu_circ_buff[act_idx].pid,
+			  gpu_circ_buff[act_idx].ctx_id,
+			  gpu_circ_buff[act_idx].timestamp,
+			  gpu_circ_buff[act_idx].evt_typ,
+			  ktime_to_us(gpu_circ_buff[act_idx].arrive_ts));
+		if (retval >= PAGE_SIZE) {
+			pr_err("msm_perf:data limit exceed\n");
+			break;
+		}
+	}
+	return retval;
 }
 
-static int perf_adjust_notify(struct notifier_block *nb, unsigned long val,
-							void *data)
+static struct kobj_attribute gfx_event_info_attr =
+__ATTR(gfx_evt, 0444, show_perf_gfx_evts, NULL);
+
+static ssize_t show_big_nr(struct kobject *kobj,
+			   struct kobj_attribute *attr,
+			   char *buf)
 {
-	struct cpufreq_policy *policy = data;
-	unsigned int cpu = policy->cpu;
-	struct cpu_status *cpu_st = &per_cpu(cpu_stats, cpu);
-	unsigned int min = cpu_st->min, max = cpu_st->max;
-
-
-	if (val != CPUFREQ_ADJUST)
-		return NOTIFY_OK;
-
-	pr_debug("msm_perf: CPU%u policy before: %u:%u kHz\n", cpu,
-						policy->min, policy->max);
-	pr_debug("msm_perf: CPU%u seting min:max %u:%u kHz\n", cpu, min, max);
-
-	cpufreq_verify_within_limits(policy, min, max);
-
-	pr_debug("msm_perf: CPU%u policy after: %u:%u kHz\n", cpu,
-						policy->min, policy->max);
-
-	return NOTIFY_OK;
+	return scnprintf(buf, PAGE_SIZE, "%u\n", aggr_big_nr);
 }
 
-static struct notifier_block perf_cpufreq_nb = {
-	.notifier_call = perf_adjust_notify,
+static struct kobj_attribute big_nr_attr =
+__ATTR(aggr_big_nr, 0444, show_big_nr, NULL);
+
+static ssize_t show_top_load(struct kobject *kobj,
+				 struct kobj_attribute *attr,
+				 char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n", aggr_top_load);
+}
+
+static struct kobj_attribute top_load_attr =
+__ATTR(aggr_top_load, 0444, show_top_load, NULL);
+
+
+static ssize_t show_top_load_cluster(struct kobject *kobj,
+				 struct kobj_attribute *attr,
+				 char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u %u %u\n",
+					top_load[MIN], top_load[MID],
+					top_load[MAX]);
+}
+
+static struct kobj_attribute cluster_top_load_attr =
+__ATTR(top_load_cluster, 0444, show_top_load_cluster, NULL);
+
+static ssize_t show_curr_cap_cluster(struct kobject *kobj,
+				 struct kobj_attribute *attr,
+				 char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u %u %u\n",
+					curr_cap[MIN], curr_cap[MID],
+					curr_cap[MAX]);
+}
+
+static struct kobj_attribute cluster_curr_cap_attr =
+__ATTR(curr_cap_cluster, 0444, show_curr_cap_cluster, NULL);
+
+static struct attribute *notify_attrs[] = {
+	&big_nr_attr.attr,
+	&top_load_attr.attr,
+	&cluster_top_load_attr.attr,
+	&cluster_curr_cap_attr.attr,
+	&gfx_event_info_attr.attr,
+	NULL,
 };
 
-static bool check_notify_status(void)
+static struct attribute_group notify_attr_group = {
+	.attrs = notify_attrs,
+};
+static struct kobject *notify_kobj;
+
+/*******************************sysfs ends************************************/
+
+/*****************PMU Data Collection*****************/
+static int set_event(struct event_data *ev, int cpu)
 {
-	int i;
-	struct cluster *cl;
-	bool any_change = false;
-	unsigned long flags;
+	int ret;
 
-
-	for (i = 0; i < num_clusters; i++) {
-		cl = managed_clusters[i];
-		spin_lock_irqsave(&cl->iowait_lock, flags);
-		if (!any_change)
-			any_change = cl->io_change;
-		cl->io_change = false;
-		spin_unlock_irqrestore(&cl->iowait_lock, flags);
-
-		spin_lock_irqsave(&cl->mode_lock, flags);
-		if (!any_change)
-			any_change = cl->mode_change;
-		cl->mode_change = false;
-		spin_unlock_irqrestore(&cl->mode_lock, flags);
-
-		spin_lock_irqsave(&cl->perf_cl_peak_lock, flags);
-		if (!any_change)
-			any_change = cl->perf_cl_detect_state_change;
-		cl->perf_cl_detect_state_change = false;
-		spin_unlock_irqrestore(&cl->perf_cl_peak_lock, flags);
-	}
-
-	return any_change;
-}
-
-static int notify_userspace(void *data)
-{
-	unsigned int i, io, cpu_mode, perf_cl_peak_mode;
-
-	while (1) {
-		set_current_state(TASK_INTERRUPTIBLE);
-		if (!check_notify_status()) {
-			schedule();
-
-			if (kthread_should_stop())
-				break;
-		}
-		set_current_state(TASK_RUNNING);
-
-		io = 0;
-		cpu_mode = 0;
-		perf_cl_peak_mode = 0;
-		for (i = 0; i < num_clusters; i++) {
-			io |= managed_clusters[i]->cur_io_busy;
-			cpu_mode |= managed_clusters[i]->mode;
-			perf_cl_peak_mode |= managed_clusters[i]->perf_cl_peak;
-		}
-		if (io != aggr_iobusy) {
-			aggr_iobusy = io;
-			sysfs_notify(mode_kobj, NULL, "aggr_iobusy");
-			pr_debug("msm_perf: Notifying IO: %u\n", aggr_iobusy);
-		}
-		if ((aggr_mode & (SINGLE | MULTI)) != cpu_mode) {
-			aggr_mode &= ~(SINGLE | MULTI);
-			aggr_mode |= cpu_mode;
-			sysfs_notify(mode_kobj, NULL, "aggr_mode");
-			pr_debug("msm_perf: Notifying CPU mode:%u\n",
-								aggr_mode);
-		}
-		if ((aggr_mode & PERF_CL_PEAK) != perf_cl_peak_mode) {
-			aggr_mode &= ~(PERF_CL_PEAK);
-			aggr_mode |= perf_cl_peak_mode;
-			sysfs_notify(mode_kobj, NULL, "aggr_mode");
-			pr_debug("msm_perf: Notifying Gaming mode:%u\n",
-								aggr_mode);
-		}
+	ret = qcom_pmu_event_supported(ev->event_id, cpu);
+	if (ret) {
+		pr_err("msm_perf: %s failed, eventId:0x%x, cpu:%d, error code:%d\n",
+				__func__, ev->event_id, cpu, ret);
+		return ret;
 	}
 
 	return 0;
 }
 
-static void hotplug_notify(int action)
+static void free_pmu_counters(unsigned int cpu)
+{
+	int i = 0;
+
+	for (i = 0; i < NO_OF_EVENT; i++) {
+		pmu_events[i][cpu].prev_count = 0;
+		pmu_events[i][cpu].cur_delta = 0;
+		pmu_events[i][cpu].cached_total_count = 0;
+	}
+}
+
+static int init_pmu_counter(void)
+{
+	int cpu;
+	unsigned long cpu_capacity;
+	int ret = 0;
+
+	int i = 0, j = 0;
+	int no_of_cpus = 0;
+
+	for_each_possible_cpu(cpu)
+		no_of_cpus++;
+
+	pmu_events = kcalloc(NO_OF_EVENT, sizeof(struct event_data *), GFP_KERNEL);
+	if (!pmu_events)
+		return -ENOMEM;
+	for (i = 0; i < NO_OF_EVENT; i++) {
+		pmu_events[i] = kcalloc(no_of_cpus, sizeof(struct event_data), GFP_KERNEL);
+		if (!pmu_events[i]) {
+			for (j = i; j >= 0; j--) {
+				kfree(pmu_events[j]);
+				pmu_events[j] = NULL;
+			}
+			kfree(pmu_events);
+			pmu_events = NULL;
+			return -ENOMEM;
+		}
+	}
+
+	/* Create events per CPU */
+	for_each_possible_cpu(cpu) {
+		/* create Instruction event */
+		pmu_events[INST_EVENT][cpu].event_id = INST_EV;
+		ret = set_event(&pmu_events[INST_EVENT][cpu], cpu);
+		if (ret < 0)
+			return ret;
+		/* create cycle event */
+		pmu_events[CYC_EVENT][cpu].event_id = CYC_EV;
+		ret = set_event(&pmu_events[CYC_EVENT][cpu], cpu);
+		if (ret < 0) {
+			free_pmu_counters(cpu);
+			return ret;
+		}
+		/* find capacity per cpu */
+		cpu_capacity = arch_scale_cpu_capacity(cpu);
+		if (cpu_capacity < min_cpu_capacity)
+			min_cpu_capacity = cpu_capacity;
+	}
+	return 0;
+}
+
+static inline void msm_perf_read_event(struct event_data *event, int cpu)
+{
+	u64 ev_count = 0;
+	int ret;
+	u64 total;
+
+	mutex_lock(&perfevent_lock);
+	if (!event->event_id) {
+		mutex_unlock(&perfevent_lock);
+		return;
+	}
+
+	if (!per_cpu(cpu_is_hp, cpu)) {
+		ret = qcom_pmu_read(cpu, event->event_id, &total);
+		if (ret) {
+			mutex_unlock(&perfevent_lock);
+			return;
+		}
+	}
+	else
+		total = event->cached_total_count;
+
+	ev_count = total - event->prev_count;
+	event->prev_count = total;
+	event->cur_delta = ev_count;
+	mutex_unlock(&perfevent_lock);
+}
+
+static ssize_t get_cpu_total_instruction(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	u64 instruction = 0;
+	u64 cycles = 0;
+	u64 total_inst_big = 0;
+	u64 total_inst_little = 0;
+	u64 ipc_big = 0;
+	u64 ipc_little = 0;
+	int cnt = 0, cpu;
+
+	for_each_possible_cpu(cpu) {
+		/* Read Instruction event */
+		msm_perf_read_event(&pmu_events[INST_EVENT][cpu], cpu);
+		/* Read Cycle event */
+		msm_perf_read_event(&pmu_events[CYC_EVENT][cpu], cpu);
+		instruction = pmu_events[INST_EVENT][cpu].cur_delta;
+		cycles = pmu_events[CYC_EVENT][cpu].cur_delta;
+		/* collecting max inst and ipc for max cap and min cap cpus */
+		if (arch_scale_cpu_capacity(cpu) > min_cpu_capacity) {
+			if (cycles && cycles >= CPU_CYCLE_THRESHOLD)
+				ipc_big = max(ipc_big,
+						((instruction*100)/cycles));
+			total_inst_big += instruction;
+		} else {
+			if (cycles)
+				ipc_little = max(ipc_little,
+						((instruction*100)/cycles));
+			total_inst_little += instruction;
+		}
+	}
+
+	cnt += scnprintf(buf, PAGE_SIZE, "%llu:%llu:%llu:%llu\n",
+			total_inst_big, ipc_big,
+			total_inst_little, ipc_little);
+
+	return cnt;
+}
+
+static int hotplug_notify_down(unsigned int cpu)
+{
+	mutex_lock(&perfevent_lock);
+	per_cpu(cpu_is_hp, cpu) = true;
+	free_pmu_counters(cpu);
+	mutex_unlock(&perfevent_lock);
+
+	return 0;
+}
+
+static int hotplug_notify_up(unsigned int cpu)
 {
 	unsigned long flags;
 
-	if (!events_group.init_success)
-		return;
+	mutex_lock(&perfevent_lock);
+	per_cpu(cpu_is_hp, cpu) = false;
+	mutex_unlock(&perfevent_lock);
 
-	if ((action == CPU_ONLINE) || (action == CPU_DEAD)) {
+	if (events_group.init_success) {
 		spin_lock_irqsave(&(events_group.cpu_hotplug_lock), flags);
 		events_group.cpu_hotplug = true;
 		spin_unlock_irqrestore(&(events_group.cpu_hotplug_lock), flags);
 		wake_up_process(events_notify_thread);
 	}
+
+	return 0;
 }
 
 static int events_notify_userspace(void *data)
@@ -1707,1011 +959,30 @@ static int events_notify_userspace(void *data)
 	return 0;
 }
 
-static void check_cluster_iowait(struct cluster *cl, u64 now)
+static int init_notify_group(void)
 {
-	struct load_stats *pcpu_st;
-	unsigned int i;
-	unsigned long flags;
-	unsigned int temp_iobusy;
-	u64 max_iowait = 0;
+	int ret;
+	struct kobject *module_kobj = &msm_perf_kset->kobj;
 
-	spin_lock_irqsave(&cl->iowait_lock, flags);
-
-	if (((now - cl->last_io_check_ts)
-		< (cl->timer_rate - LAST_IO_CHECK_TOL)) ||
-		!(workload_detect & IO_DETECT)) {
-		spin_unlock_irqrestore(&cl->iowait_lock, flags);
-		return;
-	}
-
-	temp_iobusy = cl->cur_io_busy;
-	for_each_cpu(i, cl->cpus) {
-		pcpu_st = &per_cpu(cpu_load_stats, i);
-		if ((now - pcpu_st->last_wallclock)
-			> (cl->timer_rate + LAST_UPDATE_TOL))
-			continue;
-		if (max_iowait < pcpu_st->last_iopercent)
-			max_iowait = pcpu_st->last_iopercent;
-	}
-
-	if (!cl->cur_io_busy) {
-		if (max_iowait > iowait_ceiling_pct) {
-			cl->iowait_enter_cycle_cnt++;
-			if (cl->iowait_enter_cycle_cnt >= io_enter_cycles) {
-				cl->cur_io_busy = 1;
-				cl->iowait_enter_cycle_cnt = 0;
-			}
-		} else {
-			cl->iowait_enter_cycle_cnt = 0;
-		}
-	} else {
-		if (max_iowait < iowait_floor_pct) {
-			cl->iowait_exit_cycle_cnt++;
-			if (cl->iowait_exit_cycle_cnt >= io_exit_cycles) {
-				cl->cur_io_busy = 0;
-				cl->iowait_exit_cycle_cnt = 0;
-			}
-		} else {
-			cl->iowait_exit_cycle_cnt = 0;
-		}
-	}
-
-	cl->last_io_check_ts = now;
-	trace_track_iowait(cpumask_first(cl->cpus), cl->iowait_enter_cycle_cnt,
-			cl->iowait_exit_cycle_cnt, cl->cur_io_busy, max_iowait);
-
-	if (temp_iobusy != cl->cur_io_busy) {
-		cl->io_change = true;
-		pr_debug("msm_perf: IO changed to %u\n", cl->cur_io_busy);
-	}
-
-	spin_unlock_irqrestore(&cl->iowait_lock, flags);
-	if (cl->io_change)
-		wake_up_process(notify_thread);
-}
-
-static void disable_timer(struct cluster *cl)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&cl->timer_lock, flags);
-
-	if (del_timer(&cl->mode_exit_timer)) {
-		trace_single_cycle_exit_timer_stop(cpumask_first(cl->cpus),
-			cl->single_enter_cycles, cl->single_enter_cycle_cnt,
-			cl->single_exit_cycles, cl->single_exit_cycle_cnt,
-			cl->multi_enter_cycles, cl->multi_enter_cycle_cnt,
-			cl->multi_exit_cycles, cl->multi_exit_cycle_cnt,
-			cl->timer_rate, cl->mode);
-	}
-
-	spin_unlock_irqrestore(&cl->timer_lock, flags);
-}
-
-static void start_timer(struct cluster *cl)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&cl->timer_lock, flags);
-	if ((cl->mode & SINGLE) && !timer_pending(&cl->mode_exit_timer)) {
-		/*Set timer for the Cluster since there is none pending*/
-		cl->mode_exit_timer.expires = get_jiffies_64() +
-		usecs_to_jiffies(cl->single_exit_cycles * cl->timer_rate);
-		cl->mode_exit_timer.data = cpumask_first(cl->cpus);
-		add_timer(&cl->mode_exit_timer);
-		trace_single_cycle_exit_timer_start(cpumask_first(cl->cpus),
-			cl->single_enter_cycles, cl->single_enter_cycle_cnt,
-			cl->single_exit_cycles, cl->single_exit_cycle_cnt,
-			cl->multi_enter_cycles, cl->multi_enter_cycle_cnt,
-			cl->multi_exit_cycles, cl->multi_exit_cycle_cnt,
-			cl->timer_rate, cl->mode);
-	}
-	spin_unlock_irqrestore(&cl->timer_lock, flags);
-}
-
-
-static void disable_perf_cl_peak_timer(struct cluster *cl)
-{
-
-	if (del_timer(&cl->perf_cl_peak_mode_exit_timer)) {
-		trace_perf_cl_peak_exit_timer_stop(cpumask_first(cl->cpus),
-			cl->perf_cl_peak_enter_cycles,
-			cl->perf_cl_peak_enter_cycle_cnt,
-			cl->perf_cl_peak_exit_cycles,
-			cl->perf_cl_peak_exit_cycle_cnt,
-			cl->timer_rate, cl->mode);
-	}
-
-}
-
-static void start_perf_cl_peak_timer(struct cluster *cl)
-{
-	if ((cl->mode & PERF_CL_PEAK) &&
-		!timer_pending(&cl->perf_cl_peak_mode_exit_timer)) {
-		/*Set timer for the Cluster since there is none pending*/
-		cl->perf_cl_peak_mode_exit_timer.expires = get_jiffies_64() +
-		usecs_to_jiffies(cl->perf_cl_peak_exit_cycles * cl->timer_rate);
-		cl->perf_cl_peak_mode_exit_timer.data = cpumask_first(cl->cpus);
-		add_timer(&cl->perf_cl_peak_mode_exit_timer);
-		trace_perf_cl_peak_exit_timer_start(cpumask_first(cl->cpus),
-			cl->perf_cl_peak_enter_cycles,
-			cl->perf_cl_peak_enter_cycle_cnt,
-			cl->perf_cl_peak_exit_cycles,
-			cl->perf_cl_peak_exit_cycle_cnt,
-			cl->timer_rate, cl->mode);
-	}
-}
-
-static const struct input_device_id msm_perf_input_ids[] = {
-
-	{
-		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
-		.evbit = {BIT_MASK(EV_ABS)},
-		.absbit = { [BIT_WORD(ABS_MT_POSITION_X)] =
-			BIT_MASK(ABS_MT_POSITION_X) |
-			BIT_MASK(ABS_MT_POSITION_Y)},
-	},
-
-	{},
-};
-
-static void msm_perf_input_event_handler(struct input_handle *handle,
-					unsigned int type,
-					unsigned int code,
-					int value)
-{
-	if (type != EV_ABS)
-		return;
-
-	switch (code) {
-
-	case ABS_MT_POSITION_X:
-		ip_evts->evt_x_cnt++;
-		break;
-	case ABS_MT_POSITION_Y:
-		ip_evts->evt_y_cnt++;
-		break;
-
-	case ABS_MT_DISTANCE:
-		break;
-
-	case ABS_MT_PRESSURE:
-		break;
-
-	default:
-		break;
-
-	}
-}
-static int msm_perf_input_connect(struct input_handler *handler,
-				struct input_dev *dev,
-				const struct input_device_id *id)
-{
-	int rc;
-	struct input_handle *handle;
-
-	handle = kzalloc(sizeof(*handle), GFP_KERNEL);
-	if (!handle)
+	notify_kobj = kobject_create_and_add("notify", module_kobj);
+	if (!notify_kobj) {
+		pr_err("msm_perf: Failed to add notify_kobj\n");
 		return -ENOMEM;
-
-	handle->dev = dev;
-	handle->handler = handler;
-	handle->name = handler->name;
-
-	rc = input_register_handle(handle);
-	if (rc) {
-		pr_err("Failed to register handle\n");
-		goto error;
 	}
 
-	rc = input_open_device(handle);
-	if (rc) {
-		pr_err("Failed to open device\n");
-		goto error_unregister;
-	}
-	return 0;
-
-error_unregister:
-	input_unregister_handle(handle);
-error:
-	kfree(handle);
-	return rc;
-}
-
-static void  msm_perf_input_disconnect(struct input_handle *handle)
-{
-	input_close_device(handle);
-	input_unregister_handle(handle);
-	kfree(handle);
-}
-
-static void unregister_input_handler(void)
-{
-	if (handler != NULL) {
-		input_unregister_handler(handler);
-		input_events_handler_registered = false;
-	}
-}
-
-static int register_input_handler(void)
-{
-	int rc;
-
-	if (handler == NULL) {
-		handler = kzalloc(sizeof(*handler), GFP_KERNEL);
-		if (!handler)
-			return -ENOMEM;
-		handler->event = msm_perf_input_event_handler;
-		handler->connect = msm_perf_input_connect;
-		handler->disconnect = msm_perf_input_disconnect;
-		handler->name = "msm_perf";
-		handler->id_table = msm_perf_input_ids;
-		handler->private = NULL;
-	}
-	rc = input_register_handler(handler);
-	if (rc) {
-		pr_err("Unable to register the input handler for msm_perf\n");
-		kfree(handler);
-	} else {
-		input_events_handler_registered = true;
-	}
-	return rc;
-}
-
-static void check_perf_cl_peak_load(struct cluster *cl, u64 now)
-{
-	struct load_stats *pcpu_st;
-	unsigned int i, ret_mode, max_load = 0;
-	unsigned int total_load = 0, cpu_cnt = 0;
-	unsigned long flags;
-	bool cpu_of_cluster_zero = true;
-
-	spin_lock_irqsave(&cl->perf_cl_peak_lock, flags);
-
-	cpu_of_cluster_zero = cpumask_first(cl->cpus) ? false:true;
-	/*
-	 * If delta of last load to now < than timer_rate - ld check tolerance
-	 * which is 18ms OR if perf_cl_peak detection not set
-	 * OR the first CPU of Cluster is CPU 0 (LVT)
-	 * then return do nothing. We are interested only in SLVT
-	 */
-	if (((now - cl->last_perf_cl_check_ts)
-		< (cl->timer_rate - LAST_LD_CHECK_TOL)) ||
-		!(workload_detect & PERF_CL_PEAK_DETECT) ||
-		cpu_of_cluster_zero) {
-		spin_unlock_irqrestore(&cl->perf_cl_peak_lock, flags);
-		return;
-	}
-	for_each_cpu(i, cl->cpus) {
-		pcpu_st = &per_cpu(cpu_load_stats, i);
-		if ((now - pcpu_st->last_wallclock)
-			> (cl->timer_rate + LAST_UPDATE_TOL))
-			continue;
-		if (pcpu_st->cpu_load > max_load)
-			max_load = pcpu_st->cpu_load;
-		 /*
-		  * Save the frequency for the cpu of the cluster
-		  * This frequency is the most recent/current
-		  * as obtained due to a transition
-		  * notifier callback.
-		  */
-		cl->current_freq = pcpu_st->freq;
-	}
-	ret_mode = cl->perf_cl_peak;
-
-	if (!(cl->perf_cl_peak & PERF_CL_PEAK)) {
-		if (max_load >= cl->perf_cl_peak_enter_load &&
-			freq_greater_than_threshold(cl,
-				cpumask_first(cl->cpus))) {
-			/* Reset the event count  for the first cycle
-			 * of perf_cl_peak we detect
-			 */
-			if (!cl->perf_cl_peak_enter_cycle_cnt)
-				ip_evts->evt_x_cnt = ip_evts->evt_y_cnt = 0;
-			cl->perf_cl_peak_enter_cycle_cnt++;
-			if (cl->perf_cl_peak_enter_cycle_cnt
-				>= cl->perf_cl_peak_enter_cycles) {
-				if (input_events_greater_than_threshold())
-					ret_mode |= PERF_CL_PEAK;
-				cl->perf_cl_peak_enter_cycle_cnt = 0;
-			}
-		} else {
-			cl->perf_cl_peak_enter_cycle_cnt = 0;
-			/* Reset the event count */
-			ip_evts->evt_x_cnt = ip_evts->evt_y_cnt = 0;
-		}
-	} else {
-		if (max_load >= cl->perf_cl_peak_exit_load &&
-			freq_greater_than_threshold(cl,
-				cpumask_first(cl->cpus))) {
-			cl->perf_cl_peak_exit_cycle_cnt = 0;
-			disable_perf_cl_peak_timer(cl);
-		} else {
-			start_perf_cl_peak_timer(cl);
-			cl->perf_cl_peak_exit_cycle_cnt++;
-			if (cl->perf_cl_peak_exit_cycle_cnt
-				>= cl->perf_cl_peak_exit_cycles) {
-				ret_mode &= ~PERF_CL_PEAK;
-				cl->perf_cl_peak_exit_cycle_cnt = 0;
-				disable_perf_cl_peak_timer(cl);
-			}
-		}
-	}
-
-	cl->last_perf_cl_check_ts = now;
-	if (ret_mode != cl->perf_cl_peak) {
-		pr_debug("msm_perf: Mode changed to %u\n", ret_mode);
-		cl->perf_cl_peak = ret_mode;
-		cl->perf_cl_detect_state_change = true;
-	}
-
-	trace_cpu_mode_detect(cpumask_first(cl->cpus), max_load,
-		cl->single_enter_cycle_cnt, cl->single_exit_cycle_cnt,
-		total_load, cl->multi_enter_cycle_cnt,
-		cl->multi_exit_cycle_cnt, cl->perf_cl_peak_enter_cycle_cnt,
-		cl->perf_cl_peak_exit_cycle_cnt, cl->mode, cpu_cnt);
-
-	spin_unlock_irqrestore(&cl->perf_cl_peak_lock, flags);
-
-	if (cl->perf_cl_detect_state_change)
-		wake_up_process(notify_thread);
-
-}
-
-static void check_cpu_load(struct cluster *cl, u64 now)
-{
-	struct load_stats *pcpu_st;
-	unsigned int i, max_load = 0, total_load = 0, ret_mode, cpu_cnt = 0;
-	unsigned int total_load_ceil, total_load_floor;
-	unsigned long flags;
-
-	spin_lock_irqsave(&cl->mode_lock, flags);
-
-	if (((now - cl->last_mode_check_ts)
-		< (cl->timer_rate - LAST_LD_CHECK_TOL)) ||
-		!(workload_detect & MODE_DETECT)) {
-		spin_unlock_irqrestore(&cl->mode_lock, flags);
-		return;
-	}
-
-	for_each_cpu(i, cl->cpus) {
-		pcpu_st = &per_cpu(cpu_load_stats, i);
-		if ((now - pcpu_st->last_wallclock)
-			> (cl->timer_rate + LAST_UPDATE_TOL))
-			continue;
-		if (pcpu_st->cpu_load > max_load)
-			max_load = pcpu_st->cpu_load;
-		total_load += pcpu_st->cpu_load;
-		cpu_cnt++;
-	}
-
-	if (cpu_cnt > 1) {
-		total_load_ceil = cl->pcpu_multi_enter_load * cpu_cnt;
-		total_load_floor = cl->pcpu_multi_exit_load * cpu_cnt;
-	} else {
-		total_load_ceil = UINT_MAX;
-		total_load_floor = UINT_MAX;
-	}
-
-	ret_mode = cl->mode;
-	if (!(cl->mode & SINGLE)) {
-		if (max_load >= cl->single_enter_load) {
-			cl->single_enter_cycle_cnt++;
-			if (cl->single_enter_cycle_cnt
-				>= cl->single_enter_cycles) {
-				ret_mode |= SINGLE;
-				cl->single_enter_cycle_cnt = 0;
-			}
-		} else {
-			cl->single_enter_cycle_cnt = 0;
-		}
-	} else {
-		if (max_load < cl->single_exit_load) {
-			start_timer(cl);
-			cl->single_exit_cycle_cnt++;
-			if (cl->single_exit_cycle_cnt
-				>= cl->single_exit_cycles) {
-				ret_mode &= ~SINGLE;
-				cl->single_exit_cycle_cnt = 0;
-				disable_timer(cl);
-			}
-		} else {
-			cl->single_exit_cycle_cnt = 0;
-			disable_timer(cl);
-		}
-	}
-
-	if (!(cl->mode & MULTI)) {
-		if (total_load >= total_load_ceil) {
-			cl->multi_enter_cycle_cnt++;
-			if (cl->multi_enter_cycle_cnt
-				>= cl->multi_enter_cycles) {
-				ret_mode |= MULTI;
-				cl->multi_enter_cycle_cnt = 0;
-			}
-		} else {
-			cl->multi_enter_cycle_cnt = 0;
-		}
-	} else {
-		if (total_load < total_load_floor) {
-			cl->multi_exit_cycle_cnt++;
-			if (cl->multi_exit_cycle_cnt
-				>= cl->multi_exit_cycles) {
-				ret_mode &= ~MULTI;
-				cl->multi_exit_cycle_cnt = 0;
-			}
-		} else {
-			cl->multi_exit_cycle_cnt = 0;
-		}
-	}
-
-	cl->last_mode_check_ts = now;
-
-	if (ret_mode != cl->mode) {
-		cl->mode = ret_mode;
-		cl->mode_change = true;
-		pr_debug("msm_perf: Mode changed to %u\n", ret_mode);
-	}
-
-	trace_cpu_mode_detect(cpumask_first(cl->cpus), max_load,
-		cl->single_enter_cycle_cnt, cl->single_exit_cycle_cnt,
-		total_load, cl->multi_enter_cycle_cnt,
-		cl->multi_exit_cycle_cnt, cl->perf_cl_peak_enter_cycle_cnt,
-		cl->perf_cl_peak_exit_cycle_cnt, cl->mode, cpu_cnt);
-
-	spin_unlock_irqrestore(&cl->mode_lock, flags);
-
-	if (cl->mode_change)
-		wake_up_process(notify_thread);
-}
-
-static void check_workload_stats(unsigned int cpu, unsigned int rate, u64 now)
-{
-	struct cluster *cl = NULL;
-	unsigned int i;
-
-	for (i = 0; i < num_clusters; i++) {
-		if (cpumask_test_cpu(cpu, managed_clusters[i]->cpus)) {
-			cl = managed_clusters[i];
-			break;
-		}
-	}
-	if (cl == NULL)
-		return;
-
-	cl->timer_rate = rate;
-	check_cluster_iowait(cl, now);
-	check_cpu_load(cl, now);
-	check_perf_cl_peak_load(cl, now);
-}
-
-static int perf_govinfo_notify(struct notifier_block *nb, unsigned long val,
-								void *data)
-{
-	struct cpufreq_govinfo *gov_info = data;
-	unsigned int cpu = gov_info->cpu;
-	struct load_stats *cpu_st = &per_cpu(cpu_load_stats, cpu);
-	u64 now, cur_iowait, time_diff, iowait_diff;
-
-	if (!clusters_inited || !workload_detect)
-		return NOTIFY_OK;
-
-	cur_iowait = get_cpu_iowait_time_us(cpu, &now);
-	if (cur_iowait >= cpu_st->last_iowait)
-		iowait_diff = cur_iowait - cpu_st->last_iowait;
-	else
-		iowait_diff = 0;
-
-	if (now > cpu_st->last_wallclock)
-		time_diff = now - cpu_st->last_wallclock;
-	else
-		return NOTIFY_OK;
-
-	if (iowait_diff <= time_diff) {
-		iowait_diff *= 100;
-		cpu_st->last_iopercent = div64_u64(iowait_diff, time_diff);
-	} else {
-		cpu_st->last_iopercent = 100;
-	}
-
-	cpu_st->last_wallclock = now;
-	cpu_st->last_iowait = cur_iowait;
-	cpu_st->cpu_load = gov_info->load;
-
-	/*
-	 * Avoid deadlock in case governor notifier ran in the context
-	 * of notify_work thread
-	 */
-	if (current == notify_thread)
-		return NOTIFY_OK;
-
-	check_workload_stats(cpu, gov_info->sampling_rate_us, now);
-
-	return NOTIFY_OK;
-}
-static int perf_cputrans_notify(struct notifier_block *nb, unsigned long val,
-								void *data)
-{
-	struct cpufreq_freqs *freq = data;
-	unsigned int cpu = freq->cpu;
-	unsigned long flags;
-	unsigned int i;
-	struct cluster *cl = NULL;
-	struct load_stats *cpu_st = &per_cpu(cpu_load_stats, cpu);
-
-	if (!clusters_inited || !workload_detect)
-		return NOTIFY_OK;
-
-	for (i = 0; i < num_clusters; i++) {
-		if (cpumask_test_cpu(cpu, managed_clusters[i]->cpus)) {
-			cl = managed_clusters[i];
-			break;
-		}
-	}
-	if (cl == NULL)
-		return NOTIFY_OK;
-
-	if (val == CPUFREQ_POSTCHANGE) {
-		spin_lock_irqsave(&cl->perf_cl_peak_lock, flags);
-		cpu_st->freq = freq->new;
-		spin_unlock_irqrestore(&cl->perf_cl_peak_lock, flags);
-	}
-	/*
-	* Avoid deadlock in case governor notifier ran in the context
-	* of notify_work thread
-	*/
-	if (current == notify_thread)
-		return NOTIFY_OK;
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block perf_govinfo_nb = {
-	.notifier_call = perf_govinfo_notify,
-};
-static struct notifier_block perf_cputransitions_nb = {
-	.notifier_call = perf_cputrans_notify,
-};
-
-/*
- * Attempt to offline CPUs based on their power cost.
- * CPUs with higher power costs are offlined first.
- */
-static int __ref rm_high_pwr_cost_cpus(struct cluster *cl)
-{
-	unsigned int cpu, i;
-	struct cpu_pwr_stats *per_cpu_info = get_cpu_pwr_stats();
-	struct cpu_pstate_pwr *costs;
-	unsigned int *pcpu_pwr;
-	unsigned int max_cost_cpu, max_cost;
-	int any_cpu = -1;
-
-	if (!per_cpu_info)
-		return -ENOSYS;
-
-	for_each_cpu(cpu, cl->cpus) {
-		costs = per_cpu_info[cpu].ptable;
-		if (!costs || !costs[0].freq)
-			continue;
-
-		i = 1;
-		while (costs[i].freq)
-			i++;
-
-		pcpu_pwr = &per_cpu(cpu_power_cost, cpu);
-		*pcpu_pwr = costs[i - 1].power;
-		any_cpu = (int)cpu;
-		pr_debug("msm_perf: CPU:%d Power:%u\n", cpu, *pcpu_pwr);
-	}
-
-	if (any_cpu < 0)
-		return -EAGAIN;
-
-	for (i = 0; i < cpumask_weight(cl->cpus); i++) {
-		max_cost = 0;
-		max_cost_cpu = cpumask_first(cl->cpus);
-
-		for_each_cpu(cpu, cl->cpus) {
-			pcpu_pwr = &per_cpu(cpu_power_cost, cpu);
-			if (max_cost < *pcpu_pwr) {
-				max_cost = *pcpu_pwr;
-				max_cost_cpu = cpu;
-			}
-		}
-
-		if (!cpu_online(max_cost_cpu))
-			goto end;
-
-		pr_debug("msm_perf: Offlining CPU%d Power:%d\n", max_cost_cpu,
-								max_cost);
-		cpumask_set_cpu(max_cost_cpu, cl->offlined_cpus);
-		lock_device_hotplug();
-		if (device_offline(get_cpu_device(max_cost_cpu))) {
-			cpumask_clear_cpu(max_cost_cpu, cl->offlined_cpus);
-			pr_debug("msm_perf: Offlining CPU%d failed\n",
-								max_cost_cpu);
-		}
-		unlock_device_hotplug();
-
-end:
-		pcpu_pwr = &per_cpu(cpu_power_cost, max_cost_cpu);
-		*pcpu_pwr = 0;
-		if (num_online_managed(cl->cpus) <= cl->max_cpu_request)
-			break;
-	}
-
-	if (num_online_managed(cl->cpus) > cl->max_cpu_request)
-		return -EAGAIN;
-	else
-		return 0;
-}
-
-/*
- * try_hotplug tries to online/offline cores based on the current requirement.
- * It loops through the currently managed CPUs and tries to online/offline
- * them until the max_cpu_request criteria is met.
- */
-static void __ref try_hotplug(struct cluster *data)
-{
-	unsigned int i;
-
-	if (!clusters_inited)
-		return;
-
-	pr_debug("msm_perf: Trying hotplug...%d:%d\n",
-			num_online_managed(data->cpus),	num_online_cpus());
-
-	mutex_lock(&managed_cpus_lock);
-	if (num_online_managed(data->cpus) > data->max_cpu_request) {
-		if (!rm_high_pwr_cost_cpus(data)) {
-			mutex_unlock(&managed_cpus_lock);
-			return;
-		}
-
-		/*
-		 * If power aware offlining fails due to power cost info
-		 * being unavaiable fall back to original implementation
-		 */
-		for (i = num_present_cpus() - 1; i >= 0 &&
-						i < num_present_cpus(); i--) {
-			if (!cpumask_test_cpu(i, data->cpus) ||	!cpu_online(i))
-				continue;
-
-			pr_debug("msm_perf: Offlining CPU%d\n", i);
-			cpumask_set_cpu(i, data->offlined_cpus);
-			lock_device_hotplug();
-			if (device_offline(get_cpu_device(i))) {
-				cpumask_clear_cpu(i, data->offlined_cpus);
-				pr_debug("msm_perf: Offlining CPU%d failed\n",
-									i);
-				unlock_device_hotplug();
-				continue;
-			}
-			unlock_device_hotplug();
-			if (num_online_managed(data->cpus) <=
-							data->max_cpu_request)
-				break;
-		}
-	} else {
-		for_each_cpu(i, data->cpus) {
-			if (cpu_online(i))
-				continue;
-			pr_debug("msm_perf: Onlining CPU%d\n", i);
-			lock_device_hotplug();
-			if (device_online(get_cpu_device(i))) {
-				pr_debug("msm_perf: Onlining CPU%d failed\n",
-									i);
-				unlock_device_hotplug();
-				continue;
-			}
-			unlock_device_hotplug();
-			cpumask_clear_cpu(i, data->offlined_cpus);
-			if (num_online_managed(data->cpus) >=
-							data->max_cpu_request)
-				break;
-		}
-	}
-	mutex_unlock(&managed_cpus_lock);
-}
-
-static void __ref release_cluster_control(struct cpumask *off_cpus)
-{
-	int cpu;
-
-	for_each_cpu(cpu, off_cpus) {
-		pr_debug("msm_perf: Release CPU %d\n", cpu);
-		lock_device_hotplug();
-		if (!device_online(get_cpu_device(cpu)))
-			cpumask_clear_cpu(cpu, off_cpus);
-		unlock_device_hotplug();
-	}
-}
-
-/* Work to evaluate current online CPU status and hotplug CPUs as per need*/
-static void check_cluster_status(struct work_struct *work)
-{
-	int i;
-	struct cluster *i_cl;
-
-	for (i = 0; i < num_clusters; i++) {
-		i_cl = managed_clusters[i];
-
-		if (cpumask_empty(i_cl->cpus))
-			continue;
-
-		if (i_cl->max_cpu_request < 0) {
-			if (!cpumask_empty(i_cl->offlined_cpus))
-				release_cluster_control(i_cl->offlined_cpus);
-			continue;
-		}
-
-		if (num_online_managed(i_cl->cpus) !=
-					i_cl->max_cpu_request)
-			try_hotplug(i_cl);
-	}
-}
-
-static int __ref msm_performance_cpu_callback(struct notifier_block *nfb,
-		unsigned long action, void *hcpu)
-{
-	uint32_t cpu = (uintptr_t)hcpu;
-	unsigned int i;
-	struct cluster *i_cl = NULL;
-
-	hotplug_notify(action);
-
-	if (!clusters_inited)
-		return NOTIFY_OK;
-
-	for (i = 0; i < num_clusters; i++) {
-		if (managed_clusters[i]->cpus == NULL)
-			return NOTIFY_OK;
-		if (cpumask_test_cpu(cpu, managed_clusters[i]->cpus)) {
-			i_cl = managed_clusters[i];
-			break;
-		}
-	}
-
-	if (i_cl == NULL)
-		return NOTIFY_OK;
-
-	if (action == CPU_UP_PREPARE || action == CPU_UP_PREPARE_FROZEN) {
-		/*
-		 * Prevent onlining of a managed CPU if max_cpu criteria is
-		 * already satisfied
-		 */
-		if (i_cl->offlined_cpus == NULL)
-			return NOTIFY_OK;
-		if (i_cl->max_cpu_request <=
-					num_online_managed(i_cl->cpus)) {
-			pr_debug("msm_perf: Prevent CPU%d onlining\n", cpu);
-			cpumask_set_cpu(cpu, i_cl->offlined_cpus);
-			return NOTIFY_BAD;
-		}
-		cpumask_clear_cpu(cpu, i_cl->offlined_cpus);
-
-	} else if (action == CPU_DEAD) {
-		if (i_cl->offlined_cpus == NULL)
-			return NOTIFY_OK;
-		if (cpumask_test_cpu(cpu, i_cl->offlined_cpus))
-			return NOTIFY_OK;
-		/*
-		 * Schedule a re-evaluation to check if any more CPUs can be
-		 * brought online to meet the max_cpu_request requirement. This
-		 * work is delayed to account for CPU hotplug latencies
-		 */
-		if (schedule_delayed_work(&evaluate_hotplug_work, 0)) {
-			trace_reevaluate_hotplug(cpumask_bits(i_cl->cpus)[0],
-							i_cl->max_cpu_request);
-			pr_debug("msm_perf: Re-evaluation scheduled %d\n", cpu);
-		} else {
-			pr_debug("msm_perf: Work scheduling failed %d\n", cpu);
-		}
-	}
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block __refdata msm_performance_cpu_notifier = {
-	.notifier_call = msm_performance_cpu_callback,
-};
-
-static void single_mod_exit_timer(unsigned long data)
-{
-	int i;
-	struct cluster *i_cl = NULL;
-	unsigned long flags;
-
-	if (!clusters_inited)
-		return;
-
-	for (i = 0; i < num_clusters; i++) {
-		if (cpumask_test_cpu(data,
-			managed_clusters[i]->cpus)) {
-			i_cl = managed_clusters[i];
-			break;
-		}
-	}
-
-	if (i_cl == NULL)
-		return;
-
-	spin_lock_irqsave(&i_cl->mode_lock, flags);
-	if (i_cl->mode & SINGLE) {
-		/* Disable SINGLE mode and exit since the timer expired */
-		i_cl->mode = i_cl->mode & ~SINGLE;
-		i_cl->single_enter_cycle_cnt = 0;
-		i_cl->single_exit_cycle_cnt = 0;
-		trace_single_mode_timeout(cpumask_first(i_cl->cpus),
-			i_cl->single_enter_cycles, i_cl->single_enter_cycle_cnt,
-			i_cl->single_exit_cycles, i_cl->single_exit_cycle_cnt,
-			i_cl->multi_enter_cycles, i_cl->multi_enter_cycle_cnt,
-			i_cl->multi_exit_cycles, i_cl->multi_exit_cycle_cnt,
-			i_cl->timer_rate, i_cl->mode);
-	}
-	spin_unlock_irqrestore(&i_cl->mode_lock, flags);
-	wake_up_process(notify_thread);
-}
-
-static void perf_cl_peak_mod_exit_timer(unsigned long data)
-{
-	int i;
-	struct cluster *i_cl = NULL;
-	unsigned long flags;
-
-	if (!clusters_inited)
-		return;
-
-	for (i = 0; i < num_clusters; i++) {
-		if (cpumask_test_cpu(data,
-			managed_clusters[i]->cpus)) {
-			i_cl = managed_clusters[i];
-			break;
-		}
-	}
-
-	if (i_cl == NULL)
-		return;
-
-	spin_lock_irqsave(&i_cl->perf_cl_peak_lock, flags);
-	if (i_cl->perf_cl_peak & PERF_CL_PEAK) {
-		/* Disable PERF_CL_PEAK mode and exit since the timer expired */
-		i_cl->perf_cl_peak = i_cl->perf_cl_peak & ~PERF_CL_PEAK;
-		i_cl->perf_cl_peak_enter_cycle_cnt = 0;
-		i_cl->perf_cl_peak_exit_cycle_cnt = 0;
-	}
-	spin_unlock_irqrestore(&i_cl->perf_cl_peak_lock, flags);
-	wake_up_process(notify_thread);
-}
-
-static int init_cluster_control(void)
-{
-	unsigned int i;
-	int ret = 0;
-	struct kobject *module_kobj;
-
-	managed_clusters = kcalloc(num_clusters, sizeof(struct cluster *),
-								GFP_KERNEL);
-	if (!managed_clusters)
-		return -ENOMEM;
-	for (i = 0; i < num_clusters; i++) {
-		managed_clusters[i] = kcalloc(1, sizeof(struct cluster),
-								GFP_KERNEL);
-		if (!managed_clusters[i]) {
-			pr_err("msm_perf:Cluster %u mem alloc failed\n", i);
-			ret = -ENOMEM;
-			goto error;
-		}
-		if (!alloc_cpumask_var(&managed_clusters[i]->cpus,
-		     GFP_KERNEL)) {
-			pr_err("msm_perf:Cluster %u cpu alloc failed\n",
-			       i);
-			ret = -ENOMEM;
-			goto error;
-		}
-		if (!alloc_cpumask_var(&managed_clusters[i]->offlined_cpus,
-		     GFP_KERNEL)) {
-			pr_err("msm_perf:Cluster %u off_cpus alloc failed\n",
-			       i);
-			ret = -ENOMEM;
-			goto error;
-		}
-
-		managed_clusters[i]->max_cpu_request = -1;
-		managed_clusters[i]->single_enter_load = DEF_SINGLE_ENT;
-		managed_clusters[i]->single_exit_load = DEF_SINGLE_EX;
-		managed_clusters[i]->single_enter_cycles
-						= DEF_SINGLE_ENTER_CYCLE;
-		managed_clusters[i]->single_exit_cycles
-						= DEF_SINGLE_EXIT_CYCLE;
-		managed_clusters[i]->pcpu_multi_enter_load
-						= DEF_PCPU_MULTI_ENT;
-		managed_clusters[i]->pcpu_multi_exit_load = DEF_PCPU_MULTI_EX;
-		managed_clusters[i]->multi_enter_cycles = DEF_MULTI_ENTER_CYCLE;
-		managed_clusters[i]->multi_exit_cycles = DEF_MULTI_EXIT_CYCLE;
-		managed_clusters[i]->perf_cl_peak_enter_load =
-						DEF_PERF_CL_PEAK_ENT;
-		managed_clusters[i]->perf_cl_peak_exit_load =
-						DEF_PERF_CL_PEAK_EX;
-		managed_clusters[i]->perf_cl_peak_enter_cycles =
-						DEF_PERF_CL_PEAK_ENTER_CYCLE;
-		managed_clusters[i]->perf_cl_peak_exit_cycles =
-						DEF_PERF_CL_PEAK_EXIT_CYCLE;
-
-		/* Initialize trigger threshold */
-		thr.perf_cl_trigger_threshold = CLUSTER_1_THRESHOLD_FREQ;
-		thr.pwr_cl_trigger_threshold = CLUSTER_0_THRESHOLD_FREQ;
-		thr.ip_evt_threshold = INPUT_EVENT_CNT_THRESHOLD;
-		spin_lock_init(&(managed_clusters[i]->iowait_lock));
-		spin_lock_init(&(managed_clusters[i]->mode_lock));
-		spin_lock_init(&(managed_clusters[i]->timer_lock));
-		spin_lock_init(&(managed_clusters[i]->perf_cl_peak_lock));
-		init_timer(&managed_clusters[i]->mode_exit_timer);
-		managed_clusters[i]->mode_exit_timer.function =
-			single_mod_exit_timer;
-		init_timer(&managed_clusters[i]->perf_cl_peak_mode_exit_timer);
-		managed_clusters[i]->perf_cl_peak_mode_exit_timer.function =
-			perf_cl_peak_mod_exit_timer;
-
-	}
-	ip_evts = kcalloc(1, sizeof(struct input_events), GFP_KERNEL);
-	if (!ip_evts) {
-		ret = -ENOMEM;
-		goto error;
-	}
-
-	INIT_DELAYED_WORK(&evaluate_hotplug_work, check_cluster_status);
-	mutex_init(&managed_cpus_lock);
-
-	module_kobj = kset_find_obj(module_kset, KBUILD_MODNAME);
-	if (!module_kobj) {
-		pr_err("msm_perf: Couldn't find module kobject\n");
-		ret = -ENOENT;
-		goto error;
-	}
-	mode_kobj = kobject_create_and_add("workload_modes", module_kobj);
-	if (!mode_kobj) {
-		pr_err("msm_perf: Failed to add mode_kobj\n");
-		ret = -ENOMEM;
-		kobject_put(module_kobj);
-		goto error;
-	}
-	ret = sysfs_create_group(mode_kobj, &attr_group);
+	ret = sysfs_create_group(notify_kobj, &notify_attr_group);
 	if (ret) {
+		kobject_put(notify_kobj);
 		pr_err("msm_perf: Failed to create sysfs\n");
-		kobject_put(module_kobj);
-		kobject_put(mode_kobj);
-		goto error;
+		return ret;
 	}
-	notify_thread = kthread_run(notify_userspace, NULL, "wrkld_notify");
-	clusters_inited = true;
-
 	return 0;
-
-error:
-	for (i = 0; i < num_clusters; i++) {
-		if (!managed_clusters[i])
-			break;
-		if (managed_clusters[i]->offlined_cpus)
-			free_cpumask_var(managed_clusters[i]->offlined_cpus);
-		if (managed_clusters[i]->cpus)
-			free_cpumask_var(managed_clusters[i]->cpus);
-		kfree(managed_clusters[i]);
-	}
-	kfree(managed_clusters);
-	return ret;
 }
 
 static int init_events_group(void)
 {
 	int ret;
-	struct kobject *module_kobj;
-
-	module_kobj = kset_find_obj(module_kset, KBUILD_MODNAME);
-	if (!module_kobj) {
-		pr_err("msm_perf: Couldn't find module kobject\n");
-		return -ENOENT;
-	}
+	struct kobject *module_kobj = &msm_perf_kset->kobj;
 
 	events_kobj = kobject_create_and_add("events", module_kobj);
 	if (!events_kobj) {
@@ -2736,22 +1007,1083 @@ static int init_events_group(void)
 	return 0;
 }
 
+static void nr_notify_userspace(struct work_struct *work)
+{
+	sysfs_notify(notify_kobj, NULL, "aggr_top_load");
+	sysfs_notify(notify_kobj, NULL, "aggr_big_nr");
+	sysfs_notify(notify_kobj, NULL, "top_load_cluster");
+	sysfs_notify(notify_kobj, NULL, "curr_cap_cluster");
+}
+
+static int msm_perf_core_ctl_notify(struct notifier_block *nb,
+					unsigned long unused,
+					void *data)
+{
+	static unsigned int tld, nrb, i;
+	static unsigned int top_ld[CLUSTER_MAX], curr_cp[CLUSTER_MAX];
+	static DECLARE_WORK(sysfs_notify_work, nr_notify_userspace);
+	struct core_ctl_notif_data *d = data;
+	int cluster = 0;
+
+	nrb += d->nr_big;
+	tld += d->coloc_load_pct;
+	for (cluster = 0; cluster < CLUSTER_MAX; cluster++) {
+		top_ld[cluster] += d->ta_util_pct[cluster];
+		curr_cp[cluster] += d->cur_cap_pct[cluster];
+	}
+	i++;
+	if (i == POLL_INT) {
+		aggr_big_nr = ((nrb%POLL_INT) ? 1 : 0) + nrb/POLL_INT;
+		aggr_top_load = tld/POLL_INT;
+		for (cluster = 0; cluster < CLUSTER_MAX; cluster++) {
+			top_load[cluster] = top_ld[cluster]/POLL_INT;
+			curr_cap[cluster] = curr_cp[cluster]/POLL_INT;
+			top_ld[cluster] = 0;
+			curr_cp[cluster] = 0;
+		}
+		tld = 0;
+		nrb = 0;
+		i = 0;
+		schedule_work(&sysfs_notify_work);
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block msm_perf_nb = {
+	.notifier_call = msm_perf_core_ctl_notify
+};
+
+static bool core_ctl_register;
+static ssize_t get_core_ctl_register(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%c\n", core_ctl_register ? 'Y' : 'N');
+}
+
+static ssize_t set_core_ctl_register(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	bool old_val = core_ctl_register;
+	int ret;
+
+	ret = kstrtobool(buf, &core_ctl_register);
+	if (ret < 0) {
+		pr_err("msm_perf: getting new core_ctl_register failed, ret=%d\n", ret);
+		return ret;
+	}
+
+	if (core_ctl_register == old_val)
+		return count;
+
+	if (core_ctl_register)
+		core_ctl_notifier_register(&msm_perf_nb);
+	else
+		core_ctl_notifier_unregister(&msm_perf_nb);
+
+	return count;
+}
+
+
+/*******************************gPLAF Segment************************************/
+static int gplaf_data, gplaf_log_level, gplaf_notify, gplaf_health;
+static struct scmi_protocol_handle *gplaf_handle;
+static const struct scmi_gplaf_vendor_ops *gplaf_ops;
+
+int cpucp_gplaf_init(struct scmi_device *sdev)
+{
+	int ret = 0;
+
+	if (!sdev || !sdev->handle)
+		return -EINVAL;
+
+	gplaf_ops = sdev->handle->devm_get_protocol(sdev, SCMI_PROTOCOL_GPLAF, &gplaf_handle);
+
+	if (IS_ERR(gplaf_ops))
+		return PTR_ERR(gplaf_ops);
+	if (!gplaf_handle)
+		return -EINVAL;
+	return ret;
+}
+EXPORT_SYMBOL(cpucp_gplaf_init);
+
+
+static void hw_gplaf_pass_data(int data)
+{
+	int ret;
+
+	/* received event notification here */
+	if (!gplaf_handle || !gplaf_ops) {
+		pr_err("msm_perf: gplaf_handle or gplaf_ops null\n");
+		return;
+	}
+
+	ret = gplaf_ops->pass_gplaf_data(gplaf_handle, data);
+
+	if (ret < 0) {
+		pr_err("msm_perf: hw gplaf pass data failed, ret=%d\n", ret);
+		return;
+	}
+}
+
+static ssize_t get_gplaf_data(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", gplaf_data);
+}
+
+static ssize_t set_gplaf_data(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret;
+
+	ret = sscanf(buf, "%du", &gplaf_data);
+	if (ret < 0) {
+		pr_err("msm_perf:reading gplaf data failed, ret=%d\n", ret);
+		return ret;
+	}
+
+	hw_gplaf_pass_data(gplaf_data);
+
+	return count;
+}
+
+static void hw_gplaf_notify(int notif)
+{
+	int ret;
+
+	/* received event notification here */
+	if (!gplaf_handle || !gplaf_ops) {
+		pr_err("msm_perf: gplaf_handle or gplaf_ops null\n");
+		return;
+	}
+	if (notif > 0) {
+		ret = gplaf_ops->start_gplaf(gplaf_handle, notif);
+		//gplaf_notif = 1;
+	} else {
+		ret = gplaf_ops->stop_gplaf(gplaf_handle);
+		//gplaf_notif = 0;
+	}
+
+	if (ret < 0) {
+		pr_err("msm_perf: hw gplaf start or stop failed, ret=%d\n", ret);
+		return;
+	}
+}
+
+static ssize_t get_gplaf_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", gplaf_notify);
+}
+
+static ssize_t set_gplaf_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret;
+
+	ret = sscanf(buf, "%du", &gplaf_notify);
+	if (ret < 0) {
+		pr_err("msm_perf: starting gplaf failed, ret=%d\n", ret);
+		return ret;
+	}
+
+	hw_gplaf_notify(gplaf_notify);
+
+	return count;
+}
+
+static void hw_gplaf_health_update(int health)
+{
+	int ret;
+
+	/* received event notification here */
+	if (!gplaf_handle || !gplaf_ops) {
+		pr_err("msm_perf: gplaf_handle or gplaf_ops null\n");
+		return;
+	}
+	ret = gplaf_ops->update_gplaf_health(gplaf_handle, health);
+
+	if (ret < 0) {
+		pr_err("msm_perf: hw gplaf update health failed, ret=%d\n", ret);
+		return;
+	}
+}
+
+static ssize_t get_gplaf_health(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", gplaf_health);
+}
+
+static ssize_t set_gplaf_health(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret;
+
+	ret = sscanf(buf, "%du", &gplaf_health);
+	if (ret < 0) {
+		pr_err("msm_perf: starting gplaf failed, ret=%d\n", ret);
+		return ret;
+	}
+
+	hw_gplaf_health_update(gplaf_health);
+
+	return count;
+}
+
+static void frame_notify_cpucp(struct work_struct *dummy)
+{
+	int ret;
+
+	if (!gplaf_handle || !gplaf_ops) {
+		pr_err("msm_perf: hw gplaf not supported\n");
+		return;
+	}
+
+	ret = gplaf_ops->send_frame_retire_event(gplaf_handle);
+}
+
+void frame_retire_notify(void)
+{
+	static DECLARE_WORK(frame_notify_work, frame_notify_cpucp);
+
+	if (gplaf_notif > 0)
+		schedule_work(&frame_notify_work);
+}
+EXPORT_SYMBOL(frame_retire_notify);
+
+
+static void gfx_data_notify_cpucp(struct work_struct *dummy)
+{
+	struct queue_indicies updated_pos;
+	unsigned long flags;
+	int idx = 0, size, act_idx, j = 0, ret = 0;
+	uint64_t gfx_data[GPLAF_ELEM_SIZE] = {0};
+
+	if (!gplaf_handle || !gplaf_ops) {
+		pr_err("msm_perf: hw gplaf not supported\n");
+		return;
+	}
+
+	spin_lock_irqsave(&gfx_circ_buff_lock, flags);
+	updated_pos.head = curr_pos.head;
+	updated_pos.tail = curr_pos.tail;
+	size = CIRC_CNT(updated_pos.head, updated_pos.tail, QUEUE_POOL_SIZE);
+	curr_pos.tail = (curr_pos.tail + size) % QUEUE_POOL_SIZE;
+	spin_unlock_irqrestore(&gfx_circ_buff_lock, flags);
+
+	for (idx = 0; idx < size && j < GPLAF_ELEM_SIZE - MAX_GFX_STR_ELEMENTS - 1; idx++) {
+		act_idx = (updated_pos.tail + idx) % QUEUE_POOL_SIZE;
+
+		gfx_data[++j] = gpu_circ_buff[act_idx].pid;
+		gfx_data[++j] = gpu_circ_buff[act_idx].ctx_id;
+		gfx_data[++j] = gpu_circ_buff[act_idx].timestamp;
+		gfx_data[++j] = gpu_circ_buff[act_idx].evt_typ;
+		gfx_data[++j] = ktime_to_us(gpu_circ_buff[act_idx].arrive_ts);
+	}
+	gfx_data[0] = idx;
+	msm_perf_atomic_buf_write(dest, gfx_data, j);
+
+	ret = gplaf_ops->send_gfx_data_notify(gplaf_handle);
+}
+
+void  msm_perf_events_update(enum evt_update_t update_typ,
+			enum gfx_evt_t evt_typ, pid_t pid,
+			uint32_t ctx_id, uint32_t timestamp, bool end_of_frame)
+{
+	unsigned long flags;
+	int idx = 0;
+
+	if (update_typ != MSM_PERF_GFX)
+		return;
+
+	if (pid != atomic_read(&game_status_pid) || (timestamp == 0)
+		|| !(end_of_frame))
+		return;
+
+	spin_lock_irqsave(&gfx_circ_buff_lock, flags);
+	idx = curr_pos.head;
+	curr_pos.head = ((curr_pos.head + 1) % QUEUE_POOL_SIZE);
+	spin_unlock_irqrestore(&gfx_circ_buff_lock, flags);
+	gpu_circ_buff[idx].pid = pid;
+	gpu_circ_buff[idx].ctx_id = ctx_id;
+	gpu_circ_buff[idx].timestamp = timestamp;
+	gpu_circ_buff[idx].evt_typ = evt_typ;
+	gpu_circ_buff[idx].arrive_ts = ktime_get();
+
+	if (evt_typ == MSM_PERF_QUEUE || evt_typ == MSM_PERF_RETIRED) {
+		if (gplaf_notif > 0)
+			schedule_work(&gfx_notify_work);
+		else
+			complete(&gfx_evt_arrival);
+	}
+}
+EXPORT_SYMBOL(msm_perf_events_update);
+
+static ssize_t set_game_start_pid(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	long usr_val = 0;
+	kstrtol(buf, 0, &usr_val);
+	atomic_set(&game_status_pid, usr_val);
+	return count;
+}
+static ssize_t get_game_start_pid(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	long usr_val  = atomic_read(&game_status_pid);
+
+	return scnprintf(buf, PAGE_SIZE, "%ld\n", usr_val);
+}
+
+static ssize_t get_gplaf_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", gplaf_log_level);
+}
+
+static ssize_t set_gplaf_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret, log_val_backup;
+
+	if (!gplaf_handle || !gplaf_ops) {
+		pr_err("msm_perf: gplaf scmi handle or vendor ops null\n");
+		return -EINVAL;
+	}
+
+	log_val_backup = gplaf_log_level;
+
+	ret = sscanf(buf, "%du", &gplaf_log_level);
+
+	if (ret < 0) {
+		pr_err("msm_perf: getting new gplaf_log_level failed, ret=%d\n", ret);
+		return ret;
+	}
+
+	gplaf_log_level = clamp(gplaf_log_level, CPUCP_MIN_LOG_LEVEL, CPUCP_MAX_LOG_LEVEL);
+	ret = gplaf_ops->set_gplaf_log_level(gplaf_handle, gplaf_log_level);
+	if (ret < 0) {
+		gplaf_log_level = log_val_backup;
+		pr_err("msm_perf: setting new gplaf_log_level failed, ret=%d\n", ret);
+		return ret;
+	}
+	return count;
+}
+
+/*******************************GFX Call************************************/
+
+#define PLH_FPS_MAX_CNT			8
+#define PLH_IPC_FREQ_VTBL_MAX_CNT		5 /* ipc freq pair */
+#define PLH_INIT_IPC_FREQ_TBL_PARAMS	\
+			(2 + PLH_FPS_MAX_CNT * (1 + (2 * PLH_IPC_FREQ_VTBL_MAX_CNT)))
+
+static struct scmi_protocol_handle *plh_handle;
+static const struct scmi_plh_vendor_ops *plh_ops;
+int cpucp_plh_init(struct scmi_device *sdev)
+{
+	int ret = 0;
+
+	if (!sdev || !sdev->handle)
+		return -EINVAL;
+
+	plh_ops = sdev->handle->devm_get_protocol(sdev, SCMI_PROTOCOL_PLH, &plh_handle);
+
+	if (IS_ERR(plh_ops))
+		return PTR_ERR(plh_ops);
+
+	return ret;
+}
+EXPORT_SYMBOL(cpucp_plh_init);
+
+static int splh_notif, splh_init_done, splh_sample_ms, splh_log_level,
+			dplh_init_done;
+
+#define SPLH_MIN_SAMPLE_MS			1
+#define SPLH_MAX_SAMPLE_MS			30
+
+static ssize_t get_splh_sample_ms(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", splh_sample_ms);
+}
+
+static ssize_t set_splh_sample_ms(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret, ms_val_backup;
+
+	if (!plh_handle || !plh_ops) {
+		pr_err("msm_perf: plh scmi handle or vendor ops null\n");
+		return -EINVAL;
+	}
+
+	ms_val_backup = splh_sample_ms;
+
+	ret = sscanf(buf, "%du", &splh_sample_ms);
+
+	if (ret < 0) {
+		pr_err("msm_perf: getting new splh_sample_ms failed, ret=%d\n", ret);
+		return ret;
+	}
+
+	splh_sample_ms = clamp(splh_sample_ms, SPLH_MIN_SAMPLE_MS, SPLH_MAX_SAMPLE_MS);
+	ret = plh_ops->set_plh_sample_ms(plh_handle, splh_sample_ms, PERF_LOCK_SCROLL);
+	if (ret < 0) {
+		splh_sample_ms = ms_val_backup;
+		pr_err("msm_perf: setting new splh_sample_ms failed, ret=%d\n", ret);
+		return ret;
+	}
+	return count;
+}
+
+static ssize_t get_splh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", splh_log_level);
+}
+
+static ssize_t set_splh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret, log_val_backup;
+
+	if (!plh_handle || !plh_ops) {
+		pr_err("msm_perf: plh scmi handle or vendor ops null\n");
+		return -EINVAL;
+	}
+
+	log_val_backup = splh_log_level;
+
+	ret = sscanf(buf, "%du", &splh_log_level);
+
+	if (ret < 0) {
+		pr_err("msm_perf: getting new splh_log_level failed, ret=%d\n", ret);
+		return ret;
+	}
+
+	splh_log_level = clamp(splh_log_level, CPUCP_MIN_LOG_LEVEL, CPUCP_MAX_LOG_LEVEL);
+	ret = plh_ops->set_plh_log_level(plh_handle, splh_log_level, PERF_LOCK_SCROLL);
+	if (ret < 0) {
+		splh_log_level = log_val_backup;
+		pr_err("msm_perf: setting new splh_log_level failed, ret=%d\n", ret);
+		return ret;
+	}
+	return count;
+}
+
+static int init_plh_notif(const char *buf, int feature_id)
+{
+	int i, j, ret;
+	u16 tmp[PLH_INIT_IPC_FREQ_TBL_PARAMS];
+	u16 *ptmp = tmp, ntokens, nfps, n_ipc_freq_pair, tmp_valid_len = 0;
+	const char *cp, *cp1;
+
+	/* buf contains the init info from user */
+	if (buf == NULL || !plh_handle || !plh_ops)
+		return -EINVAL;
+
+	cp = buf;
+	ntokens = 0;
+	while ((cp = strpbrk(cp + 1, ":")))
+		ntokens++;
+
+	/* format of cmd nfps, n_ipc_freq_pair, <fps0, <ipc0, freq0>,...>,... */
+	cp = buf;
+	if (sscanf(cp, INIT ":%hu", &nfps)) {
+		if ((nfps != ntokens-1) || (nfps == 0) || (nfps > PLH_FPS_MAX_CNT))
+			return -EINVAL;
+
+		cp = strnchr(cp, strlen(cp), ':');	/* skip INIT */
+		cp++;
+		cp = strnchr(cp, strlen(cp), ':');	/* skip nfps */
+		if (!cp)
+			return -EINVAL;
+
+		*ptmp++ = nfps;		/* nfps is first cmd param */
+		tmp_valid_len++;
+		cp1 = cp;
+		ntokens = 0;
+		/* get count of nfps * n_ipc_freq_pair * <ipc freq pair values> */
+		while ((cp1 = strpbrk(cp1 + 1, ",")))
+			ntokens++;
+
+		if (ntokens % (2 * nfps)) /* ipc freq pair values should be multiple of nfps */
+			return -EINVAL;
+
+		n_ipc_freq_pair = ntokens / (2 * nfps); /* ipc_freq pair values for each FPS */
+		if ((n_ipc_freq_pair == 0) || (n_ipc_freq_pair > PLH_IPC_FREQ_VTBL_MAX_CNT))
+			return -EINVAL;
+
+		*ptmp++ = n_ipc_freq_pair; /* n_ipc_freq_pair is second cmd param */
+		tmp_valid_len++;
+		cp1 = cp;
+		for (i = 0; i < nfps; i++) {
+			if (sscanf(cp1, ":%hu", ptmp) != 1)
+				return -EINVAL;
+
+			ptmp++;		/* increment after storing FPS val */
+			tmp_valid_len++;
+			cp1 = strnchr(cp1, strlen(cp1), ','); /* move to ,ipc */
+			if (!cp1)
+				return -EINVAL;
+
+			for (j = 0; j < 2 * n_ipc_freq_pair; j++) {
+				if (sscanf(cp1, ",%hu", ptmp) != 1)
+					return -EINVAL;
+
+				ptmp++;	/* increment after storing ipc or freq */
+				tmp_valid_len++;
+				cp1++;
+				if (j != (2 * n_ipc_freq_pair - 1)) {
+					cp1 = strnchr(cp1, strlen(cp1), ','); /* move to next */
+					if (!cp1)
+						return -EINVAL;
+
+				}
+			}
+
+			if (i != (nfps - 1)) {
+				cp1 = strnchr(cp1, strlen(cp1), ':'); /* move to next FPS val */
+				if (!cp1)
+					return -EINVAL;
+
+			}
+
+		}
+	} else {
+		return -EINVAL;
+	}
+
+	ret = plh_ops->init_plh_ipc_freq_tbl(plh_handle, tmp, tmp_valid_len, feature_id);
+	if (ret < 0)
+		return -EINVAL;
+
+	pr_info("msm_perf: nfps=%hu n_ipc_freq_pair=%hu last_freq_val=%hu len=%hu\n",
+		nfps, n_ipc_freq_pair, *--ptmp, tmp_valid_len);
+
+	if (feature_id == PERF_LOCK_SCROLL)
+		splh_init_done = 1;
+	else if (feature_id == PERF_LOCK_DRAG)
+		dplh_init_done = 1;
+	return 0;
+}
+static void activate_splh_notif(void)
+{
+	int ret;
+
+	/* received event notification here */
+	if (!plh_handle || !plh_ops) {
+		pr_err("msm_perf: splh not supported\n");
+		return;
+	}
+
+	if (splh_notif)
+		ret = plh_ops->start_plh(plh_handle,
+			splh_notif, PERF_LOCK_SCROLL); /* splh_notif is fps */
+	else
+		ret = plh_ops->stop_plh(plh_handle, PERF_LOCK_SCROLL);
+
+	if (ret < 0) {
+		pr_err("msm_perf: splh start or stop failed, ret=%d\n", ret);
+		return;
+	}
+}
+
+static ssize_t get_splh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", splh_notif);
+}
+
+static ssize_t set_splh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret;
+
+	if (strnstr(buf, INIT, sizeof(INIT)) != NULL) {
+		splh_init_done = 0;
+		ret = init_plh_notif(buf, PERF_LOCK_SCROLL);
+		if (ret < 0)
+			pr_err("msm_perf: splh ipc freq tbl init failed, ret=%d\n", ret);
+
+		return count;
+	}
+
+	if (!splh_init_done) {
+		pr_err("msm_perf: splh ipc freq tbl not initialized\n");
+		return -EINVAL;
+	}
+
+	ret = sscanf(buf, "%du", &splh_notif);
+	if (ret < 0)
+		return ret;
+
+	activate_splh_notif();
+
+	return count;
+}
+
+#define LPLH_MIN_SAMPLE_MS			1
+#define LPLH_MAX_SAMPLE_MS			30
+#define LPLH_CLUSTER_MAX_CNT		4
+#define LPLH_IPC_FREQ_VTBL_MAX_CNT		5 /* ipc freq pair */
+#define LPLH_INIT_IPC_FREQ_TBL_PARAMS	\
+			(1 + LPLH_CLUSTER_MAX_CNT * (2 + (2 * LPLH_IPC_FREQ_VTBL_MAX_CNT)))
+
+static int lplh_notif, lplh_init_done, lplh_sample_ms, lplh_log_level;
+
+static ssize_t get_lplh_sample_ms(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", lplh_sample_ms);
+}
+
+static ssize_t set_lplh_sample_ms(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret, ms_val_backup;
+
+	if (!plh_handle || !plh_ops) {
+		pr_err("msm_perf: plh scmi handle or vendor ops null\n");
+		return -EINVAL;
+	}
+
+	ms_val_backup = lplh_sample_ms;
+
+	ret = sscanf(buf, "%du", &lplh_sample_ms);
+
+	if (ret < 0) {
+		pr_err("msm_perf: getting new lplh_sample_ms failed, ret=%d\n", ret);
+		return ret;
+	}
+
+	lplh_sample_ms = clamp(lplh_sample_ms, LPLH_MIN_SAMPLE_MS, LPLH_MAX_SAMPLE_MS);
+	ret = plh_ops->set_plh_sample_ms(plh_handle, lplh_sample_ms, PERF_LOCK_LAUNCH);
+	if (ret < 0) {
+		lplh_sample_ms = ms_val_backup;
+		pr_err("msm_perf: setting new lplh_sample_ms failed, ret=%d\n", ret);
+		return ret;
+	}
+	return count;
+}
+
+static ssize_t get_lplh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", lplh_log_level);
+}
+
+static ssize_t set_lplh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret, log_val_backup;
+
+	if (!plh_handle || !plh_ops) {
+		pr_err("msm_perf: plh scmi handle or vendor ops null\n");
+		return -EINVAL;
+	}
+
+	log_val_backup = lplh_log_level;
+
+	ret = sscanf(buf, "%du", &lplh_log_level);
+
+	if (ret < 0) {
+		pr_err("msm_perf: getting new lplh_log_level failed, ret=%d\n", ret);
+		return ret;
+	}
+
+	lplh_log_level = clamp(lplh_log_level, CPUCP_MIN_LOG_LEVEL, CPUCP_MAX_LOG_LEVEL);
+	ret = plh_ops->set_plh_log_level(plh_handle, lplh_log_level, PERF_LOCK_LAUNCH);
+	if (ret < 0) {
+		lplh_log_level = log_val_backup;
+		pr_err("msm_perf: setting new lplh_log_level failed, ret=%d\n", ret);
+		return ret;
+	}
+	return count;
+}
+
+static int init_lplh_notif(const char *buf)
+{
+	u16 tmp[LPLH_INIT_IPC_FREQ_TBL_PARAMS];
+	char *token;
+	int i, j, ret;
+	u16 *ptmp = tmp, total_tokens = 0, nTokens = 0, nClusters = 0, clusterId, nValues, value;
+	const char *cp, *cp1;
+
+	/* buf contains the init info from user */
+	if (buf == NULL || !plh_handle || !plh_ops)
+		return -EINVAL;
+	cp = buf;
+	if (sscanf(cp, INIT ":%hu", &nClusters)) {
+		if (!nClusters || nClusters > LPLH_CLUSTER_MAX_CNT)
+			return -EINVAL;
+
+		*ptmp++ = nClusters;
+		total_tokens++;
+		while ((cp = strpbrk(cp + 1, ":")))
+			nTokens++;
+
+		if (!nTokens || (nTokens - 1 != nClusters))
+			return -EINVAL;
+
+		cp = buf;
+		cp = strnchr(cp, strlen(cp), ':');	/* skip INIT */
+		cp++;
+		cp = strnchr(cp, strlen(cp), ':');	/* skip nClusters */
+		cp++;
+		if (!cp || !strlen(cp))
+			return -EINVAL;
+
+		for (i = 0; i < nClusters; i++) {
+			clusterId = 0;
+			if (!cp || strlen(cp) == 0)
+				return -EINVAL;
+
+			if (sscanf(cp, "%hu,", &clusterId)) {
+				*ptmp++ = clusterId;
+				total_tokens++;
+				cp = strnchr(cp, strlen(cp), ',');
+				if (!cp)
+					return -EINVAL;
+
+				token = strsep((char **)&cp, ":");
+				if (!token || strlen(token) == 0)
+					return -EINVAL;
+
+				nValues = 1;
+				cp1 = token;
+				while ((cp1 = strpbrk(cp1 + 1, ",")))
+					nValues++;
+
+				if (nValues % 2 != 0 || LPLH_IPC_FREQ_VTBL_MAX_CNT < nValues/2)
+					return -EINVAL;
+
+				*ptmp++ = nValues/2;
+				total_tokens++;
+				for (j = 0; j < nValues / 2; j++) {
+					value = 0;
+					if (!token || sscanf(token, ",%hu", &value) != 1)
+						return -EINVAL;
+
+					*ptmp++ = value;
+					total_tokens++;
+					token++;
+					if (!token || strlen(token) == 0)
+						return -EINVAL;
+
+					token = strnchr(token, strlen(token), ',');
+					if (!token || sscanf(token, ",%hu", &value) != 1)
+						return -EINVAL;
+
+					*ptmp++ = value;
+					total_tokens++;
+					token++;
+					token = strnchr(token, strlen(token), ',');
+				}
+			} else {
+				return -EINVAL;
+			}
+		}
+	} else {
+		return -EINVAL;
+	}
+	ret = plh_ops->init_plh_ipc_freq_tbl(plh_handle, tmp, total_tokens, PERF_LOCK_LAUNCH);
+	if (ret < 0)
+		return -EINVAL;
+
+	pr_info("msm_perf: lplh: nClusters=%hu last_freq_val=%hu len=%hu\n",
+			nClusters, *--ptmp, total_tokens);
+
+	lplh_init_done = 1;
+	return 0;
+}
+
+static void activate_lplh_notif(void)
+{
+	int ret;
+
+	/* received event notification here */
+	if (!plh_handle || !plh_ops) {
+		pr_err("msm_perf: lplh not supported\n");
+		return;
+	}
+
+	if (lplh_notif)
+		ret = plh_ops->start_plh(plh_handle,
+				lplh_notif, PERF_LOCK_LAUNCH); /* lplh_notif is duration */
+	else
+		ret = plh_ops->stop_plh(plh_handle, PERF_LOCK_LAUNCH);
+
+	if (ret < 0) {
+		pr_err("msm_perf: lplh start or stop failed, ret=%d\n", ret);
+		return;
+	}
+}
+
+static ssize_t get_lplh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", lplh_notif);
+}
+
+static ssize_t set_lplh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret;
+
+	if (strnstr(buf, INIT, sizeof(INIT)) != NULL) {
+		lplh_init_done = 0;
+		ret = init_lplh_notif(buf);
+		if (ret < 0)
+			pr_err("msm_perf: lplh ipc freq tbl init failed, ret=%d\n", ret);
+
+		return count;
+	}
+
+	if (!lplh_init_done) {
+		pr_err("msm_perf: lplh ipc freq tbl not initialized\n");
+		return -EINVAL;
+	}
+
+	ret = sscanf(buf, "%du", &lplh_notif);
+	if (ret < 0)
+		return ret;
+
+	activate_lplh_notif();
+
+	return count;
+}
+
+/*********** dplh(Drag Perf Lock hardening) code start from here ***********/
+
+static int dplh_notif, dplh_log_level;
+
+
+static ssize_t get_dplh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", dplh_log_level);
+}
+
+static ssize_t set_dplh_log_level(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret, log_val_backup;
+
+	if (!plh_handle || !plh_ops) {
+		pr_err("msm_perf: plh scmi handle or vendor ops null\n");
+		return -EINVAL;
+	}
+
+	log_val_backup = dplh_log_level;
+
+	ret = sscanf(buf, "%du", &dplh_log_level);
+
+	if (ret < 0) {
+		pr_err("msm_perf: getting new dplh_log_level failed, ret=%d\n", ret);
+		return ret;
+	}
+
+	dplh_log_level = clamp(dplh_log_level, CPUCP_MIN_LOG_LEVEL, CPUCP_MAX_LOG_LEVEL);
+	ret = plh_ops->set_plh_log_level(plh_handle, dplh_log_level, PERF_LOCK_DRAG);
+	if (ret < 0) {
+		dplh_log_level = log_val_backup;
+		pr_err("msm_perf: setting new dplh_log_level failed, ret=%d\n", ret);
+		return ret;
+	}
+	return count;
+}
+
+static void activate_dplh_notif(void)
+{
+	int ret;
+
+	/* received event notification here */
+	if (!plh_handle || !plh_ops) {
+		pr_err("msm_perf: dplh not supported\n");
+		return;
+	}
+
+	if (dplh_notif)
+		ret = plh_ops->start_plh(plh_handle,
+				dplh_notif, PERF_LOCK_DRAG); /* dplh_notif is fps */
+	else
+		ret = plh_ops->stop_plh(plh_handle, PERF_LOCK_DRAG);
+
+	if (ret < 0) {
+		pr_err("msm_perf: dplh start or stop failed, ret=%d\n", ret);
+		return;
+	}
+}
+
+static ssize_t get_dplh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", dplh_notif);
+}
+
+static ssize_t set_dplh_notif(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf,
+	size_t count)
+{
+	int ret;
+
+	if (strnstr(buf, INIT, sizeof(INIT)) != NULL) {
+		dplh_init_done = 0;
+		ret = init_plh_notif(buf, PERF_LOCK_DRAG);
+		if (ret < 0)
+			pr_err("msm_perf: dplh ipc freq tbl init failed, ret=%d\n", ret);
+
+		return count;
+	}
+
+	if (!dplh_init_done) {
+		pr_err("msm_perf: dplh ipc freq tbl not initialized\n");
+		return -EINVAL;
+	}
+
+	ret = sscanf(buf, "%du", &dplh_notif);
+	if (ret < 0)
+		return ret;
+
+	activate_dplh_notif();
+
+	return count;
+}
+
+static struct scmi_protocol_handle *shared_rail_handle;
+static const struct scmi_shared_rail_vendor_ops *shared_rail_ops;
+int cpucp_scmi_shared_rail_boost_init(struct scmi_device *sdev)
+{
+	int ret = 0;
+
+	shared_rail_ops = sdev->handle->devm_get_protocol(sdev,
+				SCMI_PROTOCOL_SHARED_RAIL, &shared_rail_handle);
+	if (IS_ERR(shared_rail_ops))
+		return PTR_ERR(shared_rail_ops);
+
+	return ret;
+}
+EXPORT_SYMBOL(cpucp_scmi_shared_rail_boost_init);
+
+static int l3_data;
+static ssize_t get_l3_boost(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", l3_data);
+}
+
+static ssize_t set_l3_boost(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int ret, data_backup;
+
+	if (!shared_rail_handle || !shared_rail_ops) {
+		pr_err("shared_rail scmi handle or vendor ops null\n");
+		return -EINVAL;
+	}
+
+	data_backup = l3_data;
+	ret = sscanf(buf, "%du", &l3_data);
+	if (ret < 0) {
+		pr_err("shared_rail getting new data, ret=%d\n", ret);
+		return ret;
+	}
+
+	ret = shared_rail_ops->set_shared_rail_boost(shared_rail_handle, l3_data, L3_BOOST);
+	if (ret < 0) {
+		l3_data = data_backup;
+		pr_err("shared_rail setting new data failed, ret=%d\n", ret);
+		return ret;
+	}
+	return count;
+}
+
+static int silver_core_data;
+static ssize_t get_silver_core_boost(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", silver_core_data);
+}
+
+static ssize_t set_silver_core_boost(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int ret, data_backup;
+
+	if (!shared_rail_handle || !shared_rail_ops) {
+		pr_err("shared_rail scmi handle or vendor ops null\n");
+		return -EINVAL;
+	}
+
+	data_backup = silver_core_data;
+	ret = sscanf(buf, "%du", &silver_core_data);
+	if (ret < 0) {
+		pr_err("shared_rail getting new data, ret=%d\n", ret);
+		return ret;
+	}
+
+	ret = shared_rail_ops->set_shared_rail_boost(shared_rail_handle,
+						silver_core_data, SILVER_CORE_BOOST);
+	if (ret < 0) {
+		silver_core_data = data_backup;
+		pr_err("shared_rail setting new data failed, ret=%d\n", ret);
+		return ret;
+	}
+	return count;
+}
+
 static int __init msm_performance_init(void)
 {
 	unsigned int cpu;
+	int ret;
+	if (!alloc_cpumask_var(&limit_mask_min, GFP_KERNEL))
+		return -ENOMEM;
 
-	cpufreq_register_notifier(&perf_cpufreq_nb, CPUFREQ_POLICY_NOTIFIER);
-	cpufreq_register_notifier(&perf_govinfo_nb, CPUFREQ_GOVINFO_NOTIFIER);
-	cpufreq_register_notifier(&perf_cputransitions_nb,
-					CPUFREQ_TRANSITION_NOTIFIER);
+	if (!alloc_cpumask_var(&limit_mask_max, GFP_KERNEL)) {
+		free_cpumask_var(limit_mask_min);
+		return -ENOMEM;
+	}
+	get_online_cpus();
+	for_each_possible_cpu(cpu) {
+		if (!cpumask_test_cpu(cpu, cpu_online_mask))
+			per_cpu(cpu_is_hp, cpu) = true;
+	}
 
-	for_each_present_cpu(cpu)
-		per_cpu(cpu_stats, cpu).max = UINT_MAX;
+	ret = cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN,
+		"msm_performance_cpu_hotplug",
+		hotplug_notify_up,
+		hotplug_notify_down);
 
-	register_cpu_notifier(&msm_performance_cpu_notifier);
+	put_online_cpus();
+
+	msm_perf_kset = kset_create_and_add("msm_performance", NULL, kernel_kobj);
+	if (!msm_perf_kset) {
+		free_cpumask_var(limit_mask_min);
+		free_cpumask_var(limit_mask_max);
+		return -ENOMEM;
+	}
+
+	add_module_params();
 
 	init_events_group();
+	init_notify_group();
+	init_pmu_counter();
 
+	dest = ioremap(GPLAF_SP_ADDR, GPLAF_SP_SIZE);
 	return 0;
 }
+MODULE_LICENSE("GPL v2");
 late_initcall(msm_performance_init);

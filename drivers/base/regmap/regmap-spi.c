@@ -1,14 +1,10 @@
-/*
- * Register map access API - SPI support
- *
- * Copyright 2011 Wolfson Microelectronics plc
- *
- * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- */
+// SPDX-License-Identifier: GPL-2.0
+//
+// Register map access API - SPI support
+//
+// Copyright 2011 Wolfson Microelectronics plc
+//
+// Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
 
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
@@ -102,7 +98,7 @@ static int regmap_spi_read(void *context,
 	return spi_write_then_read(spi, reg, reg_size, val, val_size);
 }
 
-static struct regmap_bus regmap_spi = {
+static const struct regmap_bus regmap_spi = {
 	.write = regmap_spi_write,
 	.gather_write = regmap_spi_gather_write,
 	.async_write = regmap_spi_async_write,
@@ -113,37 +109,24 @@ static struct regmap_bus regmap_spi = {
 	.val_format_endian_default = REGMAP_ENDIAN_BIG,
 };
 
-/**
- * regmap_init_spi(): Initialise register map
- *
- * @spi: Device that will be interacted with
- * @config: Configuration for register map
- *
- * The return value will be an ERR_PTR() on error or a valid pointer to
- * a struct regmap.
- */
-struct regmap *regmap_init_spi(struct spi_device *spi,
-			       const struct regmap_config *config)
+struct regmap *__regmap_init_spi(struct spi_device *spi,
+				 const struct regmap_config *config,
+				 struct lock_class_key *lock_key,
+				 const char *lock_name)
 {
-	return regmap_init(&spi->dev, &regmap_spi, &spi->dev, config);
+	return __regmap_init(&spi->dev, &regmap_spi, &spi->dev, config,
+			     lock_key, lock_name);
 }
-EXPORT_SYMBOL_GPL(regmap_init_spi);
+EXPORT_SYMBOL_GPL(__regmap_init_spi);
 
-/**
- * devm_regmap_init_spi(): Initialise register map
- *
- * @spi: Device that will be interacted with
- * @config: Configuration for register map
- *
- * The return value will be an ERR_PTR() on error or a valid pointer
- * to a struct regmap.  The map will be automatically freed by the
- * device management code.
- */
-struct regmap *devm_regmap_init_spi(struct spi_device *spi,
-				    const struct regmap_config *config)
+struct regmap *__devm_regmap_init_spi(struct spi_device *spi,
+				      const struct regmap_config *config,
+				      struct lock_class_key *lock_key,
+				      const char *lock_name)
 {
-	return devm_regmap_init(&spi->dev, &regmap_spi, &spi->dev, config);
+	return __devm_regmap_init(&spi->dev, &regmap_spi, &spi->dev, config,
+				  lock_key, lock_name);
 }
-EXPORT_SYMBOL_GPL(devm_regmap_init_spi);
+EXPORT_SYMBOL_GPL(__devm_regmap_init_spi);
 
 MODULE_LICENSE("GPL");

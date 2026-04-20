@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Bluetooth built-in chip control
  *
  * Copyright (c) 2008 Dmitry Baryshkov
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 
 #include <linux/kernel.h>
@@ -16,7 +12,7 @@
 #include <linux/delay.h>
 #include <linux/rfkill.h>
 
-#include <mach/tosa_bt.h>
+#include "tosa_bt.h"
 
 static void tosa_bt_on(struct tosa_bt_data *data)
 {
@@ -129,20 +125,10 @@ static struct platform_driver tosa_bt_driver = {
 
 	.driver = {
 		.name = "tosa-bt",
-		.owner = THIS_MODULE,
 	},
 };
+module_platform_driver(tosa_bt_driver);
 
-
-static int __init tosa_bt_init(void)
-{
-	return platform_driver_register(&tosa_bt_driver);
-}
-
-static void __exit tosa_bt_exit(void)
-{
-	platform_driver_unregister(&tosa_bt_driver);
-}
-
-module_init(tosa_bt_init);
-module_exit(tosa_bt_exit);
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Dmitry Baryshkov");
+MODULE_DESCRIPTION("Bluetooth built-in chip control");

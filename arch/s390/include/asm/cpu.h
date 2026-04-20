@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *    Copyright IBM Corp. 2000, 2009
  *    Author(s): Hartmut Penner <hp@de.ibm.com>,
@@ -7,8 +8,6 @@
 
 #ifndef _ASM_S390_CPU_H
 #define _ASM_S390_CPU_H
-
-#define MAX_CPU_ADDRESS 255
 
 #ifndef __ASSEMBLY__
 

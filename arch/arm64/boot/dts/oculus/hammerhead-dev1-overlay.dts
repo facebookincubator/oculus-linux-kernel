@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+
+#include "hammerhead.dtsi"
+#include "hammerhead-thermal.dtsi"
+
+/ {
+	model = "Hammerhead Dev1";
+	compatible = "meta,hammerhead", "meta,hammerhead-dev1";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <34 0xa3>;
+};
+
+&usb_conn_gpio {
+	meta,suspend-disable;
+};

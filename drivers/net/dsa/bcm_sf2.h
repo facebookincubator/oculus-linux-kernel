@@ -1,12 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Broadcom Starfighter2 private context
  *
  * Copyright (C) 2014, Broadcom Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #ifndef __BCM_SF2_H
@@ -19,10 +15,15 @@
 #include <linux/mutex.h>
 #include <linux/mii.h>
 #include <linux/ethtool.h>
+#include <linux/types.h>
+#include <linux/bitops.h>
+#include <linux/if_vlan.h>
+#include <linux/reset.h>
 
 #include <net/dsa.h>
 
 #include "bcm_sf2_regs.h"
+#include "b53/b53_priv.h"
 
 struct bcm_sf2_hw_params {
 	u16	top_rev;
@@ -44,8 +45,16 @@ struct bcm_sf2_hw_params {
 
 struct bcm_sf2_port_status {
 	unsigned int link;
+	bool enabled;
+};
 
-	struct ethtool_eee eee;
+struct bcm_sf2_cfp_priv {
+	/* Mutex protecting concurrent accesses to the CFP registers */
+	struct mutex lock;
+	DECLARE_BITMAP(used, CFP_NUM_RULES);
+	DECLARE_BITMAP(unique, CFP_NUM_RULES);
+	unsigned int rules_cnt;
+	struct list_head rules_list;
 };
 
 struct bcm_sf2_priv {
@@ -57,6 +66,14 @@ struct bcm_sf2_priv {
 	void __iomem			*fcb;
 	void __iomem			*acb;
 
+	struct reset_control		*rcdev;
+
+	/* Register offsets indirection tables */
+	u32 				type;
+	const u16			*reg_offsets;
+	unsigned int			core_reg_align;
+	unsigned int			num_cfp_rules;
+
 	/* spinlock protecting access to the indirect registers */
 	spinlock_t			indir_lock;
 
@@ -67,8 +84,8 @@ struct bcm_sf2_priv {
 	u32				irq1_stat;
 	u32				irq1_mask;
 
-	/* Mutex protecting access to the MIB counters */
-	struct mutex			stats_mutex;
+	/* Backing b53_device */
+	struct b53_device		*dev;
 
 	struct bcm_sf2_hw_params	hw_params;
 
@@ -76,23 +93,50 @@ struct bcm_sf2_priv {
 
 	/* Mask of ports enabled for Wake-on-LAN */
 	u32				wol_ports_mask;
+
+	struct clk			*clk;
+	struct clk			*clk_mdiv;
+
+	/* MoCA port location */
+	int				moca_port;
+
+	/* Bitmask of ports having an integrated PHY */
+	unsigned int			int_phy_mask;
+
+	/* Master and slave MDIO bus controller */
+	unsigned int			indir_phy_mask;
+	struct device_node		*master_mii_dn;
+	struct mii_bus			*slave_mii_bus;
+	struct mii_bus			*master_mii_bus;
+
+	/* Bitmask of ports needing BRCM tags */
+	unsigned int			brcm_tag_mask;
+
+	/* CFP rules context */
+	struct bcm_sf2_cfp_priv		cfp;
 };
 
-struct bcm_sf2_hw_stats {
-	const char	*string;
-	u16		reg;
-	u8		sizeof_stat;
-};
+static inline struct bcm_sf2_priv *bcm_sf2_to_priv(struct dsa_switch *ds)
+{
+	struct b53_device *dev = ds->priv;
+
+	return dev->priv;
+}
+
+static inline u32 bcm_sf2_mangle_addr(struct bcm_sf2_priv *priv, u32 off)
+{
+	return off << priv->core_reg_align;
+}
 
 #define SF2_IO_MACRO(name) \
 static inline u32 name##_readl(struct bcm_sf2_priv *priv, u32 off)	\
 {									\
-	return __raw_readl(priv->name + off);				\
+	return readl_relaxed(priv->name + off);				\
 }									\
 static inline void name##_writel(struct bcm_sf2_priv *priv,		\
 				  u32 val, u32 off)			\
 {									\
-	__raw_writel(val, priv->name + off);				\
+	writel_relaxed(val, priv->name + off);				\
 }									\
 
 /* Accesses to 64-bits register requires us to latch the hi/lo pairs
@@ -105,8 +149,8 @@ static inline u64 name##_readq(struct bcm_sf2_priv *priv, u32 off)	\
 {									\
 	u32 indir, dir;							\
 	spin_lock(&priv->indir_lock);					\
+	dir = name##_readl(priv, off);					\
 	indir = reg_readl(priv, REG_DIR_DATA_READ);			\
-	dir = __raw_readl(priv->name + off);				\
 	spin_unlock(&priv->indir_lock);					\
 	return (u64)indir << 32 | dir;					\
 }									\
@@ -115,7 +159,7 @@ static inline void name##_writeq(struct bcm_sf2_priv *priv, u64 val,	\
 {									\
 	spin_lock(&priv->indir_lock);					\
 	reg_writel(priv, upper_32_bits(val), REG_DIR_DATA_WRITE);	\
-	__raw_writel(lower_32_bits(val), priv->name + off);		\
+	name##_writel(priv, lower_32_bits(val), off);			\
 	spin_unlock(&priv->indir_lock);					\
 }
 
@@ -123,8 +167,8 @@ static inline void name##_writeq(struct bcm_sf2_priv *priv, u64 val,	\
 static inline void intrl2_##which##_mask_clear(struct bcm_sf2_priv *priv, \
 						u32 mask)		\
 {									\
-	intrl2_##which##_writel(priv, mask, INTRL2_CPU_MASK_CLEAR);	\
 	priv->irq##which##_mask &= ~(mask);				\
+	intrl2_##which##_writel(priv, mask, INTRL2_CPU_MASK_CLEAR);	\
 }									\
 static inline void intrl2_##which##_mask_set(struct bcm_sf2_priv *priv, \
 						u32 mask)		\
@@ -133,8 +177,28 @@ static inline void intrl2_##which##_mask_set(struct bcm_sf2_priv *priv, \
 	priv->irq##which##_mask |= (mask);				\
 }									\
 
-SF2_IO_MACRO(core);
-SF2_IO_MACRO(reg);
+static inline u32 core_readl(struct bcm_sf2_priv *priv, u32 off)
+{
+	u32 tmp = bcm_sf2_mangle_addr(priv, off);
+	return readl_relaxed(priv->core + tmp);
+}
+
+static inline void core_writel(struct bcm_sf2_priv *priv, u32 val, u32 off)
+{
+	u32 tmp = bcm_sf2_mangle_addr(priv, off);
+	writel_relaxed(val, priv->core + tmp);
+}
+
+static inline u32 reg_readl(struct bcm_sf2_priv *priv, u16 off)
+{
+	return readl_relaxed(priv->reg + priv->reg_offsets[off]);
+}
+
+static inline void reg_writel(struct bcm_sf2_priv *priv, u32 val, u16 off)
+{
+	writel_relaxed(val, priv->reg + priv->reg_offsets[off]);
+}
+
 SF2_IO64_MACRO(core);
 SF2_IO_MACRO(intrl2_0);
 SF2_IO_MACRO(intrl2_1);
@@ -143,5 +207,19 @@ SF2_IO_MACRO(acb);
 
 SWITCH_INTR_L2(0);
 SWITCH_INTR_L2(1);
+
+/* RXNFC */
+int bcm_sf2_get_rxnfc(struct dsa_switch *ds, int port,
+		      struct ethtool_rxnfc *nfc, u32 *rule_locs);
+int bcm_sf2_set_rxnfc(struct dsa_switch *ds, int port,
+		      struct ethtool_rxnfc *nfc);
+int bcm_sf2_cfp_rst(struct bcm_sf2_priv *priv);
+void bcm_sf2_cfp_exit(struct dsa_switch *ds);
+int bcm_sf2_cfp_resume(struct dsa_switch *ds);
+void bcm_sf2_cfp_get_strings(struct dsa_switch *ds, int port,
+			     u32 stringset, uint8_t *data);
+void bcm_sf2_cfp_get_ethtool_stats(struct dsa_switch *ds, int port,
+				   uint64_t *data);
+int bcm_sf2_cfp_get_sset_count(struct dsa_switch *ds, int port, int sset);
 
 #endif /* __BCM_SF2_H */

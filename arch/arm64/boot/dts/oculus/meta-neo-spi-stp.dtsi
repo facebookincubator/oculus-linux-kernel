@@ -1,0 +1,242 @@
+&tlmm {
+	stp_mcu_request_transaction: stp_mcu_request_transaction {
+		mux {
+			pins = "gpio18";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio18";
+			drive-strength = <2>;
+			bias-pull-up;
+			input-enabled;
+		};
+	};
+
+	stp_soc_has_data: stp_soc_has_data {
+		mux {
+			pins = "gpio19";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio19";
+			drive-strength = <2>;
+			bias-pull-up;
+			output-low;
+		};
+	};
+};
+
+&qupv3_se0_spi {
+	status = "ok";
+	// Bump up priority to get better latency
+	qcom,rt;
+	// this is 3 cycles at 17MHz which is ~180ns
+	qcom,set-inter-words-delay = <3>;
+	// Set transfer timeout offset to 1000ms
+	qcom,xfer-timeout-offset = <1000>;
+	spi_stp: spi-stp@0 {
+		status = "ok";
+		compatible = "meta,spi-stp";
+		reg = <0>;
+		spi-max-frequency = <17000000>;
+		spi-cpha;
+		pinctrl-names = "default";
+		pinctrl-0 = <&stp_mcu_request_transaction &stp_soc_has_data>;
+		mcu-request-transaction = <&tlmm 18 0>;
+		soc-has-data = <&tlmm 19 0>;
+		channel@0 {
+			channel = <0>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <30>;
+		};
+		channel@1 {
+			channel = <1>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <30>;
+		};
+		channel@2 {
+			channel = <2>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <30>;
+		};
+		channel@3 {
+			channel = <3>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <30>;
+		};
+		channel@4 {
+			channel = <4>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <30>;
+		};
+		channel@5 {
+			channel = <5>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <30>;
+		};
+		channel@6 {
+			channel = <6>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <30>;
+		};
+		channel@7 {
+			channel = <7>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <30>;
+		};
+		channel@8 {
+			channel = <8>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <20>;
+		};
+		channel@9 {
+			channel = <9>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <31>;
+		};
+		channel@10 {
+			channel = <10>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <1>;
+		};
+		channel@11 {
+			channel = <11>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <0>;
+		};
+		channel@12 {
+			channel = <12>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <0>;
+		};
+		channel@13 {
+			channel = <13>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <1>;
+		};
+		channel@14 {
+			channel = <14>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <31>;
+		};
+		channel@15 {
+			channel = <15>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <31>;
+		};
+		channel@16 {
+			channel = <16>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <31>;
+		};
+		channel@17 {
+			channel = <17>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <31>;
+		};
+		channel@18 {
+			channel = <18>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <2>;
+		};
+		channel@19 {
+			channel = <19>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <31>;
+		};
+		channel@20 {
+			channel = <20>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <31>;
+		};
+		channel@21 {
+			channel = <21>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <31>;
+		};
+		channel@22 {
+			channel = <22>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <31>;
+		};
+		channel@23 {
+			channel = <23>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <31>;
+		};
+		channel@24 {
+			channel = <24>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <31>;
+		};
+		channel@25 {
+			channel = <25>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <0>;
+		};
+		channel@26 {
+			channel = <26>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <0>;
+		};
+		channel@27 {
+			channel = <27>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <0>;
+		};
+		channel@28 {
+			channel = <28>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <1>;
+		};
+		channel@29 {
+			channel = <29>;
+			tx_buffer_size = <4096>;
+			rx_buffer_size = <4096>;
+			priority = <0>;
+		};
+		channel@30 {
+			channel = <30>;
+			tx_buffer_size = <8192>;
+			rx_buffer_size = <8192>;
+			priority = <0>;
+		};
+		channel@31 {
+			channel = <31>;
+			tx_buffer_size = <8192>;
+			rx_buffer_size = <8192>;
+			priority = <30>;
+		};
+	};
+};

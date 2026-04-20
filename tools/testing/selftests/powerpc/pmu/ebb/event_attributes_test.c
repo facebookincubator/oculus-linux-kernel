@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2014, Michael Ellerman, IBM Corp.
- * Licensed under GPLv2.
  */
 
 #include <stdio.h>
@@ -15,6 +15,8 @@
 int event_attributes(void)
 {
 	struct event event, leader;
+
+	SKIP_IF(!ebb_is_supported());
 
 	event_init(&event, 0x1001e);
 	event_leader_ebb_init(&event);

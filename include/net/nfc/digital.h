@@ -1,16 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * NFC Digital Protocol stack
  * Copyright (c) 2013, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
  */
 
 #ifndef __NFC_DIGITAL_H
@@ -220,11 +211,24 @@ struct nfc_digital_dev {
 	struct list_head cmd_queue;
 	struct mutex cmd_lock;
 
-	struct work_struct poll_work;
+	struct delayed_work poll_work;
 
 	u8 curr_protocol;
 	u8 curr_rf_tech;
 	u8 curr_nfc_dep_pni;
+	u8 did;
+	u16 dep_rwt;
+
+	u8 local_payload_max;
+	u8 remote_payload_max;
+
+	struct sk_buff *chaining_skb;
+	struct digital_data_exch *data_exch;
+
+	int atn_count;
+	int nack_count;
+
+	struct sk_buff *saved_skb;
 
 	u16 target_fsc;
 

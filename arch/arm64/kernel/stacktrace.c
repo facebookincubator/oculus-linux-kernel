@@ -1,28 +1,21 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Stack tracing support
  *
  * Copyright (C) 2012 ARM Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include <linux/compat.h>
-#include <linux/kasan.h>
 #include <linux/kernel.h>
 #include <linux/export.h>
+#include <linux/ftrace.h>
+#include <linux/kprobes.h>
 #include <linux/sched.h>
+#include <linux/sched/debug.h>
+#include <linux/sched/task_stack.h>
 #include <linux/stacktrace.h>
-#include <linux/uaccess.h>
 
+#include <asm/irq.h>
+#include <asm/pointer_auth.h>
+#include <asm/stack_pointer.h>
 #include <asm/stacktrace.h>
 
 /*
@@ -38,174 +31,192 @@
  *	ldp	x29, x30, [sp]
  *	add	sp, sp, #0x10
  */
-int notrace unwind_frame(struct stackframe *frame)
+
+/*
+ * Unwind from one frame record (A) to the next frame record (B).
+ *
+ * We terminate early if the location of B indicates a malformed chain of frame
+ * records (e.g. a cycle), determined based on the location and fp value of A
+ * and the location (but not the fp value) of B.
+ */
+int notrace unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 {
-	unsigned long high, low;
 	unsigned long fp = frame->fp;
+	struct stack_info info;
 
-	low  = frame->sp;
-	high = ALIGN(low, THREAD_SIZE);
-
-	if (fp < low || fp > high - 0x18 || fp & 0xf)
+	if (fp & 0xf)
 		return -EINVAL;
 
-	kasan_disable_current();
+	if (!tsk)
+		tsk = current;
 
-	frame->sp = fp + 0x10;
-	frame->fp = *(unsigned long *)(fp);
-	frame->pc = *(unsigned long *)(fp + 8);
+	if (!on_accessible_stack(tsk, fp, &info))
+		return -EINVAL;
 
-	kasan_enable_current();
+	if (test_bit(info.type, frame->stacks_done))
+		return -EINVAL;
+
+	/*
+	 * As stacks grow downward, any valid record on the same stack must be
+	 * at a strictly higher address than the prior record.
+	 *
+	 * Stacks can nest in several valid orders, e.g.
+	 *
+	 * TASK -> IRQ -> OVERFLOW -> SDEI_NORMAL
+	 * TASK -> SDEI_NORMAL -> SDEI_CRITICAL -> OVERFLOW
+	 *
+	 * ... but the nesting itself is strict. Once we transition from one
+	 * stack to another, it's never valid to unwind back to that first
+	 * stack.
+	 */
+	if (info.type == frame->prev_type) {
+		if (fp <= frame->prev_fp)
+			return -EINVAL;
+	} else {
+		set_bit(frame->prev_type, frame->stacks_done);
+	}
+
+	/*
+	 * Record this frame record's values and location. The prev_fp and
+	 * prev_type are only meaningful to the next unwind_frame() invocation.
+	 */
+	frame->fp = READ_ONCE_NOCHECK(*(unsigned long *)(fp));
+	frame->pc = READ_ONCE_NOCHECK(*(unsigned long *)(fp + 8));
+	frame->prev_fp = fp;
+	frame->prev_type = info.type;
+
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
+	if (tsk->ret_stack &&
+		(ptrauth_strip_insn_pac(frame->pc) == (unsigned long)return_to_handler)) {
+		struct ftrace_ret_stack *ret_stack;
+		/*
+		 * This is a case where function graph tracer has
+		 * modified a return address (LR) in a stack frame
+		 * to hook a function return.
+		 * So replace it to an original value.
+		 */
+		ret_stack = ftrace_graph_get_ret_stack(tsk, frame->graph++);
+		if (WARN_ON_ONCE(!ret_stack))
+			return -EINVAL;
+		frame->pc = ret_stack->ret;
+	}
+#endif /* CONFIG_FUNCTION_GRAPH_TRACER */
+
+	frame->pc = ptrauth_strip_insn_pac(frame->pc);
+
+	/*
+	 * Frames created upon entry from EL0 have NULL FP and PC values, so
+	 * don't bother reporting these. Frames created by __noreturn functions
+	 * might have a valid FP even if PC is bogus, so only terminate where
+	 * both are NULL.
+	 */
+	if (!frame->fp && !frame->pc)
+		return -EINVAL;
 
 	return 0;
 }
+NOKPROBE_SYMBOL(unwind_frame);
 
-void notrace walk_stackframe(struct stackframe *frame,
-		     int (*fn)(struct stackframe *, void *), void *data)
+void notrace walk_stackframe(struct task_struct *tsk, struct stackframe *frame,
+			     bool (*fn)(void *, unsigned long), void *data)
 {
 	while (1) {
 		int ret;
 
-		if (fn(frame, data))
+		if (!fn(data, frame->pc))
 			break;
-		ret = unwind_frame(frame);
+		ret = unwind_frame(tsk, frame);
 		if (ret < 0)
 			break;
 	}
 }
-EXPORT_SYMBOL(walk_stackframe);
+NOKPROBE_SYMBOL(walk_stackframe);
+
+static void dump_backtrace_entry(unsigned long where, const char *loglvl)
+{
+	printk("%s %pS\n", loglvl, (void *)where);
+}
+
+void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk,
+		    const char *loglvl)
+{
+	struct stackframe frame;
+	int skip = 0;
+
+	pr_debug("%s(regs = %p tsk = %p)\n", __func__, regs, tsk);
+
+	if (regs) {
+		if (user_mode(regs))
+			return;
+		skip = 1;
+	}
+
+	if (!tsk)
+		tsk = current;
+
+	if (!try_get_task_stack(tsk))
+		return;
+
+	if (tsk == current) {
+		start_backtrace(&frame,
+				(unsigned long)__builtin_frame_address(0),
+				(unsigned long)dump_backtrace);
+	} else {
+		/*
+		 * task blocked in __switch_to
+		 */
+		start_backtrace(&frame,
+				thread_saved_fp(tsk),
+				thread_saved_pc(tsk));
+	}
+
+	printk("%sCall trace:\n", loglvl);
+	do {
+		/* skip until specified stack frame */
+		if (!skip) {
+			dump_backtrace_entry(frame.pc, loglvl);
+		} else if (frame.fp == regs->regs[29]) {
+			skip = 0;
+			/*
+			 * Mostly, this is the case where this function is
+			 * called in panic/abort. As exception handler's
+			 * stack frame does not contain the corresponding pc
+			 * at which an exception has taken place, use regs->pc
+			 * instead.
+			 */
+			dump_backtrace_entry(regs->pc, loglvl);
+		}
+	} while (!unwind_frame(tsk, &frame));
+
+	put_task_stack(tsk);
+}
+EXPORT_SYMBOL_GPL(dump_backtrace);
+
+void show_stack(struct task_struct *tsk, unsigned long *sp, const char *loglvl)
+{
+	dump_backtrace(NULL, tsk, loglvl);
+	barrier();
+}
 
 #ifdef CONFIG_STACKTRACE
-struct stack_trace_data {
-	struct stack_trace *trace;
-	unsigned int no_sched_functions;
-	unsigned int skip;
-};
 
-static int save_trace(struct stackframe *frame, void *d)
+noinline notrace void arch_stack_walk(stack_trace_consume_fn consume_entry,
+			      void *cookie, struct task_struct *task,
+			      struct pt_regs *regs)
 {
-	struct stack_trace_data *data = d;
-	struct stack_trace *trace = data->trace;
-	unsigned long addr = frame->pc;
-
-	if (data->no_sched_functions && in_sched_functions(addr))
-		return 0;
-	if (data->skip) {
-		data->skip--;
-		return 0;
-	}
-
-	trace->entries[trace->nr_entries++] = addr;
-
-	return trace->nr_entries >= trace->max_entries;
-}
-
-void save_stack_trace_tsk(struct task_struct *tsk, struct stack_trace *trace)
-{
-	struct stack_trace_data data;
 	struct stackframe frame;
 
-	data.trace = trace;
-	data.skip = trace->skip;
+	if (regs)
+		start_backtrace(&frame, regs->regs[29], regs->pc);
+	else if (task == current)
+		start_backtrace(&frame,
+				(unsigned long)__builtin_frame_address(1),
+				(unsigned long)__builtin_return_address(0));
+	else
+		start_backtrace(&frame, thread_saved_fp(task),
+				thread_saved_pc(task));
 
-	if (tsk != current) {
-		data.no_sched_functions = 1;
-		frame.fp = thread_saved_fp(tsk);
-		frame.sp = thread_saved_sp(tsk);
-		frame.pc = thread_saved_pc(tsk);
-	} else {
-		data.no_sched_functions = 0;
-		frame.fp = (unsigned long)__builtin_frame_address(0);
-		frame.sp = current_stack_pointer;
-		frame.pc = (unsigned long)save_stack_trace_tsk;
-	}
-
-	walk_stackframe(&frame, save_trace, &data);
-	if (trace->nr_entries < trace->max_entries)
-		trace->entries[trace->nr_entries++] = ULONG_MAX;
+	walk_stackframe(task, &frame, consume_entry, cookie);
 }
 
-void save_stack_trace(struct stack_trace *trace)
-{
-	save_stack_trace_tsk(current, trace);
-}
-
-static void add_trace_entry(struct stack_trace *trace, unsigned long pc)
-{
-	if (trace->nr_entries < trace->max_entries)
-		trace->entries[trace->nr_entries++] = pc;
-}
-
-static const void __user *stack_walk_next(
-	struct stack_trace *trace, const void __user *fp, int compat)
-{
-	/* Part of the stack containing saved FP and LR registers. */
-	unsigned long frame_tail[2];
-	const size_t tail_size = compat ? 8 : sizeof(frame_tail);
-
-	/*
-	 * PCS specifies the minimum SP alignment to be 4 and 16 bytes
-	 * for AArch32 and AArch64, respectively.
-	 */
-	const size_t sp_mask = compat ? 0x3 : 0xf;
-
-	const void __user *prev_fp;
-	int ret;
-
-	BUILD_BUG_ON(tail_size > sizeof(frame_tail));
-	if (!access_ok(VERIFY_READ, fp, tail_size))
-		return NULL;
-
-	pagefault_disable();
-	ret = __copy_from_user_inatomic(&frame_tail[0], fp, tail_size);
-	pagefault_enable();
-
-	if (ret)
-		return NULL;
-
-	if (compat) {
-		u32 *tail = (u32 *)&frame_tail[0];
-
-		prev_fp = (const void __user *)(unsigned long)tail[0];
-		add_trace_entry(trace, tail[1]);
-	} else {
-		prev_fp = (const void __user *)frame_tail[0];
-		add_trace_entry(trace, frame_tail[1]);
-	}
-
-	/*
-	 * Since the stack grows downwards, previous frame pointer is expected
-	 * to be at a higher memory address.
-	 */
-	if (prev_fp > fp && !((unsigned long)prev_fp & sp_mask))
-		return prev_fp;
-	return NULL;
-}
-
-void save_stack_trace_user(struct stack_trace *trace)
-{
-	const struct pt_regs *regs = task_pt_regs(current);
-	const int compat = compat_user_mode(regs);
-	const void __user *fp;
-
-	add_trace_entry(trace, regs->pc);
-
-	/*
-	 * Leaf functions may not have separate stack frames, so always
-	 * include the value of the link register to make sure we don't
-	 * skip such functions.
-	 */
-	if (compat) {
-		add_trace_entry(trace, regs->compat_lr);
-		fp = (const void __user *)regs->compat_fp;
-	} else {
-		add_trace_entry(trace, regs->regs[30]);
-		fp = (const void __user *)regs->regs[29];
-	}
-
-	while (fp && trace->nr_entries < trace->max_entries)
-		fp = stack_walk_next(trace, fp, compat);
-}
-
-EXPORT_SYMBOL_GPL(save_stack_trace);
 #endif

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * dmi-sysfs.c
  *
@@ -25,6 +26,7 @@
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/io.h>
+#include <asm/dmi.h>
 
 #define MAX_ENTRY_TYPE 255 /* Most of these aren't used, but we consider
 			      the top entry type is only 8 bits */
@@ -260,7 +262,7 @@ struct dmi_system_event_log {
 	u8	header_format;
 	u8	type_descriptors_supported_count;
 	u8	per_log_type_descriptor_length;
-	u8	supported_log_type_descriptos[0];
+	u8	supported_log_type_descriptos[];
 } __packed;
 
 #define DMI_SYSFS_SEL_FIELD(_field) \
@@ -380,7 +382,7 @@ static ssize_t dmi_sel_raw_read_phys32(struct dmi_sysfs_entry *entry,
 	u8 __iomem *mapped;
 	ssize_t wrote = 0;
 
-	mapped = ioremap(sel->access_method_address, sel->area_length);
+	mapped = dmi_remap(sel->access_method_address, sel->area_length);
 	if (!mapped)
 		return -EIO;
 
@@ -390,7 +392,7 @@ static ssize_t dmi_sel_raw_read_phys32(struct dmi_sysfs_entry *entry,
 		wrote++;
 	}
 
-	iounmap(mapped);
+	dmi_unmap(mapped);
 	return wrote;
 }
 
@@ -566,7 +568,6 @@ static struct kobj_type dmi_sysfs_entry_ktype = {
 	.default_attrs = dmi_sysfs_entry_attrs,
 };
 
-static struct kobject *dmi_kobj;
 static struct kset *dmi_kset;
 
 /* Global count of all instances seen.  Only for setup */
@@ -602,7 +603,7 @@ static void __init dmi_sysfs_register_handle(const struct dmi_header *dh,
 				    "%d-%d", dh->type, entry->instance);
 
 	if (*ret) {
-		kfree(entry);
+		kobject_put(&entry->kobj);
 		return;
 	}
 
@@ -648,17 +649,20 @@ static void cleanup_entry_list(void)
 
 static int __init dmi_sysfs_init(void)
 {
-	int error = -ENOMEM;
+	int error;
 	int val;
 
-	/* Set up our directory */
-	dmi_kobj = kobject_create_and_add("dmi", firmware_kobj);
-	if (!dmi_kobj)
+	if (!dmi_kobj) {
+		pr_debug("dmi-sysfs: dmi entry is absent.\n");
+		error = -ENODATA;
 		goto err;
+	}
 
 	dmi_kset = kset_create_and_add("entries", NULL, dmi_kobj);
-	if (!dmi_kset)
+	if (!dmi_kset) {
+		error = -ENOMEM;
 		goto err;
+	}
 
 	val = 0;
 	error = dmi_walk(dmi_sysfs_register_handle, &val);
@@ -675,7 +679,6 @@ static int __init dmi_sysfs_init(void)
 err:
 	cleanup_entry_list();
 	kset_unregister(dmi_kset);
-	kobject_put(dmi_kobj);
 	return error;
 }
 
@@ -685,8 +688,6 @@ static void __exit dmi_sysfs_exit(void)
 	pr_debug("dmi-sysfs: unloading.\n");
 	cleanup_entry_list();
 	kset_unregister(dmi_kset);
-	kobject_del(dmi_kobj);
-	kobject_put(dmi_kobj);
 }
 
 module_init(dmi_sysfs_init);

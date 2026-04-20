@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * bcm63xx_udc.c -- BCM63xx UDC high/full speed USB device controller
  *
  * Copyright (C) 2012 Kevin Cernekee <cernekee@gmail.com>
  * Copyright (C) 2012 Broadcom Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/bitops.h>
@@ -21,7 +17,6 @@
 #include <linux/errno.h>
 #include <linux/interrupt.h>
 #include <linux/ioport.h>
-#include <linux/kconfig.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/module.h>
@@ -31,6 +26,7 @@
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/timer.h>
+#include <linux/usb.h>
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 #include <linux/workqueue.h>
@@ -44,9 +40,29 @@
 #define DRV_MODULE_NAME		"bcm63xx_udc"
 
 static const char bcm63xx_ep0name[] = "ep0";
-static const char *const bcm63xx_ep_name[] = {
-	bcm63xx_ep0name,
-	"ep1in-bulk", "ep2out-bulk", "ep3in-int", "ep4out-int",
+
+static const struct {
+	const char *name;
+	const struct usb_ep_caps caps;
+} bcm63xx_ep_info[] = {
+#define EP_INFO(_name, _caps) \
+	{ \
+		.name = _name, \
+		.caps = _caps, \
+	}
+
+	EP_INFO(bcm63xx_ep0name,
+		USB_EP_CAPS(USB_EP_CAPS_TYPE_CONTROL, USB_EP_CAPS_DIR_ALL)),
+	EP_INFO("ep1in-bulk",
+		USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK, USB_EP_CAPS_DIR_IN)),
+	EP_INFO("ep2out-bulk",
+		USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK, USB_EP_CAPS_DIR_OUT)),
+	EP_INFO("ep3in-int",
+		USB_EP_CAPS(USB_EP_CAPS_TYPE_INT, USB_EP_CAPS_DIR_IN)),
+	EP_INFO("ep4out-int",
+		USB_EP_CAPS(USB_EP_CAPS_TYPE_INT, USB_EP_CAPS_DIR_OUT)),
+
+#undef EP_INFO
 };
 
 static bool use_fullspeed;
@@ -251,8 +267,8 @@ struct bcm63xx_req {
  * @pd: Platform data (board/port info).
  * @usbd_clk: Clock descriptor for the USB device block.
  * @usbh_clk: Clock descriptor for the USB host block.
- * @gadget: USB slave device.
- * @driver: Driver for USB slave devices.
+ * @gadget: USB device.
+ * @driver: Driver for USB device.
  * @usbd_regs: Base address of the USBD/USB20D block.
  * @iudma_regs: Base address of the USBD's associated IUDMA block.
  * @bep: Array of endpoints, including ep0.
@@ -273,8 +289,6 @@ struct bcm63xx_req {
  * @ep0_reply: Pending reply from gadget driver.
  * @ep0_request: Outstanding ep0 request.
  * @debugfs_root: debugfs directory: /sys/kernel/debug/<DRV_MODULE_NAME>.
- * @debugfs_usbd: debugfs file "usbd" for controller state.
- * @debugfs_iudma: debugfs file "usbd" for IUDMA state.
  */
 struct bcm63xx_udc {
 	spinlock_t			lock;
@@ -315,8 +329,6 @@ struct bcm63xx_udc {
 	struct usb_request		*ep0_request;
 
 	struct dentry			*debugfs_root;
-	struct dentry			*debugfs_usbd;
-	struct dentry			*debugfs_iudma;
 };
 
 static const struct usb_ep_ops bcm63xx_udc_ep_ops;
@@ -943,7 +955,8 @@ static int bcm63xx_init_udc_hw(struct bcm63xx_udc *udc)
 	for (i = 0; i < BCM63XX_NUM_EP; i++) {
 		struct bcm63xx_ep *bep = &udc->bep[i];
 
-		bep->ep.name = bcm63xx_ep_name[i];
+		bep->ep.name = bcm63xx_ep_info[i].name;
+		bep->ep.caps = bcm63xx_ep_info[i].caps;
 		bep->ep_num = i;
 		bep->ep.ops = &bcm63xx_udc_ep_ops;
 		list_add_tail(&bep->ep.ep_list, &udc->gadget.ep_list);
@@ -1062,7 +1075,7 @@ static int bcm63xx_ep_disable(struct usb_ep *ep)
 	struct bcm63xx_ep *bep = our_ep(ep);
 	struct bcm63xx_udc *udc = bep->udc;
 	struct iudma_ch *iudma = bep->iudma;
-	struct list_head *pos, *n;
+	struct bcm63xx_req *breq, *n;
 	unsigned long flags;
 
 	if (!ep || !ep->desc)
@@ -1078,10 +1091,7 @@ static int bcm63xx_ep_disable(struct usb_ep *ep)
 	iudma_reset_channel(udc, iudma);
 
 	if (!list_empty(&bep->queue)) {
-		list_for_each_safe(pos, n, &bep->queue) {
-			struct bcm63xx_req *breq =
-				list_entry(pos, struct bcm63xx_req, queue);
-
+		list_for_each_entry_safe(breq, n, &bep->queue, queue) {
 			usb_gadget_unmap_request(&udc->gadget, &breq->req,
 						 iudma->is_tx);
 			list_del(&breq->queue);
@@ -1735,7 +1745,7 @@ static void bcm63xx_ep0_process(struct work_struct *w)
 
 /**
  * bcm63xx_udc_get_frame - Read current SOF frame number from the HW.
- * @gadget: USB slave device.
+ * @gadget: USB device.
  */
 static int bcm63xx_udc_get_frame(struct usb_gadget *gadget)
 {
@@ -1747,7 +1757,7 @@ static int bcm63xx_udc_get_frame(struct usb_gadget *gadget)
 
 /**
  * bcm63xx_udc_pullup - Enable/disable pullup on D+ line.
- * @gadget: USB slave device.
+ * @gadget: USB device.
  * @is_on: 0 to disable pullup, 1 to enable.
  *
  * See notes in bcm63xx_select_pullup().
@@ -1796,8 +1806,8 @@ static int bcm63xx_udc_pullup(struct usb_gadget *gadget, int is_on)
 
 /**
  * bcm63xx_udc_start - Start the controller.
- * @gadget: USB slave device.
- * @driver: Driver for USB slave devices.
+ * @gadget: USB device.
+ * @driver: Driver for USB device.
  */
 static int bcm63xx_udc_start(struct usb_gadget *gadget,
 		struct usb_gadget_driver *driver)
@@ -1833,11 +1843,10 @@ static int bcm63xx_udc_start(struct usb_gadget *gadget,
 
 /**
  * bcm63xx_udc_stop - Shut down the controller.
- * @gadget: USB slave device.
- * @driver: Driver for USB slave devices.
+ * @gadget: USB device.
+ * @driver: Driver for USB device.
  */
-static int bcm63xx_udc_stop(struct usb_gadget *gadget,
-		struct usb_gadget_driver *driver)
+static int bcm63xx_udc_stop(struct usb_gadget *gadget)
 {
 	struct bcm63xx_udc *udc = gadget_to_udc(gadget);
 	unsigned long flags;
@@ -1963,7 +1972,7 @@ static irqreturn_t bcm63xx_udc_ctrl_isr(int irq, void *dev_id)
 {
 	struct bcm63xx_udc *udc = dev_id;
 	u32 stat;
-	bool disconnected = false;
+	bool disconnected = false, bus_reset = false;
 
 	stat = usbd_readl(udc, USBD_EVENT_IRQ_STATUS_REG) &
 	       usbd_readl(udc, USBD_EVENT_IRQ_MASK_REG);
@@ -1991,7 +2000,7 @@ static irqreturn_t bcm63xx_udc_ctrl_isr(int irq, void *dev_id)
 
 		udc->ep0_req_reset = 1;
 		schedule_work(&udc->ep0_wq);
-		disconnected = true;
+		bus_reset = true;
 	}
 	if (stat & BIT(USBD_EVENT_IRQ_SETUP)) {
 		if (bcm63xx_update_link_speed(udc)) {
@@ -2014,6 +2023,8 @@ static irqreturn_t bcm63xx_udc_ctrl_isr(int irq, void *dev_id)
 
 	if (disconnected && udc->driver)
 		udc->driver->disconnect(&udc->gadget);
+	else if (bus_reset && udc->driver)
+		usb_gadget_udc_reset(&udc->gadget, udc->driver);
 
 	return IRQ_HANDLED;
 }
@@ -2144,6 +2155,7 @@ static int bcm63xx_usbd_dbg_show(struct seq_file *s, void *p)
 
 	return 0;
 }
+DEFINE_SHOW_ATTRIBUTE(bcm63xx_usbd_dbg);
 
 /*
  * bcm63xx_iudma_dbg_show - Show IUDMA status and descriptors.
@@ -2224,33 +2236,7 @@ static int bcm63xx_iudma_dbg_show(struct seq_file *s, void *p)
 
 	return 0;
 }
-
-static int bcm63xx_usbd_dbg_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, bcm63xx_usbd_dbg_show, inode->i_private);
-}
-
-static int bcm63xx_iudma_dbg_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, bcm63xx_iudma_dbg_show, inode->i_private);
-}
-
-static const struct file_operations usbd_dbg_fops = {
-	.owner		= THIS_MODULE,
-	.open		= bcm63xx_usbd_dbg_open,
-	.llseek		= seq_lseek,
-	.read		= seq_read,
-	.release	= single_release,
-};
-
-static const struct file_operations iudma_dbg_fops = {
-	.owner		= THIS_MODULE,
-	.open		= bcm63xx_iudma_dbg_open,
-	.llseek		= seq_lseek,
-	.read		= seq_read,
-	.release	= single_release,
-};
-
+DEFINE_SHOW_ATTRIBUTE(bcm63xx_iudma_dbg);
 
 /**
  * bcm63xx_udc_init_debugfs - Create debugfs entries.
@@ -2258,34 +2244,16 @@ static const struct file_operations iudma_dbg_fops = {
  */
 static void bcm63xx_udc_init_debugfs(struct bcm63xx_udc *udc)
 {
-	struct dentry *root, *usbd, *iudma;
+	struct dentry *root;
 
 	if (!IS_ENABLED(CONFIG_USB_GADGET_DEBUG_FS))
 		return;
 
-	root = debugfs_create_dir(udc->gadget.name, NULL);
-	if (IS_ERR(root) || !root)
-		goto err_root;
-
-	usbd = debugfs_create_file("usbd", 0400, root, udc,
-			&usbd_dbg_fops);
-	if (!usbd)
-		goto err_usbd;
-	iudma = debugfs_create_file("iudma", 0400, root, udc,
-			&iudma_dbg_fops);
-	if (!iudma)
-		goto err_iudma;
-
+	root = debugfs_create_dir(udc->gadget.name, usb_debug_root);
 	udc->debugfs_root = root;
-	udc->debugfs_usbd = usbd;
-	udc->debugfs_iudma = iudma;
-	return;
-err_iudma:
-	debugfs_remove(usbd);
-err_usbd:
-	debugfs_remove(root);
-err_root:
-	dev_err(udc->dev, "debugfs is not available\n");
+
+	debugfs_create_file("usbd", 0400, root, udc, &bcm63xx_usbd_dbg_fops);
+	debugfs_create_file("iudma", 0400, root, udc, &bcm63xx_iudma_dbg_fops);
 }
 
 /**
@@ -2296,12 +2264,7 @@ err_root:
  */
 static void bcm63xx_udc_cleanup_debugfs(struct bcm63xx_udc *udc)
 {
-	debugfs_remove(udc->debugfs_iudma);
-	debugfs_remove(udc->debugfs_usbd);
-	debugfs_remove(udc->debugfs_root);
-	udc->debugfs_iudma = NULL;
-	udc->debugfs_usbd = NULL;
-	udc->debugfs_root = NULL;
+	debugfs_remove_recursive(udc->debugfs_root);
 }
 
 /***********************************************************************
@@ -2320,14 +2283,11 @@ static int bcm63xx_udc_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct bcm63xx_usbd_platform_data *pd = dev_get_platdata(dev);
 	struct bcm63xx_udc *udc;
-	struct resource *res;
 	int rc = -ENOMEM, i, irq;
 
 	udc = devm_kzalloc(dev, sizeof(*udc), GFP_KERNEL);
-	if (!udc) {
-		dev_err(dev, "cannot allocate memory\n");
+	if (!udc)
 		return -ENOMEM;
-	}
 
 	platform_set_drvdata(pdev, udc);
 	udc->dev = dev;
@@ -2338,13 +2298,11 @@ static int bcm63xx_udc_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	udc->usbd_regs = devm_ioremap_resource(dev, res);
+	udc->usbd_regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(udc->usbd_regs))
 		return PTR_ERR(udc->usbd_regs);
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-	udc->iudma_regs = devm_ioremap_resource(dev, res);
+	udc->iudma_regs = devm_platform_ioremap_resource(pdev, 1);
 	if (IS_ERR(udc->iudma_regs))
 		return PTR_ERR(udc->iudma_regs);
 
@@ -2368,28 +2326,20 @@ static int bcm63xx_udc_probe(struct platform_device *pdev)
 
 	/* IRQ resource #0: control interrupt (VBUS, speed, etc.) */
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0) {
-		dev_err(dev, "missing IRQ resource #0\n");
+	if (irq < 0)
 		goto out_uninit;
-	}
 	if (devm_request_irq(dev, irq, &bcm63xx_udc_ctrl_isr, 0,
-			     dev_name(dev), udc) < 0) {
-		dev_err(dev, "error requesting IRQ #%d\n", irq);
-		goto out_uninit;
-	}
+			     dev_name(dev), udc) < 0)
+		goto report_request_failure;
 
 	/* IRQ resources #1-6: data interrupts for IUDMA channels 0-5 */
 	for (i = 0; i < BCM63XX_NUM_IUDMA; i++) {
 		irq = platform_get_irq(pdev, i + 1);
-		if (irq < 0) {
-			dev_err(dev, "missing IRQ resource #%d\n", i + 1);
+		if (irq < 0)
 			goto out_uninit;
-		}
 		if (devm_request_irq(dev, irq, &bcm63xx_udc_data_isr, 0,
-				     dev_name(dev), &udc->iudma[i]) < 0) {
-			dev_err(dev, "error requesting IRQ #%d\n", irq);
-			goto out_uninit;
-		}
+				     dev_name(dev), &udc->iudma[i]) < 0)
+			goto report_request_failure;
 	}
 
 	bcm63xx_udc_init_debugfs(udc);
@@ -2401,6 +2351,10 @@ static int bcm63xx_udc_probe(struct platform_device *pdev)
 out_uninit:
 	bcm63xx_uninit_udc_hw(udc);
 	return rc;
+
+report_request_failure:
+	dev_err(dev, "error requesting IRQ #%d\n", irq);
+	goto out_uninit;
 }
 
 /**
@@ -2425,7 +2379,6 @@ static struct platform_driver bcm63xx_udc_driver = {
 	.remove		= bcm63xx_udc_remove,
 	.driver		= {
 		.name	= DRV_MODULE_NAME,
-		.owner	= THIS_MODULE,
 	},
 };
 module_platform_driver(bcm63xx_udc_driver);

@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014, The Linux Foundation. All rights reserved.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -31,79 +23,80 @@
 #include "clk-rcg.h"
 #include "clk-branch.h"
 #include "reset.h"
+#include "gdsc.h"
 
-#define P_XO	0
-#define P_GPLL0	1
-#define P_GPLL1	1
-#define P_GPLL4	2
-#define P_PCIE_0_1_PIPE_CLK 1
-#define P_SATA_ASIC0_CLK 1
-#define P_SATA_RX_CLK 1
-#define P_SLEEP_CLK 1
-
-static const u8 gcc_xo_gpll0_map[] = {
-	[P_XO]		= 0,
-	[P_GPLL0]	= 1,
+enum {
+	P_XO,
+	P_GPLL0,
+	P_GPLL1,
+	P_GPLL4,
+	P_PCIE_0_1_PIPE_CLK,
+	P_SATA_ASIC0_CLK,
+	P_SATA_RX_CLK,
+	P_SLEEP_CLK,
 };
 
-static const char *gcc_xo_gpll0[] = {
+static const struct parent_map gcc_xo_gpll0_map[] = {
+	{ P_XO, 0 },
+	{ P_GPLL0, 1 }
+};
+
+static const char * const gcc_xo_gpll0[] = {
 	"xo",
 	"gpll0_vote",
 };
 
-static const u8 gcc_xo_gpll0_gpll4_map[] = {
-	[P_XO]		= 0,
-	[P_GPLL0]	= 1,
-	[P_GPLL4]	= 5,
+static const struct parent_map gcc_xo_gpll0_gpll4_map[] = {
+	{ P_XO, 0 },
+	{ P_GPLL0, 1 },
+	{ P_GPLL4, 5 }
 };
 
-static const char *gcc_xo_gpll0_gpll4[] = {
+static const char * const gcc_xo_gpll0_gpll4[] = {
 	"xo",
 	"gpll0_vote",
 	"gpll4_vote",
 };
 
-static const u8 gcc_xo_sata_asic0_map[] = {
-	[P_XO]			= 0,
-	[P_SATA_ASIC0_CLK]	= 2,
+static const struct parent_map gcc_xo_sata_asic0_map[] = {
+	{ P_XO, 0 },
+	{ P_SATA_ASIC0_CLK, 2 }
 };
 
-static const char *gcc_xo_sata_asic0[] = {
+static const char * const gcc_xo_sata_asic0[] = {
 	"xo",
 	"sata_asic0_clk",
 };
 
-static const u8 gcc_xo_sata_rx_map[] = {
-	[P_XO]			= 0,
-	[P_SATA_RX_CLK]		= 2,
+static const struct parent_map gcc_xo_sata_rx_map[] = {
+	{ P_XO, 0 },
+	{ P_SATA_RX_CLK, 2}
 };
 
-static const char *gcc_xo_sata_rx[] = {
+static const char * const gcc_xo_sata_rx[] = {
 	"xo",
 	"sata_rx_clk",
 };
 
-static const u8 gcc_xo_pcie_map[] = {
-	[P_XO]			= 0,
-	[P_PCIE_0_1_PIPE_CLK]	= 2,
+static const struct parent_map gcc_xo_pcie_map[] = {
+	{ P_XO, 0 },
+	{ P_PCIE_0_1_PIPE_CLK, 2 }
 };
 
-static const char *gcc_xo_pcie[] = {
+static const char * const gcc_xo_pcie[] = {
 	"xo",
 	"pcie_pipe",
 };
 
-static const u8 gcc_xo_pcie_sleep_map[] = {
-	[P_XO]			= 0,
-	[P_SLEEP_CLK]		= 6,
+static const struct parent_map gcc_xo_pcie_sleep_map[] = {
+	{ P_XO, 0 },
+	{ P_SLEEP_CLK, 6 }
 };
 
-static const char *gcc_xo_pcie_sleep[] = {
+static const char * const gcc_xo_pcie_sleep[] = {
 	"xo",
 	"sleep_clk_src",
 };
-
-#define F(f, s, h, m, n) { (f), (s), (2 * (h) - 1), (m), (n) }
 
 static struct clk_pll gpll0 = {
 	.l_reg = 0x0004,
@@ -1139,7 +1132,7 @@ static struct clk_rcg2 sdcc1_apps_clk_src = {
 		.name = "sdcc1_apps_clk_src",
 		.parent_names = gcc_xo_gpll0_gpll4,
 		.num_parents = 3,
-		.ops = &clk_rcg2_ops,
+		.ops = &clk_rcg2_floor_ops,
 	},
 };
 
@@ -1153,7 +1146,7 @@ static struct clk_rcg2 sdcc2_apps_clk_src = {
 		.name = "sdcc2_apps_clk_src",
 		.parent_names = gcc_xo_gpll0,
 		.num_parents = 2,
-		.ops = &clk_rcg2_ops,
+		.ops = &clk_rcg2_floor_ops,
 	},
 };
 
@@ -1167,7 +1160,7 @@ static struct clk_rcg2 sdcc3_apps_clk_src = {
 		.name = "sdcc3_apps_clk_src",
 		.parent_names = gcc_xo_gpll0,
 		.num_parents = 2,
-		.ops = &clk_rcg2_ops,
+		.ops = &clk_rcg2_floor_ops,
 	},
 };
 
@@ -1181,7 +1174,7 @@ static struct clk_rcg2 sdcc4_apps_clk_src = {
 		.name = "sdcc4_apps_clk_src",
 		.parent_names = gcc_xo_gpll0,
 		.num_parents = 2,
-		.ops = &clk_rcg2_ops,
+		.ops = &clk_rcg2_floor_ops,
 	},
 };
 
@@ -1263,9 +1256,9 @@ static const struct freq_tbl ftbl_gcc_usb_hsic_clk[] = {
 	{ }
 };
 
-static u8 usb_hsic_clk_src_map[] = {
-	[P_XO]		= 0,
-	[P_GPLL1]	= 4,
+static const struct parent_map usb_hsic_clk_src_map[] = {
+	{ P_XO, 0 },
+	{ P_GPLL1, 4 }
 };
 
 static struct clk_rcg2 usb_hsic_clk_src = {
@@ -2103,6 +2096,7 @@ static struct clk_branch gcc_ce1_clk = {
 				"ce1_clk_src",
 			},
 			.num_parents = 1,
+			.flags = CLK_SET_RATE_PARENT,
 			.ops = &clk_branch2_ops,
 		},
 	},
@@ -3251,6 +3245,38 @@ static struct clk_branch gcc_usb_hsic_system_clk = {
 	},
 };
 
+static struct gdsc usb_hs_hsic_gdsc = {
+	.gdscr = 0x404,
+	.pd = {
+		.name = "usb_hs_hsic",
+	},
+	.pwrsts = PWRSTS_OFF_ON,
+};
+
+static struct gdsc pcie0_gdsc = {
+	.gdscr = 0x1ac4,
+	.pd = {
+		.name = "pcie0",
+	},
+	.pwrsts = PWRSTS_OFF_ON,
+};
+
+static struct gdsc pcie1_gdsc = {
+	.gdscr = 0x1b44,
+	.pd = {
+		.name = "pcie1",
+	},
+	.pwrsts = PWRSTS_OFF_ON,
+};
+
+static struct gdsc usb30_gdsc = {
+	.gdscr = 0x1e84,
+	.pd = {
+		.name = "usb30",
+	},
+	.pwrsts = PWRSTS_OFF_ON,
+};
+
 static struct clk_regmap *gcc_apq8084_clocks[] = {
 	[GPLL0] = &gpll0.clkr,
 	[GPLL0_VOTE] = &gpll0_vote,
@@ -3444,6 +3470,13 @@ static struct clk_regmap *gcc_apq8084_clocks[] = {
 	[GCC_USB_HSIC_SYSTEM_CLK] = &gcc_usb_hsic_system_clk.clkr,
 };
 
+static struct gdsc *gcc_apq8084_gdscs[] = {
+	[USB_HS_HSIC_GDSC] = &usb_hs_hsic_gdsc,
+	[PCIE0_GDSC] = &pcie0_gdsc,
+	[PCIE1_GDSC] = &pcie1_gdsc,
+	[USB30_GDSC] = &usb30_gdsc,
+};
+
 static const struct qcom_reset_map gcc_apq8084_resets[] = {
 	[GCC_SYSTEM_NOC_BCR] = { 0x0100 },
 	[GCC_CONFIG_NOC_BCR] = { 0x0140 },
@@ -3552,6 +3585,8 @@ static const struct qcom_cc_desc gcc_apq8084_desc = {
 	.num_clks = ARRAY_SIZE(gcc_apq8084_clocks),
 	.resets = gcc_apq8084_resets,
 	.num_resets = ARRAY_SIZE(gcc_apq8084_resets),
+	.gdscs = gcc_apq8084_gdscs,
+	.num_gdscs = ARRAY_SIZE(gcc_apq8084_gdscs),
 };
 
 static const struct of_device_id gcc_apq8084_match_table[] = {
@@ -3562,34 +3597,24 @@ MODULE_DEVICE_TABLE(of, gcc_apq8084_match_table);
 
 static int gcc_apq8084_probe(struct platform_device *pdev)
 {
-	struct clk *clk;
+	int ret;
 	struct device *dev = &pdev->dev;
 
-	/* Temporary until RPM clocks supported */
-	clk = clk_register_fixed_rate(dev, "xo", NULL, CLK_IS_ROOT, 19200000);
-	if (IS_ERR(clk))
-		return PTR_ERR(clk);
+	ret = qcom_cc_register_board_clk(dev, "xo_board", "xo", 19200000);
+	if (ret)
+		return ret;
 
-	clk = clk_register_fixed_rate(dev, "sleep_clk_src", NULL,
-				      CLK_IS_ROOT, 32768);
-	if (IS_ERR(clk))
-		return PTR_ERR(clk);
+	ret = qcom_cc_register_sleep_clk(dev);
+	if (ret)
+		return ret;
 
 	return qcom_cc_probe(pdev, &gcc_apq8084_desc);
 }
 
-static int gcc_apq8084_remove(struct platform_device *pdev)
-{
-	qcom_cc_remove(pdev);
-	return 0;
-}
-
 static struct platform_driver gcc_apq8084_driver = {
 	.probe		= gcc_apq8084_probe,
-	.remove		= gcc_apq8084_remove,
 	.driver		= {
 		.name	= "gcc-apq8084",
-		.owner	= THIS_MODULE,
 		.of_match_table = gcc_apq8084_match_table,
 	},
 };

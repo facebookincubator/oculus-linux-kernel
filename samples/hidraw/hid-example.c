@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Hidraw Userspace Example
  *
@@ -46,10 +47,14 @@ int main(int argc, char **argv)
 	char buf[256];
 	struct hidraw_report_descriptor rpt_desc;
 	struct hidraw_devinfo info;
+	char *device = "/dev/hidraw0";
+
+	if (argc > 1)
+		device = argv[1];
 
 	/* Open the Device with non-blocking reads. In real life,
 	   don't use a hard coded path; use libudev instead. */
-	fd = open("/dev/hidraw0", O_RDWR|O_NONBLOCK);
+	fd = open(device, O_RDWR|O_NONBLOCK);
 
 	if (fd < 0) {
 		perror("Unable to open device");
@@ -114,7 +119,7 @@ int main(int argc, char **argv)
 	if (res < 0)
 		perror("HIDIOCSFEATURE");
 	else
-		printf("ioctl HIDIOCGFEATURE returned: %d\n", res);
+		printf("ioctl HIDIOCSFEATURE returned: %d\n", res);
 
 	/* Get Feature */
 	buf[0] = 0x9; /* Report Number */

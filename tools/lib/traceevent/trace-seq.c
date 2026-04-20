@@ -1,22 +1,10 @@
+// SPDX-License-Identifier: LGPL-2.1
 /*
  * Copyright (C) 2009 Red Hat Inc, Steven Rostedt <srostedt@redhat.com>
  *
- * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation;
- * version 2.1 of the License (not later!)
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this program; if not,  see <http://www.gnu.org/licenses>
- *
- * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
+#include "trace-seq.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -112,7 +100,8 @@ static void expand_buffer(struct trace_seq *s)
  * @fmt: printf format string
  *
  * It returns 0 if the trace oversizes the buffer's free
- * space, 1 otherwise.
+ * space, the number of characters printed, or a negative
+ * value in case of an error.
  *
  * The tracer may use either sequence operations or its own
  * copy to user routines. To simplify formating of a trace
@@ -141,9 +130,10 @@ trace_seq_printf(struct trace_seq *s, const char *fmt, ...)
 		goto try_again;
 	}
 
-	s->len += ret;
+	if (ret > 0)
+		s->len += ret;
 
-	return 1;
+	return ret;
 }
 
 /**
@@ -151,6 +141,10 @@ trace_seq_printf(struct trace_seq *s, const char *fmt, ...)
  * @s: trace sequence descriptor
  * @fmt: printf format string
  *
+ * It returns 0 if the trace oversizes the buffer's free
+ * space, the number of characters printed, or a negative
+ * value in case of an error.
+ * *
  * The tracer may use either sequence operations or its own
  * copy to user routines. To simplify formating of a trace
  * trace_seq_printf is used to store strings into a special
@@ -175,9 +169,10 @@ trace_seq_vprintf(struct trace_seq *s, const char *fmt, va_list args)
 		goto try_again;
 	}
 
-	s->len += ret;
+	if (ret > 0)
+		s->len += ret;
 
-	return len;
+	return ret;
 }
 
 /**
@@ -231,19 +226,24 @@ void trace_seq_terminate(struct trace_seq *s)
 	s->buffer[s->len] = 0;
 }
 
-int trace_seq_do_printf(struct trace_seq *s)
+int trace_seq_do_fprintf(struct trace_seq *s, FILE *fp)
 {
 	TRACE_SEQ_CHECK(s);
 
 	switch (s->state) {
 	case TRACE_SEQ__GOOD:
-		return printf("%.*s", s->len, s->buffer);
+		return fprintf(fp, "%.*s", s->len, s->buffer);
 	case TRACE_SEQ__BUFFER_POISONED:
-		puts("Usage of trace_seq after it was destroyed");
+		fprintf(fp, "%s\n", "Usage of trace_seq after it was destroyed");
 		break;
 	case TRACE_SEQ__MEM_ALLOC_FAILED:
-		puts("Can't allocate trace_seq buffer memory");
+		fprintf(fp, "%s\n", "Can't allocate trace_seq buffer memory");
 		break;
 	}
 	return -1;
+}
+
+int trace_seq_do_printf(struct trace_seq *s)
+{
+	return trace_seq_do_fprintf(s, stdout);
 }

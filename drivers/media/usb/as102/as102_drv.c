@@ -1,17 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Abilis Systems Single DVB-T Receiver
  * Copyright (C) 2008 Pierrick Hascoet <pierrick.hascoet@abilis.com>
  * Copyright (C) 2010 Devin Heitmueller <dheitmueller@kernellabs.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 #include <linux/kernel.h>
 #include <linux/errno.h>
@@ -27,7 +18,7 @@
 #include "as10x_cmd.h"
 #include "as102_fe.h"
 #include "as102_fw.h"
-#include "dvbdev.h"
+#include <media/dvbdev.h>
 
 int dual_tuner;
 module_param_named(dual_tuner, dual_tuner, int, 0644);
@@ -337,6 +328,7 @@ int as102_dvb_register(struct as102_dev_t *as102_dev)
 				       &as102_dev->bus_adap,
 				       as102_dev->elna_cfg);
 	if (!as102_dev->dvb_fe) {
+		ret = -ENODEV;
 		dev_err(dev, "%s: as102_attach() failed: %d",
 		    __func__, ret);
 		goto efereg;

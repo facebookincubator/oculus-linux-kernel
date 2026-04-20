@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/fs/file_table.c
  *
@@ -13,6 +14,7 @@
 #include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/security.h>
+#include <linux/cred.h>
 #include <linux/eventpoll.h>
 #include <linux/rcupdate.h>
 #include <linux/mount.h>
@@ -20,12 +22,11 @@
 #include <linux/cdev.h>
 #include <linux/fsnotify.h>
 #include <linux/sysctl.h>
-#include <linux/lglock.h>
 #include <linux/percpu_counter.h>
 #include <linux/percpu.h>
-#include <linux/hardirq.h>
 #include <linux/task_work.h>
 #include <linux/ima.h>
+#include <linux/swap.h>
 
 #include <linux/atomic.h>
 
@@ -41,141 +42,6 @@ static struct kmem_cache *filp_cachep __read_mostly;
 
 static struct percpu_counter nr_files __cacheline_aligned_in_smp;
 
-#ifdef CONFIG_FILE_TABLE_DEBUG
-#include <linux/hashtable.h>
-#include <mount.h>
-static DEFINE_MUTEX(global_files_lock);
-static DEFINE_HASHTABLE(global_files_hashtable, 10);
-
-struct global_filetable_lookup_key {
-	struct work_struct work;
-	uintptr_t value;
-};
-
-static void global_filetable_print_warning_once(void)
-{
-	pr_err_once("\n**********************************************************\n");
-	pr_err_once("**   NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE   **\n");
-	pr_err_once("**                                                      **\n");
-	pr_err_once("**      VFS FILE TABLE DEBUG is enabled .               **\n");
-	pr_err_once("**  Allocating extra memory and slowing access to files **\n");
-	pr_err_once("**                                                      **\n");
-	pr_err_once("** This means that this is a DEBUG kernel and it is     **\n");
-	pr_err_once("** unsafe for production use.                           **\n");
-	pr_err_once("**                                                      **\n");
-	pr_err_once("** If you see this message and you are not debugging    **\n");
-	pr_err_once("** the kernel, report this immediately to your vendor!  **\n");
-	pr_err_once("**                                                      **\n");
-	pr_err_once("**   NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE   **\n");
-	pr_err_once("**********************************************************\n");
-}
-
-void global_filetable_add(struct file *filp)
-{
-	struct mount *mnt;
-
-	if (filp->f_path.dentry->d_iname == NULL ||
-	    strlen(filp->f_path.dentry->d_iname) == 0)
-		return;
-
-	mnt = real_mount(filp->f_path.mnt);
-
-	mutex_lock(&global_files_lock);
-	hash_add(global_files_hashtable, &filp->f_hash, (uintptr_t)mnt);
-	mutex_unlock(&global_files_lock);
-}
-
-void global_filetable_del(struct file *filp)
-{
-	mutex_lock(&global_files_lock);
-	hash_del(&filp->f_hash);
-	mutex_unlock(&global_files_lock);
-}
-
-static void global_print_file(struct file *filp, char *path_buffer, int *count)
-{
-	char *pathname;
-
-	pathname = d_path(&filp->f_path, path_buffer, PAGE_SIZE);
-	if (IS_ERR(pathname))
-		pr_err("VFS: File %d Address : %pa partial filename: %s ref_count=%ld\n",
-			++(*count), &filp, filp->f_path.dentry->d_iname,
-			atomic_long_read(&filp->f_count));
-	else
-		pr_err("VFS: File %d Address : %pa full filepath: %s ref_count=%ld\n",
-			++(*count), &filp, pathname,
-			atomic_long_read(&filp->f_count));
-}
-
-static void global_filetable_print(uintptr_t lookup_mnt)
-{
-	struct hlist_node *tmp;
-	struct file *filp;
-	struct mount *mnt;
-	int index;
-	int count = 0;
-	char *path_buffer = (char *)__get_free_page(GFP_TEMPORARY);
-
-	mutex_lock(&global_files_lock);
-	pr_err("\n**********************************************************\n");
-	pr_err("**   NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE   **\n");
-
-	pr_err("\n");
-	pr_err("VFS: The following files hold a reference to the mount\n");
-	pr_err("\n");
-	hash_for_each_possible_safe(global_files_hashtable, filp, tmp, f_hash,
-				    lookup_mnt) {
-		mnt = real_mount(filp->f_path.mnt);
-		if ((uintptr_t)mnt == lookup_mnt)
-			global_print_file(filp, path_buffer, &count);
-	}
-	pr_err("\n");
-	pr_err("VFS: Found total of %d open files\n", count);
-	pr_err("\n");
-
-	count = 0;
-	pr_err("\n");
-	pr_err("VFS: The following files need to cleaned up\n");
-	pr_err("\n");
-	hash_for_each_safe(global_files_hashtable, index, tmp, filp, f_hash) {
-		if (atomic_long_read(&filp->f_count) == 0)
-			global_print_file(filp, path_buffer, &count);
-	}
-
-	pr_err("\n");
-	pr_err("VFS: Found total of %d files awaiting clean-up\n", count);
-	pr_err("\n");
-	pr_err("**   NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE   **\n");
-	pr_err("\n**********************************************************\n");
-
-	mutex_unlock(&global_files_lock);
-	free_page((unsigned long)path_buffer);
-}
-
-static void global_filetable_print_work_fn(struct work_struct *work)
-{
-	struct global_filetable_lookup_key *key;
-	uintptr_t lookup_mnt;
-
-	key = container_of(work, struct global_filetable_lookup_key, work);
-	lookup_mnt = key->value;
-	kfree(key);
-	global_filetable_print(lookup_mnt);
-}
-
-void global_filetable_delayed_print(struct mount *mnt)
-{
-	struct global_filetable_lookup_key *key;
-
-	key = kzalloc(sizeof(*key), GFP_KERNEL);
-	if (key == NULL)
-		return;
-	key->value = (uintptr_t)mnt;
-	INIT_WORK(&key->work, global_filetable_print_work_fn);
-	schedule_work(&key->work);
-}
-#endif /* CONFIG_FILE_TABLE_DEBUG */
-
 static void file_free_rcu(struct rcu_head *head)
 {
 	struct file *f = container_of(head, struct file, f_u.fu_rcuhead);
@@ -186,7 +52,9 @@ static void file_free_rcu(struct rcu_head *head)
 
 static inline void file_free(struct file *f)
 {
-	percpu_counter_dec(&nr_files);
+	security_file_free(f);
+	if (!(f->f_mode & FMODE_NOACCOUNT))
+		percpu_counter_dec(&nr_files);
 	call_rcu(&f->f_u.fu_rcuhead, file_free_rcu);
 }
 
@@ -212,18 +80,46 @@ EXPORT_SYMBOL_GPL(get_max_files);
  */
 #if defined(CONFIG_SYSCTL) && defined(CONFIG_PROC_FS)
 int proc_nr_files(struct ctl_table *table, int write,
-                     void __user *buffer, size_t *lenp, loff_t *ppos)
+                     void *buffer, size_t *lenp, loff_t *ppos)
 {
 	files_stat.nr_files = get_nr_files();
 	return proc_doulongvec_minmax(table, write, buffer, lenp, ppos);
 }
 #else
 int proc_nr_files(struct ctl_table *table, int write,
-                     void __user *buffer, size_t *lenp, loff_t *ppos)
+                     void *buffer, size_t *lenp, loff_t *ppos)
 {
 	return -ENOSYS;
 }
 #endif
+
+static struct file *__alloc_file(int flags, const struct cred *cred)
+{
+	struct file *f;
+	int error;
+
+	f = kmem_cache_zalloc(filp_cachep, GFP_KERNEL);
+	if (unlikely(!f))
+		return ERR_PTR(-ENOMEM);
+
+	f->f_cred = get_cred(cred);
+	error = security_file_alloc(f);
+	if (unlikely(error)) {
+		file_free_rcu(&f->f_u.fu_rcuhead);
+		return ERR_PTR(error);
+	}
+
+	atomic_long_set(&f->f_count, 1);
+	rwlock_init(&f->f_owner.lock);
+	spin_lock_init(&f->f_lock);
+	mutex_init(&f->f_pos_lock);
+	eventpoll_init_file(f);
+	f->f_flags = flags;
+	f->f_mode = OPEN_FMODE(flags);
+	/* f->f_version: 0 */
+
+	return f;
+}
 
 /* Find an unused file structure and return a pointer to it.
  * Returns an error pointer if some error happend e.g. we over file
@@ -235,12 +131,10 @@ int proc_nr_files(struct ctl_table *table, int write,
  * done, you will imbalance int the mount's writer count
  * and a warning at __fput() time.
  */
-struct file *get_empty_filp(void)
+struct file *alloc_empty_file(int flags, const struct cred *cred)
 {
-	const struct cred *cred = current_cred();
 	static long old_max;
 	struct file *f;
-	int error;
 
 	/*
 	 * Privileged users can go above max_files
@@ -254,24 +148,10 @@ struct file *get_empty_filp(void)
 			goto over;
 	}
 
-	f = kmem_cache_zalloc(filp_cachep, GFP_KERNEL);
-	if (unlikely(!f))
-		return ERR_PTR(-ENOMEM);
+	f = __alloc_file(flags, cred);
+	if (!IS_ERR(f))
+		percpu_counter_inc(&nr_files);
 
-	percpu_counter_inc(&nr_files);
-	f->f_cred = get_cred(cred);
-	error = security_file_alloc(f);
-	if (unlikely(error)) {
-		file_free(f);
-		return ERR_PTR(error);
-	}
-
-	atomic_long_set(&f->f_count, 1);
-	rwlock_init(&f->f_owner.lock);
-	spin_lock_init(&f->f_lock);
-	mutex_init(&f->f_pos_lock);
-	eventpoll_init_file(f);
-	/* f->f_version: 0 */
 	return f;
 
 over:
@@ -283,38 +163,92 @@ over:
 	return ERR_PTR(-ENFILE);
 }
 
+/*
+ * Variant of alloc_empty_file() that doesn't check and modify nr_files.
+ *
+ * Should not be used unless there's a very good reason to do so.
+ */
+struct file *alloc_empty_file_noaccount(int flags, const struct cred *cred)
+{
+	struct file *f = __alloc_file(flags, cred);
+
+	if (!IS_ERR(f))
+		f->f_mode |= FMODE_NOACCOUNT;
+
+	return f;
+}
+
 /**
  * alloc_file - allocate and initialize a 'struct file'
  *
  * @path: the (dentry, vfsmount) pair for the new file
- * @mode: the mode with which the new file will be opened
+ * @flags: O_... flags with which the new file will be opened
  * @fop: the 'struct file_operations' for the new file
  */
-struct file *alloc_file(struct path *path, fmode_t mode,
+static struct file *alloc_file(const struct path *path, int flags,
 		const struct file_operations *fop)
 {
 	struct file *file;
 
-	file = get_empty_filp();
+	file = alloc_empty_file(flags, current_cred());
 	if (IS_ERR(file))
 		return file;
 
 	file->f_path = *path;
 	file->f_inode = path->dentry->d_inode;
 	file->f_mapping = path->dentry->d_inode->i_mapping;
-	if ((mode & FMODE_READ) &&
-	     likely(fop->read || fop->aio_read || fop->read_iter))
-		mode |= FMODE_CAN_READ;
-	if ((mode & FMODE_WRITE) &&
-	     likely(fop->write || fop->aio_write || fop->write_iter))
-		mode |= FMODE_CAN_WRITE;
-	file->f_mode = mode;
+	file->f_wb_err = filemap_sample_wb_err(file->f_mapping);
+	file->f_sb_err = file_sample_sb_err(file);
+	if ((file->f_mode & FMODE_READ) &&
+	     likely(fop->read || fop->read_iter))
+		file->f_mode |= FMODE_CAN_READ;
+	if ((file->f_mode & FMODE_WRITE) &&
+	     likely(fop->write || fop->write_iter))
+		file->f_mode |= FMODE_CAN_WRITE;
+	file->f_mode |= FMODE_OPENED;
 	file->f_op = fop;
-	if ((mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
+	if ((file->f_mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
 		i_readcount_inc(path->dentry->d_inode);
 	return file;
 }
-EXPORT_SYMBOL(alloc_file);
+
+struct file *alloc_file_pseudo(struct inode *inode, struct vfsmount *mnt,
+				const char *name, int flags,
+				const struct file_operations *fops)
+{
+	static const struct dentry_operations anon_ops = {
+		.d_dname = simple_dname
+	};
+	struct qstr this = QSTR_INIT(name, strlen(name));
+	struct path path;
+	struct file *file;
+
+	path.dentry = d_alloc_pseudo(mnt->mnt_sb, &this);
+	if (!path.dentry)
+		return ERR_PTR(-ENOMEM);
+	if (!mnt->mnt_sb->s_d_op)
+		d_set_d_op(path.dentry, &anon_ops);
+	path.mnt = mntget(mnt);
+	d_instantiate(path.dentry, inode);
+	file = alloc_file(&path, flags, fops);
+	if (IS_ERR(file)) {
+		ihold(inode);
+		path_put(&path);
+	}
+	return file;
+}
+EXPORT_SYMBOL(alloc_file_pseudo);
+
+struct file *alloc_file_clone(struct file *base, int flags,
+				const struct file_operations *fops)
+{
+	struct file *f = alloc_file(&base->f_path, flags, fops);
+	if (!IS_ERR(f)) {
+		path_get(&f->f_path);
+		f->f_mapping = base->f_mapping;
+	}
+	return f;
+}
 
 /* the real guts of fput() - releasing the last reference to file
  */
@@ -323,6 +257,10 @@ static void __fput(struct file *file)
 	struct dentry *dentry = file->f_path.dentry;
 	struct vfsmount *mnt = file->f_path.mnt;
 	struct inode *inode = file->f_inode;
+	fmode_t mode = file->f_mode;
+
+	if (unlikely(!(file->f_mode & FMODE_OPENED)))
+		goto out;
 
 	might_sleep();
 
@@ -334,45 +272,41 @@ static void __fput(struct file *file)
 	eventpoll_release(file);
 	locks_remove_file(file);
 
+	ima_file_free(file);
 	if (unlikely(file->f_flags & FASYNC)) {
 		if (file->f_op->fasync)
 			file->f_op->fasync(-1, file, 0);
 	}
-	ima_file_free(file);
 	if (file->f_op->release)
 		file->f_op->release(inode, file);
-	security_file_free(file);
 	if (unlikely(S_ISCHR(inode->i_mode) && inode->i_cdev != NULL &&
-		     !(file->f_mode & FMODE_PATH))) {
+		     !(mode & FMODE_PATH))) {
 		cdev_put(inode->i_cdev);
 	}
 	fops_put(file->f_op);
 	put_pid(file->f_owner.pid);
-	if ((file->f_mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
+	if ((mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
 		i_readcount_dec(inode);
-	if (file->f_mode & FMODE_WRITER) {
+	if (mode & FMODE_WRITER) {
 		put_write_access(inode);
 		__mnt_drop_write(mnt);
 	}
-	global_filetable_del(file);
-	file->f_path.dentry = NULL;
-	file->f_path.mnt = NULL;
-	file->f_inode = NULL;
-	file_free(file);
 	dput(dentry);
+	if (unlikely(mode & FMODE_NEED_UNMOUNT))
+		dissolve_on_fput(mnt);
 	mntput(mnt);
+out:
+	file_free(file);
 }
 
 static LLIST_HEAD(delayed_fput_list);
 static void delayed_fput(struct work_struct *unused)
 {
 	struct llist_node *node = llist_del_all(&delayed_fput_list);
-	struct llist_node *next;
+	struct file *f, *t;
 
-	for (; node; node = next) {
-		next = llist_next(node);
-		__fput(llist_entry(node, struct file, f_u.fu_llist));
-	}
+	llist_for_each_entry_safe(f, t, node, f_u.fu_llist)
+		__fput(f);
 }
 
 static void ____fput(struct callback_head *work)
@@ -394,17 +328,18 @@ void flush_delayed_fput(void)
 {
 	delayed_fput(NULL);
 }
+EXPORT_SYMBOL_GPL(flush_delayed_fput);
 
 static DECLARE_DELAYED_WORK(delayed_fput_work, delayed_fput);
 
-void fput(struct file *file)
+void fput_many(struct file *file, unsigned int refs)
 {
-	if (atomic_long_dec_and_test(&file->f_count)) {
+	if (atomic_long_sub_and_test(refs, &file->f_count)) {
 		struct task_struct *task = current;
 
 		if (likely(!in_interrupt() && !(task->flags & PF_KTHREAD))) {
 			init_task_work(&file->f_u.fu_rcuhead, ____fput);
-			if (!task_work_add(task, &file->f_u.fu_rcuhead, true))
+			if (!task_work_add(task, &file->f_u.fu_rcuhead, TWA_RESUME))
 				return;
 			/*
 			 * After this task has run exit_task_work(),
@@ -416,6 +351,11 @@ void fput(struct file *file)
 		if (llist_add(&file->f_u.fu_llist, &delayed_fput_list))
 			schedule_delayed_work(&delayed_fput_work, 1);
 	}
+}
+
+void fput(struct file *file)
+{
+	fput_many(file, 1);
 }
 
 /*
@@ -436,29 +376,27 @@ void __fput_sync(struct file *file)
 }
 
 EXPORT_SYMBOL(fput);
+EXPORT_SYMBOL(__fput_sync);
 
-void put_filp(struct file *file)
+void __init files_init(void)
 {
-	if (atomic_long_dec_and_test(&file->f_count)) {
-		security_file_free(file);
-		file_free(file);
-	}
+	filp_cachep = kmem_cache_create("filp", sizeof(struct file), 0,
+			SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_ACCOUNT, NULL);
+	percpu_counter_init(&nr_files, 0, GFP_KERNEL);
 }
 
-void __init files_init(unsigned long mempages)
-{ 
+/*
+ * One file with associated inode and dcache is very roughly 1K. Per default
+ * do not use more than 10% of our memory for files.
+ */
+void __init files_maxfiles_init(void)
+{
 	unsigned long n;
+	unsigned long nr_pages = totalram_pages();
+	unsigned long memreserve = (nr_pages - nr_free_pages()) * 3/2;
 
-	filp_cachep = kmem_cache_create("filp", sizeof(struct file), 0,
-			SLAB_HWCACHE_ALIGN | SLAB_PANIC, NULL);
+	memreserve = min(memreserve, nr_pages - 1);
+	n = ((nr_pages - memreserve) * (PAGE_SIZE / 1024)) / 10;
 
-	/*
-	 * One file with associated inode and dcache is very roughly 1K.
-	 * Per default don't use more than 10% of our memory for files. 
-	 */ 
-
-	n = (mempages * (PAGE_SIZE / 1024)) / 10;
 	files_stat.max_files = max_t(unsigned long, n, NR_FILE);
-	percpu_counter_init(&nr_files, 0, GFP_KERNEL);
-	global_filetable_print_warning_once();
-} 
+}

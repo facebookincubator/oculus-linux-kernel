@@ -1,19 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * pcl726.c
  * Comedi driver for 6/12-Channel D/A Output and DIO cards
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 1998 David A. Schleef <ds@schleef.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
@@ -21,11 +12,8 @@
  * Description: Advantech PCL-726 & compatibles
  * Author: David A. Schleef <ds@schleef.org>
  * Status: untested
- * Devices: (Advantech) PCL-726 [pcl726]
- *	    (Advantech) PCL-727 [pcl727]
- *	    (Advantech) PCL-728 [pcl728]
- *	    (ADLink) ACL-6126 [acl6126]
- *	    (ADLink) ACL-6128 [acl6128]
+ * Devices: [Advantech] PCL-726 (pcl726), PCL-727 (pcl727), PCL-728 (pcl728),
+ *   [ADLink] ACL-6126 (acl6126), ACL-6128 (acl6128)
  *
  * Configuration Options:
  *   [0]  - IO Base
@@ -64,8 +52,6 @@
 #include <linux/interrupt.h>
 
 #include "../comedidev.h"
-
-#include "comedi_fc.h"
 
 #define PCL726_AO_MSB_REG(x)	(0x00 + ((x) * 2))
 #define PCL726_AO_LSB_REG(x)	(0x01 + ((x) * 2))
@@ -176,11 +162,11 @@ static int pcl726_intr_cmdtest(struct comedi_device *dev,
 
 	/* Step 1 : check if triggers are trivially valid */
 
-	err |= cfc_check_trigger_src(&cmd->start_src, TRIG_NOW);
-	err |= cfc_check_trigger_src(&cmd->scan_begin_src, TRIG_EXT);
-	err |= cfc_check_trigger_src(&cmd->convert_src, TRIG_FOLLOW);
-	err |= cfc_check_trigger_src(&cmd->scan_end_src, TRIG_COUNT);
-	err |= cfc_check_trigger_src(&cmd->stop_src, TRIG_NONE);
+	err |= comedi_check_trigger_src(&cmd->start_src, TRIG_NOW);
+	err |= comedi_check_trigger_src(&cmd->scan_begin_src, TRIG_EXT);
+	err |= comedi_check_trigger_src(&cmd->convert_src, TRIG_FOLLOW);
+	err |= comedi_check_trigger_src(&cmd->scan_end_src, TRIG_COUNT);
+	err |= comedi_check_trigger_src(&cmd->stop_src, TRIG_NONE);
 
 	if (err)
 		return 1;
@@ -190,11 +176,12 @@ static int pcl726_intr_cmdtest(struct comedi_device *dev,
 
 	/* Step 3: check if arguments are trivially valid */
 
-	err |= cfc_check_trigger_arg_is(&cmd->start_arg, 0);
-	err |= cfc_check_trigger_arg_is(&cmd->scan_begin_arg, 0);
-	err |= cfc_check_trigger_arg_is(&cmd->convert_arg, 0);
-	err |= cfc_check_trigger_arg_is(&cmd->scan_end_arg, cmd->chanlist_len);
-	err |= cfc_check_trigger_arg_is(&cmd->stop_arg, 0);
+	err |= comedi_check_trigger_arg_is(&cmd->start_arg, 0);
+	err |= comedi_check_trigger_arg_is(&cmd->scan_begin_arg, 0);
+	err |= comedi_check_trigger_arg_is(&cmd->convert_arg, 0);
+	err |= comedi_check_trigger_arg_is(&cmd->scan_end_arg,
+					   cmd->chanlist_len);
+	err |= comedi_check_trigger_arg_is(&cmd->stop_arg, 0);
 
 	if (err)
 		return 3;
@@ -235,9 +222,8 @@ static irqreturn_t pcl726_interrupt(int irq, void *d)
 	if (devpriv->cmd_running) {
 		pcl726_intr_cancel(dev, s);
 
-		comedi_buf_put(s, 0);
-		s->async->events |= (COMEDI_CB_BLOCK | COMEDI_CB_EOS);
-		comedi_event(dev, s);
+		comedi_buf_write_samples(s, &s->state, 1);
+		comedi_handle_events(dev, s);
 	}
 
 	return IRQ_HANDLED;
@@ -377,7 +363,6 @@ static int pcl726_attach(struct comedi_device *dev,
 	s->maxdata	= 0x0fff;
 	s->range_table_list = devpriv->rangelist;
 	s->insn_write	= pcl726_ao_insn_write;
-	s->insn_read	= comedi_readback_insn_read;
 
 	ret = comedi_alloc_subdev_readback(s);
 	if (ret)
@@ -404,7 +389,7 @@ static int pcl726_attach(struct comedi_device *dev,
 	}
 
 	if (dev->irq) {
-		/* Digial Input subdevice - Interrupt support */
+		/* Digital Input subdevice - Interrupt support */
 		s = &dev->subdevices[subdev++];
 		dev->read_subdev = s;
 		s->type		= COMEDI_SUBD_DI;
@@ -433,6 +418,6 @@ static struct comedi_driver pcl726_driver = {
 };
 module_comedi_driver(pcl726_driver);
 
-MODULE_AUTHOR("Comedi http://www.comedi.org");
+MODULE_AUTHOR("Comedi https://www.comedi.org");
 MODULE_DESCRIPTION("Comedi driver for Advantech PCL-726 & compatibles");
 MODULE_LICENSE("GPL");

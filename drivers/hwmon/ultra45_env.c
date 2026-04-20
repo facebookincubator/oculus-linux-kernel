@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ultra45_env.c: Driver for Ultra45 PIC16F747 environmental monitor.
  *
@@ -314,7 +315,6 @@ MODULE_DEVICE_TABLE(of, env_match);
 static struct platform_driver env_driver = {
 	.driver = {
 		.name = "ultra45_env",
-		.owner = THIS_MODULE,
 		.of_match_table = env_match,
 	},
 	.probe		= env_probe,

@@ -1,20 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Delay loops based on the OpenRISC implementation.
  *
  * Copyright (C) 2012 ARM Limited
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  *
  * Author: Will Deacon <will.deacon@arm.com>
  */
@@ -29,7 +17,7 @@
 /*
  * Default to the loop-based delay implementation.
  */
-struct arm_delay_ops arm_delay_ops = {
+struct arm_delay_ops arm_delay_ops __ro_after_init = {
 	.delay		= __loop_delay,
 	.const_udelay	= __loop_const_udelay,
 	.udelay		= __loop_udelay,
@@ -82,6 +70,12 @@ void __init register_current_timer_delay(const struct delay_timer *timer)
 	clocks_calc_mult_shift(&new_mult, &new_shift, timer->freq,
 			       NSEC_PER_SEC, 3600);
 	res = cyc_to_ns(1ULL, new_mult, new_shift);
+
+	if (res > 1000) {
+		pr_err("Ignoring delay timer %ps, which has insufficient resolution of %lluns\n",
+			timer, res);
+		return;
+	}
 
 	if (!delay_calibrated && (!delay_res || (res < delay_res))) {
 		pr_info("Switching to timer-based delay loop, resolution %lluns\n", res);

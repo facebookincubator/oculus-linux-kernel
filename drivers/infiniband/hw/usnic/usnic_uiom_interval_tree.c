@@ -1,9 +1,24 @@
 /*
  * Copyright (c) 2014, Cisco Systems, Inc. All rights reserved.
  *
- * This program is free software; you may redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; version 2 of the License.
+ * This software is available to you under a choice of one of two
+ * licenses.  You may choose to be licensed under the terms of the GNU
+ * General Public License (GPL) Version 2, available from the file
+ * COPYING in the main directory of this source tree, or the
+ * BSD license below:
+ *
+ *     Redistribution and use in source and binary forms, with or
+ *     without modification, are permitted provided that the following
+ *     conditions are met:
+ *
+ *      - Redistributions of source code must retain the above
+ *        copyright notice, this list of conditions and the following
+ *        disclaimer.
+ *
+ *      - Redistributions in binary form must reproduce the above
+ *        copyright notice, this list of conditions and the following
+ *        disclaimer in the documentation and/or other materials
+ *        provided with the distribution.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
@@ -85,9 +100,9 @@ static int interval_cmp(void *priv, struct list_head *a, struct list_head *b)
 }
 
 static void
-find_intervals_intersection_sorted(struct rb_root *root, unsigned long start,
-					unsigned long last,
-					struct list_head *list)
+find_intervals_intersection_sorted(struct rb_root_cached *root,
+				   unsigned long start, unsigned long last,
+				   struct list_head *list)
 {
 	struct usnic_uiom_interval_node *node;
 
@@ -103,7 +118,7 @@ find_intervals_intersection_sorted(struct rb_root *root, unsigned long start,
 
 int usnic_uiom_get_intervals_diff(unsigned long start, unsigned long last,
 					int flags, int flag_mask,
-					struct rb_root *root,
+					struct rb_root_cached *root,
 					struct list_head *diff_set)
 {
 	struct usnic_uiom_interval_node *interval, *tmp;
@@ -160,7 +175,7 @@ void usnic_uiom_put_interval_set(struct list_head *intervals)
 		kfree(interval);
 }
 
-int usnic_uiom_insert_interval(struct rb_root *root, unsigned long start,
+int usnic_uiom_insert_interval(struct rb_root_cached *root, unsigned long start,
 				unsigned long last, int flags)
 {
 	struct usnic_uiom_interval_node *interval, *tmp;
@@ -231,8 +246,9 @@ err_out:
 	return err;
 }
 
-void usnic_uiom_remove_interval(struct rb_root *root, unsigned long start,
-				unsigned long last, struct list_head *removed)
+void usnic_uiom_remove_interval(struct rb_root_cached *root,
+				unsigned long start, unsigned long last,
+				struct list_head *removed)
 {
 	struct usnic_uiom_interval_node *interval;
 

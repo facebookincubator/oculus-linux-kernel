@@ -1,26 +1,34 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Device Tree for the ST-Ericsson Nomadik 8815 STn8815 SoC
  */
 
 #include <dt-bindings/gpio/gpio.h>
-#include "skeleton.dtsi"
 
 / {
 	#address-cells = <1>;
 	#size-cells = <1>;
 
 	memory {
+		device_type = "memory";
 		reg = <0x00000000 0x04000000>,
 		    <0x08000000 0x04000000>;
 	};
 
-	L2: l2-cache {
+	L2: cache-controller {
 		compatible = "arm,l210-cache";
 		reg = <0x10210000 0x1000>;
 		interrupt-parent = <&vica>;
 		interrupts = <30>;
 		cache-unified;
 		cache-level = <2>;
+		cache-size = <131072>;
+		cache-sets = <512>;
+		cache-line-size = <32>;
+		/* At full speed latency must be >=2 */
+		arm,tag-latency = <8>;
+		arm,data-latency = <8 8>;
+		arm,dirty-latency = <8>;
 	};
 
 	mtu0: mtu@101e2000 {
@@ -52,6 +60,7 @@
 		gpio-controller;
 		#gpio-cells = <2>;
 		gpio-bank = <0>;
+		gpio-ranges = <&pinctrl 0 0 32>;
 		clocks = <&pclk>;
 	};
 
@@ -65,6 +74,7 @@
 		gpio-controller;
 		#gpio-cells = <2>;
 		gpio-bank = <1>;
+		gpio-ranges = <&pinctrl 0 32 32>;
 		clocks = <&pclk>;
 	};
 
@@ -78,12 +88,14 @@
 		gpio-controller;
 		#gpio-cells = <2>;
 		gpio-bank = <2>;
+		gpio-ranges = <&pinctrl 0 64 32>;
 		clocks = <&pclk>;
 	};
 
 	gpio3: gpio@101e7000 {
 		compatible = "st,nomadik-gpio";
 		reg =  <0x101e7000 0x80>;
+		ngpio = <28>;
 		interrupt-parent = <&vica>;
 		interrupts = <9>;
 		interrupt-controller;
@@ -91,66 +103,52 @@
 		gpio-controller;
 		#gpio-cells = <2>;
 		gpio-bank = <3>;
+		gpio-ranges = <&pinctrl 0 96 28>;
 		clocks = <&pclk>;
 	};
 
-	pinctrl {
+	pinctrl: pinctrl {
 		compatible = "stericsson,stn8815-pinctrl";
+		nomadik-gpio-chips = <&gpio0>, <&gpio1>, <&gpio2>, <&gpio3>;
 		/* Pin configurations */
-		uart0 {
-			uart0_default_mux: uart0_mux {
-				u0_default_mux {
-					ste,function = "u0";
-					ste,pins = "u0_a_1";
-				};
-			};
-		};
 		uart1 {
 			uart1_default_mux: uart1_mux {
 				u1_default_mux {
-					ste,function = "u1";
-					ste,pins = "u1_a_1";
+					function = "u1";
+					groups = "u1_a_1";
 				};
 			};
 		};
 		mmcsd {
 			mmcsd_default_mux: mmcsd_mux {
 				mmcsd_default_mux {
-					ste,function = "mmcsd";
-					ste,pins = "mmcsd_a_1", "mmcsd_b_1";
+					function = "mmcsd";
+					groups = "mmcsd_a_1", "mmcsd_b_1";
 				};
 			};
 			mmcsd_default_mode: mmcsd_default {
 				mmcsd_default_cfg1 {
-					/* MCCLK */
-					ste,pins = "GPIO8_B10";
-					ste,output = <0>;
-				};
-				mmcsd_default_cfg2 {
-					/* MCCMDDIR, MCDAT0DIR, MCDAT31DIR, MCDATDIR2 */
-					ste,pins = "GPIO10_C11", "GPIO15_A12",
-					"GPIO16_C13", "GPIO23_D15";
-					ste,output = <1>;
-				};
-				mmcsd_default_cfg3 {
-					/* MCCMD, MCDAT3-0, MCMSFBCLK */
-					ste,pins = "GPIO9_A10", "GPIO11_B11",
-					"GPIO12_A11", "GPIO13_C12",
-					"GPIO14_B12", "GPIO24_C15";
-					ste,input = <1>;
+					/*
+					 * MCCLK, MCCMDDIR, MCDAT0DIR, MCDAT31DIR, MCDATDIR2
+					 * MCCMD, MCDAT3-0, MCMSFBCLK
+					 */
+					pins = "GPIO8_B10", "GPIO9_A10", "GPIO10_C11", "GPIO11_B11",
+					       "GPIO12_A11", "GPIO13_C12", "GPIO14_B12", "GPIO15_A12",
+					       "GPIO16_C13", "GPIO23_D15", "GPIO24_C15";
+					ste,output = <2>;
 				};
 			};
 		};
 		i2c0 {
 			i2c0_default_mux: i2c0_mux {
 				i2c0_default_mux {
-					ste,function = "i2c0";
-					ste,pins = "i2c0_a_1";
+					function = "i2c0";
+					groups = "i2c0_a_1";
 				};
 			};
 			i2c0_default_mode: i2c0_default {
 				i2c0_default_cfg {
-					ste,pins = "GPIO62_D3", "GPIO63_D2";
+					pins = "GPIO62_D3", "GPIO63_D2";
 					ste,input = <0>;
 				};
 			};
@@ -158,32 +156,40 @@
 		i2c1 {
 			i2c1_default_mux: i2c1_mux {
 				i2c1_default_mux {
-					ste,function = "i2c1";
-					ste,pins = "i2c1_a_1";
+					function = "i2c1";
+					groups = "i2c1_a_1";
 				};
 			};
 			i2c1_default_mode: i2c1_default {
 				i2c1_default_cfg {
-					ste,pins = "GPIO53_L4", "GPIO54_L3";
+					pins = "GPIO53_L4", "GPIO54_L3";
 					ste,input = <0>;
 				};
 			};
 		};
-		i2c2 {
-			i2c2_default_mode: i2c2_default {
-				i2c2_default_cfg {
-					ste,pins = "GPIO73_C21", "GPIO74_C20";
-					ste,input = <0>;
+		clcd {
+			/*
+			 * This should be activated to use the additional
+			 * 8 lines for bits 16 thru 23 from the CLCD block.
+			 */
+			clcd_24bit_mux: clcd_mux {
+				clcd_24bit_mux {
+					function = "clcd";
+					groups = "clcd_16_23_b_1";
 				};
 			};
 		};
 	};
 
+	/* Power Management Unit */
+	pmu: pmu@101e9000 {
+		compatible = "stericsson,nomadik-pmu", "syscon";
+		reg = <0x101e0000 0x1000>;
+	};
+
 	src: src@101e0000 {
 		compatible = "stericsson,nomadik-src";
 		reg = <0x101e0000 0x1000>;
-		disable-sxtalo;
-		disable-mxtalo;
 
 		/*
 		 * MXTAL "Main Chrystal" is a chrystal oscillator @19.2 MHz
@@ -655,7 +661,6 @@
 		reg-names = "fsmc_regs", "nand_data", "nand_addr", "nand_cmd";
 		clocks = <&hclksmc>;
 		status = "okay";
-		timings = /bits/ 8 <0 0 0 0x10 0x0a 0>;
 
 		partition@0 {
 		label = "X-Loader(NAND)";
@@ -680,18 +685,6 @@
 		partition@1b80000 {
 			label = "User Filesystem(NAND)";
 			reg = <0x1b80000 0x6480000>;
-		};
-	};
-
-	external-bus@34000000 {
-		compatible = "simple-bus";
-		reg = <0x34000000 0x1000000>;
-		#address-cells = <1>;
-		#size-cells = <1>;
-		ranges = <0 0x34000000 0x1000000>;
-		ethernet@300 {
-			compatible = "smsc,lan91c111";
-			reg = <0x300 0x0fd00>;
 		};
 	};
 
@@ -743,42 +736,33 @@
 			   compatible = "st,stw5095";
 			   reg = <0x1a>;
 		};
-		lis3lv02dl@1d {
-			   compatible = "st,lis3lv02dl";
-			   reg = <0x1d>;
-		};
-	};
-
-	/* I2C2 connected to the USB portions of the STw4811 only */
-	i2c2 {
-		compatible = "i2c-gpio";
-		gpios = <&gpio2 10 0>, /* sda */
-			<&gpio2 9 0>; /* scl */
-		#address-cells = <1>;
-		#size-cells = <0>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&i2c2_default_mode>;
-
-		stw4811@2d {
-			   compatible = "st,stw4811-usb";
-			   reg = <0x2d>;
-		};
 	};
 
 	amba {
-		compatible = "arm,amba-bus";
+		compatible = "simple-bus";
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges;
 
-		vica: intc@10140000 {
+		clcd@10120000 {
+			compatible = "arm,pl110", "arm,primecell";
+			reg = <0x10120000 0x1000>;
+			interrupt-names = "combined";
+			interrupts = <14>;
+			interrupt-parent = <&vica>;
+			clocks = <&clcdclk>, <&hclkclcd>;
+			clock-names = "clcdclk", "apb_pclk";
+			status = "disabled";
+		};
+
+		vica: interrupt-controller@10140000 {
 			compatible = "arm,versatile-vic";
 			interrupt-controller;
 			#interrupt-cells = <1>;
 			reg = <0x10140000 0x20>;
 		};
 
-		vicb: intc@10140020 {
+		vicb: interrupt-controller@10140020 {
 			compatible = "arm,versatile-vic";
 			interrupt-controller;
 			#interrupt-cells = <1>;
@@ -792,8 +776,10 @@
 			interrupts = <12>;
 			clocks = <&uart0clk>, <&pclkuart0>;
 			clock-names = "uartclk", "apb_pclk";
-			pinctrl-names = "default";
-			pinctrl-0 = <&uart0_default_mux>;
+			status = "disabled";
+			dmas = <&dmac0 14 1>,
+			       <&dmac0 15 1>;
+			dma-names = "rx", "tx";
 		};
 
 		uart1: uart@101fb000 {
@@ -805,6 +791,9 @@
 			clock-names = "uartclk", "apb_pclk";
 			pinctrl-names = "default";
 			pinctrl-0 = <&uart1_default_mux>;
+			dmas = <&dmac1 22 1>,
+			       <&dmac1 23 1>;
+			dma-names = "rx", "tx";
 		};
 
 		uart2: uart@101f2000 {
@@ -815,6 +804,9 @@
 			clocks = <&uart2clk>, <&pclkuart2>;
 			clock-names = "uartclk", "apb_pclk";
 			status = "disabled";
+			dmas = <&dmac1 30 1>,
+			       <&dmac1 31 1>;
+			dma-names = "rx", "tx";
 		};
 
 		rng: rng@101b0000 {
@@ -840,14 +832,53 @@
 			clock-names = "mclk", "apb_pclk";
 			interrupt-parent = <&vica>;
 			interrupts = <22>;
-			max-frequency = <48000000>;
+			max-frequency = <400000>;
 			bus-width = <4>;
 			cap-mmc-highspeed;
 			cap-sd-highspeed;
-			cd-gpios = <&gpio3 15 GPIO_ACTIVE_LOW>;
+			full-pwr-cycle;
+			/*
+			 * The STw4811 circuit used with the Nomadik strictly
+			 * requires that all of these signal direction pins be
+			 * routed and used for its 4-bit levelshifter.
+			 */
+			st,sig-dir-dat0;
+			st,sig-dir-dat2;
+			st,sig-dir-dat31;
+			st,sig-dir-cmd;
+			st,sig-pin-fbclk;
 			pinctrl-names = "default";
 			pinctrl-0 = <&mmcsd_default_mux>, <&mmcsd_default_mode>;
 			vmmc-supply = <&vmmc_regulator>;
+		};
+
+		dmac0: dma-controller@10130000 {
+			compatible = "arm,pl080", "arm,primecell";
+			reg = <0x10130000 0x1000>;
+			interrupt-parent = <&vica>;
+			interrupts = <15>;
+			clocks = <&hclkdma0>;
+			clock-names = "apb_pclk";
+			lli-bus-interface-ahb1;
+			lli-bus-interface-ahb2;
+			mem-bus-interface-ahb2;
+			memcpy-burst-size = <256>;
+			memcpy-bus-width = <32>;
+			#dma-cells = <2>;
+		};
+		dmac1: dma-controller@10150000 {
+			compatible = "arm,pl080", "arm,primecell";
+			reg = <0x10150000 0x1000>;
+			interrupt-parent = <&vica>;
+			interrupts = <13>;
+			clocks = <&hclkdma1>;
+			clock-names = "apb_pclk";
+			lli-bus-interface-ahb1;
+			lli-bus-interface-ahb2;
+			mem-bus-interface-ahb2;
+			memcpy-burst-size = <256>;
+			memcpy-bus-width = <32>;
+			#dma-cells = <2>;
 		};
 	};
 };

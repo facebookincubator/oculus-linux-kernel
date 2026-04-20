@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  */
 struct btcx_riscmem {
@@ -26,9 +27,3 @@ void btcx_sort_clips(struct v4l2_clip *clips, unsigned int nclips);
 void btcx_calc_skips(int line, int width, int *maxy,
 		     struct btcx_skiplist *skips, unsigned int *nskips,
 		     const struct v4l2_clip *clips, unsigned int nclips);
-
-/*
- * Local variables:
- * c-basic-offset: 8
- * End:
- */

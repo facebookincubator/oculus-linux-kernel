@@ -1,3 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
+/*
+ * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
+ */
+
 #ifndef _UAPI_QCOTA_H
 #define _UAPI_QCOTA_H
 
@@ -42,14 +47,15 @@ enum qce_ota_algo_enum {
  * generate the final cipher data stream.
  */
 struct qce_f8_req {
-	uint8_t  *data_in;
-	uint8_t  *data_out;
-	uint16_t  data_len;
-	uint32_t  count_c;
-	uint8_t   bearer;
-	uint8_t   ckey[OTA_KEY_SIZE];
+	__u8  *data_in;
+	__u8  *data_out;
+	__u16  data_len;
+	__u32  count_c;
+	__u8   bearer;
+	__u8   ckey[OTA_KEY_SIZE];
 	enum qce_ota_dir_enum  direction;
 	enum qce_ota_algo_enum algorithm;
+	int current_req_info;
 };
 
 /**
@@ -87,7 +93,7 @@ struct qce_f8_req {
  *   In one request, multiple packets can be ciphered, and output to the
  *   data_out stream.
  *
- *   Packet data are layed out contiguously in sequence in data_in,
+ *   Packet data are laid out contiguously in sequence in data_in,
  *   and data_out area. Every packet is identical size.
  *   If the PDU is not byte aligned, set the data_len value of
  *   to the rounded up value of the packet size. Eg, PDU size of
@@ -105,16 +111,16 @@ struct qce_f8_req {
  *   unchanged and output to the dataOut area.
  *
  *   For each packet the input arguments of bearer, direction,
- *   ckey, algoritm have to be the same. count_c is the ciphering sequence
+ *   ckey, algorithm have to be the same. count_c is the ciphering sequence
  *   number of the first packet. The 2nd packet's ciphering sequence
  *   number is assumed to be count_c + 1. The 3rd packet's ciphering sequence
  *   number is count_c + 2.....
  *
  */
 struct qce_f8_multi_pkt_req {
-	uint16_t    num_pkt;
-	uint16_t    cipher_start;
-	uint16_t    cipher_size;
+	__u16    num_pkt;
+	__u16    cipher_start;
+	__u16    cipher_size;
 	struct qce_f8_req qce_f8_req;
 };
 
@@ -156,7 +162,7 @@ struct qce_f8_multi_pkt_req {
  *   packet.
  *
  *   For each packet the input arguments of bearer, direction,
- *   ckey, algoritm have to be the same. count_c is the ciphering sequence
+ *   ckey, algorithm have to be the same. count_c is the ciphering sequence
  *   number of the first packet. The 2nd packet's ciphering sequence
  *   number is assumed to be count_c + 1. The 3rd packet's ciphering sequence
  *   number is count_c + 2.....
@@ -168,7 +174,7 @@ struct cipher_iov {
 	unsigned short  size;
 };
 
-struct qce_f8_varible_multi_pkt_req {
+struct qce_f8_variable_multi_pkt_req {
 	unsigned short    num_pkt;
 	struct cipher_iov cipher_iov[MAX_NUM_V_MULTI_PKT];
 	struct qce_f8_req qce_f8_req;
@@ -188,15 +194,16 @@ struct qce_f8_varible_multi_pkt_req {
  * @algorithm:  Kasumi, or Snow3G.
  */
 struct qce_f9_req {
-	uint8_t   *message;
-	uint16_t   msize;
-	uint8_t    last_bits;
-	uint32_t   mac_i;
-	uint32_t   fresh;
-	uint32_t   count_i;
+	__u8   *message;
+	__u16   msize;
+	__u8    last_bits;
+	__u32   mac_i;
+	__u32   fresh;
+	__u32   count_i;
 	enum qce_ota_dir_enum direction;
-	uint8_t    ikey[OTA_KEY_SIZE];
+	__u8    ikey[OTA_KEY_SIZE];
 	enum qce_ota_algo_enum algorithm;
+	int current_req_info;
 };
 
 #define QCOTA_IOC_MAGIC     0x85
@@ -205,6 +212,6 @@ struct qce_f9_req {
 #define QCOTA_F8_MPKT_REQ _IOWR(QCOTA_IOC_MAGIC, 2, struct qce_f8_multi_pkt_req)
 #define QCOTA_F9_REQ _IOWR(QCOTA_IOC_MAGIC, 3, struct qce_f9_req)
 #define QCOTA_F8_V_MPKT_REQ _IOWR(QCOTA_IOC_MAGIC, 4,\
-				struct qce_f8_varible_multi_pkt_req)
+				struct qce_f8_variable_multi_pkt_req)
 
 #endif /* _UAPI_QCOTA_H */

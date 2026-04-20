@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * (Hisilicon's SoC based) flattened device tree enabled machine
  *
@@ -5,13 +6,8 @@
  * Copyright (c) 2012-2013 Linaro Ltd.
  *
  * Author: Haojian Zhuang <haojian.zhuang@linaro.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
 */
 
-#include <linux/clk-provider.h>
 #include <linux/clocksource.h>
 #include <linux/irqchip.h>
 
@@ -45,7 +41,7 @@ static void __init hi3620_map_io(void)
 	iotable_init(hi3620_io_desc, ARRAY_SIZE(hi3620_io_desc));
 }
 
-static const char *hi3xxx_compat[] __initconst = {
+static const char *const hi3xxx_compat[] __initconst = {
 	"hisilicon,hi3620-hi4511",
 	NULL,
 };
@@ -53,22 +49,4 @@ static const char *hi3xxx_compat[] __initconst = {
 DT_MACHINE_START(HI3620, "Hisilicon Hi3620 (Flattened Device Tree)")
 	.map_io		= hi3620_map_io,
 	.dt_compat	= hi3xxx_compat,
-MACHINE_END
-
-static const char *hix5hd2_compat[] __initconst = {
-	"hisilicon,hix5hd2",
-	NULL,
-};
-
-DT_MACHINE_START(HIX5HD2_DT, "Hisilicon HIX5HD2 (Flattened Device Tree)")
-	.dt_compat	= hix5hd2_compat,
-MACHINE_END
-
-static const char *hip04_compat[] __initconst = {
-	"hisilicon,hip04-d01",
-	NULL,
-};
-
-DT_MACHINE_START(HIP04, "Hisilicon HiP04 (Flattened Device Tree)")
-	.dt_compat	= hip04_compat,
 MACHINE_END

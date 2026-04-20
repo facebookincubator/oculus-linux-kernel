@@ -15,10 +15,8 @@
 #include <linux/pci_ids.h>
 #include <linux/edac.h>
 
-#include <asm-generic/io-64-nonatomic-lo-hi.h>
-#include "edac_core.h"
-
-#define X38_REVISION		"1.1"
+#include <linux/io-64-nonatomic-lo-hi.h>
+#include "edac_module.h"
 
 #define EDAC_MOD_STR		"x38_edac"
 
@@ -268,7 +266,7 @@ static void __iomem *x38_map_mchbar(struct pci_dev *pdev)
 		return NULL;
 	}
 
-	window = ioremap_nocache(u.mchbar, X38_MMR_WINDOW_SIZE);
+	window = ioremap(u.mchbar, X38_MMR_WINDOW_SIZE);
 	if (!window)
 		printk(KERN_ERR "x38: cannot map mmio space at 0x%llx\n",
 			(unsigned long long)u.mchbar);
@@ -357,7 +355,6 @@ static int x38_probe1(struct pci_dev *pdev, int dev_idx)
 	mci->edac_cap = EDAC_FLAG_SECDED;
 
 	mci->mod_name = EDAC_MOD_STR;
-	mci->mod_ver = X38_REVISION;
 	mci->ctl_name = x38_devs[dev_idx].ctl_name;
 	mci->dev_name = pci_name(pdev);
 	mci->edac_check = x38_check;
@@ -500,8 +497,7 @@ fail1:
 	pci_unregister_driver(&x38_driver);
 
 fail0:
-	if (mci_pdev)
-		pci_dev_put(mci_pdev);
+	pci_dev_put(mci_pdev);
 
 	return pci_rc;
 }

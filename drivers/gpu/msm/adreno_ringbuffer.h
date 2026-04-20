@@ -1,21 +1,9 @@
-/* Copyright (c) 2002,2007-2016,2019-2020 The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2002,2007-2021, The Linux Foundation. All rights reserved.
  */
 #ifndef __ADRENO_RINGBUFFER_H
 #define __ADRENO_RINGBUFFER_H
-
-#include "kgsl_iommu.h"
-#include "adreno_iommu.h"
-#include "adreno_dispatch.h"
 
 /* Given a ringbuffer, return the adreno device that owns it */
 
@@ -34,6 +22,32 @@
  */
 #define KGSL_RB_DWORDS (KGSL_RB_SIZE >> 2)
 
+/* Specifies that the command should be run in protected mode */
+#define F_NOTPROTECTED		BIT(0)
+/* Indicates that the CP should wait for idle after executing the command */
+#define F_WFI			BIT(1)
+/* Indicates that the poweron fixup should be executed before the command */
+#define F_PWRON_FIXUP		BIT(2)
+/* Indicates that the submission should be secure */
+#define F_SECURE		BIT(3)
+/* Indicates that the IBs in the submission should be skipped */
+#define F_SKIP			BIT(4)
+/* Indicates that user always on timer profiling is enabled */
+#define F_USER_PROFILE		BIT(5)
+/* Indicates that kernel always on timer profiling is enabled */
+#define F_KERNEL_PROFILE	BIT(6)
+/* Indicates that the submission has a preamble */
+#define F_PREAMBLE		BIT(7)
+
+#define IS_NOTPROTECTED(flags) ((flags) & F_NOTPROTECTED)
+#define IS_WFI(flags) ((flags) & F_WFI)
+#define IS_PWRON_FIXUP(flags) ((flags) & F_PWRON_FIXUP)
+#define IS_SECURE(flags) ((flags) & F_SECURE)
+#define IS_SKIP(flags) ((flags) & F_SKIP)
+#define IS_USER_PROFILE(flags) ((flags) & F_USER_PROFILE)
+#define IS_KERNEL_PROFILE(flags) ((flags) & F_KERNEL_PROFILE)
+#define IS_PREAMBLE(flags) ((flags) & F_PREAMBLE)
+
 struct kgsl_device;
 struct kgsl_device_private;
 
@@ -43,43 +57,25 @@ struct kgsl_device_private;
  * @ticks: GPU ticks at submit time (from the 19.2Mhz timer)
  * @ktime: local clock time (in nanoseconds)
  * @utime: Wall clock time
+ * @drawobj: the object that we want to profile
  */
 struct adreno_submit_time {
 	uint64_t ticks;
 	u64 ktime;
-	struct timespec utime;
+	struct timespec64 utime;
+	struct kgsl_drawobj *drawobj;
 };
 
 /**
- * struct adreno_ringbuffer_pagetable_info - Contains fields used during a
- * pagetable switch.
- * @current_global_ptname: The current pagetable id being used by the GPU.
- * Only the ringbuffers[0] current_global_ptname is used to keep track of
- * the current pagetable id
- * @current_rb_ptname: The current pagetable active on the given RB
- * @incoming_ptname: Contains the incoming pagetable we are switching to. After
- * switching of pagetable this value equals current_rb_ptname.
- * @switch_pt_enable: Flag used during pagetable switch to check if pt
- * switch can be skipped
- * @ttbr0: value to program into TTBR0 during pagetable switch.
- * @contextidr: value to program into CONTEXTIDR during pagetable switch.
+ * This is to keep track whether the SET_PSEUDO_REGISTER packet needs to be submitted
+ * or not
  */
-struct adreno_ringbuffer_pagetable_info {
-	int current_global_ptname;
-	int current_rb_ptname;
-	int incoming_ptname;
-	int switch_pt_enable;
-	uint64_t ttbr0;
-	unsigned int contextidr;
-};
-
-#define PT_INFO_OFFSET(_field) \
-	offsetof(struct adreno_ringbuffer_pagetable_info, _field)
+#define ADRENO_RB_SET_PSEUDO_DONE 0
 
 /**
  * struct adreno_ringbuffer - Definition for an adreno ringbuffer object
  * @flags: Internal control flags for the ringbuffer
- * @buffer_desc: Pointer to the ringbuffer memory descripto
+ * @buffer_desc: Pointer to the ringbuffer memory descriptor
  * @_wptr: The next value of wptr to be written to the hardware on submit
  * @wptr: Local copy of the wptr offset last written to hardware
  * @last_wptr: offset of the last wptr that was written to CFF
@@ -92,7 +88,10 @@ struct adreno_ringbuffer_pagetable_info {
  * @drawctxt_active: The last pagetable that this ringbuffer is set to
  * @preemption_desc: The memory descriptor containing
  * preemption info written/read by CP
- * @pagetable_desc: Memory to hold information about the pagetables being used
+ * @secure_preemption_desc: The memory descriptor containing
+ * preemption info written/read by CP for secure contexts
+ * @perfcounter_save_restore_desc: Used by CP to save/restore the perfcounter
+ * values across preemption
  * and the commands to switch pagetable on the RB
  * @dispatch_q: The dispatcher side queue for this ringbuffer
  * @ts_expire_waitq: Wait queue to wait for rb timestamp to expire
@@ -101,14 +100,13 @@ struct adreno_ringbuffer_pagetable_info {
  * at the right rptr
  * @gpr11: The gpr11 value of this RB
  * @preempted_midway: Indicates that the RB was preempted before rptr = wptr
- * @sched_timer: Timer that tracks how long RB has been waiting to be scheduled
- * or how long it has been scheduled for after preempting in
- * @starve_timer_state: Indicates the state of the wait.
  * @preempt_lock: Lock to protect the wptr pointer while it is being updated
+ * @skip_inline_wptr: Used during preemption to make sure wptr is updated in
+ * hardware
  */
 struct adreno_ringbuffer {
-	uint32_t flags;
-	struct kgsl_memdesc buffer_desc;
+	unsigned long flags;
+	struct kgsl_memdesc *buffer_desc;
 	unsigned int _wptr;
 	unsigned int wptr;
 	unsigned int last_wptr;
@@ -117,21 +115,21 @@ struct adreno_ringbuffer {
 	unsigned int timestamp;
 	struct kgsl_event_group events;
 	struct adreno_context *drawctxt_active;
-	struct kgsl_memdesc preemption_desc;
-	struct kgsl_memdesc pagetable_desc;
-	struct adreno_dispatcher_cmdqueue dispatch_q;
+	struct kgsl_memdesc *preemption_desc;
+	struct kgsl_memdesc *secure_preemption_desc;
+	struct kgsl_memdesc *perfcounter_save_restore_desc;
+	struct adreno_dispatcher_drawqueue dispatch_q;
 	wait_queue_head_t ts_expire_waitq;
 	unsigned int wptr_preempt_end;
 	unsigned int gpr11;
 	int preempted_midway;
-	unsigned long sched_timer;
-	enum adreno_dispatcher_starve_timer_states starve_timer_state;
 	spinlock_t preempt_lock;
+	bool skip_inline_wptr;
 	/**
 	 * @profile_desc: global memory to construct IB1s to do user side
 	 * profiling
 	 */
-	struct kgsl_memdesc profile_desc;
+	struct kgsl_memdesc *profile_desc;
 	/**
 	 * @profile_index: Pointer to the next "slot" in profile_desc for a user
 	 * profiling IB1.  This allows for PAGE_SIZE / 16 = 256 simultaneous
@@ -144,39 +142,32 @@ struct adreno_ringbuffer {
 /* Returns the current ringbuffer */
 #define ADRENO_CURRENT_RINGBUFFER(a)	((a)->cur_rb)
 
-int cp_secure_mode(struct adreno_device *adreno_dev, uint *cmds, int set);
-
 int adreno_ringbuffer_issueibcmds(struct kgsl_device_private *dev_priv,
 				struct kgsl_context *context,
-				struct kgsl_cmdbatch *cmdbatch,
+				struct kgsl_drawobj *drawobj,
 				uint32_t *timestamp);
 
+/**
+ * adreno_ringbuffer_setup - Do generic set up on a ringbuffer
+ * @adreno_dev: Pointer to an Adreno GPU handle
+ * @rb: Pointer to the ringbuffer struct to set up
+ * @id: Index of the ringbuffer
+ *
+ * Set up generic memory and other bits of a ringbuffer.
+ * Return: 0 on success or negative on error.
+ */
+int adreno_ringbuffer_setup(struct adreno_device *adreno_dev,
+		struct adreno_ringbuffer *rb, int id);
+
 int adreno_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
-		struct kgsl_cmdbatch *cmdbatch,
+		struct kgsl_drawobj_cmd *cmdobj,
 		struct adreno_submit_time *time);
 
-int adreno_ringbuffer_probe(struct adreno_device *adreno_dev, bool nopreempt);
-
-int adreno_ringbuffer_start(struct adreno_device *adreno_dev,
-		unsigned int start_type);
 
 void adreno_ringbuffer_stop(struct adreno_device *adreno_dev);
 
-void adreno_ringbuffer_close(struct adreno_device *adreno_dev);
-
-int adreno_ringbuffer_issuecmds(struct adreno_ringbuffer *rb,
-					unsigned int flags,
-					unsigned int *cmdaddr,
-					int sizedwords);
-
 void adreno_ringbuffer_submit(struct adreno_ringbuffer *rb,
 		struct adreno_submit_time *time);
-
-int adreno_ringbuffer_submit_spin_nosync(struct adreno_ringbuffer *rb,
-		struct adreno_submit_time *time, unsigned int timeout);
-
-int adreno_ringbuffer_submit_spin(struct adreno_ringbuffer *rb,
-		struct adreno_submit_time *time, unsigned int timeout);
 
 void kgsl_cp_intrcallback(struct kgsl_device *device);
 
@@ -217,11 +208,18 @@ static inline unsigned int adreno_ringbuffer_dec_wrapped(unsigned int val,
 	return (val + size - sizeof(unsigned int)) % size;
 }
 
-static inline int adreno_ringbuffer_set_pt_ctx(struct adreno_ringbuffer *rb,
-		struct kgsl_pagetable *pt, struct adreno_context *context,
-		unsigned long flags)
-{
-	return adreno_iommu_set_pt_ctx(rb, pt, context, flags);
-}
+/**
+ * adreno_ringbuffer_set_constraint - Set a system constraint before submission
+ * @device: A KGSL GPU device handle
+ * @drawobj: Pointer to the drawobj being sbumitted
+ *
+ * Check the drawobj to see if a constraint is applied and apply it.
+ */
+void adreno_ringbuffer_set_constraint(struct kgsl_device *device,
+		struct kgsl_drawobj *drawobj);
+
+void adreno_get_submit_time(struct adreno_device *adreno_dev,
+		struct adreno_ringbuffer *rb,
+		struct adreno_submit_time *time);
 
 #endif  /* __ADRENO_RINGBUFFER_H */

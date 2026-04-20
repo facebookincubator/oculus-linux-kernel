@@ -1,16 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (c) 2010 Sascha Hauer <s.hauer@pengutronix.de>
  * Copyright (C) 2005-2009 Freescale Semiconductor, Inc.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * for more details.
  */
 
 #include <linux/export.h>
@@ -112,8 +103,7 @@ struct ipu_dc_priv {
 	struct ipu_dc		channels[IPU_DC_NUM_CHANNELS];
 	struct mutex		mutex;
 	struct completion	comp;
-	int			dc_irq;
-	int			dp_irq;
+	int			use_count;
 };
 
 static void dc_link_event(struct ipu_dc *dc, int event, int addr, int priority)
@@ -146,69 +136,72 @@ static void dc_write_tmpl(struct ipu_dc *dc, int word, u32 opcode, u32 operand,
 	writel(reg2, priv->dc_tmpl_reg + word * 8 + 4);
 }
 
-static int ipu_pixfmt_to_map(u32 fmt)
+static int ipu_bus_format_to_map(u32 fmt)
 {
 	switch (fmt) {
-	case V4L2_PIX_FMT_RGB24:
-		return IPU_DC_MAP_RGB24;
-	case V4L2_PIX_FMT_RGB565:
-		return IPU_DC_MAP_RGB565;
-	case IPU_PIX_FMT_GBR24:
-		return IPU_DC_MAP_GBR24;
-	case V4L2_PIX_FMT_BGR666:
-		return IPU_DC_MAP_BGR666;
-	case v4l2_fourcc('L', 'V', 'D', '6'):
-		return IPU_DC_MAP_LVDS666;
-	case V4L2_PIX_FMT_BGR24:
-		return IPU_DC_MAP_BGR24;
 	default:
-		return -EINVAL;
+		WARN_ON(1);
+		fallthrough;
+	case MEDIA_BUS_FMT_RGB888_1X24:
+		return IPU_DC_MAP_RGB24;
+	case MEDIA_BUS_FMT_RGB565_1X16:
+		return IPU_DC_MAP_RGB565;
+	case MEDIA_BUS_FMT_GBR888_1X24:
+		return IPU_DC_MAP_GBR24;
+	case MEDIA_BUS_FMT_RGB666_1X18:
+		return IPU_DC_MAP_BGR666;
+	case MEDIA_BUS_FMT_RGB666_1X24_CPADHI:
+		return IPU_DC_MAP_LVDS666;
+	case MEDIA_BUS_FMT_BGR888_1X24:
+		return IPU_DC_MAP_BGR24;
 	}
 }
 
 int ipu_dc_init_sync(struct ipu_dc *dc, struct ipu_di *di, bool interlaced,
-		u32 pixel_fmt, u32 width)
+		u32 bus_format, u32 width)
 {
 	struct ipu_dc_priv *priv = dc->priv;
+	int addr, sync;
 	u32 reg = 0;
 	int map;
 
 	dc->di = ipu_di_get_num(di);
 
-	map = ipu_pixfmt_to_map(pixel_fmt);
-	if (map < 0) {
-		dev_dbg(priv->dev, "IPU_DISP: No MAP\n");
-		return map;
-	}
+	map = ipu_bus_format_to_map(bus_format);
+
+	/*
+	 * In interlaced mode we need more counters to create the asymmetric
+	 * per-field VSYNC signals. The pixel active signal synchronising DC
+	 * to DI moves to signal generator #6 (see ipu-di.c). In progressive
+	 * mode counter #5 is used.
+	 */
+	sync = interlaced ? 6 : 5;
+
+	/* Reserve 5 microcode template words for each DI */
+	if (dc->di)
+		addr = 5;
+	else
+		addr = 0;
 
 	if (interlaced) {
-		dc_link_event(dc, DC_EVT_NL, 0, 3);
-		dc_link_event(dc, DC_EVT_EOL, 0, 2);
-		dc_link_event(dc, DC_EVT_NEW_DATA, 0, 1);
+		dc_link_event(dc, DC_EVT_NL, addr, 3);
+		dc_link_event(dc, DC_EVT_EOL, addr, 2);
+		dc_link_event(dc, DC_EVT_NEW_DATA, addr, 1);
 
 		/* Init template microcode */
-		dc_write_tmpl(dc, 0, WROD(0), 0, map, SYNC_WAVE, 0, 8, 1);
+		dc_write_tmpl(dc, addr, WROD(0), 0, map, SYNC_WAVE, 0, sync, 1);
 	} else {
-		if (dc->di) {
-			dc_link_event(dc, DC_EVT_NL, 2, 3);
-			dc_link_event(dc, DC_EVT_EOL, 3, 2);
-			dc_link_event(dc, DC_EVT_NEW_DATA, 1, 1);
-			/* Init template microcode */
-			dc_write_tmpl(dc, 2, WROD(0), 0, map, SYNC_WAVE, 8, 5, 1);
-			dc_write_tmpl(dc, 3, WROD(0), 0, map, SYNC_WAVE, 4, 5, 0);
-			dc_write_tmpl(dc, 4, WRG, 0, map, NULL_WAVE, 0, 0, 1);
-			dc_write_tmpl(dc, 1, WROD(0), 0, map, SYNC_WAVE, 0, 5, 1);
-		} else {
-			dc_link_event(dc, DC_EVT_NL, 5, 3);
-			dc_link_event(dc, DC_EVT_EOL, 6, 2);
-			dc_link_event(dc, DC_EVT_NEW_DATA, 8, 1);
-			/* Init template microcode */
-			dc_write_tmpl(dc, 5, WROD(0), 0, map, SYNC_WAVE, 8, 5, 1);
-			dc_write_tmpl(dc, 6, WROD(0), 0, map, SYNC_WAVE, 4, 5, 0);
-			dc_write_tmpl(dc, 7, WRG, 0, map, NULL_WAVE, 0, 0, 1);
-			dc_write_tmpl(dc, 8, WROD(0), 0, map, SYNC_WAVE, 0, 5, 1);
-		}
+		dc_link_event(dc, DC_EVT_NL, addr + 2, 3);
+		dc_link_event(dc, DC_EVT_EOL, addr + 3, 2);
+		dc_link_event(dc, DC_EVT_NEW_DATA, addr + 1, 1);
+
+		/* Init template microcode */
+		dc_write_tmpl(dc, addr + 2, WROD(0), 0, map, SYNC_WAVE, 8, sync, 1);
+		dc_write_tmpl(dc, addr + 3, WROD(0), 0, map, SYNC_WAVE, 4, sync, 0);
+		dc_write_tmpl(dc, addr + 4, WRG, 0, map, NULL_WAVE, 0, 0, 1);
+		dc_write_tmpl(dc, addr + 1, WROD(0), 0, map, SYNC_WAVE, 0, sync, 1);
 	}
+
 	dc_link_event(dc, DC_EVT_NF, 0, 0);
 	dc_link_event(dc, DC_EVT_NFIELD, 0, 0);
 	dc_link_event(dc, DC_EVT_EOF, 0, 0);
@@ -232,16 +225,22 @@ EXPORT_SYMBOL_GPL(ipu_dc_init_sync);
 
 void ipu_dc_enable(struct ipu_soc *ipu)
 {
-	ipu_module_enable(ipu, IPU_CONF_DC_EN);
+	struct ipu_dc_priv *priv = ipu->dc_priv;
+
+	mutex_lock(&priv->mutex);
+
+	if (!priv->use_count)
+		ipu_module_enable(priv->ipu, IPU_CONF_DC_EN);
+
+	priv->use_count++;
+
+	mutex_unlock(&priv->mutex);
 }
 EXPORT_SYMBOL_GPL(ipu_dc_enable);
 
 void ipu_dc_enable_channel(struct ipu_dc *dc)
 {
-	int di;
 	u32 reg;
-
-	di = dc->di;
 
 	reg = readl(dc->base + DC_WR_CH_CONF);
 	reg |= DC_WR_CH_CONF_PROG_TYPE_NORMAL;
@@ -249,52 +248,30 @@ void ipu_dc_enable_channel(struct ipu_dc *dc)
 }
 EXPORT_SYMBOL_GPL(ipu_dc_enable_channel);
 
-static irqreturn_t dc_irq_handler(int irq, void *dev_id)
-{
-	struct ipu_dc *dc = dev_id;
-	u32 reg;
-
-	reg = readl(dc->base + DC_WR_CH_CONF);
-	reg &= ~DC_WR_CH_CONF_PROG_TYPE_MASK;
-	writel(reg, dc->base + DC_WR_CH_CONF);
-
-	/* The Freescale BSP kernel clears DIx_COUNTER_RELEASE here */
-
-	complete(&dc->priv->comp);
-	return IRQ_HANDLED;
-}
-
 void ipu_dc_disable_channel(struct ipu_dc *dc)
 {
-	struct ipu_dc_priv *priv = dc->priv;
-	int irq, ret;
 	u32 val;
 
-	/* TODO: Handle MEM_FG_SYNC differently from MEM_BG_SYNC */
-	if (dc->chno == 1)
-		irq = priv->dc_irq;
-	else if (dc->chno == 5)
-		irq = priv->dp_irq;
-	else
-		return;
-
-	init_completion(&priv->comp);
-	enable_irq(irq);
-	ret = wait_for_completion_timeout(&priv->comp, msecs_to_jiffies(50));
-	disable_irq(irq);
-	if (ret <= 0) {
-		dev_warn(priv->dev, "DC stop timeout after 50 ms\n");
-
-		val = readl(dc->base + DC_WR_CH_CONF);
-		val &= ~DC_WR_CH_CONF_PROG_TYPE_MASK;
-		writel(val, dc->base + DC_WR_CH_CONF);
-	}
+	val = readl(dc->base + DC_WR_CH_CONF);
+	val &= ~DC_WR_CH_CONF_PROG_TYPE_MASK;
+	writel(val, dc->base + DC_WR_CH_CONF);
 }
 EXPORT_SYMBOL_GPL(ipu_dc_disable_channel);
 
 void ipu_dc_disable(struct ipu_soc *ipu)
 {
-	ipu_module_disable(ipu, IPU_CONF_DC_EN);
+	struct ipu_dc_priv *priv = ipu->dc_priv;
+
+	mutex_lock(&priv->mutex);
+
+	priv->use_count--;
+	if (!priv->use_count)
+		ipu_module_disable(priv->ipu, IPU_CONF_DC_EN);
+
+	if (priv->use_count < 0)
+		priv->use_count = 0;
+
+	mutex_unlock(&priv->mutex);
 }
 EXPORT_SYMBOL_GPL(ipu_dc_disable);
 
@@ -364,7 +341,7 @@ int ipu_dc_init(struct ipu_soc *ipu, struct device *dev,
 	struct ipu_dc_priv *priv;
 	static int channel_offsets[] = { 0, 0x1c, 0x38, 0x54, 0x58, 0x5c,
 		0x78, 0, 0x94, 0xb4};
-	int i, ret;
+	int i;
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
@@ -384,23 +361,6 @@ int ipu_dc_init(struct ipu_soc *ipu, struct device *dev,
 		priv->channels[i].priv = priv;
 		priv->channels[i].base = priv->dc_reg + channel_offsets[i];
 	}
-
-	priv->dc_irq = ipu_map_irq(ipu, IPU_IRQ_DC_FC_1);
-	if (!priv->dc_irq)
-		return -EINVAL;
-	ret = devm_request_irq(dev, priv->dc_irq, dc_irq_handler, 0, NULL,
-			       &priv->channels[1]);
-	if (ret < 0)
-		return ret;
-	disable_irq(priv->dc_irq);
-	priv->dp_irq = ipu_map_irq(ipu, IPU_IRQ_DP_SF_END);
-	if (!priv->dp_irq)
-		return -EINVAL;
-	ret = devm_request_irq(dev, priv->dp_irq, dc_irq_handler, 0, NULL,
-			       &priv->channels[5]);
-	if (ret < 0)
-		return ret;
-	disable_irq(priv->dp_irq);
 
 	writel(DC_WR_CH_CONF_WORD_SIZE_24 | DC_WR_CH_CONF_DISP_ID_PARALLEL(1) |
 			DC_WR_CH_CONF_PROG_DI_ID,

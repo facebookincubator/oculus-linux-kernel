@@ -1,26 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Driver for the Conexant CX23885 PCIe bridge
  *
  *  Copyright (c) 2007 Steven Toth <stoth@linuxtv.org>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *
- *  GNU General Public License for more details.
  */
+
+#include "cx23885.h"
 
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/init.h>
-
-#include "cx23885.h"
 
 static unsigned int vbibufs = 4;
 module_param(vbibufs, int, 0644);
@@ -32,7 +22,8 @@ MODULE_PARM_DESC(vbi_debug, "enable debug messages [vbi]");
 
 #define dprintk(level, fmt, arg...)\
 	do { if (vbi_debug >= level)\
-		printk(KERN_DEBUG "%s/0: " fmt, dev->name, ## arg);\
+		printk(KERN_DEBUG pr_fmt("%s: vbi:" fmt), \
+			__func__, ##arg); \
 	} while (0)
 
 /* ------------------------------------------------------------------ */
@@ -83,7 +74,7 @@ int cx23885_vbi_irq(struct cx23885_dev *dev, u32 status)
 	if (status & VID_BC_MSK_VBI_RISCI1) {
 		dprintk(1, "%s() VID_BC_MSK_VBI_RISCI1\n", __func__);
 		spin_lock(&dev->slock);
-		count = cx_read(VID_A_GPCNT);
+		count = cx_read(VBI_A_GPCNT);
 		cx23885_video_wakeup(dev, &dev->vbiq, count);
 		spin_unlock(&dev->slock);
 		handled++;
@@ -103,7 +94,6 @@ static int cx23885_start_vbi_dma(struct cx23885_dev    *dev,
 				VBI_LINE_LENGTH, buf->risc.dma);
 
 	/* reset counter */
-	cx_write(VID_A_GPCNT_CTL, 3);
 	cx_write(VID_A_VBI_CTRL, 3);
 	cx_write(VBI_A_GPCNT_CTL, 3);
 	q->count = 0;
@@ -121,9 +111,9 @@ static int cx23885_start_vbi_dma(struct cx23885_dev    *dev,
 
 /* ------------------------------------------------------------------ */
 
-static int queue_setup(struct vb2_queue *q, const struct v4l2_format *fmt,
+static int queue_setup(struct vb2_queue *q,
 			   unsigned int *num_buffers, unsigned int *num_planes,
-			   unsigned int sizes[], void *alloc_ctxs[])
+			   unsigned int sizes[], struct device *alloc_devs[])
 {
 	struct cx23885_dev *dev = q->drv_priv;
 	unsigned lines = VBI_PAL_LINE_COUNT;
@@ -137,12 +127,12 @@ static int queue_setup(struct vb2_queue *q, const struct v4l2_format *fmt,
 
 static int buffer_prepare(struct vb2_buffer *vb)
 {
+	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 	struct cx23885_dev *dev = vb->vb2_queue->drv_priv;
-	struct cx23885_buffer *buf = container_of(vb,
+	struct cx23885_buffer *buf = container_of(vbuf,
 		struct cx23885_buffer, vb);
 	struct sg_table *sgt = vb2_dma_sg_plane_desc(vb, 0);
 	unsigned lines = VBI_PAL_LINE_COUNT;
-	int ret;
 
 	if (dev->tvnorm & V4L2_STD_525_60)
 		lines = VBI_NTSC_LINE_COUNT;
@@ -150,10 +140,6 @@ static int buffer_prepare(struct vb2_buffer *vb)
 	if (vb2_plane_size(vb, 0) < lines * VBI_LINE_LENGTH * 2)
 		return -EINVAL;
 	vb2_set_plane_payload(vb, 0, lines * VBI_LINE_LENGTH * 2);
-
-	ret = dma_map_sg(&dev->pci->dev, sgt->sgl, sgt->nents, DMA_FROM_DEVICE);
-	if (!ret)
-		return -EIO;
 
 	cx23885_risc_vbibuffer(dev->pci, &buf->risc,
 			 sgt->sgl,
@@ -165,14 +151,11 @@ static int buffer_prepare(struct vb2_buffer *vb)
 
 static void buffer_finish(struct vb2_buffer *vb)
 {
-	struct cx23885_dev *dev = vb->vb2_queue->drv_priv;
-	struct cx23885_buffer *buf = container_of(vb,
+	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
+	struct cx23885_buffer *buf = container_of(vbuf,
 		struct cx23885_buffer, vb);
-	struct sg_table *sgt = vb2_dma_sg_plane_desc(vb, 0);
 
 	cx23885_free_buffer(vb->vb2_queue->drv_priv, buf);
-
-	dma_unmap_sg(&dev->pci->dev, sgt->sgl, sgt->nents, DMA_FROM_DEVICE);
 }
 
 /*
@@ -198,8 +181,10 @@ static void buffer_finish(struct vb2_buffer *vb)
  */
 static void buffer_queue(struct vb2_buffer *vb)
 {
+	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 	struct cx23885_dev *dev = vb->vb2_queue->drv_priv;
-	struct cx23885_buffer *buf = container_of(vb, struct cx23885_buffer, vb);
+	struct cx23885_buffer *buf = container_of(vbuf,
+			struct cx23885_buffer, vb);
 	struct cx23885_buffer *prev;
 	struct cx23885_dmaqueue *q = &dev->vbiq;
 	unsigned long flags;
@@ -214,7 +199,7 @@ static void buffer_queue(struct vb2_buffer *vb)
 		list_add_tail(&buf->queue, &q->active);
 		spin_unlock_irqrestore(&dev->slock, flags);
 		dprintk(2, "[%p/%d] vbi_queue - first active\n",
-			buf, buf->vb.v4l2_buf.index);
+			buf, buf->vb.vb2_buf.index);
 
 	} else {
 		buf->risc.cpu[0] |= cpu_to_le32(RISC_IRQ1);
@@ -225,7 +210,7 @@ static void buffer_queue(struct vb2_buffer *vb)
 		spin_unlock_irqrestore(&dev->slock, flags);
 		prev->risc.jmp[1] = cpu_to_le32(buf->risc.dma);
 		dprintk(2, "[%p/%d] buffer_queue - append to active\n",
-			buf, buf->vb.v4l2_buf.index);
+			buf, buf->vb.vb2_buf.index);
 	}
 }
 
@@ -253,13 +238,13 @@ static void cx23885_stop_streaming(struct vb2_queue *q)
 			struct cx23885_buffer, queue);
 
 		list_del(&buf->queue);
-		vb2_buffer_done(&buf->vb, VB2_BUF_STATE_ERROR);
+		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
 	}
 	spin_unlock_irqrestore(&dev->slock, flags);
 }
 
 
-struct vb2_ops cx23885_vbi_qops = {
+const struct vb2_ops cx23885_vbi_qops = {
 	.queue_setup    = queue_setup,
 	.buf_prepare  = buffer_prepare,
 	.buf_finish = buffer_finish,

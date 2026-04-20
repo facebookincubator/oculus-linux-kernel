@@ -1,11 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  arch/arm/include/asm/glue-cache.h
  *
  *  Copyright (C) 1999-2002 Russell King
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #ifndef ASM_GLUE_CACHE_H
 #define ASM_GLUE_CACHE_H
@@ -117,12 +114,12 @@
 # endif
 #endif
 
+#if defined(CONFIG_CACHE_B15_RAC)
+# define MULTI_CACHE 1
+#endif
+
 #if defined(CONFIG_CPU_V7M)
-# ifdef _CACHE
 #  define MULTI_CACHE 1
-# else
-#  define _CACHE nop
-# endif
 #endif
 
 #if !defined(_CACHE) && !defined(MULTI_CACHE)
@@ -158,11 +155,12 @@ static inline void nop_dma_unmap_area(const void *s, size_t l, int f) { }
 #define __cpuc_coherent_user_range	__glue(_CACHE,_coherent_user_range)
 #define __cpuc_flush_dcache_area	__glue(_CACHE,_flush_kern_dcache_area)
 
-#define dmac_map_area			__glue(_CACHE,_dma_map_area)
-#define dmac_unmap_area			__glue(_CACHE,_dma_unmap_area)
 #define dmac_flush_range		__glue(_CACHE,_dma_flush_range)
-#define dmac_inv_range			__glue(_CACHE,_dma_inv_range)
-#define dmac_clean_range		__glue(_CACHE,_dma_clean_range)
+#define dmac_map_area          __glue(_CACHE, _dma_map_area)
+#define dmac_unmap_area            __glue(_CACHE, _dma_unmap_area)
+
+#define __dma_map_area         dmac_map_area
+#define __dma_unmap_area       dmac_unmap_area
 #endif
 
 #endif

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Frame buffer device for IBM GXT4500P/6500P and GXT4000P/6000P
  * display adaptors
@@ -142,7 +143,7 @@ static const unsigned char watfmt[] = {
 
 struct gxt4500_par {
 	void __iomem *regs;
-
+	int wc_cookie;
 	int pixfmt;		/* pixel format, see DFA_PIX_* values */
 
 	/* PLL parameters */
@@ -347,11 +348,12 @@ static void gxt4500_unpack_pixfmt(struct fb_var_screeninfo *var,
 		break;
 	}
 	if (pixfmt != DFA_PIX_8BIT) {
-		var->green.offset = var->red.length;
-		var->blue.offset = var->green.offset + var->green.length;
+		var->blue.offset = 0;
+		var->green.offset = var->blue.length;
+		var->red.offset = var->green.offset + var->green.length;
 		if (var->transp.length)
 			var->transp.offset =
-				var->blue.offset + var->blue.length;
+				var->red.offset + var->red.length;
 	}
 }
 
@@ -525,14 +527,14 @@ static int gxt4500_setcolreg(unsigned int reg, unsigned int red,
 		u32 val = reg;
 		switch (par->pixfmt) {
 		case DFA_PIX_16BIT_565:
-			val |= (reg << 11) | (reg << 6);
+			val |= (reg << 11) | (reg << 5);
 			break;
 		case DFA_PIX_16BIT_1555:
 			val |= (reg << 10) | (reg << 5);
 			break;
 		case DFA_PIX_32BIT:
 			val |= (reg << 24);
-			/* fall through */
+			fallthrough;
 		case DFA_PIX_24BIT:
 			val |= (reg << 16) | (reg << 8);
 			break;
@@ -597,7 +599,7 @@ static const struct fb_fix_screeninfo gxt4500_fix = {
 	.mmio_len = 0x20000,
 };
 
-static struct fb_ops gxt4500_ops = {
+static const struct fb_ops gxt4500_ops = {
 	.owner = THIS_MODULE,
 	.fb_check_var = gxt4500_check_var,
 	.fb_set_par = gxt4500_set_par,
@@ -641,10 +643,9 @@ static int gxt4500_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	info = framebuffer_alloc(sizeof(struct gxt4500_par), &pdev->dev);
-	if (!info) {
-		dev_err(&pdev->dev, "gxt4500: cannot alloc FB info record\n");
+	if (!info)
 		goto err_free_fb;
-	}
+
 	par = info->par;
 	cardtype = ent->driver_data;
 	par->refclk_ps = cardinfo[cardtype].refclk_ps;
@@ -662,7 +663,7 @@ static int gxt4500_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	info->fix.smem_start = fb_phys;
 	info->fix.smem_len = pci_resource_len(pdev, 1);
-	info->screen_base = pci_ioremap_bar(pdev, 1);
+	info->screen_base = pci_ioremap_wc_bar(pdev, 1);
 	if (!info->screen_base) {
 		dev_err(&pdev->dev, "gxt4500: cannot map framebuffer\n");
 		goto err_unmap_regs;
@@ -670,11 +671,22 @@ static int gxt4500_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	pci_set_drvdata(pdev, info);
 
+	par->wc_cookie = arch_phys_wc_add(info->fix.smem_start,
+					  info->fix.smem_len);
+
+#ifdef __BIG_ENDIAN
 	/* Set byte-swapping for DFA aperture for all pixel sizes */
 	pci_write_config_dword(pdev, CFG_ENDIAN0, 0x333300);
+#else /* __LITTLE_ENDIAN */
+	/* not sure what this means but fgl23 driver does that */
+	pci_write_config_dword(pdev, CFG_ENDIAN0, 0x2300);
+/*	pci_write_config_dword(pdev, CFG_ENDIAN0 + 4, 0x400000);*/
+	pci_write_config_dword(pdev, CFG_ENDIAN0 + 8, 0x98530000);
+#endif
 
 	info->fbops = &gxt4500_ops;
-	info->flags = FBINFO_FLAG_DEFAULT;
+	info->flags = FBINFO_FLAG_DEFAULT | FBINFO_HWACCEL_XPAN |
+					    FBINFO_HWACCEL_YPAN;
 
 	err = fb_alloc_cmap(&info->cmap, 256, 0);
 	if (err) {
@@ -727,6 +739,7 @@ static void gxt4500_remove(struct pci_dev *pdev)
 		return;
 	par = info->par;
 	unregister_framebuffer(info);
+	arch_phys_wc_del(par->wc_cookie);
 	fb_dealloc_cmap(&info->cmap);
 	iounmap(par->regs);
 	iounmap(info->screen_base);

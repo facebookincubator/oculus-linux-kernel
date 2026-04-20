@@ -1,8 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) ST-Ericsson SA 2010
  *
  * Author: Arun R Murthy <arun.murthy@stericsson.com>
- * License terms: GNU General Public License (GPL) version 2
  */
 #include <linux/err.h>
 #include <linux/platform_device.h>
@@ -131,7 +131,6 @@ static int ab8500_pwm_remove(struct platform_device *pdev)
 static struct platform_driver ab8500_pwm_driver = {
 	.driver = {
 		.name = "ab8500-pwm",
-		.owner = THIS_MODULE,
 	},
 	.probe = ab8500_pwm_probe,
 	.remove = ab8500_pwm_remove,

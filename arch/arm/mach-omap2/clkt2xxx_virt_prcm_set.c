@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * OMAP2xxx DVFS virtual clock functions
  *
@@ -10,10 +11,6 @@
  *
  * Based on earlier work by Tuukka Tikkanen, Tony Lindgren,
  * Gordon McNutt and RidgeRun, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * XXX Some of this code should be replaceable by the upcoming OPP layer
  * code.  However, some notion of "rate set" is probably still necessary
@@ -232,14 +229,12 @@ void omap2xxx_clkt_vps_init(void)
 	struct clk_hw_omap *hw = NULL;
 	struct clk *clk;
 	const char *parent_name = "mpu_ck";
-	struct clk_lookup *lookup = NULL;
 
 	omap2xxx_clkt_vps_late_init();
 	omap2xxx_clkt_vps_check_bootloader_rates();
 
 	hw = kzalloc(sizeof(*hw), GFP_KERNEL);
-	lookup = kzalloc(sizeof(*lookup), GFP_KERNEL);
-	if (!hw || !lookup)
+	if (!hw)
 		goto cleanup;
 	init.name = "virt_prcm_set";
 	init.ops = &virt_prcm_set_ops;
@@ -249,15 +244,9 @@ void omap2xxx_clkt_vps_init(void)
 	hw->hw.init = &init;
 
 	clk = clk_register(NULL, &hw->hw);
-
-	lookup->dev_id = NULL;
-	lookup->con_id = "cpufreq_ck";
-	lookup->clk = clk;
-
-	clkdev_add(lookup);
+	clkdev_create(clk, "cpufreq_ck", NULL);
 	return;
 cleanup:
 	kfree(hw);
-	kfree(lookup);
 }
 #endif

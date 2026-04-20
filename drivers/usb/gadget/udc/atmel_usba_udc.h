@@ -1,14 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver for the Atmel USBA high speed USB device controller
  *
  * Copyright (C) 2005-2007 Atmel Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #ifndef __LINUX_USB_GADGET_USBA_UDC_H__
 #define __LINUX_USB_GADGET_USBA_UDC_H__
+
+#include <linux/gpio/consumer.h>
 
 /* USB register offsets */
 #define USBA_CTRL				0x0000
@@ -43,13 +42,8 @@
 #define USBA_REMOTE_WAKE_UP			(1 << 10)
 #define USBA_PULLD_DIS				(1 << 11)
 
-#if defined(CONFIG_AVR32)
-#define USBA_ENABLE_MASK			USBA_EN_USBA
-#define USBA_DISABLE_MASK			0
-#elif defined(CONFIG_ARCH_AT91)
 #define USBA_ENABLE_MASK			(USBA_EN_USBA | USBA_PULLD_DIS)
 #define USBA_DISABLE_MASK			USBA_DETACH
-#endif /* CONFIG_ARCH_AT91 */
 
 /* Bitfields in FNUM */
 #define USBA_MICRO_FRAME_NUM_OFFSET		0
@@ -192,17 +186,17 @@
 
 /* Register access macros */
 #define usba_readl(udc, reg)					\
-	__raw_readl((udc)->regs + USBA_##reg)
+	readl_relaxed((udc)->regs + USBA_##reg)
 #define usba_writel(udc, reg, value)				\
-	__raw_writel((value), (udc)->regs + USBA_##reg)
+	writel_relaxed((value), (udc)->regs + USBA_##reg)
 #define usba_ep_readl(ep, reg)					\
-	__raw_readl((ep)->ep_regs + USBA_EPT_##reg)
+	readl_relaxed((ep)->ep_regs + USBA_EPT_##reg)
 #define usba_ep_writel(ep, reg, value)				\
-	__raw_writel((value), (ep)->ep_regs + USBA_EPT_##reg)
+	writel_relaxed((value), (ep)->ep_regs + USBA_EPT_##reg)
 #define usba_dma_readl(ep, reg)					\
-	__raw_readl((ep)->dma_regs + USBA_DMA_##reg)
+	readl_relaxed((ep)->dma_regs + USBA_DMA_##reg)
 #define usba_dma_writel(ep, reg, value)				\
-	__raw_writel((value), (ep)->dma_regs + USBA_DMA_##reg)
+	writel_relaxed((value), (ep)->dma_regs + USBA_DMA_##reg)
 
 /* Calculate base address for a given endpoint or DMA controller */
 #define USBA_EPT_BASE(x)	(0x100 + (x) * 0x20)
@@ -265,11 +259,18 @@ struct usba_dma_desc {
 	u32 ctrl;
 };
 
+struct usba_fifo_cfg {
+	u8			hw_ep_num;
+	u16			fifo_size;
+	u8			nr_banks;
+};
+
 struct usba_ep {
 	int					state;
 	void __iomem				*ep_regs;
 	void __iomem				*dma_regs;
 	void __iomem				*fifo;
+	char					name[8];
 	struct usb_ep				ep;
 	struct usba_udc				*udc;
 
@@ -282,14 +283,17 @@ struct usba_ep {
 	unsigned int				can_isoc:1;
 	unsigned int				is_isoc:1;
 	unsigned int				is_in:1;
-
+	unsigned long				ept_cfg;
 #ifdef CONFIG_USB_GADGET_DEBUG_FS
 	u32					last_dma_status;
 	struct dentry				*debugfs_dir;
-	struct dentry				*debugfs_queue;
-	struct dentry				*debugfs_dma_status;
-	struct dentry				*debugfs_state;
 #endif
+};
+
+struct usba_ep_config {
+	u8					nr_banks;
+	unsigned int				can_dma:1;
+	unsigned int				can_isoc:1;
 };
 
 struct usba_request {
@@ -304,9 +308,24 @@ struct usba_request {
 	unsigned int				mapped:1;
 };
 
+struct usba_udc_errata {
+	void (*toggle_bias)(struct usba_udc *udc, int is_on);
+	void (*pulse_bias)(struct usba_udc *udc);
+};
+
+struct usba_udc_config {
+	const struct usba_udc_errata *errata;
+	const struct usba_ep_config *config;
+	const int num_ep;
+	const bool ep_prealloc;
+};
+
 struct usba_udc {
 	/* Protect hw registers from concurrent modifications */
 	spinlock_t lock;
+
+	/* Mutex to prevent concurrent start or stop */
+	struct mutex vbus_mutex;
 
 	void __iomem *regs;
 	void __iomem *fifo;
@@ -314,23 +333,31 @@ struct usba_udc {
 	struct usb_gadget gadget;
 	struct usb_gadget_driver *driver;
 	struct platform_device *pdev;
+	const struct usba_udc_errata *errata;
 	int irq;
-	int vbus_pin;
-	int vbus_pin_inverted;
+	struct gpio_desc *vbus_pin;
 	int num_ep;
+	struct usba_fifo_cfg *fifo_cfg;
 	struct clk *pclk;
 	struct clk *hclk;
 	struct usba_ep *usba_ep;
+	bool bias_pulse_needed;
+	bool clocked;
+	bool suspended;
+	bool ep_prealloc;
 
 	u16 devstatus;
 
 	u16 test_mode;
 	int vbus_prev;
 
+	u32 int_enb_cache;
+
 #ifdef CONFIG_USB_GADGET_DEBUG_FS
 	struct dentry *debugfs_root;
-	struct dentry *debugfs_regs;
 #endif
+
+	struct regmap *pmc;
 };
 
 static inline struct usba_ep *to_usba_ep(struct usb_ep *ep)

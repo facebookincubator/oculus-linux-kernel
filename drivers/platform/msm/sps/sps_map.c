@@ -1,17 +1,9 @@
-/* Copyright (c) 2011-2013, 2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2011-2013, 2015, 2017-2019, The Linux Foundation. All rights reserved.
  */
-
 /**
- * Connection mapping table managment for SPS device driver.
+ * Connection mapping table management for SPS device driver.
  */
 
 #include <linux/types.h>	/* u32 */
@@ -50,7 +42,7 @@ int sps_map_init(const struct sps_map *map_props, u32 options)
 		    maps->src.periph_phy_addr == SPS_ADDR_INVALID)
 			break;
 
-	SPS_DBG(sps, "sps: %d mappings", sps_maps.num_maps);
+	SPS_DBG(sps, "sps: %d mappings\n", sps_maps.num_maps);
 
 	return 0;
 }
@@ -106,7 +98,7 @@ int sps_map_find(struct sps_connect *connect)
 		data = spsi_get_mem_ptr(map->data_base);
 		if (data == NULL) {
 			SPS_ERR(sps,
-				"sps:Can't get virt addr for I/O buffer: %pa",
+				"sps:Can't get virt addr for I/O buffer: %pa\n",
 				&map->data_base);
 			return SPS_ERROR;
 		}

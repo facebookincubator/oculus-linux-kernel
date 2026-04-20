@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *    HMC Drive DVD Module
  *
@@ -11,7 +12,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
-#include <linux/version.h>
 #include <linux/stat.h>
 
 #include "hmcdrv_ftp.h"

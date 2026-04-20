@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /***************************************************************************/
 
 /*
@@ -42,37 +43,28 @@ static u32 pit_cnt;
  * This is also called after resume to bring the PIT into operation again.
  */
 
-static void init_cf_pit_timer(enum clock_event_mode mode,
-                             struct clock_event_device *evt)
+static int cf_pit_set_periodic(struct clock_event_device *evt)
 {
-	switch (mode) {
-	case CLOCK_EVT_MODE_PERIODIC:
+	__raw_writew(MCFPIT_PCSR_DISABLE, TA(MCFPIT_PCSR));
+	__raw_writew(PIT_CYCLES_PER_JIFFY, TA(MCFPIT_PMR));
+	__raw_writew(MCFPIT_PCSR_EN | MCFPIT_PCSR_PIE |
+		     MCFPIT_PCSR_OVW | MCFPIT_PCSR_RLD |
+		     MCFPIT_PCSR_CLK64, TA(MCFPIT_PCSR));
+	return 0;
+}
 
-		__raw_writew(MCFPIT_PCSR_DISABLE, TA(MCFPIT_PCSR));
-		__raw_writew(PIT_CYCLES_PER_JIFFY, TA(MCFPIT_PMR));
-		__raw_writew(MCFPIT_PCSR_EN | MCFPIT_PCSR_PIE | \
-				MCFPIT_PCSR_OVW | MCFPIT_PCSR_RLD | \
-				MCFPIT_PCSR_CLK64, TA(MCFPIT_PCSR));
-		break;
+static int cf_pit_set_oneshot(struct clock_event_device *evt)
+{
+	__raw_writew(MCFPIT_PCSR_DISABLE, TA(MCFPIT_PCSR));
+	__raw_writew(MCFPIT_PCSR_EN | MCFPIT_PCSR_PIE |
+		     MCFPIT_PCSR_OVW | MCFPIT_PCSR_CLK64, TA(MCFPIT_PCSR));
+	return 0;
+}
 
-	case CLOCK_EVT_MODE_SHUTDOWN:
-	case CLOCK_EVT_MODE_UNUSED:
-
-		__raw_writew(MCFPIT_PCSR_DISABLE, TA(MCFPIT_PCSR));
-		break;
-
-	case CLOCK_EVT_MODE_ONESHOT:
-
-		__raw_writew(MCFPIT_PCSR_DISABLE, TA(MCFPIT_PCSR));
-		__raw_writew(MCFPIT_PCSR_EN | MCFPIT_PCSR_PIE | \
-				MCFPIT_PCSR_OVW | MCFPIT_PCSR_CLK64, \
-				TA(MCFPIT_PCSR));
-		break;
-
-	case CLOCK_EVT_MODE_RESUME:
-		/* Nothing to do here */
-		break;
-	}
+static int cf_pit_shutdown(struct clock_event_device *evt)
+{
+	__raw_writew(MCFPIT_PCSR_DISABLE, TA(MCFPIT_PCSR));
+	return 0;
 }
 
 /*
@@ -88,12 +80,15 @@ static int cf_pit_next_event(unsigned long delta,
 }
 
 struct clock_event_device cf_pit_clockevent = {
-	.name		= "pit",
-	.features	= CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT,
-	.set_mode	= init_cf_pit_timer,
-	.set_next_event	= cf_pit_next_event,
-	.shift		= 32,
-	.irq		= MCF_IRQ_PIT1,
+	.name			= "pit",
+	.features		= CLOCK_EVT_FEAT_PERIODIC |
+				  CLOCK_EVT_FEAT_ONESHOT,
+	.set_state_shutdown	= cf_pit_shutdown,
+	.set_state_periodic	= cf_pit_set_periodic,
+	.set_state_oneshot	= cf_pit_set_oneshot,
+	.set_next_event		= cf_pit_next_event,
+	.shift			= 32,
+	.irq			= MCF_IRQ_PIT1,
 };
 
 
@@ -116,15 +111,7 @@ static irqreturn_t pit_tick(int irq, void *dummy)
 
 /***************************************************************************/
 
-static struct irqaction pit_irq = {
-	.name	 = "timer",
-	.flags	 = IRQF_TIMER,
-	.handler = pit_tick,
-};
-
-/***************************************************************************/
-
-static cycle_t pit_read_clk(struct clocksource *cs)
+static u64 pit_read_clk(struct clocksource *cs)
 {
 	unsigned long flags;
 	u32 cycles;
@@ -151,15 +138,23 @@ static struct clocksource pit_clk = {
 
 void hw_timer_init(irq_handler_t handler)
 {
+	int ret;
+
 	cf_pit_clockevent.cpumask = cpumask_of(smp_processor_id());
 	cf_pit_clockevent.mult = div_sc(FREQ, NSEC_PER_SEC, 32);
 	cf_pit_clockevent.max_delta_ns =
 		clockevent_delta2ns(0xFFFF, &cf_pit_clockevent);
+	cf_pit_clockevent.max_delta_ticks = 0xFFFF;
 	cf_pit_clockevent.min_delta_ns =
 		clockevent_delta2ns(0x3f, &cf_pit_clockevent);
+	cf_pit_clockevent.min_delta_ticks = 0x3f;
 	clockevents_register_device(&cf_pit_clockevent);
 
-	setup_irq(MCF_IRQ_PIT1, &pit_irq);
+	ret = request_irq(MCF_IRQ_PIT1, pit_tick, IRQF_TIMER, "timer", NULL);
+	if (ret) {
+		pr_err("Failed to request irq %d (timer): %pe\n", MCF_IRQ_PIT1,
+		       ERR_PTR(ret));
+	}
 
 	clocksource_register_hz(&pit_clk, FREQ);
 }

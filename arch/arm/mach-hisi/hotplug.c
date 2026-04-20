@@ -1,10 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2013 Linaro Ltd.
  * Copyright (c) 2013 Hisilicon Limited.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
  */
 
 #include <linux/cpu.h>
@@ -64,6 +61,9 @@
 #define PMC0_CPU1_WAIT_MTCOMS_ACK	(1 << 8)
 #define PMC0_CPU1_PMC_ENABLE		(1 << 7)
 #define PMC0_CPU1_POWERDOWN		(1 << 3)
+
+#define HIP01_PERI9                    0x50
+#define PERI9_CPU1_RESET               (1 << 1)
 
 enum {
 	HI3620_CTRL,
@@ -145,13 +145,20 @@ static int hi3xxx_hotplug_init(void)
 	struct device_node *node;
 
 	node = of_find_compatible_node(NULL, NULL, "hisilicon,sysctrl");
-	if (node) {
-		ctrl_base = of_iomap(node, 0);
-		id = HI3620_CTRL;
-		return 0;
+	if (!node) {
+		id = ERROR_CTRL;
+		return -ENOENT;
 	}
-	id = ERROR_CTRL;
-	return -ENOENT;
+
+	ctrl_base = of_iomap(node, 0);
+	of_node_put(node);
+	if (!ctrl_base) {
+		id = ERROR_CTRL;
+		return -ENOMEM;
+	}
+
+	id = HI3620_CTRL;
+	return 0;
 }
 
 void hi3xxx_set_cpu(int cpu, bool enable)
@@ -170,11 +177,15 @@ static bool hix5hd2_hotplug_init(void)
 	struct device_node *np;
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,cpuctrl");
-	if (np) {
-		ctrl_base = of_iomap(np, 0);
-		return true;
-	}
-	return false;
+	if (!np)
+		return false;
+
+	ctrl_base = of_iomap(np, 0);
+	of_node_put(np);
+	if (!ctrl_base)
+		return false;
+
+	return true;
 }
 
 void hix5hd2_set_cpu(int cpu, bool enable)
@@ -206,6 +217,34 @@ void hix5hd2_set_cpu(int cpu, bool enable)
 		val = readl_relaxed(ctrl_base + HIX5HD2_PERI_CRG20);
 		val |= CRG20_CPU1_RESET;
 		writel_relaxed(val, ctrl_base + HIX5HD2_PERI_CRG20);
+	}
+}
+
+void hip01_set_cpu(int cpu, bool enable)
+{
+	unsigned int temp;
+	struct device_node *np;
+
+	if (!ctrl_base) {
+		np = of_find_compatible_node(NULL, NULL, "hisilicon,hip01-sysctrl");
+		BUG_ON(!np);
+		ctrl_base = of_iomap(np, 0);
+		of_node_put(np);
+		BUG_ON(!ctrl_base);
+	}
+
+	if (enable) {
+		/* reset on CPU1  */
+		temp = readl_relaxed(ctrl_base + HIP01_PERI9);
+		temp |= PERI9_CPU1_RESET;
+		writel_relaxed(temp, ctrl_base + HIP01_PERI9);
+
+		udelay(50);
+
+		/* unreset on CPU1 */
+		temp = readl_relaxed(ctrl_base + HIP01_PERI9);
+		temp &= ~PERI9_CPU1_RESET;
+		writel_relaxed(temp, ctrl_base + HIP01_PERI9);
 	}
 }
 

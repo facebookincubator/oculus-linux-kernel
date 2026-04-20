@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 1995-1997 Olaf Kirch <okir@monad.swb.de>
  */
@@ -6,6 +7,7 @@
 
 #include <linux/sunrpc/cache.h>
 #include <uapi/linux/nfsd/export.h>
+#include <linux/nfs4.h>
 
 struct knfsd_fh;
 struct svc_fh;
@@ -56,7 +58,10 @@ struct svc_export {
 	struct nfsd4_fs_locations ex_fslocs;
 	uint32_t		ex_nflavors;
 	struct exp_flavor_info	ex_flavors[MAX_SECINFO_LIST];
+	u32			ex_layout_types;
+	struct nfsd4_deviceid_map *ex_devid_map;
 	struct cache_detail	*cd;
+	struct rcu_head		ex_rcu;
 };
 
 /* an "export key" (expkey) maps a filehandlefragement to an
@@ -71,6 +76,7 @@ struct svc_expkey {
 	u32			ek_fsid[6];
 
 	struct path		ek_path;
+	struct rcu_head		ek_rcu;
 };
 
 #define EX_ISSYNC(exp)		(!((exp)->ex_flags & NFSEXP_ASYNC))

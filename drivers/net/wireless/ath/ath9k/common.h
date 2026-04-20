@@ -24,6 +24,7 @@
 #include "common-init.h"
 #include "common-beacon.h"
 #include "common-debug.h"
+#include "common-spectral.h"
 
 /* Common header for Atheros 802.11n base driver cores */
 
@@ -49,6 +50,7 @@
 #define IEEE80211_MS_TO_TU(x)   (((x) * 1000) / 1024)
 
 struct ath_beacon_config {
+	struct ieee80211_vif *main_vif;
 	int beacon_interval;
 	u16 dtim_period;
 	u16 bmiss_timeout;

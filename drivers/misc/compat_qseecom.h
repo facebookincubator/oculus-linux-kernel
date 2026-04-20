@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2017, 2019-2020, The Linux Foundation. All rights reserved.
+ */
 #ifndef _UAPI_COMPAT_QSEECOM_H_
 #define _UAPI_COMPAT_QSEECOM_H_
 
@@ -86,14 +90,14 @@ struct compat_qseecom_send_resp_req {
  * @img_len - Length of the .mdt + .b00 +..+.bxx images files in bytes
  * @ion_fd - Ion file descriptor used when allocating memory.
  * @img_name - Name of the image.
-*/
+ */
 struct compat_qseecom_load_img_req {
 	compat_ulong_t mdt_len; /* in */
 	compat_ulong_t img_len; /* in */
 	compat_long_t  ifd_data_fd; /* in */
 	char	 img_name[MAX_APP_NAME_SIZE]; /* in */
 	compat_ulong_t app_arch; /* in */
-	compat_int_t app_id; /* out*/
+	compat_uint_t app_id; /* out*/
 };
 
 struct compat_qseecom_set_sb_mem_param_req {
@@ -117,7 +121,7 @@ struct compat_qseecom_qseos_version_req {
  */
 struct compat_qseecom_qseos_app_load_query {
 	char app_name[MAX_APP_NAME_SIZE]; /* in */
-	compat_int_t app_id; /* out */
+	compat_uint_t app_id; /* out */
 	compat_ulong_t app_arch;
 };
 
@@ -226,6 +230,9 @@ struct file;
 extern long compat_qseecom_ioctl(struct file *file,
 					unsigned int cmd, unsigned long arg);
 
+extern long qseecom_ioctl(struct file *file,
+					unsigned int cmd, unsigned long arg);
+
 #define COMPAT_QSEECOM_IOCTL_REGISTER_LISTENER_REQ \
 	_IOWR(QSEECOM_IOC_MAGIC, 1, struct compat_qseecom_register_listener_req)
 
@@ -331,4 +338,3 @@ extern long compat_qseecom_ioctl(struct file *file,
 
 #endif
 #endif /* _UAPI_COMPAT_QSEECOM_H_ */
-

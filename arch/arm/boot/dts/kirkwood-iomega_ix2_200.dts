@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 
 #include "kirkwood.dtsi"
@@ -169,6 +170,10 @@
 			gpios = <&gpio1 3 GPIO_ACTIVE_LOW>;
 		};
 	};
+	gpio-poweroff {
+		compatible = "gpio-poweroff";
+		gpios = <&gpio0 17 GPIO_ACTIVE_LOW>;
+	};
 };
 
 &nand {
@@ -192,8 +197,8 @@
 	};
 
 	partition@400000 {
-		label = "uInitrd";
-		reg = <0x540000 0x1000000>;
+		label = "rootfs";
+		reg = <0x400000 0x1C00000>;
 	};
 };
 

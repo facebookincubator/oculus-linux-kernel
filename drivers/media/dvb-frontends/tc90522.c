@@ -1,17 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Toshiba TC90522 Demodulator
  *
  * Copyright (C) 2014 Akihiro Tsukada <tskd08@gmail.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation version 2.
- *
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
@@ -30,7 +21,7 @@
 #include <linux/kernel.h>
 #include <linux/math64.h>
 #include <linux/dvb/frontend.h>
-#include "dvb_math.h"
+#include <media/dvb_math.h>
 #include "tc90522.h"
 
 #define TC90522_I2C_THRU_REG 0xfe
@@ -130,7 +121,7 @@ static int tc90522t_set_layers(struct dvb_frontend *fe)
 
 /* frontend ops */
 
-static int tc90522s_read_status(struct dvb_frontend *fe, fe_status_t *status)
+static int tc90522s_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct tc90522_state *state;
 	int ret;
@@ -158,7 +149,7 @@ static int tc90522s_read_status(struct dvb_frontend *fe, fe_status_t *status)
 	return 0;
 }
 
-static int tc90522t_read_status(struct dvb_frontend *fe, fe_status_t *status)
+static int tc90522t_read_status(struct dvb_frontend *fe, enum fe_status *status)
 {
 	struct tc90522_state *state;
 	int ret;
@@ -194,17 +185,17 @@ static int tc90522t_read_status(struct dvb_frontend *fe, fe_status_t *status)
 	return 0;
 }
 
-static const fe_code_rate_t fec_conv_sat[] = {
+static const enum fe_code_rate fec_conv_sat[] = {
 	FEC_NONE, /* unused */
 	FEC_1_2, /* for BPSK */
 	FEC_1_2, FEC_2_3, FEC_3_4, FEC_5_6, FEC_7_8, /* for QPSK */
 	FEC_2_3, /* for 8PSK. (trellis code) */
 };
 
-static int tc90522s_get_frontend(struct dvb_frontend *fe)
+static int tc90522s_get_frontend(struct dvb_frontend *fe,
+				 struct dtv_frontend_properties *c)
 {
 	struct tc90522_state *state;
-	struct dtv_frontend_properties *c;
 	struct dtv_fe_stats *stats;
 	int ret, i;
 	int layers;
@@ -212,8 +203,8 @@ static int tc90522s_get_frontend(struct dvb_frontend *fe)
 	u32 cndat;
 
 	state = fe->demodulator_priv;
-	c = &fe->dtv_property_cache;
 	c->delivery_system = SYS_ISDBS;
+	c->symbol_rate = 28860000;
 
 	layers = 0;
 	ret = reg_read(state, 0xe6, val, 5);
@@ -237,7 +228,10 @@ static int tc90522s_get_frontend(struct dvb_frontend *fe)
 			c->layer[1].segment_count = 0;
 		else
 			c->layer[1].segment_count = val[4] & 0x3f; /* slots */
-		/* actually, BPSK if v==1, but not defined in fe_modulation_t */
+		/*
+		 * actually, BPSK if v==1, but not defined in
+		 * enum fe_modulation
+		 */
 		c->layer[1].modulation = QPSK;
 		layers = (v > 0) ? 2 : 1;
 	}
@@ -318,25 +312,25 @@ static int tc90522s_get_frontend(struct dvb_frontend *fe)
 }
 
 
-static const fe_transmit_mode_t tm_conv[] = {
+static const enum fe_transmit_mode tm_conv[] = {
 	TRANSMISSION_MODE_2K,
 	TRANSMISSION_MODE_4K,
 	TRANSMISSION_MODE_8K,
 	0
 };
 
-static const fe_code_rate_t fec_conv_ter[] = {
+static const enum fe_code_rate fec_conv_ter[] = {
 	FEC_1_2, FEC_2_3, FEC_3_4, FEC_5_6, FEC_7_8, 0, 0, 0
 };
 
-static const fe_modulation_t mod_conv[] = {
+static const enum fe_modulation mod_conv[] = {
 	DQPSK, QPSK, QAM_16, QAM_64, 0, 0, 0, 0
 };
 
-static int tc90522t_get_frontend(struct dvb_frontend *fe)
+static int tc90522t_get_frontend(struct dvb_frontend *fe,
+				 struct dtv_frontend_properties *c)
 {
 	struct tc90522_state *state;
-	struct dtv_frontend_properties *c;
 	struct dtv_fe_stats *stats;
 	int ret, i;
 	int layers;
@@ -344,13 +338,12 @@ static int tc90522t_get_frontend(struct dvb_frontend *fe)
 	u32 cndat;
 
 	state = fe->demodulator_priv;
-	c = &fe->dtv_property_cache;
 	c->delivery_system = SYS_ISDBT;
 	c->bandwidth_hz = 6000000;
 	mode = 1;
 	ret = reg_read(state, 0xb0, val, 1);
 	if (ret == 0) {
-		mode = (val[0] & 0xc0) >> 2;
+		mode = (val[0] & 0xc0) >> 6;
 		c->transmission_mode = tm_conv[mode];
 		c->guard_interval = (val[0] & 0x30) >> 4;
 	}
@@ -377,7 +370,7 @@ static int tc90522t_get_frontend(struct dvb_frontend *fe)
 		}
 
 		/* layer B */
-		v = (val[3] & 0x03) << 1 | (val[4] & 0xc0) >> 6;
+		v = (val[3] & 0x03) << 2 | (val[4] & 0xc0) >> 6;
 		if (v == 0x0f)
 			c->layer[1].segment_count = 0;
 		else {
@@ -654,7 +647,7 @@ tc90522_master_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num)
 	for (i = 0; i < num; i++)
 		if (msgs[i].flags & I2C_M_RD)
 			rd_num++;
-	new_msgs = kmalloc(sizeof(*new_msgs) * (num + rd_num), GFP_KERNEL);
+	new_msgs = kmalloc_array(num + rd_num, sizeof(*new_msgs), GFP_KERNEL);
 	if (!new_msgs)
 		return -ENOMEM;
 
@@ -692,10 +685,33 @@ tc90522_master_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num)
 		p += new_msgs[j].len;
 	}
 
-	if (i < num)
+	if (i < num) {
 		ret = -ENOMEM;
-	else
+	} else if (!state->cfg.split_tuner_read_i2c || rd_num == 0) {
 		ret = i2c_transfer(state->i2c_client->adapter, new_msgs, j);
+	} else {
+		/*
+		 * Split transactions at each I2C_M_RD message.
+		 * Some of the parent device require this,
+		 * such as Friio (see. dvb-usb-gl861).
+		 */
+		int from, to;
+
+		ret = 0;
+		from = 0;
+		do {
+			int r;
+
+			to = from + 1;
+			while (to < j && !(new_msgs[to].flags & I2C_M_RD))
+				to++;
+			r = i2c_transfer(state->i2c_client->adapter,
+					 &new_msgs[from], to - from);
+			ret = (r <= 0) ? r : ret + r;
+			from = to;
+		} while (from < j && ret > 0);
+	}
+
 	if (ret >= 0 && ret < j)
 		ret = -EIO;
 	kfree(new_msgs);
@@ -721,8 +737,8 @@ static const struct dvb_frontend_ops tc90522_ops_sat = {
 	.delsys = { SYS_ISDBS },
 	.info = {
 		.name = "Toshiba TC90522 ISDB-S module",
-		.frequency_min =  950000,
-		.frequency_max = 2150000,
+		.frequency_min_hz =  950 * MHz,
+		.frequency_max_hz = 2150 * MHz,
 		.caps = FE_CAN_INVERSION_AUTO | FE_CAN_FEC_AUTO |
 			FE_CAN_QAM_AUTO | FE_CAN_TRANSMISSION_MODE_AUTO |
 			FE_CAN_GUARD_INTERVAL_AUTO | FE_CAN_HIERARCHY_AUTO,
@@ -741,9 +757,9 @@ static const struct dvb_frontend_ops tc90522_ops_ter = {
 	.delsys = { SYS_ISDBT },
 	.info = {
 		.name = "Toshiba TC90522 ISDB-T module",
-		.frequency_min = 470000000,
-		.frequency_max = 770000000,
-		.frequency_stepsize = 142857,
+		.frequency_min_hz = 470 * MHz,
+		.frequency_max_hz = 770 * MHz,
+		.frequency_stepsize_hz = 142857,
 		.caps = FE_CAN_INVERSION_AUTO |
 			FE_CAN_FEC_1_2  | FE_CAN_FEC_2_3 | FE_CAN_FEC_3_4 |
 			FE_CAN_FEC_5_6  | FE_CAN_FEC_7_8 | FE_CAN_FEC_AUTO |
@@ -788,18 +804,17 @@ static int tc90522_probe(struct i2c_client *client,
 	adap->owner = THIS_MODULE;
 	adap->algo = &tc90522_tuner_i2c_algo;
 	adap->dev.parent = &client->dev;
-	strlcpy(adap->name, "tc90522_sub", sizeof(adap->name));
+	strscpy(adap->name, "tc90522_sub", sizeof(adap->name));
 	i2c_set_adapdata(adap, state);
 	ret = i2c_add_adapter(adap);
 	if (ret < 0)
-		goto err;
+		goto free_state;
 	cfg->tuner_i2c = state->cfg.tuner_i2c = adap;
 
 	i2c_set_clientdata(client, &state->cfg);
 	dev_info(&client->dev, "Toshiba TC90522 attached.\n");
 	return 0;
-
-err:
+free_state:
 	kfree(state);
 	return ret;
 }

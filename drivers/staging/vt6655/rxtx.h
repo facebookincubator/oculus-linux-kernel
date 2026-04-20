@@ -1,20 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright (c) 1996, 2003 VIA Networking Technologies, Inc.
  * All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  *
  * File: rxtx.h
  *
@@ -29,9 +16,11 @@
 #ifndef __RXTX_H__
 #define __RXTX_H__
 
-#include "ttype.h"
 #include "device.h"
-#include "wcmd.h"
+
+#define DEFAULT_MSDU_LIFETIME_RES_64us	8000 /* 64us */
+#define DEFAULT_MGN_LIFETIME_RES_64us	125  /* 64us */
+
 
 /*---------------------  Export Definitions -------------------------*/
 
@@ -173,6 +162,14 @@ struct vnt_cts_fb {
 	u16 reserved2;
 } __packed;
 
+struct vnt_tx_fifo_head {
+	u8 tx_key[WLAN_KEY_LEN_CCMP];
+	__le16 fifo_ctl;
+	__le16 time_stamp;
+	__le16 frag_ctl;
+	__le16 current_rate;
+} __packed;
+
 struct vnt_tx_short_buf_head {
 	__le16 fifo_ctl;
 	u16 time_stamp;
@@ -181,38 +178,10 @@ struct vnt_tx_short_buf_head {
 	__le16 time_stamp_off;
 } __packed;
 
-void
-vGenerateMACHeader(
-	struct vnt_private *,
-	unsigned char *pbyBufferAddr,
-	unsigned short wDuration,
-	PSEthernetHeader psEthHeader,
-	bool bNeedEncrypt,
-	unsigned short wFragType,
-	unsigned int uDMAIdx,
-	unsigned int uFragIdx
-);
+int vnt_generate_fifo_header(struct vnt_private *priv, u32 dma_idx,
+			     struct vnt_tx_desc *head_td, struct sk_buff *skb);
+int vnt_beacon_make(struct vnt_private *priv, struct ieee80211_vif *vif);
+int vnt_beacon_enable(struct vnt_private *priv, struct ieee80211_vif *vif,
+		      struct ieee80211_bss_conf *conf);
 
-unsigned int
-cbGetFragCount(
-	struct vnt_private *,
-	PSKeyItem        pTransmitKey,
-	unsigned int	cbFrameBodySize,
-	PSEthernetHeader psEthHeader
-);
-
-void
-vGenerateFIFOHeader(struct vnt_private *, unsigned char byPktTyp,
-		    unsigned char *pbyTxBufferAddr, bool bNeedEncrypt,
-		    unsigned int cbPayloadSize, unsigned int uDMAIdx,
-		    PSTxDesc pHeadTD, PSEthernetHeader psEthHeader,
-		    unsigned char *pPacket, PSKeyItem pTransmitKey,
-		    unsigned int uNodeIndex, unsigned int *puMACfragNum,
-		    unsigned int *pcbHeaderSize);
-
-void vDMA0_tx_80211(struct vnt_private *, struct sk_buff *skb,
-		    unsigned char *pbMPDU, unsigned int cbMPDULen);
-CMD_STATUS csMgmt_xmit(struct vnt_private *, PSTxMgmtPacket pPacket);
-CMD_STATUS csBeacon_xmit(struct vnt_private *, PSTxMgmtPacket pPacket);
-
-#endif // __RXTX_H__
+#endif /* __RXTX_H__ */

@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: GPL-2.0
+
+// Turn on left pmic and simo in dragon Dev0 phase2 CX.
+&qupv3_se8_i2c {
+	simo_left: max77675-regulator@40 {
+		reg = <0x40>;
+		compatible = "adi,max77675";
+		enable-gpio = <&tlmm 91 GPIO_ACTIVE_HIGH>;
+		status = "ok";
+		regulators {
+			simo_sbb0: regulator-sbb0 {
+				regulator-name = "simo_sbb0";
+				regulator-compatible = "regulator_sbb0";
+				regulator-min-microvolt = <500000>;
+				regulator-max-microvolt = <5500000>;
+				regulator-active-discharge = <1>;
+			};
+			simo_sbb1: regulator-sbb1 {
+				regulator-name = "simo_sbb1";
+				regulator-compatible = "regulator_sbb1";
+				regulator-min-microvolt = <500000>;
+				regulator-max-microvolt = <5500000>;
+				regulator-active-discharge = <1>;
+			};
+			simo_sbb2: regulator-sbb2 {
+				regulator-name = "simo_sbb2";
+				regulator-compatible = "regulator_sbb2";
+				regulator-min-microvolt = <500000>;
+				regulator-max-microvolt = <5500000>;
+				regulator-active-discharge = <1>;
+			};
+			simo_sbb3: regulator-sbb3 {
+				regulator-name = "simo_sbb3";
+				regulator-compatible = "regulator_sbb3";
+				regulator-min-microvolt = <500000>;
+				regulator-max-microvolt = <5500000>;
+				regulator-active-discharge = <1>;
+			};
+		};
+	};
+
+	pmic_left: slg5b47231-regulator@76 {
+		reg = <0x76>;
+		compatible = "renesas,slg5b47231";
+		enable-gpio = <&tlmm 114 GPIO_ACTIVE_HIGH>;
+		vin1_2-supply = < &simo_sbb1>;
+		vin3-supply = < &simo_sbb1>;
+		vin4-supply = < &simo_sbb0>;
+		vin6-supply = < &simo_sbb3>;
+		status = "ok";
+	};
+};

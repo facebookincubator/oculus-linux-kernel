@@ -1,7 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) ST-Ericsson SA 2010
  *
- * License Terms: GNU General Public License, version 2
  * Author: Hanumath Prasad <hanumath.prasad@stericsson.com> for ST-Ericsson
  * Author: Rabin Vincent <rabin.vincent@stericsson.com> for ST-Ericsson
  */
@@ -18,7 +18,7 @@
 #include <linux/mfd/tc3589x.h>
 #include <linux/err.h>
 
-/**
+/*
  * enum tc3589x_version - indicates the TC3589x version
  */
 enum tc3589x_version {
@@ -53,7 +53,7 @@ int tc3589x_reg_read(struct tc3589x *tc3589x, u8 reg)
 EXPORT_SYMBOL_GPL(tc3589x_reg_read);
 
 /**
- * tc3589x_reg_read() - write a single TC3589x register
+ * tc3589x_reg_write() - write a single TC3589x register
  * @tc3589x:	Device to write to
  * @reg:	Register to read
  * @data:	Value to write
@@ -118,7 +118,7 @@ EXPORT_SYMBOL_GPL(tc3589x_block_write);
  * @tc3589x:	Device to write to
  * @reg:	Register to write
  * @mask:	Mask of bits to set
- * @values:	Value to set
+ * @val:	Value to set
  */
 int tc3589x_set_bits(struct tc3589x *tc3589x, u8 reg, u8 mask, u8 val)
 {
@@ -187,7 +187,7 @@ again:
 
 	while (status) {
 		int bit = __ffs(status);
-		int virq = irq_create_mapping(tc3589x->domain, bit);
+		int virq = irq_find_mapping(tc3589x->domain, bit);
 
 		handle_nested_irq(virq);
 		status &= ~(1 << bit);
@@ -215,25 +215,18 @@ static int tc3589x_irq_map(struct irq_domain *d, unsigned int virq,
 	irq_set_chip_and_handler(virq, &dummy_irq_chip,
 				handle_edge_irq);
 	irq_set_nested_thread(virq, 1);
-#ifdef CONFIG_ARM
-	set_irq_flags(virq, IRQF_VALID);
-#else
 	irq_set_noprobe(virq);
-#endif
 
 	return 0;
 }
 
 static void tc3589x_irq_unmap(struct irq_domain *d, unsigned int virq)
 {
-#ifdef CONFIG_ARM
-	set_irq_flags(virq, 0);
-#endif
 	irq_set_chip_and_handler(virq, NULL, NULL);
 	irq_set_chip_data(virq, NULL);
 }
 
-static struct irq_domain_ops tc3589x_irq_ops = {
+static const struct irq_domain_ops tc3589x_irq_ops = {
 	.map    = tc3589x_irq_map,
 	.unmap  = tc3589x_irq_unmap,
 	.xlate  = irq_domain_xlate_onecell,
@@ -241,10 +234,8 @@ static struct irq_domain_ops tc3589x_irq_ops = {
 
 static int tc3589x_irq_init(struct tc3589x *tc3589x, struct device_node *np)
 {
-	int base = tc3589x->irq_base;
-
 	tc3589x->domain = irq_domain_add_simple(
-		np, TC3589x_NR_INTERNAL_IRQS, base,
+		np, TC3589x_NR_INTERNAL_IRQS, 0,
 		&tc3589x_irq_ops, tc3589x);
 
 	if (!tc3589x->domain) {
@@ -298,7 +289,7 @@ static int tc3589x_device_init(struct tc3589x *tc3589x)
 	if (blocks & TC3589x_BLOCK_GPIO) {
 		ret = mfd_add_devices(tc3589x->dev, -1, tc3589x_dev_gpio,
 				      ARRAY_SIZE(tc3589x_dev_gpio), NULL,
-				      tc3589x->irq_base, tc3589x->domain);
+				      0, tc3589x->domain);
 		if (ret) {
 			dev_err(tc3589x->dev, "failed to add gpio child\n");
 			return ret;
@@ -309,7 +300,7 @@ static int tc3589x_device_init(struct tc3589x *tc3589x)
 	if (blocks & TC3589x_BLOCK_KEYPAD) {
 		ret = mfd_add_devices(tc3589x->dev, -1, tc3589x_dev_keypad,
 				      ARRAY_SIZE(tc3589x_dev_keypad), NULL,
-				      tc3589x->irq_base, tc3589x->domain);
+				      0, tc3589x->domain);
 		if (ret) {
 			dev_err(tc3589x->dev, "failed to keypad child\n");
 			return ret;
@@ -320,7 +311,6 @@ static int tc3589x_device_init(struct tc3589x *tc3589x)
 	return ret;
 }
 
-#ifdef CONFIG_OF
 static const struct of_device_id tc3589x_match[] = {
 	/* Legacy compatible string */
 	{ .compatible = "tc3589x", .data = (void *) TC3589X_UNKNOWN },
@@ -361,14 +351,6 @@ tc3589x_of_probe(struct device *dev, enum tc3589x_version *version)
 
 	return pdata;
 }
-#else
-static inline struct tc3589x_platform_data *
-tc3589x_of_probe(struct device *dev, enum tc3589x_version *version)
-{
-	dev_err(dev, "no device tree support\n");
-	return ERR_PTR(-ENODEV);
-}
-#endif
 
 static int tc3589x_probe(struct i2c_client *i2c,
 				   const struct i2c_device_id *id)
@@ -404,7 +386,6 @@ static int tc3589x_probe(struct i2c_client *i2c,
 	tc3589x->dev = &i2c->dev;
 	tc3589x->i2c = i2c;
 	tc3589x->pdata = pdata;
-	tc3589x->irq_base = pdata->irq_base;
 
 	switch (version) {
 	case TC3589X_TC35893:
@@ -504,7 +485,6 @@ MODULE_DEVICE_TABLE(i2c, tc3589x_id);
 static struct i2c_driver tc3589x_driver = {
 	.driver = {
 		.name	= "tc3589x",
-		.owner	= THIS_MODULE,
 		.pm	= &tc3589x_dev_pm_ops,
 		.of_match_table = of_match_ptr(tc3589x_match),
 	},
