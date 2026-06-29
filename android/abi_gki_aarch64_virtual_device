@@ -28,12 +28,14 @@
   blk_queue_physical_block_size
   blk_queue_write_cache
   blk_status_to_errno
+  bpf_redirect_info
   bpf_trace_run1
   bpf_trace_run2
   bpf_trace_run3
   bpf_trace_run4
   bpf_trace_run5
   bpf_trace_run6
+  blk_mq_quiesce_queue_nowait
   bt_err
   bt_info
   bt_warn

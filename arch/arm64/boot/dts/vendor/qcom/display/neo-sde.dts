@@ -1,0 +1,9 @@
+/dts-v1/;
+/plugin/;
+
+#include "neo-sde.dtsi"
+
+/ {
+	qcom,msm-id = <525 0x10000>, <554 0x10000>, <579 0x10000>;
+	qcom,board-id = <0 0>;
+};

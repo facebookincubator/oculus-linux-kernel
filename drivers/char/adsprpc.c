@@ -280,6 +280,13 @@ enum fastrpc_remote_subsys_state {
 	SUBSYSTEM_UP,
 };
 
+/* Hibernation states */
+enum fastrpc_hibernation_state {
+	NORMAL_STATE = 0,
+	HIBERNATION_SUSPEND,
+	HIBERNATION_RESTORE,
+};
+
 #define PERF_END (void)0
 
 #define PERF(enb, cnt, ff) \
@@ -540,7 +547,7 @@ struct fastrpc_channel_ctx {
 	struct mutex rpmsg_mutex;
 	uint64_t sesscount;
 	uint64_t ssrcount;
-	int in_hib;
+	int hib_state;
 	void *handle;
 	uint64_t prevssrcount;
 	int subsystemstate;
@@ -562,6 +569,9 @@ struct fastrpc_channel_ctx {
 	struct hlist_head initmems;
 	/* Store gfa structure debug details */
 	struct fastrpc_buf *buf;
+#ifdef CONFIG_MSM_ADSPRPC_UEVENT
+	struct work_struct uevent_work;
+#endif
 };
 
 struct fastrpc_apps {
@@ -849,6 +859,50 @@ static inline int64_t get_timestamp_in_ns(void)
 	return ns;
 }
 
+#ifdef CONFIG_MSM_ADSPRPC_UEVENT
+static void adsprpc_uevent_work(struct work_struct *data)
+{
+	struct fastrpc_apps *me = &gfa;
+	struct fastrpc_channel_ctx *ctx = container_of(data, struct fastrpc_channel_ctx, uevent_work);
+	int cid = -1;
+	int subsystemstate;
+	char *statestr = NULL;
+	char *props[3];
+	int i;
+
+	cid = ctx - &me->channel[0];
+
+	mutex_lock(&me->channel[cid].smd_mutex);
+	subsystemstate = ctx->subsystemstate;
+
+	switch (subsystemstate) {
+	case SUBSYSTEM_UP:
+		statestr = "POWERUP";
+		break;
+	case SUBSYSTEM_RESTARTING:
+		statestr = "RESTARTING";
+		break;
+	case SUBSYSTEM_DOWN:
+		statestr = "POWERDOWN";
+		break;
+	default:
+		break;
+	}
+
+	props[0] = kasprintf(GFP_KERNEL, "ADSPRPC_SUBSYS_NAME=%s", gcinfo[cid].subsys);
+	props[1] = kasprintf(GFP_KERNEL, "ADSPRPC_SUBSYS_STATE=%s", statestr);
+	props[2] = NULL;
+
+	kobject_uevent_env(&ctx->dev->kobj, KOBJ_CHANGE, props);
+	for (i = 0; i < 2; ++i)
+		kfree(props[i]);
+	mutex_unlock(&me->channel[cid].smd_mutex);
+
+	pr_info("adsprpc: %s: %s subsystem state: %d\n",
+			__func__, gcinfo[cid].subsys, subsystemstate);
+}
+#endif
+
 static inline int poll_for_remote_response(struct smq_invoke_ctx *ctx, uint32_t timeout)
 {
 	int err = -EIO;
@@ -1118,7 +1172,7 @@ skip_buf_cache:
 			goto bail;
 		}
 		vmid = fl->apps->channel[cid].vmid;
-		if ((vmid) && (fl->apps->channel[cid].in_hib == 0)) {
+		if ((vmid) && (fl->apps->channel[cid].hib_state == NORMAL_STATE)) {
 			int srcVM[2] = {VMID_HLOS, vmid};
 			int hyp_err = 0;
 
@@ -1411,7 +1465,7 @@ static void fastrpc_mmap_free(struct fastrpc_mmap *map, uint32_t flags)
 
 		vmid = fl->apps->channel[cid].vmid;
 		if (vmid && map->phys &&
-			(me->channel[fl->cid].in_hib == 0)) {
+			(me->channel[fl->cid].hib_state == NORMAL_STATE)) {
 			int hyp_err = 0;
 			int srcVM[2] = {VMID_HLOS, vmid};
 
@@ -2065,6 +2119,13 @@ static int context_alloc(struct fastrpc_file *fl, uint32_t kernel,
 		!(kernel || invoke->handle < FASTRPC_STATIC_HANDLE_MAX)) {
 		err = -EDQUOT;
 		spin_unlock(&fl->hlock);
+
+		#ifdef CONFIG_VERBOSE_ADSP_RPC_LOGGING
+		// additional logging to assist the HTP kernel panic investigations
+		pr_err("Context alloc failure. num_active_ctx: %d, kernel: %d, invoke->handle: %d\n", fl->clst.num_active_ctxs, kernel, invoke->handle);
+		panic ("Context alloc failure");
+		#endif //CONFIG_VERBOSE_ADSP_RPC_LOGGING
+
 		goto bail;
 	}
 	spin_unlock(&fl->hlock);
@@ -3982,6 +4043,12 @@ static int fastrpc_get_spd_session(char *name, int *session, int *cid)
 	VERIFY(err, i < NUM_CHANNELS && j < NUM_SESSIONS);
 	if (err) {
 		err = -EUSERS;
+
+		#ifdef CONFIG_VERBOSE_ADSP_RPC_LOGGING
+		// additional logging to assist the HTP kernel panic investigations
+		pr_err("fastrpc_get_spd_session failure with number of channels %d and number of sessions %d\n", i, j);
+		#endif //CONFIG_VERBOSE_ADSP_RPC_LOGGING
+
 		goto bail;
 	}
 	*cid = i;
@@ -5070,7 +5137,7 @@ static int fastrpc_munmap_rh(uint64_t phys, size_t size,
 	int destVMperm[1] = {PERM_READ | PERM_WRITE | PERM_EXEC};
 
 	if ((me->channel[RH_CID].rhvm.vmid)
-			&& (me->channel[RH_CID].in_hib == 0)) {
+			&& (me->channel[RH_CID].hib_state == NORMAL_STATE)) {
 		err = hyp_assign_phys(phys,
 				(uint64_t)size,
 				me->channel[RH_CID].rhvm.vmid,
@@ -5160,7 +5227,8 @@ static int fastrpc_mmap_remove_ssr(struct fastrpc_file *fl, int locked)
 			ramdump_segments_rh.size = match->size;
 			INIT_LIST_HEAD(&head);
 			list_add(&ramdump_segments_rh.node, &head);
-			if (me->dev && dump_enabled() && me->enable_ramdump) {
+			if (me->dev && dump_enabled() && me->enable_ramdump &&
+				(me->channel[RH_CID].hib_state == NORMAL_STATE)) {
 				ret = qcom_elf_dump(&head, me->dev, ELF_CLASS);
 				if (ret < 0)
 					pr_err("adsprpc: %s: unable to dump heap (err %d)\n",
@@ -6248,7 +6316,7 @@ static int fastrpc_channel_open(struct fastrpc_file *fl)
 		me->channel[cid].prevssrcount =
 					me->channel[cid].ssrcount;
 	}
-	me->channel[cid].in_hib = 0;
+	me->channel[cid].hib_state = NORMAL_STATE;
 	mutex_unlock(&me->channel[cid].smd_mutex);
 
 bail:
@@ -7307,6 +7375,9 @@ static int fastrpc_restart_notifier_cb(struct notifier_block *nb,
 		mutex_unlock(&me->channel[cid].smd_mutex);
 		if (cid == RH_CID)
 			me->staticpd_flags = 0;
+#ifdef CONFIG_MSM_ADSPRPC_UEVENT
+		schedule_work(&ctx->uevent_work);
+#endif
 		break;
 	case QCOM_SSR_AFTER_SHUTDOWN:
 		trace_rproc_qcom_event(gcinfo[cid].subsys,
@@ -7323,6 +7394,9 @@ static int fastrpc_restart_notifier_cb(struct notifier_block *nb,
 			if (me->ramdump_handle)
 				me->channel[RH_CID].ramdumpenabled = 1;
 		}
+#ifdef CONFIG_MSM_ADSPRPC_UEVENT
+		schedule_work(&ctx->uevent_work);
+#endif
 		pr_info("adsprpc: %s: received RAMDUMP notification for %s\n",
 			__func__, gcinfo[cid].subsys);
 		break;
@@ -7338,7 +7412,8 @@ static int fastrpc_restart_notifier_cb(struct notifier_block *nb,
 		}
 		/* Skip ram dump collection in first boot */
 		if (cid == CDSP_DOMAIN_ID && dump_enabled() &&
-				ctx->ssrcount) {
+				ctx->ssrcount &&
+				me->channel[cid].hib_state == NORMAL_STATE) {
 			mutex_lock(&me->channel[cid].smd_mutex);
 			fastrpc_print_debug_data(cid);
 			mutex_unlock(&me->channel[cid].smd_mutex);
@@ -7352,6 +7427,9 @@ static int fastrpc_restart_notifier_cb(struct notifier_block *nb,
 		pr_info("adsprpc: %s: %s subsystem is up\n",
 			__func__, gcinfo[cid].subsys);
 		ctx->subsystemstate = SUBSYSTEM_UP;
+#ifdef CONFIG_MSM_ADSPRPC_UEVENT
+		schedule_work(&ctx->uevent_work);
+#endif
 		break;
 	default:
 		break;
@@ -7862,14 +7940,18 @@ static struct notifier_block fastrpc_notif_block = {
 #ifdef CONFIG_PM_SLEEP
 static int fastrpc_hibernation_suspend(struct device *dev)
 {
-	int err = 0;
+	struct fastrpc_apps *me = &gfa;
+	int err = 0, cid;
 
 	if (of_device_is_compatible(dev->of_node,
 					"qcom,msm-fastrpc-compute")) {
+		pr_info("adsprpc: suspend %s\n", dev_name(dev));
 		err = fastrpc_mmap_remove_ssr(NULL, 0);
 		if (err)
 			ADSPRPC_WARN("failed to unmap remote heap (err %d)\n",
 					err);
+		for (cid = 0; cid < NUM_CHANNELS; cid++)
+			me->channel[cid].hib_state = HIBERNATION_SUSPEND;
 	}
 	return err;
 }
@@ -7879,10 +7961,13 @@ static int fastrpc_restore(struct device *dev)
 	struct fastrpc_apps *me = &gfa;
 	int cid;
 
-	pr_info("adsprpc: restore enter\n");
-	for (cid = 0; cid < NUM_CHANNELS; cid++)
-		me->channel[cid].in_hib = 1;
-	pr_info("adsprpc: restore exit\n");
+	if (of_device_is_compatible(dev->of_node,
+					"qcom,msm-fastrpc-compute")) {
+		pr_info("adsprpc: restore %s\n", dev_name(dev));
+		for (cid = 0; cid < NUM_CHANNELS; cid++)
+			me->channel[cid].hib_state = HIBERNATION_RESTORE;
+	}
+
 	return 0;
 }
 
@@ -8266,11 +8351,14 @@ static int __init fastrpc_device_init(void)
 		me->jobid[i] = 1;
 		me->channel[i].dev = me->secure_dev;
 		me->channel[i].ssrcount = 0;
-		me->channel[i].in_hib = 0;
+		me->channel[i].hib_state = NORMAL_STATE;
 		me->channel[i].prevssrcount = 0;
 		me->channel[i].subsystemstate = SUBSYSTEM_UP;
 		me->channel[i].ramdumpenabled = 0;
 		me->channel[i].rh_dump_dev = NULL;
+#ifdef CONFIG_MSM_ADSPRPC_UEVENT
+		INIT_WORK(&me->channel[i].uevent_work, adsprpc_uevent_work);
+#endif
 		me->channel[i].nb.notifier_call = fastrpc_restart_notifier_cb;
 		me->channel[i].handle = qcom_register_ssr_notifier(
 							gcinfo[i].subsys,

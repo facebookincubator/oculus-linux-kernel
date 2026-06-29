@@ -2820,6 +2820,7 @@ static void msm_geni_serial_flush(struct uart_port *uport)
 static void msm_geni_serial_shutdown(struct uart_port *uport)
 {
 	struct msm_geni_serial_port *msm_port = GET_DEV_PORT(uport);
+	int usage_count = atomic_read(&uport->dev->power.usage_count);
 	int ret, j = 0;
 
 	// META smartglasses Begin: Track serial port shutdown.
@@ -2833,7 +2834,7 @@ static void msm_geni_serial_shutdown(struct uart_port *uport)
 		console_stop(uport->cons);
 		disable_irq(uport->irq);
 	} else {
-		if (!msm_port->ioctl_count)
+		if (!usage_count)
 			msm_geni_serial_power_on(uport);
 
 		msm_geni_serial_stop_tx(uport);
@@ -2851,6 +2852,10 @@ static void msm_geni_serial_shutdown(struct uart_port *uport)
 
 		if (pm_runtime_enabled(uport->dev)) {
 			ret = pm_runtime_put_sync_suspend(uport->dev);
+			usage_count = atomic_read(&uport->dev->power.usage_count);
+			UART_LOG_DBG(msm_port->ipc_log_pwr, uport->dev,
+					"%s: after put_sync_suspend usage_count:%d\n",
+					__func__, usage_count);
 			if (ret < 0) {
 				UART_LOG_DBG(msm_port->ipc_log_pwr, uport->dev,
 					     "%s: Failed to suspend:%d\n",

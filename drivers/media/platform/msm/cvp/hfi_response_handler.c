@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/bitops.h>
@@ -455,7 +456,7 @@ static struct msm_cvp_inst *cvp_get_inst_from_id(struct msm_cvp_core *core,
 retry:
 	if (mutex_trylock(&core->lock)) {
 		list_for_each_entry(inst, &core->instances, list) {
-			if (hash32_ptr(inst->session) == session_id) {
+			if (inst->sess_id == session_id) {
 				match = true;
 				break;
 			}

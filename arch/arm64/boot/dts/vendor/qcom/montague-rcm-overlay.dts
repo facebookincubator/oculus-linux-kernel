@@ -1,0 +1,20 @@
+/dts-v1/;
+/plugin/;
+
+#include "montague-rcm.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Montague RCM IDP";
+	compatible = "qcom,montague-qrd", "qcom,montague", "qcom,idp", "qcom,montague-qmb";
+	qcom,msm-id = <581 0x10000>, <582 0x10000>, <734 0x10000>;
+	qcom,board-id = <0x10022 0x5>;
+};
+
+&pcie0 {
+
+	qcom,config-recovery;
+	qcom,drv-supported;
+
+};
+
+

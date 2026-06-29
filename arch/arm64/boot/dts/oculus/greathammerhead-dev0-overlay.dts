@@ -6,7 +6,3 @@
 	qcom,msm-id = <554 0x10000>;
 	qcom,board-id = <34 0x60>;
 };
-
-&rt600_ctrl {
-	nirq-mcu-map = <0 24>;
-};

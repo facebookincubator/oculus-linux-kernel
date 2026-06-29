@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2015, 2017-2020, The Linux Foundation. All rights reserved.*/
-
+/* Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.*/
 /*
  * MSM PCIe endpoint service layer.
  */
@@ -14,7 +14,7 @@
 
 LIST_HEAD(head);
 
-int ep_pcie_register_drv(struct ep_pcie_hw *handle)
+int ep_pcie_register_drv(struct ep_pcie_hw *handle, void *dev)
 {
 	struct ep_pcie_hw *present;
 	bool new = true;
@@ -31,10 +31,12 @@ int ep_pcie_register_drv(struct ep_pcie_hw *handle)
 
 	if (new) {
 		list_add(&handle->node, &head);
+		handle->private_data = (struct ep_pcie_dev_t *)dev;
 		pr_debug("ep_pcie:%s: register a new driver for device 0x%x\n",
 			__func__, handle->device_id);
 		return 0;
 	}
+
 	pr_debug(
 		"ep_pcie:%s: driver to register for device 0x%x has already existed\n",
 		__func__, handle->device_id);
@@ -124,6 +126,14 @@ enum ep_pcie_link_status ep_pcie_get_linkstatus(struct ep_pcie_hw *phandle)
 	return phandle->get_linkstatus();
 }
 EXPORT_SYMBOL(ep_pcie_get_linkstatus);
+
+u32 ep_pcie_qtimer_cap_off(struct ep_pcie_hw *phandle)
+{
+	if (phandle)
+		return phandle->get_qtimer_off(phandle->private_data);
+	return -EINVAL;
+}
+EXPORT_SYMBOL_GPL(ep_pcie_qtimer_cap_off);
 
 int ep_pcie_config_outbound_iatu(struct ep_pcie_hw *phandle,
 				struct ep_pcie_iatu entries[],

@@ -143,7 +143,11 @@ struct cnss_pci_data {
 	struct mhi_controller *mhi_ctrl;
 	unsigned long mhi_state;
 	u32 remap_window;
+	struct completion wake_event_complete;
 	struct timer_list dev_rddm_timer;
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	struct timer_list recovery_timer;
+#endif
 	struct timer_list boot_debug_timer;
 	struct delayed_work time_sync_work;
 	u8 disable_pc;
@@ -157,6 +161,10 @@ struct cnss_pci_data {
 	u8 iommu_geometry;
 	bool drv_supported;
 	bool is_smmu_fault;
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	atomic64_t last_reset_time_ms;
+	atomic64_t last_wake_time_ms;
+#endif
 };
 
 static inline void cnss_set_pci_priv(struct pci_dev *pci_dev, void *data)

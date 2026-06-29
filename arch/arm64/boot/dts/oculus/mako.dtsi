@@ -1,0 +1,86 @@
+#include "florian.dtsi"
+#include "mako-thermal.dtsi"
+
+&tlmm {
+	pinctrl-0 = <
+		&unused_pulldown_defaults
+		&unused_nopull_defaults
+		&soc_slider_defaults
+		&soc_capture_button
+		&soc_action_button
+		&wcn_buck_active
+	>;
+
+	wcn_buck_active: wcn_buck_active {
+		mux {
+			pins = "gpio13", "gpio23";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio13", "gpio23";
+			drive-strength = <16>;
+			output-high;
+			bias-pull-up;
+		};
+	};
+};
+
+&qupv3_se10_i2c {
+	hl7594: hl7594@51{
+		compatible = "hl,hl7594";
+		reg = <0x51>;
+		regulator-min-microvolt = <950000>;
+		regulator-max-microvolt = <950000>;
+		status = "ok";
+	};
+
+	ktb8399: ktb8399@61 {
+		compatible = "kinetic,ktb8399";
+		reg = <0x61>;
+		regulator-name = "ktb8399-buck";
+		regulator-min-microvolt = <1950000>;
+		regulator-max-microvolt = <1950000>;
+		status = "ok";
+	};
+
+	pm3003a_2: pm3003a-2@60 {
+		compatible = "qcom,pm3003a";
+		reg = <0x60>;
+		regulator-name = "pm3003a-buck";
+		regulator-min-microvolt = <1000000>;
+		regulator-max-microvolt = <1000000>;
+		status = "ok";
+	};
+
+	pm3003a_8: pm3003a-8@58 {
+		compatible = "qcom,pm3003a";
+		reg = <0x58>;
+		regulator-name = "pm3003a-buck";
+		regulator-min-microvolt = <1362500>;
+		regulator-max-microvolt = <1362500>;
+		status = "ok";
+	};
+};
+
+&wlan_kiwi {
+	qcom,board-name = "mako";
+};
+
+&sg_camera_sensor {
+	sensor-position-roll = <270>;
+};
+
+&pcie0 {
+  qcom,target-link-speed = <0x1>;
+};
+
+&pcie1 {
+  qcom,target-link-speed = <0x1>;
+};
+
+&thermal_zones {
+  therm-in-temp-usr {
+	status = "disabled";
+  };
+};

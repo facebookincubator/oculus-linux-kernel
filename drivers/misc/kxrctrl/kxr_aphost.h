@@ -7,7 +7,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/pinctrl/consumer.h>
@@ -22,6 +22,7 @@
 #include "kxr_spi_xchg.h"
 #include "kxr_spi_uart.h"
 #include "kxr_aphost_v1.h"
+#include <linux/version.h>
 
 #pragma once
 
@@ -51,12 +52,20 @@ struct kxr_aphost {
 	struct regulator *pwr_v1p8;
 #endif
 	struct mutex power_mutex;
+	struct mutex gpio_mutex;
+	struct completion sync_completion;
+	spinlock_t lock;
+	u32 busy;
+	unsigned long flags;
 	bool pwr_enabled;
+	bool qtimer_enable;
 };
 
 void kxr_aphost_println(const char *fmt, ...);
 bool kxr_aphost_power_mode_set(struct kxr_aphost *aphost, enum kxr_spi_power_mode mode);
 enum kxr_spi_power_mode kxr_aphost_power_mode_get(void);
+uint64_t kxr_aphost_read_time(struct kxr_aphost *aphost, void __user *buff, int length);
+uint64_t kxr_aphost_gpio_unlock(struct kxr_aphost *aphost);
 
 int kxr_spi_xfer_setup(struct spi_device *spi);
 void kxr_spi_xchg_write_command(struct kxr_aphost *aphost, u32 command);

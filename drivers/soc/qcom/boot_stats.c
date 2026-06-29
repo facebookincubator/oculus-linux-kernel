@@ -115,7 +115,11 @@ void bootstat_record_kernel2_event(const enum hibernation_kernel2_event e)
 		 * then obviously first-stage kernel did not fail.
 		 * Wipe the random value left in IMEM then. */
 		bootstat_data.hibernation.boot_stats.kernel1[HIBEVENT_KERN1_HIBERNATION_RESTORE_FAILED] = 0;
-		/* Final event recorded. Mark data as valid. */
+		/* Final **kernel** event recorded. Mark **kernel** data as valid.
+		 * Userspace events will be 0ms until userspace sets them.
+		 *
+		 * Do not rely on order of events after HIBEVENT_KERN2_IMAGE_RESTORED!
+		 */
 		smp_wmb();
 		bootstat_data.hibernation.valid = true;
 	}
@@ -308,7 +312,13 @@ static ssize_t hibernation_stats_get(struct device *dev, struct device_attribute
 		       "kernel2_end_device_resume %u\n"
 		       "kernel2_image_restored %u\n"
 		       "kernel2_hibernation_process_thaw_done %u\n"
-		       "kernel2_hibernation_exit %u\n",
+		       "kernel2_hibernation_exit %u\n"
+		       "userspace_led_ready %u\n"
+		       "userspace_captureapp_ready %u\n"
+		       "userspace_systemui_ready %u\n"
+		       "userspace_powerup_earcon %u\n"
+		       "userspace_assistant_ready %u\n"
+		       "userspace_btc_ready %u\n",
 		       mpm2ms(saved_boot_stats->bootloader_start),
 		       mpm2ms(saved_boot_stats->bootloader_end),
 		       mpm2ms(saved_boot_stats->kernel1[HIBEVENT_KERN1_LOAD_MEM_FROM_DISK_STARTED]),
@@ -319,7 +329,13 @@ static ssize_t hibernation_stats_get(struct device *dev, struct device_attribute
 		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_END_DEVICE_RESUME]),
 		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_IMAGE_RESTORED]),
 		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_HIBERNATION_PROCESSES_THAW_DONE]),
-		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_HIBERNATION_EXIT]));
+		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_HIBERNATION_EXIT]),
+		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_LED_READY]),
+		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_CAPTUREAPP_READY]),
+		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_SYSTEMUI_READY]),
+		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_POWERUP_EARCON]),
+		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_ASSISTANT_READY]),
+		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_BTC_READY]));
 
 	return ret;
 }
@@ -327,10 +343,21 @@ static ssize_t hibernation_stats_get(struct device *dev, struct device_attribute
 static ssize_t hibernation_stats_set(struct device *dev, struct device_attribute *attr,
 	const char *buf, size_t count)
 {
-	dev_dbg(dev, "resetting hibernation stats");
-
-	if (*buf) {
+	if (!strncmp(buf, "btc_ready", 9)) {
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_USER_BTC_READY);
+	} else if (!strncmp(buf, "powerup_earcon", 14)) {
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_USER_POWERUP_EARCON);
+	} else if (!strncmp(buf, "systemui_ready", 14)) {
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_USER_SYSTEMUI_READY);
+	} else if (!strncmp(buf, "captureapp_ready", 16)) {
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_USER_CAPTUREAPP_READY);
+	} else if (!strncmp(buf, "assistant_ready", 15)) {
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_USER_ASSISTANT_READY);
+	} else if (!strncmp(buf, "led_ready", 9)) {
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_USER_LED_READY);
+	} else if (*buf) {
 		/* Invalidate the hibernation stats. */
+		dev_dbg(dev, "resetting hibernation stats");
 		bootstat_reset_hibernation_stats();
 	}
 	return count;

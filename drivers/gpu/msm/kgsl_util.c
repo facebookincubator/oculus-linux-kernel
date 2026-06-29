@@ -125,7 +125,7 @@ int kgsl_zap_shader_load(struct device *dev, const char *name)
 	if (!fwname)
 		return -ENOMEM;
 
-	ret = request_firmware(&fw, fwname, dev);
+	ret = firmware_request_nowarn(&fw, fwname, dev);
 	if (ret) {
 		dev_err(dev, "Couldn't load the firmware %s\n", fwname);
 		kfree(fwname);

@@ -1,0 +1,125 @@
+#include "greatwhite-panel-jbd4020-vga-60hz_vid.dtsi"
+
+&qupv3_se4_i2c {
+    qcom,clk-freq-out = <400000>;
+
+    pmicDA9172: pmicDA9172@6A {
+        compatible = "meta,pmic-i2c-da9172";
+        regulator-name = "pmicDA9172";
+        reg = <0x6A>;
+        status = "ok";
+        continouous-splash;
+        disp-gpios = <&tlmm 29 GPIO_ACTIVE_HIGH>;
+        pmic-gpios = <&tlmm 116 GPIO_ACTIVE_HIGH>;
+    };
+
+    jbd4020: jbd4020@59 {
+        compatible = "meta,jbd4020-i2c";
+        reg = <0x59>;
+        status = "ok";
+
+	#thermal-sensor-cells = <0>;
+	continuous-splash;
+
+        ports {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            port@0 {
+                reg = <0>;
+                dsi_jbd4020_bridge: endpoint {
+                    remote-endpoint = <&ext_dsi_out>;
+                };
+            };
+        };
+    };
+
+    boardtemp_proty:tmp114@4E {
+        compatible = "meta,tmp114-i2c";
+        reg = <0x4E>;
+        status = "ok";
+
+        pmic-supply = "pmicOP03010";
+        #thermal-sensor-cells = <0>;
+    };
+};
+
+&mdss_mdp {
+    bridges = <&jbd4020>;
+};
+
+&sde_dsi {
+    qcom,dsi-default-panel = <&dsi_jbd4020_uled_640x480_60>;
+};
+
+&ext_dsi_out {
+    remote-endpoint = <&dsi_jbd4020_bridge>;
+};
+
+&thermal_zones {
+    display-sensor-temp {
+        thermal-sensors = <&jbd4020 0>;
+    };
+
+    display-boardtemp {
+        status = "ok";
+        thermal-sensors = <&boardtemp_proty 0>;
+    };
+
+    display-gtemp {
+        status = "disabled";
+    };
+
+    display-rbtemp {
+        status = "disabled";
+    };
+};
+
+&display_temp_cfg0{
+    temperature = <40000>;
+    hysteresis = <5000>;
+};
+
+&display_temp_cfg1{
+    temperature = <52000>;
+    hysteresis = <5000>;
+};
+
+&display_temp_cfg2{
+    temperature = <58000>;
+    hysteresis = <5000>;
+};
+
+&display_temp_cfg3{
+    temperature = <64000>;
+    hysteresis = <5000>;
+};
+
+&display_temp_cfg4{
+    temperature = <70000>;
+    hysteresis = <5000>;
+};
+
+&lcosOP03010 {
+    status = "disabled";
+};
+
+&pmicOP03010 {
+    status = "disabled";
+};
+
+&rbtemp {
+    status = "disabled";
+};
+
+&gtemp {
+    status = "disabled";
+};
+
+&dispboardtemp {
+    status = "disabled";
+};
+
+&leddriver {
+    status = "disabled";
+};

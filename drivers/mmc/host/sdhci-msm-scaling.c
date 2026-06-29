@@ -9,6 +9,10 @@
 #include "sdhci-msm.h"
 #include "sdhci-msm-scaling.h"
 
+static bool default_perf_governor;
+module_param(default_perf_governor, bool, 0444);
+MODULE_PARM_DESC(default_perf_governor, "Use performance as default devfreq governor");
+
 #define cls_dev_to_mmc_host(d)  container_of(d, struct mmc_host, class_dev)
 
 static int mmc_dt_get_array(struct device *dev, const char *prop_name,
@@ -1311,7 +1315,7 @@ int _sdhci_msm_mmc_init_clk_scaling(struct sdhci_msm_host *host)
 	devfreq = devfreq_add_device(
 		mmc_classdev(mhost),
 		&host->clk_scaling.devfreq_profile,
-		"simple_ondemand",
+		default_perf_governor ? "performance" : "simple_ondemand",
 		&host->clk_scaling.ondemand_gov_data);
 
 	if (IS_ERR(devfreq)) {
@@ -1325,10 +1329,12 @@ int _sdhci_msm_mmc_init_clk_scaling(struct sdhci_msm_host *host)
 	}
 
 	host->clk_scaling.devfreq = devfreq;
-	pr_debug("%s: clk scaling is enabled for device %s (%pK) with devfreq %pK (clock = %uHz)\n",
+
+	pr_info("%s: clk scaling is enabled for device %s (%pK) with devfreq %s (%pK) (clock = %uHz)\n",
 		mmc_hostname(mhost),
 		dev_name(mmc_classdev(mhost)),
 		mmc_classdev(mhost),
+		default_perf_governor ? "performance" : "simple_ondemand",
 		host->clk_scaling.devfreq,
 		mhost->ios.clock);
 
@@ -1355,6 +1361,7 @@ EXPORT_SYMBOL(_sdhci_msm_mmc_init_clk_scaling);
 int _sdhci_msm_mmc_suspend_clk_scaling(struct sdhci_msm_host *host)
 {
 	struct mmc_host *mhost = host->mmc;
+	unsigned long resume_freq = host->clk_scaling.curr_freq;
 	int err;
 
 	if (!mhost) {
@@ -1383,6 +1390,8 @@ int _sdhci_msm_mmc_suspend_clk_scaling(struct sdhci_msm_host *host)
 	host->clk_scaling.is_suspended = true;
 
 	host->clk_scaling.total_busy_time_us = 0;
+
+	host->clk_scaling.devfreq->resume_freq = resume_freq;
 
 	pr_debug("%s: devfreq was removed\n", mmc_hostname(mhost));
 
@@ -1444,6 +1453,8 @@ int _sdhci_msm_mmc_resume_clk_scaling(struct sdhci_msm_host *host)
 		host->clk_scaling.is_suspended = false;
 		pr_debug("%s: devfreq resumed\n", mmc_hostname(mhost));
 	}
+
+	host->clk_scaling.devfreq->resume_freq = 0;
 
 	return err;
 }

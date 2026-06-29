@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
@@ -280,6 +280,8 @@ int gen7_gmu_device_start(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
+
+	gmu_core_reset_trace_header(&gmu->trace);
 
 	gmu_ao_sync_event(adreno_dev);
 
@@ -876,6 +878,10 @@ void gen7_gmu_register_config(struct adreno_device *adreno_dev)
 	 */
 	kgsl_regwrite(device, GEN7_GBIF_HALT, 0x0);
 
+	/* Set vrb address before starting GMU */
+	if (!IS_ERR_OR_NULL(gmu->vrb))
+		gmu_core_regwrite(device, GEN7_GMU_GENERAL_11, gmu->vrb->gmuaddr);
+
 	/* Set the log wptr index */
 	gmu_core_regwrite(device, GEN7_GMU_GENERAL_9,
 			gmu->log_wptr_retention);
@@ -1240,18 +1246,18 @@ int gen7_gmu_parse_fw(struct adreno_device *adreno_dev)
 		if (gen7_core->gmufw_name == NULL)
 			return -EINVAL;
 
-		ret = request_firmware(&gmu->fw_image, gmufw_name,
+		ret = firmware_request_nowarn(&gmu->fw_image, gmufw_name,
 				&gmu->pdev->dev);
 		if (ret) {
 			if (gen7_core->gmufw_bak_name) {
 				gmufw_name = gen7_core->gmufw_bak_name;
-				ret = request_firmware(&gmu->fw_image, gmufw_name,
+				ret = firmware_request_nowarn(&gmu->fw_image, gmufw_name,
 					&gmu->pdev->dev);
 			}
 
 			if (ret) {
 				dev_err(&gmu->pdev->dev,
-					"request_firmware (%s) failed: %d\n",
+					"firmware request (%s) failed: %d\n",
 					gmufw_name, ret);
 
 				return ret;
@@ -2439,6 +2445,9 @@ int gen7_gmu_probe(struct kgsl_device *device,
 	/* Set default GMU attributes */
 	gmu->log_stream_enable = false;
 	gmu->log_group_mask = 0x3;
+
+	/* Initialize to zero to detect trace packet loss */
+	gmu->trace.seq_num = 0;
 
 	/* GMU sysfs nodes setup */
 	(void) kobject_init_and_add(&gmu->log_kobj, &log_kobj_type, &dev->kobj, "log");

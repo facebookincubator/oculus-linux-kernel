@@ -1,0 +1,27 @@
+#include "neo-sde-display.dtsi"
+
+&dsi_dual_rdp370f_fsc_vid {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_external";
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+};
+
+&dsi_dual_rdp370f_rgb_vid {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_external";
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+};
+
+&sim_dual_fsc_vid {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_external";
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+};
+
+&sde_dsi {
+	qcom,dsi-default-panel = <&dsi_dual_rdp370f_fsc_vid>;
+};
+
+&qupv3_se4_i2c {
+	status = "ok";
+};

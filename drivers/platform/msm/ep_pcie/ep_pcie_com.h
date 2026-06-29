@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.*/
+/* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries. */
 
 #ifndef __EP_PCIE_COM_H
 #define __EP_PCIE_COM_H
@@ -16,6 +17,8 @@
 #include <linux/msm_ep_pcie.h>
 #include <linux/iommu.h>
 #include <linux/pci_regs.h>
+#include <linux/sched.h>
+#include <linux/smp.h>
 
 #define PCIE20_PARF_SYS_CTRL           0x00
 #define PCIE20_PARF_DB_CTRL            0x10
@@ -77,8 +80,11 @@
 #define PCIE20_PARF_ATU_BASE_ADDR      0x634
 #define PCIE20_PARF_ATU_BASE_ADDR_HI   0x638
 #define PCIE20_PARF_SRIS_MODE		0x644
-#define PCIE20_PARF_BUS_DISCONNECT_CTRL          0x648
-#define PCIE20_PARF_BUS_DISCONNECT_STATUS        0x64c
+#define PCIE20_QTIMER_MHI_LOW_ADDR		0x6a8
+#define PCIE20_QTIMER_MHI_LOW_AXI_ADDR_MASK	GENMASK(11, 0)
+#define PCIE20_QTIMER_MHI_LOW_AHB_ADDR_MASK	GENMASK(23, 12)
+#define PCIE20_PARF_BUS_DISCONNECT_CTRL		0x680
+#define PCIE20_PARF_BUS_DISCONNECT_STATUS	0x684
 #define PCIE20_PARF_BDF_TO_SID_CFG		0x2c00
 
 #define PCIE20_PARF_DEVICE_TYPE        0x1000
@@ -222,41 +228,55 @@
 	} while (0)
 
 #define EP_PCIE_DBG(dev, fmt, arg...) do {			 \
-	ipc_log_string((dev)->ipc_log_ful, "%s: " fmt, __func__, arg); \
+	ipc_log_string((dev)->ipc_log_ful, "[CPU:%d][%s] %s: " fmt,\
+		smp_processor_id(), current->comm, __func__, arg); \
 	if (ep_pcie_get_debug_mask())   \
-		pr_alert("%s: " fmt, __func__, arg);		  \
+		pr_alert("[CPU:%d][%s] %s: " fmt, smp_processor_id(),\
+		current->comm, __func__, arg);\
 	} while (0)
 
 #define EP_PCIE_DBG2(dev, fmt, arg...) do {			 \
 	ipc_log_string((dev)->ipc_log_sel, \
-		"DBG1:%s: " fmt, __func__, arg); \
+		"[CPU:%d][%s] DBG1:%s: " fmt, smp_processor_id(),\
+		current->comm, __func__, arg); \
 	ipc_log_string((dev)->ipc_log_ful, \
-		"DBG2:%s: " fmt, __func__, arg); \
+		"[CPU:%d][%s] DBG2:%s: " fmt, smp_processor_id(),\
+		current->comm, __func__, arg); \
 	if (ep_pcie_get_debug_mask())   \
-		pr_alert("%s: " fmt, __func__, arg); \
+		pr_alert("[CPU:%d][%s] %s: " fmt, smp_processor_id(),\
+		current->comm, __func__, arg); \
 	} while (0)
 
-#define EP_PCIE_DBG_FS(fmt, arg...) pr_alert("%s: " fmt, __func__, arg)
+#define EP_PCIE_DBG_FS(fmt, arg...) pr_alert("[CPU:%d][%s] %s: "\
+				fmt, smp_processor_id(), current->comm, __func__, arg)
 
 #define EP_PCIE_DUMP(dev, fmt, arg...) do {			\
 	ipc_log_string((dev)->ipc_log_dump, \
-		"DUMP:%s: " fmt, __func__, arg); \
+		"[CPU:%d][%s] DUMP:%s: " fmt, smp_processor_id(),\
+		current->comm, __func__, arg); \
 	if (ep_pcie_get_debug_mask())   \
-		pr_alert("%s: " fmt, __func__, arg); \
+		pr_alert("[CPU:%d][%s] %s: " fmt, smp_processor_id(),\
+		current->comm, __func__, arg); \
 	} while (0)
 
 #define EP_PCIE_INFO(dev, fmt, arg...) do {			 \
 	ipc_log_string((dev)->ipc_log_sel, \
-		"INFO:%s: " fmt, __func__, arg); \
-	ipc_log_string((dev)->ipc_log_ful, "%s: " fmt, __func__, arg); \
-	pr_info("%s: " fmt, __func__, arg);  \
+		"[CPU:%d][%s] INFO:%s: " fmt, smp_processor_id(),\
+		current->comm, __func__, arg); \
+	ipc_log_string((dev)->ipc_log_ful, "[CPU:%d][%s] %s: " fmt,\
+		smp_processor_id(), current->comm, __func__, arg); \
+	pr_info("[CPU:%d][%s] %s: " fmt, smp_processor_id(),\
+		current->comm, __func__, arg);  \
 	} while (0)
 
 #define EP_PCIE_ERR(dev, fmt, arg...) do {			 \
 	ipc_log_string((dev)->ipc_log_sel, \
-		"ERR:%s: " fmt, __func__, arg); \
-	ipc_log_string((dev)->ipc_log_ful, "%s: " fmt, __func__, arg); \
-	pr_err("%s: " fmt, __func__, arg);  \
+		"[CPU:%d][%s] ERR:%s: " fmt, smp_processor_id(),\
+		current->comm, __func__, arg); \
+	ipc_log_string((dev)->ipc_log_ful, "[CPU:%d][%s] %s: " fmt,\
+		smp_processor_id(), current->comm, __func__, arg); \
+	pr_err("[CPU:%d][%s] %s: " fmt, smp_processor_id(),\
+		current->comm, __func__, arg);  \
 	} while (0)
 
 enum ep_pcie_res {

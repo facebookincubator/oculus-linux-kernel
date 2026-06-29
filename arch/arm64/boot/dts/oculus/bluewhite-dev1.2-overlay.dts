@@ -2,6 +2,8 @@
 /plugin/;
 
 #include "greatwhite.dtsi"
+#include "bluewhite-gpios.dtsi"
+
 / {
 	model = "Bluewhite Dev1.2";
 	compatible = "meta,greatwhite", "meta,greatwhite-dev1", "meta,bluewhite-dev1.2";

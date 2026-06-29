@@ -53,6 +53,24 @@ enum hibernation_kernel2_event {
 	/* Second-stage kernel has declared hibernation restore finished. */
 	HIBEVENT_KERN2_HIBERNATION_EXIT,
 
+	/* Userspace has declared Bluetooth Classic is now ready. */
+	HIBEVENT_KERN2_USER_BTC_READY,
+
+	/* Userspace has declared that Earcon audio has been played. */
+	HIBEVENT_KERN2_USER_POWERUP_EARCON,
+
+	/* Userspace has declared that SystemUI is ready. */
+	HIBEVENT_KERN2_USER_SYSTEMUI_READY,
+
+	/* Userspace has declared that CaptureApp is ready. */
+	HIBEVENT_KERN2_USER_CAPTUREAPP_READY,
+
+	/* Userspace has declared that Assistant is ready. */
+	HIBEVENT_KERN2_USER_ASSISTANT_READY,
+
+	/* Userspace has declared we've booted to green led. */
+	HIBEVENT_KERN2_USER_LED_READY,
+
 	/* Number of valid hibernation events. */
 	HIBEVENT_KERN2_MAX
 };

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <asm/memory.h>
@@ -29,6 +30,7 @@
 #include "cvp_hfi_helper.h"
 #include "cvp_hfi_io.h"
 #include "msm_cvp_dsp.h"
+#include "msm_cvp.h"
 
 #define FIRMWARE_SIZE			0X00A00000
 #define REG_ADDR_OFFSET_BITMASK	0x000FFFFF
@@ -2196,11 +2198,21 @@ static void __session_clean(struct cvp_hal_session *session)
 {
 	struct cvp_hal_session *temp, *next;
 	struct iris_hfi_device *device;
+	struct msm_cvp_core *core = NULL;
+	struct msm_cvp_inst *inst = NULL;
+	void *tmp = NULL;
 
 	if (!session || !session->device) {
 		dprintk(CVP_WARN, "%s: invalid params\n", __func__);
 		return;
 	}
+	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
+	inst = (struct msm_cvp_inst *) session->session_id;
+	if (!core || !inst) {
+		dprintk(CVP_WARN, "%s: invalid params\n", __func__);
+		return;
+	}
+
 	device = session->device;
 	dprintk(CVP_SESS, "deleted the session: %pK\n", session);
 	/*
@@ -2213,6 +2225,14 @@ static void __session_clean(struct cvp_hal_session *session)
 			break;
 		}
 	}
+
+	/* Remove the IDR id assigned to this session */
+	mutex_lock(&core->idr_mtx);
+	tmp = idr_remove(&core->sess_idr, inst->sess_id);
+	if (tmp != session)
+		dprintk(CVP_WARN, "%s: session\n", __func__);
+	mutex_unlock(&core->idr_mtx);
+
 	/* Poison the session handle with zeros */
 	*session = (struct cvp_hal_session){ {0} };
 	kfree(session);
@@ -2250,13 +2270,22 @@ static int iris_hfi_session_init(void *device, void *session_id,
 	struct cvp_hfi_cmd_sys_session_init_packet pkt;
 	struct iris_hfi_device *dev;
 	struct cvp_hal_session *s;
+	struct msm_cvp_core *core = NULL;
+	struct msm_cvp_inst *inst = NULL;
+	int id = 0;
 
-	if (!device || !new_session) {
+	if (!device || !new_session || !session_id) {
 		dprintk(CVP_ERR, "%s - invalid input\n", __func__);
 		return -EINVAL;
 	}
 
 	dev = device;
+	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
+	inst = session_id;
+	if (!core || !inst) {
+		dprintk(CVP_WARN, "%s: invalid params\n", __func__);
+		return -EINVAL;
+	}
 	mutex_lock(&dev->lock);
 
 	s = kzalloc(sizeof(*s), GFP_KERNEL);
@@ -2267,13 +2296,29 @@ static int iris_hfi_session_init(void *device, void *session_id,
 
 	s->session_id = session_id;
 	s->device = dev;
+
+	mutex_lock(&core->idr_mtx);
+	idr_preload(GFP_KERNEL);
+	/* Need to think if we can use core->lock or dev->lock or need a
+	 * different new lock for this?
+	 */
+	id = idr_alloc(&core->sess_idr, (void *)s, 0x7FFF0000, INT_MAX, GFP_NOWAIT);
+	idr_preload_end();
+	mutex_unlock(&core->idr_mtx);
+	if (id < 0) {
+		dprintk(CVP_ERR,
+			"%s: idr allocation failed for session %pK of inst %pK\n",
+			__func__, s, session_id);
+		goto err_session_init_fail;
+	}
 	dprintk(CVP_SESS,
-		"%s: inst %pK, session %pK\n", __func__, session_id, s);
+		"%s: inst %pK, session %pK, idr_id = 0x%x\n", __func__, session_id, s, id);
 
 	list_add_tail(&s->list, &dev->sess_head);
 
 	__set_default_sys_properties(device);
 
+	inst->sess_id = id;
 	if (call_hfi_pkt_op(dev, session_init, &pkt, s)) {
 		dprintk(CVP_ERR, "session_init: failed to create packet\n");
 		goto err_session_init_fail;
@@ -2850,9 +2895,10 @@ static struct cvp_hal_session *__get_session(struct iris_hfi_device *device,
 		u32 session_id)
 {
 	struct cvp_hal_session *temp = NULL;
-
+	struct msm_cvp_inst *inst = NULL;
 	list_for_each_entry(temp, &device->sess_head, list) {
-		if (session_id == hash32_ptr(temp))
+		inst = (struct msm_cvp_inst *)temp->session_id;
+		if (session_id == inst->sess_id)
 			return temp;
 	}
 
@@ -3028,7 +3074,7 @@ static int __response_handler(struct iris_hfi_device *device)
 
 		/* Process the packet types that we're interested in */
 		process_system_msg(info, device, raw_packet);
-
+		/* This session_id is a double pointer to the idr_id of session */
 		session_id = get_session_id(info);
 		/*
 		 * hfi_process_msg_packet provides a session_id that's a hashed
@@ -3040,11 +3086,6 @@ static int __response_handler(struct iris_hfi_device *device)
 		if (session_id) {
 			struct cvp_hal_session *session = NULL;
 
-			if (upper_32_bits((uintptr_t)*session_id) != 0) {
-				dprintk(CVP_ERR,
-					"Upper 32-bits != 0 for sess_id=%pK\n",
-					*session_id);
-			}
 			session = __get_session(device,
 					(u32)(uintptr_t)*session_id);
 			if (!session) {

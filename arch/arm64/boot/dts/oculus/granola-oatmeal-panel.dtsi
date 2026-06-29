@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "vendor-base/qcom/display/neo-sde.dtsi"
+#include "vendor-base/qcom/display/neo_luna-v2-sde-display.dtsi"
+
+&dsi_sim_1280x1280_60hz_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,panel-sec-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-sec-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <511>;
+	qcom,mdss-brightness-max-level = <511>;
+
+	qcom,mdss-dsi-display-timings {
+		timing@0 {
+			qcom,mdss-dsi-panel-width = <600>;
+			qcom,mdss-dsi-panel-height = <800>;
+		};
+	};
+};
+
+&sde_dsi {
+	qcom,dsi-default-panel = <&dsi_sim_1280x1280_60hz_video>;
+};
+
+&sde_dsi1 {
+	qcom,dsi-default-panel = <&dsi_sim_1280x1280_60hz_video>;
+};

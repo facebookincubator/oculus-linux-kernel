@@ -787,6 +787,26 @@ static void fw_abort_batch_reqs(struct firmware *fw)
 	mutex_unlock(&fw_lock);
 }
 
+/*
+ * Reject firmware file names with ".." path components.
+ * There are drivers that construct firmware file names from device-supplied
+ * strings, and we don't want some device to be able to tell us "I would like to
+ * be sent my firmware from ../../../etc/shadow, please".
+ *
+ * Search for ".." surrounded by either '/' or start/end of string.
+ *
+ * This intentionally only looks at the firmware name, not at the firmware base
+ * directory or at symlink contents.
+ */
+static bool name_contains_dotdot(const char *name)
+{
+	size_t name_len = strlen(name);
+
+	return strcmp(name, "..") == 0 || strncmp(name, "../", 3) == 0 ||
+	       strstr(name, "/../") != NULL ||
+	       (name_len >= 3 && strcmp(name+name_len-3, "/..") == 0);
+}
+
 /* called from request_firmware() and request_firmware_work_func() */
 static int
 _request_firmware(const struct firmware **firmware_p, const char *name,
@@ -801,6 +821,14 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 		return -EINVAL;
 
 	if (!name || name[0] == '\0') {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (name_contains_dotdot(name)) {
+		dev_warn(device,
+			 "Firmware load for '%s' refused, path contains '..' component\n",
+			 name);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -860,6 +888,8 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
  *      @name will be used as $FIRMWARE in the uevent environment and
  *      should be distinctive enough not to be confused with any other
  *      firmware image for this or any other device.
+ *	It must not contain any ".." path components - "foo/bar..bin" is
+ *	allowed, but "foo/../bar.bin" is not.
  *
  *	Caller must hold the reference count of @device.
  *
@@ -1012,6 +1042,38 @@ request_firmware_into_buf(const struct firmware **firmware_p, const char *name,
 	return ret;
 }
 EXPORT_SYMBOL(request_firmware_into_buf);
+
+/**
+ * request_firmware_into_buf_nowarn() - load optional firmware into a previously allocated buffer
+ * @firmware_p: pointer to firmware image
+ * @name: name of firmware file
+ * @device: device for which firmware is being loaded and DMA region allocated
+ * @buf: address of buffer to load firmware into
+ * @size: size of buffer
+ *
+ * This function works pretty much like request_firmware_nowarn(), but it doesn't
+ * allocate a buffer to hold the firmware data. Instead, the firmware
+ * is loaded directly into the buffer pointed to by @buf and the @firmware_p
+ * data member is pointed at @buf.
+ *
+ * This function doesn't cache firmware either.
+ */
+int
+request_firmware_into_buf_nowarn(const struct firmware **firmware_p, const char *name,
+				 struct device *device, void *buf, size_t size)
+{
+	int ret;
+
+	if (fw_cache_is_setup(device, name))
+		return -EOPNOTSUPP;
+
+	__module_get(THIS_MODULE);
+	ret = _request_firmware(firmware_p, name, device, buf, size, 0,
+				FW_OPT_UEVENT | FW_OPT_NOCACHE | FW_OPT_NO_WARN);
+	module_put(THIS_MODULE);
+	return ret;
+}
+EXPORT_SYMBOL(request_firmware_into_buf_nowarn);
 
 /**
  * request_partial_firmware_into_buf() - load partial firmware into a previously allocated buffer

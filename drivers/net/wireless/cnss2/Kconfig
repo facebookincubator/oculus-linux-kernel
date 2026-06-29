@@ -105,3 +105,10 @@ config CNSS_META_BOARD_ID_OVERRIDE
 	  device tree that is used in the suffix of the board data file.
 	  This is useful when the board ID is not programmed on the chip
 	  ROM for a product.
+
+config CNSS_META_ROBUST_RECOVERY
+	bool "Enable the WLAN robust recovery feature"
+	depends on CNSS2
+	help
+	  This enables the WLAN robust recovery feature in the WLAN driver.
+	  This feature is needed to recover WLAN after multiple WLAN crashes.

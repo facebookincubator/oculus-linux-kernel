@@ -615,6 +615,16 @@
 			unstable.  Defaults to three retries, that is,
 			four attempts to read the clock under test.
 
+	clocksource.verify_n_cpus= [KNL]
+			Limit the number of CPUs checked for clocksources
+			marked with CLOCK_SOURCE_VERIFY_PERCPU that
+			are marked unstable due to excessive skew.
+			A negative value says to check all CPUs, while
+			zero says not to check any.  Values larger than
+			nr_cpu_ids are silently truncated to nr_cpu_ids.
+			The actual CPUs are chosen randomly, with
+			no replacement if the same CPU is chosen twice.
+
 	clearcpuid=BITNUM[,BITNUM...] [X86]
 			Disable CPUID feature X for the kernel. See
 			arch/x86/include/asm/cpufeatures.h for the valid bit
@@ -1584,6 +1594,26 @@
 			Disable Hardware Error Source Table (HEST) support;
 			corresponding firmware-first mode error processing
 			logic will be disabled.
+
+	hibernate=	[HIBERNATION]
+			noresume Don't check if there's a hibernation image
+			present during boot.
+			nocompress Don't compress/decompress hibernation images.
+			no Disable hibernation and resume.
+			protect_image Turn on image protection during restoration
+			(that will set all pages holding image data
+			during restoration read-only).
+
+	hibernate.compressor=	[HIBERNATION] Compression algorithm to be
+			used with hibernation.
+			Format: { lzo | lz4 }
+			Default: lzo
+
+			lzo: Select LZO compression algorithm to
+			compress/decompress hibernation image.
+
+			lz4: Select LZ4 compression algorithm to
+			compress/decompress hibernation image.
 
 	highmem=nn[KMG]	[KNL,BOOT] forces the highmem zone to have an exact
 			size of <nn>. This works even on boxes that have no
@@ -4164,6 +4194,16 @@
 
 	printk.time=	Show timing data prefixed to each printk message line
 			Format: <bool>  (1/Y/y=enable, 0/N/n=disable)
+
+	proc_mem.force_override= [KNL]
+			Format: {always | ptrace | never}
+			Traditionally /proc/pid/mem allows memory permissions to be
+			overridden without restrictions. This option may be set to
+			restrict that. Can be one of:
+			- 'always': traditional behavior always allows mem overrides.
+			- 'ptrace': only allow mem overrides for active ptracers.
+			- 'never':  never allow mem overrides.
+			If not specified, default is the CONFIG_PROC_MEM_* choice.
 
 	processor.max_cstate=	[HW,ACPI]
 			Limit processor to maximum C-state

@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "anorak-idp-top-hmt.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Anorak IDP Topanga Hamilton";
+	compatible = "qcom,anorak-idp", "qcom,anorak", "qcom,idp";
+	qcom,msm-id = <549 0x10000>,<649 0x10000>;
+	qcom,board-id = <0x10022 0x3>;
+};

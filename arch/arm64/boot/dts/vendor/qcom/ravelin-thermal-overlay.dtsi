@@ -1,0 +1,57 @@
+#include <dt-bindings/thermal/thermal_qti.h>
+
+&thermal_zones {
+	pm6450_tz {
+		cooling-maps {
+			pm6450_lte {
+				trip = <&pm6450_trip0>;
+				cooling-device = <&modem_lte_dsc 255 255>;
+			};
+
+			pm6450_nr {
+				trip = <&pm6450_trip0>;
+				cooling-device = <&modem_nr_scg_dsc 255 255>;
+			};
+
+			pm6450_cpu0 {
+				trip = <&pm6450_trip0>;
+				cooling-device = <&cpu0_pause 1 1>;
+			};
+
+			pm6450_cpu1 {
+				trip = <&pm6450_trip0>;
+				cooling-device = <&cpu1_pause 1 1>;
+			};
+
+			pm6450_cpu2 {
+				trip = <&pm6450_trip0>;
+				cooling-device = <&cpu2_pause 1 1>;
+			};
+
+			pm6450_cpu3 {
+				trip = <&pm6450_trip0>;
+				cooling-device = <&cpu3_pause 1 1>;
+			};
+
+			pm6450_cpu4 {
+				trip = <&pm6450_trip0>;
+				cooling-device = <&cpu4_pause 1 1>;
+			};
+
+			pm6450_cpu5 {
+				trip = <&pm6450_trip0>;
+				cooling-device = <&cpu5_pause 1 1>;
+			};
+
+			pm6450_cpu6_7 {
+				trip = <&pm6450_trip0>;
+				cooling-device = <&cpu_6_7_pause 1 1>;
+			};
+
+			pm6450_gpu {
+				trip = <&pm6450_trip0>;
+				cooling-device = <&msm_gpu 3 THERMAL_NO_LIMIT>;
+			};
+		};
+	};
+};

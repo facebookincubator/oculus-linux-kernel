@@ -1,0 +1,25 @@
+/dts-v1/;
+/plugin/;
+
+#include "mako.dtsi"
+
+/ {
+	model = "Mako DVT";
+	compatible = "meta,florian", "meta,mako", "meta,mako-dvt";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <58 0x76>;
+};
+
+&aw2026_led {
+	aw2026,white_2 {
+		aw2026,name = "white_2";
+		aw2026,id = <2>;
+		aw2026,imax = <1>;
+		aw2026,led-current = <21>;
+		aw2026,max-brightness = <255>;
+		aw2026,rise-time-ms = <1>;
+		aw2026,hold-time-ms = <2>;
+		aw2026,fall-time-ms = <4>;
+		aw2026,off-time-ms = <1>;
+    };
+};

@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include "montaguep.dtsi"
+#include "montaguep-rumi.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Montaguep RUMI";
+	compatible = "qcom,montaguep-rumi", "qcom,montaguep", "qcom,rumi";
+	qcom,board-id = <0x1000F 0>;
+};
+

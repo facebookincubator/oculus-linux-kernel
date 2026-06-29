@@ -1408,6 +1408,8 @@ int geni_se_tx_dma_prep(struct device *wrapper_dev, void __iomem *base,
 	geni_write_reg(GENI_SE_DMA_PTR_L(*tx_dma), base, SE_DMA_TX_PTR_L);
 	geni_write_reg(GENI_SE_DMA_PTR_H(*tx_dma), base, SE_DMA_TX_PTR_H);
 	geni_write_reg(1, base, SE_DMA_TX_ATTR);
+	/* Ensure that above register writes went through */
+	mb();
 	geni_write_reg(tx_len, base, SE_DMA_TX_LEN);
 	return 0;
 }

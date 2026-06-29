@@ -5,7 +5,7 @@
 	qcom,default-bus-vote = <3>; /* use min svs bus voting */
 	qcom,pm-qos-latency = <0>;
 
-	dwc3@a600000 {
+	dwc3_0: dwc3@a600000 {
 		qcom,iommu-faults = "non-fatal";
 		usb-role-switch;
 	};

@@ -66,6 +66,35 @@ MEMTYPE(KGSL_MEMTYPE_EGL_IMAGE, egl_image);
 MEMTYPE(KGSL_MEMTYPE_EGL_SHADOW, egl_shadow);
 MEMTYPE(KGSL_MEMTYPE_MULTISAMPLE, egl_multisample);
 MEMTYPE(KGSL_MEMTYPE_KERNEL, kernel);
+MEMTYPE(KGSL_MEMTYPE_VK_ANY, vk_any);
+MEMTYPE(KGSL_MEMTYPE_VK_INSTANCE, vk_instance);
+MEMTYPE(KGSL_MEMTYPE_VK_PHYSICALDEVICE, vk_physicaldevice);
+MEMTYPE(KGSL_MEMTYPE_VK_DEVICE, vk_device);
+MEMTYPE(KGSL_MEMTYPE_VK_QUEUE, vk_queue);
+MEMTYPE(KGSL_MEMTYPE_VK_CMDBUFFER, vk_cmdbuffer);
+MEMTYPE(KGSL_MEMTYPE_VK_DEVICEMEMORY, vk_devicememory);
+MEMTYPE(KGSL_MEMTYPE_VK_BUFFER, vk_buffer);
+MEMTYPE(KGSL_MEMTYPE_VK_BUFFERVIEW, vk_bufferview);
+MEMTYPE(KGSL_MEMTYPE_VK_IMAGE, vk_image);
+MEMTYPE(KGSL_MEMTYPE_VK_IMAGEVIEW, vk_imageview);
+MEMTYPE(KGSL_MEMTYPE_VK_SHADERMODULE, vk_shadermodule);
+MEMTYPE(KGSL_MEMTYPE_VK_PIPELINE, vk_pipeline);
+MEMTYPE(KGSL_MEMTYPE_VK_PIPELINECACHE, vk_pipelinecache);
+MEMTYPE(KGSL_MEMTYPE_VK_PIPELINELAYOUT, vk_pipelinelayout);
+MEMTYPE(KGSL_MEMTYPE_VK_SAMPLER, vk_sampler);
+MEMTYPE(KGSL_MEMTYPE_VK_SAMPLERYCBCRCONVERSIONKHR, vk_samplerycbcrconversionkhr);
+MEMTYPE(KGSL_MEMTYPE_VK_DESCRIPTORSET, vk_descriptorset);
+MEMTYPE(KGSL_MEMTYPE_VK_DESCRIPTORSETLAYOUT, vk_descriptorsetlayout);
+MEMTYPE(KGSL_MEMTYPE_VK_DESCRIPTORPOOL, vk_descriptorpool);
+MEMTYPE(KGSL_MEMTYPE_VK_FENCE, vk_fence);
+MEMTYPE(KGSL_MEMTYPE_VK_SEMAPHORE, vk_semaphore);
+MEMTYPE(KGSL_MEMTYPE_VK_EVENT, vk_event);
+MEMTYPE(KGSL_MEMTYPE_VK_QUERYPOOL, vk_querypool);
+MEMTYPE(KGSL_MEMTYPE_VK_FRAMEBUFFER, vk_framebuffer);
+MEMTYPE(KGSL_MEMTYPE_VK_RENDERPASS, vk_renderpass);
+MEMTYPE(KGSL_MEMTYPE_VK_PROGRAM, vk_program);
+MEMTYPE(KGSL_MEMTYPE_VK_COMMANDPOOL, vk_commandpool);
+MEMTYPE(KGSL_MEMTYPE_VK_QUERY, vk_query);
 
 static struct attribute *memtype_attrs[] = {
 	&memtype_any0.attr,
@@ -90,6 +119,35 @@ static struct attribute *memtype_attrs[] = {
 	&memtype_egl_shadow.attr,
 	&memtype_egl_multisample.attr,
 	&memtype_kernel.attr,
+	&memtype_vk_any.attr,
+	&memtype_vk_instance.attr,
+	&memtype_vk_physicaldevice.attr,
+	&memtype_vk_device.attr,
+	&memtype_vk_queue.attr,
+	&memtype_vk_cmdbuffer.attr,
+	&memtype_vk_devicememory.attr,
+	&memtype_vk_buffer.attr,
+	&memtype_vk_bufferview.attr,
+	&memtype_vk_image.attr,
+	&memtype_vk_imageview.attr,
+	&memtype_vk_shadermodule.attr,
+	&memtype_vk_pipeline.attr,
+	&memtype_vk_pipelinecache.attr,
+	&memtype_vk_pipelinelayout.attr,
+	&memtype_vk_sampler.attr,
+	&memtype_vk_samplerycbcrconversionkhr.attr,
+	&memtype_vk_descriptorset.attr,
+	&memtype_vk_descriptorsetlayout.attr,
+	&memtype_vk_descriptorpool.attr,
+	&memtype_vk_fence.attr,
+	&memtype_vk_semaphore.attr,
+	&memtype_vk_event.attr,
+	&memtype_vk_querypool.attr,
+	&memtype_vk_framebuffer.attr,
+	&memtype_vk_renderpass.attr,
+	&memtype_vk_program.attr,
+	&memtype_vk_commandpool.attr,
+	&memtype_vk_query.attr,
 	NULL,
 };
 

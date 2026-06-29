@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/debugfs.h>
@@ -135,7 +135,8 @@ static int msm_cvp_initialize_core(struct platform_device *pdev,
 	INIT_LIST_HEAD(&core->instances);
 	mutex_init(&core->lock);
 	mutex_init(&core->clk_lock);
-
+	mutex_init(&core->idr_mtx);
+	idr_init(&core->sess_idr);
 	core->state = CVP_CORE_UNINIT;
 	for (i = SYS_MSG_INDEX(SYS_MSG_START);
 		i <= SYS_MSG_INDEX(SYS_MSG_END); i++) {
@@ -506,6 +507,8 @@ static int msm_cvp_remove(struct platform_device *pdev)
 	msm_cvp_free_platform_resources(&core->resources);
 	sysfs_remove_group(&pdev->dev.kobj, &msm_cvp_core_attr_group);
 	dev_set_drvdata(&pdev->dev, NULL);
+	idr_destroy(&core->sess_idr);
+	mutex_destroy(&core->idr_mtx);
 	mutex_destroy(&core->lock);
 	mutex_destroy(&core->clk_lock);
 	kfree(core);

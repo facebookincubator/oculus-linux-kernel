@@ -171,7 +171,7 @@ int qcom_scm_handle_wait(struct device *dev, int scm_ret,
 #define QCOM_SCM_ES_CONFIG_SET_ICE_KEY_V2	0x05
 #define QCOM_SCM_ES_CLEAR_ICE_KEY		0x06
 #define QCOM_SCM_ES_DERIVE_RAW_SECRET	0x07
-#define QCOM_SCM_ES_HIBERNATE_EXIT	0x08
+#define QCOM_SCM_ES_HIBERNATE_EXIT	0x0B
 
 #define QCOM_SCM_SVC_HDCP		0x11
 #define QCOM_SCM_HDCP_INVOKE		0x01
@@ -230,9 +230,13 @@ int qcom_scm_handle_wait(struct device *dev, int scm_ret,
 
 #define QCOM_SCM_LMH_LIMIT_PROFILE_CHANGE	0x01
 #define QCOM_SCM_LMH_LIMIT_DCVSH		0x10
+#define QCOM_SCM_GET_MEM_LAT_STATS_ID		0x15
+#define QCOM_SCM_SVC_MEM_LAT			0x06
 
-#define QCOM_SCM_GET_LLCC_MISSRATE_STATS_ID	0x14
 #define QCOM_SCM_SVC_MISSRATE			0x06
+#define QCOM_SCM_GET_LLCC_MISSRATE_STATS_ID	0x14
+#define QCOM_SCM_SVC_LLCC_OCCUPANCY		0x06
+#define QCOM_SCM_GET_LLCC_OCCUPANCY_STATS_ID	0x13
 
 extern void __qcom_scm_init(void);
 

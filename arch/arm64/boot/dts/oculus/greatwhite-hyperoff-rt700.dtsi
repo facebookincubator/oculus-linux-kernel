@@ -1,0 +1,47 @@
+#include "greatwhite-display-offload.dtsi"
+
+&tlmm {
+	hoff_mcu_request_transaction: hoff_mcu_request_transaction {
+		mux {
+			pins = "gpio82";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio82";
+			drive-strength = <2>;
+			bias-pull-down;
+			input-enabled;
+		};
+	};
+
+	hoff_soc_has_data: hoff_soc_has_data {
+		mux {
+			pins = "gpio81";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio81";
+			drive-strength = <2>;
+			bias-disable;
+			output-high;
+		};
+	};
+};
+
+&qupv3_se6_spi {
+	status = "ok";
+	hyperoff@0 {
+		status = "ok";
+		compatible = "meta,hyperoff";
+		reg = <0>;
+		spi-max-frequency = <17000000>;
+		spi-cpha;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&hoff_mcu_request_transaction &hoff_soc_has_data>;
+		mcu-request-transaction = <&tlmm 82 0>;
+		soc-has-data = <&tlmm 81 0>;
+	};
+};

@@ -1,0 +1,15 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/clock/qcom,gcc-ravelin.h>
+#include <dt-bindings/clock/qcom,gpucc-ravelin.h>
+#include <dt-bindings/interconnect/qcom,ravelin.h>
+#include "ravelin-vidc.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ravelin SoC";
+	compatible = "qcom,ravelin";
+	qcom,msm-id = <568 0x10000>, <602 0x10000>, <581 0x10000>, <582 0x10000>, <653 0x10000>, <654 0x10000>;
+	qcom,board-id = <0 0>, <0 0x600>, <0 0x601>, <0x10022 0x0>;
+};

@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "neo_la-sde-display.dtsi"
+
+/ {
+        model = "Qualcomm Technologies, Inc. NEO SG IDP";
+        compatible = "qcom,neo", "qcom,neo-idp";
+        qcom,msm-id = <554 0x10000>;
+        qcom,board-id = <34 1>, <34 3>;
+};

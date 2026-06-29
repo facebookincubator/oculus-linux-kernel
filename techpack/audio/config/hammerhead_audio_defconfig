@@ -1,0 +1,2 @@
+MODNAME := audio
+AUDIO_ROOT := $(srctree)//techpack/audio

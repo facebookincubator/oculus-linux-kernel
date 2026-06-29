@@ -1,0 +1,138 @@
+#include "ravelin-sde-display.dtsi"
+
+&pmi632_lcdb {
+	status = "ok";
+};
+
+&pmi632_gpios {
+
+	display_panel_supply_ctrl {
+		display_panel_vddio_default: display_panel_vddio_default {
+			pins = "gpio5";
+			function = "normal";
+			input-disable;
+			output-enable;
+			bias-disable;
+			drive-push-pull;
+			power-source = <0>;
+			qcom,drive-strength = <2>;
+		};
+
+		display_panel_extdvdd_default: display_panel_extdvdd_default {
+			pins = "gpio6";
+			function = "normal";
+			input-disable;
+			output-enable;
+			bias-disable;
+			power-source = <0>;
+			qcom,drive-strength = <2>;
+		};
+	};
+};
+
+&soc {
+	display_panel_vddio: display_gpio_regulator@1 {
+		compatible = "qti-regulator-fixed";
+		regulator-name = "display_panel_vddio";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&pmi632_gpios 5 0>;
+		enable-active-high;
+		regulator-boot-on;
+		proxy-supply = <&display_panel_vddio>;
+		qcom,proxy-consumer-enable;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_panel_vddio_default>;
+	};
+
+	display_panel_extdvdd: display_gpio_regulator@2 {
+		compatible = "qti-regulator-fixed";
+		regulator-name = "display_panel_extdvdd";
+		regulator-min-microvolt = <1300000>;
+		regulator-max-microvolt = <1300000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&pmi632_gpios 6 0>;
+		enable-active-high;
+		regulator-boot-on;
+		proxy-supply = <&display_panel_extdvdd>;
+		qcom,proxy-consumer-enable;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_panel_extdvdd_default>;
+	};
+};
+
+&dsi_ft8726_fhd_plus_90_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_labibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	pwms = <&pm6450_pwm_1 0 0>;
+	qcom,bl-pmic-pwm-period-usecs = <100>;
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,platform-reset-gpio = <&tlmm 92 0>;
+	qcom,platform-bklight-en-gpio = <&pm6450_gpios 6 0>;
+};
+
+&dsi_ft8726_fhd_plus_60_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_labibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	pwms = <&pm6450_pwm_1 0 0>;
+	qcom,bl-pmic-pwm-period-usecs = <100>;
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,platform-reset-gpio = <&tlmm 92 0>;
+	qcom,platform-bklight-en-gpio = <&pm6450_gpios 6 0>;
+};
+
+&dsi_ft8726_fhd_plus_120_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_labibb>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	pwms = <&pm6450_pwm_1 0 0>;
+	qcom,bl-pmic-pwm-period-usecs = <100>;
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,platform-reset-gpio = <&tlmm 92 0>;
+	qcom,platform-bklight-en-gpio = <&pm6450_gpios 6 0>;
+};
+
+&dsi_sim_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&dsi_sim_vid {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,platform-reset-gpio = <&tlmm 92 0>;
+};
+
+&dsi_sim_dsc_375_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&dsi_sim_dsc_10b_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&sde_dsi {
+	lab-supply = <&lcdb_ldo_vreg>;
+	ibb-supply = <&lcdb_ncp_vreg>;
+
+	vddio-supply = <&display_panel_vddio>;
+	extdvdd-supply = <&display_panel_extdvdd>;
+
+	pinctrl-names = "panel_active", "panel_suspend", "pwm_pin";
+	pinctrl-2 = <&lcd_backlight_pwm_default>;
+
+	qcom,dsi-default-panel = <&dsi_ft8726_fhd_plus_120_video>;
+};
+
+&qupv3_se1_i2c {
+	focaltech@38 {
+		panel = <&dsi_ft8726_fhd_plus_120_video
+			&dsi_ft8726_fhd_plus_90_video
+			&dsi_ft8726_fhd_plus_60_video>;
+	};
+};

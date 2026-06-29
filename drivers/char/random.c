@@ -53,6 +53,8 @@
 #include <linux/uaccess.h>
 #include <linux/siphash.h>
 #include <linux/uio.h>
+#include <linux/module.h>
+#include <linux/platform_device.h>
 #include <crypto/chacha.h>
 #include <crypto/blake2s.h>
 #include <asm/processor.h>
@@ -1452,6 +1454,8 @@ static int sysctl_random_min_urandom_seed = CRNG_RESEED_INTERVAL / HZ;
 static int sysctl_random_write_wakeup_bits = POOL_READY_BITS;
 static int sysctl_poolsize = POOL_BITS;
 static u8 sysctl_bootid[UUID_SIZE];
+static u8 sysctl_hibid[UUID_SIZE];
+static DEFINE_SPINLOCK(bootid_spinlock);
 
 /*
  * This function is used to return both the bootid UUID, and random
@@ -1476,8 +1480,6 @@ static int proc_do_uuid(struct ctl_table *table, int write, void *buf,
 		uuid = tmp_uuid;
 		generate_random_uuid(uuid);
 	} else {
-		static DEFINE_SPINLOCK(bootid_spinlock);
-
 		spin_lock(&bootid_spinlock);
 		if (!uuid[8])
 			generate_random_uuid(uuid);
@@ -1528,6 +1530,12 @@ struct ctl_table random_table[] = {
 	{
 		.procname	= "boot_id",
 		.data		= &sysctl_bootid,
+		.mode		= 0444,
+		.proc_handler	= proc_do_uuid,
+	},
+	{
+		.procname	= "hib_id",
+		.data		= &sysctl_hibid,
 		.mode		= 0444,
 		.proc_handler	= proc_do_uuid,
 	},
@@ -1612,3 +1620,57 @@ static void process_oldschool_random_ready_list(void)
 	}
 	spin_unlock_irqrestore(&random_ready_list_lock, flags);
 }
+
+static int random_sysctl_probe(struct platform_device *pdev)
+{
+	return 0;
+}
+
+/* PM notifier does not offer any hibernation-related events
+ * when userspace is frozen. To avoid races, use a dummy platform
+ * driver to ensure that hib_id will be cleared:
+ *   - after all userspace processes are frozen.
+ *   - before hibernation image is stored to swap.
+ *   - before any userspace process is thawed.
+ */
+static int random_sysctl_freeze(struct device *dev)
+{
+	/* Reset the SoC-boot session ID. */
+	spin_lock(&bootid_spinlock);
+	memset(&sysctl_hibid[0], 0, sizeof(sysctl_hibid));
+	spin_unlock(&bootid_spinlock);
+	return 0;
+}
+
+static const struct dev_pm_ops random_sysctl_pm_ops = {
+	.freeze = random_sysctl_freeze,
+};
+
+static struct platform_driver random_sysctl_driver = {
+	.driver = {
+		.name = "random-sysctl-pm",
+		.pm = &random_sysctl_pm_ops,
+	},
+	.probe = random_sysctl_probe,
+};
+
+int __init random_sysctl_init(void)
+{
+	struct platform_device *pdev;
+	int ret;
+
+	pdev = platform_device_register_simple("random-sysctl-pm", -1, NULL, 0);
+	if (IS_ERR(pdev)) {
+		pr_err("Failed to register random-sysctl platform device.\n");
+		return PTR_ERR(pdev);
+	}
+
+	ret = platform_driver_probe(&random_sysctl_driver, random_sysctl_probe);
+	if (ret) {
+		pr_err("Failed to probe random-sysctl platform driver.\n");
+		return ret;
+	}
+	return 0;
+}
+
+module_init(random_sysctl_init);

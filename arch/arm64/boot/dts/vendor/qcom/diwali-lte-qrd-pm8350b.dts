@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include "diwali-lte.dtsi"
+#include "diwali-qrd.dtsi"
+#include "diwali-qrd-pm8350b.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Diwali LTE QRD";
+	compatible = "qcom,diwali-lte-qrd", "qcom,diwali-lte", "qcom,qrd";
+	qcom,board-id = <0x1000B 0>;
+};

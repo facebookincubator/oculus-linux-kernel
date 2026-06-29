@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef __KGSL_GMU_CORE_H
 #define __KGSL_GMU_CORE_H
@@ -155,6 +155,138 @@ struct gmu_block_header {
 
 /* For GMU Logs*/
 #define GMU_LOG_SIZE  SZ_16K
+
+/* For GMU virtual register bank */
+#define GMU_VRB_SIZE  SZ_4K
+
+/*
+ * GMU Virtual Register Definitions
+ * These values are dword offsets into the GMU Virtual Register Bank
+ */
+enum gmu_vrb_idx {
+	/* Number of dwords supported by VRB */
+	VRB_SIZE_IDX = 0,
+	/* Contains the address of warmboot scratch buffer */
+	VRB_WARMBOOT_SCRATCH_IDX = 1,
+	/* Contains the address of GMU trace buffer */
+	VRB_TRACE_BUFFER_ADDR_IDX = 2,
+};
+
+/* For GMU Trace */
+#define GMU_TRACE_SIZE  SZ_16K
+
+/* Trace header defines */
+/* Logtype to decode the trace pkt data */
+#define TRACE_LOGTYPE_HWSCHED	1
+/* Trace buffer threshold for GMU to send F2H message */
+#define TRACE_BUFFER_THRESHOLD	80
+/*
+ * GMU Trace timer value to check trace packet consumption. GMU timer handler tracks the
+ * readindex, If it's not moved since last timer fired, GMU will send the f2h message to
+ * drain trace packets. GMU Trace Timer will be restarted if the readindex is moving.
+ */
+#define TRACE_TIMEOUT_MSEC	5
+
+/* Trace metadata defines */
+/* Trace drop mode hint for GMU to drop trace packets when trace buffer is full */
+#define TRACE_MODE_DROP	1
+/* Trace buffer header version */
+#define TRACE_HEADER_VERSION_1	1
+
+/* Trace packet defines */
+#define TRACE_PKT_VALID	1
+#define TRACE_PKT_SEQ_MASK	GENMASK(15, 0)
+#define TRACE_PKT_SZ_MASK	GENMASK(27, 16)
+#define TRACE_PKT_SZ_SHIFT	16
+#define TRACE_PKT_VALID_MASK	GENMASK(31, 31)
+#define TRACE_PKT_SKIP_MASK	GENMASK(30, 30)
+#define TRACE_PKT_VALID_SHIFT	31
+#define TRACE_PKT_SKIP_SHIFT	30
+
+#define TRACE_PKT_GET_SEQNUM(hdr) ((hdr) & TRACE_PKT_SEQ_MASK)
+#define TRACE_PKT_GET_SIZE(hdr) (((hdr) & TRACE_PKT_SZ_MASK) >> TRACE_PKT_SZ_SHIFT)
+#define TRACE_PKT_GET_VALID_FIELD(hdr) (((hdr) & TRACE_PKT_VALID_MASK) >> TRACE_PKT_VALID_SHIFT)
+#define TRACE_PKT_GET_SKIP_FIELD(hdr) (((hdr) & TRACE_PKT_SKIP_MASK) >> TRACE_PKT_SKIP_SHIFT)
+
+/*
+ * Trace buffer header definition
+ * Trace buffer header fields initialized/updated by KGSL and GMU
+ * GMU input: Following header fields are initialized by KGSL
+ *           - @metadata, @threshold, @size, @cookie, @timeout, @log_type
+ *           - @readIndex updated by kgsl when traces messages are consumed.
+ * GMU output: Following header fields are initialized by GMU only
+ *           - @magic, @payload_offset, @payload_size
+ *           - @write_index updated by GMU upon filling the trace messages
+ */
+struct gmu_trace_header {
+	/** @magic: Initialized by GMU to check header is valid or not */
+	u32 magic;
+	/**
+	 * @metadata: Trace buffer metadata.Bit(31) Trace Mode to log tracepoints
+	 * messages, Bits [3:0] Version for header format changes.
+	 */
+	u32 metadata;
+	/**
+	 * @threshold: % at which GMU to send f2h message to wakeup KMD to consume
+	 * tracepoints data. Set it to zero to disable thresholding. Threshold is %
+	 * of buffer full condition not the trace packet count. If GMU is continuously
+	 * writing to trace buffer makes it buffer full condition when KMD is not
+	 * consuming it. So GMU check the how much trace buffer % space is full based
+	 * on the threshold % value.If the trace packets are filling over % buffer full
+	 * condition GMU will send the f2h message for KMD to drain the trace messages.
+	 */
+	u32 threshold;
+	/** @size: trace buffer allocation size in bytes */
+	u32 size;
+	/** @read_index: trace buffer read index in dwords */
+	u32 read_index;
+	/** @write_index: trace buffer write index in dwords */
+	u32 write_index;
+	/** @payload_offset: trace buffer payload dword offset */
+	u32 payload_offset;
+	/** @payload_size: trace buffer payload size in dword */
+	u32 payload_size;
+	/** cookie: cookie data sent through F2H_PROCESS_MESSAGE */
+	u64 cookie;
+	/**
+	 * timeout: GMU Trace Timer value in msec - zero to disable trace timer else
+	 * value for GMU trace timerhandler to send HFI msg.
+	 */
+	u32 timeout;
+	/** @log_type: To decode the trace buffer data */
+	u32 log_type;
+} __packed;
+
+/* Trace ID definition */
+enum gmu_trace_id {
+	GMU_TRACE_PREEMPT_TRIGGER = 1,
+	GMU_TRACE_PREEMPT_DONE = 2,
+	GMU_TRACE_MAX,
+};
+
+struct trace_preempt_trigger {
+	u32 cur_rb;
+	u32 next_rb;
+	u32 ctx_switch_cntl;
+} __packed;
+
+struct trace_preempt_done {
+	u32 prev_rb;
+	u32 next_rb;
+	u32 ctx_switch_cntl;
+} __packed;
+
+/**
+ * struct kgsl_gmu_trace  - wrapper for gmu trace memory object
+ */
+struct kgsl_gmu_trace {
+	 /** @md: gmu trace memory descriptor */
+	struct kgsl_memdesc *md;
+	/* @seq_num: GMU trace packet sequence number to detect drop packet count */
+	u16 seq_num;
+	/* @reset_hdr: To reset trace buffer header incase of invalid packet */
+	bool reset_hdr;
+};
 
 /* GMU memdesc entries */
 #define GMU_KERNEL_ENTRIES		16
@@ -333,5 +465,42 @@ struct iommu_domain;
 int gmu_core_map_memdesc(struct iommu_domain *domain, struct kgsl_memdesc *memdesc,
 		u64 gmuaddr, int attrs);
 void gmu_core_dev_force_first_boot(struct kgsl_device *device);
+
+/**
+ * gmu_core_set_vrb_register - set vrb register value at specified index
+ * @ptr: vrb host pointer
+ * @index: vrb index to write the value
+ * @val: value to be writen into vrb
+ */
+void gmu_core_set_vrb_register(void *ptr, u32 index, u32 val);
+
+/**
+ * gmu_core_process_trace_data - Process gmu trace buffer data writes to default linux trace buffer
+ * @device: Pointer to KGSL device
+ * @dev: GMU device instance
+ * @trace: GMU trace memory pointer
+ */
+void gmu_core_process_trace_data(struct kgsl_device *device,
+	struct device *dev, struct kgsl_gmu_trace *trace);
+
+/**
+ * gmu_core_is_trace_empty - Check for trace buffer empty/full status
+ * @hdr: Pointer to gmu trace header
+ *
+ * Return: true if readidex equl to writeindex else false
+ */
+bool gmu_core_is_trace_empty(struct gmu_trace_header *hdr);
+
+/**
+ * gmu_core_trace_header_init - Initialize the GMU trace buffer header
+ * @trace: Pointer to kgsl gmu trace
+ */
+void gmu_core_trace_header_init(struct kgsl_gmu_trace *trace);
+
+/**
+ * gmu_core_reset_trace_header - Reset GMU trace buffer header
+ * @trace: Pointer to kgsl gmu trace
+ */
+void gmu_core_reset_trace_header(struct kgsl_gmu_trace *trace);
 
 #endif /* __KGSL_GMU_CORE_H */

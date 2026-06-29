@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/dma-fence-array.h>
@@ -1609,17 +1609,24 @@ static int hfi_f2h_main(void *arg)
 {
 	struct adreno_device *adreno_dev = arg;
 	struct gen7_hwsched_hfi *hfi = to_gen7_hwsched_hfi(adreno_dev);
+	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
 
 	while (!kthread_should_stop()) {
 		wait_event_interruptible(hfi->f2h_wq, kthread_should_stop() ||
-			(!(is_queue_empty(adreno_dev, HFI_MSG_ID) &&
-			is_queue_empty(adreno_dev, HFI_DBG_ID)) &&
-			(hfi->irq_mask & HFI_IRQ_MSGQ_MASK)));
+			/* If msgq irq is enabled and msgq has messages to process */
+			(((hfi->irq_mask & HFI_IRQ_MSGQ_MASK) &&
+			!is_queue_empty(adreno_dev, HFI_MSG_ID)) ||
+			/* Trace buffer has messages to process */
+			!gmu_core_is_trace_empty(gmu->trace.md->hostptr) ||
+			/* Dbgq has messages to process */
+			!is_queue_empty(adreno_dev, HFI_DBG_ID)));
 
 		if (kthread_should_stop())
 			break;
 
 		gen7_hwsched_process_msgq(adreno_dev);
+		gmu_core_process_trace_data(KGSL_DEVICE(adreno_dev),
+					&gmu->pdev->dev, &gmu->trace);
 		gen7_hwsched_process_dbgq(adreno_dev, true);
 	}
 

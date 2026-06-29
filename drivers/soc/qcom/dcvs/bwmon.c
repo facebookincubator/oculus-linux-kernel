@@ -666,7 +666,10 @@ static bool bwmon_update_cur_freq(struct hwmon_node *node)
 	new_freq.ab = MBPS_TO_KHZ(new_freq.ab, hw->dcvs_width);
 	new_freq.ib = MBPS_TO_KHZ(new_freq.ib, hw->dcvs_width);
 	new_freq.ib = max(new_freq.ib, node->min_freq);
+
 	new_freq.ib = min(new_freq.ib, node->max_freq);
+	if (node->hw_max_freq != node->max_freq)
+		new_freq.ab = min(new_freq.ab, node->max_freq);
 
 	if (new_freq.ib != node->cur_freq.ib ||
 			new_freq.ab != node->cur_freq.ab) {
@@ -1577,11 +1580,12 @@ void __stop_bw_hwmon(struct bw_hwmon *hw, enum mon_reg_type type)
 
 	bwmon_monitor_stop(hw);
 	mon_irq_disable(m, type);
-	synchronize_irq(m->irq);
-	free_irq(m->irq, m);
 	mon_disable(m, type);
 	mon_clear(m, true, type);
 	mon_irq_clear(m, type);
+	msleep(10);
+	synchronize_irq(m->irq);
+	free_irq(m->irq, m);
 }
 
 static void stop_bw_hwmon(struct bw_hwmon *hw)

@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/**
+ * Oatmeal doesn't have a display and having the configs enabled and not
+ * actually turning on the display during boot (since it doesn't have one)
+ * started causing boot up problems. So remove them so we can save some
+ * memory and avoid undefined behavior.
+ */
+
+&kgsl_smmu {
+	status = "disabled";
+};
+
+&mdp_0_tbu {
+	status = "disabled";
+};
+
+&mdp_1_tbu {
+	status = "disabled";
+};
+
+&gpucc {
+	status = "disabled";
+};
+
+&dispcc {
+	status = "disabled";
+};
+
+&gpu_cc_cx_gdsc {
+	status = "disabled";
+};
+
+&gpu_cc_gx_gdsc {
+	status = "disabled";
+};
+
+&disp_cc_mdss_core_gdsc {
+	status = "disabled";
+};
+
+&disp_cc_mdss_core_int2_gdsc {
+	status = "disabled";
+};
+
+&msm_gpu {
+	status = "disabled";
+};
+
+&kgsl_msm_iommu {
+	status = "disabled";
+};
+
+&gmu {
+	status = "disabled";
+};

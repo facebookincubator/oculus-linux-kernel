@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2013-2015,2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __ADRENO_SNAPSHOT_H
 #define __ADRENO_SNAPSHOT_H
@@ -22,6 +22,23 @@
 		(unsigned int *) _r, ARRAY_SIZE(_r) /  2)
 
 #define REG_COUNT(_ptr) ((_ptr[1] - _ptr[0]) + 1)
+
+struct snapshot_ib_meta {
+	struct kgsl_snapshot *snapshot;
+	struct kgsl_snapshot_object *obj;
+	u64 ib1base;
+	u64 ib1size;
+	u64 ib2base;
+	u64 ib2size;
+	u64 ib3base;
+	u64 ib3size;
+	u64 ib1base_lpac;
+	u64 ib1size_lpac;
+	u64 ib2base_lpac;
+	u64 ib2size_lpac;
+};
+
+extern struct snapshot_ib_meta metadata;
 
 void adreno_snapshot_registers(struct kgsl_device *device,
 		struct kgsl_snapshot *snapshot,

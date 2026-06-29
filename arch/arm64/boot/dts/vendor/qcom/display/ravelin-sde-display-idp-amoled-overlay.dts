@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "ravelin-sde-display-idp-amoled.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ravelin WCN3950 IDP + AMOLED + RCM";
+	compatible = "qcom,ravelin-idp", "qcom,ravelin", "qcom,idp";
+	qcom,msm-id = <568 0x10000>, <602 0x10000>, <653 0x10000>, <654 0x10000>, <734 0x10000>;
+	qcom,board-id = <34 2>;
+};

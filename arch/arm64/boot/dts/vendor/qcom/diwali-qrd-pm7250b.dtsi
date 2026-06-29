@@ -1,0 +1,77 @@
+#include "diwali-pm7250b.dtsi"
+
+&battery_charger {
+	qcom,thermal-mitigation = <11500000 11000000 10500000 10000000 9500000
+				9000000 8500000 8000000 7500000 7000000 6500000
+				6000000 5500000 5000000 4500000 4000000 3500000
+				3000000 2500000 2000000 1500000 1000000 500000>;
+};
+
+&usb0 {
+	usb-role-switch;
+	extcon = <&eud>;
+
+	dwc3@a600000 {
+		usb-role-switch;
+		dr_mode = "otg";
+	};
+
+	port {
+		usb_port0: endpoint {
+			remote-endpoint = <&usb_port0_connector>;
+		};
+	};
+};
+
+&ucsi {
+	connector {
+		port {
+			usb_port0_connector: endpoint {
+				remote-endpoint = <&usb_port0>;
+			};
+		};
+	};
+};
+
+&qupv3_se2_i2c {
+	status = "ok";
+
+	redriver: redriver@1c {
+		compatible = "onnn,redriver";
+		reg = <0x1c>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&usb3phy_portselect_gpio>;
+		gpios = <&tlmm 122 0>;
+		lane-channel-swap;
+
+		eq = /bits/ 8 <
+				/* Parameters for USB */
+				0x7 0x4 0x4 0x4
+				/* Parameters for DP */
+				0x7 0x5 0x5 0x7>;
+		flat-gain = /bits/ 8 <
+				/* Parameters for USB */
+				0x2 0x1 0x1 0x3
+				/* Parameters for DP */
+				0x0 0x3 0x3 0x0>;
+		output-comp = /bits/ 8 <
+				/* Parameters for USB */
+				0x3 0x3 0x3 0x3
+				/* Parameters for DP */
+				0x3 0x3 0x3 0x3>;
+		loss-match = /bits/ 8 <
+				/* Parameters for USB */
+				0x1 0x3 0x3 0x1
+				/* Parameters for DP */
+				0x3 0x3 0x3 0x3>;
+	};
+};
+
+&usb_qmp_dp_phy {
+	pinctrl-names = "unused";
+};
+
+&usb0 {
+	ssusb_redriver = <&redriver>;
+};

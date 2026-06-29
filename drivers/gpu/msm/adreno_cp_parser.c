@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -12,6 +13,11 @@
 
 #define MAX_IB_OBJS 1000
 #define NUM_SET_DRAW_GROUPS 32
+#define IB_LEVEL_1 1
+#define IB_LEVEL_2 2
+#define IB_LEVEL_3 3
+
+struct snapshot_ib_meta metadata;
 
 struct set_draw_state {
 	uint64_t cmd_stream_addr;
@@ -673,7 +679,7 @@ static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 				ret = adreno_ib_find_objs(device, process,
 					cmd_stream_addr, cmd_stream_dwords,
 					0, SNAPSHOT_GPU_OBJECT_DRAW,
-					ib_obj_list, 2);
+					ib_obj_list, IB_LEVEL_2);
 			if (ret)
 				break;
 			continue;
@@ -686,7 +692,7 @@ static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 			ret = adreno_ib_find_objs(device, process,
 				gpuaddr, (ptr[i] & 0x0000FFFF),
 				0, SNAPSHOT_GPU_OBJECT_IB,
-				ib_obj_list, 2);
+				ib_obj_list, IB_LEVEL_2);
 			if (ret)
 				break;
 		}
@@ -759,38 +765,38 @@ static int ib_parse_set_draw_state(struct kgsl_device *device,
 }
 
 /*
- * adreno_cp_parse_ib2() - Wrapper function around IB2 parsing
+ * adreno_cp_parse_ibn() - Wrapper function around IBn parsing
  * @device: Device pointer
  * @process: Process in which the IB is allocated
- * @gpuaddr: IB2 gpuaddr
- * @dwords: IB2 size in dwords
- * @ib2base: Base address of active IB2
+ * @gpuaddr: IB gpuaddr
+ * @dwords: IB size in dwords
+ * @ibbase: Base address of active IB
  * @ib_obj_list: List of objects found in IB
- * @ib_level: The level from which function is called, either from IB1 or IB2
+ * @ib_level: The level from which function is called from IBn-1
  *
- * Function does some checks to ensure that IB2 parsing is called from IB1
- * and then calls the function to find objects in IB2.
+ * Function does some checks to ensure that IBn parsing is called from IBn-1
+ * and then calls the function to find objects in IBn.
  */
-static int adreno_cp_parse_ib2(struct kgsl_device *device,
+static int adreno_cp_parse_ibn(struct kgsl_device *device,
 			struct kgsl_process_private *process,
-			uint64_t gpuaddr, uint64_t dwords, uint64_t ib2base,
+			u64 gpuaddr, u64 dwords, u64 ibbase,
 			struct adreno_ib_object_list *ib_obj_list,
 			int ib_level)
 {
 	int i;
 
 	/*
-	 * We can only expect an IB2 in IB1, if we are
-	 * already processing an IB2 then return error
+	 * We can only expect an IBn in IBn-1, if we are
+	 * already processing an IBn then return error
 	 */
-	if (ib_level == 2)
+	if (ib_level >= IB_LEVEL_3)
 		return -EINVAL;
 
-	/* Save current IB2 statically */
-	if (ib2base == gpuaddr)
+	/* Save current IBn statically */
+	if (ibbase == gpuaddr)
 		kgsl_snapshot_push_object(device, process, gpuaddr, dwords);
 	/*
-	 * only try to find sub objects iff this IB has
+	 * Only try to find sub objects if this IBn has
 	 * not been processed already
 	 */
 	for (i = 0; i < ib_obj_list->num_objs; i++) {
@@ -803,8 +809,30 @@ static int adreno_cp_parse_ib2(struct kgsl_device *device,
 			return 0;
 	}
 
-	return adreno_ib_find_objs(device, process, gpuaddr, dwords, ib2base,
-		SNAPSHOT_GPU_OBJECT_IB, ib_obj_list, 2);
+	return adreno_ib_find_objs(device, process, gpuaddr, dwords, ibbase,
+		SNAPSHOT_GPU_OBJECT_IB, ib_obj_list, ib_level + 1);
+}
+
+static s64 get_ib_base(struct adreno_device *adreno_dev, int ib_level)
+{
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	s64 ibbase = 0;
+
+	switch (ib_level) {
+	case IB_LEVEL_2:
+		ibbase = metadata.ib2base;
+		break;
+	case IB_LEVEL_3:
+		if (!adreno_is_a5xx(adreno_dev) && !adreno_is_a6xx(adreno_dev))
+			ibbase = metadata.ib3base;
+		break;
+	default:
+		/* Invalid IB level */
+		dev_err(device->dev, "Invalid IB level %d\n", ib_level);
+		return -EINVAL;
+	}
+
+	return ibbase;
 }
 
 /*
@@ -819,7 +847,7 @@ static int adreno_cp_parse_ib2(struct kgsl_device *device,
  * @ib_level: Indicates if IB1 or IB2 is being processed
  *
  * Finds all IB objects in a given IB and puts then in a list. Can be called
- * recursively for the IB2's in the IB1's
+ * recursively for the IBn in the IBn-1
  * Returns 0 on success else error code
  */
 static int adreno_ib_find_objs(struct kgsl_device *device,
@@ -900,7 +928,7 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 				uint64_t gpuaddrib2 = src[i + 1];
 				uint64_t size = src[i + 2];
 
-				ret = adreno_cp_parse_ib2(device, process,
+				ret = adreno_cp_parse_ibn(device, process,
 						gpuaddrib2, size, ib2base,
 						ib_obj_list, ib_level);
 				if (ret)
@@ -922,14 +950,14 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 
 		else if (pkt_is_type7(src[i])) {
 			if (adreno_cmd_is_ib(adreno_dev, src[i])) {
-				uint64_t size = src[i + 3];
-				uint64_t gpuaddrib2 = src[i + 2];
+				u64 size = src[i + 3];
+				u64 gpuaddribn = ((u64)(src[i + 2]) << 32) | src[i + 1];
+				s64 next_ibbase = get_ib_base(adreno_dev, ib_level + IB_LEVEL_1);
 
-				gpuaddrib2 = gpuaddrib2 << 32 | src[i + 1];
-
-				ret = adreno_cp_parse_ib2(device, process,
-						gpuaddrib2, size, ib2base,
-						ib_obj_list, ib_level);
+				if (next_ibbase == -EINVAL)
+					goto done;
+				ret = adreno_cp_parse_ibn(device, process,
+					gpuaddribn, size, (u64)next_ibbase, ib_obj_list, ib_level);
 				if (ret)
 					goto done;
 			} else {
@@ -1016,7 +1044,7 @@ int adreno_ib_create_object_list(struct kgsl_device *device,
 	}
 
 	ret = adreno_ib_find_objs(device, process, gpuaddr, dwords, ib2base,
-		SNAPSHOT_GPU_OBJECT_IB, ib_obj_list, 1);
+		SNAPSHOT_GPU_OBJECT_IB, ib_obj_list, IB_LEVEL_1);
 
 	/* Even if there was an error return the remaining objects found */
 	if (ib_obj_list->num_objs)

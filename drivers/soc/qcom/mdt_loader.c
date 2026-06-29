@@ -184,7 +184,7 @@ void *qcom_mdt_read_metadata(struct device *dev, const struct firmware *fw, cons
 		}
 		snprintf(fw_name + strlen(fw_name) - 3, 4, "b%02d", hash_index);
 
-		ret = request_firmware_into_buf(&seg_fw, fw_name, dev, data + ehdr_size, hash_size);
+		ret = request_firmware_into_buf_nowarn(&seg_fw, fw_name, dev, data + ehdr_size, hash_size);
 		kfree(fw_name);
 
 		if (ret)
@@ -343,7 +343,7 @@ static int __qcom_mdt_load(struct device *dev, const struct firmware *fw, const 
 			} else {
 				/* Firmware not large enough, load split-out segments */
 				snprintf(fw_name + fw_name_len - 3, 4, "b%02d", i);
-				ret = request_firmware_into_buf(&seg_fw, fw_name, dev,
+				ret = request_firmware_into_buf_nowarn(&seg_fw, fw_name, dev,
 								ptr, phdr->p_filesz);
 				if (ret) {
 					dev_err(dev, "failed to load %s\n", fw_name);

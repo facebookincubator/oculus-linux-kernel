@@ -44,7 +44,7 @@ struct av8l_fast_io_pgtable {
 int av8l_fast_map_public(struct io_pgtable_ops *ops, unsigned long iova,
 			 phys_addr_t paddr, size_t size, int prot);
 
-void av8l_fast_unmap_public(struct io_pgtable_ops *ops, unsigned long iova,
+size_t av8l_fast_unmap_public(struct io_pgtable_ops *ops, unsigned long iova,
 				size_t size);
 
 int av8l_fast_map_sg_public(struct io_pgtable_ops *ops,
@@ -63,9 +63,10 @@ av8l_fast_map_public(struct io_pgtable_ops *ops, unsigned long iova,
 {
 	return -EINVAL;
 }
-static inline void av8l_fast_unmap_public(struct io_pgtable_ops *ops,
+static inline size_t av8l_fast_unmap_public(struct io_pgtable_ops *ops,
 					  unsigned long iova, size_t size)
 {
+	return 0;
 }
 
 static inline int av8l_fast_map_sg_public(struct io_pgtable_ops *ops,

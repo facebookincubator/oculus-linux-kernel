@@ -31,3 +31,7 @@
 		#gpio-cells = <0>;
 	};
 };
+
+&msm_audio_ion {
+	qcom,iommu-faults = "non-fatal";
+};

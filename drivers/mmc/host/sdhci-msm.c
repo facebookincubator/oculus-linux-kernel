@@ -170,6 +170,9 @@
 /* Timeout value to avoid infinite waiting for pwr_irq */
 #define MSM_PWR_IRQ_TIMEOUT_MS 5000
 
+/* Max load for eMMC Vdd supply */
+#define MMC_VMMC_MAX_LOAD_UA	570000
+
 /* Max load for eMMC Vdd-io supply */
 #define MMC_VQMMC_MAX_LOAD_UA	325000
 
@@ -192,6 +195,11 @@
 #define VS_CAPABILITIES_SDR_50_SUPPORT BIT(0)
 #define VS_CAPABILITIES_SDR_104_SUPPORT BIT(1)
 #define VS_CAPABILITIES_DDR_50_SUPPORT BIT(2)
+/* Max load for SD Vdd supply */
+#define SD_VMMC_MAX_LOAD_UA	800000
+
+/* Max load for SD Vdd-io supply */
+#define SD_VQMMC_MAX_LOAD_UA	22000
 
 #define msm_host_readl(msm_host, host, offset) \
 	msm_host->var_ops->msm_readl_relaxed(host, offset)
@@ -1735,10 +1743,47 @@ out:
 	return true;
 }
 
-static int sdhci_msm_set_vmmc(struct mmc_host *mmc)
+static void msm_config_vmmc_regulator(struct mmc_host *mmc, bool hpm)
+{
+	int load;
+
+	if (!hpm)
+		load = 0;
+	else if (!mmc->card)
+		load = max(MMC_VMMC_MAX_LOAD_UA, SD_VMMC_MAX_LOAD_UA);
+	else if (mmc_card_mmc(mmc->card))
+		load = MMC_VMMC_MAX_LOAD_UA;
+	else if (mmc_card_sd(mmc->card))
+		load = SD_VMMC_MAX_LOAD_UA;
+	else
+		return;
+
+	regulator_set_load(mmc->supply.vmmc, load);
+}
+
+static void msm_config_vqmmc_regulator(struct mmc_host *mmc, bool hpm)
+{
+	int load;
+
+	if (!hpm)
+		load = 0;
+	else if (!mmc->card)
+		load = max(MMC_VQMMC_MAX_LOAD_UA, SD_VQMMC_MAX_LOAD_UA);
+	else if (mmc_card_sd(mmc->card))
+		load = SD_VQMMC_MAX_LOAD_UA;
+	else
+		return;
+
+	regulator_set_load(mmc->supply.vqmmc, load);
+}
+
+static int sdhci_msm_set_vmmc(struct sdhci_msm_host *msm_host,
+			      struct mmc_host *mmc, bool hpm)
 {
 	if (IS_ERR(mmc->supply.vmmc))
 		return 0;
+
+	msm_config_vmmc_regulator(mmc, hpm);
 
 	return mmc_regulator_set_ocr(mmc, mmc->supply.vmmc, mmc->ios.vdd);
 }
@@ -1751,6 +1796,8 @@ static int msm_toggle_vqmmc(struct sdhci_msm_host *msm_host,
 
 	if (msm_host->vqmmc_enabled == level)
 		return 0;
+
+	msm_config_vqmmc_regulator(mmc, level);
 
 	if (level) {
 		/* Set the IO voltage regulator to default voltage level */
@@ -2343,7 +2390,8 @@ static void sdhci_msm_handle_pwr_irq(struct sdhci_host *host, int irq)
 	}
 
 	if (pwr_state) {
-		ret = sdhci_msm_set_vmmc(mmc);
+		ret = sdhci_msm_set_vmmc(msm_host, mmc,
+					 pwr_state & REQ_BUS_ON);
 		if (!ret)
 			ret = sdhci_msm_set_vqmmc(msm_host, mmc,
 					pwr_state & REQ_BUS_ON);
@@ -4666,7 +4714,8 @@ static int sdhci_msm_prepare_hibernation(struct sdhci_msm_host *msm_host)
 #endif
 
 	/* Free cd-gpio IRQ before going into Hibernation */
-	devm_free_irq(mhost->parent, mhost->slot.cd_irq, mhost);
+	if (mhost->slot.cd_irq >= 0)
+		devm_free_irq(mhost->parent, mhost->slot.cd_irq, mhost);
 
 	mmc_put_card(mhost->card, NULL);
 	return ret;
@@ -4681,13 +4730,11 @@ static int sdhci_msm_post_hibernation(struct sdhci_msm_host *msm_host)
 	if (!mhost->card)
 		return ret;
 
-	if (mhost->caps2 & MMC_CAP2_CRYPTO)
-		blk_ksm_reprogram_all_keys(&mhost->ksm);
 
 	mmc_get_card(mhost->card, NULL);
 
 #if IS_ENABLED(CONFIG_MMC_SDHCI_MSM_SCALING)
-	if (!(mhost->caps2 & MMC_CAP2_CLK_SCALE))
+	if (mhost->caps2 & MMC_CAP2_CLK_SCALE)
 		goto enable_pm;
 
 	/* Enable the clock scaling and set the host capability */
@@ -5297,9 +5344,40 @@ static int sdhci_msm_suspend_late(struct device *dev)
 	return 0;
 }
 
+static int sdhci_freeze(struct device *dev) {
+	struct sdhci_host *host = dev_get_drvdata(dev);
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
+
+	msm_host->reg_store = true;
+	sdhci_msm_registers_save(host);
+	msm_host->reg_store = false;
+
+	return 0;
+}
+
+static int sdhci_restore(struct device *dev) {
+	struct sdhci_host *host = dev_get_drvdata(dev);
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
+	struct mmc_host *mhost = msm_host->mmc;
+
+	msm_host->reg_store = true;
+	sdhci_msm_registers_restore(host);
+	msm_host->reg_store = false;
+
+	if (mhost->card && (mhost->caps2 & MMC_CAP2_CRYPTO))
+		blk_ksm_reprogram_all_keys(&mhost->ksm);
+
+	return 0;
+}
+
 static const struct dev_pm_ops sdhci_msm_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend,
-				pm_runtime_force_resume)
+	.suspend = pm_runtime_force_suspend,
+	.resume = pm_runtime_force_resume,
+	.freeze = sdhci_freeze,
+	.thaw = pm_runtime_force_resume,
+	.restore = sdhci_restore,
 	SET_LATE_SYSTEM_SLEEP_PM_OPS(sdhci_msm_suspend_late, NULL)
 	SET_RUNTIME_PM_OPS(sdhci_msm_runtime_suspend,
 			   sdhci_msm_runtime_resume,

@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "anorak-qxr.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Anorak QXR";
+	compatible = "qcom,anorak-qxr", "qcom,anorak";
+	qcom,msm-id = <549 0x10000>,<649 0x10000>;
+	qcom,board-id = <0x10026 0x0>;
+};

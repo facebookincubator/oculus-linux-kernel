@@ -9,7 +9,7 @@
 /delete-node/ &ramoops_mem;
 
 &trusted_apps_mem {
-	reg = <0x0 0xe9300000 0x0 0x600000>;
+	reg = <0x0 0xe9300000 0x0 0x700000>;
 	no-map;
 };
 

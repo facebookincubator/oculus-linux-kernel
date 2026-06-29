@@ -1,0 +1,15 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/clock/qcom,gcc-parrot.h>
+#include <dt-bindings/interconnect/qcom,parrot.h>
+#include <dt-bindings/clock/qcom,videocc-parrot.h>
+#include "parrot-vidc.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Parrot";
+	compatible = "qcom,parrot";
+	qcom,msm-id = <537 0x10000>, <583 0x10000>, <613 0x10000>, <631 0x10000>, <633 0x10000>, <634 0x10000>, <638 0x10000>, <663 0x10000>;
+	qcom,board-id = <0 0>, <0 0x600>, <34 5>, <34 6>, <0x100b 2>;
+};

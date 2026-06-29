@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "diwali-mmrm.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. diwali SoC";
+	compatible = "qcom,diwali";
+	qcom,msm-id = <506 0x10000>;
+	qcom,board-id = <0 0>; /* required by merge_dtbs.py */
+};

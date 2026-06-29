@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include "montague.dtsi"
+#include "montague-rcm.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Montague RCM IDP";
+	compatible = "qcom,montague-qrd", "qcom,montague", "qcom,idp";
+	qcom,board-id = <0x10022 0x5>;
+};
+

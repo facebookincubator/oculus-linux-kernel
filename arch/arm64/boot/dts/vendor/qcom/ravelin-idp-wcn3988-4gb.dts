@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "ravelin-4gb.dtsi"
+#include "ravelin-idp-wcn3988-4gb.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ravelin IDP 4GB DDR + WCN3988";
+	compatible = "qcom,ravelin-idp", "qcom,ravelin", "qcom,idp";
+	qcom,board-id = <34 0x601>;
+};

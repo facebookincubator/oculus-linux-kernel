@@ -24,7 +24,7 @@ static void save_hib_resume_bdev(void *data, struct block_device *hib_resume_bde
 static void check_hibernation_swap(void *data, struct block_device *dev,
 			bool *hib_swap)
 {
-	*hib_swap = false;
+	*hib_swap = true;
 }
 
 static int __init init_s2d_hooks(void)

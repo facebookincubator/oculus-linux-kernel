@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "oatmeal-dvt-common.dtsi"
+
+/ {
+	model = "Oatmeal DVT1";
+	compatible = "meta,oatmeal", "meta,oatmeal-dvt1";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xc9>;
+};

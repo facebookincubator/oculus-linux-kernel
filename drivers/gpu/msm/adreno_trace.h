@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #if !defined(_ADRENO_TRACE_H) || defined(TRACE_HEADER_MULTI_READ)
@@ -841,40 +841,44 @@ TRACE_EVENT(adreno_hw_preempt_token_submit,
 );
 
 TRACE_EVENT(adreno_preempt_trigger,
-	TP_PROTO(struct adreno_ringbuffer *cur, struct adreno_ringbuffer *next,
-		unsigned int cntl),
-	TP_ARGS(cur, next, cntl),
+	TP_PROTO(u32 cur_rb_id, u32 next_rb_id,
+		u32 cntl, u64 gmu_ticks),
+	TP_ARGS(cur_rb_id, next_rb_id, cntl, gmu_ticks),
 	TP_STRUCT__entry(
-		__field(unsigned int, cur)
-		__field(unsigned int, next)
-		__field(unsigned int, cntl)
+		__field(u32, cur)
+		__field(u32, next)
+		__field(u32, cntl)
+		__field(u64, ticks)
 	),
 	TP_fast_assign(
-		__entry->cur = cur->id;
-		__entry->next = next->id;
+		__entry->cur = cur_rb_id;
+		__entry->next = next_rb_id;
 		__entry->cntl = cntl;
+		__entry->ticks = gmu_ticks;
 	),
-	TP_printk("trigger from id=%d to id=%d cntl=%x",
-		__entry->cur, __entry->next, __entry->cntl
+	TP_printk("trigger from id=%d to id=%d cntl=%x ticks=%llu",
+		__entry->cur, __entry->next, __entry->cntl, __entry->ticks
 	)
 );
 
 TRACE_EVENT(adreno_preempt_done,
-	TP_PROTO(struct adreno_ringbuffer *cur, struct adreno_ringbuffer *next,
-		unsigned int level),
-	TP_ARGS(cur, next, level),
+	TP_PROTO(u32 cur_rb_id, u32 next_rb_id,
+		u32 level, u64 gmu_ticks),
+	TP_ARGS(cur_rb_id, next_rb_id, level, gmu_ticks),
 	TP_STRUCT__entry(
-		__field(unsigned int, cur)
-		__field(unsigned int, next)
-		__field(unsigned int, level)
+		__field(u32, cur)
+		__field(u32, next)
+		__field(u32, level)
+		__field(u64, ticks)
 	),
 	TP_fast_assign(
-		__entry->cur = cur->id;
-		__entry->next = next->id;
+		__entry->cur = cur_rb_id;
+		__entry->next = next_rb_id;
 		__entry->level = level;
+		__entry->ticks = gmu_ticks;
 	),
-	TP_printk("done switch to id=%d from id=%d level=%x",
-		__entry->next, __entry->cur, __entry->level
+	TP_printk("done switch to id=%d from id=%d level=%x ticks=%llu",
+		__entry->next, __entry->cur, __entry->level, __entry->ticks
 	)
 );
 

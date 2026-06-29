@@ -1,0 +1,4 @@
+CONFIG_META_GRANOLA_OATMEAL=y
+
+# JBD4021 display panel (only used for proof of concept work with NFF1)
+CONFIG_JBD4021_I2C=y

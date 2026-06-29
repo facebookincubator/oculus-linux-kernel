@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+
+#include "vendor-base/qcom/neo_la.dtsi"
+#include "vendor-base/qcom/neo-idp.dtsi"
+#include "meta-neo-base.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO-LA";
+	compatible = "qcom,neo";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <0 0>;
+};
+
+&apps_rsc {
+	/delete-node/ rpmh-regulator-smpa2;
+};
+
+&wlan_kiwi {
+	/delete-property/ vdd-wlan-supply;
+};
+
+&aliases {
+	i2c0 = &qupv3_se5_i2c;
+	i2c1 = &qupv3_se8_i2c;
+	i2c2 = &qupv3_se10_i2c;
+};
+
+&apps_rsc {
+	S9A_LEVEL: pm8150_s9_level: regulator-pm8150-s9-level {
+		compatible = "qcom,stub-regulator";
+		qcom,hpm-min-load = <10000>;
+		regulator-name = "pm8150_s9_level";
+		regulator-min-microvolt
+			= <RPMH_REGULATOR_LEVEL_RETENTION>;
+		regulator-max-microvolt
+			= <RPMH_REGULATOR_LEVEL_MAX>;
+	};
+};
