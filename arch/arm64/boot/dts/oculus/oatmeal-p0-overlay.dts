@@ -1,0 +1,92 @@
+/dts-v1/;
+/plugin/;
+
+#include "oatmeal.dtsi"
+
+/ {
+	model = "Oatmeal P0";
+	compatible = "meta,oatmeal", "meta,oatmeal-p0";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xc2>;
+};
+
+&qupv3_se1_2uart {
+	status = "disabled";
+};
+
+&gpio_action_btn {
+	mux {
+		pins = "gpio62";
+	};
+
+	config {
+		pins = "gpio62";
+	};
+};
+
+&action_btn {
+	gpios = <&tlmm 62 GPIO_ACTIVE_LOW>;
+};
+
+&ads1115 {
+	status = "disabled";
+};
+
+&ina236 {
+	status = "disabled";
+};
+
+&max17332 {
+	max17332,max-bob-voltage-uv = <7623028>;
+	max17332,force-enable-cmd-override;
+	/delete-property/ max17332,reset-vsys-on-usb-insertion;
+
+	charger {
+		extcon = <&ptn5150>;
+	};
+};
+
+&mp28167 {
+	/**
+	 * The bob I_limit is relatived to resistor and capacitor values
+	 * of OC pin follows the below relationship:
+	 *      R_OC(KOhm)   75    21.5
+	 *      C_OC(nF)     6.8   22
+	 *      I_limit(A)   0.98  3.65
+	 *
+	 * In NFF device, we use default configuration, R_OC=21.5, C_0C=22
+	 * In P0 and later device, we use R_OC=75, C_0C=6.8
+	 *
+	 * I_limit is inversely proportional to R_OC
+	 * bob_lsb_p0 / bob_lsb_nff = 21.5 / 75
+	 * bob_lsb_p0 = bob_lsb_nff * 21.5 / 75
+	 *
+	 * In P0, we need to change the bob_curr_limit to
+	 * bob_curr_limit*75/21.5, bob scaling = 75/21.5 = 3.48
+	 *
+	 * Default scaling is 1.00
+	 */
+	ilim-scaling = <348>;
+	status = "ok";
+};
+
+&max77789 {
+	status = "disabled";
+};
+
+&ptn5150 {
+	status = "ok";
+};
+
+/**
+ * For P0, we must set HL7594 to PWM instead of PFM mode to remove signal interference with
+ * Acro I3C. Here we are applying it to P0 to have PWM setting.
+ */
+&qupv3_se8_i2c {
+        hl7594: hl7594@57{
+                compatible = "hl,hl7594";
+                reg = <0x57>;
+                hl7594,using-pwm-mode;
+                status = "ok";
+        };
+};

@@ -200,6 +200,12 @@ config SPI_STP_I2C
 	help
 	  Enable I2C bus driver over STP.
 
+config ST60_CTRL
+	tristate "Meta ST60 control driver"
+	default n
+	help
+	  Enable ST60 control driver.
+
 config METABATTERY
 	tristate "Kernel Battery Driver"
 	depends on SPI_STP_INTERFACE
@@ -226,6 +232,16 @@ config METASOC
 	default n
 	help
 	  Enable generation of metasoc in max17332 battery driver
+
+config PCI_MSM_GPIO_INIT_LEGACY
+    depends on PCI_MSM
+    bool "Use legacy GPIO initialization"
+
+config MCU_THERMISTOR
+	tristate "Kernel MCU Thermistor Driver"
+	depends on SPI_STP_INTERFACE
+	help
+	  Enable mcu thermistor interface.
 
 source "drivers/staging/oculus/mcu/Kconfig"
 

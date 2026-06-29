@@ -1,0 +1,12 @@
+/dts-v1/;
+
+#include "parrot.dtsi"
+#include "parrot-wcn6755.dtsi"
+#include "parrot-idp.dtsi"
+#include "parrot-idp-pm7250b.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Parrot WCN6755 IDP";
+	compatible = "qcom,parrot-idp", "qcom,parrot", "qcom,idp";
+	qcom,board-id = <34 5>;
+};

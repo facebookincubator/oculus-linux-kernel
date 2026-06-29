@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/dma-direction.h>
@@ -165,7 +166,7 @@ void *msm_cvp_open(int core_id, int session_type)
 		list_for_each_entry(inst, &core->instances, list)
 			dprintk(CVP_ERR, "inst %pK, cmd %d id %d\n",
 				inst, inst->cur_cmd_type,
-				hash32_ptr(inst->session));
+				inst->sess_id);
 		mutex_unlock(&core->lock);
 
 		return NULL;
@@ -349,7 +350,7 @@ int msm_cvp_destroy(struct msm_cvp_inst *inst)
 	synx_uninitialize(inst->synx_session_id);
 
 	pr_info(CVP_DBG_TAG "Closed cvp instance: %pK session_id = %d\n",
-		"sess", inst, hash32_ptr(inst->session));
+		"sess", inst, inst, inst->sess_id);
 	if (inst->cur_cmd_type)
 		dprintk(CVP_ERR, "deleted instance has pending cmd %d\n",
 				inst->cur_cmd_type);

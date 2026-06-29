@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "cape-sde-display-mtp-120fps.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Cape MTP";
+	compatible = "qcom,cape-mtp", "qcom,cape", "qcom,mtp";
+	qcom,msm-id = <530 0x10000>, <531 0x10000>, <540 0x10000>, <591 0x10000>;
+	qcom,board-id = <0x10008 3>;
+};

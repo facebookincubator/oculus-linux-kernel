@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "adreno.h"
@@ -1241,9 +1241,10 @@ void gen7_snapshot(struct adreno_device *adreno_dev,
 	struct adreno_ringbuffer *rb;
 	size_t cp_indexed_reglist_len;
 	unsigned int i;
-	u32 hi, lo, cgc = 0, cgc1 = 0, cgc2 = 0;
+	u32 cgc = 0, cgc1 = 0, cgc2 = 0;
 	int is_current_rt;
 
+	gpucore = to_gen7_core(ADRENO_DEVICE(device));
 	gen7_crashdump_timedout = false;
 	gen7_snapshot_block_list = gpucore->gen7_snapshot_block_list;
 	cp_indexed_reglist = gen7_snapshot_block_list->cp_indexed_reg_list;
@@ -1291,28 +1292,21 @@ void gen7_snapshot(struct adreno_device *adreno_dev,
 	if (is_current_rt)
 		sched_set_normal(current, 0);
 
-	kgsl_regread(device, GEN7_CP_IB1_BASE, &lo);
-	kgsl_regread(device, GEN7_CP_IB1_BASE_HI, &hi);
-
-	snapshot->ib1base = (((u64) hi) << 32) | lo;
-
-	kgsl_regread(device, GEN7_CP_IB2_BASE, &lo);
-	kgsl_regread(device, GEN7_CP_IB2_BASE_HI, &hi);
-
-	snapshot->ib2base = (((u64) hi) << 32) | lo;
+	kgsl_regread64(device, GEN7_CP_IB1_BASE,
+		GEN7_CP_IB1_BASE_HI, &snapshot->ib1base);
+	kgsl_regread64(device, GEN7_CP_IB2_BASE,
+		GEN7_CP_IB2_BASE_HI, &snapshot->ib2base);
+	kgsl_regread64(device, GEN7_CP_IB3_BASE,
+		GEN7_CP_IB3_BASE_HI, &snapshot->ib3base);
 
 	kgsl_regread(device, GEN7_CP_IB1_REM_SIZE, &snapshot->ib1size);
 	kgsl_regread(device, GEN7_CP_IB2_REM_SIZE, &snapshot->ib2size);
+	kgsl_regread(device, GEN7_CP_IB3_REM_SIZE, &snapshot->ib3size);
 
-	kgsl_regread(device, GEN7_CP_LPAC_IB1_BASE, &lo);
-	kgsl_regread(device, GEN7_CP_LPAC_IB1_BASE_HI, &hi);
-
-	snapshot->ib1base_lpac = (((u64) hi) << 32) | lo;
-
-	kgsl_regread(device, GEN7_CP_LPAC_IB2_BASE, &lo);
-	kgsl_regread(device, GEN7_CP_LPAC_IB2_BASE_HI, &hi);
-
-	snapshot->ib2base_lpac = (((u64) hi) << 32) | lo;
+	kgsl_regread64(device, GEN7_CP_LPAC_IB1_BASE,
+		GEN7_CP_LPAC_IB1_BASE_HI, &snapshot->ib1base_lpac);
+	kgsl_regread64(device, GEN7_CP_LPAC_IB2_BASE,
+		GEN7_CP_LPAC_IB2_BASE_HI, &snapshot->ib2base_lpac);
 
 	kgsl_regread(device, GEN7_CP_LPAC_IB1_REM_SIZE, &snapshot->ib1size_lpac);
 	kgsl_regread(device, GEN7_CP_LPAC_IB2_REM_SIZE, &snapshot->ib2size_lpac);

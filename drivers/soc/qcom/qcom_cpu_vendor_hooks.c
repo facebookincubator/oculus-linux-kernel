@@ -42,8 +42,6 @@ static void trace_ipi_stop(void *unused, struct pt_regs *regs)
 
 	per_cpu(regs_before_stop, cpu) = *regs;
 	raw_spin_lock_irqsave(&stop_lock, flags);
-	pr_crit("CPU%u: stopping\n", cpu);
-	show_regs(regs);
 	raw_spin_unlock_irqrestore(&stop_lock, flags);
 }
 

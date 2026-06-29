@@ -4,6 +4,45 @@
 #include <linux/utsname.h>
 #include <linux/freezer.h>
 #include <linux/compiler.h>
+#include <linux/crypto.h>
+
+struct hib_entry_stats {
+        /* Total time spent in kernel while entering hibernation */
+        unsigned int kernel_total_us;
+        /* Time spent on allocating pages for snapshot */
+        unsigned int preallocation_us;
+        /* Number of snapshot pages allocated */
+        unsigned int preallocation_pages;
+        /* Size of hibernation image after compression */
+        unsigned int hib_image_size_kb;
+        /* Time spent on encrypting the compressed image */
+        unsigned int encryption_us;
+        /* Time spent on compression averaged between threads */
+        unsigned int compression_avg_us;
+        /* Total time spent inside swap_write_page */
+        unsigned int async_io_us;
+        /* System uptime when hibernation was initiated */
+        unsigned int uptime_at_hibentry_s;
+        /* Reset on normal cold boots */
+        unsigned int consecutive_hib_entries;
+        /* Sum of all hibernation image writings. Only reset when swap partition is wiped */
+        unsigned int lifetime_hibdata_written_mb;
+        /* Total time spent in userspace while entering hibernation */
+        unsigned int userspace_total_us;
+} __packed;
+
+struct swsusp_header {
+        char reserved[PAGE_SIZE - 20 - sizeof(sector_t) - sizeof(int) -
+                      sizeof(u32) - sizeof(struct hib_entry_stats)];
+        struct hib_entry_stats stats;
+        u32     crc32;
+        sector_t image;
+        unsigned int flags;     /* Flags to pass to the "boot" kernel */
+        char    orig_sig[10];
+        char    sig[10];
+} __packed;
+
+extern struct swsusp_header *swsusp_header;
 
 struct swsusp_info {
 	struct new_utsname	uts;
@@ -57,6 +96,15 @@ asmlinkage int swsusp_save(void);
 
 /* kernel/power/hibernate.c */
 extern bool freezer_test_done;
+extern char hib_comp_algo[CRYPTO_MAX_ALG_NAME];
+extern ktime_t stats_hib_entry_userspace_start;
+extern ktime_t stats_hib_entry_kernel_start;
+
+/* kernel/power/swap.c */
+extern unsigned int swsusp_header_flags;
+extern unsigned int stats_preallocation_us;
+extern unsigned int stats_preallocation_pages;
+extern unsigned int stats_consecutive_hib_entries;
 
 extern int hibernation_snapshot(int platform_mode);
 extern int hibernation_restore(int platform_mode);
@@ -159,6 +207,7 @@ extern void hibernate_release(void);
 
 extern sector_t alloc_swapdev_block(int swap);
 extern struct block_device *hib_resume_bdev;
+extern uint32_t swap_auth_slot_offset;
 extern void free_all_swap_pages(int swap);
 extern int swsusp_swap_in_use(void);
 
@@ -166,17 +215,34 @@ extern int swsusp_swap_in_use(void);
  * Flags that can be passed from the hibernatig hernel to the "boot" kernel in
  * the image header.
  */
+#define SF_COMPRESSION_ALG_LZO 0 /* dummy, details given below */
 #define SF_PLATFORM_MODE	1
 #define SF_NOCOMPRESS_MODE	2
 #define SF_CRC32_MODE	        4
 
+/*
+ * Bit to indicate the compression algorithm to be used(for LZ4). The same
+ * could be checked while saving/loading image to/from disk to use the
+ * corresponding algorithms.
+ *
+ * By default, LZO compression is enabled if SF_CRC32_MODE is set. Use
+ * SF_COMPRESSION_ALG_LZ4 to override this behaviour and use LZ4.
+ *
+ * SF_CRC32_MODE, SF_COMPRESSION_ALG_LZO(dummy) -> Compression, LZO
+ * SF_CRC32_MODE, SF_COMPRESSION_ALG_LZ4 -> Compression, LZ4
+*/
+#define SF_COMPRESSION_ALG_LZ4 16
+
 /* kernel/power/hibernate.c */
+extern void populate_hib_entry_stats(struct hib_entry_stats *stats);
+extern void print_hib_entry_stats(struct hib_entry_stats *stats, bool save);
 extern int swsusp_check(void);
 extern void swsusp_free(void);
 extern int swsusp_read(unsigned int *flags_p);
 extern int swsusp_write(unsigned int flags);
 extern void swsusp_close(fmode_t);
 extern void swsusp_mark_swapfile(void);
+extern int swsusp_read_stats(struct hib_entry_stats *stats);
 #ifdef CONFIG_SUSPEND
 extern int swsusp_unmark(void);
 #endif

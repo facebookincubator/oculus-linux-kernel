@@ -1,0 +1,15 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/clock/qcom,gcc-khaje.h>
+#include <dt-bindings/interconnect/qcom,bengal.h>
+#include <dt-bindings/clock/qcom,gpucc-khaje.h>
+#include "khaje-vidc.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Khaje SoC";
+	compatible = "qcom,khaje";
+	qcom,msm-id = <518 0x10000>, <561 0x10000>, <585 0x10000>, <586 0x10000>;
+	qcom,board-id = <0 0>;
+};

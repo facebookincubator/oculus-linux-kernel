@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/clk.h>
@@ -696,6 +696,43 @@ static void hwsched_idle_timer(struct timer_list *t)
 	kgsl_schedule_work(&device->idle_check_ws);
 }
 
+static int gen7_hwsched_gmu_memory_init(struct adreno_device *adreno_dev)
+{
+	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
+
+	/* GMU Virtual register bank */
+	if (IS_ERR_OR_NULL(gmu->vrb)) {
+		gmu->vrb = gen7_reserve_gmu_kernel_block(gmu, 0, GMU_VRB_SIZE,
+						GMU_NONCACHED_KERNEL, 0);
+
+		if (IS_ERR(gmu->vrb))
+			return PTR_ERR(gmu->vrb);
+
+		/* Populate size of the virtual register bank */
+		gmu_core_set_vrb_register(gmu->vrb->hostptr, VRB_SIZE_IDX,
+					gmu->vrb->size >> 2);
+	}
+
+	/* GMU trace log */
+	if (IS_ERR_OR_NULL(gmu->trace.md)) {
+		gmu->trace.md = gen7_reserve_gmu_kernel_block(gmu, 0,
+					GMU_TRACE_SIZE, GMU_NONCACHED_KERNEL, 0);
+
+		if (IS_ERR(gmu->trace.md))
+			return PTR_ERR(gmu->trace.md);
+
+		/* Pass trace buffer address to GMU through the VRB */
+		gmu_core_set_vrb_register(gmu->vrb->hostptr,
+					VRB_TRACE_BUFFER_ADDR_IDX,
+					gmu->trace.md->gmuaddr);
+
+		/* Initialize the GMU trace buffer header */
+		gmu_core_trace_header_init(&gmu->trace);
+	}
+
+	return 0;
+}
+
 static int gen7_hwsched_gmu_init(struct adreno_device *adreno_dev)
 {
 	int ret;
@@ -705,6 +742,10 @@ static int gen7_hwsched_gmu_init(struct adreno_device *adreno_dev)
 		return ret;
 
 	ret = gen7_gmu_memory_init(adreno_dev);
+	if (ret)
+		return ret;
+
+	ret = gen7_hwsched_gmu_memory_init(adreno_dev);
 	if (ret)
 		return ret;
 
@@ -1500,6 +1541,24 @@ int gen7_hwsched_add_to_minidump(struct adreno_device *adreno_dev)
 					KGSL_HFIMEM_ENTRY,
 					gen7_dev->gmu.hfi.hfi_mem->hostptr,
 					gen7_dev->gmu.hfi.hfi_mem->size);
+		if (ret)
+			return ret;
+	}
+
+	if (!IS_ERR_OR_NULL(gen7_dev->gmu.vrb)) {
+		ret = kgsl_add_va_to_minidump(adreno_dev->dev.dev,
+					KGSL_GMU_VRB_ENTRY,
+					gen7_dev->gmu.vrb->hostptr,
+					gen7_dev->gmu.vrb->size);
+		if (ret)
+			return ret;
+	}
+
+	if (!IS_ERR_OR_NULL(gen7_dev->gmu.trace.md)) {
+		ret = kgsl_add_va_to_minidump(adreno_dev->dev.dev,
+					KGSL_GMU_TRACE_ENTRY,
+					gen7_dev->gmu.trace.md->hostptr,
+					gen7_dev->gmu.trace.md->size);
 		if (ret)
 			return ret;
 	}

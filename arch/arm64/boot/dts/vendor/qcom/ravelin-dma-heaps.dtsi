@@ -1,0 +1,38 @@
+#include <dt-bindings/arm/msm/qcom_dma_heap_dt_constants.h>
+
+&soc {
+	qcom,dma-heaps {
+		compatible = "qcom,dma-heaps";
+		qcom,user_contig {
+			qcom,dma-heap-name = "qcom,user-contig";
+			qcom,dma-heap-type = <HEAP_TYPE_CMA>;
+			memory-region = <&user_contig_mem>;
+		};
+
+		qcom,qseecom {
+			qcom,dma-heap-name = "qcom,qseecom";
+			qcom,dma-heap-type = <HEAP_TYPE_CMA>;
+			memory-region = <&qseecom_mem>;
+		};
+
+		qcom,qseecom_ta {
+			qcom,dma-heap-name = "qcom,qseecom-ta";
+			qcom,dma-heap-type = <HEAP_TYPE_CMA>;
+			memory-region = <&qseecom_ta_mem>;
+		};
+
+		qcom,audio_ml {
+			qcom,dma-heap-name = "qcom,audio-ml";
+			qcom,dma-heap-type = <HEAP_TYPE_CMA>;
+			memory-region = <&audio_cma_mem>;
+		};
+
+		non_secure_display_dma_buf: qcom,display {
+			qcom,dma-heap-name = "qcom,display";
+			qcom,dma-heap-type = <HEAP_TYPE_CMA>;
+			qcom,max-align = <9>;
+			memory-region = <&non_secure_display_memory>;
+		};
+	};
+};
+

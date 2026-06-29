@@ -29,6 +29,7 @@
  * md_table : Local Minidump toc holder
  * @num_regions : Number of regions requested
  * @md_ss_toc  : HLOS toc pointer
+ * @md_ss_toc_save_area : Area to save HLOS toc during hibernation.
  * @md_gbl_toc : Global toc pointer
  * @md_regions : HLOS regions base pointer
  * @entry : array of HLOS regions requested
@@ -37,6 +38,8 @@ struct md_table {
 	u32			revision;
 	u32                     num_regions;
 	struct md_ss_toc	*md_ss_toc;
+	/* A few bytes do not warrant a dynamic allocation. */
+	struct md_ss_toc	md_ss_toc_save_area;
 	struct md_global_toc	*md_gbl_toc;
 	struct md_ss_region	*md_regions;
 	struct md_region	entry[MAX_NUM_ENTRIES];
@@ -665,16 +668,65 @@ static int msm_minidump_driver_probe(struct platform_device *pdev)
 	return 0;
 }
 
+static int msm_minidump_freeze_noirq(struct device *dev)
+{
+	/* Save the minidump SMEM configuration for our hibernated kernel. */
+	if (minidump_table.md_ss_toc)
+		minidump_table.md_ss_toc_save_area = *minidump_table.md_ss_toc;
+	return 0;
+}
+
+static int msm_minidump_restore(struct device *dev)
+{
+	struct md_global_toc *md_global_toc;
+	size_t size;
+
+	/* SMEM contents are lost during poweroff.
+	 * Restore the TOC table entry this driver is maintaining in SMEM.
+	 *
+	 * Note that drivers/soc/qcom/smem.c has already recalculated
+	 * the SMEM offsets at its restore_early callback.
+	 */
+	md_global_toc = qcom_smem_get(QCOM_SMEM_HOST_ANY, SBL_MINIDUMP_SMEM_ID,
+				      &size);
+	if (IS_ERR_OR_NULL(md_global_toc)) {
+		dev_err(dev,"SMEM is not initialized on hibernation exit.\n");
+		return PTR_ERR(md_global_toc);
+	}
+
+	/* Check global minidump support initialization */
+	if (size < sizeof(*md_global_toc) || !md_global_toc->md_toc_init) {
+		dev_err(dev, "System Minidump TOC not initialized on hibernation exit\n");
+		return -ENODEV;
+	}
+
+	minidump_table.md_gbl_toc = md_global_toc;
+
+	/* Must use same NON-HLOS firmware for hibernation save and restore. */
+	BUG_ON (minidump_table.revision != md_global_toc->md_revision);
+
+	minidump_table.md_ss_toc = &md_global_toc->md_ss_toc[MD_SS_HLOS_ID];
+	*minidump_table.md_ss_toc = minidump_table.md_ss_toc_save_area;
+
+	return 0;
+}
+
 static const struct of_device_id msm_minidump_of_match[] = {
 	{ .compatible = "qcom,minidump" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, msm_minidump_of_match);
 
+static const struct dev_pm_ops msm_minidump_pm_ops = {
+	.freeze_noirq = msm_minidump_freeze_noirq,
+	.restore = msm_minidump_restore,
+};
+
 static struct platform_driver msm_minidump_driver = {
 	.driver = {
 		.name = "qcom-minidump",
 		.of_match_table = msm_minidump_of_match,
+		.pm = &msm_minidump_pm_ops,
 	},
 	.probe = msm_minidump_driver_probe,
 	.remove = msm_minidump_driver_remove,

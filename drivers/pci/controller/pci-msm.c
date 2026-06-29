@@ -4817,6 +4817,12 @@ static int msm_pcie_enable(struct msm_pcie_dev_t *dev)
 		goto out;
 	}
 
+#ifndef CONFIG_PCI_MSM_GPIO_INIT_LEGACY
+		ret = msm_pcie_gpio_init(dev);
+	if (ret)
+		goto out;
+#endif
+
 	/* assert PCIe reset link to keep EP in reset */
 
 	PCIE_INFO(dev, "PCIe: Assert the reset of endpoint of RC%d.\n",
@@ -4828,8 +4834,12 @@ static int msm_pcie_enable(struct msm_pcie_dev_t *dev)
 
 	/* enable power */
 	ret = msm_pcie_vreg_init(dev);
-	if (ret)
+	if (ret) {
+#ifndef CONFIG_PCI_MSM_GPIO_INIT_LEGACY
+		msm_pcie_gpio_deinit(dev);
+#endif
 		goto out;
+	}
 
 	/* enable clocks */
 	ret = msm_pcie_clk_init(dev);
@@ -5122,6 +5132,10 @@ static void msm_pcie_disable(struct msm_pcie_dev_t *dev)
 	if (dev->gpio[MSM_PCIE_GPIO_EP].num)
 		gpio_set_value(dev->gpio[MSM_PCIE_GPIO_EP].num,
 				1 - dev->gpio[MSM_PCIE_GPIO_EP].on);
+
+#ifndef CONFIG_PCI_MSM_GPIO_INIT_LEGACY
+	msm_pcie_gpio_deinit(dev);
+#endif
 
 	mutex_unlock(&dev->setup_lock);
 
@@ -6815,6 +6829,7 @@ static int msm_pcie_probe(struct platform_device *pdev)
 		}
 	}
 
+#ifdef CONFIG_PCI_MSM_GPIO_INIT_LEGACY
 	ret = msm_pcie_gpio_init(pcie_dev);
 	if (ret) {
 		msm_pcie_release_resources(pcie_dev);
@@ -6827,6 +6842,13 @@ static int msm_pcie_probe(struct platform_device *pdev)
 		msm_pcie_gpio_deinit(pcie_dev);
 		goto decrease_rc_num;
 	}
+#else
+	ret = msm_pcie_irq_init(pcie_dev);
+	if (ret) {
+		msm_pcie_release_resources(pcie_dev);
+		goto decrease_rc_num;
+	}
+#endif
 
 	pcie_dev->config_recovery = of_property_read_bool(of_node,
 							"qcom,config-recovery");

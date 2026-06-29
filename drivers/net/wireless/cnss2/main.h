@@ -577,6 +577,12 @@ struct cnss_plat_data {
 #ifdef CONFIG_CNSS_META_BOARD_ID_OVERRIDE
 	const char *board_name;
 #endif
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	u32 recovery_reason;
+	struct kernfs_node *notify_recovery_attr_node;
+	u32 hang_event_counter;
+	struct kernfs_node *notify_hang_event_attr_node;
+#endif
 };
 
 #if IS_ENABLED(CONFIG_ARCH_QCOM)
@@ -665,4 +671,8 @@ int cnss_get_feature_list(struct cnss_plat_data *plat_priv,
 int cnss_get_input_gpio_value(struct cnss_plat_data *plat_priv, int gpio_num);
 bool cnss_check_driver_loading_allowed(void);
 void cnss_recovery_handler(struct cnss_plat_data *plat_priv);
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+void cnss_post_schedule_recovery(struct cnss_plat_data *pci_priv);
+void cnss_stop_schedule_recovery(struct cnss_plat_data *plat_priv);
+#endif
 #endif /* _CNSS_MAIN_H */

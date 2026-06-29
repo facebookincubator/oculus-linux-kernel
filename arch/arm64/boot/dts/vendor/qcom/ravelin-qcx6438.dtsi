@@ -1,0 +1,58 @@
+&soc {
+	wil6210: qcom,wil6210 {
+		compatible = "qcom,wil6210";
+		qcom,pcie-parent = <&pcie0>;
+		qcom,wigig-en = <&tlmm 91 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&wil6210_refclk_en_pin>;
+		qcom,11ad-bus-bw,name = "wil6210";
+		qcom,11ad-bus-bw,num-cases = <3>;
+		qcom,11ad-bus-bw,num-paths = <1>;
+		qcom,11ad-bus-bw,vectors-KBps = <100 512 0 0>,
+				<100 512 600000 800000>,
+				<100 512 1300000 1300000>;
+		qcom,use-ext-supply;
+		vdd-s1c-supply = <&S9B>;
+		qcom,keep-radio-on-during-sleep;
+		qcom,use-ap-power-save;
+		status = "disabled";
+	};
+};
+
+&pcie0_rp {
+	#address-cells = <5>;
+	#size-cells = <0>;
+
+	wil6210_pci: wil6210_pci {
+		reg = <0 0 0 0 0>;
+		qcom,iommu-group = <&wil6210_pci_iommu_group>;
+
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		wil6210_pci_iommu_group: wil6210_pci_iommu_group {
+			reg = <0 0>;
+			qcom,iommu-dma-addr-pool = <0xa0000000 0x10000000>;
+			qcom,iommu-dma = "fastmap";
+			qcom,iommu-pagetable = "coherent";
+		};
+	};
+};
+
+&tlmm {
+	talyn_pins {
+		wil6210_refclk_en_pin: wil6210_refclk_en_pin {
+			mux {
+				pins = "gpio83";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio83";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+
+	};
+};

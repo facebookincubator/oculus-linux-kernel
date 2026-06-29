@@ -1,0 +1,16 @@
+#include "montague.dtsi"
+/ {
+	model = "Qualcomm Technologies, Inc. Montague QMB SoC";
+	compatible = "qcom,montague-qmb";
+	qcom,msm-id = <734 0x10000>;
+
+	cpus {
+		CPU6 {
+			enable-method = "none";
+		};
+
+		CPU7 {
+			enable-method = "none";
+		};
+	};
+};

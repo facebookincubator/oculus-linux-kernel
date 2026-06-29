@@ -1,0 +1,51 @@
+#include "florian.dtsi"
+#include "silvertip-zebra-thermal.dtsi"
+
+&apps_rsc {
+	rpmh-regulator-smpa2 {
+		compatible = "qcom,rpmh-vrm-regulator";
+		qcom,resource-name = "smpa2";
+		S2A: pm8150_s2: regulator-pm8150-s2 {
+			regulator-name = "pm8150_s2";
+			qcom,set = <RPMH_REGULATOR_SET_ALL>;
+			regulator-min-microvolt = <465000>;
+			regulator-max-microvolt = <1004000>;
+			qcom,init-voltage = <465000>;
+		};
+	};
+};
+
+&wlan_kiwi {
+	vdd-wlan-supply = <&S2A>;
+};
+
+&qupv3_se5_i2c {
+	ktb8399: ktb8399@60 {
+		compatible = "kinetic,ktb8399";
+		reg = <0x60>;
+		ktb8399,vsel-active-low;
+		regulator-name = "ktb8399-buck";
+		regulator-min-microvolt = <1362500>;
+		regulator-max-microvolt = <1362500>;
+		regulator-always-on;
+		status = "ok";
+	};
+};
+
+&wlan_kiwi {
+	qcom,board-name = "silvertip";
+};
+
+&generic_zones {
+	zone2 {
+		type = "therm-in-temp-usr";
+		coefficient = <1522>;
+	};
+};
+
+&virtual_zones {
+	zone2 {
+		type = "therm-in-temp-usr";
+		coefficient = <1522>;
+	};
+};

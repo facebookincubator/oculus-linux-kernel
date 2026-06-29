@@ -122,9 +122,6 @@ struct walt_rq {
 	u64			cycles;
 	int			num_mvp_tasks;
 	struct list_head	mvp_tasks;
-
-	/* UCLAMP tracking */
-	unsigned long		uclamp_limit[UCLAMP_CNT];
 };
 
 struct walt_sched_cluster {
@@ -299,8 +296,6 @@ extern unsigned int sched_lib_mask_force;
 #define WALT_CPUFREQ_PL			(1U << 3)
 #define WALT_CPUFREQ_EARLY_DET		(1U << 4)
 #define WALT_CPUFREQ_BOOST_UPDATE	(1U << 5)
-#define WALT_CPUFREQ_UCLAMP		(1U << 6)
-
 
 #define NO_BOOST 0
 #define FULL_THROTTLE_BOOST 1

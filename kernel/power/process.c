@@ -40,6 +40,7 @@ static int try_to_freeze_tasks(bool user_only)
 	unsigned int elapsed_msecs;
 	bool wakeup = false;
 	int sleep_usecs = USEC_PER_MSEC;
+	unsigned char task_name[TASK_COMM_LEN];
 
 	start = ktime_get_boottime();
 
@@ -55,8 +56,10 @@ static int try_to_freeze_tasks(bool user_only)
 			if (p == current || !freeze_task(p))
 				continue;
 
-			if (!freezer_should_skip(p))
+			if (!freezer_should_skip(p)) {
+				get_task_comm(task_name, p);
 				todo++;
+			}
 		}
 		read_unlock(&tasklist_lock);
 
@@ -97,6 +100,7 @@ static int try_to_freeze_tasks(bool user_only)
 		       " (%d tasks refusing to freeze, wq_busy=%d):\n",
 		       elapsed_msecs / 1000, elapsed_msecs % 1000,
 		       todo - wq_busy, wq_busy);
+		pr_err("Task %s failed to freeze\n", task_name);
 
 		if (wq_busy)
 			show_workqueue_state();

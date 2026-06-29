@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/regulator/adi,max77720.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Maxim MAX77720 voltage regulator
+
+
+allOf:
+  - $ref: regulator.yaml#
+
+properties:
+  compatible:
+    enum:
+      - adi,max77720
+
+  adi,externally-enable:
+    type: boolean
+    description: |
+      Externally control the regulator output enable/disable, if not, regulator enable by register side.
+
+  adi,enable-gpio:
+    maxItems: 1
+    description: |
+      GPIO for enable control. If the valid GPIO is provided then externally
+      enable control will be considered.
+
+   adi,bias-force-en:
+    maxItems: 1
+    description: |
+      bias force enable using register
+
+   adi,force-ibb-en:
+    maxItems: 1
+    description: |
+      no Externally control, force enable ibb by register control
+
+    adi,force-bst-en:
+    maxItems: 1
+    description: |
+      no Externally control, force enable bst by register control
+  reg:
+    maxItems: 1
+
+required:
+  - compatible
+  - reg
+
+unevaluatedProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/gpio/gpio.h>
+
+    i2c {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        regulator@41 {
+            compatible = "adi,max77720";
+            reg = <0x41>;
+
+            #regulator-always-on;
+            regulator-boot-on;
+            #adi,enable-gpio = <&pmic 5 GPIO_ACTIVE_HIGH>;
+            #adi,externally-enable;
+            adi,bias-force-en;
+            adi,fore-ibb-en;
+            adi,fore-bst-en;
+        };
+    };

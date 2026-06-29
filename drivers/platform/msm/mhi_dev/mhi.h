@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.*/
+/* Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.*/
 
 #ifndef __MHI_H
 #define __MHI_H
@@ -7,6 +8,8 @@
 #include <linux/msm_ep_pcie.h>
 #include <linux/ipc_logging.h>
 #include <linux/msm_mhi_dev.h>
+#include <linux/sched.h>
+#include <linux/smp.h>
 
 /**
  * MHI control data structures alloted by the host, including
@@ -267,6 +270,17 @@ struct mhi_config {
 #define MHI_MASK_ROWS_CH_EV_DB		4
 #define TRB_MAX_DATA_SIZE		8192
 #define MHI_CTRL_STATE			100
+#define MHI_CAP_ID_MASK			GENMASK(31, 24)
+#define MHI_NEXT_PTR_MASK		GENMASK(23, 12)
+#define TIME_CFG_OFFSET			4
+#define PER_CAPABILITY_OFFSET		0x10
+#define MAX_TRB_LEN_BITS		24
+#define MAX_TRB_LEN			((0x1 << MAX_TRB_LEN_BITS) - 1)
+#define MAX_TRB_LEN_CFG_OFFS		0x4
+
+/* Returns the offset from BAR address to the MHI register */
+#define MHI_BAR_OFFSET(x)		(x - 0x100)
+#define MHI_ABS_OFFSET(x)		(x + 0x100)
 
 /* maximum transfer completion events buffer */
 #define NUM_TR_EVENTS_DEFAULT			128
@@ -362,6 +376,15 @@ enum mhi_dev_tr_compl_evt_type {
 enum mhi_dev_transfer_type {
 	MHI_DEV_DMA_SYNC,
 	MHI_DEV_DMA_ASYNC,
+};
+
+enum mhi_dev_cap_id {
+	MHI_DEV_INTX_CAP_ID = 1,
+	MHI_DEV_QTIMER_TIME_SYNC_CAP_ID,
+	MHI_DEV_BW_SCALE_CAP_ID,
+	MHI_DEV_TSC_TIME_SYNC_CAP_ID,
+	MHI_DEV_MAX_TRB_LEN_CAP_ID,
+	MHI_DEV_MHI_CAP_MAX_RES,
 };
 
 struct msi_buf_cb_data {
@@ -695,12 +718,13 @@ extern void *mhi_ipc_log;
 
 #define mhi_log(_msg_lvl, _msg, ...) do { \
 	if (_msg_lvl >= mhi_msg_lvl) { \
-		pr_err("[0x%x %s] "_msg, bhi_imgtxdb, \
-				__func__, ##__VA_ARGS__); \
+		pr_err("[0x%x %s][CPU:%d][%s] "_msg, bhi_imgtxdb, \
+				__func__, smp_processor_id(), current->comm, ##__VA_ARGS__);\
 	} \
 	if (mhi_ipc_log && (_msg_lvl >= mhi_ipc_msg_lvl)) { \
 		ipc_log_string(mhi_ipc_log,                     \
-		"[0x%x %s] " _msg, bhi_imgtxdb, __func__, ##__VA_ARGS__);     \
+		"[0x%x %s][CPU:%d][%s] " _msg, bhi_imgtxdb, __func__,\
+		smp_processor_id(), current->comm, ##__VA_ARGS__);\
 	} \
 } while (0)
 
@@ -1058,6 +1082,36 @@ int mhi_dev_mmio_get_mhi_state(struct mhi_dev *dev, enum mhi_dev_state *state,
  * @dev:	MHI device structure.
  */
 int mhi_dev_mmio_init(struct mhi_dev *dev);
+
+/**
+ * mhi_dev_is_cap_populated - If MISCOFF register contains expected value,
+ * capabilities are already exposed by the bootloader. Otherwise, HLOS should
+ * program the needed capabilities. This implementation is based on the fact
+ * that Qtimer capability is present on all the targets as the first capability.
+ *
+ * @dev:	MHI Dev structure.
+ * @mhi_first_cap_offs: First capability offset
+ * @cap_id:	Capability ID.
+ */
+bool mhi_dev_is_cap_populated(struct mhi_dev *dev, u32 mhi_first_cap_offs,
+			      enum mhi_dev_cap_id cap_id);
+
+/**
+ * mhi_dev_configure_time_sync_cap - Configure timesync capability, if not
+ * programmed by bootloader
+ *
+ * @dev:	MHI Dev structure.
+ * @mhi_first_cap_offs: First capability offset
+ */
+void mhi_dev_configure_time_sync_cap(struct mhi_dev *dev, u32 mhi_first_cap_offs);
+
+/**
+ * mhi_dev_configure_max_trb_len - Configure max TRB length, if not programmed
+ * by PBL.
+ *
+ * @dev:	MHI Dev structure.
+ */
+void mhi_dev_configure_max_trb_len(struct mhi_dev *dev);
 
 /**
  * mhi_dev_update_ner() - Update the number of event rings (NER) programmed by

@@ -25,6 +25,8 @@
 #include "quirks.h"
 #include "sd_ops.h"
 #include "pwrseq.h"
+#include "ffu_head.h"
+#include "ffu.h"
 
 #define DEFAULT_CMD6_TIMEOUT_MS	500
 #define MIN_CACHE_EN_TIMEOUT_MS 1600
@@ -1580,11 +1582,89 @@ EXPORT_SYMBOL_GPL(mmc_hs200_tuning);
  * In the case of a resume, "oldcard" will contain the card
  * we're trying to reinitialise.
  */
+
+#define NUM_SUPPORTED_FIRMWARE 3
+#define MIN_FIRMWARE_VERSION_FOR_DOWNGRADE 2
+#define FFU_FW_VERSION_DISALLOWED 0
+
+const static char FIRMWARE_VERSION[NUM_SUPPORTED_FIRMWARE][8] = { 	{0x00, 0x00, 0x00, 0x00, 0x04, 0x70, 0x92, 0x51},
+									{0x00, 0x00, 0x00, 0x00, 0x04, 0x80, 0x73, 0x01},
+									{0x00, 0x00, 0x00, 0x00, 0x04, 0x80, 0x73, 0x04}};
+static int mmc_ffu_check_firmware(struct mmc_card *card)
+{
+	int fw_version = 0;
+
+	// Find which is the current firmware version on the device, comparing the value for each version.
+	do {
+		if (memcmp(card->ext_csd.fwrev, FIRMWARE_VERSION[fw_version], 8) == 0) {
+			if (fw_version == FFU_FW_VERSION_DISALLOWED) {
+				pr_warn("%s: ffu from fwrev %d is disallowed\n", __func__, fw_version);
+				return 0;
+			}
+			break;
+		}
+		fw_version++;
+	} while (fw_version < NUM_SUPPORTED_FIRMWARE);
+
+#ifdef FFU_back
+	/* Skip downgrade for first or second version.
+	 * If we are at the first version the downgrade is unnecessary.
+	 * Going from the second to the first version causes regression on
+	 * the device that prevents it from upgrading again.
+	 */
+	if (fw_version < MIN_FIRMWARE_VERSION_FOR_DOWNGRADE)
+		return 0;
+#else
+	// Check if is the newest version, then skip upgrade.
+	if (fw_version == (NUM_SUPPORTED_FIRMWARE - 1))
+		return 0;
+#endif
+
+	// Skip if the device has firmware version not supported yet.
+	if(fw_version == NUM_SUPPORTED_FIRMWARE)
+		return 0;
+	else
+		return fw_version+1;
+}
+
+static bool mmc_is_ffu_needed(struct mmc_host *host, struct mmc_card *card,
+			      int *ffu_version)
+{
+	bool ret;
+	static bool ffu_first_time = true;
+
+	if (!ffu_first_time)
+		return false;
+
+	ffu_first_time = false;
+
+	ret = (card->cid.manfid == 0xf4) &&
+	      (of_property_read_bool (mmc_dev(host)->of_node, "meta,biwin-ffu-enable")) &&
+	      (!strncmp(card->cid.prod_name, "AMP11X", sizeof(card->cid.prod_name)) ||
+	       (!strncmp(card->cid.prod_name, "Biwin", sizeof(card->cid.prod_name))));
+
+	if (ret)
+		*ffu_version = mmc_ffu_check_firmware(card);
+
+	pr_warn("%s: cid=%08x%08x%08x%08x fwrev=0x%x%x%x%x%x%x%x%x ret=%d ffu_version=%d\n", __func__,
+		card->raw_cid[0], card->raw_cid[1],
+		card->raw_cid[2], card->raw_cid[3],
+		card->ext_csd.fwrev[0], card->ext_csd.fwrev[1],
+		card->ext_csd.fwrev[2], card->ext_csd.fwrev[3],
+		card->ext_csd.fwrev[4], card->ext_csd.fwrev[5],
+		card->ext_csd.fwrev[6], card->ext_csd.fwrev[7],
+		ret, *ffu_version);
+
+	return ret;
+}
+
+extern int mmc_ffu_download(struct mmc_card *card, int step, int version);
+static bool mmc_ffu_init_count = false;
 static int mmc_init_card(struct mmc_host *host, u32 ocr,
 	struct mmc_card *oldcard)
 {
 	struct mmc_card *card;
-	int err;
+	int err, ffu_version = 0;
 	u32 cid[4];
 	u32 rocr;
 
@@ -1811,6 +1891,20 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 			err = mmc_select_hs_ddr(card);
 			if (err)
 				goto free_card;
+		}
+	}
+
+	if (mmc_is_ffu_needed(host, card, &ffu_version)) {
+		if (ffu_version) {
+			//card->host->card = card;	//If a null pointer error occurs, open this code comment
+			err = mmc_ffu_download(card, 0, ffu_version);
+			pr_warn("%s: ffu end with err: %d, reinit mmc status:%d \n", __func__, err, mmc_ffu_init_count);
+			if (!mmc_ffu_init_count) {
+				if (err != 26)
+					mmc_ffu_init_count = true;
+				err = -EAGAIN;
+				goto free_card;
+			}
 		}
 	}
 

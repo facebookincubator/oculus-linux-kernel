@@ -801,6 +801,16 @@ static ssize_t extldo_show(struct device *dev, struct device_attribute *attr,
 
 static DEVICE_ATTR_RO(extldo);
 
+static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	bluetooth_power(0);
+	bluetooth_power(1);
+	return count;
+}
+
+static DEVICE_ATTR_WO(reset);
+
 static int btpower_rfkill_probe(struct platform_device *pdev)
 {
 	struct rfkill *rfkill;
@@ -819,6 +829,11 @@ static int btpower_rfkill_probe(struct platform_device *pdev)
 	ret = device_create_file(&pdev->dev, &dev_attr_extldo);
 	if (ret < 0)
 		pr_err("%s: device create file error\n", __func__);
+
+	/* add file to handle reset */
+	ret = device_create_file(&pdev->dev, &dev_attr_reset);
+	if (ret < 0)
+		pr_err("%s: device create reset file error\n", __func__);
 
 	/* force Bluetooth off during init to allow for user control */
 	rfkill_init_sw_state(rfkill, 1);

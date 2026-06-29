@@ -1,0 +1,13 @@
+#include "neo-audio-overlay.dtsi"
+
+&va_macro{
+	qcom,wcd-dmic-enabled;
+};
+
+&tx_macro{
+	qcom,wcd-dmic-enabled;
+};
+
+&waipio_snd {
+	qcom,wcn-bt = <1>;
+};

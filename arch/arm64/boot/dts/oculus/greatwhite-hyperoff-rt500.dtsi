@@ -1,0 +1,45 @@
+&tlmm {
+	hoff_mcu_request_transaction: hoff_mcu_request_transaction {
+		mux {
+			pins = "gpio11";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio11";
+			drive-strength = <2>;
+			bias-pull-down;
+			input-enabled;
+		};
+	};
+
+	hoff_soc_has_data: hoff_soc_has_data {
+		mux {
+			pins = "gpio80";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio80";
+			drive-strength = <2>;
+			bias-disable;
+			output-high;
+		};
+	};
+};
+
+&qupv3_se9_spi {
+	status = "ok";
+	hyperoff@0 {
+		status = "ok";
+		compatible = "meta,hyperoff";
+		reg = <0>;
+		spi-max-frequency = <17000000>;
+		spi-cpha;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&hoff_mcu_request_transaction &hoff_soc_has_data>;
+		mcu-request-transaction = <&tlmm 11 0>;
+		soc-has-data = <&tlmm 80 0>;
+	};
+};

@@ -250,6 +250,7 @@ struct qpnp_pon {
 	ktime_t			kpdpwr_last_release_time;
 	bool			log_kpd_event;
 	bool			cblpwr_usb_conn;
+	bool			charger_input_suspend;
 };
 
 static struct qpnp_pon *sys_reset_dev;
@@ -329,6 +330,7 @@ static const unsigned int usb_extcon_cable[] = {
 };
 
 static enum power_supply_property qpnp_pon_psy_props[] = {
+	POWER_SUPPLY_PROP_INPUT_SUSPEND,
 	POWER_SUPPLY_PROP_ONLINE,
 };
 
@@ -1635,14 +1637,55 @@ static int qpnp_pon_psy_get_property(struct power_supply *psy,
 	struct qpnp_pon_config *cfg = qpnp_get_cfg(pon, PON_CBLPWR);
 
 	switch (psp) {
+	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
+		val->intval = pon->charger_input_suspend;
+		break;
 	case POWER_SUPPLY_PROP_ONLINE:
-		val->intval = cfg->old_state;
+		if (pon->charger_input_suspend)
+			val->intval = 0;
+		else
+			val->intval = cfg->old_state;
 		break;
 	default:
 		return -EINVAL;
 	}
 
 	return 0;
+}
+
+static int qpnp_pon_psy_set_property(struct power_supply *psy,
+				     enum power_supply_property psp,
+				     const union power_supply_propval *val)
+{
+	struct qpnp_pon *pon = power_supply_get_drvdata(psy);
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
+		pon->charger_input_suspend = val->intval;
+		schedule_work(&pon->charger_notif_work);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int qpnp_pon_psy_prop_is_writeable(struct power_supply *psy,
+					  enum power_supply_property psp)
+{
+	int rc = 0;
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
+		rc = 1;
+		break;
+	default:
+		rc = 0;
+		break;
+	}
+
+	return rc;
 }
 
 static void qpnp_pon_usb_conn_work(struct work_struct *work)
@@ -1693,6 +1736,8 @@ static int qpnp_pon_usb_conn_init(struct device *dev, struct qpnp_pon *pon)
 	pwr_desc->properties = qpnp_pon_psy_props;
 	pwr_desc->num_properties = ARRAY_SIZE(qpnp_pon_psy_props);
 	pwr_desc->get_property = qpnp_pon_psy_get_property;
+	pwr_desc->set_property = qpnp_pon_psy_set_property;
+	pwr_desc->property_is_writeable = qpnp_pon_psy_prop_is_writeable;
 	pwr_desc->type = POWER_SUPPLY_TYPE_USB;
 	pwr_cfg.drv_data = pon;
 

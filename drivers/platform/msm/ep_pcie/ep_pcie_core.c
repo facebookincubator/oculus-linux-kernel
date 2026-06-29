@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.*/
-
+/* Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.*/
 /*
  * MSM PCIe endpoint core driver.
  */
@@ -41,6 +41,7 @@
 #define PCIE_MHI_FWD_COUNT			200
 #define PCIE_L1SUB_AHB_TIMEOUT_MIN		100
 #define PCIE_L1SUB_AHB_TIMEOUT_MAX		120
+#define TIME_CAP_OFF_FROM_TIME_LOW		0x8
 
 #define ICC_AVG_BW				500
 #define ICC_PEAK_BW				800
@@ -618,12 +619,24 @@ static void ep_pcie_bar_init(struct ep_pcie_dev_t *dev)
 	ep_pcie_write_mask(dev->dm_core + PCIE20_MISC_CONTROL_1, BIT(0), 0);
 }
 
+static u32 ep_pcie_core_qtimer_cap_off(void *ep_pcie_dev)
+{
+	struct ep_pcie_dev_t *dev = (struct ep_pcie_dev_t *)ep_pcie_dev;
+
+	/*
+	 * TIME_SYNC_CAP can be located anywhere in MHI RAM, the offset can be calculated
+	 * in generic way using "QTIMER_MHI_LOW_ADDR" register, in PARF space. It holds the
+	 * actual offset of TIME_CAP. TIME_CAP offset can be calculated from QTIMER_MHI_LOW_ADDR
+	 * as TIME_CAP = QTIMER_MHI_LOW_ADDR(AHB Addr)-0x8.
+	 */
+	return FIELD_GET(PCIE20_QTIMER_MHI_LOW_AHB_ADDR_MASK, readl_relaxed(dev->parf +
+					PCIE20_QTIMER_MHI_LOW_ADDR)) - TIME_CAP_OFF_FROM_TIME_LOW;
+}
+
 static void ep_pcie_config_mmio(struct ep_pcie_dev_t *dev)
 {
-	u32 mhi_status, mhi_miscoff;
+	u32 mhi_status;
 	void __iomem *mhi_status_addr;
-	struct resource *res = dev->res[EP_PCIE_RES_MMIO].resource;
-	u32 mhi_reg_size = resource_size(res);
 
 	EP_PCIE_DBG(dev,
 		"Initial version of MMIO is:0x%x\n",
@@ -652,15 +665,6 @@ static void ep_pcie_config_mmio(struct ep_pcie_dev_t *dev)
 	ep_pcie_write_reg(dev->mmio, PCIE20_MHIVER, 0x1000000);
 	ep_pcie_write_reg(dev->mmio, PCIE20_BHI_VERSION_LOWER, 0x2);
 	ep_pcie_write_reg(dev->mmio, PCIE20_BHI_VERSION_UPPER, 0x1);
-
-	/*
-	 * If this register holds an invalid value that implies bootloaders
-	 * didn't update the capabilities. And we don't support any of the
-	 * MHI capabilities so set this register to zero.
-	 */
-	mhi_miscoff = readl_relaxed(dev->mmio + PCIE20_MISCOFF);
-	if (mhi_miscoff > mhi_reg_size)
-		ep_pcie_write_reg(dev->mmio, PCIE20_MISCOFF, 0);
 
 	dev->config_mmio_init = true;
 }
@@ -1507,7 +1511,7 @@ static void ep_pcie_enumeration_complete(struct ep_pcie_dev_t *dev)
 	EP_PCIE_DBG(&ep_pcie_dev,
 		"PCIe V%d: register driver for device 0x%x\n",
 		ep_pcie_dev.rev, hw_drv.device_id);
-	ep_pcie_register_drv(&hw_drv);
+	ep_pcie_register_drv(&hw_drv, dev);
 	if (!dev->no_notify)
 		ep_pcie_notify_event(dev, EP_PCIE_EVENT_LINKUP);
 	else
@@ -3451,6 +3455,7 @@ struct ep_pcie_hw hw_drv = {
 	.register_event	= ep_pcie_core_register_event,
 	.deregister_event = ep_pcie_core_deregister_event,
 	.get_linkstatus = ep_pcie_core_get_linkstatus,
+	.get_qtimer_off = ep_pcie_core_qtimer_cap_off,
 	.config_outbound_iatu = ep_pcie_core_config_outbound_iatu,
 	.get_msi_config = ep_pcie_core_get_msi_config,
 	.trigger_msi = ep_pcie_core_trigger_msi,

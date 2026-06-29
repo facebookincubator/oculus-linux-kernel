@@ -7,7 +7,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include "kxr_aphost.h"
@@ -24,15 +24,12 @@ static void d_packet_set_instance(struct cp_buffer_t *in)
 	}
 
 	spin_lock(&gspi_client->smem_lock);
-	if (in == NULL) {
-		u_packet = NULL;
-		u_packet->c_head = 0;
-		u_packet->p_head = 0;
-	} else {
+	if (in != NULL) {
 		u_packet = in;
 		u_packet->c_head = -1;
 		u_packet->p_head = -1;
-	}
+	} else
+		u_packet = NULL;
 	spin_unlock(&gspi_client->smem_lock);
 
 	if (in == NULL)

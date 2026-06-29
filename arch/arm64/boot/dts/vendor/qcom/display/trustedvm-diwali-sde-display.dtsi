@@ -1,0 +1,14 @@
+#include "diwali-sde-display-common.dtsi"
+
+&sde_dsi {
+	clocks = <&clock_cpucc 0>,
+			<&clock_cpucc 1>,
+			<&clock_cpucc 2>,
+			<&clock_cpucc 3>;
+	clock-names = "pll_byte_clk0", "pll_dsi_clk0",
+			"pll_byte_clk1", "pll_dsi_clk1";
+};
+
+&mdss_mdp {
+	connectors = <&sde_dsi &smmu_sde_unsec>;
+};

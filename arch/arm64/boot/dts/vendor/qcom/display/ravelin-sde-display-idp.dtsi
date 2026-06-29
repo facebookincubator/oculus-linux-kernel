@@ -1,0 +1,73 @@
+#include "ravelin-sde-display.dtsi"
+
+&dsi_ft8726_fhd_plus_120_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lcd>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	pwms = <&pm6450_pwm_1 0 0>;
+	qcom,bl-pmic-pwm-period-usecs = <100>;
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,platform-reset-gpio = <&tlmm 92 0>;
+	qcom,platform-bklight-en-gpio = <&pm6450_gpios 6 0>;
+};
+
+&dsi_ft8726_fhd_plus_90_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lcd>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	pwms = <&pm6450_pwm_1 0 0>;
+	qcom,bl-pmic-pwm-period-usecs = <100>;
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,platform-reset-gpio = <&tlmm 92 0>;
+	qcom,platform-bklight-en-gpio = <&pm6450_gpios 6 0>;
+};
+
+&dsi_ft8726_fhd_plus_60_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_lcd>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	pwms = <&pm6450_pwm_1 0 0>;
+	qcom,bl-pmic-pwm-period-usecs = <100>;
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,platform-reset-gpio = <&tlmm 92 0>;
+	qcom,platform-bklight-en-gpio = <&pm6450_gpios 6 0>;
+};
+
+&dsi_sim_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&dsi_sim_vid {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,platform-reset-gpio = <&tlmm 92 0>;
+};
+
+&dsi_sim_dsc_375_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&dsi_sim_dsc_10b_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&sde_dsi {
+	vddio-supply = <&display_panel_vddio>;
+	avdd-supply = <&display_panel_avdd>;
+
+	pinctrl-names = "panel_active", "panel_suspend", "pwm_pin";
+	pinctrl-2 = <&lcd_backlight_pwm_default>;
+
+	qcom,dsi-default-panel = <&dsi_ft8726_fhd_plus_120_video>;
+};
+
+&qupv3_se1_i2c {
+	focaltech@38 {
+		panel = <&dsi_ft8726_fhd_plus_120_video
+			&dsi_ft8726_fhd_plus_90_video
+			&dsi_ft8726_fhd_plus_60_video>;
+	};
+};

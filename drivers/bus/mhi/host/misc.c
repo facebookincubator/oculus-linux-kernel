@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -1211,6 +1212,7 @@ static int mhi_init_timesync(struct mhi_controller *mhi_cntrl,
 	mhi_write_reg(mhi_cntrl, mhi_tsync->time_reg, TIMESYNC_CFG_OFFSET,
 		      MHI_TIMESYNC_DB_SETUP(er_index));
 
+	mhi_tsync->cap_en = true;
 	MHI_VERB("Time synchronization DB mode setup complete. Event ring:%d\n",
 		 er_index);
 
@@ -1712,7 +1714,7 @@ int mhi_get_remote_time_sync(struct mhi_device *mhi_dev,
 	int ret;
 
 	/* not all devices support time features */
-	if (!mhi_tsync)
+	if (!mhi_tsync || !mhi_tsync->cap_en)
 		return -EINVAL;
 
 	if (unlikely(MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state))) {
@@ -1807,7 +1809,7 @@ int mhi_get_remote_time(struct mhi_device *mhi_dev,
 	int ret = 0;
 
 	/* not all devices support all time features */
-	if (!mhi_tsync || !mhi_tsync->time_db)
+	if (!mhi_tsync || !mhi_tsync->cap_en || !mhi_tsync->time_db)
 		return -EINVAL;
 
 	mutex_lock(&mhi_tsync->mutex);

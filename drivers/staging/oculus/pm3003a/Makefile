@@ -1,0 +1,1 @@
+obj-$(CONFIG_REGULATOR_PM3003A) += pm3003a.o

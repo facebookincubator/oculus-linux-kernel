@@ -217,6 +217,9 @@ enum cnss_recovery_reason {
 	CNSS_REASON_LINK_DOWN,
 	CNSS_REASON_RDDM,
 	CNSS_REASON_TIMEOUT,
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	CNSS_REASON_DELAYED,
+#endif
 };
 
 enum cnss_fw_caps {

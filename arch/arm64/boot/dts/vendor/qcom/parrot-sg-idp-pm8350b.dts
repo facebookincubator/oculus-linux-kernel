@@ -1,0 +1,12 @@
+/dts-v1/;
+
+#include "parrot-sg.dtsi"
+#include "parrot-wcn6750.dtsi"
+#include "parrot-sg-idp.dtsi"
+#include "parrot-idp-pm8350b.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Parrot SG IDP";
+	compatible = "qcom,parrot-idp", "qcom,parrot", "qcom,idp";
+	qcom,board-id = <34 0>;
+};

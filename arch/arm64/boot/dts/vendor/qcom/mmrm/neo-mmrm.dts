@@ -1,0 +1,14 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/clock/qcom,camcc-neo.h>
+#include <dt-bindings/clock/qcom,videocc-neo.h>
+#include <dt-bindings/clock/qcom,dispcc-neo.h>
+#include "neo-mmrm.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Neo SoC";
+	compatible = "qcom,neo";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <34 1>; /* required by merge_dtbs.py */
+};

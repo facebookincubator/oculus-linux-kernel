@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include "adreno.h"
@@ -137,8 +137,8 @@ static void _a6xx_preemption_done(struct adreno_device *adreno_dev)
 
 	kgsl_regread(device,  A6XX_CP_CONTEXT_SWITCH_LEVEL_STATUS, &status);
 
-	trace_adreno_preempt_done(adreno_dev->cur_rb, adreno_dev->next_rb,
-		status);
+	trace_adreno_preempt_done(adreno_dev->cur_rb->id, adreno_dev->next_rb->id,
+		status, 0);
 
 	/* Clean up all the bits */
 	adreno_dev->prev_rb = adreno_dev->cur_rb;
@@ -383,8 +383,8 @@ void a6xx_preemption_trigger(struct adreno_device *adreno_dev, bool atomic)
 	if (preempt->usesgmem)
 		cntl |= (1 << 8);
 
-	trace_adreno_preempt_trigger(adreno_dev->cur_rb, adreno_dev->next_rb,
-		cntl);
+	trace_adreno_preempt_trigger(adreno_dev->cur_rb->id, adreno_dev->next_rb->id,
+		cntl, 0);
 
 	adreno_set_preempt_state(adreno_dev, ADRENO_PREEMPT_TRIGGERED);
 
@@ -451,8 +451,8 @@ void a6xx_preemption_callback(struct adreno_device *adreno_dev, int bit)
 
 	kgsl_regread(device, A6XX_CP_CONTEXT_SWITCH_LEVEL_STATUS, &status);
 
-	trace_adreno_preempt_done(adreno_dev->cur_rb, adreno_dev->next_rb,
-		status);
+	trace_adreno_preempt_done(adreno_dev->cur_rb->id, adreno_dev->next_rb->id,
+		status, 0);
 
 	adreno_dev->prev_rb = adreno_dev->cur_rb;
 	adreno_dev->cur_rb = adreno_dev->next_rb;

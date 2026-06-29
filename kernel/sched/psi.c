@@ -589,11 +589,36 @@ static void psi_schedule_poll_work(struct psi_group *group, unsigned long delay,
 	rcu_read_unlock();
 }
 
+static u64 psi_silence_until_ns;
+static int psi_suspend_notifier(struct notifier_block *nb,
+                                unsigned long event,
+                                void *dummy)
+{
+        switch (event) {
+        case PM_HIBERNATION_PREPARE:
+        case PM_POST_HIBERNATION:
+		/* During and shortly after hibernation, provide a window
+		 * of "PSI silence", so that:
+		 *     - pagecache can be refilled, without triggering
+		 *       misleading PSI events in lmkd.
+		 *     - the spike from memory allocation/deallocation of
+		 *       temporary hibernation image can subside.
+		 */
+		WRITE_ONCE(psi_silence_until_ns, sched_clock() + 20 * NSEC_PER_SEC);
+		break;
+	}
+	return NOTIFY_DONE;
+}
+static struct notifier_block psi_notif_block = {
+        .notifier_call = psi_suspend_notifier,
+};
+
+
 static void psi_poll_work(struct psi_group *group)
 {
 	bool force_reschedule = false;
 	u32 changed_states;
-	u64 now;
+	u64 now, silence_until;
 
 	mutex_lock(&group->trigger_lock);
 
@@ -655,6 +680,12 @@ static void psi_poll_work(struct psi_group *group)
 	if (now > group->polling_until) {
 		group->polling_next_update = ULLONG_MAX;
 		goto out;
+	}
+
+	silence_until = READ_ONCE(psi_silence_until_ns);
+	if (silence_until > group->polling_next_update) {
+		/* Do wakeup userspace during a "silence" period. */
+		group->polling_next_update = silence_until;
 	}
 
 	if (now >= group->polling_next_update)
@@ -1406,11 +1437,18 @@ static const struct proc_ops psi_cpu_proc_ops = {
 
 static int __init psi_proc_init(void)
 {
+	int st;
+
 	if (psi_enable) {
 		proc_mkdir("pressure", NULL);
 		proc_create("pressure/io", 0, NULL, &psi_io_proc_ops);
 		proc_create("pressure/memory", 0, NULL, &psi_memory_proc_ops);
 		proc_create("pressure/cpu", 0, NULL, &psi_cpu_proc_ops);
+
+		st = register_pm_notifier(&psi_notif_block);
+		if (st) {
+			pr_err("%s: failed to register PM notifier\n", __func__);
+		}
 	}
 	return 0;
 }

@@ -1,0 +1,24 @@
+&tlmm {
+	pinctrl-names = "default";
+	pinctrl-0 = <
+		&soc_slider_defaults
+		&mcu_to_soc_disp_dd_state
+		&action_button
+		&vchrg_gpio_pin_default
+	    &soc_action_button
+	>;
+
+
+	soc_action_button: soc_action_button {
+		mux {
+			pins = "gpio150";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio150";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+};

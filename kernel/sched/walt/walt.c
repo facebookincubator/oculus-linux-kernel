@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/syscore_ops.h>
@@ -3077,14 +3077,95 @@ static int create_default_coloc_group(void)
 	return 0;
 }
 
+struct cgroup_subsys_state *apps_cgroup_css;
+struct cgroup *top_app_cg;
+
+static __always_inline bool is_top_app_cgroup_descendant(struct cgroup *cgroup)
+{
+	struct cgroup_subsys_state *apps_css = apps_cgroup_css;
+	struct cgroup_subsys_state *css_iter = NULL;
+	bool top_app_cgroup_present = false;
+
+	/*
+	 * Verify the presence of the "apps/top-app" cgroup. This check is
+	 * necessary because the cgroup might be removed and recreated. Vendor
+	 * hook support, when a cgroup is freed, will eliminate the need for
+	 * this verification.
+	 */
+	css_for_each_child(css_iter, apps_css) {
+		if (strcmp(css_iter->cgroup->kn->name, "top-app") == 0) {
+			top_app_cgroup_present = true;
+			break;
+		}
+	}
+
+	if (top_app_cgroup_present && cgroup_is_descendant(cgroup, top_app_cg) &&
+			(strcmp(cgroup->kn->name, "normal") == 0))
+		return true;
+
+	if (top_app_cgroup_present && cgroup_is_descendant(cgroup, top_app_cg) &&
+			(strcmp(cgroup->kn->name, "latency-sensitive") == 0))
+		return true;
+
+	return false;
+}
+
 static void walt_update_tg_pointer(struct cgroup_subsys_state *css)
 {
-	if (!strcmp(css->cgroup->kn->name, "top-app"))
+	struct cgroup_subsys_state *root_css = &root_task_group.css;
+	struct cgroup_subsys_state *css_iter = NULL;
+	struct cgroup *cur_cg = css->cgroup;
+	bool apps_cgroup_present = false;
+
+	/*
+	 * Verify the presence of the "apps" cgroup. This check is necessary
+	 * because the cgroup might be removed and recreated. Vendor hook
+	 * support, when a cgroup is freed, will eliminate the need for this
+	 * verification.
+	 */
+	css_for_each_child(css_iter, root_css) {
+		if (strcmp(css_iter->cgroup->kn->name, "apps") == 0) {
+			apps_cgroup_present = true;
+			break;
+		}
+	}
+
+	if (!strcmp(cur_cg->kn->name, "apps") && (cur_cg->level == 1)) {
+		apps_cgroup_css = css;
+
+	} else if (!strcmp(cur_cg->kn->name, "top-app")) {
+
+		if (cur_cg->level == 1) {
+			/*
+			 * 'top-app' cgroup that is created at the root level is
+			 * considered as top-app group. Example: /dev/cpuctl/top-app
+			 */
+			walt_init_topapp_tg(css_tg(css));
+
+		} else if ((cur_cg->level == 2) && apps_cgroup_present &&
+				cgroup_is_descendant(cur_cg, apps_cgroup_css->cgroup)) {
+			/*
+			 * 'top-app' cgroup that is created in 'apps' cgroup is
+			 * considered as top-app group. Example: /dev/cpuctl/apps/top-app
+			 */
+			top_app_cg = cur_cg;
+			walt_init_topapp_tg(css_tg(css));
+
+		} else {
+			/*
+			 * Any other 'top-app' cgroup will not be considered as top-app group
+			 */
+			walt_init_tg(css_tg(css));
+		}
+	} else if (apps_cgroup_present && is_top_app_cgroup_descendant(cur_cg)) {
 		walt_init_topapp_tg(css_tg(css));
-	else if (!strcmp(css->cgroup->kn->name, "foreground"))
+
+	} else if (!strcmp(cur_cg->kn->name, "foreground")) {
 		walt_init_foreground_tg(css_tg(css));
-	else
+
+	} else {
 		walt_init_tg(css_tg(css));
+	}
 }
 
 static void android_rvh_cpu_cgroup_online(void *unused, struct cgroup_subsys_state *css)
@@ -3092,7 +3173,9 @@ static void android_rvh_cpu_cgroup_online(void *unused, struct cgroup_subsys_sta
 	if (unlikely(walt_disabled))
 		return;
 
+	rcu_read_lock();
 	walt_update_tg_pointer(css);
+	rcu_read_unlock();
 }
 
 static void android_rvh_cpu_cgroup_attach(void *unused,
@@ -3670,10 +3753,6 @@ static void walt_sched_init_rq(struct rq *rq)
 	wrq->notif_pending = false;
 
 	wrq->num_mvp_tasks = 0;
-
-	wrq->uclamp_limit[UCLAMP_MIN] = 0;
-	wrq->uclamp_limit[UCLAMP_MAX] = SCHED_CAPACITY_SCALE;
-
 	INIT_LIST_HEAD(&wrq->mvp_tasks);
 }
 
@@ -3851,10 +3930,7 @@ static void android_rvh_enqueue_task(void *unused, struct rq *rq, struct task_st
 {
 	u64 wallclock = walt_ktime_get_ns();
 	struct walt_task_struct *wts = (struct walt_task_struct *) p->android_vendor_data1;
-	struct walt_rq *wrq = (struct walt_rq *) rq->android_vendor_data1;
 	bool double_enqueue = false;
-	unsigned long min = uclamp_rq_get(rq, UCLAMP_MIN);
-	unsigned long max = uclamp_rq_get(rq, UCLAMP_MAX);
 
 	if (unlikely(walt_disabled))
 		return;
@@ -3887,14 +3963,6 @@ static void android_rvh_enqueue_task(void *unused, struct rq *rq, struct task_st
 
 	if (!double_enqueue)
 		walt_inc_cumulative_runnable_avg(rq, p);
-
-	if ((wrq->uclamp_limit[UCLAMP_MIN] != min) ||
-		(wrq->uclamp_limit[UCLAMP_MAX] != max)) {
-		wrq->uclamp_limit[UCLAMP_MIN] = min;
-		wrq->uclamp_limit[UCLAMP_MAX] = max;
-		waltgov_run_callback(rq, WALT_CPUFREQ_UCLAMP);
-	}
-
 	trace_sched_enq_deq_task(p, 1, cpumask_bits(&p->cpus_mask)[0], is_mvp(wts));
 }
 
@@ -3903,8 +3971,6 @@ static void android_rvh_dequeue_task(void *unused, struct rq *rq, struct task_st
 	struct walt_rq *wrq = (struct walt_rq *) rq->android_vendor_data1;
 	struct walt_task_struct *wts = (struct walt_task_struct *) p->android_vendor_data1;
 	bool double_dequeue = false;
-	unsigned long min = uclamp_rq_get(rq, UCLAMP_MIN);
-	unsigned long max = uclamp_rq_get(rq, UCLAMP_MAX);
 
 	if (unlikely(walt_disabled))
 		return;
@@ -3944,13 +4010,6 @@ static void android_rvh_dequeue_task(void *unused, struct rq *rq, struct task_st
 
 	if (!double_dequeue)
 		walt_dec_cumulative_runnable_avg(rq, p);
-
-	if ((wrq->uclamp_limit[UCLAMP_MIN] != min) ||
-	    (wrq->uclamp_limit[UCLAMP_MAX] != max)) {
-		wrq->uclamp_limit[UCLAMP_MIN] = min;
-		wrq->uclamp_limit[UCLAMP_MAX] = max;
-		waltgov_run_callback(rq, WALT_CPUFREQ_UCLAMP);
-	}
 
 	trace_sched_enq_deq_task(p, 0, cpumask_bits(&p->cpus_mask)[0], is_mvp(wts));
 }

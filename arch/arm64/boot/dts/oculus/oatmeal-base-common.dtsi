@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "vendor-base/qcom/neo_luna-v2.dtsi"
+#include "vendor-base/qcom/neo_luna-v2-sg-idp.dtsi"
+#include "meta-neo-base.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO-LA";
+	compatible = "qcom,neo";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <0 0>;
+};
+
+&wlan_kiwi {
+	/delete-property/ vdd-wlan-aon-supply;
+	/delete-property/ vdd-wlan-dig-supply;
+};
+
+&bluetooth {
+	/delete-property/ qcom,bt-vdd-aon-supply;
+	/delete-property/ qcom,bt-vdd-rfaOp8_supply;
+	/delete-property/ qcom,bt-vdd-rfa2-supply;
+};
+
+&aliases {
+	/* UART */
+	hsuart1 = &qupv3_se9_2uart;
+	hsuart2 = &qupv3_se6_4uart;
+	hsuart3 = &qupv3_se1_2uart;
+	/* I2C */
+	i2c0 = &qupv3_se5_i2c;
+	i2c1 = &qupv3_se8_i2c;
+	i2c2 = &qupv3_se10_i2c;
+};
+
+&qupv3_se6_4uart {
+	status = "ok";
+};
+
+&qupv3_se9_2uart {
+	status = "ok";
+};

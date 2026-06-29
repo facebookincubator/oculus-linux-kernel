@@ -1,0 +1,23 @@
+/dts-v1/;
+/plugin/;
+
+#include "oatmeal.dtsi"
+
+/ {
+	model = "Oatmeal NFF2-S";
+	compatible = "meta,oatmeal", "meta,oatmeal-nff2-s";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xc5>;
+};
+
+&pcal6408 {
+	status = "ok";
+};
+
+&tps61280 {
+	status = "ok";
+};
+
+&bbc_ctrl {
+        status = "ok";
+};

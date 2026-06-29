@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (c) 2015, 2017-2020, The Linux Foundation. All rights reserved.*/
+/* Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.*/
 
 #ifndef _MHI_HWIO_
 #define _MHI_HWIO_
@@ -73,6 +74,8 @@
 #define ERDBOFF						(0x0120)
 #define ERDBOFF_ERDBOFF_MASK				0xffffffff
 #define ERDBOFF_ERDBOFF_SHIFT				0x0
+
+#define MISCOFF						(0x0124)
 
 #define BHIOFF						(0x0128)
 #define BHIOFF_BHIOFF_MASK				0xffffffff

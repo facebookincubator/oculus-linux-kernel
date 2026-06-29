@@ -1,0 +1,32 @@
+/dts-v1/;
+/plugin/;
+
+#include "greatwhite.dtsi"
+
+/ {
+	model = "Greatwhite Dev0.2";
+	compatible = "meta,greatwhite", "meta,greatwhite-dev0.2";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xb7>;
+};
+
+&max77813 {
+    status="disabled";
+};
+
+/* Display card (Celeste) I2C bus: */
+
+&qupv3_se4_i2c {
+	status = "ok";
+};
+
+&sdhc_1 {
+        meta,biwin-ffu-enable;
+};
+
+#include "gw-mipi-mux.dtsi"
+
+#include "meta-rt685-rt700.dtsi"
+#include "greatwhite-display-p1.dtsi"
+#include "gw-p1-power-slider.dtsi"
+#include "greatwhite-hyperoff-rt700.dtsi"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *
  */
 
@@ -1837,9 +1837,6 @@ static struct qcom_icc_bcm bcm_acv_disp = {
 static struct qcom_icc_bcm bcm_mc0_disp = {
 	.name = "MC0",
 	.voter_idx = 1,
-#ifdef CONFIG_HIBERNATION
-	.keepalive_early = true,
-#endif
 	.num_nodes = 1,
 	.nodes = { &ebi_disp },
 };
@@ -1847,9 +1844,6 @@ static struct qcom_icc_bcm bcm_mc0_disp = {
 static struct qcom_icc_bcm bcm_mm0_disp = {
 	.name = "MM0",
 	.voter_idx = 1,
-#ifdef CONFIG_HIBERNATION
-	.keepalive_early = true,
-#endif
 	.num_nodes = 1,
 	.nodes = { &qns_mem_noc_hf_disp },
 };
@@ -1865,9 +1859,6 @@ static struct qcom_icc_bcm bcm_mm1_disp = {
 static struct qcom_icc_bcm bcm_sh0_disp = {
 	.name = "SH0",
 	.voter_idx = 1,
-#ifdef CONFIG_HIBERNATION
-	.keepalive_early = true,
-#endif
 	.num_nodes = 1,
 	.nodes = { &qns_llcc_disp },
 };

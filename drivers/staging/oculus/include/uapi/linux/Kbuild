@@ -1,0 +1,5 @@
+header-y += oatmeal/
+
+header-y += arfirmware_io_interface.h
+header-y += arfirmware_types.h
+header-y += gfx_kmd.h

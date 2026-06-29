@@ -2,6 +2,7 @@
 /plugin/;
 
 #include "greatwhite.dtsi"
+#include "bluewhite-gpios.dtsi"
 #include "greatwhite-evt1-thermal.dtsi"
 
 / {

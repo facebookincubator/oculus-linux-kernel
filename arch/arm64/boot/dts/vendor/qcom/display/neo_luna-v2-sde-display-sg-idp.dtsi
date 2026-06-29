@@ -1,0 +1,5 @@
+#include "neo_luna-v2-sde-display-idp.dtsi"
+
+&sde_dsi {
+	qcom,dsi-default-panel = <&dsi_sy103_dual_2560x1280_60hz_video>;
+};

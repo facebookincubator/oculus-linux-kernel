@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "silvertip.dtsi"
+
+/ {
+	model = "Silvertip PVT";
+	compatible = "meta,florian", "meta,silvertip", "meta,silvertip-pvt";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <59 0x54>;
+};

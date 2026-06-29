@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+
+#include "vendor-base/qcom/neo_luna-v2.dtsi"
+#include "vendor-base/qcom/neo_luna-v2-sg-idp.dtsi"
+#include "meta-neo-base.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO-LA";
+	compatible = "qcom,neo";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <0 0>;
+};
+
+/* Enable/disable buck converter for wifi card */
+
+&cnss_pins {
+	cnss_wlan_en_active: cnss_wlan_en_active {
+		mux {
+			pins = "gpio13", "gpio23", "gpio45";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio13", "gpio23", "gpio45";
+			drive-strength = <16>;
+			output-high;
+			bias-pull-up;
+		};
+	};
+
+	cnss_wlan_en_sleep: cnss_wlan_en_sleep {
+		mux {
+			pins = "gpio13", "gpio23", "gpio45";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio13", "gpio23", "gpio45";
+			drive-strength = <2>;
+			output-low;
+			bias-pull-down;
+		};
+	};
+};
+
+&wlan_kiwi {
+	pinctrl-0 = <&cnss_wlan_en_active>;
+	pinctrl-1 = <&cnss_wlan_en_sleep>;
+};
+
+/* Set I2C initial loading sequecne */
+
+&aliases {
+	i2c0 = &qupv3_se4_i2c;
+	i2c1 = &qupv3_se5_i2c;
+	i2c2 = &qupv3_se8_i2c;
+	i2c3 = &qupv3_se10_i2c;
+};

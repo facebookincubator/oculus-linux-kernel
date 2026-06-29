@@ -1,0 +1,93 @@
+&tlmm {
+	disp0_pos_en: disp0_pos_en {
+		mux {
+			pins = "gpio11";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio11";
+			drive-strength = <8>;
+			bias-disable;
+			output-low;
+		};
+	};
+
+	disp0_neg_en: disp0_neg_en {
+		mux {
+			pins = "gpio97";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio97";
+			drive-strength = <8>;
+			bias-disable;
+			output-low;
+		};
+	};
+
+	disp0_eldo_en: disp0_eldo_en {
+		mux {
+			pins = "gpio116";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio116";
+			drive-strength = <8>;
+			bias-disable;
+			output-low;
+		};
+	};
+};
+
+&soc {
+	disp_vddi_1p8: disp_vddi_1p8 {
+		compatible = "regulator-fixed";
+		regulator-name = "disp_vddi_1p8";
+		pinctrl-names = "default";
+		pinctrl-0 = <&disp0_eldo_en>;
+		gpio = <&tlmm 116 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		startup-delay-us = <1250>;
+		status = "okay";
+	};
+
+	disp_avdd_1p2: disp_avdd_1p2 {
+		compatible = "regulator-fixed";
+		regulator-name = "disp_avdd_1p2";
+		pinctrl-names = "default";
+		pinctrl-0 = <&disp0_pos_en>;
+		gpio = <&tlmm 11 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		startup-delay-us = <1250>;
+		status = "okay";
+	};
+
+	disp_avee_neg_2p2: disp_avee_neg_2p2 {
+		compatible = "regulator-fixed";
+		regulator-name = "disp_avee_neg_2p2";
+		pinctrl-names = "default";
+		pinctrl-0 = <&disp0_neg_en>;
+		gpio = <&tlmm 97 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		startup-delay-us = <1250>;
+		status = "okay";
+	};
+};
+
+/* Display I2C on gpio20/21 */
+&qupv3_se4_i2c {
+	status = "ok";
+	jbd4021: jbd4021@5A {
+		compatible = "meta,jbd4021-i2c";
+		reg = <0x5A>;
+
+		avdd-supply = <&disp_avdd_1p2>;
+		vddi-supply = <&disp_vddi_1p8>;
+		avee-supply = <&disp_avee_neg_2p2>;
+
+		status = "okay";
+	};
+};

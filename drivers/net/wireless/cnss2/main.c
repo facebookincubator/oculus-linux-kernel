@@ -760,6 +760,9 @@ static int cnss_fw_ready_hdlr(struct cnss_plat_data *plat_priv)
 	if (test_bit(CNSS_FW_BOOT_RECOVERY, &plat_priv->driver_state)) {
 		clear_bit(CNSS_FW_BOOT_RECOVERY, &plat_priv->driver_state);
 		clear_bit(CNSS_DRIVER_RECOVERY, &plat_priv->driver_state);
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+		cnss_stop_schedule_recovery(plat_priv);
+#endif
 	}
 
 	if (test_bit(ENABLE_WALTEST, &plat_priv->ctrl_params.quirks)) {
@@ -1562,6 +1565,9 @@ void cnss_device_crashed(struct device *dev)
 	subsys_info = &plat_priv->subsys_info;
 	if (subsys_info->subsys_device) {
 		set_bit(CNSS_DRIVER_RECOVERY, &plat_priv->driver_state);
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+		cnss_post_schedule_recovery(plat_priv);
+#endif
 		subsys_set_crash_status(subsys_info->subsys_device, true);
 		subsystem_restart_dev(subsys_info->subsys_device);
 	}
@@ -1576,6 +1582,11 @@ static void cnss_subsys_crash_shutdown(const struct subsys_desc *subsys_desc)
 		cnss_pr_err("plat_priv is NULL\n");
 		return;
 	}
+
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	plat_priv->hang_event_counter++;
+	sysfs_notify_dirent(plat_priv->notify_hang_event_attr_node);
+#endif
 
 	cnss_bus_dev_crash_shutdown(plat_priv);
 }
@@ -1605,6 +1616,9 @@ void cnss_recovery_handler(struct cnss_plat_data *plat_priv)
 	int ret;
 
 	set_bit(CNSS_DRIVER_RECOVERY, &plat_priv->driver_state);
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	cnss_post_schedule_recovery(plat_priv);
+#endif
 
 	if (!plat_priv->recovery_enabled)
 		panic("subsys-restart: Resetting the SoC wlan crashed\n");
@@ -1648,6 +1662,9 @@ void cnss_device_crashed(struct device *dev)
 		return;
 
 	set_bit(CNSS_DRIVER_RECOVERY, &plat_priv->driver_state);
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	cnss_post_schedule_recovery(plat_priv);
+#endif
 	schedule_work(&plat_priv->recovery_work);
 }
 EXPORT_SYMBOL(cnss_device_crashed);
@@ -1679,6 +1696,10 @@ static const char *cnss_recovery_reason_to_str(enum cnss_recovery_reason reason)
 		return "RDDM";
 	case CNSS_REASON_TIMEOUT:
 		return "TIMEOUT";
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	case CNSS_REASON_DELAYED:
+		return "DELAYED";
+#endif
 	}
 
 	return "UNKNOWN";
@@ -1688,6 +1709,9 @@ static int cnss_do_recovery(struct cnss_plat_data *plat_priv,
 			    enum cnss_recovery_reason reason)
 {
 	plat_priv->recovery_count++;
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	plat_priv->recovery_reason = reason;
+#endif
 
 	if (plat_priv->device_id == QCA6174_DEVICE_ID)
 		goto self_recovery;
@@ -1708,6 +1732,9 @@ static int cnss_do_recovery(struct cnss_plat_data *plat_priv,
 
 	switch (reason) {
 	case CNSS_REASON_LINK_DOWN:
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+		sysfs_notify_dirent(plat_priv->notify_recovery_attr_node);
+#endif
 		if (!cnss_bus_check_link_status(plat_priv)) {
 			cnss_pr_dbg("Skip link down recovery as link is already up\n");
 			return 0;
@@ -1721,6 +1748,9 @@ static int cnss_do_recovery(struct cnss_plat_data *plat_priv,
 			 */
 			clear_bit(CNSS_DRIVER_RECOVERY,
 				  &plat_priv->driver_state);
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+			cnss_stop_schedule_recovery(plat_priv);
+#endif
 			return 0;
 		}
 		break;
@@ -1729,6 +1759,9 @@ static int cnss_do_recovery(struct cnss_plat_data *plat_priv,
 		break;
 	case CNSS_REASON_DEFAULT:
 	case CNSS_REASON_TIMEOUT:
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	case CNSS_REASON_DELAYED:
+#endif
 		break;
 	default:
 		cnss_pr_err("Unsupported recovery reason: %s(%d)\n",
@@ -1819,6 +1852,9 @@ static int cnss_driver_recovery_hdlr(struct cnss_plat_data *plat_priv,
 	}
 
 	set_bit(CNSS_DRIVER_RECOVERY, &plat_priv->driver_state);
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	cnss_post_schedule_recovery(plat_priv);
+#endif
 	ret = cnss_do_recovery(plat_priv, recovery_data->reason);
 
 out:
@@ -3475,6 +3511,41 @@ static ssize_t charger_mode_store(struct device *dev,
 	return count;
 }
 
+static ssize_t reset_store(struct device *dev,
+			      struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct cnss_plat_data *plat_priv = dev_get_drvdata(dev);
+
+	cnss_pr_info("Received reset request\n");
+	if (plat_priv) {
+		cnss_power_off_device(plat_priv);
+		cnss_power_on_device(plat_priv);
+	}
+
+	return count;
+}
+
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+static ssize_t notify_recovery_show(struct device *dev,
+				     struct device_attribute *attr,
+				     char *buf)
+{
+	struct cnss_plat_data *plat_priv = dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", plat_priv->recovery_reason);
+}
+
+static ssize_t notify_hang_event_show(struct device *dev,
+				      struct device_attribute *attr,
+				      char *buf)
+{
+	struct cnss_plat_data *plat_priv = dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", plat_priv->hang_event_counter);
+}
+#endif
+
 static DEVICE_ATTR_WO(fs_ready);
 static DEVICE_ATTR_WO(shutdown);
 static DEVICE_ATTR_WO(recovery);
@@ -3485,6 +3556,11 @@ static DEVICE_ATTR_WO(qdss_conf_download);
 static DEVICE_ATTR_WO(hw_trace_override);
 static DEVICE_ATTR_WO(charger_mode);
 static DEVICE_ATTR_RW(time_sync_period);
+static DEVICE_ATTR_WO(reset);
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+static DEVICE_ATTR_RO(notify_recovery);
+static DEVICE_ATTR_RO(notify_hang_event);
+#endif
 
 static struct attribute *cnss_attrs[] = {
 	&dev_attr_fs_ready.attr,
@@ -3497,6 +3573,11 @@ static struct attribute *cnss_attrs[] = {
 	&dev_attr_hw_trace_override.attr,
 	&dev_attr_charger_mode.attr,
 	&dev_attr_time_sync_period.attr,
+	&dev_attr_reset.attr,
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	&dev_attr_notify_recovery.attr,
+	&dev_attr_notify_hang_event.attr,
+#endif
 	NULL,
 };
 
@@ -3549,6 +3630,13 @@ static int cnss_create_sysfs(struct cnss_plat_data *plat_priv)
 			    ret);
 		goto out;
 	}
+
+#ifdef CONFIG_CNSS_META_ROBUST_RECOVERY
+	plat_priv->notify_recovery_attr_node = sysfs_get_dirent(
+			plat_priv->plat_dev->dev.kobj.sd, "notify_recovery");
+	plat_priv->notify_hang_event_attr_node = sysfs_get_dirent(
+			plat_priv->plat_dev->dev.kobj.sd, "notify_hang_event");
+#endif
 
 	cnss_create_sysfs_link(plat_priv);
 

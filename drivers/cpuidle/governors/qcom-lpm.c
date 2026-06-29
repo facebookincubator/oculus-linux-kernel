@@ -3,7 +3,7 @@
  * Copyright (C) 2006-2007 Adam Belay <abelay@novell.com>
  * Copyright (C) 2009 Intel Corporation
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/cpu.h>
@@ -389,11 +389,10 @@ static void update_cpu_history(struct lpm_cpu *cpu_gov)
 		lpm_history->samples_idx = 0;
 }
 
-void update_ipi_history(int cpu)
+void update_ipi_history(int cpu, ktime_t now)
 {
 	struct lpm_cpu *cpu_gov = per_cpu_ptr(&lpm_cpu_data, cpu);
 	struct history_ipi *history = &cpu_gov->ipi_history;
-	ktime_t now = ktime_get();
 
 	history->interval[history->current_ptr] =
 			ktime_to_us(ktime_sub(now,
@@ -465,10 +464,11 @@ static void ipi_raise(void *ignore, const struct cpumask *mask, const char *unus
 	int cpu;
 	struct lpm_cpu *cpu_gov;
 	unsigned long flags;
-
+	ktime_t now;
 	if (suspend_in_progress)
 		return;
 
+	now = ktime_get();
 	for_each_cpu(cpu, mask) {
 		cpu_gov = &(per_cpu(lpm_cpu_data, cpu));
 		if (!cpu_gov->enable)
@@ -476,8 +476,8 @@ static void ipi_raise(void *ignore, const struct cpumask *mask, const char *unus
 
 		spin_lock_irqsave(&cpu_gov->lock, flags);
 		cpu_gov->ipi_pending = true;
+		update_ipi_history(cpu, now);
 		spin_unlock_irqrestore(&cpu_gov->lock, flags);
-		update_ipi_history(cpu);
 	}
 }
 

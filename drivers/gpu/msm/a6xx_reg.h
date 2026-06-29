@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef _A6XX_REG_H
@@ -1064,6 +1064,7 @@
 #define A6XX_GMU_GENERAL_1			0x1F9C6
 #define A6XX_GMU_GENERAL_6			0x1F9CB
 #define A6XX_GMU_GENERAL_7			0x1F9CC
+#define A6XX_GMU_GENERAL_11			0x1F9D0
 
 /* ISENSE registers */
 #define A6XX_GMU_ISENSE_CTRL			0x1F95D

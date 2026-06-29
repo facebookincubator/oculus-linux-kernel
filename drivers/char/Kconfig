@@ -469,6 +469,14 @@ config MSM_ADSPRPC
 		applications/compute DSP processor.
 		Say M if you want to enable this module.
 
+config MSM_ADSPRPC_UEVENT
+	bool "Uevent notification of adsp subsystems state"
+	depends on MSM_ADSPRPC
+	help
+	  Enable uevent notifications to userspace when the adsprpc subsystems
+	  state changes. They can be in any of the following states:
+	  "POWERDOWN/POWERUP/RESTARTING"
+
 config MSM_RDBG
 	tristate "QTI Remote debug driver"
 	help

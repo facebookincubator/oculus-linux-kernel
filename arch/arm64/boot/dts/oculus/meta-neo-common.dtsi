@@ -282,3 +282,9 @@
 		};
 	};
 };
+
+&pm8150_pon {
+	qcom,pon_1 {
+		linux,code = <KEY_RESERVED>;
+	};
+};

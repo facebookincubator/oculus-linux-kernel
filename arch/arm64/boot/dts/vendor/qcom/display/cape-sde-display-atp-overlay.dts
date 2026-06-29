@@ -1,0 +1,12 @@
+/dts-v1/;
+/plugin/;
+
+#include "cape-sde-display-atp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Cape ATP";
+	compatible = "qcom,cape-atp", "qcom,cape", "qcom,atp";
+	qcom,msm-id = <530 0x10000>, <531 0x10000>, <540 0x10000>, <591 0x10000>;
+	qcom,board-id = <0x10021 0>;
+};
+

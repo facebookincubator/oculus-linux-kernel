@@ -1,4 +1,4 @@
-subdir-ccflags-y += -Werror -Wall
+subdir-ccflags-y += -Werror -Wall -Wno-error=frame-address
 
 USERINCLUDE	+= \
 	-I$(srctree)/drivers/staging/oculus/include/uapi
@@ -22,6 +22,8 @@ obj-$(CONFIG_REGULATOR_MAX77813) 		+= max77813/
 obj-$(CONFIG_REGULATOR_PM3003A)			+= pm3003a/
 obj-$(CONFIG_REGULATOR_RT6160)			+= rt6160/
 obj-$(CONFIG_RT600_CTRL) 			+= rt600_ctrl/
+obj-$(CONFIG_ST60_CTRL) 			+= st60_ctrl/
 obj-$(CONFIG_SPI_STP)				+= stp/
 obj-$(CONFIG_METASOC)				+= metasoc/
+obj-$(CONFIG_MCU_THERMISTOR) 		+= mcu_thermistor/
 obj-y						+= mcu/

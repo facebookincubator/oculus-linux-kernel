@@ -289,9 +289,6 @@ static void waltgov_walt_adjust(struct waltgov_cpu *wg_cpu, unsigned long cpu_ut
 	if (is_hiload && !is_migration)
 		*util = max(*util, wg_policy->hispeed_util);
 
-	if (is_hiload && nl >= mult_frac(cpu_util, NL_RATIO, 100))
-		*util = *max;
-
 	if (wg_policy->tunables->pl) {
 		if (sysctl_sched_conservative_pl)
 			pl = mult_frac(pl, TARGET_LOAD, 100);

@@ -26,26 +26,40 @@ void slim_msg_response(struct slim_controller *ctrl, u8 *reply, u8 tid, u8 len)
 {
 	struct slim_msg_txn *txn;
 	struct slim_val_inf *msg;
+	struct completion *comp;
 	unsigned long flags;
 
 	spin_lock_irqsave(&ctrl->txn_lock, flags);
 	txn = idr_find(&ctrl->tid_idr, tid);
-	spin_unlock_irqrestore(&ctrl->txn_lock, flags);
 
-	if (txn == NULL)
+	if (txn == NULL) {
+		spin_unlock_irqrestore(&ctrl->txn_lock, flags);
 		return;
+	}
 
 	msg = txn->msg;
 	if (msg == NULL || msg->rbuf == NULL) {
 		dev_err(ctrl->dev, "Got response to invalid TID:%d, len:%d\n",
 				tid, len);
+		spin_unlock_irqrestore(&ctrl->txn_lock, flags);
 		return;
 	}
 
-	slim_free_txn_tid(ctrl, txn);
+	/* Do everything under lock to prevent race with timeout path */
+	if (len > msg->num_bytes) {
+		dev_err(ctrl->dev, "Response length %zu exceeds buffer size %zu\n",
+			(size_t)len, (size_t)msg->num_bytes);
+		spin_unlock_irqrestore(&ctrl->txn_lock, flags);
+		return;
+	}
+
 	memcpy(msg->rbuf, reply, len);
-	if (txn->comp)
-		complete(txn->comp);
+	comp = txn->comp;
+	idr_remove(&ctrl->tid_idr, txn->tid);
+	spin_unlock_irqrestore(&ctrl->txn_lock, flags);
+
+	if (comp)
+		complete(comp);
 
 	/* Remove runtime-pm vote now that response was received for TID txn */
 	pm_runtime_mark_last_busy(ctrl->dev);
@@ -165,8 +179,9 @@ int slim_do_transfer(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 
 
 	ret = ctrl->xfer_msg(ctrl, txn);
-
-	if (!ret && need_tid && !txn->msg->comp) {
+	if (ret == -ETIMEDOUT) {
+		slim_free_txn_tid(ctrl, txn);
+	} else if (!ret && need_tid && !txn->msg->comp) {
 		unsigned long ms = txn->rl + HZ;
 
 		timeout = wait_for_completion_timeout(txn->comp,

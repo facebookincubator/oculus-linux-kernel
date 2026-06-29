@@ -95,3 +95,7 @@
 		status = "ok";
 	};
 };
+
+&sdhc_1 {
+        meta,biwin-ffu-enable;
+};

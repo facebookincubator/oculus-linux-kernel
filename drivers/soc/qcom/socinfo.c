@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2009-2021, The Linux Foundation. All rights reserved.
  * Copyright (c) 2017-2019, Linaro Ltd.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/err.h>
@@ -147,6 +147,17 @@ enum {
 	SKU_Y6 = 0xf7,
 	SKU_Y7 = 0xf8,
 	SKU_INT_RESERVE,
+
+	/* SubPart SKU */
+	SKU_W0 = 0xd1,
+	SKU_W1 = 0xd2,
+	SKU_W2 = 0xd3,
+	SKU_W3 = 0xd4,
+	SKU_W4 = 0xd5,
+	SKU_W5 = 0xd6,
+	SKU_W6 = 0xd7,
+	SKU_W7 = 0xd8,
+	SKU_SUBPART_RESERVE,
 };
 
 static const char * const hw_platform_esku[] = {
@@ -169,6 +180,18 @@ static const char * const hw_platform_isku[] = {
 	[SKU_Y5 & SKU_INT_MASK] = "Y5",
 	[SKU_Y6 & SKU_INT_MASK] = "Y6",
 	[SKU_Y7 & SKU_INT_MASK] = "Y7",
+};
+
+#define SKU_SUBPART_MASK 0x0d
+static const char * const hw_platform_sbsku[] = {
+	[SKU_W0 & SKU_SUBPART_MASK] = "W0",
+	[SKU_W1 & SKU_SUBPART_MASK] = "W1",
+	[SKU_W2 & SKU_SUBPART_MASK] = "W2",
+	[SKU_W3 & SKU_SUBPART_MASK] = "W3",
+	[SKU_W4 & SKU_SUBPART_MASK] = "W4",
+	[SKU_W5 & SKU_SUBPART_MASK] = "W5",
+	[SKU_W6 & SKU_SUBPART_MASK] = "W6",
+	[SKU_W7 & SKU_SUBPART_MASK] = "W7",
 };
 
 enum {
@@ -471,6 +494,8 @@ static const char *socinfo_get_esku_mapping(void)
 		return hw_platform_esku[id];
 	else if (id >= SKU_Y0 && id < SKU_INT_RESERVE)
 		return hw_platform_isku[id & SKU_INT_MASK];
+	else if (id >= SKU_W0 && id < SKU_SUBPART_RESERVE)
+		return hw_platform_sbsku[id & SKU_SUBPART_MASK];
 
 	return NULL;
 }
@@ -1065,6 +1090,7 @@ static const struct soc_id soc_id[] = {
 	{ 602, "RAVELINP" },
 	{ 653, "SG_RAVELIN" },
 	{ 654, "SG_RAVELINP" },
+	{ 734, "MONTAGUEQMB" },
 };
 
 static struct qcom_socinfo *qsocinfo;

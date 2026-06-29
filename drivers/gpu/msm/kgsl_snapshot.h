@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef _KGSL_SNAPSHOT_H_
@@ -213,6 +213,8 @@ struct kgsl_snapshot_ib_v2 {
 #define SNAPSHOT_GMU_MEM_DEBUG		0x04
 #define SNAPSHOT_GMU_MEM_BIN_BLOCK	0x05
 #define SNAPSHOT_GMU_MEM_CONTEXT_QUEUE	0x06
+#define SNAPSHOT_GMU_MEM_VRB		0x09
+#define SNAPSHOT_GMU_MEM_TRACE		0x0a
 
 /* GMU memory section data */
 struct kgsl_snapshot_gmu_mem {

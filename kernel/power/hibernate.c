@@ -46,6 +46,18 @@ static char resume_file[256] = CONFIG_PM_STD_PARTITION;
 dev_t swsusp_resume_device;
 sector_t swsusp_resume_block;
 __visible int in_suspend __nosavedata;
+ktime_t stats_hib_entry_userspace_start;
+ktime_t stats_hib_entry_kernel_start;
+static struct hib_entry_stats hib_entry_stats;
+
+static char hibernate_compressor[CRYPTO_MAX_ALG_NAME] = CONFIG_HIBERNATION_DEF_COMP;
+
+/*
+ * Compression/decompression algorithm to be used while saving/loading
+ * image to/from disk. This would later be used in 'kernel/power/swap.c'
+ * to allocate comp streams.
+ */
+char hib_comp_algo[CRYPTO_MAX_ALG_NAME];
 
 enum {
 	HIBERNATION_INVALID,
@@ -84,6 +96,34 @@ void hibernate_release(void)
 bool hibernation_available(void)
 {
 	return nohibernate == 0 && !security_locked_down(LOCKDOWN_HIBERNATION);
+}
+
+void print_hib_entry_stats(struct hib_entry_stats *stats, bool save)
+{
+	pr_info("%s hibernation entry stats:\n"
+		"\tTotal time userspace: %u us\n"
+		"\tTotal time kernel: %u us\n"
+		"\tImage size: %u kb\n"
+ 		"\tPreallocation time: %u us\n"
+ 		"\tPreallocated pages: %u\n"
+ 		"\tCompression time (thread avg): %u us\n"
+ 		"\tIO time: %u us\n"
+		"\tEncryption time: %u us\n"
+		"\tUptime at hibernation entry: %u s\n"
+		"\tConsecutive hibernation cycles: %u\n"
+		"\tLifetime hibernation data written: %u mb\n",
+		save? "Saved": "Loaded",
+		stats->userspace_total_us,
+		stats->kernel_total_us,
+		stats->hib_image_size_kb,
+		stats->preallocation_us,
+		stats->preallocation_pages,
+		stats->compression_avg_us,
+		stats->async_io_us,
+		stats->encryption_us,
+                stats->uptime_at_hibentry_s,
+		stats->consecutive_hib_entries,
+		stats->lifetime_hibdata_written_mb);
 }
 
 /**
@@ -596,7 +636,11 @@ int hibernation_platform_enter(void)
 
 	local_irq_disable();
 	system_state = SYSTEM_SUSPEND;
-	syscore_suspend();
+
+	error = syscore_suspend();
+	if (error)
+		goto Enable_irqs;
+
 	if (pm_wakeup_pending()) {
 		error = -EAGAIN;
 		goto Power_up;
@@ -608,6 +652,7 @@ int hibernation_platform_enter(void)
 
  Power_up:
 	syscore_resume();
+ Enable_irqs:
 	system_state = SYSTEM_RUNNING;
 	local_irq_enable();
 
@@ -709,6 +754,9 @@ static int load_image_and_restore(void)
 	return error;
 }
 
+#define COMPRESSION_ALGO_LZO "lzo"
+#define COMPRESSION_ALGO_LZ4 "lz4"
+
 /**
  * hibernate - Carry out system hibernation, including saving the image.
  */
@@ -725,6 +773,17 @@ int hibernate(void)
 	bootstat_reset_hibernation_stats();
 
 	lock_system_sleep();
+	/*
+	* Query for the compression algorithm support if compression is enabled.
+	*/
+	if (!nocompress) {
+		strscpy(hib_comp_algo, hibernate_compressor, sizeof(hib_comp_algo));
+		if (crypto_has_comp(hib_comp_algo, 0, 0) != 1) {
+			pr_err("%s compression is not available\n", hib_comp_algo);
+			return -EOPNOTSUPP;
+		}
+	}
+
 	/* The snapshot device should not be opened while we're running */
 	if (!hibernate_acquire()) {
 		error = -EBUSY;
@@ -734,8 +793,10 @@ int hibernate(void)
 	pr_info("hibernation entry\n");
 	pm_prepare_console();
 	error = pm_notifier_call_chain_robust(PM_HIBERNATION_PREPARE, PM_POST_HIBERNATION);
-	if (error)
+	if (error) {
+		pr_err("hibernation prepare failed\n");
 		goto Restore;
+	}
 
 	ksys_sync_helper();
 
@@ -751,6 +812,8 @@ int hibernate(void)
 		power_down();
 	}
 
+	stats_hib_entry_kernel_start = ktime_get();
+
 	/* Allocate memory management structures */
 	error = create_basic_memory_bitmaps();
 	if (error)
@@ -765,10 +828,23 @@ int hibernate(void)
 
 		if (hibernation_mode == HIBERNATION_PLATFORM)
 			flags |= SF_PLATFORM_MODE;
-		if (nocompress)
+		if (nocompress) {
 			flags |= SF_NOCOMPRESS_MODE;
-		else
+		} else {
 		        flags |= SF_CRC32_MODE;
+
+			/*
+			* By default, LZO compression is enabled. Use SF_COMPRESSION_ALG_LZ4
+			* to override this behaviour and use LZ4.
+			*
+			* Refer kernel/power/power.h for more details
+			*/
+
+			if (!strcmp(hib_comp_algo, COMPRESSION_ALGO_LZ4))
+				flags |= SF_COMPRESSION_ALG_LZ4;
+			else
+				flags |= SF_COMPRESSION_ALG_LZO;
+		}
 
 		pm_pr_dbg("Writing hibernation image.\n");
 		error = swsusp_write(flags);
@@ -784,6 +860,15 @@ int hibernate(void)
 	} else {
 		bootstat_record_kernel2_event(HIBEVENT_KERN2_IMAGE_RESTORED);
 		pm_pr_dbg("Hibernation image restored successfully.\n");
+		/*
+		* After a resume, swsusp_header will have been replaced by a previous version
+		* so we need to read back a fresh copy of the hib_entry_stats field.
+		*/
+		if (!swsusp_read_stats(&hib_entry_stats)) {
+			print_hib_entry_stats(&hib_entry_stats, false);
+			stats_consecutive_hib_entries = hib_entry_stats.consecutive_hib_entries;
+		}
+
 	}
 
  Free_bitmaps:
@@ -810,7 +895,7 @@ int hibernate(void)
  Unlock:
 	unlock_system_sleep();
 	bootstat_record_kernel2_event(HIBEVENT_KERN2_HIBERNATION_EXIT);
-	pr_info("hibernation exit\n");
+	pr_info("hibernation exit %d\n", error);
 
 	return error;
 }
@@ -995,6 +1080,22 @@ static int software_resume(void)
 	error = swsusp_check();
 	if (error)
 		goto Unlock;
+
+	/*
+	* Check if the hibernation image is compressed. If so, query for
+	* the algorithm support.
+	*/
+	if(!(swsusp_header_flags & SF_NOCOMPRESS_MODE)) {
+		if (swsusp_header_flags & SF_COMPRESSION_ALG_LZ4)
+			strscpy(hib_comp_algo, COMPRESSION_ALGO_LZ4, sizeof(hib_comp_algo));
+		else
+			strscpy(hib_comp_algo, COMPRESSION_ALGO_LZO, sizeof(hib_comp_algo));
+		if (crypto_has_comp(hib_comp_algo, 0, 0) != 1) {
+			pr_err("%s compression is not available\n", hib_comp_algo);
+			error = -EOPNOTSUPP;
+			goto Unlock;
+		}
+	}
 
 	/* The snapshot device should not be opened while we're running */
 	if (!hibernate_acquire()) {
@@ -1289,6 +1390,61 @@ static ssize_t reserved_size_store(struct kobject *kobj,
 
 power_attr(reserved_size);
 
+static ssize_t hib_entry_stats_show(struct kobject *kobj,
+				    struct kobj_attribute *attr, char *buf)
+{
+	if (hib_entry_stats.kernel_total_us)
+		/*
+		* If hib_entry_stats is populated, we're in a resume cycle
+		* and display all available fields.
+		*/
+		return sprintf(buf,
+		       "userspace_total_us %u\n"
+		       "kernel_total_us %u\n"
+		       "preallocation_us %u\n"
+		       "preallocation_pages %u\n"
+		       "image_size_kb %u\n"
+		       "encryption_us %u\n"
+		       "compression_avg_us %u\n"
+		       "async_io_us %u\n"
+		       "uptime_at_hibentry_s %u\n"
+		       "consecutive_hib_entries %u\n"
+		       "lifetime_hibdata_written_mb %u\n",
+		       hib_entry_stats.userspace_total_us,
+		       hib_entry_stats.kernel_total_us,
+		       hib_entry_stats.preallocation_us,
+		       hib_entry_stats.preallocation_pages,
+		       hib_entry_stats.hib_image_size_kb,
+		       hib_entry_stats.encryption_us,
+		       hib_entry_stats.compression_avg_us,
+		       hib_entry_stats.async_io_us,
+		       hib_entry_stats.uptime_at_hibentry_s,
+		       hib_entry_stats.consecutive_hib_entries,
+		       hib_entry_stats.lifetime_hibdata_written_mb);
+	else
+		/*
+		* We're in a normal boot and display only lifetime_hibdata_written_mb
+		* directly from swsusp_header since it's now up-to-date.
+		*/
+		return sprintf(buf,
+		       "lifetime_hibdata_written_mb %u\n",
+		       swsusp_header->stats.lifetime_hibdata_written_mb);
+}
+
+static ssize_t hib_entry_stats_store(struct kobject *kobj,
+				     struct kobj_attribute *attr,
+				     const char *buf, size_t n)
+{
+	if (!strncmp(buf, "userspace_init", 14)) {
+		stats_hib_entry_userspace_start = ktime_get();
+		return n;
+	} else {
+		return -EPERM;
+	}
+}
+
+power_attr(hib_entry_stats);
+
 static struct attribute *g[] = {
 	&disk_attr.attr,
 	&resume_offset_attr.attr,
@@ -1296,6 +1452,7 @@ static struct attribute *g[] = {
 	&image_size_attr.attr,
 	&reserved_size_attr.attr,
 	&disk_write_skip_attr.attr,
+	&hib_entry_stats_attr.attr,
 	NULL,
 };
 
@@ -1378,6 +1535,56 @@ static int __init nohibernate_setup(char *str)
 	nohibernate = 1;
 	return 1;
 }
+
+static const char * const comp_alg_enabled[] = {
+#if IS_ENABLED(CONFIG_CRYPTO_LZO)
+	COMPRESSION_ALGO_LZO,
+#endif
+#if IS_ENABLED(CONFIG_CRYPTO_LZ4)
+	COMPRESSION_ALGO_LZ4,
+#endif
+};
+
+static int hibernate_compressor_param_set(const char *compressor,
+	const struct kernel_param *kp)
+{
+	int index, ret;
+
+	lock_system_sleep();
+
+	 index = sysfs_match_string(comp_alg_enabled, compressor);
+	if (index >= 0) {
+		ret = param_set_copystring(comp_alg_enabled[index], kp);
+		if (!ret)
+			strscpy(hib_comp_algo, comp_alg_enabled[index],
+				sizeof(hib_comp_algo));
+	} else {
+		ret = index;
+	}
+
+	unlock_system_sleep();
+
+	if (ret)
+		pr_debug("Cannot set specified compressor %s\n",
+			compressor);
+
+	return ret;
+}
+
+static const struct kernel_param_ops hibernate_compressor_param_ops = {
+	.set  = hibernate_compressor_param_set,
+	.get  = param_get_string,
+};
+
+static struct kparam_string hibernate_compressor_param_string = {
+	.maxlen = sizeof(hibernate_compressor),
+	.string = hibernate_compressor,
+};
+
+module_param_cb(compressor, &hibernate_compressor_param_ops,
+	&hibernate_compressor_param_string, 0644);
+MODULE_PARM_DESC(compressor,
+	"Compression algorithm to be used with hibernation");
 
 __setup("noresume", noresume_setup);
 __setup("resume_offset=", resume_offset_setup);

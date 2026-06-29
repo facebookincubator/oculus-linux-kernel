@@ -1,0 +1,108 @@
+&tlmm {
+	pinctrl-names = "default";
+	pinctrl-0 = <
+		&unused_pulldown_defaults
+		&unused_nopull_defaults
+		&soc_slider_defaults
+		&soc_capture_button
+		&soc_action_button
+		&vchrg_gpio_pin_default
+	>;
+
+	/*
+	 * GPIO122: VOLUME_UP not used
+	 * GPIO12/GPIO116/GPIO117: Display related GPIOs not used
+	 */
+	unused_pulldown_defaults: unused_pulldown_defaults {
+		mux {
+			pins = "gpio122", "gpio12", "gpio116";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio122", "gpio12", "gpio116";
+			drive-strength = <2>;
+			bias-pull-down;
+			input-enable;
+		};
+	};
+
+	/*
+	 * GPIO89: SOC_PLATFORM_ID no pull
+	 */
+	unused_nopull_defaults: unused_nopull_defaults {
+		mux {
+			pins = "gpio89";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio89";
+			drive-strength = <2>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	soc_slider_defaults: soc_slider_defaults {
+		mux {
+			pins = "gpio39";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio39";
+			drive-strength = <2>;
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	soc_capture_button: soc_capture_button {
+		mux {
+			pins = "gpio62";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio62";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	soc_action_button: soc_action_button {
+		mux {
+			pins = "gpio150";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio150";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	vchrg_gpio_pin_default: vchrg_gpio_pin_default {
+		mux {
+			pins ="gpio6", "gpio11";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio6", "gpio11";
+			drive-strength = <2>;
+			bias-disable;
+			input-enable;
+		};
+	};
+};
+
+/*
+ * We don't have volume up key, so disable it
+ */
+&soc {
+	gpio_keys {
+		status = "disabled";
+	};
+};

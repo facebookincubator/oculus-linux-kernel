@@ -1,0 +1,46 @@
+#include "neo-idp.dtsi"
+#include <dt-bindings/clock/qcom,gcc-neo.h>
+#include <dt-bindings/clock/qcom,tcsrcc.h>
+
+&soc {
+};
+
+&tcsrcc {
+	protected-clocks = <TCSR_PCIE_0_CLKREF_EN>,
+		<TCSR_PCIE_1_CLKREF_EN>;
+};
+
+&gcc {
+	clocks = <&rpmhcc RPMH_CXO_CLK>, <&sleep_clk>,
+		<&usb3_phy_wrapper_gcc_usb30_pipe_clk>;
+	clock-names = "bi_tcxo", "sleep_clk",
+		"usb3_phy_wrapper_gcc_usb30_pipe_clk";
+	protected-clocks =  <GCC_DDRSS_PCIE_SF_CLK>,
+		<GCC_PCIE_0_AUX_CLK>, <GCC_PCIE_0_AUX_CLK_SRC>,
+		<GCC_PCIE_0_CFG_AHB_CLK>, <GCC_PCIE_0_MSTR_AXI_CLK>,
+		<GCC_PCIE_0_PHY_RCHNG_CLK>, <GCC_PCIE_0_PHY_RCHNG_CLK_SRC>,
+		<GCC_PCIE_0_PIPE_CLK>, <GCC_PCIE_0_PIPE_CLK_SRC>,
+		<GCC_PCIE_0_SLV_AXI_CLK>, <GCC_PCIE_0_SLV_Q2A_AXI_CLK>,
+		<GCC_PCIE_1_AUX_CLK>, <GCC_PCIE_1_AUX_CLK_SRC>,
+		<GCC_PCIE_1_CFG_AHB_CLK>, <GCC_PCIE_1_MSTR_AXI_CLK>,
+		<GCC_PCIE_1_PHY_RCHNG_CLK>, <GCC_PCIE_1_PHY_RCHNG_CLK_SRC>,
+		<GCC_PCIE_1_PIPE_CLK>, <GCC_PCIE_1_PIPE_CLK_SRC>,
+		<GCC_PCIE_1_SLV_AXI_CLK>, <GCC_PCIE_1_SLV_Q2A_AXI_CLK>,
+		<GCC_QMIP_PCIE_AHB_CLK>;
+};
+
+&gcc_pcie_0_gdsc {
+	status = "disabled";
+};
+
+&gcc_pcie_0_phy_gdsc {
+	status = "disabled";
+};
+
+&gcc_pcie_1_gdsc {
+	status = "disabled";
+};
+
+&gcc_pcie_1_phy_gdsc {
+	status = "disabled";
+};

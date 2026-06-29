@@ -1,0 +1,19 @@
+/dts-v1/;
+/plugin/;
+
+#include "silvertip.dtsi"
+
+/ {
+	model = "Silvertip P2";
+	compatible = "meta,florian", "meta,silvertip", "meta,silvertip-p2";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <59 0x51>;
+};
+
+&generic_virtual_sensor {
+        status = "disabled";
+};
+
+&outdoor_virtual_sensor {
+	status = "disabled";
+};

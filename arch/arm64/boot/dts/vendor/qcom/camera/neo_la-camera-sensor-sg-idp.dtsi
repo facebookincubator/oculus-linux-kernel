@@ -1,0 +1,84 @@
+#include <dt-bindings/clock/qcom,camcc-neo.h>
+#include <dt-bindings/msm-camera.h>
+
+&tlmm {
+	rgb_ext_ldo_en: rgb_ext_ldo_enable {
+		mux {
+			pins = "gpio114"; // Only 2
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio114";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+		};
+	};
+};
+
+&soc {
+	qcom,cam-res-mgr {
+		compatible = "qcom,cam-res-mgr";
+		status = "ok";
+	};
+
+	ktb_lieca_1p3: regulator-ktb8399nedaa1 {
+		compatible = "qti-regulator-fixed";
+		regulator-name = "ktb8399nedaa1";
+		regulator-min-microvolt = <1300000>;
+		regulator-max-microvolt = <1300000>;
+		enable-active-high;
+	};
+
+	rgb_dvdd_1p2: rgb_dovdd_1p8:
+	rgb_avdd_2p8: regulator-ncp139_1p2 {
+		compatible = "qti-regulator-fixed";
+		regulator-name = "npc139_1p2";
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
+		gpio = <&tlmm 114 0>;
+		enable-active-high;
+		vin-supply = <&ktb_lieca_1p3>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&rgb_ext_ldo_en>;
+	};
+
+};
+
+&cam_cci2 {
+	qcom,cam-sensor0 {
+		cell-index = <0>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <1>;
+		sensor-position-roll = <180>;
+		sensor-position-pitch = <0>;
+		sensor-position-yaw = <180>;
+		cam_vio-supply  = <&rgb_dvdd_1p2>;
+		cam_clk-supply  = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vio",
+			"cam_clk" ;
+		rgltr-cntrl-support;
+		rgltr-min-voltage  = <1200000 0>;
+		rgltr-max-voltage  = <1200000 0>;
+		rgltr-load-current = <2700  0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk0_active
+			&cam_sensor_active_rst0>;
+		pinctrl-1 = <&cam_sensor_mclk0_suspend
+			&cam_sensor_suspend_rst0>;
+		gpios = <&tlmm 69 0>,
+			<&tlmm 65 0>;
+		gpio-reset = <1>;
+		gpio-req-tbl-num = <0 1>;
+		gpio-req-tbl-flags = <1 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK0",
+					"CAM_RESET0";
+		cci-master = <0>;
+		clocks = <&camcc CAM_CC_MCLK0_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "nominal";
+		clock-rates = <24000000>;
+		status = "ok";
+	};
+};

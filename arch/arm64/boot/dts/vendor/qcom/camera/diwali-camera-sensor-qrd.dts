@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/clock/qcom,gcc-diwali.h>
+#include <dt-bindings/clock/qcom,camcc-diwali.h>
+#include <dt-bindings/interconnect/qcom,diwali.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
+
+#include "diwali-camera-sensor-qrd.dtsi"
+/ {
+	model = "Qualcomm Technologies, Inc. Diwali QRD";
+	compatible = "qcom,diwali";
+	qcom,msm-id = <506 0x10000>;
+	qcom,board-id = <0x1000B 0>;
+};

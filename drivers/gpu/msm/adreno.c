@@ -75,10 +75,10 @@ int adreno_get_firmware(struct adreno_device *adreno_dev,
 	if (!IS_ERR_OR_NULL(firmware->memdesc))
 		return 0;
 
-	ret = request_firmware(&fw, fwfile, &device->pdev->dev);
+	ret = firmware_request_nowarn(&fw, fwfile, &device->pdev->dev);
 
 	if (ret) {
-		dev_err(device->dev, "request_firmware(%s) failed: %d\n",
+		dev_err(device->dev, "firmware_request_nowarn(%s) failed: %d\n",
 				fwfile, ret);
 		return ret;
 	}
