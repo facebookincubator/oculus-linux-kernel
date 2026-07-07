@@ -32,7 +32,7 @@ struct timesync_dev_data {
 
 	/* Period of synchronization (and IRQ toggles) */
 	uint32_t period_ms;
-	uint32_t period_ktime;
+	ktime_t period_ktime;
 
 	/* Timestamp of most recent GPIO toggle */
 	int64_t ap_ts_us;

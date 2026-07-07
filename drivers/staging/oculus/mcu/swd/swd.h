@@ -266,6 +266,11 @@ struct swd_dev_data {
 
 	/* Enable direct access via file operations */
 	bool direct_fd;
+
+#ifdef CONFIG_META_SWD_DIRECTFD
+	/* Chardev data for direct file access, cleaned up on remove */
+	void *chardev_data;
+#endif
 };
 
 ssize_t fwupdate_update_firmware_show(struct device *dev, char *buf);

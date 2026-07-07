@@ -10,6 +10,7 @@
 #include <linux/sched.h>
 #include <linux/string.h>
 
+#include "bpf.h"
 #include "features.h"
 #include "flags.h"
 #include "sched.h"
@@ -34,6 +35,7 @@ static int __init init_hzos_ext(void)
 	pr_info("hzos_ext starting");
 
 	hzos_ext_features_init();
+	hzos_ext_bpf_init();
 	hzos_ext_sched_init();
 	hzos_ext_mem_init();
 

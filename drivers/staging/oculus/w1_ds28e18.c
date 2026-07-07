@@ -563,7 +563,7 @@ static ssize_t speed_show(struct device *dev, struct device_attribute *attr,
 		break;
 	}
 
-	return sprintf(buf, "%d\n", speed);
+	return sysfs_emit(buf, "%d\n", speed);
 }
 
 static ssize_t speed_store(struct device *dev, struct device_attribute *attr,
@@ -631,7 +631,7 @@ static ssize_t protocol_show(struct device *dev, struct device_attribute *attr,
 	if (ret < 0)
 		return ret;
 
-	return sprintf(buf, "%s\n",
+	return sysfs_emit(buf, "%s\n",
 			(config & W1_F56_CONFIG_PROT_MASK) == W1_F56_CONFIG_PROT_SPI_VAL ? "spi" : "i2c");
 }
 

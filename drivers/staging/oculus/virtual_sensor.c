@@ -6,6 +6,7 @@
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
+#include <linux/ktime.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
@@ -112,6 +113,22 @@ struct virtual_sensor_drvdata {
 	s64 last_temperature;
 	bool was_charging;
 	struct power_supply *batt_psy;
+
+	/* time averaging logic */
+	/* delay between averaged samples, in milliseconds */
+	s64 averaging_delay;
+	/* over how many polls to average */
+	int averaging_count;
+	/* place to save the history, as a circular buffer */
+	int *historic_temps;
+	/* the size of collected history, up to averaging_count */
+	int history_size;
+	/* index of last collected value in the circular buffer, unless history_size==0 */
+	int history_idx;
+	/* sum of all values in history, a precursor for averaging */
+	int sum_temp;
+	/* time of the last historic value, in milliseconds */
+	s64 hist_ms;
 };
 
 static bool is_charging(struct power_supply *batt_psy)
@@ -305,6 +322,59 @@ static int virtual_sensor_calculate_temp_for_coeffs(
 	return 0;
 }
 
+static void virtual_sensor_averaging(
+		struct virtual_sensor_drvdata *vs, int *temperature)
+{
+	/*
+	 * There is no guarantee that temperatures get read exactly at
+	 * averaging intervals, the reading might be slightly delayed or
+	 * there might be additional reads in between. So be fuzzy and
+	 * accept whatever was the first sample within each period.
+	 */
+	const s64 cur_ms = ktime_to_ms(ktime_get_boottime());
+
+	if (cur_ms - vs->hist_ms >= vs->averaging_delay * vs->averaging_count) {
+		/* uh-oh, polling broke, maybe the system was sleeping, reset the history */
+		vs->history_size = 0;
+	}
+	if (vs->history_size == 0) {
+		/*
+		 * Initialize the history by pushing in one value.
+		 */
+		vs->history_size = 1;
+		vs->history_idx = 0;
+		vs->historic_temps[0] = *temperature;
+		vs->sum_temp = *temperature;
+		vs->hist_ms = cur_ms;
+		return;
+	}
+
+	/*
+	 * Advance time in whole averaging delay slices, so if less than
+	 * one whole slice had passed yet, no advancing would be done,
+	 * and the last value would be returned.
+	 */
+	while (cur_ms - vs->hist_ms >= vs->averaging_delay) {
+		vs->hist_ms += vs->averaging_delay;
+
+		/* insert a new data point */
+		if (++vs->history_idx >= vs->averaging_count)
+			vs->history_idx = 0; /* wrap on the circular buffer */
+		if (vs->history_size < vs->averaging_count) {
+			++vs->history_size;
+		} else {
+			/* drop the oldest value */
+			vs->sum_temp -=
+				vs->historic_temps[vs->history_idx];
+		}
+		vs->historic_temps[vs->history_idx] = *temperature;
+		vs->sum_temp += *temperature;
+	}
+
+	/* replace the temperature with the average */
+	*temperature = vs->sum_temp / vs->history_size;
+}
+
 #if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE)
 static int virtual_sensor_get_temp(struct thermal_zone_device *tz, int *temperature)
 #else
@@ -316,12 +386,19 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 #else
 	struct virtual_sensor_drvdata *vs = data;
 #endif
-	const bool charging = is_charging(vs->batt_psy);
 	const ktime_t curr_ktime = ktime_get_boottime();
 	const bool should_inc_smoothing_factor =
 		ktime_ms_delta(curr_ktime, vs->last_inc_smoothing_factor_time) > (1 * MSEC_PER_SEC);
 	s64 temp = 0, temp_charging = 0, temp_discharging = 0, fallback_temp = 0;
 	int ret = 0;
+	int calc_ret = 0;
+	bool charging;
+
+	/* Lazily acquire battery power supply if not available at probe */
+	if (!vs->batt_psy)
+		vs->batt_psy = power_supply_get_by_name("battery");
+
+	charging = is_charging(vs->batt_psy);
 
 	if (!temperature)
 		return -EINVAL;
@@ -349,9 +426,9 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 	}
 	vs->was_charging = charging;
 
-	ret = virtual_sensor_calculate_temp_for_coeffs(vs, &vs->data_charging, &temp_charging);
-	ret |= virtual_sensor_calculate_temp_for_coeffs(vs, &vs->data_discharging, &temp_discharging);
-	if (ret) {
+	calc_ret = virtual_sensor_calculate_temp_for_coeffs(vs, &vs->data_charging, &temp_charging);
+	calc_ret |= virtual_sensor_calculate_temp_for_coeffs(vs, &vs->data_discharging, &temp_discharging);
+	if (calc_ret) {
 		/*
 		 * Unable to calculate new temp, use the last one so the function doesn't
 		 * cause the thermal subsystem to error out.
@@ -361,7 +438,7 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 			__func__, vs->last_temperature);
 
 		*temperature = vs->last_temperature;
-		goto get_temp_unlock;
+		goto get_temp_virtual;
 	}
 
 	temp = (temp_charging * vs->charging_smoothing_factor) +
@@ -375,7 +452,7 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 		temp_discharging, (CHARGING_SMOOTHING_FACTOR_MAX - vs->charging_smoothing_factor));
 
 	if (!vs->fallback_tzd)
-		goto get_temp_unlock;
+		goto get_temp_virtual;
 
 	ret = get_fallback_temp(vs, &fallback_temp);
 	if (ret != 0) {
@@ -389,7 +466,20 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 	if (abs(temp - fallback_temp) > vs->fallback_tolerance)
 		*temperature = (int)fallback_temp;
 
-get_temp_unlock:
+get_temp_virtual:
+	if (vs->averaging_count > 1) {
+		if (calc_ret != 0) {
+			/*
+			 * The new point is invalid, can only return the last value if any,
+			 * but dont pollute the averaging logic with the invalid guesses.
+			 */
+			if (vs->history_size > 0)
+				*temperature = vs->sum_temp / vs->history_size;
+		} else {
+			virtual_sensor_averaging(vs, temperature);
+		}
+	}
+
 	vs->last_temperature = *temperature;
 	mutex_unlock(&vs->lock);
 	return 0;
@@ -612,7 +702,7 @@ static ssize_t intercept_charging_show(struct device *dev,
 		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
-	ret = sprintf(buf, "%d\n", data.intercept);
+	ret = sysfs_emit(buf, "%d\n", data.intercept);
 	mutex_unlock(&drvdata->lock);
 
 	return ret;
@@ -654,7 +744,7 @@ static ssize_t intercept_discharging_show(struct device *dev,
 		dev_warn(dev, "%s aborted due to signal. status=%d", __func__, (int)ret);
 		return ret;
 	}
-	ret = sprintf(buf, "%d\n", data.intercept);
+	ret = sysfs_emit(buf, "%d\n", data.intercept);
 	mutex_unlock(&drvdata->lock);
 
 	return ret;
@@ -968,7 +1058,7 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 
 	vs->batt_psy = power_supply_get_by_name("battery");
 	if (!vs->batt_psy)
-		return -EPROBE_DEFER;
+		dev_dbg(&pdev->dev, "battery power supply not available yet, charging state will default to discharging\n");
 
 	ret = of_property_read_string(pdev->dev.of_node,
 			"fallback-thermal-zone", &fallback_tz_name);
@@ -1000,6 +1090,30 @@ static int virtual_sensor_probe(struct platform_device *pdev)
 	}
 
 no_fallback:
+	ret = of_property_read_u32(pdev->dev.of_node,
+			"averaging-count", &vs->averaging_count);
+	if (ret < 0 || vs->averaging_count <= 1)
+		vs->averaging_count = 0;
+
+	if (vs->averaging_count > 1) {
+		u32 avg_delay;
+
+		ret = of_property_read_u32(pdev->dev.of_node,
+				"averaging-delay", &avg_delay);
+		vs->averaging_delay = avg_delay;
+		if (ret < 0 || vs->averaging_delay < 1) {
+			dev_err(&pdev->dev,
+				"averaging-count requires a positive averaging-delay");
+			return -EINVAL;
+		}
+
+		vs->historic_temps = devm_kcalloc(&pdev->dev,
+				vs->averaging_count,
+				sizeof(*vs->historic_temps), GFP_KERNEL);
+		if (!vs->historic_temps)
+			return -ENOMEM;
+	}
+
 	vs->data_charging.name = "charging";
 	ret = virtual_sensor_parse_dt(vs->dev, &vs->data_charging);
 	if (ret == -EPROBE_DEFER)
@@ -1060,7 +1174,8 @@ static int virtual_sensor_remove(struct platform_device *pdev)
 #if (KERNEL_VERSION(6, 1, 0) >= LINUX_VERSION_CODE)
 	thermal_zone_of_sensor_unregister(&pdev->dev, vs->tzd);
 #endif
-	power_supply_put(vs->batt_psy);
+	if (vs->batt_psy)
+		power_supply_put(vs->batt_psy);
 
 	sysfs_remove_groups(&pdev->dev.kobj, virtual_sensor_groups);
 

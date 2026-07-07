@@ -106,6 +106,11 @@ struct syncboss_display_event {
 } __attribute__((packed));
 #define SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE 85
 
+struct enable_timesync_data {
+	uint8_t enable;
+} __attribute__((packed));
+#define SYNCBOSS_ENABLE_TIMESYNC_MESSAGE_TYPE 8
+
 /*
  * THIS MUST BE ALINGED TO LIBSYNCBOSS Struct used in fbsource hal library -
  * fbsource/arvr/firmware/projects/libsyncboss/os_interface/syncboss_hal_impl_android_driver.c
@@ -151,6 +156,7 @@ struct syncboss_sensor_direct_channel_data {
 #define SYNCBOSS_PROX_EVENT_SYSTEM_DOWN 1
 #define SYNCBOSS_PROX_EVENT_PROX_ON 2
 #define SYNCBOSS_PROX_EVENT_PROX_OFF 3
+#define SYNCBOSS_PROX_EVENT_MCU_WAKE 4
 
 /* ioctl used to set per-client stream filter */
 #define SYNCBOSS_SET_STREAMFILTER_IOCTL \

@@ -5,6 +5,8 @@
 /*
  * HZOS_EXT_FEATURE(name, enabled)
  *
+ * Boolean features that can be enabled or disabled at runtime.
+ *
  * The meaning of "enabled" depends on the feature. For example, for ALLOW_RT,
  * "enabled" means that we will enforce the check if a task is allowed to use
  * RT.
@@ -24,3 +26,22 @@
 HZOS_EXT_FEATURE(ALLOW_RT, false)
 HZOS_EXT_FEATURE(SELECT_RQ_IDLE, false)
 HZOS_EXT_FEATURE(BALANCE_ANON_FILE_RECLAIM, true)
+
+/*
+ * HZOS_EXT_NUMERIC_FEATURE(name, write_cb, read_cb)
+ *
+ * Numeric features store a 64-bit signed integer value that can be queried
+ * and modified at runtime via callbacks. Each numeric feature specifies:
+ *
+ * - write_cb: void (*)(s64) - called when the feature value is written
+ * - read_cb: s64 (*)(void) - called when the feature value is read
+ *
+ * To set a numeric feature value, echo NAME=VALUE to /proc/hzos_ext:
+ *
+ * - "MEM_HAIRCUT=32000000" sets MEM_HAIRCUT to 32000000
+ * - Only a single feature may be modified in a single syscall.
+ *
+ * To query the current status, read /proc/hzos_ext. Each numeric feature
+ * will be printed as NAME=VALUE.
+ */
+HZOS_EXT_NUMERIC_FEATURE(MEM_HAIRCUT, mem_haircut_write, mem_haircut_get)

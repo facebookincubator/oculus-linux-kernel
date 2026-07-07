@@ -1474,6 +1474,7 @@ static int omap_iommu_add_device(struct device *dev)
 		}
 
 		oiommu = platform_get_drvdata(pdev);
+		put_device(&pdev->dev);
 		if (!oiommu) {
 			of_node_put(np);
 			kfree(arch_data);

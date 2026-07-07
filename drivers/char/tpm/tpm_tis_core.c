@@ -701,8 +701,8 @@ static int tpm_tis_probe_irq_single(struct tpm_chip *chip, u32 intmask,
 	 * will call disable_irq which undoes all of the above.
 	 */
 	if (!(chip->flags & TPM_CHIP_FLAG_IRQ)) {
-		rc = tpm_tis_write8(priv, original_int_vec,
-				TPM_INT_VECTOR(priv->locality));
+		rc = tpm_tis_write8(priv, TPM_INT_VECTOR(priv->locality),
+				original_int_vec);
 		if (rc < 0)
 			return rc;
 

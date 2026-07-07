@@ -11,7 +11,7 @@
 
 #include "usbvdm/subscriber.h"
 
-#define REQ_ACK_TIMEOUT_MS 200
+#define REQ_ACK_TIMEOUT_MS 1000
 #define MAX_BROADCAST_PERIOD_MIN 60
 #define MAX_LOG_SIZE 4096
 #define MAX_VDO_SIZE 16
@@ -32,6 +32,7 @@
 #define PARAMETER_TYPE_REBOOT_INTO_BOOTLOADER 0xF0
 #define PARAMETER_TYPE_SWITCH_DATA_LANES 0xF3
 #define PARAMETER_TYPE_CHIP_RESET 0xF4
+#define PARAMETER_TYPE_DP_VIDEO_SOURCE 0xF5
 
 #define VDO_LOG_TRANSMIT_STOP 0x00
 #define VDO_LOG_TRANSMIT_START 0x01
@@ -79,6 +80,7 @@ struct charging_dock_params_t {
 	size_t log_size;
 	struct port_config_t port_config[NUM_CHARGING_DOCK_PORTS];
 	int moisture_detected_counts[NUM_MOISTURE_DETECTION_PORTS];
+	u32 dp_video_source;
 };
 
 struct usbvdm_subscription_data {
@@ -102,7 +104,6 @@ struct usbvdm_subscription_data {
  * @workqueue: workqueue for @work
  * @periodic_work: delayed work queue for sending periodic requests
  * @ack_parameter: VDM request parameter for which ack is received
- * @req_ack_timeout_ms: duration to wait for an ACK from the dock
  * @rx_complete: VDM response completion
  * @params: items reported by the dock
  * @log: buffer for dock log
@@ -129,7 +130,6 @@ struct charging_dock_device_t {
 	struct workqueue_struct	*workqueue;
 	struct delayed_work periodic_work;
 	u32 ack_parameter;
-	u32 req_ack_timeout_ms;
 	struct completion rx_complete;
 	struct charging_dock_params_t params;
 

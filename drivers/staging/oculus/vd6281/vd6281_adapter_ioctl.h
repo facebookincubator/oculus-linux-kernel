@@ -66,6 +66,7 @@
 #define VD6281_IOCTL_REG_WR		_IOW('r', 0x01, struct vd6281_reg)
 #define VD6281_IOCTL_REG_RD		_IOWR('r', 0x02, struct vd6281_reg)
 #define VD6281_IOCTL_REG_RD_MULTI  _IOWR('r', 0x03, struct vd6281_read_multi_regs)
+#define VD6281_IOCTL_DIAGNOSE_HW   _IOR('r', 0x04, struct vd6281_diag_result)
 
 #define VD6281_IOCTL_GET_SPI_INFO	_IOWR('r', 0x01, struct vd6281_spi_info)
 #define VD6281_IOCTL_SET_SPI_PARAMS	_IOW('r', 0x02, struct vd6281_spi_params)
@@ -94,5 +95,14 @@ struct vd6281_spi_params {
 };
 
 #define MAX_CIC_STAGE (4)
+
+#define VD6281_DIAG_READ_COUNT 50
+
+struct vd6281_diag_result {
+	__u32 nack_count;	/* number of NAK errors out of diag reads */
+	__u32 success_count;	/* number of successful reads */
+	__s32 first_err;	/* errno of first failure (0 if all passed) */
+	__u8  hw_failure;	/* 1 if nack_count == VD6281_DIAG_READ_COUNT */
+};
 
 #endif

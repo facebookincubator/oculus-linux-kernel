@@ -63,7 +63,7 @@ ssize_t hzos_ext_flags_write_procfs(struct task_struct *task,
 	enum hzos_ext_flags flag;
 	bool off;
 	char *kbuf;
-	size_t len = MAX_FLAGS_LEN;
+	size_t len;
 
 	/* No partial writes. */
 	if (*ppos != 0)
@@ -80,11 +80,10 @@ ssize_t hzos_ext_flags_write_procfs(struct task_struct *task,
 	kbuf = strstrip(tmpbuf);
 
 	off = !strncmp(kbuf, "NO_", 3);
-	if (off) {
+	if (off)
 		kbuf += 3;
-		len -= 3;
-	}
 
+	len = strlen(kbuf);
 	flag = hzos_ext_str_to_flag(kbuf, len);
 	if (!flag)
 		return -ENOENT;
@@ -97,6 +96,12 @@ ssize_t hzos_ext_flags_write_procfs(struct task_struct *task,
 	else
 		WRITE_ONCE(task->hzos_ext.flags,
 			   (task->hzos_ext.flags | flag));
+
+#ifdef CONFIG_META_WAKE_AFFINE
+	if (flag == HZOS_EXT_FLAG_WAKE_AFFINE)
+		WRITE_ONCE(task->wake_affine, !off);
+#endif
+
 	mutex_unlock(&task->hzos_ext.lock);
 	return count;
 }
@@ -144,7 +149,8 @@ enum hzos_ext_flags hzos_ext_str_to_flag(const char *str, size_t len)
 	for (i = 0; i < HZOS_EXT_NUM_FLAGS; i++) {
 		const char *flag_str = hzos_ext_flag_strings[i];
 
-		if (!strncmp(str, flag_str, len))
+		if (!strncmp(str, flag_str, len) &&
+		    strlen(flag_str) == len)
 			return hzos_ext_idx_to_flag(i);
 	}
 

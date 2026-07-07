@@ -17,12 +17,49 @@ void miscfifo_cancel(struct file *file)
 }
 EXPORT_SYMBOL(miscfifo_cancel);
 
+/**
+ * Set the poison flag on all existing clients without waking waiters.
+ *
+ * Use this when multiple fifos must be poisoned atomically with respect
+ * to RT-priority readers.  Call miscfifo_poison_notify() on each fifo
+ * after all flags have been set.
+ */
+void miscfifo_poison_mark(struct miscfifo *mf)
+{
+	struct miscfifo_client *client;
+
+	down_read(&mf->clients.rw_lock);
+	list_for_each_entry(client, &mf->clients.list, node) {
+		WRITE_ONCE(client->poisoned, true);
+	}
+	up_read(&mf->clients.rw_lock);
+}
+EXPORT_SYMBOL_GPL(miscfifo_poison_mark);
+
+/**
+ * Wake all blocked readers on this miscfifo.
+ *
+ * Pair with miscfifo_poison_mark() after all critical disconnect
+ * work is complete, so that RT-priority readers cannot preempt
+ * the caller in a busy-loop before teardown finishes.
+ */
+void miscfifo_poison_notify(struct miscfifo *mf)
+{
+	wake_up_interruptible_all(&mf->clients.wait);
+}
+EXPORT_SYMBOL_GPL(miscfifo_poison_notify);
+
 static bool read_is_ready(struct miscfifo_client *client, ssize_t *rc)
 {
 	int cancel = atomic_xchg(&client->cancel, 0);
 
 	if (cancel) {
 		*rc = -ECANCELED;
+		return true;
+	}
+
+	if (READ_ONCE(client->poisoned)) {
+		*rc = -ENODEV;
 		return true;
 	}
 
@@ -36,6 +73,14 @@ ssize_t miscfifo_fop_read(struct file *file,
 	ssize_t rc;
 	unsigned int copied;
 	struct miscfifo_client *client = file->private_data;
+
+	/*
+	 * Optimistic early check — avoids taking consumer_lock when
+	 * already poisoned.  If poisoning races with this check,
+	 * read_is_ready() catches it after poison_notify() wakes us.
+	 */
+	if (READ_ONCE(client->poisoned))
+		return -ENODEV;
 
 	mutex_lock(&client->consumer_lock);
 	if (kfifo_is_empty(&client->fifo)) {
@@ -79,6 +124,10 @@ ssize_t miscfifo_fop_read_many(struct file *file,
 	ssize_t rc;
 	unsigned int total_copied = 0;
 	struct miscfifo_client *client = file->private_data;
+
+	/* Optimistic early check; read_is_ready() is the real guard. */
+	if (READ_ONCE(client->poisoned))
+		return -ENODEV;
 
 	mutex_lock(&client->consumer_lock);
 	if (kfifo_is_empty(&client->fifo)) {
@@ -146,6 +195,9 @@ unsigned int miscfifo_fop_poll(struct file *file,
 {
 	unsigned int mask = 0;
 	struct miscfifo_client *client = file->private_data;
+
+	if (READ_ONCE(client->poisoned))
+		return POLLERR;
 
 	if (atomic_read(&client->cancel)) {
 		/*
@@ -280,6 +332,9 @@ int miscfifo_write_buf(struct miscfifo *mf, const u8 *buf, size_t len, bool *sho
 	down_read(&mf->clients.rw_lock);
 	list_for_each_entry(client, &mf->clients.list, node) {
 		bool skip;
+
+		if (READ_ONCE(client->poisoned))
+			continue;
 
 		mutex_lock(&client->context_lock);
 		skip = mf->config.filter_fn &&

@@ -105,7 +105,10 @@ struct pwm_fan_ctx {
 	ktime_t last_tach_timestamp;
 	ktime_t last_rpm_update_timestamp;
 	int32_t max_rpm;
+	int32_t pid_min_rpm;
+	int32_t pid_max_rpm;
 	int32_t rpm_value;
+	int32_t rpm_mid;
 	int32_t target_rpm_value;
 	int32_t rpm_history[MAX_RPM_HISTORY];
 	int32_t resume_rpm_value;
@@ -121,12 +124,14 @@ struct pwm_fan_ctx {
 
 static uint32_t get_rpm_delay_ms(int32_t rpm)
 {
-	if (rpm > 2000)
+	if (rpm > 4000)
 		return 50;
+	else if (rpm >= 3000)
+		return 80;
+	else if (rpm >= 2000)
+		return 120;
 	else if (rpm >= 1100)
-		return 100;
-	else if (rpm >= 600)
-		return 150;
+		return 180;
 	else if (rpm >= 0)
 		return 200;
 	return 0;
@@ -136,16 +141,14 @@ static int32_t get_tolerance(int32_t rpm)
 {
 	if (rpm > 4500)
 		return 200;
-	else if (rpm >= 4500)
-		return 180;
 	else if (rpm >= 3500)
-		return 150;
+		return 180;
 	else if (rpm >= 2500)
-		return 100;
+		return 150;
 	else if (rpm >= 1500)
-		return 80;
-	else if (rpm >= 800)
-		return 60;
+		return 120;
+	else if (rpm >= 1000)
+		return 100;
 	else if (rpm >= 500)
 		return 50;
 	return 200;
@@ -230,6 +233,7 @@ static void disable_fan_notimestamp_locked(struct pwm_fan_ctx *ctx)
 	}
 	pwm_disable(ctx->pwm);
 	atomic64_set(&ctx->rpm, 0);
+	ctx->rpm_mid = 0;
 
 	if (ctx->vdd_supply != NULL && ctx->vdd_enabled) {
 		int rc = regulator_disable(ctx->vdd_supply);
@@ -415,7 +419,7 @@ static ssize_t show_rpm(struct device *dev,
 {
 	struct pwm_fan_ctx *ctx = dev_get_drvdata(dev);
 
-	return snprintf(buf, MAX_STR_LEN, "%lld\n", (s64)atomic64_read(&ctx->rpm));
+	return snprintf(buf, MAX_STR_LEN, "%d\n", ctx->rpm_mid);
 }
 
 static ssize_t set_rpm_per_sec(struct device *dev, struct device_attribute *attr,
@@ -572,7 +576,7 @@ pwm_fan_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
 	if (state == ctx->pwm_fan_state)
 		goto end_set_cur_state;
 
-	rpm = ctx->pwm_fan_cooling_levels[state];
+	rpm = ctx->pwm_fan_cooling_levels ? ctx->pwm_fan_cooling_levels[state] : state;
 	if (!ctx->is_display_on) {
 		/* Set RPM to expected level once display is on */
 		ctx->resume_rpm_value = rpm;
@@ -603,22 +607,44 @@ static int pwm_fan_get_requested_power(struct thermal_cooling_device *cdev,
 }
 
 static int pwm_fan_state2power(struct thermal_cooling_device *cdev,
-				unsigned long state, u32 *power)
-{
-	dev_err(&cdev->device, "%s: not implemented\n", __func__);
-	return -EPERM;
-}
-
-static int pwm_fan_power2state(struct thermal_cooling_device *cdev, u32 power,
-				unsigned long *state)
+				unsigned long state_in_rpm, u32 *power_in_rpm)
 {
 	struct pwm_fan_ctx *ctx = cdev->devdata;
 
-	if (power > ctx->pwm_fan_max_state)
-		power = ctx->pwm_fan_max_state;
+	// errors out unless cooling-level-as-state mode.
+	if (ctx->pwm_fan_cooling_levels != NULL) {
+		dev_err(&cdev->device, "%s: not implemented for this state.\n", __func__);
+		return -EPERM;
+	}
 
-	*state = power;
-	dev_dbg(&cdev->device, "%s: state %lu power %d\n", __func__, *state, power);
+	if (state_in_rpm >= ctx->pid_max_rpm)
+		*power_in_rpm = ctx->pid_max_rpm;
+	else if (state_in_rpm <= ctx->pid_min_rpm)
+		*power_in_rpm = ctx->pid_min_rpm;
+	else
+		*power_in_rpm = state_in_rpm;
+
+	return 0;
+}
+
+static int pwm_fan_power2state(struct thermal_cooling_device *cdev, u32 power_in_rpm,
+				unsigned long *state_in_rpm)
+{
+	struct pwm_fan_ctx *ctx = cdev->devdata;
+
+	// errors out unless cooling-level-as-state mode.
+	if (ctx->pwm_fan_cooling_levels != NULL) {
+		dev_err(&cdev->device, "%s: not implemented for this state\n", __func__);
+		return -EPERM;
+	}
+
+	if (power_in_rpm <= ctx->pid_min_rpm)
+		*state_in_rpm = ctx->pid_min_rpm;
+	else if (power_in_rpm >= ctx->pid_max_rpm)
+		*state_in_rpm = ctx->pid_max_rpm;
+	else
+		*state_in_rpm = power_in_rpm;
+
 	return 0;
 }
 #endif
@@ -906,6 +932,7 @@ static void fan_work_func(struct work_struct *work)
 	rpm_mid = MID(ctx->rpm_history[rpm_history_idx % MAX_RPM_HISTORY],
 		ctx->rpm_history[abs((rpm_history_idx - 1) % MAX_RPM_HISTORY)],
 		ctx->rpm_history[abs((rpm_history_idx - 2) % MAX_RPM_HISTORY)]);
+	ctx->rpm_mid = rpm_mid;
 
 	/*
 	 * To make the actual rpm closer to the set value
@@ -964,6 +991,9 @@ static int pwm_fan_of_get_cooling_data(struct device *dev,
 
 		ctx->pwm_fan_cooling_levels[max_percentage - 1] = ctx->max_rpm;
 		ctx->pwm_fan_max_state = max_percentage - 1;
+	} else if (device_property_read_bool(dev, "cooling-level-as-state")) {
+		ctx->pwm_fan_cooling_levels = NULL;
+		ctx->pwm_fan_max_state = ctx->max_rpm;
 	} else {
 		if (!of_find_property(np, "cooling-levels", NULL))
 			return 0;
@@ -1217,6 +1247,12 @@ static int pwm_fan_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Property 'max-rpm' cannot be read!\n");
 		goto err_tach_gpio_dir;
 	}
+
+	if (of_property_read_u32(pdev->dev.of_node, "pid-min-rpm", &ctx->pid_min_rpm))
+		ctx->pid_min_rpm = 0;
+
+	if (of_property_read_u32(pdev->dev.of_node, "pid-max-rpm", &ctx->pid_max_rpm))
+		ctx->pid_max_rpm = ctx->max_rpm;
 
 	ctx->pinctrl = devm_pinctrl_get(&pdev->dev);
 	if (IS_ERR_OR_NULL(ctx->pinctrl))

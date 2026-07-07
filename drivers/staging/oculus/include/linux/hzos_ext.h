@@ -87,6 +87,18 @@ ssize_t hzos_ext_preferred_mask_write(struct kernfs_open_file *of, char *buf,
  */
 int hzos_ext_preferred_mask_read(struct seq_file *sf, void *v);
 
+/**
+ * hzos_ext_check_bpf_helper - Check if a BPF helper should be blocked.
+ *
+ * @func_id: The BPF helper function ID to check.
+ * @ret: Set to -EPERM if the helper should be blocked.
+ */
+void hzos_ext_check_bpf_helper(int func_id, int *ret);
+
+#else
+
+static inline void hzos_ext_check_bpf_helper(int func_id, int *ret) { }
+
 #endif /* CONFIG_HZOS_EXT */
 
 #endif /* _LINUX_HZOS_EXT_H */

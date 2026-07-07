@@ -113,7 +113,8 @@ static int misc_open(struct inode *inode, struct file *file)
 		}
 	}
 
-	if (!new_fops) {
+	/* Only request module for fixed minor code */
+	if (!new_fops && minor < MISC_DYNAMIC_MINOR) {
 		up_read(&misc_rwlock);
 		request_module("char-major-%d-%d", MISC_MAJOR, minor);
 		down_read(&misc_rwlock);
@@ -124,9 +125,10 @@ static int misc_open(struct inode *inode, struct file *file)
 				break;
 			}
 		}
-		if (!new_fops)
-			goto fail;
 	}
+
+	if (!new_fops)
+		goto fail;
 
 	/*
 	 * Place the miscdevice in the file's

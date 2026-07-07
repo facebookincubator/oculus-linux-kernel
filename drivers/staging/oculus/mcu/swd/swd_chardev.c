@@ -124,8 +124,10 @@ static int device_open(struct inode *inode, struct file *filp)
 	filp->private_data = cdevdata;
 
 	// treat O_NONBLOCK as signal to skip initializaiton
-	if (filp->f_flags & O_NONBLOCK)
+	if (filp->f_flags & O_NONBLOCK) {
+		dev_info(dev, "Skip target prepare for nonblocking release!");
 		return 0;
+	}
 
 	devdata = dev_get_drvdata(swd_dev);
 
@@ -143,7 +145,8 @@ static int device_open(struct inode *inode, struct file *filp)
 	return 0;
 
 err:
-
+	if (cdevdata)
+		atomic_set(&cdevdata->in_use, 0);
 	return ret;
 }
 
@@ -155,8 +158,10 @@ static int device_release(struct inode *inode, struct file *filp)
 	struct device *swd_dev = dev->parent;
 	struct swd_dev_data *devdata = dev_get_drvdata(swd_dev);
 
-	if (filp->f_flags & O_NONBLOCK)
+	if (filp->f_flags & O_NONBLOCK) {
+		dev_info(dev, "Skip target finalize for nonblocking release!");
 		goto out;
+	}
 
 	if (devdata->mcu_data.swd_ops.target_finalize) {
 		ret = devdata->mcu_data.swd_ops.target_finalize(swd_dev);
@@ -230,6 +235,7 @@ static loff_t noop_seek(struct file *filp, loff_t off, int whence)
 }
 
 static const struct file_operations chardev_fops = {
+	.owner                  = THIS_MODULE,
 	.read                   = device_read,
 	.write                  = device_write,
 	.open                   = device_open,
@@ -240,7 +246,7 @@ static const struct file_operations chardev_fops = {
 
 int swd_driver_init_chardev(struct device *dev, const char *const flavor)
 {
-	int ret, major;
+	int ret;
 	u8 *buf = NULL;
 	size_t chunk_size = 0;
 	struct swd_dev_data *devdata = NULL;
@@ -264,47 +270,79 @@ int swd_driver_init_chardev(struct device *dev, const char *const flavor)
 
 	if (!buf || !cdevdata) {
 		ret = -ENOMEM;
-		goto out_error;
+		goto err_free;
 	}
 
 	ret = alloc_chrdev_region(&cdevdata->devt, 0, 1, "swd_chardev");
 	if (ret < 0) {
 		dev_err(dev, "alloc_chrdev_region() failed");
-		goto out_error;
+		goto err_free;
 	}
 
-	major = MAJOR(cdevdata->devt);
-
 	cls = class_create(THIS_MODULE, flavor);
-	cdevdata->devt = MKDEV(major, 0);
+	if (IS_ERR(cls)) {
+		ret = PTR_ERR(cls);
+		dev_err(dev, "class_create() failed: %d", ret);
+		cls = NULL;
+		goto err_unreg_chrdev;
+	}
 
 	cdev_init(&cdevdata->cdev, &chardev_fops);
 	ret = cdev_add(&cdevdata->cdev, cdevdata->devt, 1);
-	if (ret)
-		goto out_error;
+	if (ret) {
+		dev_err(dev, "cdev_add() failed: %d", ret);
+		goto err_class_destroy;
+	}
 
 	cdevdata->dev = device_create(cls, dev, cdevdata->devt, cdevdata,
 				      "swd_%s", flavor);
-
-	if (IS_ERR(cdevdata->dev) != 0) {
-		dev_err(dev, "failed to create device!");
-		goto out_error;
+	if (IS_ERR(cdevdata->dev)) {
+		ret = PTR_ERR(cdevdata->dev);
+		dev_err(dev, "device_create() failed: %d", ret);
+		goto err_cdev_del;
 	}
 
 	cdevdata->buf = buf;
 	cdevdata->chunk_size = chunk_size;
 
+	devdata->chardev_data = cdevdata;
+
 	return 0;
 
-out_error:
-
+err_cdev_del:
+	cdev_del(&cdevdata->cdev);
+err_class_destroy:
+	class_destroy(cls);
+	cls = NULL;
+err_unreg_chrdev:
+	unregister_chrdev_region(cdevdata->devt, 1);
+err_free:
 	kfree(buf);
 	kfree(cdevdata);
 
-	if (cls)
-		class_destroy(cls);
-
-	cls = NULL;
-
 	return ret;
+}
+
+void swd_driver_deinit_chardev(struct device *dev)
+{
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	struct cdev_data *cdevdata;
+
+	if (!devdata || !devdata->chardev_data)
+		return;
+
+	cdevdata = devdata->chardev_data;
+
+	device_destroy(cls, cdevdata->devt);
+	cdev_del(&cdevdata->cdev);
+	unregister_chrdev_region(cdevdata->devt, 1);
+
+	if (cls) {
+		class_destroy(cls);
+		cls = NULL;
+	}
+
+	kfree(cdevdata->buf);
+	kfree(cdevdata);
+	devdata->chardev_data = NULL;
 }
