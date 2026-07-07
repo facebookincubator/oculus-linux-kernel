@@ -213,6 +213,11 @@ void adreno_dispatcher_stop_fault_timer(struct kgsl_device *device)
  * without going to the GPU.  In those cases, update the
  * memstore from the CPU, kick off the event engine to handle
  * expired events and destroy the ib.
+ *
+ * NOTE: This function only performs the bookkeeping (timestamps, events,
+ * tracing). The caller is responsible for calling kgsl_drawobj_destroy()
+ * after releasing any spinlocks, since drawobj destruction can sleep
+ * (del_timer_sync, kgsl_context_put, kvfree).
  */
 static void _retire_timestamp(struct kgsl_drawobj *drawobj)
 {
@@ -275,8 +280,6 @@ static void _retire_timestamp(struct kgsl_drawobj *drawobj)
 
 	log_kgsl_cmdbatch_retired_event(context->id, drawobj->timestamp,
 		context->priority, drawobj->flags, 0, 0);
-
-	kgsl_drawobj_destroy(drawobj);
 }
 
 static int _check_context_queue(struct adreno_context *drawctxt, u32 count)
@@ -321,13 +324,15 @@ static inline void _pop_drawobj(struct adreno_context *drawctxt)
 }
 
 static int dispatch_retire_markerobj(struct kgsl_drawobj *drawobj,
-				struct adreno_context *drawctxt)
+				struct adreno_context *drawctxt,
+				struct kgsl_drawobj **retired, int *retired_count)
 {
 	struct kgsl_drawobj_cmd *cmdobj = CMDOBJ(drawobj);
 
 	if (_marker_expired(cmdobj)) {
 		_pop_drawobj(drawctxt);
 		_retire_timestamp(drawobj);
+		retired[(*retired_count)++] = drawobj;
 		return 0;
 	}
 
@@ -344,13 +349,14 @@ static int dispatch_retire_markerobj(struct kgsl_drawobj *drawobj,
 }
 
 static int dispatch_retire_syncobj(struct kgsl_drawobj *drawobj,
-				struct adreno_context *drawctxt)
+				struct adreno_context *drawctxt,
+				struct kgsl_drawobj **retired, int *retired_count)
 {
 	struct kgsl_drawobj_sync *syncobj = SYNCOBJ(drawobj);
 
 	if (!kgsl_drawobj_events_pending(syncobj)) {
 		_pop_drawobj(drawctxt);
-		kgsl_drawobj_destroy(drawobj);
+		retired[(*retired_count)++] = drawobj;
 		return 0;
 	}
 
@@ -367,7 +373,8 @@ static int dispatch_retire_syncobj(struct kgsl_drawobj *drawobj,
 }
 
 static int drawqueue_retire_timelineobj(struct kgsl_drawobj *drawobj,
-		struct adreno_context *drawctxt)
+		struct adreno_context *drawctxt,
+		struct kgsl_drawobj **retired, int *retired_count)
 {
 	struct kgsl_drawobj_timeline *timelineobj = TIMELINEOBJ(drawobj);
 	int i;
@@ -378,18 +385,21 @@ static int drawqueue_retire_timelineobj(struct kgsl_drawobj *drawobj,
 
 	_pop_drawobj(drawctxt);
 	_retire_timestamp(drawobj);
+	retired[(*retired_count)++] = drawobj;
 
 	return 0;
 }
 
 static int drawqueue_retire_bindobj(struct kgsl_drawobj *drawobj,
-		struct adreno_context *drawctxt)
+		struct adreno_context *drawctxt,
+		struct kgsl_drawobj **retired, int *retired_count)
 {
 	struct kgsl_drawobj_bind *bindobj = BINDOBJ(drawobj);
 
 	if (test_bit(KGSL_BINDOBJ_STATE_DONE, &bindobj->state)) {
 		_pop_drawobj(drawctxt);
 		_retire_timestamp(drawobj);
+		retired[(*retired_count)++] = drawobj;
 		return 0;
 	}
 
@@ -414,9 +424,14 @@ static int drawqueue_retire_bindobj(struct kgsl_drawobj *drawobj,
  * b) -EAGAIN for syncobj with syncpoints pending.
  * c) -EAGAIN for markerobj whose marker timestamp has not expired yet.
  * c) NULL for no commands remaining in drawqueue.
+ *
+ * Retired drawobjs are collected in @retired (up to @retired_count entries).
+ * The caller MUST call kgsl_drawobj_destroy() on each after releasing
+ * drawctxt->lock, since drawobj destruction can sleep.
  */
 static struct kgsl_drawobj *_process_drawqueue_get_next_drawobj(
-				struct adreno_context *drawctxt)
+				struct adreno_context *drawctxt,
+				struct kgsl_drawobj **retired, int *retired_count)
 {
 	struct kgsl_drawobj *drawobj;
 	unsigned int i = drawctxt->drawqueue_head;
@@ -436,19 +451,23 @@ static struct kgsl_drawobj *_process_drawqueue_get_next_drawobj(
 		case CMDOBJ_TYPE:
 			return drawobj;
 		case MARKEROBJ_TYPE:
-			ret = dispatch_retire_markerobj(drawobj, drawctxt);
+			ret = dispatch_retire_markerobj(drawobj, drawctxt,
+					retired, retired_count);
 			/* Special case where marker needs to be sent to GPU */
 			if (ret == 1)
 				return drawobj;
 			break;
 		case SYNCOBJ_TYPE:
-			ret = dispatch_retire_syncobj(drawobj, drawctxt);
+			ret = dispatch_retire_syncobj(drawobj, drawctxt,
+					retired, retired_count);
 			break;
 		case BINDOBJ_TYPE:
-			ret = drawqueue_retire_bindobj(drawobj, drawctxt);
+			ret = drawqueue_retire_bindobj(drawobj, drawctxt,
+					retired, retired_count);
 			break;
 		case TIMELINEOBJ_TYPE:
-			ret = drawqueue_retire_timelineobj(drawobj, drawctxt);
+			ret = drawqueue_retire_timelineobj(drawobj, drawctxt,
+					retired, retired_count);
 			break;
 		default:
 			ret = -EINVAL;
@@ -532,7 +551,7 @@ static int dispatcher_queue_context(struct adreno_device *adreno_dev,
 	/* This function can be called in an atomic context */
 	job = kmem_cache_alloc(jobs_cache, GFP_ATOMIC);
 	if (!job) {
-		kgsl_context_put(&drawctxt->base);
+		kgsl_context_put_deferred(&drawctxt->base);
 		return -ENOMEM;
 	}
 
@@ -760,15 +779,22 @@ static int dispatcher_context_sendcmds(struct adreno_device *adreno_dev,
 {
 	struct adreno_dispatcher_drawqueue *dispatch_q =
 					&(drawctxt->rb->dispatch_q);
+	struct kgsl_drawobj *retired[ADRENO_CONTEXT_DRAWQUEUE_SIZE];
 	int count = 0;
 	int ret = 0;
+	int retired_count = 0;
 	int inflight = _drawqueue_inflight(dispatch_q);
 	unsigned int timestamp;
+	int i;
 
 	if (dispatch_q->inflight >= inflight) {
 		spin_lock(&drawctxt->lock);
-		_process_drawqueue_get_next_drawobj(drawctxt);
+		_process_drawqueue_get_next_drawobj(drawctxt,
+				retired, &retired_count);
 		spin_unlock(&drawctxt->lock);
+
+		for (i = 0; i < retired_count; i++)
+			kgsl_drawobj_destroy(retired[i]);
 		return -EBUSY;
 	}
 
@@ -784,8 +810,10 @@ static int dispatcher_context_sendcmds(struct adreno_device *adreno_dev,
 		if (adreno_gpu_fault(adreno_dev) != 0)
 			break;
 
+		retired_count = 0;
 		spin_lock(&drawctxt->lock);
-		drawobj = _process_drawqueue_get_next_drawobj(drawctxt);
+		drawobj = _process_drawqueue_get_next_drawobj(drawctxt,
+				retired, &retired_count);
 
 		/*
 		 * adreno_context_get_drawobj returns -EAGAIN if the current
@@ -798,10 +826,17 @@ static int dispatcher_context_sendcmds(struct adreno_device *adreno_dev,
 			if (IS_ERR(drawobj))
 				ret = PTR_ERR(drawobj);
 			spin_unlock(&drawctxt->lock);
+			/* Destroy retired drawobjs outside the spinlock */
+			for (i = 0; i < retired_count; i++)
+				kgsl_drawobj_destroy(retired[i]);
 			break;
 		}
 		_pop_drawobj(drawctxt);
 		spin_unlock(&drawctxt->lock);
+
+		/* Destroy retired drawobjs outside the spinlock */
+		for (i = 0; i < retired_count; i++)
+			kgsl_drawobj_destroy(retired[i]);
 
 		timestamp = drawobj->timestamp;
 		cmdobj = CMDOBJ(drawobj);
@@ -1385,9 +1420,14 @@ static int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 				kmem_cache_free(jobs_cache, job);
 			}
 
-			if (ret == 1)
+			if (ret == 1) {
+				/*
+				 * Marker was fastpath-retired under the lock.
+				 * Destroy it now that the lock is released.
+				 */
+				kgsl_drawobj_destroy(drawobj[i]);
 				goto done;
-			else if (ret)
+			} else if (ret)
 				return ret;
 			break;
 		case CMDOBJ_TYPE:
@@ -2650,7 +2690,7 @@ static void change_preemption(struct adreno_device *adreno_dev, void *priv)
 	adreno_dev->prev_rb = NULL;
 
 	/* Update the ringbuffer for each draw context */
-	write_lock(&device->context_lock);
+	spin_lock(&device->context_lock);
 	idr_for_each_entry(&device->context_idr, context, id) {
 		drawctxt = ADRENO_CONTEXT(context);
 		drawctxt->rb = dispatch_get_rb(adreno_dev, drawctxt);
@@ -2662,7 +2702,7 @@ static void change_preemption(struct adreno_device *adreno_dev, void *priv)
 		adreno_rb_readtimestamp(adreno_dev, drawctxt->rb,
 			KGSL_TIMESTAMP_RETIRED, &drawctxt->internal_timestamp);
 	}
-	write_unlock(&device->context_lock);
+	spin_unlock(&device->context_lock);
 }
 
 static int _preemption_store(struct adreno_device *adreno_dev, bool val)

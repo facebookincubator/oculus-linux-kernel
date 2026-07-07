@@ -342,16 +342,20 @@ int kgsl_devfreq_get_dev_status(struct device *dev,
 		struct xstats *last_b =
 			(struct xstats *)last_status.private_data;
 
-		last_status.total_time = stat->total_time;
-		last_status.busy_time = stat->busy_time;
-		last_status.current_frequency = stat->current_frequency;
+		WRITE_ONCE(last_status.total_time, stat->total_time);
+		WRITE_ONCE(last_status.busy_time, stat->busy_time);
+		WRITE_ONCE(last_status.current_frequency,
+			stat->current_frequency);
 
-		last_b->ram_time = device->pwrscale.accum_stats.ram_time;
-		last_b->ram_wait = device->pwrscale.accum_stats.ram_wait;
-		last_b->buslevel = device->pwrctrl.cur_dcvs_buslevel;
+		WRITE_ONCE(last_b->ram_time,
+			device->pwrscale.accum_stats.ram_time);
+		WRITE_ONCE(last_b->ram_wait,
+			device->pwrscale.accum_stats.ram_wait);
+		WRITE_ONCE(last_b->buslevel,
+			device->pwrctrl.cur_dcvs_buslevel);
 
 		pwrlevel = &pwrctrl->pwrlevels[pwrctrl->min_pwrlevel];
-		last_b->gpu_minfreq = pwrlevel->gpu_freq;
+		WRITE_ONCE(last_b->gpu_minfreq, pwrlevel->gpu_freq);
 	}
 
 	kgsl_pwrctrl_busy_time(device, stat->total_time, stat->busy_time);
@@ -418,18 +422,18 @@ int kgsl_busmon_get_dev_status(struct device *dev,
 	if (!device->pwrscale.devfreq_enabled)
 		return -EPROTO;
 
-	stat->total_time = last_status.total_time;
-	stat->busy_time = last_status.busy_time;
-	stat->current_frequency = last_status.current_frequency;
+	stat->total_time = READ_ONCE(last_status.total_time);
+	stat->busy_time = READ_ONCE(last_status.busy_time);
+	stat->current_frequency = READ_ONCE(last_status.current_frequency);
 
 	if (stat->private_data) {
 		struct xstats *last_b =
 			(struct xstats *)last_status.private_data;
 		b = (struct xstats *)stat->private_data;
-		b->ram_time = last_b->ram_time;
-		b->ram_wait = last_b->ram_wait;
-		b->buslevel = last_b->buslevel;
-		b->gpu_minfreq = last_b->gpu_minfreq;
+		b->ram_time = READ_ONCE(last_b->ram_time);
+		b->ram_wait = READ_ONCE(last_b->ram_wait);
+		b->buslevel = READ_ONCE(last_b->buslevel);
+		b->gpu_minfreq = READ_ONCE(last_b->gpu_minfreq);
 	}
 	return 0;
 }
@@ -677,9 +681,10 @@ static int thermal_max_notifier_call(struct notifier_block *nb, unsigned long va
 		return NOTIFY_OK;
 
 	trace_kgsl_thermal_constraint(max_freq);
-	pwr->thermal_pwrlevel = level;
 
 	mutex_lock(&device->mutex);
+
+	pwr->thermal_pwrlevel = level;
 
 	/* If RT hint is active, send thermal constraint to GMU */
 	if (pwr->rt_pwrlevel_hint != INVALID_DCVS_IDX)

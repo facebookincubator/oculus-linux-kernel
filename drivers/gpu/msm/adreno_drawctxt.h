@@ -85,7 +85,7 @@ struct adreno_context {
 	/** @hw_fence_ts: timestamp of the last hardware fence in the fence list */
 	u32 hw_fence_ts;
 	/** @hw_fence_count: Number of hardware fences not yet sent to Tx Queue */
-	u32 hw_fence_count;
+	atomic_t hw_fence_count;
 	/** @syncobj_timestamp: Timestamp to check whether GMU has consumed a syncobj */
 	u32 syncobj_timestamp;
 };

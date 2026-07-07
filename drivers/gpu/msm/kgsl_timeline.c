@@ -192,8 +192,8 @@ static bool timeline_fence_signaled(struct dma_fence *fence)
 {
 	struct kgsl_timeline_fence *f = to_timeline_fence(fence);
 
-	return !__dma_fence_is_later(fence->seqno, f->timeline->value,
-		fence->ops);
+	return !__dma_fence_is_later(fence->seqno,
+		READ_ONCE(f->timeline->value), fence->ops);
 }
 
 static bool timeline_fence_enable_signaling(struct dma_fence *fence)
@@ -223,7 +223,7 @@ static void timeline_get_value_str(struct dma_fence *fence,
 {
 	struct kgsl_timeline_fence *f = to_timeline_fence(fence);
 
-	snprintf(str, size, "%lld", f->timeline->value);
+	snprintf(str, size, "%lld", READ_ONCE(f->timeline->value));
 }
 
 static const struct dma_fence_ops timeline_fence_ops = {
@@ -269,7 +269,7 @@ void kgsl_timeline_signal(struct kgsl_timeline *timeline, u64 seqno)
 
 	trace_kgsl_timeline_signal(timeline->id, seqno);
 
-	timeline->value = seqno;
+	WRITE_ONCE(timeline->value, seqno);
 
 	spin_lock(&timeline->fence_lock);
 	list_for_each_entry_safe(fence, tmp, &timeline->fences, node)
@@ -278,13 +278,19 @@ void kgsl_timeline_signal(struct kgsl_timeline *timeline, u64 seqno)
 			list_move(&fence->node, &temp);
 	spin_unlock(&timeline->fence_lock);
 
-	list_for_each_entry_safe(fence, tmp, &temp, node) {
+	list_for_each_entry_safe(fence, tmp, &temp, node)
 		dma_fence_signal_locked(&fence->base);
-		dma_fence_put(&fence->base);
-	}
 
 unlock:
 	spin_unlock_irq(&timeline->lock);
+
+	/*
+	 * Put signaled fences outside the spinlock because dma_fence_put
+	 * can trigger timeline_fence_release which takes fence_lock and
+	 * logs to the eventlog.
+	 */
+	list_for_each_entry_safe(fence, tmp, &temp, node)
+		dma_fence_put(&fence->base);
 }
 
 struct dma_fence *kgsl_timeline_fence_alloc(struct kgsl_timeline *timeline,
@@ -543,6 +549,18 @@ long kgsl_ioctl_timeline_destroy(struct kgsl_device_private *dev_priv,
 		return -EINVAL;
 	}
 
+	/*
+	 * Take an explicit reference before removing from the IDR and
+	 * releasing the lock. Without this, the timeline fields accessed
+	 * below (fence_lock, fences, lock) are protected only by the
+	 * implicit creation reference — if any in-flight fence release
+	 * races to drop the last ref, we'd use-after-free.
+	 */
+	if (!kref_get_unless_zero(&timeline->ref)) {
+		spin_unlock(&device->timelines_lock);
+		return -ENODEV;
+	}
+
 	idr_remove(&device->timelines, timeline->id);
 	spin_unlock(&device->timelines_lock);
 
@@ -559,10 +577,20 @@ long kgsl_ioctl_timeline_destroy(struct kgsl_device_private *dev_priv,
 	list_for_each_entry_safe(fence, tmp, &temp, node) {
 		dma_fence_set_error(&fence->base, -ENOENT);
 		dma_fence_signal_locked(&fence->base);
-		dma_fence_put(&fence->base);
 	}
 	spin_unlock_irq(&timeline->lock);
 
+	/*
+	 * Put fences outside the spinlock because dma_fence_put can trigger
+	 * the fence release callback (timeline_fence_release) which takes
+	 * fence_lock and logs to the eventlog — sleeping is also possible.
+	 */
+	list_for_each_entry_safe(fence, tmp, &temp, node)
+		dma_fence_put(&fence->base);
+
+	/* Drop the explicit reference taken above */
+	kgsl_timeline_put(timeline);
+	/* Drop the creation reference */
 	kgsl_timeline_put(timeline);
 
 	return 0;

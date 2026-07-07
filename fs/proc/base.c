@@ -3369,7 +3369,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 	ONE("arch_status", S_IRUGO, proc_pid_arch_status),
 #endif
 #ifdef CONFIG_HZOS_EXT
-	REG("hzos_ext_flags", S_IRUGO|S_IWUGO,
+	REG("hzos_ext_flags", S_IRUSR|S_IWUSR,
 	    proc_hzos_ext_flag_ops),
 #endif
 };

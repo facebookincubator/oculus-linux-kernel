@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _MSM_CVP_H_
@@ -39,4 +40,6 @@ int msm_cvp_get_session_info(struct msm_cvp_inst *inst, u32 *session);
 int msm_cvp_update_power(struct msm_cvp_inst *inst);
 int cvp_clean_session_queues(struct msm_cvp_inst *inst);
 int msm_eva_set_sw_pc(u32 data);
+void *get_sessObj_from_idr(struct msm_cvp_inst *inst);
+u32 get_sessId_from_idr(void *session);
 #endif

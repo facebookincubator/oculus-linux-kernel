@@ -2329,6 +2329,7 @@ int sde_dbg_debugfs_register(struct device *dev)
 	debugfs_create_file("recovery_reg", 0400, debugfs_root, dbg, &sde_recovery_reg_fops);
 
 	debugfs_create_u32("enable", 0600, debugfs_root, &(sde_dbg_base_evtlog->enable));
+	debugfs_create_u32("reglog_enable", 0600, debugfs_root, &(sde_dbg_base_reglog->enable));
 	debugfs_create_u32("evtlog_dump", 0600, debugfs_root, &(sde_dbg_base_evtlog->dump_mode));
 	debugfs_create_u32("panic", 0600, debugfs_root, &dbg->panic_on_err);
 	debugfs_create_u32("reg_dump", 0600, debugfs_root, &dbg->enable_reg_dump);

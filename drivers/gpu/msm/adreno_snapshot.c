@@ -880,8 +880,8 @@ static struct kgsl_process_private *setup_fault_process(struct kgsl_device *devi
 	if (kgsl_mmu_is_perprocess(&device->mmu)) {
 		struct kgsl_process_private *tmp;
 
-		read_lock(&kgsl_driver.proclist_lock);
-		list_for_each_entry(tmp, &kgsl_driver.process_list, list) {
+		rcu_read_lock();
+		list_for_each_entry_rcu(tmp, &kgsl_driver.process_list, list) {
 			u64 pt_ttbr0;
 
 			pt_ttbr0 = kgsl_mmu_pagetable_get_ttbr0(tmp->pagetable);
@@ -891,7 +891,7 @@ static struct kgsl_process_private *setup_fault_process(struct kgsl_device *devi
 				break;
 			}
 		}
-		read_unlock(&kgsl_driver.proclist_lock);
+		rcu_read_unlock();
 	}
 done:
 	return process;
@@ -1020,7 +1020,7 @@ static void adreno_snapshot_os(struct kgsl_device *device,
 	remain = snapshot->remain - sizeof(*sect) + sizeof(*header);
 	mem = snapshot->ptr + sizeof(*sect) + sizeof(*header);
 
-	read_lock(&device->context_lock);
+	rcu_read_lock();
 	idr_for_each_entry(&device->context_idr, context, id) {
 		struct kgsl_snapshot_linux_context_v2 *c = mem;
 
@@ -1041,7 +1041,7 @@ static void adreno_snapshot_os(struct kgsl_device *device,
 		mem += sizeof(*c);
 		remain -= sizeof(*c);
 	}
-	read_unlock(&device->context_lock);
+	rcu_read_unlock();
 
 	sect->magic = SNAPSHOT_SECTION_MAGIC;
 	sect->id = KGSL_SNAPSHOT_SECTION_OS;

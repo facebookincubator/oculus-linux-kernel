@@ -465,6 +465,7 @@ csiphy_reg_t csiphy_3ph_v1_2_3_reg[MAX_LANES][MAX_SETTINGS_PER_LANE] = {
 		{0x0988, 0x05, 0x00, CSIPHY_DEFAULT_PARAMS},
 		{0x0980, 0x61, 0x00, CSIPHY_DEFAULT_PARAMS},
 		{0x09B0, 0x01, 0x00, CSIPHY_DEFAULT_PARAMS},
+		{0x09B4, 0x02, 0x00, CSIPHY_DEFAULT_PARAMS},
 		{0x0800, 0x0E, 0x00, CSIPHY_DEFAULT_PARAMS},
 	},
 	{
@@ -498,6 +499,7 @@ csiphy_reg_t csiphy_3ph_v1_2_3_reg[MAX_LANES][MAX_SETTINGS_PER_LANE] = {
 		{0x0A88, 0x05, 0x00, CSIPHY_DEFAULT_PARAMS},
 		{0x0A80, 0x61, 0x00, CSIPHY_DEFAULT_PARAMS},
 		{0x0AB0, 0x01, 0x00, CSIPHY_DEFAULT_PARAMS},
+		{0x0AB4, 0x02, 0x00, CSIPHY_DEFAULT_PARAMS},
 		{0x0800, 0x0E, 0x00, CSIPHY_DEFAULT_PARAMS},
 	},
 	{
@@ -531,6 +533,7 @@ csiphy_reg_t csiphy_3ph_v1_2_3_reg[MAX_LANES][MAX_SETTINGS_PER_LANE] = {
 		{0x0B88, 0x05, 0x00, CSIPHY_DEFAULT_PARAMS},
 		{0x0B80, 0x61, 0x00, CSIPHY_DEFAULT_PARAMS},
 		{0x0BB0, 0x01, 0x00, CSIPHY_DEFAULT_PARAMS},
+		{0x0BB4, 0x02, 0x00, CSIPHY_DEFAULT_PARAMS},
 		{0x0800, 0x0E, 0x00, CSIPHY_DEFAULT_PARAMS},
 	},
 };
@@ -645,6 +648,37 @@ csiphy_reg_t csiphy_3ph_v1_2_3_low_peak_reg[MAX_LANES][MAX_SETTINGS_PER_LANE] = 
  *   TITAN_A_PHY_*_CSIPHY_LN5_CSI_3PHASE_CTRL27
  */
 int32_t csiphy_3ph_v1_2_3_rx_eq_reg_addr[MAX_LANES] = {0x016C, 0x036C, 0x056C};
+
+/*
+ * CDR Fine code register offsets (RX_REG_MISC) for 3 CPHY lanes:
+ *   TITAN_A_PHY_*_CSIPHY_LN1_RX_REG_MISC
+ *   TITAN_A_PHY_*_CSIPHY_LN3_RX_REG_MISC
+ *   TITAN_A_PHY_*_CSIPHY_LN5_RX_REG_MISC
+ *
+ * RX_REG_MISC[7:0] bits definition:
+ *   Bit[7]: Reserved
+ *   Bit[6]: HSRX bias enable (0=disable, 1=normal operation)
+ *   Bits[5:4]: Equalizer output resistor (00=4R/4, 01=4R/3, 10=4R/2, 11=4R/1)
+ *   Bits[3:0]: CDR PGM fine code (0-15)
+ *   Default: 0x46 = HSRX enabled, 4R/4 resistor, fine=6
+ */
+int32_t csiphy_3ph_v1_2_3_cdr_fine_reg_addr[MAX_LANES] = {0x015C, 0x035C, 0x055C};
+
+/*
+ * CDR Coarse code register offsets for 3 CPHY lanes:
+ *   TITAN_A_PHY_*_CSIPHY_LN1_CDR_COARSE
+ *   TITAN_A_PHY_*_CSIPHY_LN3_CDR_COARSE
+ *   TITAN_A_PHY_*_CSIPHY_LN5_CDR_COARSE
+ *
+ * CDR_COARSE register[7:0] bits definition:
+ *   Bit[7]: Reserved
+ *   Bits[6:0]: CDR_COARSE_EFUSE[6:0]
+ *     CDR_COARSE_EFUSE[6]: Reserved
+ *     CDR_COARSE_EFUSE[5]: Efuse enable (0=use register value, 1=use efuse)
+ *     CDR_COARSE_EFUSE[4:0]: CDR coarse code (0-31)
+ *   Default: 0x02 = efuse disabled, coarse=2
+ */
+int32_t csiphy_3ph_v1_2_3_cdr_coarse_reg_addr[MAX_LANES] = {0x09B4, 0x0AB4, 0x0BB4};
 
 struct data_rate_settings_t data_rate_delta_table_1_2_3 = {
 	.num_data_rate_settings = 3,

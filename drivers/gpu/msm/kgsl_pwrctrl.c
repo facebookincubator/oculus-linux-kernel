@@ -500,10 +500,11 @@ static ssize_t gpubusy_show(struct device *dev,
 	struct kgsl_clk_stats *stats = &device->pwrctrl.clk_stats;
 
 	ret = scnprintf(buf, PAGE_SIZE, "%7d %7d\n",
-			stats->busy_old, stats->total_old);
+			READ_ONCE(stats->busy_old),
+			READ_ONCE(stats->total_old));
 	if (!test_bit(KGSL_PWRFLAGS_AXI_ON, &device->pwrctrl.power_flags)) {
-		stats->busy_old = 0;
-		stats->total_old = 0;
+		WRITE_ONCE(stats->busy_old, 0);
+		WRITE_ONCE(stats->total_old, 0);
 	}
 	return ret;
 }
@@ -520,7 +521,8 @@ static ssize_t gpubusy_accum_show(struct device *dev,
 	stats = &device->pwrctrl.clk_stats;
 
 	return snprintf(buf, PAGE_SIZE, "%llu %llu\n",
-			stats->busy_accum, stats->total_accum);
+			READ_ONCE(stats->busy_accum),
+			READ_ONCE(stats->total_accum));
 }
 
 static ssize_t gpu_available_frequencies_show(struct device *dev,
@@ -755,15 +757,20 @@ static ssize_t _gpu_busy_show(struct kgsl_device *device,
 	struct kgsl_clk_stats *stats = &device->pwrctrl.clk_stats;
 	unsigned int busy_percent = 0;
 
-	if (stats->total_old != 0)
-		busy_percent = (stats->busy_old * 100) / stats->total_old;
+	{
+		unsigned int busy = READ_ONCE(stats->busy_old);
+		unsigned int total = READ_ONCE(stats->total_old);
+
+		if (total != 0)
+			busy_percent = (busy * 100) / total;
+	}
 
 	ret = scnprintf(buf, PAGE_SIZE, "%d %%\n", busy_percent);
 
 	/* Reset the stats if GPU is OFF */
 	if (!test_bit(KGSL_PWRFLAGS_AXI_ON, &device->pwrctrl.power_flags)) {
-		stats->busy_old = 0;
-		stats->total_old = 0;
+		WRITE_ONCE(stats->busy_old, 0);
+		WRITE_ONCE(stats->total_old, 0);
 	}
 	return ret;
 }
@@ -1091,15 +1098,15 @@ void kgsl_pwrctrl_busy_time(struct kgsl_device *device, u64 time, u64 busy)
 	stats->busy += busy;
 
 	/* these counters are never reset; only deltas are used */
-	stats->total_accum += time;
-	stats->busy_accum += busy;
+	WRITE_ONCE(stats->total_accum, stats->total_accum + time);
+	WRITE_ONCE(stats->busy_accum, stats->busy_accum + busy);
 
 	if (stats->total < UPDATE_BUSY_VAL)
 		return;
 
 	/* Update the output regularly and reset the counters. */
-	stats->total_old = stats->total;
-	stats->busy_old = stats->busy;
+	WRITE_ONCE(stats->total_old, stats->total);
+	WRITE_ONCE(stats->busy_old, stats->busy);
 	stats->total = 0;
 	stats->busy = 0;
 
@@ -1241,7 +1248,7 @@ int kgsl_pwrctrl_enable_cx_gdsc(struct kgsl_device *device, struct regulator *re
 	if (ret)
 		dev_err(device->dev, "Failed to enable CX regulator: %d\n", ret);
 
-	pwr->cx_gdsc_wait = false;
+	WRITE_ONCE(pwr->cx_gdsc_wait, false);
 	return ret;
 }
 
@@ -1264,7 +1271,15 @@ void kgsl_pwrctrl_disable_cx_gdsc(struct kgsl_device *device, struct regulator *
 		return;
 
 	reinit_completion(&device->pwrctrl.cx_gdsc_gate);
-	device->pwrctrl.cx_gdsc_wait = true;
+	WRITE_ONCE(device->pwrctrl.cx_gdsc_wait, true);
+	/*
+	 * Ensure the notifier callback on another CPU sees cx_gdsc_wait
+	 * before regulator_disable triggers the REGULATOR_EVENT_DISABLE
+	 * notification. Without this barrier, the notifier may read a
+	 * stale 'false' and skip the completion, causing
+	 * kgsl_pwrctrl_enable_cx_gdsc to hang in wait_for_completion.
+	 */
+	smp_wmb();
 	regulator_disable(regulator);
 }
 

@@ -274,6 +274,11 @@ struct dp_parser {
 	const char *mst_fixed_display_type[MAX_DP_MST_STREAMS];
 	const char *display_type;
 
+	/* Per-display mode limits (width/height/refresh) from device tree */
+	u32 max_hactive;
+	u32 max_vactive;
+	u32 max_refresh;
+
 	int (*parse)(struct dp_parser *parser);
 	struct dp_io_data *(*get_io)(struct dp_parser *parser, char *name);
 	void (*get_io_buf)(struct dp_parser *parser, char *name);

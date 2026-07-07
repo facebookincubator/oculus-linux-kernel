@@ -555,13 +555,15 @@ static int msm_smmu_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, client);
 
+	ret = component_add(&pdev->dev, &msm_smmu_comp_ops);
+	if (ret) {
+		pr_err("component add failed\n");
+		return ret;
+	}
+
 	mutex_lock(&smmu_list_lock);
 	list_add(&client->smmu_list, &sde_smmu_list);
 	mutex_unlock(&smmu_list_lock);
-
-	ret = component_add(&pdev->dev, &msm_smmu_comp_ops);
-	if (ret)
-		pr_err("component add failed\n");
 
 	return ret;
 }

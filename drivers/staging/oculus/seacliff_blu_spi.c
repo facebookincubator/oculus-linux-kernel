@@ -1050,7 +1050,7 @@ static int blu_spi_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	blu->work_queue = create_singlethread_workqueue("blu_work_queue");
+	blu->work_queue = alloc_ordered_workqueue("%s", WQ_MEM_RECLAIM, "blu_work_queue");
 	if (!blu->work_queue) {
 		dev_err(&spi->dev, "%s: could not create work queue\n", __func__);
 		return -ENOMEM;

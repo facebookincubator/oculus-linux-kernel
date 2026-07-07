@@ -18,7 +18,6 @@
 #include "dsi_defs.h"
 #include "dsi_panel.h"
 #include "dsi_ctrl_hw.h"
-#include "dsi_defs.h"
 #include "dsi_parser.h"
 #include "sde_dbg.h"
 #include "sde_dsc_helper.h"
@@ -745,27 +744,10 @@ error:
 	return rc;
 }
 
-static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
-			u32 bl_lvl)
+static int dsi_panel_queue_blu_pulse_cmds(struct mipi_dsi_device *dsi,
+			struct blu_pulse p1, struct blu_pulse p2)
 {
 	int rc = 0;
-	struct dsi_mode_info *timing;
-	struct mipi_dsi_device *dsi;
-	struct dsi_backlight_config *bl_config;
-	u32 vactive, vtotal, internal_vtotal, frame_period_ns, external_1h_ns;
-	u32 blu_start_time_ns, blu_end_time_ns, blu_duration_ns;
-	u32 blu_scanline_duration, blu_scanline_offset;
-	u32 blu_pulse1_duration, blu_pulse1_offset, blu_pulse2_duration, blu_pulse2_offset;
-	u32 guardband_internal_scanlines, guardband_margin_prior, guardband_margin_after;
-	u32 fifo_time_external_scanlines = 0;
-	s32 fifo_time_ns = 0;
-	s32 fifo_trim = 0;
-	u32 blu_default_duty;
-
-	u32 internal_1h_ns; /* Internal (TFT) 1H time */
-	const u32 internal_1h_error_tolerance = 98; /* Error tolerance of the internal display clock */
-	const u32 guardband_margin_thousandths = 15; /* 1.5% of frame height */
-
 	u8 blu_set_pwm_page[2] = {0xFF, 0x23};
 	u8 blu_set_pulse_mode[2] = {0xD0, 0x01}; /* 2-pulse mode */
 	u8 blu_scanline1_msb[2] = {0xB8, 0x00}; /* BLU pulse 1 scanline offset MSB */
@@ -776,6 +758,67 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	u8 blu_scanline2_lsb[2] = {0xBD, 0x00}; /* BLU pulse 2 scanline offset LSB */
 	u8 blu_duration2_msb[2] = {0xBE, 0x00}; /* BLU pulse 2 scanline duration MSB */
 	u8 blu_duration2_lsb[2] = {0xBF, 0x00}; /* BLU pulse 2 scanline duration LSB */
+
+	/* Pulse 2's offset is relative to the end of pulse 1. */
+	p2.offset -= (p1.offset + p1.duration);
+
+	/* Two-pulse mode scales offset scanline by 4x and duration by 2x. */
+	p1.offset >>= 2;
+	p1.duration >>= 1;
+	p2.offset >>= 2;
+	p2.duration >>= 1;
+
+	/* Trim a scanline from both offset and duration to account for roundoff error. */
+	p1.offset = max_t(s32, p1.offset - 1, 0);
+	p1.duration = max_t(s32, p1.duration - 1, 1);
+	p2.offset = max_t(s32, p2.offset - 1, 0);
+	p2.duration = max_t(s32, p2.duration - 1, 0);
+
+	blu_scanline1_msb[1] = (p1.offset >> 8) & 0x1F;
+	blu_scanline1_lsb[1] = p1.offset & 0xFF;
+	blu_duration1_msb[1] = (p1.duration >> 8) & 0x1F;
+	blu_duration1_lsb[1] = p1.duration & 0xFF;
+	blu_scanline2_msb[1] = (p2.offset >> 8) & 0x1F;
+	blu_scanline2_lsb[1] = p2.offset & 0xFF;
+	blu_duration2_msb[1] = (p2.duration >> 8) & 0x1F;
+	blu_duration2_lsb[1] = p2.duration & 0xFF;
+
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pwm_page, sizeof(blu_set_pwm_page), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pulse_mode, sizeof(blu_set_pulse_mode),
+			MIPI_DSI_MSG_BATCH_COMMAND, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_scanline1_msb, sizeof(blu_scanline1_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_scanline1_lsb, sizeof(blu_scanline1_lsb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_duration1_msb, sizeof(blu_duration1_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_duration1_lsb, sizeof(blu_duration1_lsb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_scanline2_msb, sizeof(blu_scanline2_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_scanline2_lsb, sizeof(blu_scanline2_lsb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_duration2_msb, sizeof(blu_duration2_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
+	/* Send without MIPI_DSI_MSG_BATCH_COMMAND to set last command flag */
+	rc = mipi_dsi_dcs_write_queue(dsi, blu_duration2_lsb, sizeof(blu_duration2_lsb), 0, 0);
+
+	return rc;
+}
+
+static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
+			u32 bl_lvl)
+{
+	int rc = 0;
+	struct dsi_mode_info *timing;
+	struct mipi_dsi_device *dsi;
+	struct dsi_backlight_config *bl_config;
+	u32 vactive, vtotal, internal_vtotal, frame_period_ns, external_1h_ns;
+	u32 blu_start_time_ns, blu_end_time_ns, blu_duration_ns;
+	u32 blu_scanline_duration, blu_scanline_offset;
+	struct blu_pulse blu_pulse1 = {0}, blu_pulse2 = {0};
+	u32 guardband_internal_scanlines, guardband_margin_prior, guardband_margin_after;
+	u32 fifo_time_external_scanlines = 0;
+	s32 fifo_time_ns = 0;
+	s32 fifo_trim = 0;
+	u32 blu_default_duty;
+
+	u32 internal_1h_ns; /* Internal (TFT) 1H time */
+	const u32 internal_1h_error_tolerance = 98; /* Error tolerance of the internal display clock */
+	const u32 guardband_margin_thousandths = 15; /* 1.5% of frame height */
 
 	if (!panel || !panel->cur_mode || !panel->cur_mode->timing.refresh_rate || bl_lvl > 0xFFFF)
 		return -EINVAL;
@@ -874,46 +917,28 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 	/* Split into two pulses if there is overlap with the next active scanout. */
 	if (blu_end_time_ns >= frame_period_ns && blu_start_time_ns < frame_period_ns) {
 		/* Pulse 1 starts at the beginning of the active period. */
-		blu_pulse1_offset = 0;
-		blu_pulse1_duration = blu_end_time_ns / internal_1h_ns - internal_vtotal;
+		blu_pulse1.offset = 0;
+		blu_pulse1.duration = blu_end_time_ns / internal_1h_ns - internal_vtotal;
 
-		/* Pulse 2's offset is relative to the end of pulse 1. */
-		blu_pulse2_offset = internal_vtotal - blu_scanline_duration;
-		blu_pulse2_duration = 0x10000;
+		// now put whatever's left in pulse 2
+		blu_pulse2.duration = blu_scanline_duration - blu_pulse1.duration;
+		blu_pulse2.offset = internal_vtotal - blu_pulse2.duration; // shove it as far right as possible
+		// prevent flickering - force p2 to max length so it spans the guardband
+		// and connects with p1 on next frame preventing a gap that confuses MCU
+		blu_pulse2.duration = 0x10000;
 	} else {
 		/* The backlight flash can fit within a single pulse. */
-		blu_pulse1_offset = blu_scanline_offset;
-		blu_pulse1_duration = blu_scanline_duration;
+		blu_pulse1.offset = blu_scanline_offset;
+		blu_pulse1.duration = blu_scanline_duration;
 
 		/* Make sure the pulse starts within (internal) Vtotal. */
-		if (blu_pulse1_offset >= internal_vtotal)
-			blu_pulse1_offset -= internal_vtotal;
+		if (blu_pulse1.offset >= internal_vtotal)
+			blu_pulse1.offset -= internal_vtotal;
 
 		/* Disable the second pulse. */
-		blu_pulse2_duration = 0;
-		blu_pulse2_offset = 0;
+		blu_pulse2.duration = 0;
+		blu_pulse2.offset = 0;
 	}
-
-	/* Two-pulse mode scales offset scanline by 4x and duration by 2x. */
-	blu_pulse1_offset >>= 2;
-	blu_pulse1_duration >>= 1;
-	blu_pulse2_offset >>= 2;
-	blu_pulse2_duration >>= 1;
-
-	/* Trim a scanline from both offset and duration to account for roundoff error. */
-	blu_pulse1_offset = max_t(s32, blu_pulse1_offset - 1, 0);
-	blu_pulse1_duration = max_t(s32, blu_pulse1_duration - 1, 1);
-	blu_pulse2_offset = max_t(s32, blu_pulse2_offset - 1, 0);
-	blu_pulse2_duration = max_t(s32, blu_pulse2_duration - 1, 0);
-
-	blu_scanline1_msb[1] = (blu_pulse1_offset >> 8) & 0x1F;
-	blu_scanline1_lsb[1] = blu_pulse1_offset & 0xFF;
-	blu_duration1_msb[1] = (blu_pulse1_duration >> 8) & 0x1F;
-	blu_duration1_lsb[1] = blu_pulse1_duration & 0xFF;
-	blu_scanline2_msb[1] = (blu_pulse2_offset >> 8) & 0x1F;
-	blu_scanline2_lsb[1] = blu_pulse2_offset & 0xFF;
-	blu_duration2_msb[1] = (blu_pulse2_duration >> 8) & 0x1F;
-	blu_duration2_lsb[1] = blu_pulse2_duration & 0xFF;
 
 	/* Queue the DCS writes so they can be batched together in one frame. */
 	if (bl_config->bicubic_scaling != panel->bicubic_scaling) {
@@ -950,23 +975,22 @@ static int dsi_panel_handle_dfps_pwm_fifo_tokki_a(struct dsi_panel *panel,
 		rc = mipi_dsi_dcs_write_queue(dsi, delay_vid_lsb, sizeof(delay_vid_lsb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
 	}
 
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pwm_page, sizeof(blu_set_pwm_page), MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_set_pulse_mode, sizeof(blu_set_pulse_mode),
-			MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_scanline1_msb, sizeof(blu_scanline1_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_scanline1_lsb, sizeof(blu_scanline1_lsb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_duration1_msb, sizeof(blu_duration1_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_duration1_lsb, sizeof(blu_duration1_lsb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_scanline2_msb, sizeof(blu_scanline2_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_scanline2_lsb, sizeof(blu_scanline2_lsb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_duration2_msb, sizeof(blu_duration2_msb), MIPI_DSI_MSG_BATCH_COMMAND, 0);
-	/* Send without MIPI_DSI_MSG_BATCH_COMMAND to set last command flag */
-	rc = mipi_dsi_dcs_write_queue(dsi, blu_duration2_lsb, sizeof(blu_duration2_lsb), 0, 0);
+	// if we add or remove the 2nd pulse
+	if ((blu_pulse2.duration == 0) != (bl_config->last_blu_pulse2.duration == 0)) {
+		// we have to adjust P2 first, keeping old P1 value
+		rc = dsi_panel_queue_blu_pulse_cmds(dsi,
+			bl_config->last_blu_pulse1, blu_pulse2);
+	}
+
+	rc = dsi_panel_queue_blu_pulse_cmds(dsi, blu_pulse1, blu_pulse2);
 
 	if (rc) {
 		pr_err("failed to set Tokki-A backlight cmds, rc=%d\n", rc);
 		goto error;
 	}
+
+	bl_config->last_blu_pulse1 = blu_pulse1;
+	bl_config->last_blu_pulse2 = blu_pulse2;
 
 	/* If the scanline offset is during active scanout, push the predicted time out a frame. */
 	blu_start_time_ns += fifo_time_ns;
@@ -1405,7 +1429,10 @@ static void dsi_panel_temp_dependent_read_thermal_zone_task(struct work_struct *
 		else
 			ret = thermal_zone_get_temp(bl_config->bl_temp_tz, &temp);
 
-		bl_config->settling_time_target_us =
+		if (bl_config->settling_time_override_us > 0)
+			bl_config->settling_time_target_us = bl_config->settling_time_override_us;
+		else
+			bl_config->settling_time_target_us =
 				dsi_panel_calculate_settling_time(bl_config,
 						(ret < 0) ? INT_MIN : temp);
 	}

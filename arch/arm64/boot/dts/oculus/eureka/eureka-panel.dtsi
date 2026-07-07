@@ -109,6 +109,12 @@
 /delete-node/ &display_panel_avee;
 /delete-node/ &dsi_panel_pwr_supply_oled;
 
+&sde_dp {
+	meta,dp-max-hactive = <1920>;
+	meta,dp-max-vactive = <1080>;
+	meta,dp-max-refresh = <60>;
+};
+
 &sde_dsi {
 	avdd-supply = <>;
 	avee-supply = <>;

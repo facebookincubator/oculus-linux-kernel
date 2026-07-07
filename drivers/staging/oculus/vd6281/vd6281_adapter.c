@@ -69,9 +69,13 @@
 #include <linux/uaccess.h>
 #include <linux/version.h>
 
+#include <linux/delay.h>
+#include <linux/errno.h>
+
 #include "vd6281_adapter_ioctl.h"
 
 #define VD6281_ADAPTER_DEV_NAME "vd6281_adapter"
+#define VD6281_DEVICE_ID_REG 0x00
 
 struct vd6281_adapter {
 	struct device *dev;
@@ -563,6 +567,59 @@ spi_remove_out:
 #endif
 }
 
+static bool vd6281_is_nack(int err)
+{
+	return err == -ENXIO || err == -ENOTCONN;
+}
+
+static int vd6281_diagnose_hw(struct vd6281_adapter *adp, void __user *p)
+{
+	struct vd6281_diag_result result = {0};
+	struct i2c_msg msgs[2];
+	uint8_t data;
+	int ret;
+	int i;
+
+	for (i = 0; i < VD6281_DIAG_READ_COUNT; i++) {
+		data = VD6281_DEVICE_ID_REG;
+
+		msgs[0].addr = adp->addr;
+		msgs[0].flags = I2C_M_DMA_SAFE;
+		msgs[0].len = 1;
+		msgs[0].buf = &data;
+
+		msgs[1].addr = adp->addr;
+		msgs[1].flags = I2C_M_RD | I2C_M_DMA_SAFE;
+		msgs[1].len = 1;
+		msgs[1].buf = &data;
+
+		ret = i2c_transfer(adp->adapter, msgs, 2);
+		if (ret < 0) {
+			if (!result.first_err)
+				result.first_err = ret;
+			if (vd6281_is_nack(ret))
+				result.nack_count++;
+		} else {
+			result.success_count++;
+		}
+
+		usleep_range(1000, 2000);
+	}
+
+	result.hw_failure = (result.nack_count == VD6281_DIAG_READ_COUNT);
+
+	if (result.hw_failure)
+		dev_err(adp->dev,
+			"VD6281 HW failure detected: %u/%u NAKs, first_err=%d",
+			result.nack_count, VD6281_DIAG_READ_COUNT,
+			result.first_err);
+
+	if (copy_to_user(p, &result, sizeof(result)))
+		return -EFAULT;
+
+	return 0;
+}
+
 static int vd6281_read_reg8(struct vd6281_adapter *adp, void __user *p)
 {
 	struct vd6281_reg reg;
@@ -691,6 +748,10 @@ static int vd6281_ioctl_handler(struct vd6281_adapter *adp, unsigned int cmd,
 
 	case VD6281_IOCTL_REG_RD_MULTI:
 		ret = vd6281_read_reg8_multi(adp, (void __user *) arg);
+		break;
+
+	case VD6281_IOCTL_DIAGNOSE_HW:
+		ret = vd6281_diagnose_hw(adp, (void __user *) arg);
 		break;
 
 	default:

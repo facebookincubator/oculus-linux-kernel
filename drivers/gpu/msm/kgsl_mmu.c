@@ -80,9 +80,9 @@ sysfs_show_entries(struct kobject *kobj,
 		unsigned int val = atomic_read(&pt->stats.entries);
 
 		ret += scnprintf(buf, PAGE_SIZE, "%d\n", val);
+		kref_put(&pt->refcount, kgsl_destroy_pagetable);
 	}
 
-	kref_put(&pt->refcount, kgsl_destroy_pagetable);
 	return ret;
 }
 
@@ -100,9 +100,9 @@ sysfs_show_mapped(struct kobject *kobj,
 		uint64_t val = atomic_long_read(&pt->stats.mapped);
 
 		ret += scnprintf(buf, PAGE_SIZE, "%llu\n", val);
+		kref_put(&pt->refcount, kgsl_destroy_pagetable);
 	}
 
-	kref_put(&pt->refcount, kgsl_destroy_pagetable);
 	return ret;
 }
 
@@ -120,9 +120,9 @@ sysfs_show_max_mapped(struct kobject *kobj,
 		uint64_t val = atomic_long_read(&pt->stats.max_mapped);
 
 		ret += scnprintf(buf, PAGE_SIZE, "%llu\n", val);
+		kref_put(&pt->refcount, kgsl_destroy_pagetable);
 	}
 
-	kref_put(&pt->refcount, kgsl_destroy_pagetable);
 	return ret;
 }
 
@@ -228,8 +228,13 @@ kgsl_mmu_log_fault_addr(struct kgsl_mmu *mmu, u64 pt_base,
 {
 	struct kgsl_pagetable *pt;
 	unsigned int ret = 0;
+	unsigned long flags;
 
-	spin_lock(&kgsl_driver.ptlock);
+	/*
+	 * Use _irqsave because this function is called from the IOMMU fault
+	 * handler path which may run in hardirq context.
+	 */
+	spin_lock_irqsave(&kgsl_driver.ptlock, flags);
 	list_for_each_entry(pt, &kgsl_driver.pagetable_list, list) {
 		if (kgsl_mmu_pagetable_get_ttbr0(pt) == MMU_SW_PT_BASE(pt_base)) {
 			if ((addr & ~(PAGE_SIZE-1)) == pt->fault_addr) {
@@ -241,7 +246,7 @@ kgsl_mmu_log_fault_addr(struct kgsl_mmu *mmu, u64 pt_base,
 			break;
 		}
 	}
-	spin_unlock(&kgsl_driver.ptlock);
+	spin_unlock_irqrestore(&kgsl_driver.ptlock, flags);
 
 	return ret;
 }

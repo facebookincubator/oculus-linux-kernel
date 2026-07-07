@@ -1280,6 +1280,22 @@ config RT_THROTTLING_SYSCTL
 	 that is consumed by user-space for telemetry purposes to get insight
 	 into system performance and frequency of throttling events.
 
+config RT_TOP_CONTRIBUTORS
+       bool "Track top RT contributors per bandwidth period"
+       depends on RT_THROTTLING_SYSCTL
+       default n
+       help
+         Maintain a small per-CPU LFU table of the processes (by tgid) that
+         consumed the most CPU time on the root rt_rq during the current RT
+         bandwidth period. The table is dumped alongside the existing
+         "potential CPU hogs" listing when RT throttling activates, which
+         captures hogs that have already finished running before the
+         throttling event fires.
+
+         The hot-path cost is bounded (linear scan of a 10-entry array under
+         the rt_runtime_lock that is already held). Disable to remove all
+         tracking overhead.
+
 config SYSFS_DEPRECATED
 	bool "Enable deprecated sysfs features to support old userspace tools"
 	depends on SYSFS
@@ -1773,6 +1789,7 @@ config BPF_SYSCALL
 	select BPF
 	select IRQ_WORK
 	select TASKS_TRACE_RCU
+	select NET_SOCK_MSG if INET
 	default n
 	help
 	  Enable the bpf() system call that allows to manipulate eBPF

@@ -764,6 +764,14 @@ int qcom_wdt_remove(struct platform_device *pdev)
 {
 	struct msm_watchdog_data *wdog_dd = platform_get_drvdata(pdev);
 
+	if (!wdog_dd->watchdog_task) {
+		atomic_notifier_chain_unregister(&panic_notifier_list,
+						 &wdog_dd->panic_blk);
+		unregister_restart_handler(&wdog_dd->restart_blk);
+		dev_info(wdog_dd->dev, "QCOM Apps Watchdog Exit - Deactivated\n");
+		return 0;
+	}
+
 	if (!IPI_CORES_IN_LPM)
 		cpu_pm_unregister_notifier(&wdog_dd->wdog_cpu_pm_nb);
 
@@ -995,6 +1003,48 @@ static void qcom_wdt_dt_to_pdata(struct platform_device *pdev,
 	qcom_wdt_dump_pdata(pdata);
 }
 
+static bool panic_bite_in_panic;
+
+static int panic_bite_panic_handler(struct notifier_block *nb,
+				    unsigned long event, void *data)
+{
+	panic_bite_in_panic = true;
+	return NOTIFY_OK;
+}
+
+static int panic_bite_restart_handler(struct notifier_block *nb,
+				      unsigned long event, void *data)
+{
+	if (!WDOG_BITE_ON_PANIC || !panic_bite_in_panic || !wdog_data)
+		return NOTIFY_DONE;
+
+	dev_err(wdog_data->dev, "Causing a QCOM Apps Watchdog bite!\n");
+	wdog_data->ops->set_bark_time(1, wdog_data);
+	wdog_data->ops->set_bite_time(1, wdog_data);
+	wdog_data->ops->enable_wdt(3, wdog_data);
+	wdog_data->ops->reset_wdt(wdog_data);
+	mdelay(10000);
+	while (1)
+		udelay(1);
+
+	return NOTIFY_DONE;
+}
+
+static int qcom_wdt_register_panic_only(struct platform_device *pdev,
+					struct msm_watchdog_data *wdog_dd)
+{
+	dev_info(&pdev->dev,
+		 "watchdog disabled for normal operation (panic bite still available)\n");
+	wdog_dd->panic_blk.priority = INT_MAX - 1;
+	wdog_dd->panic_blk.notifier_call = panic_bite_panic_handler;
+	atomic_notifier_chain_register(&panic_notifier_list,
+				       &wdog_dd->panic_blk);
+	wdog_dd->restart_blk.priority = 255;
+	wdog_dd->restart_blk.notifier_call = panic_bite_restart_handler;
+	register_restart_handler(&wdog_dd->restart_blk);
+	return 0;
+}
+
 /**
  *  qcom_wdt_register() - Creates QCOM Apps watchdog device.
  *
@@ -1019,6 +1069,17 @@ int qcom_wdt_register(struct platform_device *pdev,
 	}
 
 	if (disable_wdt) {
+		/*
+		 * Register panic notifier to force a watchdog bite when
+		 * wdog is disabled — the PSCI/TZ reboot path fails after
+		 * panic on these devices, so a bite is the only way out.
+		 */
+		if (WDOG_BITE_ON_PANIC) {
+			wdog_data = wdog_dd;
+			wdog_dd->dev = &pdev->dev;
+			platform_set_drvdata(pdev, wdog_dd);
+			return qcom_wdt_register_panic_only(pdev, wdog_dd);
+		}
 		dev_err(&pdev->dev, "watchdog disabled by module param\n");
 		return -ENODEV;
 	}

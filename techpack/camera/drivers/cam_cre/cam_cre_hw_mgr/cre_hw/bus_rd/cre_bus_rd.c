@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/delay.h>
 #include "cam_hw.h"
@@ -137,6 +138,11 @@ static int cam_cre_bus_rd_update(struct cam_cre_hw *cam_cre_hw_info,
 
 	in_port_idx =
 	cam_cre_bus_rd_in_port_idx(io_buf->resource_type);
+
+	if (in_port_idx < 0 || in_port_idx >= MAX_CRE_RD_CLIENTS) {
+		CAM_ERR(CAM_CRE, "Invalid in_port_idx for resource %d", io_buf->resource_type);
+		return -EINVAL;
+	}
 
 	CAM_DBG(CAM_CRE, "in_port_idx %d", in_port_idx);
 	for (k = 0; k < io_buf->num_planes; k++) {

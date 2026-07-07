@@ -277,11 +277,13 @@ static int delete_dsp_session(struct msm_cvp_inst *inst,
 		dprintk(CVP_WARN, "%s Unexpected pm_qos off vote %d\n",
 			__func__,
 			inst->core->resources.pm_qos.off_vote_cnt);
-	spin_unlock(&inst->core->resources.pm_qos.lock);
-
 	hdev = inst->core->device;
-	call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data);
-
+	spin_unlock(&inst->core->resources.pm_qos.lock);
+	//vote with default value if all sessions are deleted.
+	if(!inst->core->resources.pm_qos.off_vote_cnt){
+		call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data,
+				PM_QOS_RESUME_LATENCY_DEFAULT_VALUE);
+	}
 	rc = msm_cvp_close(inst);
 	if (rc)
 		dprintk(CVP_ERR, "Warning: Failed to close cvp instance\n");
@@ -1442,6 +1444,7 @@ static void __dsp_cvp_sess_create(struct cvp_dsp_cmd_msg *cmd)
 	struct pid *pid_s = NULL;
 	struct task_struct *task = NULL;
 	struct cvp_hfi_device *hdev;
+	struct iris_hfi_device *dev = NULL;
 
 	cmd->ret = 0;
 
@@ -1520,10 +1523,14 @@ static void __dsp_cvp_sess_create(struct cvp_dsp_cmd_msg *cmd)
 
 	spin_lock(&inst->core->resources.pm_qos.lock);
 	inst->core->resources.pm_qos.off_vote_cnt++;
-	spin_unlock(&inst->core->resources.pm_qos.lock);
 	hdev = inst->core->device;
-	call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data);
-
+	dev = hdev->hfi_device_data;
+	spin_unlock(&inst->core->resources.pm_qos.lock);
+	//only vote if off_vote_cnt ==1, i.e no need to vote for next sessions.
+	if(inst->core->resources.pm_qos.off_vote_cnt == 1){
+		call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data,
+				dev->res->pm_qos.latency_us);
+	}
 	return;
 
 fail_get_pid:
@@ -1545,7 +1552,7 @@ static void __dsp_cvp_sess_delete(struct cvp_dsp_cmd_msg *cmd)
 	struct cvp_dsp2cpu_cmd_msg *dsp2cpu_cmd = &me->pending_dsp2cpu_cmd;
 	struct cvp_dsp_fastrpc_driver_entry *frpc_node = NULL;
 	struct task_struct *task = NULL;
-	struct cvp_hfi_device *hdev;
+	struct cvp_hfi_device *hdev = NULL;
 
 	cmd->ret = 0;
 
@@ -1590,10 +1597,13 @@ static void __dsp_cvp_sess_delete(struct cvp_dsp_cmd_msg *cmd)
 		dprintk(CVP_WARN, "%s Unexpected pm_qos off vote %d\n",
 			__func__,
 			inst->core->resources.pm_qos.off_vote_cnt);
-	spin_unlock(&inst->core->resources.pm_qos.lock);
-
 	hdev = inst->core->device;
-	call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data);
+	spin_unlock(&inst->core->resources.pm_qos.lock);
+	if(!inst->core->resources.pm_qos.off_vote_cnt){
+		call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data,
+				PM_QOS_RESUME_LATENCY_DEFAULT_VALUE);
+	}
+
 
 	rc = msm_cvp_close(inst);
 	if (rc) {
@@ -1644,6 +1654,7 @@ static void __dsp_cvp_power_req(struct cvp_dsp_cmd_msg *cmd)
 	inst->prop.od_cycles =	dsp2cpu_cmd->power_req.clock_od;
 	inst->prop.mpu_cycles =	dsp2cpu_cmd->power_req.clock_mpu;
 	inst->prop.fw_cycles = dsp2cpu_cmd->power_req.clock_fw;
+	//inst->prop.xra_cycles = dsp2cpu_cmd->power_req.clock_xra;
 	inst->prop.ddr_bw = dsp2cpu_cmd->power_req.bw_ddr;
 	inst->prop.ddr_cache = dsp2cpu_cmd->power_req.bw_sys_cache;
 	inst->prop.fdu_op_cycles = dsp2cpu_cmd->power_req.op_clock_fdu;
@@ -1651,6 +1662,7 @@ static void __dsp_cvp_power_req(struct cvp_dsp_cmd_msg *cmd)
 	inst->prop.od_op_cycles = dsp2cpu_cmd->power_req.op_clock_od;
 	inst->prop.mpu_op_cycles = dsp2cpu_cmd->power_req.op_clock_mpu;
 	inst->prop.fw_op_cycles = dsp2cpu_cmd->power_req.op_clock_fw;
+	//inst->prop.xra_op_cycles = dsp2cpu_cmd->power_req.op_clock_xra;
 	inst->prop.ddr_op_bw = dsp2cpu_cmd->power_req.op_bw_ddr;
 	inst->prop.ddr_op_cache = dsp2cpu_cmd->power_req.op_bw_sys_cache;
 
@@ -1718,6 +1730,8 @@ static void __dsp_cvp_buf_register(struct cvp_dsp_cmd_msg *cmd)
 	rc = msm_cvp_register_buffer(inst, kmd_buf);
 	if (rc) {
 		dprintk(CVP_ERR, "%s Failed to register buffer\n", __func__);
+		dprintk(CVP_ERR, "%s kmd_buf 0x%x, fd %d, size %d, offset %d \n",
+			__func__, kmd_buf, kmd_buf->fd, kmd_buf->size, kmd_buf->offset);
 		cmd->ret = -1;
 		goto dsp_fail_buf_reg;
 	}

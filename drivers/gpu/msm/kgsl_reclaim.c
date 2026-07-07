@@ -343,8 +343,8 @@ static void kgsl_reclaim_background_work(struct work_struct *work)
 	struct kgsl_process_private *process, *next;
 
 	INIT_LIST_HEAD(&kgsl_reclaim_process_list);
-	read_lock(&kgsl_driver.proclist_lock);
-	list_for_each_entry(process, &kgsl_driver.process_list, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(process, &kgsl_driver.process_list, list) {
 		if (test_bit(KGSL_PROC_STATE, &process->state) ||
 				!kgsl_process_private_get(process))
 			continue;
@@ -352,7 +352,7 @@ static void kgsl_reclaim_background_work(struct work_struct *work)
 		bg_proc++;
 		list_add(&process->reclaim_list, &kgsl_reclaim_process_list);
 	}
-	read_unlock(&kgsl_driver.proclist_lock);
+	rcu_read_unlock();
 
 	list_for_each_entry(process, &kgsl_reclaim_process_list, reclaim_list) {
 		if (!nr_pages)
@@ -394,13 +394,13 @@ kgsl_reclaim_shrink_count_objects(struct shrinker *shrinker,
 
 	if (!current_is_kswapd())
 		return 0;
-	read_lock(&kgsl_driver.proclist_lock);
-	list_for_each_entry(process, &kgsl_driver.process_list, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(process, &kgsl_driver.process_list, list) {
 		if (!test_bit(KGSL_PROC_STATE, &process->state))
 			count_reclaimable += kgsl_reclaim_max_page_limit -
 				atomic_read(&process->unpinned_page_count);
 	}
-	read_unlock(&kgsl_driver.proclist_lock);
+	rcu_read_unlock();
 
 	return count_reclaimable;
 }

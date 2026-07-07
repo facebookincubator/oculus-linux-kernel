@@ -55,7 +55,7 @@
 #define SYNCBOSS_RESET_SPI_SETTLING_TIME_MS 100
 
 /* Maximum egress messages that may be enqueued */
-#define MAX_MSG_QUEUE_ITEMS 100
+#define MAX_MSG_QUEUE_ITEMS 200
 
 /*
  * These are SPI message types that the driver explicitly monitors and

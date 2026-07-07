@@ -333,7 +333,10 @@ struct drm_msm_vsync_trigger {
 };
 /**
  * struct drm_msm_backlight_scale: Payload for brightness scalar control
- * @scale_value:  brightness scalar value in [0 - 65535].
+ * @scale_value:  brightness scalar value. Value of 65535 represents 1.0 scale.
+ *                Values > 65535 are allowed (representing > 1.0 scale), but the
+ *                final brightness (scale * user_brightness) will be clamped to
+ *                the physical backlight maximum (bl_max_level).
  */
 struct drm_msm_backlight_scale {
 	__u32 bl_scale_value;
@@ -358,12 +361,12 @@ struct drm_msm_settle_time_scale {
  * struct drm_msm_control_dpu_histogram: Control the DPU histogram
  * @histogram_enable: Flag to control DPU histogram.
  * @regdma_enable: Flag to control regdma.
- * @read_interval_msec: interval in millisecond between two reads.
+ * @read_interval_frames: number of frames between two histogram reads.
  */
 struct drm_msm_dpu_histogram_control {
 	__u32 histogram_enable;
 	__u32 regdma_enable;
-	__u32 read_interval_msec;
+	__u32 read_interval_frames;
 };
 
 /**
@@ -372,12 +375,15 @@ struct drm_msm_dpu_histogram_control {
  * @max_width:         Maximum allowed width in pixels for this mode.
  * @max_height:        Maximum allowed height in pixels for this mode.
  * @max_refresh_rate:  Maximum allowed refresh rate in Hz for this mode.
+ * @connector_id:      DRM connector ID (from drm_connector.base.id) to target.
+ *                     Use 0 to target by connector_type only (first match).
  */
 struct drm_msm_dp_mode_limit {
 	__u32 connector_type;
 	__u32 max_width;
 	__u32 max_height;
 	__u32 max_refresh_rate;
+	__u32 connector_id;
 };
 
 

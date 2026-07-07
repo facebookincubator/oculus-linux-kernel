@@ -257,7 +257,7 @@ static int swd_driver_init_dev_data(struct swd_dev_data *devdata, struct device 
 	}
 #endif
 
-	devdata->workqueue = create_singlethread_workqueue(
+	devdata->workqueue = alloc_ordered_workqueue("%s", WQ_MEM_RECLAIM,
 		"fwupdate_workqueue");
 	if (!devdata->workqueue) {
 		dev_err(dev, "Could not create work queue");
@@ -322,6 +322,10 @@ static int swd_driver_remove(struct platform_device *pdev)
 #ifdef CONFIG_META_SWD_DEBUG
 	if (fwupdate_remove_debugfs(dev))
 		dev_err(dev, "Error removing debugfs nodes");
+#endif
+
+#ifdef CONFIG_META_SWD_DIRECTFD
+	swd_driver_deinit_chardev(dev);
 #endif
 
 	destroy_workqueue(devdata->workqueue);

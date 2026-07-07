@@ -388,7 +388,7 @@ static int hwsched_queue_context(struct adreno_device *adreno_dev,
 
 	job = kmem_cache_alloc(jobs_cache, GFP_ATOMIC);
 	if (!job) {
-		kgsl_context_put(&drawctxt->base);
+		kgsl_context_put_deferred(&drawctxt->base);
 		return -ENOMEM;
 	}
 
@@ -413,11 +413,11 @@ void adreno_hwsched_remove_hw_fence_entry(struct adreno_device *adreno_dev,
 	struct adreno_hwsched *hwsched = &adreno_dev->hwsched;
 	struct adreno_context *drawctxt = entry->drawctxt;
 
-	hwsched->hw_fence_count--;
-	drawctxt->hw_fence_count--;
+	atomic_dec(&hwsched->hw_fence_count);
+	atomic_dec(&drawctxt->hw_fence_count);
 
 	dma_fence_put(&entry->kfence->fence);
-	kgsl_context_put(&drawctxt->base);
+	kgsl_context_put_deferred(&drawctxt->base);
 
 	list_del_init(&entry->node);
 	kmem_cache_free(hwsched->hw_fence_cache, entry);
@@ -440,8 +440,8 @@ static struct adreno_hw_fence_entry *allocate_hw_fence_entry(struct adreno_devic
 	entry->kfence = kfence;
 	entry->drawctxt = drawctxt;
 
-	drawctxt->hw_fence_count++;
-	hwsched->hw_fence_count++;
+	atomic_inc(&drawctxt->hw_fence_count);
+	atomic_inc(&hwsched->hw_fence_count);
 
 	return entry;
 }
@@ -512,7 +512,13 @@ static int hwsched_sendcmd(struct adreno_device *adreno_dev,
 	 */
 	WARN_ON(!rt_mutex_is_locked(&hwsched->mutex));
 
-	obj = kmem_cache_alloc(obj_cache, GFP_KERNEL);
+	/*
+	 * This runs in the kgsl_hwsched kthread (SCHED_FIFO, near-max RT
+	 * priority). GFP_KERNEL can enter direct reclaim, blocking the RT
+	 * thread on lower-priority reclaim work — a priority inversion.
+	 * Use __GFP_NORETRY to limit reclaim to a single attempt.
+	 */
+	obj = kmem_cache_alloc(obj_cache, GFP_KERNEL | __GFP_NORETRY);
 	if (!obj)
 		return -ENOMEM;
 
@@ -528,12 +534,15 @@ static int hwsched_sendcmd(struct adreno_device *adreno_dev,
 	}
 
 	/*
-	 * Stop the power-down timer and let it complete in case it was already
-	 * running. This case will force us through the slow path below, but it
-	 * should always be safe since the active count gets and puts will
-	 * balance out.
+	 * Cancel the power-down timer. If it has already fired, the callback
+	 * only does test_and_clear_bit + kgsl_schedule_work (non-sleeping),
+	 * and the power-down work takes device->mutex to call
+	 * adreno_active_count_put — so the active count stays balanced
+	 * regardless of the race. Use del_timer (non-blocking) instead of
+	 * del_timer_sync to avoid blocking the RT-priority hwsched thread
+	 * for up to one timer tick.
 	 */
-	del_timer_sync(&hwsched->power_down_timer);
+	del_timer(&hwsched->power_down_timer);
 	if (!test_bit(ADRENO_HWSCHED_POWER, &hwsched->flags)) {
 		mutex_lock(&device->mutex);
 		ret = adreno_active_count_get(adreno_dev);
@@ -1981,10 +1990,11 @@ done:
 
 void adreno_hwsched_clear_fault(struct adreno_device *adreno_dev)
 {
+	/*
+	 * No explicit barrier needed: the consumer (adreno_hwsched_do_fault)
+	 * uses atomic_xchg which provides full ordering on ARM64.
+	 */
 	atomic_set(&adreno_dev->hwsched.fault, 0);
-
-	/* make sure other CPUs see the update */
-	smp_wmb();
 }
 
 static bool adreno_hwsched_do_fault(struct adreno_device *adreno_dev)
@@ -2054,12 +2064,8 @@ void adreno_hwsched_fault(struct adreno_device *adreno_dev,
 		u32 fault)
 {
 	struct adreno_hwsched *hwsched = &adreno_dev->hwsched;
-	u32 curr = atomic_read(&hwsched->fault);
 
-	atomic_set(&hwsched->fault, curr | fault);
-
-	/* make sure fault is written before triggering dispatcher */
-	smp_wmb();
+	atomic_or(fault, &hwsched->fault);
 
 	adreno_hwsched_trigger(adreno_dev);
 }
@@ -2101,7 +2107,7 @@ static bool is_tx_slot_available(struct adreno_device *adreno_dev)
 	u32 queue_size_dwords = hdr->queue_size / sizeof(u32);
 	u32 payload_size_dwords = hdr->pkt_size / sizeof(u32);
 	u32 free_dwords, write_idx = hdr->write_index, read_idx = hdr->read_index;
-	u32 reserved_dwords = adreno_dev->hwsched.hw_fence_count * payload_size_dwords;
+	u32 reserved_dwords = atomic_read(&adreno_dev->hwsched.hw_fence_count) * payload_size_dwords;
 
 	free_dwords = read_idx <= write_idx ?
 		queue_size_dwords - (write_idx - read_idx) :
@@ -2154,7 +2160,7 @@ static void adreno_hwsched_create_hw_fence(struct adreno_device *adreno_dev,
 	if (!is_tx_slot_available(adreno_dev))
 		goto context_put;
 
-	if (!DRAWCTXT_SLOT_AVAILABLE(drawctxt->hw_fence_count))
+	if (!DRAWCTXT_SLOT_AVAILABLE(atomic_read(&drawctxt->hw_fence_count)))
 		goto context_put;
 
 	entry = allocate_hw_fence_entry(adreno_dev, drawctxt, kfence);
@@ -2205,8 +2211,8 @@ static void adreno_hwsched_create_hw_fence(struct adreno_device *adreno_dev,
 	msm_hw_fence_destroy(kfence->hw_fence_handle, &kfence->fence);
 
 decrement:
-	drawctxt->hw_fence_count--;
-	adreno_dev->hwsched.hw_fence_count--;
+	atomic_dec(&drawctxt->hw_fence_count);
+	atomic_dec(&adreno_dev->hwsched.hw_fence_count);
 	kmem_cache_free(adreno_dev->hwsched.hw_fence_cache, entry);
 context_put:
 	kgsl_context_put(context);
@@ -2364,7 +2370,7 @@ static int unregister_context(int id, void *ptr, void *data)
 	 * contexts. So just reset the flag so that the context
 	 * registers with gmu on its first submission post slumber.
 	 */
-	context->gmu_registered = false;
+	WRITE_ONCE(context->gmu_registered, false);
 
 	/* Consider the scenario where non-recurring submissions were made
 	 * by a context. Here internal_timestamp of context would be non
@@ -2387,9 +2393,9 @@ void adreno_hwsched_unregister_contexts(struct adreno_device *adreno_dev)
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct adreno_hwsched *hwsched = &adreno_dev->hwsched;
 
-	read_lock(&device->context_lock);
+	spin_lock(&device->context_lock);
 	idr_for_each(&device->context_idr, unregister_context, NULL);
-	read_unlock(&device->context_lock);
+	spin_unlock(&device->context_lock);
 
 	if (hwsched->global_ctxtq.hostptr) {
 		struct gmu_context_queue_header *header = hwsched->global_ctxtq.hostptr;

@@ -261,7 +261,7 @@ struct kgsl_device {
 	struct platform_device *pdev;
 	struct dentry *d_debugfs;
 	struct idr context_idr;
-	rwlock_t context_lock;
+	spinlock_t context_lock;
 
 	struct {
 		void *ptr;
@@ -308,10 +308,10 @@ struct kgsl_device {
 	struct kgsl_memdesc *qdss_desc;
 	/* @qtimer_desc: Memory descriptor for the QDSS region if applicable */
 	struct kgsl_memdesc *qtimer_desc;
-	/** @event_groups: List of event groups for this device */
+	/** @event_groups: List of event groups for this device (RCU-protected) */
 	struct list_head event_groups;
-	/** @event_groups_lock: A R/W lock for the events group list */
-	rwlock_t event_groups_lock;
+	/** @event_groups_lock: Spinlock protecting event_groups list mutations */
+	spinlock_t event_groups_lock;
 	/** @speed_bin: Speed bin for the GPU device if applicable */
 	u32 speed_bin;
 	/** @gmu_fault: Set when a gmu or rgmu fault is encountered */
@@ -426,6 +426,7 @@ struct kgsl_fault_node {
  * @total_fault_count: number of times gpu faulted in this context
  * @last_faulted_cmd_ts: last faulted command batch timestamp
  * @gmu_registered: whether context is registered with gmu or not
+ * @rcu: RCU head for deferred destruction
  */
 struct kgsl_context {
 	struct kref refcount;
@@ -456,6 +457,10 @@ struct kgsl_context {
 	struct list_head faults;
 	/** @fault_lock: Mutex to protect faults */
 	struct mutex fault_lock;
+	/** @rcu: RCU head for deferred destruction */
+	struct rcu_head rcu;
+	/** @deferred_destroy_ws: Work struct used to destroy context in a deferred manner */
+	struct work_struct deferred_destroy_ws;
 };
 
 struct adreno_perfcount_register;
@@ -572,6 +577,11 @@ struct kgsl_process_private {
 	 * @cmdline: Cmdline string of the process
 	 */
 	char *cmdline;
+	/**
+	 * @destroy_work: Work struct for deferred process destruction
+	 * from atomic context
+	 */
+	struct work_struct destroy_work;
 };
 
 struct kgsl_device_private {
@@ -806,6 +816,7 @@ void kgsl_flush_event_group(struct kgsl_device *device,
 void kgsl_process_event_groups(struct kgsl_device *device);
 
 void kgsl_context_destroy(struct kref *kref);
+void kgsl_context_destroy_deferred(struct kref *kref);
 
 int kgsl_context_init(struct kgsl_device_private *dev_priv,
 		struct kgsl_context *context);
@@ -845,6 +856,21 @@ kgsl_context_put(struct kgsl_context *context)
 {
 	if (context)
 		kref_put(&context->refcount, kgsl_context_destroy);
+}
+
+/**
+ * kgsl_context_put_deferred() - Release context reference count, deferring
+ * destruction to a workqueue if this is the last reference.
+ * @context: Pointer to the KGSL context to be released
+ *
+ * Use this variant from atomic, softirq, or IRQ context where
+ * kgsl_context_destroy (which sleeps) cannot run directly.
+ */
+static inline void
+kgsl_context_put_deferred(struct kgsl_context *context)
+{
+	if (context)
+		kref_put(&context->refcount, kgsl_context_destroy_deferred);
 }
 
 /**
@@ -918,7 +944,7 @@ static inline struct kgsl_context *kgsl_context_get(struct kgsl_device *device,
 	int result = 0;
 	struct kgsl_context *context = NULL;
 
-	read_lock(&device->context_lock);
+	rcu_read_lock();
 
 	context = idr_find(&device->context_idr, id);
 
@@ -928,7 +954,7 @@ static inline struct kgsl_context *kgsl_context_get(struct kgsl_device *device,
 	else
 		result = kref_get_unless_zero(&context->refcount);
 
-	read_unlock(&device->context_lock);
+	rcu_read_unlock();
 
 	if (!result)
 		return NULL;
@@ -997,6 +1023,7 @@ static inline int kgsl_process_private_get(struct kgsl_process_private *process)
 }
 
 void kgsl_process_private_put(struct kgsl_process_private *private);
+void kgsl_process_private_put_deferred(struct kgsl_process_private *private);
 
 
 struct kgsl_process_private *kgsl_process_private_find(pid_t pid);

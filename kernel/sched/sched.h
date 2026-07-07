@@ -694,6 +694,23 @@ static inline int rt_bandwidth_enabled(void)
 #endif
 
 /* Real-Time classes' related field in a runqueue: */
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+#define RT_TOP_CONTRIB_N 10
+/* Bound on the cmdline length we resolve at dump time. Caps each entry's
+ * printed name so the printk buf and sysctl latch buffer can't be
+ * monopolized by a single pathologically long /proc/<tgid>/cmdline.
+ */
+#define RT_TOP_NAME_MAX 64
+struct rt_top_contrib {
+	pid_t	tgid;
+	u64	runtime_ns;
+	u64	last_seen_ns;
+	u64	max_delta_ns;	/* largest single delta_exec contribution */
+	u32	hit_count;	/* number of update_curr_rt accountings */
+	char	comm[TASK_COMM_LEN];
+};
+#endif
+
 struct rt_rq {
 	struct rt_prio_array	active;
 	unsigned int		rt_nr_running;
@@ -726,6 +743,10 @@ struct rt_rq {
 
 	struct rq		*rq;
 	struct task_group	*tg;
+#endif
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	struct rt_top_contrib	rt_top[RT_TOP_CONTRIB_N];
+	u8			rt_top_count;
 #endif
 };
 

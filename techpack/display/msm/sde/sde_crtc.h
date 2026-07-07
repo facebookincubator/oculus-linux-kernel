@@ -491,8 +491,9 @@ struct sde_crtc {
 	/* DPU Histogram controls. */
 	bool histogram_enable;
 	bool regdma_enable;
-	s32 histogram_interval_msec;
-	ktime_t regdma_histogram_last_exec_time;
+	u32 histogram_interval_frames;
+	u32 histogram_frame_counter;
+	struct drm_file *histogram_file;
 };
 
 enum sde_crtc_dirty_flags {
@@ -585,7 +586,6 @@ struct sde_crtc_state {
 enum sde_crtc_irq_state {
 	IRQ_NOINIT,
 	IRQ_ENABLED,
-	IRQ_DISABLING,
 	IRQ_DISABLED,
 };
 

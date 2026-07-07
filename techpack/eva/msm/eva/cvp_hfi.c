@@ -35,6 +35,7 @@
 #include "msm_cvp_common.h"
 #ifndef HALLIDAY_DISABLE
 #include "msm_gpu_eva.h"
+#include "msm_cvp.h"
 #endif
 
 #include "msm_cvp_events.h"
@@ -488,7 +489,7 @@ static int __read_queue(struct cvp_iface_q_info *qinfo, u8 *packet,
 		u32 *pb_tx_req_is_set)
 {
 	struct cvp_hfi_queue_header *queue;
-	u32 packet_size_in_words, new_read_idx;
+	u32 packet_size_in_words, new_read_idx, packet_size_in_bytes;
 	u32 *read_ptr;
 	u32 receive_request = 0;
 	u32 read_idx, write_idx;
@@ -561,6 +562,7 @@ static int __read_queue(struct cvp_iface_q_info *qinfo, u8 *packet,
 	}
 
 	packet_size_in_words = (*read_ptr) >> 2;
+	packet_size_in_bytes = *read_ptr;
 	if (!packet_size_in_words) {
 		spin_unlock(&qinfo->hfi_lock);
 		dprintk(CVP_ERR, "Zero packet size\n");
@@ -587,7 +589,7 @@ static int __read_queue(struct cvp_iface_q_info *qinfo, u8 *packet,
 		 * the packet from a shared queue, there is a possibility that the
 		 * packet->size data gets corrupted by malicious firmware.
 		 */
-		*((u32 *) packet) = packet_size_in_words << 2;
+		*((u32 *) packet) = packet_size_in_bytes;
 	} else {
 		dprintk(CVP_WARN,
 			"BAD packet received, read_idx: %#x, pkt_size: %d\n",
@@ -1327,23 +1329,10 @@ static int __iface_cmdq_write(struct iris_hfi_device *device, void *pkt)
 		dprintk(CVP_PROF, "wr_no_intr at_time = 0x%llx \n",
 					 __read_aon_time(device));
 	}
-        cmd_hdr = (struct cvp_hfi_cmd_session_hdr *)pkt;
-	if(( (msm_cvp_debug & CVP_TRACE) == CVP_TRACE ) &&
-			cmd_hdr->packet_type > HFI_CMD_SESSION_CVP_START &&
-			cmd_hdr->size >= sizeof(struct cvp_hfi_cmd_session_hdr))
-	{
-		u64 aon_cycles = 0;
-		u32 sess_id = 0;
-		u32 pkt_id = 0;
-		u32 stream_id = 0;
-		u32 t_id =0;
-		sess_id = cmd_hdr->session_id;
-		pkt_id  = cmd_hdr->packet_type;
-		stream_id = cmd_hdr->stream_idx;
-		t_id    = cmd_hdr->client_data.transaction_id;
-		aon_cycles  = get_aon_time();
-		trace_tracing_eva_frame_from_sw(aon_cycles, "EVA_KMD_FWD_END", sess_id, stream_id, pkt_id, t_id);
-	}
+	cmd_hdr = (struct cvp_hfi_cmd_session_hdr *)pkt;
+
+	msm_cvp_cmd_tracing_from_sw(cmd_hdr, "EVA_KMD_FWD_END");
+
 	return rc;
 }
 
@@ -1902,38 +1891,25 @@ static int __sys_set_power_control(struct iris_hfi_device *device,
 	return 0;
 }
 
-static void cvp_pm_qos_update(struct iris_hfi_device *device, bool vote_on)
+static void cvp_pm_qos_update(struct iris_hfi_device *device, u32 latency)
 {
-	u32 latency, off_vote_cnt;
 	int i, err = 0;
-
-	spin_lock(&device->res->pm_qos.lock);
-	off_vote_cnt = device->res->pm_qos.off_vote_cnt;
-	spin_unlock(&device->res->pm_qos.lock);
-
-	if (vote_on && off_vote_cnt)
-		return;
-
-	latency = vote_on ? device->res->pm_qos.latency_us :
-			PM_QOS_RESUME_LATENCY_DEFAULT_VALUE;
-
-	if (device->res->pm_qos.latency_us && device->res->pm_qos.pm_qos_hdls)
+	if (device->res->pm_qos.latency_us && device->res->pm_qos.pm_qos_hdls){
 		for (i = 0; i < device->res->pm_qos.silver_count; i++) {
 			err = dev_pm_qos_update_request(
 				&device->res->pm_qos.pm_qos_hdls[i],
 				latency);
 			if (err < 0) {
-				if (vote_on) {
-					dprintk(CVP_WARN,
-						"pm qos on failed %d\n", err);
-				} else {
-					dprintk(CVP_WARN,
-						"pm qos off failed %d\n", err);
-				}
+				dprintk(CVP_WARN,"pm qos on failed with err %d for \
+					latency\n", err,latency);
+			} else {
+				dprintk(CVP_PWR,"pm qos update with  latency = %d \
+					on core %d\n", latency,i);
 			}
 		}
+	}
 }
-static int iris_pm_qos_update(void *device)
+static int iris_pm_qos_update(void *device, u32 latency)
 {
 	struct iris_hfi_device *dev;
 
@@ -1945,7 +1921,7 @@ static int iris_pm_qos_update(void *device)
 	dev = device;
 
 	mutex_lock(&dev->lock);
-	cvp_pm_qos_update(dev, true);
+	cvp_pm_qos_update(dev,latency);
 	mutex_unlock(&dev->lock);
 
 	return 0;
@@ -2114,6 +2090,7 @@ err_core_init:
 err_load_fw:
 err_no_mem:
 	dprintk(CVP_ERR, "Core init failed\n");
+	__dev_regspace_unmap(device);
 	mutex_unlock(&dev->lock);
 	pm_relax(dev->res->pdev->dev.parent);
 	return rc;
@@ -2253,8 +2230,16 @@ static void __session_clean(struct cvp_hal_session *session)
 {
 	struct cvp_hal_session *temp, *next;
 	struct iris_hfi_device *device;
-
+	struct msm_cvp_core *core = NULL;
+	struct msm_cvp_inst *inst = NULL;
+	void *tmp = NULL;
 	if (!session || !session->device) {
+		dprintk(CVP_WARN, "%s: invalid params\n", __func__);
+		return;
+	}
+	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
+	inst = (struct msm_cvp_inst *) session->session_id;
+	if (!core|| !inst) {
 		dprintk(CVP_WARN, "%s: invalid params\n", __func__);
 		return;
 	}
@@ -2270,6 +2255,14 @@ static void __session_clean(struct cvp_hal_session *session)
 			break;
 		}
 	}
+
+	/* Remove the IDR id assigned to this session */
+	mutex_lock(&core->idr_mtx);
+	tmp = idr_remove(&core->sess_idr, inst->sess_id);
+	if (tmp != session)
+		dprintk(CVP_WARN, "%s: session\n", __func__);
+	mutex_unlock(&core->idr_mtx);
+
 	/* Poison the session handle with zeros */
 	*session = (struct cvp_hal_session){ {0} };
 	kfree(session);
@@ -2308,12 +2301,20 @@ static int iris_hfi_session_init(void *device, void *session_id,
 	struct iris_hfi_device *dev;
 	struct cvp_hal_session *s;
 
-	if (!device || !new_session) {
+	struct msm_cvp_core *core = NULL;
+	struct msm_cvp_inst *inst = NULL;
+	int id = 0;
+	if (!device || !new_session || !session_id) {
 		dprintk(CVP_ERR, "%s - invalid input\n", __func__);
 		return -EINVAL;
 	}
-
 	dev = device;
+	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
+	inst = session_id;
+	if (!core|| !inst) {
+		dprintk(CVP_WARN, "%s: invalid params\n", __func__);
+		return -EINVAL;
+	}
 	mutex_lock(&dev->lock);
 
 	s = kzalloc(sizeof(*s), GFP_KERNEL);
@@ -2324,13 +2325,30 @@ static int iris_hfi_session_init(void *device, void *session_id,
 
 	s->session_id = session_id;
 	s->device = dev;
+
+
+	mutex_lock(&core->idr_mtx);
+	idr_preload(GFP_KERNEL);
+	/* Need to think if we can use core->lock or dev->lock or need a
+	 * different new lock for this?
+	 */
+	id = idr_alloc_cyclic(&core->sess_idr, (void *)s, 0x7FFF0000, INT_MAX, GFP_NOWAIT);
+	idr_preload_end();
+	mutex_unlock(&core->idr_mtx);
+	if (id < 0) {
+		dprintk(CVP_ERR,
+			"%s: idr allocation failed for session %pK of inst %pK\n",
+			__func__, s, session_id);
+		goto err_session_init_fail;
+	}
 	dprintk(CVP_SESS,
-		"%s: inst %pK, session %pK\n", __func__, session_id, s);
+		"%s: inst %pK, session %pK, idr_id = 0x%x\n", __func__, session_id, s, id);
 
 	list_add_tail(&s->list, &dev->sess_head);
 
 	__set_default_sys_properties(device);
 
+	inst->sess_id = id;
 	if (call_hfi_pkt_op(dev, session_init, &pkt, s)) {
 		dprintk(CVP_ERR, "session_init: failed to create packet\n");
 		goto err_session_init_fail;
@@ -2346,6 +2364,7 @@ static int iris_hfi_session_init(void *device, void *session_id,
 err_session_init_fail:
 	if (s)
 		__session_clean(s);
+	inst->sess_id = 0;
 	*new_session = NULL;
 	mutex_unlock(&dev->lock);
 	return -EINVAL;
@@ -2806,7 +2825,7 @@ static void __process_sys_error(struct iris_hfi_device *device)
 	if (vsfr) {
 		u32 sfr_buf_size = 0;
 		sfr_buf_size = vsfr->bufSize;
-		if (sfr_buf_size < ALIGNED_SFR_SIZE) {
+		if (sfr_buf_size <= ALIGNED_SFR_SIZE) {
 			void *p = memchr(vsfr->rg_data, '\0', sfr_buf_size);
 			/*
 			* SFR isn't guaranteed to be NULL terminated
@@ -2889,9 +2908,13 @@ static void __flush_debug_queue(struct iris_hfi_device *device, u8 *packet)
 			 * line.
 			 */
 			pkt->rg_msg_data[pkt->msg_size-1] = '\0';
-			dprintk(log_level, "%s", &pkt->rg_msg_data[1]);
-                        if((log_level & CVP_FW) && (pkt->msg_type == HFI_DEBUG_MSG_TIME))
+                        if((log_level & CVP_FW) && (pkt->msg_type == HFI_DEBUG_MSG_TIME)){
 				trace_tracing_eva_frame_from_fw(&pkt->rg_msg_data[1]);
+			}
+			else{
+				dprintk(log_level, "%s", &pkt->rg_msg_data[1]);
+			}
+
 		}
 	}
 #undef SKIP_INVALID_PKT
@@ -2922,9 +2945,10 @@ static struct cvp_hal_session *__get_session(struct iris_hfi_device *device,
 		u32 session_id)
 {
 	struct cvp_hal_session *temp = NULL;
-
+	struct msm_cvp_inst *inst = NULL;
 	list_for_each_entry(temp, &device->sess_head, list) {
-		if (session_id == hash32_ptr(temp))
+		inst = (struct msm_cvp_inst *)temp->session_id;
+		if (session_id == inst->sess_id)
 			return temp;
 	}
 
@@ -3083,7 +3107,7 @@ static int __response_handler(struct iris_hfi_device *device)
 
 		/* Process the packet types that we're interested in */
 		process_system_msg(info, device, raw_packet);
-
+		/* This session_id is a double pointer to the idr_id of session */
 		session_id = get_session_id(info);
 		/*
 		 * hfi_process_msg_packet provides a session_id that's a hashed
@@ -3095,11 +3119,6 @@ static int __response_handler(struct iris_hfi_device *device)
 		if (session_id) {
 			struct cvp_hal_session *session = NULL;
 
-			if (upper_32_bits((uintptr_t)*session_id) != 0) {
-				dprintk(CVP_ERR,
-					"Upper 32-bits != 0 for sess_id=%pK\n",
-					*session_id);
-			}
 			session = __get_session(device,
 					(u32)(uintptr_t)*session_id);
 			if (!session) {
@@ -4173,7 +4192,7 @@ static inline int __suspend(struct iris_hfi_device *device)
 	call_iris_op(device, power_off, device);
 
 	if (device->res->pm_qos.latency_us && device->res->pm_qos.pm_qos_hdls)
-		cvp_pm_qos_update(device, false);
+		cvp_pm_qos_update(device, PM_QOS_RESUME_LATENCY_DEFAULT_VALUE);
 
 	return rc;
 
@@ -4403,7 +4422,7 @@ static int __power_off_core(struct iris_hfi_device *device)
 	 */
 	do {
 		value = __read_register(device, CVP_SS_IDLE_STATUS);
-		if (value & 0x400000)
+		if (value & CVP_SS_IDLE_STATUS__DMA_NOC_IDLE___M)
 			break;
 		else
 			usleep_range(1000, 2000);
@@ -4416,11 +4435,12 @@ static int __power_off_core(struct iris_hfi_device *device)
 	}
 
 	/* Apply partial reset on MSF interface and wait for ACK */
-	__write_register(device, CVP_NOC_RESET_REQ, 0x7);
+	__write_register(device, CVP_NOC_RESET_REQ, AON_WRAPPER_CVP_NOC_RESET_REQ___M);
 	count = 0;
 	do {
 		value = __read_register(device, CVP_NOC_RESET_ACK);
-		if ((value & 0x7) == 0x7)
+		if ((value & AON_WRAPPER_CVP_NOC_RESET_ACK___M) ==
+						AON_WRAPPER_CVP_NOC_RESET_ACK___M)
 			break;
 		else
 			usleep_range(100, 200);
@@ -4432,8 +4452,36 @@ static int __power_off_core(struct iris_hfi_device *device)
 		warn_flag = 1;
 	}
 
+	/* Apply partial reset pulse to core to clear the pending transactions from core and wait for the ack*/
+
+	__write_register(device, CVP_WRAPPER_CORE_SW_RESET_H,
+				(CVP_VPU_WRAPPER_CORE_SW_RESET_H___M  & ~CVP_VPU_WRAPPER_CORE_SW_RESET_H__ARES_TOP_RIF___M));
+	__write_register(device, CVP_WRAPPER_CORE_SW_RESET_L,
+				CVP_VPU_WRAPPER_CORE_SW_RESET_L___M);
+	__write_register(device, CVP_WRAPPER_CORE_SW_RESET_TRIGGER, 0x1);
+
+	count = 0;
+	do {
+		value = __read_register(device, CVP_WRAPPER_CORE_SW_RESET_REQ_ACK);
+		if ((value & CVP_VPU_WRAPPER_CORE_SW_RESET_H__ARES_TOP_RIF___M) ==
+						CVP_VPU_WRAPPER_CORE_SW_RESET_H__ARES_TOP_RIF___M)
+			break;
+		else
+			usleep_range(100, 200);
+		count++;
+	} while (count < max_count);
+
+	if (count == max_count) {
+		dprintk(CVP_WARN, "Core SW reset failed\n");
+		warn_flag = 1;
+	}
+
+	__write_register(device, CVP_WRAPPER_CORE_SW_RESET_H, 0x00000000);
+	__write_register(device, CVP_WRAPPER_CORE_SW_RESET_L, 0x00000000);
+	__write_register(device, CVP_WRAPPER_CORE_SW_RESET_TRIGGER, 0x00000000);
+
 	/* De-assert partial reset on MSF interface and wait for ACK */
-	__write_register(device, CVP_NOC_RESET_REQ, 0x0);
+	__write_register(device, CVP_NOC_RESET_REQ, 0x1C0);
 	count = 0;
 	do {
 		value = __read_register(device, CVP_NOC_RESET_ACK);
@@ -4448,6 +4496,10 @@ static int __power_off_core(struct iris_hfi_device *device)
 		dprintk(CVP_WARN, "Core NoC reset de-assert failed\n");
 		warn_flag = 1;
 	}
+
+        /* Reset Ack Sel */
+	__write_register(device, CVP_NOC_RESET_REQ, 0x0);
+         /* End CVP NoC Partial Reset*/
 
 	if (warn_flag)
 		__print_sidebandmanager_regs(device);
@@ -4541,7 +4593,7 @@ static inline int __resume(struct iris_hfi_device *device)
 	__set_threshold_registers(device);
 
 	if (device->res->pm_qos.latency_us && device->res->pm_qos.pm_qos_hdls)
-		cvp_pm_qos_update(device, true);
+		cvp_pm_qos_update(device,device->res->pm_qos.latency_us);
 
 	__sys_set_debug(device, msm_cvp_fw_debug);
 

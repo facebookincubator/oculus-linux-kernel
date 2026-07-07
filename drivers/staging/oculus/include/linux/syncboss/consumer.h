@@ -6,6 +6,14 @@
 #include <linux/notifier.h>
 #include <uapi/linux/syncboss.h>
 
+/**
+ * Optional data passed with SYNCBOSS_EVENT_MCU_DOWN notifications.
+ * NULL data indicates an orderly shutdown (last client close, PM suspend).
+ */
+struct syncboss_mcu_down_data {
+	bool unexpected;
+};
+
 enum syncboss_state_event_types {
 	SYNCBOSS_EVENT_MCU_UP,
 	SYNCBOSS_EVENT_MCU_DOWN,

@@ -2073,6 +2073,144 @@ static int dp_debug_init_mst(struct dp_debug_private *debug, struct dentry *dir)
 	return rc;
 }
 
+static ssize_t dp_debug_read_mode_limit(struct file *file,
+		char __user *user_buff, size_t count, loff_t *ppos)
+{
+	struct dp_debug_private *debug = file->private_data;
+	char *buf;
+	int const buf_size = SZ_4K;
+	u32 len = 0;
+	struct drm_connector *connector;
+	struct drm_msm_dp_mode_limit *limit;
+
+	if (*ppos)
+		return 0;
+
+	if (!debug || !debug->display)
+		return -ENODEV;
+
+	buf = kzalloc(buf_size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	mutex_lock(&debug->lock);
+
+	limit = &debug->display->mode_limit;
+	connector = debug->display->base_connector;
+
+	len += scnprintf(buf + len, buf_size - len,
+			"=== DP Mode Limits ===\n");
+
+	if (connector) {
+		len += scnprintf(buf + len, buf_size - len,
+				"connector_id: %u\n", connector->base.id);
+		len += scnprintf(buf + len, buf_size - len,
+				"connector_type: %u (%s)\n",
+				connector->connector_type,
+				connector->connector_type == 10 ? "DP" :
+				connector->connector_type == 14 ? "eDP" : "Unknown");
+	} else {
+		len += scnprintf(buf + len, buf_size - len,
+				"connector_id: (not connected)\n");
+	}
+
+	len += scnprintf(buf + len, buf_size - len,
+			"max_width: %u pixels\n", limit->max_width);
+	len += scnprintf(buf + len, buf_size - len,
+			"max_height: %u pixels\n", limit->max_height);
+	len += scnprintf(buf + len, buf_size - len,
+			"max_refresh_rate: %u Hz\n", limit->max_refresh_rate);
+
+	len += scnprintf(buf + len, buf_size - len,
+			"\n=== Usage ===\n");
+	len += scnprintf(buf + len, buf_size - len,
+			"To set mode limits, write: <max_width> <max_height> <max_refresh>\n");
+	len += scnprintf(buf + len, buf_size - len,
+			"Example: echo \"1920 1080 60\" > mode_limit\n");
+
+	mutex_unlock(&debug->lock);
+
+	len = min_t(size_t, count, len);
+	if (copy_to_user(user_buff, buf, len)) {
+		kfree(buf);
+		return -EFAULT;
+	}
+
+	*ppos += len;
+	kfree(buf);
+	return len;
+}
+
+static ssize_t dp_debug_write_mode_limit(struct file *file,
+		const char __user *user_buff, size_t count, loff_t *ppos)
+{
+	struct dp_debug_private *debug = file->private_data;
+	char buf[64];
+	size_t len;
+	u32 max_width, max_height, max_refresh;
+	int rc;
+
+	if (!debug || !debug->display)
+		return -ENODEV;
+
+	len = min_t(size_t, count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buff, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+
+	/* Parse: max_width max_height max_refresh */
+	rc = sscanf(buf, "%u %u %u", &max_width, &max_height, &max_refresh);
+	if (rc != 3) {
+		DP_ERR("Invalid format. Usage: <max_width> <max_height> <max_refresh>\n");
+		return -EINVAL;
+	}
+
+	/* Validate inputs */
+	if (max_width == 0 || max_height == 0 || max_refresh == 0) {
+		DP_ERR("Invalid values: width=%u, height=%u, refresh=%u (must be > 0)\n",
+		       max_width, max_height, max_refresh);
+		return -EINVAL;
+	}
+
+	mutex_lock(&debug->lock);
+
+	debug->display->mode_limit.max_width = max_width;
+	debug->display->mode_limit.max_height = max_height;
+	debug->display->mode_limit.max_refresh_rate = max_refresh;
+
+	DP_INFO("Mode limits updated: %ux%u@%uHz\n",
+		max_width, max_height, max_refresh);
+
+	mutex_unlock(&debug->lock);
+
+	return count;
+}
+
+static const struct file_operations mode_limit_fops = {
+	.open = simple_open,
+	.read = dp_debug_read_mode_limit,
+	.write = dp_debug_write_mode_limit,
+};
+
+static int dp_debug_init_mode_limit(struct dp_debug_private *debug,
+		struct dentry *dir)
+{
+	int rc = 0;
+	struct dentry *file;
+
+	file = debugfs_create_file("mode_limit", 0644, dir,
+			debug, &mode_limit_fops);
+	if (IS_ERR_OR_NULL(file)) {
+		rc = PTR_ERR(file);
+		DP_ERR("[%s] debugfs mode_limit failed, rc=%d\n",
+		       debug->name, rc);
+		return rc;
+	}
+
+	return rc;
+}
+
 static int dp_debug_init_link(struct dp_debug_private *debug,
 		struct dentry *dir)
 {
@@ -2456,6 +2594,10 @@ static int dp_debug_init(struct dp_debug *dp_debug)
 		goto error_remove_dir;
 
 	rc = dp_debug_init_link(debug, dir);
+	if (rc)
+		goto error_remove_dir;
+
+	rc = dp_debug_init_mode_limit(debug, dir);
 	if (rc)
 		goto error_remove_dir;
 

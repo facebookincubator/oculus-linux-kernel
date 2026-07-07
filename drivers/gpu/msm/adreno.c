@@ -214,7 +214,7 @@ static void adreno_input_work(struct work_struct *work)
 
 	mutex_lock(&device->mutex);
 
-	adreno_dev->wake_on_touch = true;
+	WRITE_ONCE(adreno_dev->wake_on_touch, true);
 
 	ops->touch_wakeup(adreno_dev);
 
@@ -225,13 +225,17 @@ static void adreno_input_work(struct work_struct *work)
 void adreno_touch_wake(struct kgsl_device *device)
 {
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+	unsigned int state;
 
 	/*
 	 * Don't do anything if anything hasn't been rendered since we've been
-	 * here before
+	 * here before. Use READ_ONCE/WRITE_ONCE because this function can be
+	 * called from the input event handler (interrupt context) while
+	 * wake_on_touch and device->state are written under device->mutex
+	 * on other CPUs.
 	 */
 
-	if (adreno_dev->wake_on_touch)
+	if (READ_ONCE(adreno_dev->wake_on_touch))
 		return;
 
 	if (gmu_core_isenabled(device)) {
@@ -245,15 +249,16 @@ void adreno_touch_wake(struct kgsl_device *device)
 	 * already in slumber schedule the wake.
 	 */
 
-	if (device->state == KGSL_STATE_NAP) {
+	state = READ_ONCE(device->state);
+	if (state == KGSL_STATE_NAP) {
 		/*
 		 * Set the wake on touch bit to keep from coming back here and
 		 * keeping the device in nap without rendering
 		 */
-		adreno_dev->wake_on_touch = true;
+		WRITE_ONCE(adreno_dev->wake_on_touch, true);
 		kgsl_start_idle_timer(device);
 
-	} else if (device->state == KGSL_STATE_SLUMBER) {
+	} else if (state == KGSL_STATE_SLUMBER) {
 		schedule_work(&adreno_dev->input_work);
 	}
 }
@@ -1670,10 +1675,14 @@ static int adreno_last_close(struct kgsl_device *device)
 		dev_err(device->dev,
 			"Waiting for the active count to become 0\n");
 
-		while (kgsl_active_count_wait(device, 0, HZ))
+		while (READ_ONCE(device->open_count) == 1 &&
+		       kgsl_active_count_wait(device, 0, HZ))
 			dev_err(device->dev,
 				"Still waiting for the active count\n");
 	}
+
+	if (READ_ONCE(device->open_count) > 1)
+		return 0;
 
 	return ops->last_close(adreno_dev);
 }
@@ -1688,6 +1697,12 @@ static int adreno_pwrctrl_active_count_get(struct adreno_device *adreno_dev)
 
 	if ((atomic_read(&device->active_cnt) == 0) &&
 		(device->state != KGSL_STATE_ACTIVE)) {
+		/*
+		 * NOTE: The mutex is temporarily released while waiting for
+		 * the hwaccess gate. Device state may change during this
+		 * window. Callers must not assume device->mutex was held
+		 * continuously across this call.
+		 */
 		mutex_unlock(&device->mutex);
 		wait_for_completion(&device->hwaccess_gate);
 		mutex_lock(&device->mutex);
@@ -2965,7 +2980,7 @@ int adreno_verify_cmdobj(struct kgsl_device_private *dev_priv,
 			 * been submitted since the last time we set it.
 			 * But only clear it when we have rendering commands.
 			 */
-			ADRENO_DEVICE(device)->wake_on_touch = false;
+			WRITE_ONCE(ADRENO_DEVICE(device)->wake_on_touch, false);
 		}
 
 		/* A3XX does not have support for drawobj profiling */
@@ -3214,10 +3229,10 @@ static int adreno_cx_gdsc_event(struct notifier_block *nb,
 {
 	struct kgsl_pwrctrl *pwr = container_of(nb, struct kgsl_pwrctrl, cx_gdsc_nb);
 
-	if (!(event & REGULATOR_EVENT_DISABLE) || !pwr->cx_gdsc_wait)
+	if (!(event & REGULATOR_EVENT_DISABLE) || !READ_ONCE(pwr->cx_gdsc_wait))
 		return 0;
 
-	pwr->cx_gdsc_wait = false;
+	WRITE_ONCE(pwr->cx_gdsc_wait, false);
 	complete_all(&pwr->cx_gdsc_gate);
 
 	return 0;
@@ -3371,7 +3386,12 @@ static int adreno_secure_pt_hibernate(struct adreno_device *adreno_dev)
 	struct kgsl_memdesc *memdesc;
 	int ret, id;
 
-	read_lock(&kgsl_driver.proclist_lock);
+	/*
+	 * Hold process_mutex to prevent process list mutations while
+	 * iterating. This is preferred over rcu_read_lock because we call
+	 * sleeping functions (kgsl_unlock_sgt) inside the loop.
+	 */
+	mutex_lock(&kgsl_driver.process_mutex);
 	list_for_each_entry(process, &kgsl_driver.process_list, list) {
 		idr_for_each_entry(&process->mem_idr, entry, id) {
 			memdesc = &entry->memdesc;
@@ -3380,17 +3400,13 @@ static int adreno_secure_pt_hibernate(struct adreno_device *adreno_dev)
 				(memdesc->priv & KGSL_MEMDESC_HYPASSIGNED_HLOS))
 				continue;
 
-			read_unlock(&kgsl_driver.proclist_lock);
-
 			if (kgsl_unlock_sgt(memdesc->sgt))
 				dev_err(device->dev, "kgsl_unlock_sgt failed\n");
 
 			memdesc->priv |= KGSL_MEMDESC_HYPASSIGNED_HLOS;
-
-			read_lock(&kgsl_driver.proclist_lock);
 		}
 	}
-	read_unlock(&kgsl_driver.proclist_lock);
+	mutex_unlock(&kgsl_driver.process_mutex);
 
 	list_for_each_entry(md, &device->globals, node) {
 		memdesc = &md->memdesc;
@@ -3442,7 +3458,12 @@ static int adreno_secure_pt_restore(struct adreno_device *adreno_dev)
 		}
 	}
 
-	read_lock(&kgsl_driver.proclist_lock);
+	/*
+	 * Hold process_mutex to prevent process list mutations while
+	 * iterating. This is preferred over rcu_read_lock because we call
+	 * sleeping functions (kgsl_lock_sgt) inside the loop.
+	 */
+	mutex_lock(&kgsl_driver.process_mutex);
 	list_for_each_entry(process, &kgsl_driver.process_list, list) {
 		idr_for_each_entry(&process->mem_idr, entry, id) {
 			memdesc = &entry->memdesc;
@@ -3451,19 +3472,16 @@ static int adreno_secure_pt_restore(struct adreno_device *adreno_dev)
 				!(memdesc->priv & KGSL_MEMDESC_HYPASSIGNED_HLOS))
 				continue;
 
-			read_unlock(&kgsl_driver.proclist_lock);
-
 			ret = kgsl_lock_sgt(memdesc->sgt, memdesc->size);
 			if (ret) {
 				dev_err(device->dev, "kgsl_lock_sgt failed ret %d\n", ret);
+				mutex_unlock(&kgsl_driver.process_mutex);
 				return ret;
 			}
 			memdesc->priv &= ~KGSL_MEMDESC_HYPASSIGNED_HLOS;
-
-			read_lock(&kgsl_driver.proclist_lock);
 		}
 	}
-	read_unlock(&kgsl_driver.proclist_lock);
+	mutex_unlock(&kgsl_driver.process_mutex);
 
 	return 0;
 }

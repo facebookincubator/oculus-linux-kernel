@@ -1776,6 +1776,15 @@ int msm_venc_enum_fmt(struct msm_vidc_inst *inst, struct v4l2_fmtdesc *f)
 			if (formats & BIT(i)) {
 				if (idx >= ARRAY_SIZE(array))
 					break;
+				/*
+				 * Hide RGBA formats from enumeration so that
+				 * COLOR_FormatSurface does not select them by
+				 * default.  RGBA input is still accepted via
+				 * explicit S_FMT (the format remains in
+				 * step_or_mask).
+				 */
+				if (is_rgba_colorformat(BIT(i)))
+					continue;
 				array[idx] = formats & BIT(i);
 				idx++;
 			}
