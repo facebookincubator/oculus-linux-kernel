@@ -82,7 +82,7 @@ static void binder_insert_free_buffer(struct binder_alloc *alloc,
 	size_t buffer_size;
 	size_t new_buffer_size;
 
-	BUG_ON(!new_buffer->free);
+	BUG_ON(!test_bit(BINDER_BUF_FLAG_FREE, &new_buffer->flags));
 
 	new_buffer_size = binder_alloc_buffer_size(alloc, new_buffer);
 
@@ -93,7 +93,7 @@ static void binder_insert_free_buffer(struct binder_alloc *alloc,
 	while (*p) {
 		parent = *p;
 		buffer = rb_entry(parent, struct binder_buffer, rb_node);
-		BUG_ON(!buffer->free);
+		BUG_ON(!test_bit(BINDER_BUF_FLAG_FREE, &buffer->flags));
 
 		buffer_size = binder_alloc_buffer_size(alloc, buffer);
 
@@ -113,12 +113,12 @@ static void binder_insert_allocated_buffer_locked(
 	struct rb_node *parent = NULL;
 	struct binder_buffer *buffer;
 
-	BUG_ON(new_buffer->free);
+	BUG_ON(test_bit(BINDER_BUF_FLAG_FREE, &new_buffer->flags));
 
 	while (*p) {
 		parent = *p;
 		buffer = rb_entry(parent, struct binder_buffer, rb_node);
-		BUG_ON(buffer->free);
+		BUG_ON(test_bit(BINDER_BUF_FLAG_FREE, &buffer->flags));
 
 		if (new_buffer->user_data < buffer->user_data)
 			p = &parent->rb_left;
@@ -143,7 +143,7 @@ static struct binder_buffer *binder_alloc_prepare_to_free_locked(
 
 	while (n) {
 		buffer = rb_entry(n, struct binder_buffer, rb_node);
-		BUG_ON(buffer->free);
+		BUG_ON(test_bit(BINDER_BUF_FLAG_FREE, &buffer->flags));
 
 		if (uptr < buffer->user_data)
 			n = n->rb_left;
@@ -155,9 +155,9 @@ static struct binder_buffer *binder_alloc_prepare_to_free_locked(
 			 * free the buffer when in use by kernel or
 			 * after it's already been freed.
 			 */
-			if (!buffer->allow_user_free)
+			if (!test_bit(BINDER_BUF_FLAG_ALLOW_USER_FREE, &buffer->flags))
 				return ERR_PTR(-EPERM);
-			buffer->allow_user_free = 0;
+			clear_bit(BINDER_BUF_FLAG_ALLOW_USER_FREE, &buffer->flags);
 			return buffer;
 		}
 	}
@@ -366,7 +366,7 @@ static void debug_low_async_space_locked(struct binder_alloc *alloc, int pid)
 		buffer = rb_entry(n, struct binder_buffer, rb_node);
 		if (buffer->pid != pid)
 			continue;
-		if (!buffer->async_transaction)
+		if (!test_bit(BINDER_BUF_FLAG_ASYNC_TRANSACTION, &buffer->flags))
 			continue;
 		total_alloc_size += binder_alloc_buffer_size(alloc, buffer)
 			+ sizeof(struct binder_buffer);
@@ -437,7 +437,7 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 
 	while (n) {
 		buffer = rb_entry(n, struct binder_buffer, rb_node);
-		BUG_ON(!buffer->free);
+		BUG_ON(!test_bit(BINDER_BUF_FLAG_FREE, &buffer->flags));
 		buffer_size = binder_alloc_buffer_size(alloc, buffer);
 
 		if (size < buffer_size) {
@@ -518,20 +518,24 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 		}
 		new_buffer->user_data = (u8 __user *)buffer->user_data + size;
 		list_add(&new_buffer->entry, &buffer->entry);
-		new_buffer->free = 1;
+		set_bit(BINDER_BUF_FLAG_FREE, &new_buffer->flags);
 		binder_insert_free_buffer(alloc, new_buffer);
 	}
 
 	rb_erase(best_fit, &alloc->free_buffers);
-	buffer->free = 0;
-	buffer->allow_user_free = 0;
+	clear_bit(BINDER_BUF_FLAG_FREE, &buffer->flags);
+	clear_bit(BINDER_BUF_FLAG_ALLOW_USER_FREE, &buffer->flags);
 	binder_insert_allocated_buffer_locked(alloc, buffer);
 	binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC,
 		     "%d: binder_alloc_buf size %zd got %pK\n",
 		      alloc->pid, size, buffer);
 	buffer->data_size = data_size;
 	buffer->offsets_size = offsets_size;
-	buffer->async_transaction = is_async;
+	if (is_async)
+		set_bit(BINDER_BUF_FLAG_ASYNC_TRANSACTION, &buffer->flags);
+	else
+		clear_bit(BINDER_BUF_FLAG_ASYNC_TRANSACTION, &buffer->flags);
+
 	buffer->extra_buffers_size = extra_buffers_size;
 	buffer->pid = pid;
 	if (is_async) {
@@ -607,7 +611,7 @@ static void binder_delete_free_buffer(struct binder_alloc *alloc,
 	bool to_free = true;
 	BUG_ON(alloc->buffers.next == &buffer->entry);
 	prev = binder_buffer_prev(buffer);
-	BUG_ON(!prev->free);
+	BUG_ON(!test_bit(BINDER_BUF_FLAG_FREE, &prev->flags));
 	if (prev_buffer_end_page(prev) == buffer_start_page(buffer)) {
 		to_free = false;
 		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC,
@@ -663,13 +667,13 @@ static void binder_free_buf_locked(struct binder_alloc *alloc,
 		     "%d: binder_free_buf %pK size %zd buffer_size %zd\n",
 		      alloc->pid, buffer, size, buffer_size);
 
-	BUG_ON(buffer->free);
+	BUG_ON(test_bit(BINDER_BUF_FLAG_FREE, &buffer->flags));
 	BUG_ON(size > buffer_size);
 	BUG_ON(buffer->transaction != NULL);
 	BUG_ON(buffer->user_data < alloc->buffer);
 	BUG_ON(buffer->user_data > alloc->buffer + alloc->buffer_size);
 
-	if (buffer->async_transaction) {
+	if (test_bit(BINDER_BUF_FLAG_ASYNC_TRANSACTION, &buffer->flags)) {
 		alloc->free_async_space += buffer_size;
 		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC_ASYNC,
 			     "%d: binder_free_buf size %zd async free %zd\n",
@@ -682,11 +686,11 @@ static void binder_free_buf_locked(struct binder_alloc *alloc,
 			  buffer->user_data + buffer_size) & PAGE_MASK));
 
 	rb_erase(&buffer->rb_node, &alloc->allocated_buffers);
-	buffer->free = 1;
+	set_bit(BINDER_BUF_FLAG_FREE, &buffer->flags);
 	if (!list_is_last(&buffer->entry, &alloc->buffers)) {
 		struct binder_buffer *next = binder_buffer_next(buffer);
 
-		if (next->free) {
+		if (test_bit(BINDER_BUF_FLAG_FREE, &next->flags)) {
 			rb_erase(&next->rb_node, &alloc->free_buffers);
 			binder_delete_free_buffer(alloc, next);
 		}
@@ -694,7 +698,7 @@ static void binder_free_buf_locked(struct binder_alloc *alloc,
 	if (alloc->buffers.next != &buffer->entry) {
 		struct binder_buffer *prev = binder_buffer_prev(buffer);
 
-		if (prev->free) {
+		if (test_bit(BINDER_BUF_FLAG_FREE, &prev->flags)) {
 			binder_delete_free_buffer(alloc, buffer);
 			rb_erase(&prev->rb_node, &alloc->free_buffers);
 			buffer = prev;
@@ -767,7 +771,7 @@ int binder_alloc_mmap_handler(struct binder_alloc *alloc,
 
 	buffer->user_data = alloc->buffer;
 	list_add(&buffer->entry, &alloc->buffers);
-	buffer->free = 1;
+	set_bit(BINDER_BUF_FLAG_FREE, &buffer->flags);
 	binder_insert_free_buffer(alloc, buffer);
 	alloc->free_async_space = alloc->buffer_size / 2;
 	binder_alloc_set_vma(alloc, vma);
@@ -814,7 +818,7 @@ void binder_alloc_deferred_release(struct binder_alloc *alloc)
 	while (!list_empty(&alloc->buffers)) {
 		buffer = list_first_entry(&alloc->buffers,
 					  struct binder_buffer, entry);
-		WARN_ON(!buffer->free);
+		WARN_ON(!test_bit(BINDER_BUF_FLAG_FREE, &buffer->flags));
 
 		list_del(&buffer->entry);
 		WARN_ON_ONCE(!list_empty(&alloc->buffers));
@@ -1091,9 +1095,11 @@ int binder_alloc_shrinker_init(void)
  * allowed to touch the buffer in two cases:
  *
  * 1) when the buffer is being created:
- *     (buffer->free == 0 && buffer->allow_user_free == 0)
+ *     (test_bit(BINDER_BUF_FLAG_FREE, &buffer->flags) == 0 &&
+ *      test_bit(BINDER_BUF_FLAG_ALLOW_USER_FREE, &buffer->flags) == 0)
  * 2) when the buffer is being torn down:
- *     (buffer->free == 0 && buffer->transaction == NULL).
+ *     (test_bit(BINDER_BUF_FLAG_FREE, &buffer->flags) == 0 &&
+ *      buffer->transaction == NULL).
  *
  * Return: true if the buffer is safe to access
  */
@@ -1106,8 +1112,8 @@ static inline bool check_buffer(struct binder_alloc *alloc,
 	return buffer_size >= bytes &&
 		offset <= buffer_size - bytes &&
 		IS_ALIGNED(offset, sizeof(u32)) &&
-		!buffer->free &&
-		(!buffer->allow_user_free || !buffer->transaction);
+		!test_bit(BINDER_BUF_FLAG_FREE, &buffer->flags) &&
+		(!test_bit(BINDER_BUF_FLAG_ALLOW_USER_FREE, &buffer->flags) || !buffer->transaction);
 }
 
 /**

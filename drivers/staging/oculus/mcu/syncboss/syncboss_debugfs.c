@@ -186,7 +186,7 @@ int syncboss_debugfs_init(struct syncboss_debugfs *debugfs, struct device *dev,
 
 	dentry = syncboss_debugfs_create_seq_allocations_dir(debugfs,
 		debugfs->dentry, &seq->allocations, "sequence_numbers");
-	if (IS_ERR_OR_NULL(debugfs->dentry))
+	if (IS_ERR_OR_NULL(dentry))
 		return PTR_ERR(dentry);
 
 	return 0;

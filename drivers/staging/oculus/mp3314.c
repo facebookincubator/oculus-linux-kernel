@@ -14,6 +14,10 @@
 #include <linux/regulator/of_regulator.h>
 #include <linux/version.h>
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+#include <linux/math.h>
+#endif
+
 #define PWM1_REG 0x00
 #define PWM0_REG 0x01
 #define CURR_LIM_REG 0x02
@@ -142,7 +146,7 @@ static void init_regmap_config(struct regmap_config *regmap_config)
 	regmap_config->readable_reg = mp3314_readable;
 	regmap_config->volatile_reg = mp3314_volatile;
 	regmap_config->writeable_reg = mp3314_writeable;
-	regmap_config->cache_type = REGCACHE_FLAT,
+	regmap_config->cache_type = REGCACHE_FLAT;
 	regmap_config->use_single_read = true;
 	regmap_config->use_single_write = true;
 	regmap_config->reg_defaults = mp3314_reg_defs;
@@ -419,7 +423,7 @@ static int mp3314_probe(struct i2c_client *i2c,
 	struct regulator_config reg_cfg = {};
 	struct regmap_config regmap_config;
 	struct reg_default initial_regs[NUM_REGISTERS];
-	unsigned int num_initial_regs = 0;
+	unsigned int num_initial_regs = 0, imult;
 
 	if (!i2c_check_functionality(i2c->adapter, I2C_FUNC_I2C)) {
 		dev_err(&i2c->dev, "No I2C functionality present\n");
@@ -458,8 +462,11 @@ static int mp3314_probe(struct i2c_client *i2c,
 	else
 		mp3314_set_initial_state_from_dt(bld, initial_regs, num_initial_regs);
 
+	imult = DIV_ROUND_CLOSEST(bld->match_data->iset_resistor_max,
+					bld->iset_ext_resistor);
+
 	for (i = 0; i < NUM_IMAX_VALUES; ++i)
-		bld->imax_ua[i] = imax_values[i] * bld->match_data->iset_resistor_max / bld->iset_ext_resistor;
+		bld->imax_ua[i] = imult * imax_values[i];
 
 	bld->reg_desc.name = i2c->dev.of_node->name;
 	bld->reg_desc.id = 0;

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs:*)",
+      "Bash(arc lint:*)",
+      "Bash(riot:*)",
+      "Bash(ek:*)",
+      "Bash(ondemand:*)",
+      "Bash(adb shell:*)",
+      "Bash(adb devices:*)",
+      "Bash(adb root:*)"
+    ]
+  }
+}

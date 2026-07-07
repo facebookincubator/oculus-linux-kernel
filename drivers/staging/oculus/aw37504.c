@@ -12,6 +12,7 @@
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/of_regulator.h>
+#include <linux/version.h>
 
 /* Compatible table name */
 #define AW37504_NODE_TABLE "aw,aw37504"
@@ -179,36 +180,6 @@ static int aw37504_is_enabled(struct regulator_dev *rdev)
 	return aw_dev->is_enabled;
 }
 
-static int aw37504_set_voltage(struct regulator_dev *rdev,
-		int min_uV, int max_uV, unsigned int *selector)
-{
-	int rc = 0;
-	struct aw_device *aw_dev = rdev_get_drvdata(rdev);
-
-	u8 p_val = get_voltage_reg_val(max_uV);
-	u8 n_val = get_voltage_reg_val(min_uV);
-
-	/* write positive voltage to VOUTP */
-	rc = write_reg(aw_dev, VOUTP_REG, p_val);
-	if (rc < 0) {
-		dev_err(&aw_dev->i2c->dev,
-				"%s: Failed to set the voltage to %d, ret=%d\n",
-				__func__, max_uV, rc);
-		return rc;
-	}
-
-	/* write negative voltage to VOUTN */
-	rc = write_reg(aw_dev, VOUTN_REG, n_val);
-	if (rc < 0) {
-		dev_err(&aw_dev->i2c->dev,
-				"%s: Failed to set the voltage to -%d, ret=%d\n",
-				__func__, min_uV, rc);
-		return rc;
-	}
-
-	return 0;
-}
-
 static int aw37504_get_voltage(struct regulator_dev *rdev)
 {
 	int rc = 0;
@@ -287,7 +258,6 @@ static struct regulator_ops aw37504_reg_ops = {
 	.enable = aw37504_enable,
 	.disable = aw37504_disable,
 	.is_enabled = aw37504_is_enabled,
-	.set_voltage = aw37504_set_voltage,
 	.get_voltage = aw37504_get_voltage,
 	.set_load = aw37504_set_load,
 	.get_optimum_mode = aw37504_get_optimm_mode,
@@ -299,6 +269,8 @@ static int aw37504_probe(struct i2c_client *i2c,
 	const struct i2c_device_id *id)
 {
 	int rc = 0;
+	int voltage_uV = 0;
+	u8 voltage_val = 0;
 	struct aw_device *aw_dev;
 	struct regulator_init_data *init_data;
 	struct regulator_config reg_cfg = {};
@@ -337,9 +309,8 @@ static int aw37504_probe(struct i2c_client *i2c,
 
 	reg_cfg.dev = &i2c->dev;
 	reg_cfg.init_data = init_data;
-	init_data->constraints.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE
-					| REGULATOR_CHANGE_STATUS | REGULATOR_CHANGE_STATUS
-					| REGULATOR_CHANGE_MODE	| REGULATOR_CHANGE_DRMS;
+	init_data->constraints.valid_ops_mask = REGULATOR_CHANGE_STATUS
+					| REGULATOR_CHANGE_MODE | REGULATOR_CHANGE_DRMS;
 	reg_cfg.driver_data = aw_dev;
 	reg_cfg.of_node = i2c->dev.of_node;
 
@@ -352,12 +323,56 @@ static int aw37504_probe(struct i2c_client *i2c,
 		return rc;
 	}
 
+	/* Program fixed voltage from device tree constraints at probe time */
+
+	voltage_uV = init_data->constraints.min_uV;
+	voltage_val = get_voltage_reg_val(voltage_uV);
+
+	/* Open write protection */
+	rc = write_reg(aw_dev, WPRTEN_REG, WPRTEN_OPEN_VAL);
+	if (rc < 0) {
+		dev_err(&i2c->dev,
+			"%s: Failed to open write protection\n",
+			__func__);
+		return rc;
+	}
+
+	/* Set positive voltage (VOUTP) */
+	rc = write_reg(aw_dev, VOUTP_REG, voltage_val);
+	if (rc < 0) {
+		dev_err(&i2c->dev,
+			"%s: Failed to set VOUTP to %duV\n",
+			__func__, voltage_uV);
+		return rc;
+	}
+
+	/* Set negative voltage (VOUTN) */
+	rc = write_reg(aw_dev, VOUTN_REG, voltage_val);
+	if (rc < 0) {
+		dev_err(&i2c->dev,
+			"%s: Failed to set VOUTN to %duV\n",
+			__func__, voltage_uV);
+		return rc;
+	}
+
+	dev_info(&i2c->dev,
+			"Fixed voltage set to +/-%duV (reg=0x%02x)\n",
+			voltage_uV, voltage_val);
+
+
 	return 0;
 }
 
-static int aw37504_remove(struct i2c_client *i2c)
+#if KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE
+static int
+#else
+static void
+#endif
+aw37504_remove(struct i2c_client *i2c)
 {
+#if KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE
 	return 0;
+#endif
 }
 
 static int aw37504_suspend(struct device *dev)

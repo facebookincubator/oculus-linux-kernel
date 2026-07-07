@@ -1141,7 +1141,8 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	pos += snprintf(pos, end - pos, "potential CPU hogs:\n");
 #ifdef CONFIG_SCHED_INFO
 	if (sched_info_on()) {
-		struct task_struct *tgid_task = curr->tgid ?
+		struct task_struct *tgid_task =
+			(curr->tgid && task_active_pid_ns(current)) ?
 			get_pid_task(find_vpid(curr->tgid), PIDTYPE_PID) : NULL;
 		if (tgid_task != NULL) {
 			tgid_comm = kmalloc(PAGE_SIZE, GFP_ATOMIC);

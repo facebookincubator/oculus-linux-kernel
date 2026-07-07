@@ -668,6 +668,10 @@ struct smb_charger {
 	/* lpd timer work */
 	struct workqueue_struct *wq;
 	struct work_struct	lpd_recheck_work;
+
+	/* suspend */
+	bool			suspended;
+	struct work_struct	usb_plugin_work;
 };
 
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val);

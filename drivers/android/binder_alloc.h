@@ -31,9 +31,12 @@ struct binder_transaction;
  * struct binder_buffer - buffer used for binder transactions
  * @entry:              entry alloc->buffers
  * @rb_node:            node for allocated_buffers/free_buffers rb trees
- * @free:               %true if buffer is free
- * @allow_user_free:    %true if user is allowed to free buffer
- * @async_transaction:  %true if buffer is in use for an async txn
+ * @flags:              bitfield containing:
+ *                      BINDER_BUF_FLAG_FREE if buffer is free
+ *                      BINDER_BUF_FLAG_ALLOW_USER_FREE if user is allowed to
+ *                      free the buffer
+ *                      BINDER_BUF_FLAG_ASYNC_TRANSACTION if buffer is in use
+ *                      for an async txn
  * @debug_id:           unique ID for debugging
  * @transaction:        pointer to associated struct binder_transaction
  * @target_node:        struct binder_node associated with this buffer
@@ -49,10 +52,13 @@ struct binder_buffer {
 	struct list_head entry; /* free and allocated entries by address */
 	struct rb_node rb_node; /* free entry by size or allocated entry */
 				/* by address */
-	unsigned free:1;
-	unsigned allow_user_free:1;
-	unsigned async_transaction:1;
-	unsigned debug_id:29;
+
+#define BINDER_BUF_FLAG_FREE 0
+#define BINDER_BUF_FLAG_ALLOW_USER_FREE 1
+#define BINDER_BUF_FLAG_ASYNC_TRANSACTION 2
+	unsigned long flags;
+
+	unsigned int debug_id;
 
 	struct binder_transaction *transaction;
 

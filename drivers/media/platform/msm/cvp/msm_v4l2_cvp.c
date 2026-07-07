@@ -477,7 +477,11 @@ static int msm_cvp_remove(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	core = dev_get_drvdata(&pdev->dev);
+	if (of_device_is_compatible(pdev->dev.of_node, "qcom,msm-cvp")) {
+		core = dev_get_drvdata(&pdev->dev);
+	} else {
+		core = dev_get_drvdata(pdev->dev.parent);
+	}
 	if (!core) {
 		dprintk(CVP_ERR, "%s invalid core", __func__);
 		return -EINVAL;

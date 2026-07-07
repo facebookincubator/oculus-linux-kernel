@@ -431,6 +431,20 @@ int fwupdate_update_single_app(
 		if (status)
 			return status;
 
+		/*
+		 * Account for erased pages in progress tracking.
+		 * Some erase implementations already increment
+		 * fw_update_steps_done per page during erase.
+		 * Only bulk-add erase steps if the erase function
+		 * didn't already track progress itself.
+		 */
+		if (atomic_read(&mcudata->fw_update_steps_done) == 0) {
+			atomic_add(fwupdate_get_num_flash_pages_to_erase(dev,
+					mcudata, erase_all,
+					force_bootloader_update),
+				&mcudata->fw_update_steps_done);
+		}
+
 		if (!force_bootloader_update) {
 			while (pages_to_skip < mcudata->flash_info.num_protected_bootloader_pages) {
 				if (!mcudata->swd_ops.target_page_is_erased(dev, pages_to_skip))
@@ -891,3 +905,11 @@ int fwupdate_init_swd_ops(struct device *dev, struct swd_mcu_data *mcudata)
 	mcudata->swd_ops = *ops;
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_KUNIT)
+EXPORT_SYMBOL_GPL(fwupdate_check_swd_ops);
+EXPORT_SYMBOL_GPL(fwupdate_update_chip_erase);
+EXPORT_SYMBOL_GPL(fwupdate_update_prepare);
+EXPORT_SYMBOL_GPL(fwupdate_update_firmware_show);
+EXPORT_SYMBOL_GPL(fwupdate_init_swd_ops);
+#endif

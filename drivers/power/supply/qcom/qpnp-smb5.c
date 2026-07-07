@@ -3948,10 +3948,34 @@ static const struct of_device_id match_table[] = {
 	{ },
 };
 
+static int smb5_suspend(struct device *dev)
+{
+	struct smb5 *chip = dev_get_drvdata(dev);
+
+	chip->chg.suspended = true;
+	return 0;
+}
+
+static int smb5_resume(struct device *dev)
+{
+	struct smb5 *chip = dev_get_drvdata(dev);
+
+	chip->chg.suspended = false;
+	/* Process any USB plugin event that arrived during suspend */
+	schedule_work(&chip->chg.usb_plugin_work);
+	return 0;
+}
+
+static const struct dev_pm_ops smb5_pm_ops = {
+	.suspend	= smb5_suspend,
+	.resume		= smb5_resume,
+};
+
 static struct platform_driver smb5_driver = {
 	.driver		= {
 		.name		= "qcom,qpnp-smb5",
 		.of_match_table	= match_table,
+		.pm		= &smb5_pm_ops,
 	},
 	.probe		= smb5_probe,
 	.remove		= smb5_remove,

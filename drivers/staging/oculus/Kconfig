@@ -53,6 +53,16 @@ config CHARGER_CYPD3177
 	  care of PD contract negotiation and advertises state changes via GPIO
 	  interrupts.
 
+config CHARGER_TPS25751
+	tristate "TI TPS25751 USB Power Delivery controller driver"
+	default n
+	depends on I2C
+	help
+	  Say Y or M here if your system has TI TPS25751 USB Power
+	  Delivery controller.
+	  If you choose to build this driver as a dynamically linked module, the
+	  module will be called tps25751.ko.
+
 config CHARGING_THERMAL_CONTROLLER
 	tristate "Charging Thermal Controller Driver"
 	default n
@@ -358,6 +368,7 @@ config W1_SLAVE_DS28E18
 
 	  If you are unsure, say N.
 
+source "drivers/staging/oculus/Kconfig.test"
 source "drivers/staging/oculus/langdon/Kconfig"
 source "drivers/staging/oculus/mcu/Kconfig"
 source "drivers/staging/oculus/pdfu/Kconfig"

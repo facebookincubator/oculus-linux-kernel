@@ -16,6 +16,10 @@
 #include <linux/regulator/of_regulator.h>
 #include <linux/version.h>
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+#include <linux/math.h>
+#endif
+
 #define MODE_CTRL_CURR_LIM_REG 0x00
 #define CHEN_REG 0x01
 #define OVP_IMAX_REG 0x02
@@ -544,7 +548,7 @@ static int mp3317_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	struct regulator_config reg_cfg = {};
 	struct regulator_dev *reg_dev;
 	struct reg_default initial_regs[NUM_REGISTERS];
-	unsigned int num_initial_regs = 0;
+	unsigned int num_initial_regs = 0, imult;
 
 	if (!i2c_check_functionality(i2c->adapter, I2C_FUNC_I2C)) {
 		dev_err(&i2c->dev, "No I2C functionality present\n");
@@ -580,10 +584,10 @@ static int mp3317_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 		mp3317_set_initial_state_from_dt(bld, initial_regs,
 						 num_initial_regs);
 
+	imult = DIV_ROUND_CLOSEST(ISET_RESISTOR_MAX, bld->iset_ext_resistor);
+
 	for (i = 0; i < NUM_IMAX_VALUES; ++i)
-		bld->imax_ua[i] = imax_values[i] *
-				  ISET_RESISTOR_MAX /
-				  bld->iset_ext_resistor;
+		bld->imax_ua[i] = imult * imax_values[i];
 
 	for (i = 0; i < MP3317_MAX_REGULATORS; i++) {
 		reg_cfg.dev = dev;

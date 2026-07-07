@@ -353,17 +353,17 @@ static int qpnp_tm_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	ret = devm_request_threaded_irq(&pdev->dev, irq, NULL, qpnp_tm_isr,
-					IRQF_ONESHOT, node->name, chip);
-	if (ret < 0)
-		return ret;
-
 	chip->tz_dev = devm_thermal_zone_of_sensor_register(&pdev->dev, 0, chip,
 							&qpnp_tm_sensor_ops);
 	if (IS_ERR(chip->tz_dev)) {
 		dev_err(&pdev->dev, "failed to register sensor\n");
 		return PTR_ERR(chip->tz_dev);
 	}
+
+	ret = devm_request_threaded_irq(&pdev->dev, irq, NULL, qpnp_tm_isr,
+					IRQF_ONESHOT, node->name, chip);
+	if (ret < 0)
+		return ret;
 
 	return 0;
 }

@@ -202,7 +202,7 @@ struct msm_cvp_inst *cvp_get_inst_validate(struct msm_cvp_core *core,
 		return NULL;
 	}
 
-	hdev = s->core->device;
+	hdev = core->device;
 	rc = call_hfi_op(hdev, validate_session, s->session, __func__);
 	if (rc) {
 		cvp_put_inst(s);
@@ -1413,27 +1413,26 @@ void msm_cvp_ssr_handler(struct work_struct *work)
 
 		dprintk(CVP_ERR, "Session abort triggered\n");
 		list_for_each_entry(inst, &core->instances, list) {
-			dprintk(CVP_WARN,
-				"Session to abort: inst %#x cmd %x ref %x\n",
-				inst, inst->cur_cmd_type,
-				kref_read(&inst->kref));
+			if (inst != NULL) {
+				s = cvp_get_inst_validate(core, inst);
+				if (!s) {
+					dprintk(CVP_ERR, "%s: Session is not valid\n", __func__);
+					return;
+				}
+				dprintk(CVP_WARN,
+					"Session to abort: inst %#x cmd %x ref %x\n",
+					inst, inst->cur_cmd_type,
+					kref_read(&inst->kref));
+				call_hfi_op(hdev, flush_debug_queue,
+					hdev->hfi_device_data);
+				dump_hfi_queue(hdev->hfi_device_data);
+				msm_cvp_comm_kill_session(inst);
+				cvp_put_inst(s);
+			} else {
+				dprintk(CVP_WARN, "No active CVP session to abort\n");
+			}
 			break;
 		}
-
-		if (inst != NULL) {
-			s = cvp_get_inst_validate(inst->core, inst);
-			if (!s)
-				return;
-
-			call_hfi_op(hdev, flush_debug_queue,
-				hdev->hfi_device_data);
-			dump_hfi_queue(hdev->hfi_device_data);
-			msm_cvp_comm_kill_session(inst);
-			cvp_put_inst(s);
-		} else {
-			dprintk(CVP_WARN, "No active CVP session to abort\n");
-		}
-
 		return;
 	}
 

@@ -977,7 +977,7 @@ int fg_get_battery_current(struct fg_dev *fg, int *val)
 	int64_t temp = 0;
 	u8 buf[2], buf_cp[2];
 
-	while (tries++ < MAX_READ_TRIES) {
+	while (tries < MAX_READ_TRIES) {
 		rc = fg_read(fg, BATT_INFO_IBATT_LSB(fg), buf, 2);
 		if (rc < 0) {
 			pr_err("failed to read addr=0x%04x, rc=%d\n",
@@ -994,6 +994,8 @@ int fg_get_battery_current(struct fg_dev *fg, int *val)
 
 		if (buf[0] == buf_cp[0] && buf[1] == buf_cp[1])
 			break;
+
+		tries++;
 	}
 
 	if (tries == MAX_READ_TRIES) {
@@ -1021,7 +1023,7 @@ int fg_get_battery_voltage(struct fg_dev *fg, int *val)
 	u16 temp = 0;
 	u8 buf[2], buf_cp[2];
 
-	while (tries++ < MAX_READ_TRIES) {
+	while (tries < MAX_READ_TRIES) {
 		rc = fg_read(fg, BATT_INFO_VBATT_LSB(fg), buf, 2);
 		if (rc < 0) {
 			pr_err("failed to read addr=0x%04x, rc=%d\n",
@@ -1038,6 +1040,8 @@ int fg_get_battery_voltage(struct fg_dev *fg, int *val)
 
 		if (buf[0] == buf_cp[0] && buf[1] == buf_cp[1])
 			break;
+
+		tries++;
 	}
 
 	if (tries == MAX_READ_TRIES) {

@@ -42,6 +42,25 @@
 
 static unsigned long kasan_flags;
 
+bool kasan_flag_panic __ro_after_init;
+
+static int __init early_kasan_fault(char *arg)
+{
+	if (!arg)
+		return -EINVAL;
+
+	if (!strcmp(arg, "report"))
+		kasan_flag_panic = false;
+	else if (!strcmp(arg, "panic"))
+		kasan_flag_panic = true;
+	else
+		return -EINVAL;
+
+	pr_info("kasan.fault=%s\n", arg);
+	return 0;
+}
+early_param("kasan.fault", early_kasan_fault);
+
 #define KASAN_BIT_REPORTED	0
 #define KASAN_BIT_MULTI_SHOT	1
 
@@ -92,6 +111,8 @@ static void end_report(unsigned long *flags)
 	add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
 	spin_unlock_irqrestore(&report_lock, *flags);
 	check_panic_on_warn("KASAN");
+	if (kasan_flag_panic)
+		panic("kasan.fault=panic set ...\n");
 	kasan_enable_current();
 }
 

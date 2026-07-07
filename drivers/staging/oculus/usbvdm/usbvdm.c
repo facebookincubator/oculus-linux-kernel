@@ -249,6 +249,9 @@ void usbvdm_engine_ext_msg(struct usbvdm_engine *engine,
 {
 	struct usbvdm_subscription *sub;
 
+	if (!engine)
+		return;
+
 	pr_debug("%s: Engine '%s' received ExtMsg, MsgType=0x%02x Len=%lu",
 			__func__, dev_name(engine->dev), msg_type, data_len);
 
@@ -279,6 +282,9 @@ void usbvdm_engine_vdm(struct usbvdm_engine *engine,
 {
 	struct usbvdm_subscription *sub;
 
+	if (!engine)
+		return;
+
 	pr_debug("%s: Engine '%s' received VDM, vdm_hdr=0x%04x num_vdos=%d",
 			__func__, dev_name(engine->dev), vdm_hdr, num_vdos);
 
@@ -305,6 +311,9 @@ void usbvdm_engine_transfer_firmware(struct usbvdm_engine *engine,
 		int progress)
 {
 	struct usbvdm_subscription *sub;
+
+	if (!engine)
+		return;
 
 	pr_debug("%s: Engine '%s' received firmware transfer progress update, progress=%d%%",
 			__func__, dev_name(engine->dev), progress);

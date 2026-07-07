@@ -281,8 +281,8 @@ static int cam_jpeg_insert_cdm_change_base(
 		return rc;
 	}
 
-	if (config_args->hw_update_entries[CAM_JPEG_CHBASE].offset >=
-		ch_base_len) {
+	if ((config_args->hw_update_entries[CAM_JPEG_CHBASE].offset +
+		(2 * sizeof(uint32_t))) >= ch_base_len) {
 		CAM_ERR(CAM_JPEG, "Not enough buf");
 		cam_mem_put_cpu_buf(
 			config_args->hw_update_entries[CAM_JPEG_CHBASE].handle);

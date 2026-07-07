@@ -551,16 +551,16 @@ static inline int syncboss_swd_nrfh20_write_memory_retry(struct device *dev,
 	ret = swd_memory_write(dev, addr, value);
 	while (unlikely(++i < n_retries && ret)) {
 		msleep(retry_interval_ms);
-		ret = swd_memory_write(dev, addr, value);
-		if (ret) {
-			dev_warn_ratelimited(dev, "%s: write failure, err %d addr = %#x, retrying..", __func__, ret, addr);
 
-			ret = swd_init(dev);
-			if (ret) {
-				dev_err(dev, "swd init failed, err %d, giving up write!", ret);
-				return ret;
-			}
+		dev_warn_ratelimited(dev, "%s: write failure, err %d addr = %#x, retrying..", __func__, ret, addr);
+
+		ret = swd_init(dev);
+		if (ret) {
+			dev_err(dev, "swd init failed, err %d, giving up write!", ret);
+			return ret;
 		}
+
+		ret = swd_memory_write(dev, addr, value);
 	}
 
 	return ret;
@@ -690,13 +690,41 @@ int syncboss_swd_nrf54h20_prepare(struct device *dev)
 	 * the mcu cores. We should do this before and after flashing for
 	 * robustness.
 	 */
+	int status;
 	syncboss_deep_powercycle(dev);
+
+	status = syncboss_swd_nrf54h20_wait_swd_init(dev);
+	if (status != 0)
+		dev_err(dev, "%s: Could not do an swd init!!", __func__);
+
+	/*
+	 * Its possible that an earlier attempt to flash failed and the mcu
+	 * bootloader is corrupted. A corrupt bootloader on the mcu can make the
+	 * SWD connection unstable and prevent any future SWD flashing. To avoid
+	 * this, Boot into the DebugWait mode, that stops the CPU from booting
+	 * into the bootloader, instead the CPU waits for SWD to attach.
+	 */
+	status = syncboss_swd_nrf54h20_chip_reboot_into_bootmode(
+		dev, SWD_NRF54H20_APREG_MAILBOX_BOOTMODE_DebugWait);
+	if (status != 0)
+		dev_err(dev, "%s: Could not reset into DebugWait mode\n", __func__);
+
 
 	return syncboss_swd_nrf54h20_wait_swd_init(dev);
 }
 
 int syncboss_swd_nrf54h20_finalize(struct device *dev)
 {
+	int status;
+
+	/* Clear BOOTMODE to normal */
+	status = syncboss_swd_nrf54h20_chip_reboot_into_bootmode(
+		dev, SWD_NRD45H20_APREG_MAILBOX_BOOTMODE_Normal);
+	if (status != 0) {
+		dev_err(dev, "%s: Finalize failed! Reset into normal boot mode failed!", __func__);
+		return status;
+	}
+
 	swd_reset(dev);
 	swd_flush(dev);
 
