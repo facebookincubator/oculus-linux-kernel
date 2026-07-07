@@ -4849,6 +4849,8 @@ void sde_encoder_helper_hw_reset(struct sde_encoder_phys *phys_enc)
 	SDE_DEBUG_ENC(sde_enc, "ctl %d reset\n",  ctl->idx);
 	SDE_EVT32(DRMID(phys_enc->parent), ctl->idx);
 
+	ctl->ops.reset(ctl);
+
 	if (phys_enc->ops.is_master && phys_enc->ops.is_master(phys_enc) &&
 			phys_enc->connector) {
 		sde_con = to_sde_connector(phys_enc->connector);

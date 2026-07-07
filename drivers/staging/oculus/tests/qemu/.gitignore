@@ -1,0 +1,4 @@
+# KUnit UML build artifacts
+*
+!.gitignore
+!kunitconfig

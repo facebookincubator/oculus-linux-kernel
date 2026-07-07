@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2008-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <uapi/linux/sched/types.h>
@@ -46,6 +46,7 @@ struct dmabuf_list_entry {
 	struct page *firstpage;
 	struct list_head node;
 	struct list_head dmabuf_list;
+	int unique_proc_count;
 };
 
 struct kgsl_dma_buf_meta {
@@ -55,6 +56,15 @@ struct kgsl_dma_buf_meta {
 	struct sg_table *table;
 	struct dmabuf_list_entry *dle;
 	struct list_head node;
+	/*
+	 * Owner process for dle bookkeeping. Pinned via
+	 * kgsl_process_private_get in add_dmabuf_list and released in
+	 * remove_dmabuf_list. Must not be derived from entry->priv at
+	 * remove time because entry->priv is cleared by
+	 * kgsl_mem_entry_detach_process before kgsl_destroy_ion runs.
+	 */
+	struct kgsl_process_private *priv;
+	bool counts_pss;
 };
 
 static inline struct kgsl_pagetable *_get_memdesc_pagetable(
@@ -249,10 +259,21 @@ static struct kgsl_mem_entry *kgsl_mem_entry_create(void)
 	return entry;
 }
 
-static void add_dmabuf_list(struct kgsl_dma_buf_meta *meta)
+static void add_dmabuf_list(struct kgsl_dma_buf_meta *meta,
+			    struct kgsl_process_private *priv)
 {
 	struct dmabuf_list_entry *dle;
+	struct kgsl_dma_buf_meta *scan;
 	struct page *page;
+
+	/*
+	 * Pin the owning process for the lifetime of this metadata so
+	 * remove_dmabuf_list has a stable owner pointer to compare
+	 * against, independent of entry->priv which is cleared during
+	 * kgsl_mem_entry_detach_process before destroy_ion runs.
+	 */
+	if (kgsl_process_private_get(priv))
+		meta->priv = priv;
 
 	/*
 	 * Get the first page. We will use it to identify the imported
@@ -266,8 +287,18 @@ static void add_dmabuf_list(struct kgsl_dma_buf_meta *meta)
 	/* Go through the list to see if we imported this buffer before */
 	list_for_each_entry(dle, &kgsl_dmabuf_list, node) {
 		if (dle->firstpage == page) {
-			/* Add the dmabuf meta to the list for this dle */
+			bool proc_present = false;
+
+			list_for_each_entry(scan, &dle->dmabuf_list, node) {
+				if (scan->priv && scan->priv == meta->priv) {
+					proc_present = true;
+					break;
+				}
+			}
 			meta->dle = dle;
+			meta->counts_pss = !proc_present;
+			if (!proc_present)
+				dle->unique_proc_count++;
 			list_add(&meta->node, &dle->dmabuf_list);
 			spin_unlock(&kgsl_dmabuf_lock);
 			return;
@@ -278,9 +309,11 @@ static void add_dmabuf_list(struct kgsl_dma_buf_meta *meta)
 	dle = kzalloc(sizeof(*dle), GFP_ATOMIC);
 	if (dle) {
 		dle->firstpage = page;
+		dle->unique_proc_count = 1;
 		INIT_LIST_HEAD(&dle->dmabuf_list);
 		list_add(&dle->node, &kgsl_dmabuf_list);
 		meta->dle = dle;
+		meta->counts_pss = true;
 		list_add(&meta->node, &dle->dmabuf_list);
 	}
 	spin_unlock(&kgsl_dmabuf_lock);
@@ -288,18 +321,47 @@ static void add_dmabuf_list(struct kgsl_dma_buf_meta *meta)
 
 static void remove_dmabuf_list(struct kgsl_dma_buf_meta *meta)
 {
+	struct kgsl_process_private *priv = meta->priv;
 	struct dmabuf_list_entry *dle = meta->dle;
+	struct kgsl_dma_buf_meta *scan;
 
 	if (!dle)
-		return;
+		goto out_put;
 
 	spin_lock(&kgsl_dmabuf_lock);
 	list_del(&meta->node);
+
+	/*
+	 * If this meta was the PSS-counting record for its process on
+	 * this buffer, hand the role to another import from the same
+	 * process if one exists; otherwise the process is no longer an
+	 * importer of this buffer, so decrement the unique-proc count.
+	 */
+	if (meta->counts_pss) {
+		bool transferred = false;
+
+		if (priv) {
+			list_for_each_entry(scan, &dle->dmabuf_list, node) {
+				if (scan->priv == priv) {
+					scan->counts_pss = true;
+					transferred = true;
+					break;
+				}
+			}
+		}
+		if (!transferred)
+			dle->unique_proc_count--;
+	}
+
 	if (list_empty(&dle->dmabuf_list)) {
 		list_del(&dle->node);
 		kfree(dle);
 	}
 	spin_unlock(&kgsl_dmabuf_lock);
+
+out_put:
+	if (priv)
+		kgsl_process_private_put(priv);
 }
 
 #ifdef CONFIG_DMA_SHARED_BUFFER
@@ -2753,11 +2815,13 @@ static void _setup_cache_mode(struct kgsl_mem_entry *entry,
 
 static int kgsl_setup_dma_buf(struct kgsl_device *device,
 				struct kgsl_pagetable *pagetable,
+				struct kgsl_process_private *priv,
 				struct kgsl_mem_entry *entry,
 				struct dma_buf *dmabuf);
 
 static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 		struct kgsl_pagetable *pagetable,
+		struct kgsl_process_private *priv,
 		struct kgsl_mem_entry *entry, unsigned long hostptr)
 {
 	struct vm_area_struct *vma;
@@ -2805,7 +2869,7 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 		return dmabuf ? PTR_ERR(dmabuf) : -ENODEV;
 	}
 
-	ret = kgsl_setup_dma_buf(device, pagetable, entry, dmabuf);
+	ret = kgsl_setup_dma_buf(device, pagetable, priv, entry, dmabuf);
 	if (ret) {
 		dma_buf_put(dmabuf);
 		up_read(&current->mm->mmap_sem);
@@ -2826,6 +2890,7 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 #else
 static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 		struct kgsl_pagetable *pagetable,
+		struct kgsl_process_private *priv,
 		struct kgsl_mem_entry *entry, unsigned long hostptr)
 {
 	return -ENODEV;
@@ -2834,6 +2899,7 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 
 static int kgsl_setup_useraddr(struct kgsl_device *device,
 		struct kgsl_pagetable *pagetable,
+		struct kgsl_process_private *priv,
 		struct kgsl_mem_entry *entry,
 		unsigned long hostptr, size_t offset, size_t size)
 {
@@ -2843,7 +2909,7 @@ static int kgsl_setup_useraddr(struct kgsl_device *device,
 		return -EINVAL;
 
 	/* Try to set up a dmabuf - if it returns -ENODEV assume anonymous */
-	ret = kgsl_setup_dmabuf_useraddr(device, pagetable, entry, hostptr);
+	ret = kgsl_setup_dmabuf_useraddr(device, pagetable, priv, entry, hostptr);
 	if (ret != -ENODEV)
 		return ret;
 
@@ -2854,6 +2920,7 @@ static int kgsl_setup_useraddr(struct kgsl_device *device,
 
 static long _gpuobj_map_useraddr(struct kgsl_device *device,
 		struct kgsl_pagetable *pagetable,
+		struct kgsl_process_private *priv,
 		struct kgsl_mem_entry *entry,
 		struct kgsl_gpuobj_import *param)
 {
@@ -2883,13 +2950,14 @@ static long _gpuobj_map_useraddr(struct kgsl_device *device,
 	if (useraddr.virtaddr > ULONG_MAX)
 		return -EINVAL;
 
-	return kgsl_setup_useraddr(device, pagetable, entry,
+	return kgsl_setup_useraddr(device, pagetable, priv, entry,
 		(unsigned long) useraddr.virtaddr, 0, param->priv_len);
 }
 
 #ifdef CONFIG_DMA_SHARED_BUFFER
 static long _gpuobj_map_dma_buf(struct kgsl_device *device,
 		struct kgsl_pagetable *pagetable,
+		struct kgsl_process_private *priv,
 		struct kgsl_mem_entry *entry,
 		struct kgsl_gpuobj_import *param,
 		int *fd)
@@ -2956,7 +3024,7 @@ static long _gpuobj_map_dma_buf(struct kgsl_device *device,
 			entry->memdesc.flags |= KGSL_MEMFLAGS_IOCOHERENT;
 	}
 
-	ret = kgsl_setup_dma_buf(device, pagetable, entry, dmabuf);
+	ret = kgsl_setup_dma_buf(device, pagetable, priv, entry, dmabuf);
 	if (ret)
 		dma_buf_put(dmabuf);
 
@@ -2965,6 +3033,7 @@ static long _gpuobj_map_dma_buf(struct kgsl_device *device,
 #else
 static long _gpuobj_map_dma_buf(struct kgsl_device *device,
 		struct kgsl_pagetable *pagetable,
+		struct kgsl_process_private *priv,
 		struct kgsl_mem_entry *entry,
 		struct kgsl_gpuobj_import *param,
 		int *fd)
@@ -3000,10 +3069,10 @@ long kgsl_ioctl_gpuobj_import(struct kgsl_device_private *dev_priv,
 
 	if (param->type == KGSL_USER_MEM_TYPE_ADDR)
 		ret = _gpuobj_map_useraddr(dev_priv->device, private->pagetable,
-			entry, param);
+			private, entry, param);
 	else
 		ret = _gpuobj_map_dma_buf(dev_priv->device, private->pagetable,
-			entry, param, &fd);
+			private, entry, param, &fd);
 
 	if (ret)
 		goto err;
@@ -3049,7 +3118,9 @@ err:
 }
 
 static long _map_usermem_addr(struct kgsl_device *device,
-		struct kgsl_pagetable *pagetable, struct kgsl_mem_entry *entry,
+		struct kgsl_pagetable *pagetable,
+		struct kgsl_process_private *priv,
+		struct kgsl_mem_entry *entry,
 		unsigned long hostptr, size_t offset, size_t size)
 {
 	if (!kgsl_mmu_has_feature(device, KGSL_MMU_PAGED))
@@ -3059,13 +3130,14 @@ static long _map_usermem_addr(struct kgsl_device *device,
 	if (entry->memdesc.flags & KGSL_MEMFLAGS_SECURE)
 		return -EINVAL;
 
-	return kgsl_setup_useraddr(device, pagetable, entry, hostptr,
+	return kgsl_setup_useraddr(device, pagetable, priv, entry, hostptr,
 		offset, size);
 }
 
 #ifdef CONFIG_DMA_SHARED_BUFFER
 static int _map_usermem_dma_buf(struct kgsl_device *device,
 		struct kgsl_pagetable *pagetable,
+		struct kgsl_process_private *priv,
 		struct kgsl_mem_entry *entry,
 		unsigned int fd)
 {
@@ -3092,7 +3164,7 @@ static int _map_usermem_dma_buf(struct kgsl_device *device,
 		ret = PTR_ERR(dmabuf);
 		return ret ? ret : -EINVAL;
 	}
-	ret = kgsl_setup_dma_buf(device, pagetable, entry, dmabuf);
+	ret = kgsl_setup_dma_buf(device, pagetable, priv, entry, dmabuf);
 	if (ret)
 		dma_buf_put(dmabuf);
 	return ret;
@@ -3100,6 +3172,7 @@ static int _map_usermem_dma_buf(struct kgsl_device *device,
 #else
 static int _map_usermem_dma_buf(struct kgsl_device *device,
 		struct kgsl_pagetable *pagetable,
+		struct kgsl_process_private *priv,
 		struct kgsl_mem_entry *entry,
 		unsigned int fd)
 {
@@ -3110,6 +3183,7 @@ static int _map_usermem_dma_buf(struct kgsl_device *device,
 #ifdef CONFIG_DMA_SHARED_BUFFER
 static int kgsl_setup_dma_buf(struct kgsl_device *device,
 				struct kgsl_pagetable *pagetable,
+				struct kgsl_process_private *priv,
 				struct kgsl_mem_entry *entry,
 				struct dma_buf *dmabuf)
 {
@@ -3187,7 +3261,7 @@ static int kgsl_setup_dma_buf(struct kgsl_device *device,
 		goto out;
 	}
 
-	add_dmabuf_list(meta);
+	add_dmabuf_list(meta, priv);
 	entry->memdesc.size = PAGE_ALIGN(entry->memdesc.size);
 
 out:
@@ -3203,39 +3277,33 @@ out:
 #endif
 
 #ifdef CONFIG_DMA_SHARED_BUFFER
-struct kgsl_process_private *kgsl_find_dmabuf_allocator(
-		struct kgsl_mem_entry *entry)
+/*
+ * kgsl_dmabuf_pss_share - Return per-process PSS share for a DMA-BUF entry
+ * @entry: A KGSL_MEM_ENTRY_ION mem_entry.
+ * @unique_procs: Out — number of unique processes importing this buffer.
+ *
+ * Returns true if @entry is the designated PSS-counting record for its
+ * importer on this buffer, in which case the caller should attribute
+ * size/unique_procs to that process. Returns false if another metadata
+ * record on the same dle owns the PSS share for this process (a process
+ * that imports the same buffer multiple times only counts once).
+ */
+bool kgsl_dmabuf_pss_share(struct kgsl_mem_entry *entry, int *unique_procs)
 {
 	struct kgsl_dma_buf_meta *meta = entry->priv_data;
-	struct dmabuf_list_entry *dle = meta ? meta->dle : NULL;
-	struct kgsl_dma_buf_meta *scan_meta;
-	struct kgsl_mem_entry *first_import;
+	bool counts;
 
-	if (!dle)
-		return entry->priv;
+	*unique_procs = 1;
+	if (!meta || !meta->dle)
+		return true;
 
 	spin_lock(&kgsl_dmabuf_lock);
-	/* each new process importing a dmabuf is added at the head of the list,
-	 * so the initial import is at the tail
-	 */
-	scan_meta = list_empty(&dle->dmabuf_list) ? NULL
-		: list_last_entry(&dle->dmabuf_list,
-				struct kgsl_dma_buf_meta, node);
-	first_import = scan_meta ? scan_meta->entry : NULL;
-	if (first_import && !kgsl_mem_entry_get(first_import))
-		first_import = NULL;
+	counts = meta->counts_pss;
+	if (meta->dle->unique_proc_count > 0)
+		*unique_procs = meta->dle->unique_proc_count;
 	spin_unlock(&kgsl_dmabuf_lock);
 
-	if (first_import) {
-		struct kgsl_process_private *alloc = first_import->priv;
-
-		if (!alloc || !kref_read(&alloc->refcount))
-			alloc = NULL;
-		kgsl_mem_entry_put_deferred(first_import);
-		return alloc;
-	}
-
-	return entry->priv;
+	return counts;
 }
 
 void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
@@ -3265,11 +3333,12 @@ void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
 	}
 	spin_unlock(&kgsl_dmabuf_lock);
 }
+
 #else
-struct kgsl_process_private *kgsl_find_dmabuf_allocator(
-		struct kgsl_mem_entry *entry)
+bool kgsl_dmabuf_pss_share(struct kgsl_mem_entry *entry, int *unique_procs)
 {
-	return entry->priv;
+	*unique_procs = 1;
+	return true;
 }
 
 void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
@@ -3339,14 +3408,16 @@ long kgsl_ioctl_map_user_mem(struct kgsl_device_private *dev_priv,
 	switch (memtype) {
 	case KGSL_MEM_ENTRY_USER:
 		result = _map_usermem_addr(dev_priv->device, private->pagetable,
-			entry, param->hostptr, param->offset, param->len);
+			private, entry, param->hostptr, param->offset,
+			param->len);
 		break;
 	case KGSL_MEM_ENTRY_ION:
 		if (param->offset != 0)
 			result = -EINVAL;
 		else
 			result = _map_usermem_dma_buf(dev_priv->device,
-				private->pagetable, entry, param->fd);
+				private->pagetable, private, entry,
+				param->fd);
 		break;
 	default:
 		result = -EOPNOTSUPP;
@@ -4325,9 +4396,9 @@ static unsigned long _gpu_set_svm_region(struct kgsl_process_private *private,
 	return addr;
 }
 
-static unsigned long get_align(struct kgsl_mem_entry *entry)
+unsigned long kgsl_get_align(struct kgsl_memdesc *memdesc)
 {
-	int bit = kgsl_memdesc_get_align(&entry->memdesc);
+	u32 bit = kgsl_memdesc_get_align(memdesc);
 
 	if (bit >= ilog2(SZ_2M))
 		return SZ_2M;
@@ -4336,7 +4407,7 @@ static unsigned long get_align(struct kgsl_mem_entry *entry)
 	else if (bit >= ilog2(SZ_64K))
 		return SZ_64K;
 
-	return SZ_4K;
+	return PAGE_SIZE;
 }
 
 static unsigned long set_svm_area(struct file *file,
@@ -4373,7 +4444,7 @@ static unsigned long get_svm_unmapped_area(struct file *file,
 {
 	struct kgsl_device_private *dev_priv = file->private_data;
 	struct kgsl_process_private *private = dev_priv->process_priv;
-	unsigned long align = get_align(entry);
+	unsigned long align = kgsl_get_align(&entry->memdesc);
 	unsigned long ret, iova;
 	u64 start = 0, end = 0;
 

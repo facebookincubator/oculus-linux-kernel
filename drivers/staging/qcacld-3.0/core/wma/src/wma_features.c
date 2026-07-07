@@ -1040,7 +1040,7 @@ int wma_unified_csa_offload_enable(tp_wma_handle wma, uint8_t vdev_id)
 static uint8_t *
 wma_parse_ch_switch_wrapper_ie(uint8_t *ch_wr_ie, uint8_t sub_ele_id)
 {
-	uint8_t len = 0, sub_ele_len = 0;
+	int16_t len = 0, sub_ele_len = 0;
 	struct ie_header *ele;
 
 	ele = (struct ie_header *)ch_wr_ie;
@@ -1051,7 +1051,7 @@ wma_parse_ch_switch_wrapper_ie(uint8_t *ch_wr_ie, uint8_t sub_ele_id)
 	len = ele->ie_len;
 	ele = (struct ie_header *)(ch_wr_ie + sizeof(struct ie_header));
 
-	while (len > 0) {
+	while (len >= sizeof(struct ie_header)) {
 		sub_ele_len = sizeof(struct ie_header) + ele->ie_len;
 		len -= sub_ele_len;
 		if (ele->ie_id == sub_ele_id)

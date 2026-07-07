@@ -59,18 +59,19 @@ static void unbind_user_space(struct thermal_zone_device *tz) {
  */
 static int notify_user_space(struct thermal_zone_device *tz, int trip)
 {
-	struct user_space_params *params = tz->governor_data;
+	struct user_space_params *params;
 	char *thermal_prop[5];
 	int i, trip_temp, trip_hyst = 0;
 	bool was_tripped = false;
 
+	mutex_lock(&tz->lock);
+
 	/*
 	 * Skip notifying when not yet bound to tz
 	 */
+	params = tz->governor_data;
 	if (!params)
-		return -ENOMEM;
-
-	mutex_lock(&tz->lock);
+		goto notify_out;
 
 	/*
 	 * Skip zones which can't notify

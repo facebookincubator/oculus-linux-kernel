@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2008-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef __KGSL_H
 #define __KGSL_H
@@ -439,12 +439,11 @@ long kgsl_ioctl_allow_tid_maximum_priority(struct kgsl_device_private *dev_priv,
 void kgsl_mem_entry_destroy(struct kref *kref);
 void kgsl_mem_entry_destroy_deferred(struct kref *kref);
 
-struct kgsl_process_private *kgsl_find_dmabuf_allocator(
-		struct kgsl_mem_entry *entry);
-
 void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
 			int *egl_surface_count, int *egl_image_count,
 			int *total_count);
+
+bool kgsl_dmabuf_pss_share(struct kgsl_mem_entry *entry, int *unique_procs);
 
 struct kgsl_mem_entry * __must_check
 kgsl_sharedmem_find(struct kgsl_process_private *private, uint64_t gpuaddr);
@@ -462,6 +461,8 @@ void kgsl_mmu_remove_global(struct kgsl_device *device,
 		struct kgsl_memdesc *memdesc);
 
 /* Helper functions */
+unsigned long kgsl_get_align(struct kgsl_memdesc *memdesc);
+
 pgprot_t kgsl_pgprot_modify(struct kgsl_memdesc *memdesc, pgprot_t pgprot);
 
 int kgsl_request_irq(struct platform_device *pdev, const  char *name,

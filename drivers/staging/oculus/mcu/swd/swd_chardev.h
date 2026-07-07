@@ -10,4 +10,5 @@
 #define SWD_IOCTL_RESET       _IOW(SWD_MAGIC_NUM, 1, u32)
 
 int swd_driver_init_chardev(struct device *dev, const char *const flavor);
+void swd_driver_deinit_chardev(struct device *dev);
 #endif

@@ -23,6 +23,7 @@
 #include <linux/file.h>
 #include <linux/vmalloc.h>
 #include <linux/stringify.h>
+#include <linux/hzos_ext.h>
 #include <linux/bsearch.h>
 #include <linux/sort.h>
 #include <linux/perf_event.h>
@@ -3230,6 +3231,15 @@ static int check_helper_call(struct bpf_verifier_env *env, int func_id, int insn
 
 	if (env->ops->get_func_proto)
 		fn = env->ops->get_func_proto(func_id, env->prog);
+
+	if (fn) {
+		int ret = 0;
+
+		hzos_ext_check_bpf_helper(func_id, &ret);
+		if (ret)
+			fn = NULL;
+	}
+
 	if (!fn) {
 		verbose(env, "unknown func %s#%d\n", func_id_name(func_id),
 			func_id);

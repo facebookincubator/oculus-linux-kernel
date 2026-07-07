@@ -6034,10 +6034,29 @@ void smblib_usb_plugin_locked(struct smb_charger *chg)
 					vbus_rising ? "attached" : "detached");
 }
 
+static void smblib_usb_plugin_work(struct work_struct *work)
+{
+	struct smb_charger *chg = container_of(work, struct smb_charger,
+					       usb_plugin_work);
+
+	if (chg->pd_hard_reset)
+		smblib_usb_plugin_hard_reset_locked(chg);
+	else
+		smblib_usb_plugin_locked(chg);
+}
+
 irqreturn_t usb_plugin_irq_handler(int irq, void *data)
 {
 	struct smb_irq_data *irq_data = data;
 	struct smb_charger *chg = irq_data->parent_data;
+
+	if (chg->suspended) {
+		/* Defer handling until system is fully resumed to avoid
+		 * RPMh regulator requests while AOSS is not ready.
+		 */
+		schedule_work(&chg->usb_plugin_work);
+		return IRQ_HANDLED;
+	}
 
 	if (chg->pd_hard_reset)
 		smblib_usb_plugin_hard_reset_locked(chg);
@@ -8976,6 +8995,7 @@ int smblib_init(struct smb_charger *chg)
 	mutex_init(&chg->moisture_detection_enable);
 	spin_lock_init(&chg->typec_pr_lock);
 	INIT_WORK(&chg->bms_update_work, bms_update_work);
+	INIT_WORK(&chg->usb_plugin_work, smblib_usb_plugin_work);
 	INIT_WORK(&chg->pl_update_work, pl_update_work);
 	INIT_WORK(&chg->jeita_update_work, jeita_update_work);
 	INIT_WORK(&chg->lpd_recheck_work, lpd_recheck_work);

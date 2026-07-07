@@ -1,0 +1,21 @@
+config KUNIT_STAGING_OCULUS
+	tristate "Enable all KUnit tests for Oculus staging drivers"
+	depends on KUNIT
+	select MISCFIFO_KUNIT_TEST if MISCFIFO
+	select META_SWD_FWUPDATE_KUNIT_TEST if META_SWD
+	help
+	  Master switch to enable all KUnit tests under drivers/staging/oculus/.
+
+config MISCFIFO_KUNIT_TEST
+	tristate "KUnit tests for miscfifo" if !KUNIT_ALL_TESTS
+	depends on KUNIT && MISCFIFO
+	default KUNIT_STAGING_OCULUS
+	help
+	  Unit tests for the miscfifo chardev driver.
+
+config META_SWD_FWUPDATE_KUNIT_TEST
+	tristate "KUnit tests for SWD fwupdate manager" if !KUNIT_ALL_TESTS
+	depends on KUNIT && META_SWD
+	default KUNIT_STAGING_OCULUS
+	help
+	  Unit tests for the SWD firmware update manager APIs.

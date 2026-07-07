@@ -183,6 +183,21 @@ int vm_swappiness = 60;
  */
 unsigned long vm_total_pages;
 
+#ifdef CONFIG_BALANCE_ANON_FILE_RECLAIM
+/*
+ * Dynamic toggle for balance_anon_file_reclaim behavior.
+ * When true, anon and file pages are treated equally during reclaim.
+ * This can be toggled at runtime by hzos_ext via set_balance_anon_file_reclaim().
+ */
+static bool balance_anon_file_reclaim_enabled = true;
+
+void set_balance_anon_file_reclaim(bool enabled)
+{
+	WRITE_ONCE(balance_anon_file_reclaim_enabled, enabled);
+}
+EXPORT_SYMBOL_GPL(set_balance_anon_file_reclaim);
+#endif /* CONFIG_BALANCE_ANON_FILE_RECLAIM */
+
 static LIST_HEAD(shrinker_list);
 static DECLARE_RWSEM(shrinker_rwsem);
 
@@ -2364,6 +2379,7 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 	unsigned long anon, file;
 	unsigned long ap, fp;
 	enum lru_list lru;
+	bool balance_reclaim = false;
 
 	/* If we have no swap space, do not bother scanning anon pages. */
 	if (!sc->may_swap || mem_cgroup_get_nr_swap_pages(memcg) <= 0) {
@@ -2435,6 +2451,7 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 		}
 	}
 
+#ifdef CONFIG_BALANCE_ANON_FILE_RECLAIM
 	/*
 	 * If there is enough inactive page cache, i.e. if the size of the
 	 * inactive list is greater than that of the active list *and* the
@@ -2443,8 +2460,13 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 	 * Without the second condition we could end up never scanning an
 	 * lruvec even if it has plenty of old anonymous pages unless the
 	 * system is under heavy pressure.
+	 *
+	 * When CONFIG_BALANCE_ANON_FILE_RECLAIM is enabled, this check uses
+	 * a runtime variable that can be toggled by hzos_ext.
 	 */
-	if (!IS_ENABLED(CONFIG_BALANCE_ANON_FILE_RECLAIM) &&
+	balance_reclaim = READ_ONCE(balance_anon_file_reclaim_enabled);
+#endif
+	if (balance_reclaim &&
 	    !inactive_list_is_low(lruvec, true, sc, false) &&
 	    lruvec_lru_size(lruvec, LRU_INACTIVE_FILE, sc->reclaim_idx) >> sc->priority) {
 		scan_balance = SCAN_FILE;

@@ -1264,6 +1264,7 @@ static int _sde_encoder_phys_wb_wait_for_commit_done(
 		SDE_ERROR("wb:%d kickoff timed out\n", WBID(wb_enc));
 
 		event = sde_encoder_phys_wb_frame_timeout(phys_enc);
+		phys_enc->enable_state = SDE_ENC_ERR_NEEDS_HW_RESET;
 	}
 
 	/* cleanup writeback framebuffer */

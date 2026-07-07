@@ -2612,6 +2612,8 @@ static int a6xx_perfcounter_update(struct adreno_device *adreno_dev,
 	struct cpu_gpu_lock *lock;
 	u32 *data;
 	int i, offset = 0;
+	/* No of pairs to add: <reg,val> */
+	u32 pending_pairs = adreno_is_a612(adreno_dev) ? 2 : 1;
 	unsigned int page_count = 0;
 
 	kptr = kgsl_sharedmem_vm_map_readwrite(adreno_dev->pwrup_reglist, 0,
@@ -2641,6 +2643,11 @@ static int a6xx_perfcounter_update(struct adreno_device *adreno_dev,
 		offset += 2;
 	}
 
+	/* Ensure there is enough space in the reglist buffer for new pairs */
+	if ((adreno_dev->pwrup_reglist) && (offset + (pending_pairs * 2)) >=
+		(adreno_dev->pwrup_reglist->size / sizeof(u32)))
+		return -ENOSPC;
+
 	/*
 	 * For a612 targets A6XX_RBBM_PERFCTR_CNTL needs to be the last entry,
 	 * so overwrite the existing A6XX_RBBM_PERFCNTL_CTRL and add it back to
@@ -2650,7 +2657,7 @@ static int a6xx_perfcounter_update(struct adreno_device *adreno_dev,
 		data[offset - 2] = reg->select;
 		data[offset - 1] = reg->countable;
 
-		data[offset] = A6XX_RBBM_PERFCTR_CNTL,
+		data[offset] = A6XX_RBBM_PERFCTR_CNTL;
 		data[offset + 1] = 1;
 	} else {
 		data[offset] = reg->select;

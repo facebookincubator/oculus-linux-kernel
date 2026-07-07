@@ -1498,17 +1498,8 @@ static int binder_inc_node_nilocked(struct binder_node *node, int strong,
 	} else {
 		if (!internal)
 			node->local_weak_refs++;
-		if (!node->has_weak_ref && list_empty(&node->work.entry)) {
-			if (target_list == NULL) {
-				pr_err("invalid inc weak node for %d\n",
-					node->debug_id);
-				return -EINVAL;
-			}
-			/*
-			 * See comment above
-			 */
+		if (!node->has_weak_ref && target_list && list_empty(&node->work.entry))
 			binder_enqueue_work_ilocked(&node->work, target_list);
-		}
 	}
 	return 0;
 }
@@ -3633,7 +3624,7 @@ static void binder_transaction(struct binder_proc *proc,
 			binder_inner_proc_unlock(target_proc);
 			goto err_dead_proc_or_thread;
 		}
-		BUG_ON(t->buffer->async_transaction != 0);
+		BUG_ON(test_bit(BINDER_BUF_FLAG_ASYNC_TRANSACTION, &t->buffer->flags));
 		binder_pop_transaction_ilocked(target_thread, in_reply_to);
 		binder_enqueue_thread_work_ilocked(target_thread, &t->work);
 		target_proc->outstanding_txns++;
@@ -3649,7 +3640,7 @@ static void binder_transaction(struct binder_proc *proc,
 		binder_restore_priority(thread, &in_reply_to->saved_priority);
 		binder_free_transaction(in_reply_to);
 	} else if (!(t->flags & TF_ONE_WAY)) {
-		BUG_ON(t->buffer->async_transaction != 0);
+		BUG_ON(test_bit(BINDER_BUF_FLAG_ASYNC_TRANSACTION, &t->buffer->flags));
 		binder_inner_proc_lock(proc);
 		/*
 		 * Defer the TRANSACTION_COMPLETE, so we don't return to
@@ -3673,7 +3664,7 @@ static void binder_transaction(struct binder_proc *proc,
 		}
 	} else {
 		BUG_ON(target_node == NULL);
-		BUG_ON(t->buffer->async_transaction != 1);
+		BUG_ON(test_bit(BINDER_BUF_FLAG_ASYNC_TRANSACTION, &t->buffer->flags) == 0);
 		binder_enqueue_thread_work(thread, tcomplete);
 		return_error = binder_proc_transaction(t, target_proc, NULL);
 		if (return_error)
@@ -3965,7 +3956,7 @@ static int binder_thread_write(struct binder_proc *proc,
 				buffer->transaction = NULL;
 			}
 			binder_inner_proc_unlock(proc);
-			if (buffer->async_transaction && buffer->target_node) {
+			if (test_bit(BINDER_BUF_FLAG_ASYNC_TRANSACTION, &buffer->flags) && buffer->target_node) {
 				struct binder_node *buf_node;
 				struct binder_work *w;
 
@@ -4640,7 +4631,7 @@ retry:
 
 		if (t_from)
 			binder_thread_dec_tmpref(t_from);
-		t->buffer->allow_user_free = 1;
+		set_bit(BINDER_BUF_FLAG_ALLOW_USER_FREE, &t->buffer->flags);
 		if (cmd != BR_REPLY && !(t->flags & TF_ONE_WAY)) {
 			binder_inner_proc_lock(thread->proc);
 			t->to_parent = thread->transaction_stack;

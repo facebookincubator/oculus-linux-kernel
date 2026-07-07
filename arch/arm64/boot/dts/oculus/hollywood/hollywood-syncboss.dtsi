@@ -77,6 +77,33 @@
 			bias-disable;
 		};
 	};
+
+	/* GPIO timesync pinctrl state: dedicated GPIO for time sync */
+	syncboss_timesync_active: syncboss_timesync_active {
+		mux {
+			pins = "gpio7";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio7";
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	syncboss_timesync_default: syncboss_timesync_default {
+		mux {
+			pins = "gpio7";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio7";
+			drive-strength = <2>;
+			bias-disable;
+			input-enable;
+		};
+	};
 };
 
 &qupv3_se17_4uart {
@@ -165,14 +192,36 @@
 			compatible = "meta,syncboss-miscfifo", "meta,syncboss-consumer";
 		};
 
+		/* nsync disabled - timesync replaces it for precise AP-MCU
+		 * time synchronization.
+		 * To re-enable nsync, set status = "okay" and disable timesync@0.
+		 */
 		nsync: nsync@0 {
 			compatible = "meta,syncboss-nsync", "meta,syncboss-consumer";
+			status = "disabled";
 
 			interrupt-parent = <&tlmm>;
 			interrupts = <66 IRQ_TYPE_EDGE_FALLING>;
 			interrupt-names = "nsync";
 
 			meta,is-vsync;
+		};
+
+		/* timesync node - enabled by default.
+		 * Uses dedicated GPIO 7 (AP) -> P0.12 (MCU) for precise timestamp
+		 * edge detection between AP and MCU.
+		 * IMPORTANT: Requires compatible SyncBoss firmware. HAL will
+		 * assert if firmware does not support this feature.
+		 */
+		timesync: timesync@0 {
+			compatible = "meta,syncboss-timesync", "meta,syncboss-consumer";
+			status = "okay";
+
+			pinctrl-names = "default", "active";
+			pinctrl-0 = <&syncboss_timesync_default>;
+			pinctrl-1 = <&syncboss_timesync_active>;
+
+			timesync-gpios = <&tlmm 7 0>;
 		};
 	};
 };

@@ -107,16 +107,37 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long type,
 
 		return NOTIFY_STOP;
 
-	case SYNCBOSS_EVENT_MCU_DOWN:
-		/*
-		 * Clear any unread fifo events that userspace has not yet read, so these
-		 * messages from the previous boot of the MCU don't get confused as messages
-		 * sent after the next boot of the MCU.
-		 */
-		miscfifo_clear(&devdata->stream_fifo);
-		miscfifo_clear(&devdata->control_fifo);
+	case SYNCBOSS_EVENT_MCU_DOWN: {
+		const struct syncboss_mcu_down_data *down = p;
+
+		if (down && down->unexpected) {
+			/*
+			 * Unexpected disconnect (e.g. USB cable yank).
+			 * Mark all clients poisoned on both fifos before
+			 * waking any readers.  Waking inline would let
+			 * RT-priority readers (SCHED_FIFO:52 SBEH thread)
+			 * preempt us in a tight -ENODEV busy-loop,
+			 * starving this SCHED_NORMAL handler for ~1.6 s
+			 * until RT throttling kicks in.
+			 */
+			dev_warn_ratelimited(devdata->dev,
+					     "MCU down: poisoning stream and control fifos");
+			miscfifo_poison_mark(&devdata->stream_fifo);
+			miscfifo_poison_mark(&devdata->control_fifo);
+			miscfifo_poison_notify(&devdata->stream_fifo);
+			miscfifo_poison_notify(&devdata->control_fifo);
+		} else {
+			/*
+			 * Orderly shutdown (last client close, PM suspend).
+			 * Clear stale data so it doesn't get confused with
+			 * messages from the next MCU boot.
+			 */
+			miscfifo_clear(&devdata->stream_fifo);
+			miscfifo_clear(&devdata->control_fifo);
+		}
 
 		return NOTIFY_OK;
+	}
 
 	default:
 		return NOTIFY_DONE;
@@ -202,6 +223,11 @@ static long syncboss_stream_ioctl(struct file *file, unsigned int cmd,
 	int ret;
 
 	mutex_lock(&devdata->stream_mutex);
+
+	if (READ_ONCE(client->poisoned)) {
+		mutex_unlock(&devdata->stream_mutex);
+		return -ENODEV;
+	}
 
 	switch (cmd) {
 	case SYNCBOSS_SET_STREAMFILTER_IOCTL:
@@ -291,8 +317,11 @@ static int syncboss_miscfifo_probe(struct platform_device *pdev)
 	    (!of_device_is_compatible(parent_node, "meta,syncboss") &&
 	     !of_device_is_compatible(parent_node, "meta,syncboss-spi"))) {
 		dev_err(dev, "failed to find compatible parent device");
+		if (parent_node)
+			of_node_put(parent_node);
 		return -ENODEV;
 	}
+	of_node_put(parent_node);
 
 	if (of_property_read_u32(dev->of_node, MISCFIFO_SIZE_PROPNAME,
 				 &miscfifo_size))

@@ -54,6 +54,7 @@ struct miscfifo_client {
 	struct file *file;
 	char *name;
 	atomic_t cancel;
+	bool poisoned;
 };
 
 /**
@@ -199,5 +200,27 @@ void *miscfifo_fop_xchg_context(struct file *file, void *context);
  * @param file file handle
  */
 void miscfifo_cancel(struct file *file);
+
+/**
+ * Set the poison flag on all existing clients without waking waiters.
+ *
+ * Use this when multiple fifos must be poisoned atomically with respect
+ * to RT-priority readers.  Call miscfifo_poison_notify() on each fifo
+ * after all flags have been set.
+ *
+ * @param mf miscfifo instance
+ */
+void miscfifo_poison_mark(struct miscfifo *mf);
+
+/**
+ * Wake all blocked readers after poisoning.
+ *
+ * Pair with miscfifo_poison_mark() after all critical disconnect work
+ * is complete, so that RT-priority readers cannot preempt the caller
+ * in a busy-loop before teardown finishes.
+ *
+ * @param mf miscfifo instance
+ */
+void miscfifo_poison_notify(struct miscfifo *mf);
 
 #endif

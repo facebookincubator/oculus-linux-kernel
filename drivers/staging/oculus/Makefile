@@ -19,6 +19,7 @@ obj-$(CONFIG_BLU_FW)			+= blu_fw_driver.o
 obj-$(CONFIG_CAM_FSYNC)			+= cam-fsync.o
 obj-$(CONFIG_CHARGER_CYPD3177)		+= cypd3177.o
 obj-$(CONFIG_CHARGING_THERMAL_CONTROLLER)	+= charging_thermal_controller.o
+obj-$(CONFIG_CHARGER_TPS25751)		+= tps25751.o
 obj-$(CONFIG_CYPD_POLICY_ENGINE)	+= cypd_policy_engine.o
 obj-$(CONFIG_FAULT_INJECTOR)		+= fault_injector.o
 obj-$(CONFIG_FPGA_AGGREGATOR)		+= fpga_aggregator.o
@@ -52,3 +53,5 @@ obj-$(CONFIG_W1_SLAVE_DS28E18)		+= w1_ds28e18.o
 obj-y					+= mcu/
 obj-y					+= pdfu/
 obj-y					+= usbvdm/
+
+include $(src)/Makefile.test

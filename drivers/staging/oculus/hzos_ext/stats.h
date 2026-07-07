@@ -27,7 +27,7 @@
  * 4. Call hzos_ext_stat_event_inc() from wherever you need elsewhere in
  *    HzOS Ext.
  */
-enum orchestator_stat_event {
+enum orchestrator_stat_event {
 	NR_SRQ_PREV,
 	NR_SRQ_SYNC,
 	NR_SRQ_ANY,
@@ -35,7 +35,7 @@ enum orchestator_stat_event {
 
 #ifdef CONFIG_HZOS_EXT_STATS
 static inline void hzos_ext_stat_event_inc(struct task_struct *p,
-					       enum orchestator_stat_event event)
+					       enum orchestrator_stat_event event)
 {
 	struct hzos_ext_stats *stats = &p->hzos_ext.stats;
 
@@ -55,7 +55,7 @@ static inline void hzos_ext_stat_event_inc(struct task_struct *p,
 }
 #else
 static inline void hzos_ext_stat_event_inc(struct task_struct *p,
-					       enum orchestator_stat_event event)
+					       enum orchestrator_stat_event event)
 {}
 #endif
 

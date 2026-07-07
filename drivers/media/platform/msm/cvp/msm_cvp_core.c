@@ -376,13 +376,26 @@ static void msm_cvp_cleanup_instance(struct msm_cvp_inst *inst)
 {
 	bool empty;
 	int max_retries;
+	struct msm_cvp_core *core = NULL;
+	struct msm_cvp_inst *s = NULL;
 
 	if (!inst) {
 		dprintk(CVP_ERR, "%s: invalid params\n", __func__);
 		return;
 	}
+	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
+	if (!core) {
+		dprintk(CVP_ERR, "%s: core is NULL", __func__);
+		return;
+	}
 
-	max_retries =  inst->core->resources.msm_cvp_hw_rsp_timeout >> 1;
+	s = cvp_get_inst_validate(core, inst);
+	if (!s) {
+		dprintk(CVP_WARN, "%s: Session is not valid\n",
+						__func__);
+		return;
+	}
+	max_retries =  core->resources.msm_cvp_hw_rsp_timeout >> 1;
 
 wait:
 	mutex_lock(&inst->cvpdspbufs.lock);
@@ -396,15 +409,17 @@ wait:
 	mutex_unlock(&inst->cvpdspbufs.lock);
 
 	dprintk(CVP_DBG, "empty %d, retry %d\n", (int)empty,
-	(inst->core->resources.msm_cvp_hw_rsp_timeout >> 1) - max_retries);
+	(core->resources.msm_cvp_hw_rsp_timeout >> 1) - max_retries);
 	if (!empty) {
 		dprintk(CVP_WARN,
 			"Failed to process frames before session close\n");
 	}
-
-	if (cvp_comm_release_persist_buffers(inst))
-		dprintk(CVP_ERR,
-			"Failed to release persist buffers\n");
+	if (inst) {
+		if (cvp_comm_release_persist_buffers(inst))
+			dprintk(CVP_ERR,
+				"Failed to release persist buffers\n");
+	}
+	cvp_put_inst(s);
 
 	dprintk(CVP_DBG, "Done cvp cleanup instance\n");
 }
