@@ -35,6 +35,12 @@ struct powerstate_dev_data {
 	/* True if prox calibration data is required for prox to work */
 	bool requires_prox_cal;
 
+	/*
+	 * True if prox calibration/enable must be set on powerstate enable
+	 * Defaults true
+	 */
+	bool requires_prox_on_enable;
+
 	/* True if prox calibration read has been attempted */
 	bool prox_cal_read_attempted;
 
@@ -48,9 +54,6 @@ struct powerstate_dev_data {
 
 	/* The most recent power state event */
 	int powerstate_last_evt;
-
-	/* True if we should refrain from sending the next system_up event */
-	bool eat_next_system_up_event;
 
 	/* True if we should refrain from sending the prox_on events */
 	bool eat_prox_on_events;

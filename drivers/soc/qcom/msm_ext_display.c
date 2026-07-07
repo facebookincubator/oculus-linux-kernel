@@ -255,7 +255,7 @@ static int msm_ext_disp_update_audio_ops(struct msm_ext_disp *ext_disp,
 
 	ret = msm_ext_disp_get_intf_data(ext_disp, codec, &data);
 	if (ret || !data) {
-		pr_err("Display not found (%s) ctld (%d) stream (%d)\n",
+		pr_debug("Display (%s) not found ctrl(%d) stream(%d), check connection\n",
 			msm_ext_disp_name(codec->type),
 			codec->ctrl_id, codec->stream_id);
 		goto end;

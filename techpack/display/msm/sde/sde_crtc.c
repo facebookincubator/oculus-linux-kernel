@@ -3061,6 +3061,8 @@ static void _sde_crtc_set_frame_data_buffers(struct drm_crtc *crtc,
 	struct sde_drm_frame_data_buffers_ctrl ctrl;
 	int i, ret;
 
+	might_sleep();
+
 	if (!crtc || !cstate || !usr)
 		return;
 
@@ -4392,10 +4394,10 @@ static void sde_crtc_atomic_begin(struct drm_crtc *crtc,
 				priv->cp_property[SDE_CP_CRTC_DSPP_HIST_IRQ]) {
 			sde_cp_crtc_set_property(crtc, crtc->state,
 					priv->cp_property[SDE_CP_CRTC_DSPP_HIST_CTRL],
-					1);
+					sde_crtc->histogram_enable ? 1 : 0);
 			sde_cp_crtc_set_property(crtc, crtc->state,
 					priv->cp_property[SDE_CP_CRTC_DSPP_HIST_IRQ],
-					1);
+					sde_crtc->histogram_enable ? 1 : 0);
 		}
 
 		sde_cp_crtc_apply_properties(crtc);
@@ -5169,7 +5171,6 @@ static void sde_crtc_handle_power_event(u32 event_type, void *arg)
 	struct sde_crtc *sde_crtc;
 	struct drm_encoder *encoder;
 	u32 power_on;
-	unsigned long flags;
 	struct sde_crtc_irq_info *node = NULL;
 	int ret = 0;
 
@@ -5185,7 +5186,12 @@ static void sde_crtc_handle_power_event(u32 event_type, void *arg)
 
 	switch (event_type) {
 	case SDE_POWER_EVENT_POST_ENABLE:
-		spin_lock_irqsave(&sde_crtc->spin_lock, flags);
+		/*
+		 * Iterate user_event_list without spin_lock to avoid
+		 * triple-nested spinlock (spin_lock -> state_lock ->
+		 * irq_lock). crtc_lock mutex provides mutual exclusion
+		 * against list modification.
+		 */
 		list_for_each_entry(node, &sde_crtc->user_event_list, list) {
 			ret = 0;
 			if (node->func)
@@ -5194,7 +5200,6 @@ static void sde_crtc_handle_power_event(u32 event_type, void *arg)
 				SDE_ERROR("%s failed to enable event %x\n",
 						sde_crtc->name, node->event);
 		}
-		spin_unlock_irqrestore(&sde_crtc->spin_lock, flags);
 
 		sde_crtc_post_ipc(crtc);
 		break;
@@ -5213,7 +5218,6 @@ static void sde_crtc_handle_power_event(u32 event_type, void *arg)
 			sde_encoder_control_te(encoder, false);
 		}
 
-		spin_lock_irqsave(&sde_crtc->spin_lock, flags);
 		node = NULL;
 		list_for_each_entry(node, &sde_crtc->user_event_list, list) {
 			ret = 0;
@@ -5223,7 +5227,6 @@ static void sde_crtc_handle_power_event(u32 event_type, void *arg)
 				SDE_ERROR("%s failed to disable event %x\n",
 						sde_crtc->name, node->event);
 		}
-		spin_unlock_irqrestore(&sde_crtc->spin_lock, flags);
 
 		sde_cp_crtc_pre_ipc(crtc);
 		break;
@@ -5273,7 +5276,6 @@ static void sde_crtc_disable(struct drm_crtc *crtc)
 	struct sde_crtc_state *cstate;
 	struct drm_encoder *encoder;
 	struct msm_drm_private *priv;
-	unsigned long flags;
 	struct sde_crtc_irq_info *node = NULL;
 	u32 power_on;
 	bool in_cont_splash = false;
@@ -5332,7 +5334,10 @@ static void sde_crtc_disable(struct drm_crtc *crtc)
 		atomic_set(&sde_crtc->frame_pending, 0);
 	}
 
-	spin_lock_irqsave(&sde_crtc->spin_lock, flags);
+	/*
+	 * Call node->func() without spin_lock to avoid triple-nested
+	 * spinlock. crtc_lock mutex serializes against list modification.
+	 */
 	list_for_each_entry(node, &sde_crtc->user_event_list, list) {
 		ret = 0;
 		if (node->func)
@@ -5341,7 +5346,6 @@ static void sde_crtc_disable(struct drm_crtc *crtc)
 			SDE_ERROR("%s failed to disable event %x\n",
 					sde_crtc->name, node->event);
 	}
-	spin_unlock_irqrestore(&sde_crtc->spin_lock, flags);
 
 	drm_for_each_encoder_mask(encoder, crtc->dev,
 			crtc->state->encoder_mask) {
@@ -5403,7 +5407,6 @@ static void sde_crtc_enable(struct drm_crtc *crtc,
 	struct sde_crtc *sde_crtc;
 	struct drm_encoder *encoder;
 	struct msm_drm_private *priv;
-	unsigned long flags;
 	struct sde_crtc_irq_info *node = NULL;
 	int ret, i;
 	struct sde_crtc_state *cstate;
@@ -5488,9 +5491,11 @@ static void sde_crtc_enable(struct drm_crtc *crtc,
 	/* update color processing on resume */
 	sde_cp_crtc_resume(crtc);
 
-	mutex_unlock(&sde_crtc->crtc_lock);
-
-	spin_lock_irqsave(&sde_crtc->spin_lock, flags);
+	/*
+	 * Enable user events under crtc_lock (mutex) without spin_lock
+	 * to avoid triple-nested spinlock. The mutex serializes against
+	 * list modification. Must be before mutex_unlock.
+	 */
 	list_for_each_entry(node, &sde_crtc->user_event_list, list) {
 		ret = 0;
 		if (node->func)
@@ -5499,7 +5504,8 @@ static void sde_crtc_enable(struct drm_crtc *crtc,
 			SDE_ERROR("%s failed to enable event %x\n",
 				sde_crtc->name, node->event);
 	}
-	spin_unlock_irqrestore(&sde_crtc->spin_lock, flags);
+
+	mutex_unlock(&sde_crtc->crtc_lock);
 
 	sde_crtc->power_event = sde_power_handle_register_event(
 		&priv->phandle,
@@ -7712,6 +7718,100 @@ static int _sde_debugfs_fence_status(struct inode *inode, struct file *file)
 				inode->i_private);
 }
 
+static ssize_t _sde_crtc_settling_time_override_read(struct file *file,
+		char __user *user_buff, size_t count, loff_t *ppos)
+{
+	struct sde_crtc *sde_crtc;
+	struct drm_crtc *crtc;
+	struct drm_encoder *enc;
+	struct sde_crtc_state *cstate;
+	struct dsi_display *display = NULL;
+	char buf[32];
+	ssize_t len;
+
+	if (*ppos)
+		return 0;
+
+	if (!file || !file->private_data)
+		return -EINVAL;
+
+	sde_crtc = file->private_data;
+	crtc = &sde_crtc->base;
+
+	if (!crtc->state)
+		return -EINVAL;
+
+	drm_for_each_encoder_mask(enc, crtc->dev, crtc->state->encoder_mask) {
+		if (enc->crtc != crtc || !sde_encoder_is_dsi_display(enc))
+			continue;
+
+		cstate = to_sde_crtc_state(crtc->state);
+		if (cstate->num_connectors > 0) {
+			struct sde_connector *c_conn = to_sde_connector(
+					cstate->connectors[0]);
+			display = c_conn->display;
+			break;
+		}
+	}
+
+	if (!display)
+		return -EINVAL;
+
+	len = scnprintf(buf, sizeof(buf), "%u\n",
+			display->panel->bl_config.settling_time_override_us);
+
+	return simple_read_from_buffer(user_buff, count, ppos, buf, len);
+}
+
+static ssize_t _sde_crtc_settling_time_override_write(struct file *file,
+		const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct sde_crtc *sde_crtc;
+	struct drm_crtc *crtc;
+	struct drm_encoder *enc;
+	struct sde_crtc_state *cstate;
+	u32 settling_time_override_us = 0;
+	char buf[32];
+	size_t buff_copy;
+	int res, i;
+
+	if (!file || !file->private_data)
+		return -EINVAL;
+
+	sde_crtc = file->private_data;
+	crtc = &sde_crtc->base;
+
+	if (!crtc->state)
+		return -EINVAL;
+
+	buff_copy = min_t(size_t, count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, buff_copy))
+		return -EFAULT;
+
+	buf[buff_copy] = '\0';
+
+	res = kstrtou32(buf, 10, &settling_time_override_us);
+	if (res < 0)
+		return res;
+
+	drm_for_each_encoder_mask(enc, crtc->dev, crtc->state->encoder_mask) {
+		if (enc->crtc != crtc || !sde_encoder_is_dsi_display(enc))
+			continue;
+
+		cstate = to_sde_crtc_state(crtc->state);
+		for (i = 0; i < cstate->num_connectors; i++) {
+			struct sde_connector *c_conn = to_sde_connector(
+					cstate->connectors[i]);
+			struct dsi_display *display = c_conn->display;
+
+			display->panel->bl_config.settling_time_override_us =
+					settling_time_override_us;
+		}
+	}
+
+	return count;
+}
+
 static int _sde_crtc_init_debugfs(struct drm_crtc *crtc)
 {
 	struct sde_crtc *sde_crtc;
@@ -7735,6 +7835,11 @@ static int _sde_crtc_init_debugfs(struct drm_crtc *crtc)
 	static const struct file_operations debugfs_fence_fops = {
 		.open =		_sde_debugfs_fence_status,
 		.read =		seq_read,
+	};
+static const struct file_operations debugfs_settling_time_override_fops = {
+		.open =		simple_open,
+		.read =		_sde_crtc_settling_time_override_read,
+		.write =	_sde_crtc_settling_time_override_write,
 	};
 
 	if (!crtc)
@@ -7764,6 +7869,9 @@ static int _sde_crtc_init_debugfs(struct drm_crtc *crtc)
 					sde_crtc, &debugfs_fps_fops);
 	debugfs_create_file("fence_status", 0400, sde_crtc->debugfs_root,
 					sde_crtc, &debugfs_fence_fops);
+	debugfs_create_file("settling_time_override_us", 0600,
+					sde_crtc->debugfs_root, sde_crtc,
+					&debugfs_settling_time_override_fops);
 
 	return 0;
 }
@@ -8239,10 +8347,10 @@ struct drm_crtc *sde_crtc_init(struct drm_device *dev, struct drm_plane *plane)
 
 	sde_crtc->enabled = false;
 	sde_crtc->kickoff_in_progress = false;
-	sde_crtc->histogram_interval_msec = 0;
+	sde_crtc->histogram_interval_frames = 0;
+	sde_crtc->histogram_frame_counter = 0;
 	sde_crtc->histogram_enable = false;
 	sde_crtc->regdma_enable = false;
-	sde_crtc->regdma_histogram_last_exec_time = 0;
 
 	/* Below parameters are for fps calculation for sysfs node */
 	sde_crtc->fps_info.fps_periodic_duration = DEFAULT_FPS_PERIOD_1_SEC;

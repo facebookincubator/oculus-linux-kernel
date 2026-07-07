@@ -130,6 +130,7 @@ static void select_task_rq_handler(void *unused, struct task_struct *p,
 	int cpu, curr_cpu;
 	struct pcpu_ctx *ctx;
 	bool sync;
+	int max_retries = nr_cpu_ids;
 
 	if (!hzos_ext_feature_enabled(HZOS_EXT_FEATURE_SELECT_RQ_IDLE))
 		return;
@@ -161,7 +162,12 @@ static void select_task_rq_handler(void *unused, struct task_struct *p,
 		}
 	}
 
-	while (true) {
+	/*
+	 * Try to find an idle CPU from the preferred mask. Limit retries to
+	 * avoid spinning indefinitely if CPUs keep exiting idle between the
+	 * cpumask_any_and() check and the atomic test_and_clear.
+	 */
+	while (max_retries-- > 0) {
 		cpu = cpumask_any_and(&p->hzos_ext.preferred_mask, idle_mask);
 
 		if (cpu >= nr_cpu_ids)
@@ -251,8 +257,8 @@ static ssize_t sched_group_set_preferred_mask(struct cgroup_subsys_state *css,
 		task_update_allowed(p, task_cpumask(p));
 		raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 	}
-	mutex_unlock(&preferred_mask_mutex);
 	css_task_iter_end(&it);
+	mutex_unlock(&preferred_mask_mutex);
 
 	return 0;
 }
@@ -278,7 +284,14 @@ free_mask:
 
 int hzos_ext_preferred_mask_read(struct seq_file *sf, void *v)
 {
-	char *kbuf = kmalloc(cpumask_size() + 1, GFP_KERNEL);
+	/*
+	 * cpumap_print_to_pagebuf() outputs a hex string where each byte
+	 * becomes 2 hex characters, plus comma separators every 32 bits.
+	 * Allocate cpumask_size() * 3 to safely cover the hex representation
+	 * (2x) plus separators and null terminator.
+	 */
+	size_t buflen = cpumask_size() * 3;
+	char *kbuf = kmalloc(buflen, GFP_KERNEL);
 	struct cpumask *tg_mask;
 
 	if (!kbuf)

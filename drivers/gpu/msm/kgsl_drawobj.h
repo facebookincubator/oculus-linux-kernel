@@ -302,6 +302,22 @@ static inline void kgsl_drawobj_put(struct kgsl_drawobj *drawobj)
 }
 
 /**
+ * kgsl_drawobj_put_deferred - Release drawobj reference, deferring context
+ * destruction to a workqueue if this is the last reference.
+ * @drawobj: Pointer to the drawobj to release
+ *
+ * Use from atomic, softirq, or IRQ context where kgsl_context_destroy
+ * (which sleeps) cannot run directly.
+ */
+void kgsl_drawobj_destroy_object_deferred(struct kref *kref);
+static inline void kgsl_drawobj_put_deferred(struct kgsl_drawobj *drawobj)
+{
+	if (drawobj)
+		kref_put(&drawobj->refcount,
+			kgsl_drawobj_destroy_object_deferred);
+}
+
+/**
  * kgsl_drawobj_create_timestamp_syncobj - Create a syncobj for a timestamp
  * @device: A GPU device handle
  * @context: Draw context for the syncobj

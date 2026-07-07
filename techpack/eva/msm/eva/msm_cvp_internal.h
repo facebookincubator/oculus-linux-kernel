@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _MSM_CVP_INTERNAL_H_
@@ -66,7 +67,8 @@ enum hw_block {
 	CVP_FDU = 0x0001,
 	CVP_ICA,
 	CVP_MPU,
-	CVP_OD
+	CVP_OD,
+	CVP_XRA
 };
 
 enum instance_state {
@@ -250,11 +252,13 @@ struct cvp_session_prop {
 	u32 mpu_cycles;
 	u32 ica_cycles;
 	u32 fw_cycles;
+	u32 xra_cycles;
 	u32 fdu_op_cycles;
 	u32 od_op_cycles;
 	u32 mpu_op_cycles;
 	u32 ica_op_cycles;
 	u32 fw_op_cycles;
+	u32 xra_op_cycles;
 	u32 ddr_bw;
 	u32 ddr_op_bw;
 	u32 ddr_cache;
@@ -375,6 +379,8 @@ struct msm_cvp_core {
 	struct cvp_cycle_info dyn_clk;
 	atomic64_t kernel_trans_id;
 	struct cvp_debug_log log;
+	struct idr sess_idr;
+	struct mutex idr_mtx;
 };
 
 struct msm_cvp_inst {
@@ -389,6 +395,7 @@ struct msm_cvp_inst {
 	struct cvp_session_queue session_queue_fence;
 	struct cvp_session_event event_handler;
 	void *session;
+	u32 sess_id;
 	enum instance_state state;
 	struct msm_cvp_list freqs;
 	struct msm_cvp_list persistbufs;

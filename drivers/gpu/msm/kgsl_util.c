@@ -312,15 +312,15 @@ static int kgsl_add_driver_data_to_va_minidump(struct kgsl_device *device)
 	}
 	spin_unlock(&adreno_dev->active_list_lock);
 
-	read_lock(&kgsl_driver.proclist_lock);
-	list_for_each_entry(p, &kgsl_driver.process_list, list) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(p, &kgsl_driver.process_list, list) {
 		snprintf(name, sizeof(name), KGSL_PROC_PRIV_ENTRY "_%d", pid_nr(p->pid));
 		ret = kgsl_add_va_to_minidump(device->dev, name,
 				(void *)(p), sizeof(struct kgsl_process_private));
 		if (ret)
 			break;
 	}
-	read_unlock(&kgsl_driver.proclist_lock);
+	rcu_read_unlock();
 
 	spin_lock(&kgsl_driver.ptlock);
 	list_for_each_entry(pt, &kgsl_driver.pagetable_list, list) {

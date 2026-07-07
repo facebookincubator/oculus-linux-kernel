@@ -101,7 +101,7 @@ struct adreno_hwsched {
 	/** @hw_fence_list: List of hardware fences sent to GMU */
 	struct list_head hw_fence_list;
 	/** @hw_fence_count: Number of hardware fences that haven't yet been sent to Tx Queue */
-	u32 hw_fence_count;
+	atomic_t hw_fence_count;
 	/** @power_down_ws: Work struct for handling HW scheduler power-down. */
 	struct work_struct power_down_ws;
 	/** @power_down_timer: Timer struct to defer HW scheduler power-down. */

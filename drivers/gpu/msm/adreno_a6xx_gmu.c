@@ -820,7 +820,7 @@ int a6xx_gmu_oob_set(struct kgsl_device *device,
 	int ret = 0;
 	int set, check;
 
-	if (req == oob_perfcntr && gmu->num_oob_perfcntr++)
+	if (req == oob_perfcntr && atomic_fetch_inc(&gmu->num_oob_perfcntr))
 		return 0;
 
 	if (adreno_is_a630(adreno_dev) || adreno_is_a615_family(adreno_dev)) {
@@ -847,7 +847,7 @@ int a6xx_gmu_oob_set(struct kgsl_device *device,
 	if (gmu_core_timed_poll_check(device, A6XX_GMU_GMU2HOST_INTR_INFO,
 				check, GPU_START_TIMEOUT, check)) {
 		if (req == oob_perfcntr)
-			gmu->num_oob_perfcntr--;
+			atomic_dec(&gmu->num_oob_perfcntr);
 		gmu_core_fault_snapshot(device);
 		ret = -ETIMEDOUT;
 		WARN(1, "OOB request %s timed out\n", oob_to_str(req));
@@ -867,7 +867,7 @@ void a6xx_gmu_oob_clear(struct kgsl_device *device,
 	struct a6xx_gmu_device *gmu = to_a6xx_gmu(adreno_dev);
 	int clear;
 
-	if (req == oob_perfcntr && --gmu->num_oob_perfcntr)
+	if (req == oob_perfcntr && atomic_dec_return(&gmu->num_oob_perfcntr))
 		return;
 
 	if (adreno_is_a630(adreno_dev) || adreno_is_a615_family(adreno_dev)) {
@@ -2705,7 +2705,7 @@ static int gmu_cx_gdsc_event(struct notifier_block *nb,
 	struct kgsl_device *device = container_of(pwr, struct kgsl_device, pwrctrl);
 	u32 val, offset;
 
-	if (!(event & REGULATOR_EVENT_DISABLE) || !pwr->cx_gdsc_wait)
+	if (!(event & REGULATOR_EVENT_DISABLE) || !READ_ONCE(pwr->cx_gdsc_wait))
 		return 0;
 
 	offset = (adreno_is_a662(ADRENO_DEVICE(device)) ||
@@ -2716,7 +2716,7 @@ static int gmu_cx_gdsc_event(struct notifier_block *nb,
 		!(val & BIT(31)), 100, 100 * 1000))
 		dev_err(device->dev, "GPU CX wait timeout.\n");
 
-	pwr->cx_gdsc_wait = false;
+	WRITE_ONCE(pwr->cx_gdsc_wait, false);
 	complete_all(&device->pwrctrl.cx_gdsc_gate);
 
 	return 0;

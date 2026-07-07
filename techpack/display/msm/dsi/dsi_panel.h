@@ -158,6 +158,11 @@ struct dsi_panel_phy_props {
 
 struct thermal_zone_device;
 
+struct blu_pulse {
+	u32 offset;
+	u32 duration;
+};
+
 struct dsi_backlight_config {
 	enum dsi_backlight_type type;
 	enum bl_update_flag bl_update;
@@ -207,6 +212,7 @@ struct dsi_backlight_config {
 	u32 settling_time_us[2];
 	u32 blu_default_duty_override;
 	u32 blu_current_duty_cycle;
+	u32 settling_time_override_us;
 
 	/* Debug tuning parameters */
 	u32 override_blu_delta_left;
@@ -235,6 +241,9 @@ struct dsi_backlight_config {
 	u64 blu_last_rising_edge_time;
 	u64 blu_settling_time_ns;
 	u64 blu_duration_ns;
+
+	/* Two-pulse mode: saved P1 values for frame-synchronized updates */
+	struct blu_pulse last_blu_pulse1, last_blu_pulse2;
 
 	bool backlight_lock;
 	bool bicubic_scaling;

@@ -3899,6 +3899,15 @@ static void dwc3_gadget_disconnect_interrupt(struct dwc3 *dwc)
 	dwc3_ep0_reset_state(dwc);
 }
 
+static void dwc3_gadget_reset_uevent_work(struct work_struct *work)
+{
+	struct dwc3 *dwc = container_of(work, struct dwc3,
+					usb_reset_uevent_work);
+	char *envp[2] = { "USB_RESET_EVENT", NULL };
+
+	kobject_uevent_env(&dwc->dev->kobj, KOBJ_CHANGE, envp);
+}
+
 static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 {
 	u32			reg;
@@ -3915,18 +3924,10 @@ static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 	 * Normal enumeration involves 2 resets which we should ignore.
 	 */
 	if (was_enumerated) {
-		char reset_type_str[64];
-		char *envp[2] = { NULL, NULL };
-
 		/* Log and report abnormal reset */
 		dev_err(dwc->dev, "Abnormal USB Reset received\n");
 
-		/* Send event to userspace (USB HAL) */
-		strscpy(reset_type_str, "USB_RESET_EVENT", sizeof("USB_RESET_EVENT"));
-		envp[0] = reset_type_str;
-		envp[1] = NULL;
-		kobject_uevent_env(&dwc->dev->kobj, KOBJ_CHANGE, envp);
-		dev_dbg(dwc->dev, "USB_RESET_EVENT uevent sent to USB HAL\n");
+		schedule_work(&dwc->usb_reset_uevent_work);
 	}
 
 	/*
@@ -4566,6 +4567,7 @@ int dwc3_gadget_init(struct dwc3 *dwc)
 		goto err3;
 	}
 
+	INIT_WORK(&dwc->usb_reset_uevent_work, dwc3_gadget_reset_uevent_work);
 
 	usb_initialize_gadget(dwc->dev, dwc->gadget, dwc_gadget_release);
 	dev				= &dwc->gadget->dev;
@@ -4652,6 +4654,7 @@ void dwc3_gadget_exit(struct dwc3 *dwc)
 
 	dwc3_enable_susphy(dwc, false);
 	usb_del_gadget(dwc->gadget);
+	cancel_work_sync(&dwc->usb_reset_uevent_work);
 	dwc3_gadget_free_endpoints(dwc);
 	usb_put_gadget(dwc->gadget);
 	dma_free_coherent(dwc->sysdev, DWC3_BOUNCE_SIZE, dwc->bounce,

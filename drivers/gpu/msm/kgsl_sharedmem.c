@@ -272,50 +272,28 @@ static struct kobj_type ktype_memtype = {
 	.default_groups = memtype_groups,
 };
 
-static uint64_t imported_mem_account(struct kgsl_process_private *priv,
-					struct kgsl_mem_entry *entry)
+static uint64_t imported_mem_account(struct kgsl_mem_entry *entry)
 {
 	struct kgsl_memdesc *m = &entry->memdesc;
-	unsigned int mt = kgsl_memdesc_get_memtype(m);
-	int egl_surface_count = 0, egl_image_count = 0, total_count = 0;
 	uint64_t sz = m->size;
+	int unique_procs;
 
 	if (kgsl_memdesc_usermem_type(m) != KGSL_MEM_ENTRY_ION)
 		return 0;
 
-	kgsl_get_egl_counts(entry, &egl_surface_count, &egl_image_count,
-			&total_count);
+	/*
+	 * One process can import the same DMA-BUF as multiple kgsl_mem_entry
+	 * records (e.g. as both EGL_SURFACE and EGL_IMAGE). The dmabuf list
+	 * tags exactly one record per (process, dle) as the PSS-counting
+	 * record; the rest return 0 here, so the per-process imported_mem
+	 * sum is size/unique_procs without any caller-side dedup. See
+	 * S617226.
+	 */
+	if (!kgsl_dmabuf_pss_share(entry, &unique_procs))
+		return 0;
 
-	if (mt == KGSL_MEMTYPE_EGL_SURFACE) {
-		do_div(sz, egl_surface_count ?: 1);
-		return sz;
-	}
-
-	if (egl_surface_count == 0) {
-		if (total_count == egl_image_count || total_count <= 1) {
-			do_div(sz, total_count ?: 1);
-		} else if (mt == KGSL_MEMTYPE_OBJECTANY && total_count >= 2) {
-			/* compositor services will typically allocate, import,
-			 * then distribute buffers to clients. with these
-			 * services, we would prefer to attribute all memory
-			 * accounting to clients, and none to the server,
-			 * matching the EGL_SURFACE/EGL_IMAGE distinction for
-			 * EGL-bound buffers.
-			 */
-			struct kgsl_process_private *allocator =
-				kgsl_get_allocator(entry);
-			kgsl_process_private_put(allocator);
-			if (allocator == priv)
-				return 0;
-
-			do_div(sz, (total_count - 1));
-		} else {
-			do_div(sz, total_count ?: 1);
-		}
-		return sz;
-	}
-
-	return 0;
+	do_div(sz, unique_procs);
+	return sz;
 }
 
 static ssize_t
@@ -354,7 +332,7 @@ imported_mem_show(struct kgsl_process_private *priv,
 			continue;
 		spin_unlock(&priv->mem_lock);
 
-		imported_mem += imported_mem_account(priv, entry);
+		imported_mem += imported_mem_account(entry);
 
 		kgsl_mem_entry_put(entry);
 		spin_lock(&priv->mem_lock);

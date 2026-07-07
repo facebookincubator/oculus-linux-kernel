@@ -171,7 +171,12 @@ static void log_profiling_info(struct adreno_device *adreno_dev, u32 *rcvd)
 	log_kgsl_cmdbatch_retired_event(context->id, cmd->ts, context->priority,
 		0, cmd->sop, cmd->eop);
 
-	kgsl_context_put(context);
+	/*
+	 * Use the deferred variant because this function is called from
+	 * the HFI interrupt handler (hardirq context) via
+	 * a6xx_hwsched_process_msgq, and kgsl_context_destroy sleeps.
+	 */
+	kgsl_context_put_deferred(context);
 }
 
 u32 a6xx_hwsched_parse_payload(struct payload_section *payload, u32 key)

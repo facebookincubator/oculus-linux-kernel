@@ -78,7 +78,7 @@ static inline s64 ktime_get_ms(void)
 }
 
 /* Increment refcount used to keep the MCU awake. */
-static void syncboss_inc_mcu_client_count_locked(struct syncboss_dev_data *devdata)
+static int syncboss_inc_mcu_client_count_locked(struct syncboss_dev_data *devdata)
 {
 	int status;
 
@@ -87,8 +87,11 @@ static void syncboss_inc_mcu_client_count_locked(struct syncboss_dev_data *devda
 
 	if (devdata->mcu_client_count++ == 0) {
 		status = regulator_bulk_enable(devdata->reg_count, devdata->reg_consumers);
-		if (status)
+		if (status) {
+			devdata->mcu_client_count--;
 			dev_err(&devdata->spi->dev, "failed to enable syncboss regulators: err=%d", status);
+			return status;
+		}
 
 		/*
 		 * Wake the MCU by pin reset.
@@ -105,6 +108,8 @@ static void syncboss_inc_mcu_client_count_locked(struct syncboss_dev_data *devda
 		 */
 		wake_mcu(devdata, true);
 	}
+
+	return 0;
 }
 
 /* Decrement refcount used to keep the MCU awake. */
@@ -146,7 +151,9 @@ static int syncboss_inc_streaming_client_count_locked(struct syncboss_dev_data *
 		}
 
 		raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_STREAMING_STARTING, &devdata->event_data);
-		syncboss_inc_mcu_client_count_locked(devdata);
+		status = syncboss_inc_mcu_client_count_locked(devdata);
+		if (status)
+			return status;
 
 		dev_dbg(&devdata->spi->dev, "starting streaming thread");
 		status = start_streaming_locked(devdata);
@@ -609,10 +616,10 @@ static bool recent_reset_event(struct syncboss_dev_data *devdata)
 }
 
 /* Calculate the checksum of a SPI transaction */
-static inline u8 calculate_checksum(const struct syncboss_transaction *trans, size_t len)
+static inline uint8_t calculate_checksum(const struct syncboss_transaction *trans, size_t len)
 {
-	const u8 *buf = (u8 *)trans;
-	u8 x = 0, sum = 0;
+	const uint8_t *buf = (uint8_t *)trans;
+	uint32_t x = 0, sum = 0;
 
 	for (x = 0; x < len; ++x)
 		sum += buf[x];
@@ -624,7 +631,7 @@ static int spi_nrf_sanity_check_trans(struct syncboss_dev_data *devdata, struct 
 {
 	int status = 0;
 	const struct syncboss_transaction *trans = (struct syncboss_transaction *)devdata->rx_elem->buf;
-	u8 checksum;
+	uint8_t checksum;
 	bool bad_magic = false;
 	bool bad_checksum = false;
 
@@ -1108,7 +1115,8 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		ctx.wake_timer_had_fired = devdata->wake_timer_fired;
 		reset_timer_status_flags(devdata);
 		timing.prev_trans_start_time_ns = ktime_get_boottime_ns();
-		if (devdata->use_fastpath)
+		wmb(); /* Ensure packet writes are visible to DMA before SPI transfer */
+		if (use_fastpath)
 			status = spi_fastpath_transfer(spi, &ctx.smsg->spi_msg);
 		else
 			status = spi_sync_locked(spi, &ctx.smsg->spi_msg);
@@ -1342,7 +1350,6 @@ void syncboss_pin_reset(struct syncboss_dev_data *devdata)
 		msleep(SYNCBOSS_RESET_TIME_MS);
 	}
 
-	raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_MCU_PIN_RESET, NULL);
 	devdata->last_reset_time_ms = ktime_get_ms();
 	gpiod_set_value(devdata->gpio_reset, 1);
 }
@@ -1447,7 +1454,6 @@ static int wake_mcu(struct syncboss_dev_data *devdata, bool force_pin_reset)
 
 	/* Wake up was successful. */
 	devdata->last_reset_time_ms = ktime_get_ms();
-	raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_MCU_UP, NULL);
 	devdata->wakeup_handled = true;
 
 	return 0;
@@ -1728,7 +1734,13 @@ static int consumer_rx_packet_notifier_register(struct device *child, struct not
 	int ret;
 
 	mutex_lock(&devdata->state_mutex);
+	if (devdata->is_streaming) {
+		dev_err(&devdata->spi->dev, "rx packet notifiers can't be registered while streaming");
+		ret = -EBUSY;
+		goto out;
+	}
 	ret = raw_notifier_chain_register(&devdata->rx_packet_event_chain, nb);
+out:
 	mutex_unlock(&devdata->state_mutex);
 
 	return ret;
@@ -1741,7 +1753,13 @@ static int consumer_rx_packet_notifier_unregister(struct device *child, struct n
 	int ret;
 
 	mutex_lock(&devdata->state_mutex);
+	if (devdata->is_streaming) {
+		dev_err(&devdata->spi->dev, "rx packet notifiers can't be unregistered while streaming");
+		ret = -EBUSY;
+		goto out;
+	}
 	ret = raw_notifier_chain_unregister(&devdata->rx_packet_event_chain, nb);
+out:
 	mutex_unlock(&devdata->state_mutex);
 
 	return ret;
@@ -1751,12 +1769,13 @@ static int consumer_rx_packet_notifier_unregister(struct device *child, struct n
 static int consumer_enable_mcu(struct device *child)
 {
 	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
+	int status;
 
 	mutex_lock(&devdata->state_mutex);
-	syncboss_inc_mcu_client_count_locked(devdata);
+	status = syncboss_inc_mcu_client_count_locked(devdata);
 	mutex_unlock(&devdata->state_mutex);
 
-	return 0;
+	return status;
 }
 
 /* Consumer API: Remove vote for keeping the MCU awake (refcounted) */
@@ -1847,7 +1866,7 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	init_completion(&devdata->pm_resume_completion);
 	complete_all(&devdata->pm_resume_completion);
 
-	devdata->syncboss_pm_workqueue = create_singlethread_workqueue("syncboss_pm_workqueue");
+	devdata->syncboss_pm_workqueue = alloc_ordered_workqueue("%s", WQ_MEM_RECLAIM, "syncboss_pm_workqueue");
 
 	hrtimer_init(&devdata->wake_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	devdata->wake_timer.function = wake_timer_callback;
@@ -1971,7 +1990,7 @@ static int syncboss_probe(struct spi_device *spi)
 		goto error_after_sysfs;
 	}
 
-	status = syncboss_debugfs_init(&devdata->debugfs, dev, &devdata->seq, 
+	status = syncboss_debugfs_init(&devdata->debugfs, dev, &devdata->seq,
 		SYNCBOSS_DEVICE_NAME);
 	if (status && -ENODEV != status) {
 		dev_err(dev, "failed to init debugfs: %d", status);
@@ -2111,9 +2130,9 @@ static int syncboss_resume(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static SIMPLE_DEV_PM_OPS(syncboss_pm_ops, syncboss_suspend, syncboss_resume);
+#endif
 
 /* SPI Driver Info */
 struct spi_driver syncboss_spi_driver = {
@@ -2121,7 +2140,9 @@ struct spi_driver syncboss_spi_driver = {
 		.name = "syncboss_spi",
 		.owner = THIS_MODULE,
 		.of_match_table = syncboss_spi_table,
+#ifdef CONFIG_PM_SLEEP
 		.pm = &syncboss_pm_ops,
+#endif
 		.probe_type = PROBE_PREFER_ASYNCHRONOUS
 	},
 	.probe	= syncboss_probe,

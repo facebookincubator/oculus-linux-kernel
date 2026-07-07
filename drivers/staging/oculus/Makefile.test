@@ -1,0 +1,2 @@
+obj-$(CONFIG_MISCFIFO_KUNIT_TEST)	+= miscfifo_test.o
+obj-$(CONFIG_META_SWD_FWUPDATE_KUNIT_TEST)	+= mcu/swd/fwupdate_manager_test.o

@@ -4,7 +4,7 @@
  */
 
 #include <linux/debugfs.h>
-#include <linux/rwlock.h>
+#include <linux/rcupdate.h>
 
 #include "kgsl_debugfs.h"
 #include "kgsl_device.h"
@@ -105,7 +105,12 @@ static void _process_event_group(struct kgsl_device *device,
 
 out:
 	spin_unlock(&group->lock);
-	kgsl_context_put(context);
+	/*
+	 * Use the deferred variant because this function can be called
+	 * under rcu_read_lock (from kgsl_process_event_groups) where
+	 * kgsl_context_destroy would sleep.
+	 */
+	kgsl_context_put_deferred(context);
 }
 
 /**
@@ -304,10 +309,10 @@ void kgsl_process_event_groups(struct kgsl_device *device)
 {
 	struct kgsl_event_group *group;
 
-	read_lock(&device->event_groups_lock);
-	list_for_each_entry(group, &device->event_groups, group)
+	rcu_read_lock();
+	list_for_each_entry_rcu(group, &device->event_groups, group)
 		_process_event_group(device, group, false);
-	read_unlock(&device->event_groups_lock);
+	rcu_read_unlock();
 }
 
 void kgsl_del_event_group(struct kgsl_device *device,
@@ -320,9 +325,10 @@ void kgsl_del_event_group(struct kgsl_device *device,
 	/* Make sure that all the events have been deleted from the list */
 	WARN_ON(!list_empty(&group->events));
 
-	write_lock(&device->event_groups_lock);
-	list_del(&group->group);
-	write_unlock(&device->event_groups_lock);
+	spin_lock(&device->event_groups_lock);
+	list_del_rcu(&group->group);
+	spin_unlock(&device->event_groups_lock);
+	synchronize_rcu();
 }
 
 void kgsl_add_event_group(struct kgsl_device *device,
@@ -347,33 +353,76 @@ void kgsl_add_event_group(struct kgsl_device *device,
 		va_end(args);
 	}
 
-	write_lock(&device->event_groups_lock);
-	list_add_tail(&group->group, &device->event_groups);
-	write_unlock(&device->event_groups_lock);
+	spin_lock(&device->event_groups_lock);
+	list_add_tail_rcu(&group->group, &device->event_groups);
+	spin_unlock(&device->event_groups_lock);
 }
 
 static void events_debugfs_print_group(struct seq_file *s,
 		struct kgsl_event_group *group)
 {
 	struct kgsl_event *event;
-	unsigned int retired;
+	struct kgsl_context *context = group->context;
+	unsigned int ctx_id;
+	int count = 0, i;
+	int processed;
+	const char *name;
+	struct {
+		unsigned int timestamp;
+		unsigned long age;
+		void *func;
+		unsigned int retired;
+	} *snapshot = NULL;
 
+	if (context && !_kgsl_context_get(context))
+		return;
+
+	ctx_id = context ? context->id : KGSL_MEMSTORE_GLOBAL;
+
+	/* First pass: count events and read header data under the lock */
 	spin_lock(&group->lock);
-
-	seq_printf(s, "%s: last=%d\n", group->name, group->processed);
-
-	list_for_each_entry(event, &group->events, node) {
-
-		group->readtimestamp(event->device, group->priv,
-			KGSL_TIMESTAMP_RETIRED, &retired);
-
-		seq_printf(s, "\t%u:%u age=%lu func=%ps [retired=%u]\n",
-			group->context ? group->context->id :
-						KGSL_MEMSTORE_GLOBAL,
-			event->timestamp, jiffies  - event->created,
-			event->func, retired);
-	}
+	name = group->name;
+	processed = group->processed;
+	list_for_each_entry(event, &group->events, node)
+		count++;
 	spin_unlock(&group->lock);
+
+	seq_printf(s, "%s: last=%d\n", name, processed);
+
+	if (count) {
+		snapshot = kvcalloc(count, sizeof(*snapshot), GFP_KERNEL);
+		if (!snapshot)
+			goto out;
+
+		/* Second pass: copy event data under the lock */
+		spin_lock(&group->lock);
+		i = 0;
+		list_for_each_entry(event, &group->events, node) {
+			if (i >= count)
+				break;
+			group->readtimestamp(event->device, group->priv,
+				KGSL_TIMESTAMP_RETIRED,
+				&snapshot[i].retired);
+			snapshot[i].timestamp = event->timestamp;
+			snapshot[i].age = jiffies - event->created;
+			snapshot[i].func = event->func;
+			i++;
+		}
+		count = i;
+		spin_unlock(&group->lock);
+
+		for (i = 0; i < count; i++)
+			seq_printf(s, "\t%u:%u age=%lu func=%ps [retired=%u]\n",
+				ctx_id, snapshot[i].timestamp,
+				snapshot[i].age, snapshot[i].func,
+				snapshot[i].retired);
+
+		kvfree(snapshot);
+	}
+
+out:
+	/* Deferred put: may be called under rcu_read_lock from events_show */
+	kgsl_context_put_deferred(context);
 }
 
 static int events_show(struct seq_file *s, void *unused)
@@ -384,12 +433,12 @@ static int events_show(struct seq_file *s, void *unused)
 	seq_puts(s, "event groups:\n");
 	seq_puts(s, "--------------\n");
 
-	read_lock(&device->event_groups_lock);
-	list_for_each_entry(group, &device->event_groups, group) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(group, &device->event_groups, group) {
 		events_debugfs_print_group(s, group);
 		seq_puts(s, "\n");
 	}
-	read_unlock(&device->event_groups_lock);
+	rcu_read_unlock();
 
 	return 0;
 }
@@ -400,18 +449,19 @@ void kgsl_device_events_remove(struct kgsl_device *device)
 {
 	struct kgsl_event_group *group, *tmp;
 
-	write_lock(&device->event_groups_lock);
+	spin_lock(&device->event_groups_lock);
 	list_for_each_entry_safe(group, tmp, &device->event_groups, group) {
 		WARN_ON(!list_empty(&group->events));
-		list_del(&group->group);
+		list_del_rcu(&group->group);
 	}
-	write_unlock(&device->event_groups_lock);
+	spin_unlock(&device->event_groups_lock);
+	synchronize_rcu();
 }
 
 void kgsl_device_events_probe(struct kgsl_device *device)
 {
 	INIT_LIST_HEAD(&device->event_groups);
-	rwlock_init(&device->event_groups_lock);
+	spin_lock_init(&device->event_groups_lock);
 
 	debugfs_create_file("events", 0444, device->d_debugfs, device,
 		&events_fops);

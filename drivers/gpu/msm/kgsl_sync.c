@@ -267,6 +267,7 @@ static void kgsl_sync_timeline_value_str(struct dma_fence *fence,
 
 	unsigned int timestamp_retired;
 	unsigned int timestamp_queued;
+	unsigned int last_ts;
 
 	if (!kref_get_unless_zero(&ktimeline->kref))
 		return;
@@ -278,9 +279,13 @@ static void kgsl_sync_timeline_value_str(struct dma_fence *fence,
 	context = ret ? ktimeline->context : NULL;
 	spin_unlock_irqrestore(&ktimeline->lock, flags);
 
-	/* Get the last signaled timestamp if the context is not valid */
-	timestamp_queued = ktimeline->last_timestamp;
-	timestamp_retired = timestamp_queued;
+	/*
+	 * Read last_timestamp once to avoid re-reading outside the lock.
+	 * It is written under ktimeline->lock in kgsl_sync_timeline_signal.
+	 */
+	last_ts = READ_ONCE(ktimeline->last_timestamp);
+	timestamp_queued = last_ts;
+	timestamp_retired = last_ts;
 	if (context) {
 		kgsl_readtimestamp(ktimeline->device, context,
 			KGSL_TIMESTAMP_RETIRED, &timestamp_retired);
@@ -292,8 +297,7 @@ static void kgsl_sync_timeline_value_str(struct dma_fence *fence,
 	}
 
 	snprintf(str, size, "%u queued:%u retired:%u",
-		ktimeline->last_timestamp,
-		timestamp_queued, timestamp_retired);
+		last_ts, timestamp_queued, timestamp_retired);
 
 put_timeline:
 	kgsl_sync_timeline_put(ktimeline);
@@ -363,6 +367,7 @@ static void kgsl_sync_timeline_signal(struct kgsl_sync_timeline *ktimeline,
 {
 	unsigned long flags;
 	struct kgsl_sync_fence *kfence, *next;
+	LIST_HEAD(signaled);
 
 	if (!kref_get_unless_zero(&ktimeline->kref))
 		return;
@@ -373,13 +378,22 @@ static void kgsl_sync_timeline_signal(struct kgsl_sync_timeline *ktimeline,
 
 	list_for_each_entry_safe(kfence, next, &ktimeline->child_list_head,
 				child_list) {
-		if (dma_fence_is_signaled_locked(&kfence->fence)) {
-			list_del_init(&kfence->child_list);
-			dma_fence_put(&kfence->fence);
-		}
+		if (dma_fence_is_signaled_locked(&kfence->fence))
+			list_move(&kfence->child_list, &signaled);
 	}
 
 	spin_unlock_irqrestore(&ktimeline->lock, flags);
+
+	/*
+	 * Put signaled fences outside the spinlock because dma_fence_put
+	 * can trigger the fence release callback which may sleep
+	 * (e.g. msm_hw_fence_destroy).
+	 */
+	list_for_each_entry_safe(kfence, next, &signaled, child_list) {
+		list_del_init(&kfence->child_list);
+		dma_fence_put(&kfence->fence);
+	}
+
 	kgsl_sync_timeline_put(ktimeline);
 }
 
@@ -571,9 +585,12 @@ struct kgsl_syncsource_fence {
 	struct dma_fence fence;
 	struct kgsl_syncsource *parent;
 	struct list_head child_list;
+	/** @release_work: Deferred release work for atomic context */
+	struct work_struct release_work;
 };
 
 static const struct dma_fence_ops kgsl_syncsource_fence_ops;
+static void kgsl_syncsource_fence_release_work(struct work_struct *work);
 
 long kgsl_ioctl_syncsource_create(struct kgsl_device_private *dev_priv,
 					unsigned int cmd, void *data)
@@ -732,6 +749,7 @@ long kgsl_ioctl_syncsource_create_fence(struct kgsl_device_private *dev_priv,
 		goto out;
 	}
 	sfence->parent = syncsource;
+	INIT_WORK(&sfence->release_work, kgsl_syncsource_fence_release_work);
 
 	/* Use a new fence context for each fence */
 	dma_fence_init(&sfence->fence, &kgsl_syncsource_fence_ops,
@@ -834,6 +852,17 @@ out:
 	return ret;
 }
 
+static void kgsl_syncsource_fence_release_work(struct work_struct *work)
+{
+	struct kgsl_syncsource_fence *sfence = container_of(work,
+			struct kgsl_syncsource_fence, release_work);
+
+	/* Release the refcount on the syncsource (may sleep) */
+	kgsl_syncsource_put(sfence->parent);
+
+	kfree(sfence);
+}
+
 static void kgsl_syncsource_fence_release(struct dma_fence *fence)
 {
 	struct kgsl_syncsource_fence *sfence =
@@ -842,10 +871,14 @@ static void kgsl_syncsource_fence_release(struct dma_fence *fence)
 	/* Signal if it's not signaled yet */
 	kgsl_syncsource_signal(sfence->parent, fence);
 
-	/* Release the refcount on the syncsource */
-	kgsl_syncsource_put(sfence->parent);
-
-	kfree(sfence);
+	/*
+	 * Defer the syncsource put and kfree to a workqueue because
+	 * dma_fence release can be called from any context (including IRQ),
+	 * and kgsl_syncsource_put -> kgsl_process_private_put can trigger
+	 * kgsl_destroy_process_private which sleeps (mutex_lock, debugfs
+	 * teardown).
+	 */
+	queue_work(kgsl_driver.lockless_workqueue, &sfence->release_work);
 }
 
 void kgsl_syncsource_process_release_syncsources(

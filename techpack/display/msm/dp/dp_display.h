@@ -62,10 +62,9 @@ struct dp_display {
 	u32 max_mixer_count;
 	u32 max_dsc_count;
 
-	/* DP Mode Limits */
-	struct drm_msm_dp_mode_limit dp_mode_limit;
-	struct drm_msm_dp_mode_limit edp_mode_limit;
 
+	/* DP Mode Limits */
+	struct drm_msm_dp_mode_limit mode_limit;
 	int (*enable)(struct dp_display *dp_display, void *panel);
 	int (*post_enable)(struct dp_display *dp_display, void *panel);
 

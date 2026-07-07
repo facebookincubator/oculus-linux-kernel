@@ -177,6 +177,22 @@ static int dp_parser_misc(struct dp_parser *parser)
 	if (!parser->display_type)
 		parser->display_type = "unknown";
 
+	/* Per-display mode limits (width/height/refresh) from device tree */
+	rc = of_property_read_u32(of_node,
+		"meta,dp-max-hactive", &parser->max_hactive);
+	if (rc)
+		parser->max_hactive = 0; /* 0 means use hardcoded default */
+
+	rc = of_property_read_u32(of_node,
+		"meta,dp-max-vactive", &parser->max_vactive);
+	if (rc)
+		parser->max_vactive = 0;
+
+	rc = of_property_read_u32(of_node,
+		"meta,dp-max-refresh", &parser->max_refresh);
+	if (rc)
+		parser->max_refresh = 0;
+
 	return 0;
 }
 

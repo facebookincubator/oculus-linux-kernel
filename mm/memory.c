@@ -1637,7 +1637,6 @@ static void zap_page_range_single(struct vm_area_struct *vma, unsigned long addr
 	struct mmu_notifier_range range;
 	struct mmu_gather tlb;
 
-	lru_add_drain();
 	mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, vma, vma->vm_mm,
 				address, address + size);
 	tlb_gather_mmu(&tlb, vma->vm_mm, address, range.end);

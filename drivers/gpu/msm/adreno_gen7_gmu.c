@@ -530,7 +530,7 @@ int gen7_gmu_oob_set(struct kgsl_device *device,
 	int ret = 0;
 	int set, check;
 
-	if (req == oob_perfcntr && gmu->num_oob_perfcntr++)
+	if (req == oob_perfcntr && atomic_fetch_inc(&gmu->num_oob_perfcntr))
 		return 0;
 
 	if (req >= oob_boot_slumber) {
@@ -548,7 +548,7 @@ int gen7_gmu_oob_set(struct kgsl_device *device,
 	if (gmu_core_timed_poll_check(device, GEN7_GMU_GMU2HOST_INTR_INFO, check,
 				100, check)) {
 		if (req == oob_perfcntr)
-			gmu->num_oob_perfcntr--;
+			atomic_dec(&gmu->num_oob_perfcntr);
 		gmu_core_fault_snapshot(device);
 		ret = -ETIMEDOUT;
 		WARN(1, "OOB request %s timed out\n", oob_to_str(req));
@@ -568,7 +568,7 @@ void gen7_gmu_oob_clear(struct kgsl_device *device,
 	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
 	int clear = BIT(31 - req * 2);
 
-	if (req == oob_perfcntr && --gmu->num_oob_perfcntr)
+	if (req == oob_perfcntr && atomic_dec_return(&gmu->num_oob_perfcntr))
 		return;
 
 	if (req >= oob_boot_slumber) {
@@ -2254,14 +2254,14 @@ static int gmu_cx_gdsc_event(struct notifier_block *nb,
 	struct kgsl_device *device = container_of(pwr, struct kgsl_device, pwrctrl);
 	u32 val;
 
-	if (!(event & REGULATOR_EVENT_DISABLE) || !pwr->cx_gdsc_wait)
+	if (!(event & REGULATOR_EVENT_DISABLE) || !READ_ONCE(pwr->cx_gdsc_wait))
 		return 0;
 
 	if (kgsl_regmap_read_poll_timeout(&device->regmap, GEN7_GPU_CC_CX_GDSCR,
 		val, !(val & BIT(31)), 100, 100 * 1000))
 		dev_err(device->dev, "GPU CX wait timeout.\n");
 
-	pwr->cx_gdsc_wait = false;
+	WRITE_ONCE(pwr->cx_gdsc_wait, false);
 	complete_all(&device->pwrctrl.cx_gdsc_gate);
 
 	return 0;

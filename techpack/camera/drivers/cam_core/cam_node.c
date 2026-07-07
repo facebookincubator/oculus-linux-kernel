@@ -964,11 +964,12 @@ int cam_node_handle_ioctl(struct cam_node *node, struct cam_control *cmd)
 				((struct cam_acquire_hw_cmd_v1 *)acquire_ptr)->struct_version;
 			if (struct_version != api_version) {
 				CAM_ERR(CAM_CORE,
-					"Unmatched struct version %u (expected api version %u) ",
-					struct_version, api_version);
+					"Unmatched struct api version %u and struct version %u",
+					api_version, struct_version);
 				rc = -EINVAL;
 				goto acquire_kfree;
 			}
+
 			rc = __cam_node_handle_acquire_hw_v1(node, acquire_ptr);
 			if (rc) {
 				CAM_ERR(CAM_CORE,
@@ -976,6 +977,16 @@ int cam_node_handle_ioctl(struct cam_node *node, struct cam_control *cmd)
 				goto acquire_kfree;
 			}
 		} else if (api_version == 2) {
+			struct_version =
+				((struct cam_acquire_hw_cmd_v2 *)acquire_ptr)->struct_version;
+			if (struct_version != api_version) {
+				CAM_ERR(CAM_CORE,
+					"Unmatched struct api version %u and struct version %u",
+					api_version, struct_version);
+				rc = -EINVAL;
+				goto acquire_kfree;
+			}
+
 			rc = __cam_node_handle_acquire_hw_v2(node, acquire_ptr);
 			if (rc) {
 				CAM_ERR(CAM_CORE,

@@ -93,6 +93,22 @@ void kgsl_drawobj_destroy_object(struct kref *kref)
 	drawobj->destroy_object(drawobj);
 }
 
+/*
+ * kgsl_drawobj_destroy_object_deferred - Release the drawobj, deferring
+ * context destruction to a workqueue if this drops the last context reference.
+ *
+ * Use this variant from atomic, softirq, or IRQ context where
+ * kgsl_context_destroy (which sleeps) cannot run directly.
+ */
+void kgsl_drawobj_destroy_object_deferred(struct kref *kref)
+{
+	struct kgsl_drawobj *drawobj = container_of(kref,
+		struct kgsl_drawobj, refcount);
+
+	kgsl_context_put_deferred(drawobj->context);
+	drawobj->destroy_object(drawobj);
+}
+
 void kgsl_dump_syncpoints(struct kgsl_device *device,
 	struct kgsl_drawobj_sync *syncobj)
 {
@@ -158,7 +174,7 @@ static void syncobj_timer(struct timer_list *t)
 		return;
 
 	if (drawobj->context == NULL) {
-		kgsl_drawobj_put(drawobj);
+		kgsl_drawobj_put_deferred(drawobj);
 		return;
 	}
 
@@ -222,7 +238,11 @@ static void syncobj_timer(struct timer_list *t)
 		}
 	}
 
-	kgsl_drawobj_put(drawobj);
+	/*
+	 * Use the deferred variant because syncobj_timer runs in softirq
+	 * context and kgsl_context_destroy (via kgsl_drawobj_put) sleeps.
+	 */
+	kgsl_drawobj_put_deferred(drawobj);
 	dev_err(device->dev, "--gpu syncpoint deadlock print end--\n");
 }
 
@@ -476,10 +496,12 @@ static bool drawobj_sync_fence_func(void *priv)
 
 	/*
 	 * Only call kgsl_drawobj_put() if it's not marked for cancellation
-	 * in another thread.
+	 * in another thread. Use the deferred variant because this callback
+	 * can be called from dma_fence_signal in IRQ/atomic context and
+	 * kgsl_context_destroy (via kgsl_drawobj_put) sleeps.
 	 */
 	if (drawobj_sync_expire(event->device, event)) {
-		kgsl_drawobj_put(&event->syncobj->base);
+		kgsl_drawobj_put_deferred(&event->syncobj->base);
 		return true;
 	}
 	return false;

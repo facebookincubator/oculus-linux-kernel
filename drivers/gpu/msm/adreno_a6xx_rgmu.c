@@ -146,7 +146,7 @@ static int a6xx_rgmu_oob_set(struct kgsl_device *device,
 	struct a6xx_rgmu_device *rgmu = to_a6xx_rgmu(ADRENO_DEVICE(device));
 	int ret, set, check;
 
-	if (req == oob_perfcntr && rgmu->num_oob_perfcntr++)
+	if (req == oob_perfcntr && atomic_fetch_inc(&rgmu->num_oob_perfcntr))
 		return 0;
 
 	set = BIT(req + 16);
@@ -164,7 +164,7 @@ static int a6xx_rgmu_oob_set(struct kgsl_device *device,
 		unsigned int status;
 
 		if (req == oob_perfcntr)
-			rgmu->num_oob_perfcntr--;
+			atomic_dec(&rgmu->num_oob_perfcntr);
 		gmu_core_regread(device, A6XX_RGMU_CX_PCC_DEBUG, &status);
 		dev_err(&rgmu->pdev->dev,
 				"Timed out while setting OOB req:%s status:0x%x\n",
@@ -188,7 +188,7 @@ static void a6xx_rgmu_oob_clear(struct kgsl_device *device,
 {
 	struct a6xx_rgmu_device *rgmu = to_a6xx_rgmu(ADRENO_DEVICE(device));
 
-	if (req == oob_perfcntr && --rgmu->num_oob_perfcntr)
+	if (req == oob_perfcntr && atomic_dec_return(&rgmu->num_oob_perfcntr))
 		return;
 
 	gmu_core_regwrite(device, A6XX_GMU_HOST2GMU_INTR_SET, BIT(req + 24));
@@ -1236,12 +1236,12 @@ static int rgmu_cx_gdsc_event(struct notifier_block *nb,
 	struct kgsl_pwrctrl *pwr = container_of(nb, struct kgsl_pwrctrl, cx_gdsc_nb);
 	struct kgsl_device *device = container_of(pwr, struct kgsl_device, pwrctrl);
 
-	if (!(event & REGULATOR_EVENT_DISABLE) || !pwr->cx_gdsc_wait)
+	if (!(event & REGULATOR_EVENT_DISABLE) || !READ_ONCE(pwr->cx_gdsc_wait))
 		return 0;
 
 	kgsl_pwrctrl_set_state(device, KGSL_STATE_NONE);
 
-	pwr->cx_gdsc_wait = false;
+	WRITE_ONCE(pwr->cx_gdsc_wait, false);
 	complete_all(&pwr->cx_gdsc_gate);
 
 	return 0;

@@ -1208,7 +1208,7 @@ static uint8_t *
 wma_parse_ch_switch_wrapper_ie(uint8_t *ch_wr_ie, uint8_t sub_ele_id,
 			       uint8_t ie_extn_id)
 {
-	uint8_t len = 0, sub_ele_len = 0;
+	int16_t len = 0, sub_ele_len = 0;
 	struct ie_header *ele;
 	struct extn_ie_header *extn_ie;
 
@@ -1223,7 +1223,7 @@ wma_parse_ch_switch_wrapper_ie(uint8_t *ch_wr_ie, uint8_t sub_ele_id,
 	len = ele->ie_len;
 	ele = (struct ie_header *)(ch_wr_ie + sizeof(struct ie_header));
 
-	while (len > 0) {
+	while (len >= sizeof(struct ie_header)) {
 		sub_ele_len = sizeof(struct ie_header) + ele->ie_len;
 		if (sub_ele_len > len) {
 			wma_debug("invalid sub element len :%d id:%d ie len:%d",

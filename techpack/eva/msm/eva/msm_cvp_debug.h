@@ -42,6 +42,25 @@ enum cvp_msg_prio {
 		CVP_PWR | CVP_DSP | CVP_SESS | CVP_HFI | CVP_PKT,
 };
 
+enum ftrace_cvp_msg_prio {
+	FTRACE_CVP_ERR  = 0x00010000,
+	FTRACE_CVP_WARN = 0x00020000,
+	FTRACE_CVP_INFO = 0x00040000,
+	FTRACE_CVP_PROF = 0x00100000,
+	FTRACE_CVP_PKT  = 0x00200000,
+	FTRACE_CVP_MEM  = 0x00400000,
+	FTRACE_CVP_SYNX = 0x00800000,
+	FTRACE_CVP_CORE = 0x01000000,
+	FTRACE_CVP_REG  = 0x02000000,
+	FTRACE_CVP_PWR  = 0x04000000,
+	FTRACE_CVP_DSP  = 0x08000000,
+	FTRACE_CVP_FW   = 0x10000000,
+	FTRACE_CVP_SESS = 0x20000000,
+	FTRACE_CVP_HFI  = 0x40000000,
+	FTRACE_CVP_DBG  = FTRACE_CVP_MEM | FTRACE_CVP_SYNX | FTRACE_CVP_CORE | FTRACE_CVP_REG |
+		FTRACE_CVP_PWR | FTRACE_CVP_DSP | FTRACE_CVP_SESS | FTRACE_CVP_HFI | FTRACE_CVP_PKT,
+};
+
 enum cvp_msg_out {
 	CVP_OUT_PRINTK = 0,
 };
@@ -54,10 +73,12 @@ enum msm_cvp_debugfs_event {
 };
 
 extern int msm_cvp_debug;
+extern int msm_ftrace_cvp_debug;
 extern int msm_cvp_debug_out;
 extern int msm_cvp_fw_debug;
 extern int msm_cvp_fw_debug_mode;
 extern int msm_cvp_fw_low_power_mode;
+extern int msm_cvp_logN;
 extern bool msm_cvp_fw_coverage;
 extern bool msm_cvp_thermal_mitigation_disabled;
 extern bool msm_cvp_cacheop_disabled;
@@ -76,6 +97,13 @@ extern int msm_cvp_hw_wd_recovery;
 			if (msm_cvp_debug_out == CVP_OUT_PRINTK) { \
 				pr_info(CVP_DBG_TAG __fmt, \
 					get_debug_level_str(__level),	\
+					## arg); \
+			} \
+		} \
+		if (msm_ftrace_cvp_debug & ( __level << 16)) { \
+			if (msm_cvp_debug_out == CVP_OUT_PRINTK) { \
+				trace_printk(CVP_DBG_TAG __fmt, \
+					get_debug_level_str(__level),   \
 					## arg); \
 			} \
 		} \

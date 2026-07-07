@@ -66,11 +66,11 @@ static int charging_dock_send_vdm_request(
 
 	ddev->ack_parameter = PARAMETER_TYPE_UNKNOWN;
 
-	result = wait_for_completion_timeout(&ddev->rx_complete, msecs_to_jiffies(ddev->req_ack_timeout_ms));
-
-	if (!result || (result && ddev->ack_parameter != parameter)) {
-		dev_err(ddev->dev, "%s: failed to receive ack, ret=%d ack_param=%d sent_param=%d\n", __func__,
-			result, ddev->ack_parameter, parameter);
+	result = wait_for_completion_timeout(&ddev->rx_complete, msecs_to_jiffies(REQ_ACK_TIMEOUT_MS));
+	if (!result || ddev->ack_parameter != parameter) {
+		dev_err(ddev->dev,
+			"%s: failed to receive ack, ret=%d ack_param=%d sent_param=0x%02X\n",
+			__func__, result, ddev->ack_parameter, parameter);
 		return -ETIMEDOUT;
 	}
 
@@ -490,28 +490,26 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 	dev_dbg(ddev->dev, "VDM protocol type = %d, VDM parameter = 0x%02x\n",
 		protocol_type, parameter_type);
 
-	if (num_vdos == 0) {
-		dev_warn(ddev->dev, "Empty VDO packets vdm_hdr=0x%x\n", vdm_hdr);
-		return;
-	}
-
 	sb = VDMH_SIZE(vdm_hdr);
 	if (sb >= ARRAY_SIZE(vdm_size_bytes)) {
 		dev_warn(ddev->dev, "Invalid size byte code, sb=%d", sb);
-		return;
+		goto complete;
 	}
 
 	if (!(protocol_type == VDM_RESPONSE || protocol_type == VDM_BROADCAST)) {
 		dev_err(ddev->dev, "Error: invalid protocol_type: %d", protocol_type);
-		return;
+		goto complete;
 	}
 
 	acked = VDMH_ACK(vdm_hdr);
 	if (protocol_type == VDM_RESPONSE && !acked) {
 		dev_warn(ddev->dev, "Unsupported request parameter 0x%x or NACK",
 			parameter_type);
-		return;
+		goto complete;
 	}
+
+	if (num_vdos == 0)
+		goto complete;
 
 	switch (parameter_type) {
 	case PARAMETER_TYPE_FW_VERSION_NUMBER:
@@ -644,12 +642,18 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 		else
 			dev_err(ddev->dev, "Moisture detection: wrong number of vdos: %d", num_vdos);
 		break;
+	case PARAMETER_TYPE_DP_VIDEO_SOURCE:
+		dev_dbg(ddev->dev, "Received DP video source: 0x%x vdo=0x%04x",
+			parameter_type, vdos[0]);
+		ddev->params.dp_video_source = vdos[0];
+		break;
 	default:
 		dev_err(ddev->dev, "Unsupported parameter 0x%x",
 			parameter_type);
 		break;
 	}
 
+complete:
 	if (protocol_type == VDM_RESPONSE) {
 		ddev->ack_parameter = parameter_type;
 		complete(&ddev->rx_complete);
@@ -869,11 +873,17 @@ static ssize_t serial_number_mlb_show(struct device *dev,
 {
 	struct charging_dock_device_t *ddev =
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
-	int result;
+	int rc;
 
-	result = scnprintf(buf, PAGE_SIZE, "%s\n", ddev->params.serial_number_mlb);
+	if (ddev->current_pid == VDM_PID_NIKU) {
+		mutex_lock(&ddev->lock);
+		rc = charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_SERIAL_NUMBER_MLB, 0, 0);
+		mutex_unlock(&ddev->lock);
+		if (rc)
+			return rc;
+	}
 
-	return result;
+	return scnprintf(buf, PAGE_SIZE, "%s\n", ddev->params.serial_number_mlb);
 }
 static DEVICE_ATTR_RO(serial_number_mlb);
 
@@ -882,12 +892,18 @@ static ssize_t serial_number_system_show(struct device *dev,
 {
 	struct charging_dock_device_t *ddev =
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
-	int result;
+	int rc;
 
-	result = scnprintf(buf, PAGE_SIZE, "%s\n",
+	if (ddev->current_pid == VDM_PID_NIKU) {
+		mutex_lock(&ddev->lock);
+		rc = charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_SERIAL_NUMBER_SYSTEM, 0, 0);
+		mutex_unlock(&ddev->lock);
+		if (rc)
+			return rc;
+	}
+
+	return scnprintf(buf, PAGE_SIZE, "%s\n",
 		ddev->params.serial_number_system);
-
-	return result;
 }
 static DEVICE_ATTR_RO(serial_number_system);
 
@@ -1380,6 +1396,29 @@ static ssize_t chip_reset_store(struct device *dev,
 }
 static DEVICE_ATTR_WO(chip_reset);
 
+static ssize_t dp_video_source_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct charging_dock_device_t *ddev = dev_get_drvdata(dev);
+	int rc = 0;
+
+	mutex_lock(&ddev->lock);
+	if (!ddev->docked) {
+		mutex_unlock(&ddev->lock);
+		return -ENODEV;
+	}
+
+	if (ddev->current_pid == VDM_PID_NIKU)
+		rc = charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_DP_VIDEO_SOURCE, 0, 0);
+
+	mutex_unlock(&ddev->lock);
+	if (rc)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", ddev->params.dp_video_source);
+}
+static DEVICE_ATTR_RO(dp_video_source);
+
 static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_docked.attr,
 	&dev_attr_broadcast_period.attr,
@@ -1435,6 +1474,7 @@ static struct attribute *charging_dock_attrs[] = {
 	&dev_attr_reboot_into_bootloader.attr,
 	&dev_attr_switch_data_lanes.attr,
 	&dev_attr_chip_reset.attr,
+	&dev_attr_dp_video_source.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(charging_dock);
@@ -1550,17 +1590,6 @@ static int charging_dock_probe(struct platform_device *pdev)
 	}
 	ddev->broadcast_period = (u8)temp_val;
 	dev_dbg(&pdev->dev, "Broadcast period=%d\n", ddev->broadcast_period);
-
-	result = of_property_read_u32(pdev->dev.of_node,
-		"req-ack-timeout-ms", &temp_val);
-	if (result < 0) {
-		dev_dbg(&pdev->dev,
-			"req-ack-timeout-ms not defined, using default: %d\n",
-			result);
-		temp_val = REQ_ACK_TIMEOUT_MS;
-	}
-	ddev->req_ack_timeout_ms = temp_val;
-	dev_dbg(&pdev->dev, "Req ack timeout ms=%d\n", ddev->req_ack_timeout_ms);
 
 	mutex_init(&ddev->lock);
 	INIT_WORK(&ddev->work, charging_dock_handle_work);

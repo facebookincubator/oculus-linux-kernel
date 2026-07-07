@@ -226,7 +226,6 @@
 			/bits/ 16 <0x2833 0x501b>;		/* UPA 45W V2 */
 		broadcast-period-min = <15>;
 		send-state-of-charge;
-		req-ack-timeout-ms = <1000>;
 	};
 
 	external_battery: oculus,external_battery {

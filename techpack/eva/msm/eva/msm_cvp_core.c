@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/dma-direction.h>
@@ -157,7 +158,7 @@ void *msm_cvp_open(int core_id, int session_type)
 		mutex_lock(&core->lock);
 		list_for_each_entry(inst, &core->instances, list)
 			dprintk(CVP_ERR, "inst %pK, id %d\n",
-				inst, hash32_ptr(inst->session));
+				inst, inst->sess_id);
 		mutex_unlock(&core->lock);
 
 		return NULL;
@@ -170,7 +171,7 @@ void *msm_cvp_open(int core_id, int session_type)
 		goto err_invalid_core;
 	}
 
-	pr_info(CVP_DBG_TAG "Opening cvp instance: %pK\n", "sess", inst);
+	pr_info(CVP_DBG_TAG "Opening cvp instance: %pK pid = %u tgid = %u\n", "sess", inst,current->pid, current->tgid);
 	mutex_init(&inst->sync_lock);
 	mutex_init(&inst->lock);
 	spin_lock_init(&inst->event_handler.lock);
@@ -287,6 +288,7 @@ static void msm_cvp_cleanup_instance(struct msm_cvp_inst *inst)
 	int max_retries;
 	struct msm_cvp_frame *frame;
 	struct cvp_session_queue *sq;
+	struct msm_cvp_core *core = NULL;
 	#ifndef DISABLE_SYNX
 	struct cvp_session_queue *sqf;
 	#endif
@@ -296,13 +298,17 @@ static void msm_cvp_cleanup_instance(struct msm_cvp_inst *inst)
 		dprintk(CVP_ERR, "%s: invalid params\n", __func__);
 		return;
 	}
-
+	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
+	if (!core) {
+		dprintk(CVP_ERR, "%s: core is NULL", __func__);
+		return ;
+	}
 	#ifndef DISABLE_SYNX
 	sqf = &inst->session_queue_fence;
 	#endif
 	sq = &inst->session_queue;
 
-	max_retries =  inst->core->resources.msm_cvp_hw_rsp_timeout >> 5;
+	max_retries =  core->resources.msm_cvp_hw_rsp_timeout >> 5;
 	msm_cvp_session_queue_stop(inst);
 
 wait_dsp:
@@ -320,7 +326,7 @@ wait_dsp:
 		dprintk(CVP_WARN, "Failed flush DSP frame retried %d\n",
 			(inst->core->resources.msm_cvp_hw_rsp_timeout >> 5)
 			- max_retries);
-	max_retries =  inst->core->resources.msm_cvp_hw_rsp_timeout >> 1;
+	max_retries =  core->resources.msm_cvp_hw_rsp_timeout >> 1;
 wait:
 	mutex_lock(&inst->frames.lock);
 	empty = list_empty(&inst->frames.list);
@@ -345,26 +351,28 @@ wait:
 				frame->pkt_type);
 		mutex_unlock(&inst->frames.lock);
 		#ifndef DISABLE_SYNX
-		inst->core->synx_ftbl->cvp_dump_fence_queue(inst);
+		core->synx_ftbl->cvp_dump_fence_queue(inst);
 		#endif
 	}
-
-	if (cvp_release_arp_buffers(inst))
+	if (inst) {
+		if (cvp_release_arp_buffers(inst))
 		dprintk(CVP_ERR,
 			"Failed to release persist buffers\n");
-
-	if (inst->prop.type == HFI_SESSION_FD
-		|| inst->prop.type == HFI_SESSION_DMM) {
 		spin_lock(&inst->core->resources.pm_qos.lock);
-		if (inst->core->resources.pm_qos.off_vote_cnt > 0)
+		if (inst->core->resources.pm_qos.off_vote_cnt > 0){
 			inst->core->resources.pm_qos.off_vote_cnt--;
-		else
-			dprintk(CVP_WARN, "%s Unexpected pm_qos off vote %d\n",
+		}
+		else{
+			dprintk(CVP_INFO, "%s Unexpected pm_qos off vote %d\n",
 				__func__,
-				inst->core->resources.pm_qos.off_vote_cnt);
+			inst->core->resources.pm_qos.off_vote_cnt);
+		}
 		spin_unlock(&inst->core->resources.pm_qos.lock);
-		hdev = inst->core->device;
-		call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data);
+		if(!inst->core->resources.pm_qos.off_vote_cnt){
+			hdev = inst->core->device;
+			call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data,
+				PM_QOS_RESUME_LATENCY_DEFAULT_VALUE);
+		}
 	}
 }
 
@@ -404,7 +412,7 @@ int msm_cvp_destroy(struct msm_cvp_inst *inst)
 	#endif
 
 	pr_info(CVP_DBG_TAG "Closed cvp instance: %pK session_id = %d\n",
-		"sess", inst, hash32_ptr(inst->session));
+		"sess", inst, inst->sess_id);
 	inst->session = (void *)0xdeadbeef;
 	kfree(inst);
 	inst = NULL;

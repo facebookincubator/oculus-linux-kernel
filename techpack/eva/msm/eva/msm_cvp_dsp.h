@@ -103,6 +103,7 @@ struct eva_power_req {
 	uint32_t clock_od;
 	uint32_t clock_mpu;
 	uint32_t clock_fw;
+//	uint32_t clock_xra;
 	uint32_t bw_ddr;
 	uint32_t bw_sys_cache;
 	uint32_t op_clock_fdu;
@@ -110,6 +111,7 @@ struct eva_power_req {
 	uint32_t op_clock_od;
 	uint32_t op_clock_mpu;
 	uint32_t op_clock_fw;
+//	uint32_t op_clock_xra;
 	uint32_t op_bw_ddr;
 	uint32_t op_bw_sys_cache;
 };

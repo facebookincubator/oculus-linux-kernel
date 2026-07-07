@@ -922,34 +922,53 @@ static struct kgsl_process_private *kgsl_iommu_get_process(u64 ptbase)
 	struct kgsl_process_private *p;
 	struct kgsl_iommu_pt *iommu_pt;
 
-	read_lock(&kgsl_driver.proclist_lock);
+	rcu_read_lock();
 
-	list_for_each_entry(p, &kgsl_driver.process_list, list) {
+	list_for_each_entry_rcu(p, &kgsl_driver.process_list, list) {
 		iommu_pt = to_iommu_pt(p->pagetable);
 		if (iommu_pt->ttbr0 == MMU_SW_PT_BASE(ptbase)) {
 			if (!kgsl_process_private_get(p))
 				p = NULL;
 
-			read_unlock(&kgsl_driver.proclist_lock);
+			rcu_read_unlock();
 			return p;
 		}
 	}
 
-	read_unlock(&kgsl_driver.proclist_lock);
+	rcu_read_unlock();
 
 	return NULL;
+}
+
+struct kgsl_fault_work {
+	struct work_struct work;
+	struct kgsl_context *context;
+	struct kgsl_pagefault_report *report;
+};
+
+static void kgsl_iommu_add_fault_work(struct work_struct *work)
+{
+	struct kgsl_fault_work *fw = container_of(work,
+			struct kgsl_fault_work, work);
+
+	if (kgsl_add_fault(fw->context, KGSL_FAULT_TYPE_PAGEFAULT, fw->report))
+		kfree(fw->report);
+
+	kgsl_context_put(fw->context);
+	kfree(fw);
 }
 
 static void kgsl_iommu_add_fault_info(struct kgsl_context *context,
 		unsigned long addr, int flags)
 {
 	struct kgsl_pagefault_report *report;
+	struct kgsl_fault_work *fw;
 	u32 fault_flag = 0;
 
 	if (!context || !(context->flags & KGSL_CONTEXT_FAULT_INFO))
 		return;
 
-	report = kzalloc(sizeof(struct kgsl_pagefault_report), GFP_KERNEL);
+	report = kzalloc(sizeof(struct kgsl_pagefault_report), GFP_ATOMIC);
 	if (!report)
 		return;
 
@@ -967,8 +986,28 @@ static void kgsl_iommu_add_fault_info(struct kgsl_context *context,
 
 	report->fault_addr = addr;
 	report->fault_type = fault_flag;
-	if (kgsl_add_fault(context, KGSL_FAULT_TYPE_PAGEFAULT, report))
+
+	/*
+	 * Defer kgsl_add_fault to a workqueue because it calls
+	 * kmalloc(GFP_KERNEL) and mutex_lock(&context->fault_lock),
+	 * both of which sleep. This function runs in the IOMMU fault
+	 * handler (IRQ context).
+	 */
+	fw = kzalloc(sizeof(*fw), GFP_ATOMIC);
+	if (!fw) {
 		kfree(report);
+		return;
+	}
+
+	if (!_kgsl_context_get(context)) {
+		kfree(report);
+		kfree(fw);
+		return;
+	}
+	fw->context = context;
+	fw->report = report;
+	INIT_WORK(&fw->work, kgsl_iommu_add_fault_work);
+	queue_work(kgsl_driver.lockless_workqueue, &fw->work);
 }
 
 static void kgsl_iommu_print_fault(struct kgsl_mmu *mmu,
@@ -1174,8 +1213,12 @@ static int kgsl_iommu_fault_handler(struct kgsl_mmu *mmu,
 				ADRENO_IOMMU_PAGE_FAULT);
 	}
 
-	kgsl_context_put(context);
-	kgsl_process_private_put(private);
+	/*
+	 * Use the deferred variant because the IOMMU fault handler runs in
+	 * IRQ context and kgsl_context_destroy sleeps.
+	 */
+	kgsl_context_put_deferred(context);
+	kgsl_process_private_put_deferred(private);
 
 	/* Return -EBUSY to keep the IOMMU driver from resuming on a stall */
 	return stall ? -EBUSY : 0;
@@ -2189,8 +2232,7 @@ static int kgsl_iommu_get_gpuaddr(struct kgsl_pagetable *pagetable,
 
 	size = kgsl_memdesc_footprint(memdesc);
 
-	align = max_t(uint64_t, 1 << kgsl_memdesc_get_align(memdesc),
-			PAGE_SIZE);
+	align = kgsl_get_align(memdesc);
 
 	if (memdesc->flags & KGSL_MEMFLAGS_FORCE_32BIT) {
 		start = pagetable->compat_va_start;

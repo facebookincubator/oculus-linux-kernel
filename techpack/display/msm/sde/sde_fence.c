@@ -235,6 +235,8 @@ static int _sde_fence_create_fd(void *fence_ctx, uint32_t val)
 	signed int fd = -EINVAL;
 	struct sde_fence_context *ctx = fence_ctx;
 
+	might_sleep();
+
 	if (!ctx) {
 		SDE_ERROR("invalid context\n");
 		goto exit;

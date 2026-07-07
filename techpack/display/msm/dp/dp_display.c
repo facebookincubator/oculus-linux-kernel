@@ -55,15 +55,9 @@
 	(dp->state &= ~(x)); \
 	dp_display_state_log("remove "#x); }
 
-#define DP_DISPLAY_MAX_HACTIVE_4K		4096
-#define DP_DISPLAY_MAX_HACTIVE_2K		2048
-#define DP_DISPLAY_MAX_HACTIVE_1080P	1920
-#define EDP_DISPLAY_MAX_HACTIVE_8192P	8192
-#define DP_DISPLAY_MAX_VACTIVE			2160
-#define DP_DISPLAY_MAX_VACTIVE_1080P	1080
-#define EDP_DISPLAY_MAX_VACTIVE_8192P	8192
-#define DP_DISPLAY_MAX_VREFRESH			60
-#define EDP_DISPLAY_MAX_VREFRESH		120
+#define DP_DISPLAY_DEFAULT_MAX_HACTIVE 8192
+#define DP_DISPLAY_DEFAULT_MAX_VACTIVE 8192
+#define DP_DISPLAY_DEFAULT_MAX_REFRESH 120
 
 #define DPCD_MAX_READ_OFFSET 0xFFFFF
 #define DPCD_MAX_READ_LEN 32
@@ -2390,15 +2384,14 @@ static int dp_init_sub_modules(struct dp_display_private *dp)
 		goto error_catalog;
 	}
 
-    /* Initialize DP mode limits to default: 1920x1080@60Hz */
-	dp->dp_display.dp_mode_limit.max_width = DP_DISPLAY_MAX_HACTIVE_1080P;
-	dp->dp_display.dp_mode_limit.max_height = DP_DISPLAY_MAX_VACTIVE_1080P;
-	dp->dp_display.dp_mode_limit.max_refresh_rate = DP_DISPLAY_MAX_VREFRESH;
-
-    /* Initialize eDP mode limits to default */
-	dp->dp_display.edp_mode_limit.max_width = EDP_DISPLAY_MAX_HACTIVE_8192P;
-	dp->dp_display.edp_mode_limit.max_height = EDP_DISPLAY_MAX_VACTIVE_8192P;
-	dp->dp_display.edp_mode_limit.max_refresh_rate = EDP_DISPLAY_MAX_VREFRESH;
+    /* Initialize mode limits */
+	/* Use DT values if available, otherwise use hardcoded defaults */
+	dp->dp_display.mode_limit.max_width = dp->parser->max_hactive ?
+		dp->parser->max_hactive : DP_DISPLAY_DEFAULT_MAX_HACTIVE;
+	dp->dp_display.mode_limit.max_height = dp->parser->max_vactive ?
+		dp->parser->max_vactive : DP_DISPLAY_DEFAULT_MAX_VACTIVE;
+	dp->dp_display.mode_limit.max_refresh_rate = dp->parser->max_refresh ?
+		dp->parser->max_refresh : DP_DISPLAY_DEFAULT_MAX_REFRESH;
 
 	dp->catalog->hpd.set_edp_mode(&dp->catalog->hpd, dp->dp_display.is_edp);
 	dp_core_revision = dp_catalog_get_dp_core_version(dp->catalog);
@@ -3374,13 +3367,7 @@ static int dp_display_validate_limits(struct dp_display *dp_display,
 		struct drm_display_mode *mode, struct dp_display_mode *dp_mode)
 {
 	u32 vrefresh = dp_mode->timing.refresh_rate;
-	const struct drm_msm_dp_mode_limit *mode_limits;
-
-	if (dp_display->is_edp) {
-		mode_limits = &dp_display->edp_mode_limit;
-	} else {
-		mode_limits = &dp_display->dp_mode_limit;
-	}
+	const struct drm_msm_dp_mode_limit *mode_limits = &dp_display->mode_limit;
 
 	if (mode->hdisplay > mode_limits->max_width ||
 		mode->vdisplay > mode_limits->max_height ||
@@ -4357,75 +4344,105 @@ static int dp_display_remove(struct platform_device *pdev)
 int dp_display_set_mode_limit(struct drm_device *dev, struct drm_msm_dp_mode_limit *in_limit)
 {
 	struct dp_display *dp_display = NULL;
-	struct drm_msm_dp_mode_limit *limit = NULL;
-	int i = 0;
+	int i;
 
 	if (!dev || !in_limit)
 		return -EINVAL;
 
 	for (i = 0; i < MAX_DP_ACTIVE_DISPLAY; i++) {
 		if (!g_dp_display[i])
-			return -ENODEV;
+			continue;  /* Skip NULL slots, continue searching */
 
-		if (g_dp_display[i]->drm_dev == dev) {
-			dp_display = g_dp_display[i];
-			break;
+		if (g_dp_display[i]->drm_dev != dev)
+			continue;  /* Skip displays not associated with this DRM device */
+
+		/*
+		 * Match by connector_id if specified (non-zero).
+		 * If connector_id is 0, match by connector_type only (first match).
+		 */
+		if (in_limit->connector_id != 0) {
+			/* Match by specific connector_id */
+			if (g_dp_display[i]->base_connector &&
+			    g_dp_display[i]->base_connector->base.id == in_limit->connector_id) {
+				dp_display = g_dp_display[i];
+				break;
+			}
+		} else {
+			/* Match by connector_type (legacy behavior - first match) */
+			if (g_dp_display[i]->base_connector &&
+			    g_dp_display[i]->base_connector->connector_type == in_limit->connector_type) {
+				dp_display = g_dp_display[i];
+				break;
+			}
 		}
 	}
 
-	/* Check if we have reached the required DP display. */
-	if (dp_display->drm_dev != dev)
+	if (!dp_display) {
+		DP_ERR("No matching DP display found for connector_id=%u, connector_type=%u\n",
+		       in_limit->connector_id, in_limit->connector_type);
 		return -ENODEV;
+	}
 
-	if (in_limit->connector_type == DRM_MODE_CONNECTOR_DisplayPort)
-		limit = &dp_display->dp_mode_limit;
-	else if (in_limit->connector_type == DRM_MODE_CONNECTOR_eDP)
-		limit = &dp_display->edp_mode_limit;
-	else
-		return -EINVAL;
+	dp_display->mode_limit.connector_id = in_limit->connector_id;
+	dp_display->mode_limit.connector_type = in_limit->connector_type;
+	dp_display->mode_limit.max_width = in_limit->max_width;
+	dp_display->mode_limit.max_height = in_limit->max_height;
+	dp_display->mode_limit.max_refresh_rate = in_limit->max_refresh_rate;
 
-	limit->connector_type = in_limit->connector_type;
-	limit->max_width = in_limit->max_width;
-	limit->max_height = in_limit->max_height;
-	limit->max_refresh_rate = in_limit->max_refresh_rate;
+	DP_DEBUG("Set mode limits for connector_id=%u: %ux%u@%uHz\n",
+		 in_limit->connector_id, in_limit->max_width,
+		 in_limit->max_height, in_limit->max_refresh_rate);
 
 	return 0;
-
 }
 
 int dp_display_get_mode_limit(struct drm_device *dev, struct drm_msm_dp_mode_limit *out_limit)
 {
 	struct dp_display *dp_display = NULL;
-	struct drm_msm_dp_mode_limit *limit = NULL;
-	int i = 0;
+	int i;
 
 	if (!dev || !out_limit)
 		return -EINVAL;
 
 	for (i = 0; i < MAX_DP_ACTIVE_DISPLAY; i++) {
 		if (!g_dp_display[i])
-			return -ENODEV;
+			continue;  /* Skip NULL slots, continue searching */
 
-		if (g_dp_display[i]->drm_dev == dev) {
-			dp_display = g_dp_display[i];
-			break;
+		if (g_dp_display[i]->drm_dev != dev)
+			continue;  /* Skip displays not associated with this DRM device */
+
+		/*
+		 * Match by connector_id if specified (non-zero).
+		 * If connector_id is 0, match by connector_type only (first match).
+		 */
+		if (out_limit->connector_id != 0) {
+			/* Match by specific connector_id */
+			if (g_dp_display[i]->base_connector &&
+			    g_dp_display[i]->base_connector->base.id == out_limit->connector_id) {
+				dp_display = g_dp_display[i];
+				break;
+			}
+		} else {
+			/* Match by connector_type (legacy behavior - first match) */
+			if (g_dp_display[i]->base_connector &&
+			    g_dp_display[i]->base_connector->connector_type == out_limit->connector_type) {
+				dp_display = g_dp_display[i];
+				break;
+			}
 		}
 	}
 
-	/* Check if we have reached the required DP display. */
-	if (!dp_display)
+	if (!dp_display) {
+		DP_ERR("No matching DP display found for connector_id=%u, connector_type=%u\n",
+		       out_limit->connector_id, out_limit->connector_type);
 		return -ENODEV;
+	}
 
-	if (out_limit->connector_type == DRM_MODE_CONNECTOR_DisplayPort)
-		limit = &dp_display->dp_mode_limit;
-	else if (out_limit->connector_type == DRM_MODE_CONNECTOR_eDP)
-		limit = &dp_display->edp_mode_limit;
-	else
-		return -EINVAL;
-
-	out_limit->max_width = limit->max_width;
-	out_limit->max_height = limit->max_height;
-	out_limit->max_refresh_rate = limit->max_refresh_rate;
+	out_limit->connector_id = dp_display->mode_limit.connector_id;
+	out_limit->connector_type = dp_display->mode_limit.connector_type;
+	out_limit->max_width = dp_display->mode_limit.max_width;
+	out_limit->max_height = dp_display->mode_limit.max_height;
+	out_limit->max_refresh_rate = dp_display->mode_limit.max_refresh_rate;
 
 	return 0;
 }

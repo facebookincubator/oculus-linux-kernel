@@ -18,6 +18,10 @@ static const u64 max_rt_runtime = MAX_BW;
 #define SYSCTL_THREAD_NAME_LEN TASK_COMM_LEN
 #define SYSCTL_PROCESS_NAME_LEN (SYSCTL_THREAD_NAME_LEN * 2)
 #define SYSCTL_LIST_LEN ((SYSCTL_THREAD_NAME_LEN + sizeof(' ')) * 8)
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+/* Up to 10 entries, ~100 chars each: "<comm> <tgid> <ms> <hits> <ms>\n". */
+#define SYSCTL_TOP_CONTRIB_LEN 1024
+#endif
 
 #ifdef CONFIG_PANIC_ON_RT_THROTTLING_DEFAULT_ON
 #define PANIC_ON_THROTTLE_DEFAULT 1U
@@ -35,8 +39,49 @@ static struct sysctl_rt_throttling_info {
 	char thread_name[SYSCTL_THREAD_NAME_LEN];
 	char process_name[SYSCTL_PROCESS_NAME_LEN];
 	char process_list[SYSCTL_LIST_LEN];
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	char top_contributors[SYSCTL_TOP_CONTRIB_LEN];
+#endif
 	raw_spinlock_t rt_lock;
 } sysctl_rt_throttling_info;
+
+/*
+ * Copy `src` into `out` (bounded by `out_len`), replacing any run of
+ * \t/\n characters with a single space. Treats consecutive delimiters
+ * as one separator and trims trailing whitespace.
+ *
+ * No stack scratch buffer: iterates `src` directly without modifying
+ * it (strsep would otherwise poison the source buffer with NULs).
+ * Bounded by `out_len`, the destination size, so a long src is
+ * truncated cleanly at the boundary.
+ *
+ * Returns the number of bytes written, excluding the NUL terminator.
+ */
+static int sysctl_pack_process_list(char *out, int out_len, const char *src)
+{
+	int n = 0;
+	bool prev_was_sep = true;	/* skip leading delimiters */
+
+	if (out_len <= 0)
+		return 0;
+	while (*src && n < out_len - 1) {
+		if (*src == '\t' || *src == '\n') {
+			if (!prev_was_sep) {
+				out[n++] = ' ';
+				prev_was_sep = true;
+			}
+		} else {
+			out[n++] = *src;
+			prev_was_sep = false;
+		}
+		src++;
+	}
+	/* Trim trailing space if we ended on a separator. */
+	if (n > 0 && out[n - 1] == ' ')
+		n--;
+	out[n] = '\0';
+	return n;
+}
 
 static void reset_sysctl_to_defaults(void)
 {
@@ -48,6 +93,9 @@ static void reset_sysctl_to_defaults(void)
 	strcpy(sysctl_rt_throttling_info.thread_name, "");
 	strcpy(sysctl_rt_throttling_info.process_name, "");
 	strcpy(sysctl_rt_throttling_info.process_list, "");
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	strcpy(sysctl_rt_throttling_info.top_contributors, "");
+#endif
 }
 
 static int sched_rt_clear_data_handler(struct ctl_table *table, int write,
@@ -132,6 +180,15 @@ struct ctl_table rt_table[] = {
 		.mode		= 0444,
 		.proc_handler	= proc_dostring,
 	},
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	{
+		.procname	= "top_contributors",
+		.data		= &sysctl_rt_throttling_info.top_contributors,
+		.maxlen		= SYSCTL_TOP_CONTRIB_LEN,
+		.mode		= 0444,
+		.proc_handler	= proc_dostring,
+	},
+#endif
 	{
 		.procname	= "panic_on_throttle",
 		.data		= &sysctl_rt_throttling_info.panic_on_throttle,
@@ -166,6 +223,198 @@ void init_rt_sysctl(void)
 }
 
 #endif /* CONFIG_RT_THROTTLING_SYSCTL */
+
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+#ifdef CONFIG_SCHED_INFO
+/* Defined later in this file; forward declared for rt_top_resolve_name(). */
+static int get_cmdline_nofault(struct task_struct *task, char *buffer, int buflen);
+#endif
+
+/*
+ * Top-N RT contributors per period (per-CPU root rt_rq).
+ *
+ * Tracks the tgids that consumed the most CPU time on this rt_rq during the
+ * current bandwidth period. Updated from update_curr_rt() under
+ * rt_runtime_lock; reset at period boundary in do_sched_rt_period_timer().
+ *
+ * Eviction policy: when the table is full and a new tgid arrives, always
+ * evict the entry with the smallest runtime_ns (oldest last_seen_ns as
+ * tiebreaker). Crucially we do NOT compare the newcomer's single-tick
+ * delta_exec against the victim's accumulated runtime — that would let
+ * the table lock in whichever 10 tgids appeared first in the period and
+ * permanently exclude any later-arriving hog. With unconditional insertion,
+ * dominant contributors win because their runtime_ns grows on every tick
+ * they are scheduled, raising them above transient newcomers within a few
+ * ticks; transient bursts churn each other rather than displacing the
+ * stable contributors.
+ *
+ * Cost on the hot path: <=N comparisons + a few stores. N is small (10) so
+ * a flat array beats any pointer-chasing structure.
+ */
+static void rt_top_account(struct rt_rq *rt_rq, struct task_struct *curr,
+			   u64 delta_exec, u64 now)
+{
+	struct rt_top_contrib *e, *victim;
+	pid_t tgid = curr->tgid;
+	int i;
+
+	for (i = 0; i < rt_rq->rt_top_count; i++) {
+		e = &rt_rq->rt_top[i];
+		if (e->tgid == tgid) {
+			e->runtime_ns += delta_exec;
+			e->last_seen_ns = now;
+			e->hit_count++;
+			if (delta_exec > e->max_delta_ns)
+				e->max_delta_ns = delta_exec;
+			return;
+		}
+	}
+
+	if (rt_rq->rt_top_count < RT_TOP_CONTRIB_N) {
+		e = &rt_rq->rt_top[rt_rq->rt_top_count++];
+	} else {
+		victim = &rt_rq->rt_top[0];
+		for (i = 1; i < RT_TOP_CONTRIB_N; i++) {
+			struct rt_top_contrib *c = &rt_rq->rt_top[i];
+
+			if (c->runtime_ns < victim->runtime_ns ||
+			    (c->runtime_ns == victim->runtime_ns &&
+			     c->last_seen_ns < victim->last_seen_ns))
+				victim = c;
+		}
+		e = victim;
+	}
+
+	e->tgid = tgid;
+	e->runtime_ns = delta_exec;
+	e->last_seen_ns = now;
+	e->hit_count = 1;
+	e->max_delta_ns = delta_exec;
+	/*
+	 * Snapshot group_leader->comm without locking. Lifetime: curr is
+	 * scheduled on this CPU under us, and group_leader is reference-
+	 * counted via signal_struct, so the deref is safe. The 16-byte
+	 * comm read may tear vs a concurrent prctl(PR_SET_NAME) on the
+	 * leader — worst case is a garbled name in the dump, no memory
+	 * safety issue. Avoiding this would require task_lock() on the
+	 * leader, which is too heavy for the scheduler hot path.
+	 */
+	strscpy(e->comm, curr->group_leader ? curr->group_leader->comm
+					    : curr->comm,
+		sizeof(e->comm));
+}
+
+static void rt_top_reset(struct rt_rq *rt_rq)
+{
+	rt_rq->rt_top_count = 0;
+}
+
+static int rt_top_snapshot_sorted(struct rt_rq *rt_rq,
+				  struct rt_top_contrib *out)
+{
+	int n = rt_rq->rt_top_count;
+	int i, j;
+
+	if (!n)
+		return 0;
+
+	memcpy(out, rt_rq->rt_top, n * sizeof(*out));
+
+	/* Insertion sort by runtime_ns desc — n <= RT_TOP_CONTRIB_N (10). */
+	for (i = 1; i < n; i++) {
+		struct rt_top_contrib t = out[i];
+
+		for (j = i; j > 0 && out[j - 1].runtime_ns < t.runtime_ns; j--)
+			out[j] = out[j - 1];
+		out[j] = t;
+	}
+	return n;
+}
+
+/*
+ * Look up the cmdline of `tgid` into `scratch` (RT_TOP_NAME_MAX bytes).
+ * Returns a pointer to a printable name: the (possibly truncated) cmdline
+ * if available, or `fallback` (the snapshotted comm) if the process exited
+ * or the lookup failed.
+ *
+ * The RT_TOP_NAME_MAX cap bounds each entry's length so a single very long
+ * cmdline (e.g. a Java app classpath) cannot monopolize the printk buf or
+ * the sysctl latch buffer at the expense of other entries.
+ *
+ * Safe in scheduler context (called from dump_throttled_rt_tasks() under
+ * rt_runtime_lock with preemption disabled). Specifically:
+ *   - find_vpid()/pid_task() require RCU; we take rcu_read_lock()
+ *     explicitly because CONFIG_PREEMPT_RCU=y means
+ *     preemption-disabled is NOT an implicit RCU read-side critical
+ *     section.
+ *   - get_task_struct() inside get_pid_task() is a single atomic
+ *     refcount bump — no locks, never sleeps.
+ *   - get_cmdline_nofault() uses mmap_read_trylock() and
+ *     access_process_vm() with FOLL_NOFAULT; both bail on contention
+ *     rather than block. No GFP allocation, no sleeping.
+ *
+ * Caller must provide scratch as RT_TOP_NAME_MAX bytes.
+ */
+static const char *rt_top_resolve_name(pid_t tgid, char *scratch,
+				       const char *fallback)
+{
+#ifdef CONFIG_SCHED_INFO
+	struct task_struct *t;
+	int res;
+
+	if (!scratch || !task_active_pid_ns(current))
+		return fallback;
+
+	rcu_read_lock();
+	t = get_pid_task(find_vpid(tgid), PIDTYPE_PID);
+	rcu_read_unlock();
+	if (!t)
+		return fallback;
+
+	res = get_cmdline_nofault(t, scratch, RT_TOP_NAME_MAX - 1);
+	put_task_struct(t);
+
+	if (res <= 0)
+		return fallback;
+	scratch[res] = '\0';
+	return scratch;
+#else
+	return fallback;
+#endif
+}
+
+static int rt_top_format(char *buf, int len,
+			 const struct rt_top_contrib *snap, int n,
+			 const char *fmt, char *cmdline_scratch)
+{
+	int written = 0;
+	int i;
+
+	if (len <= 0)
+		return 0;
+	buf[0] = '\0';
+	for (i = 0; i < n && written < len - 1; i++) {
+		const char *name = rt_top_resolve_name(snap[i].tgid,
+						       cmdline_scratch,
+						       snap[i].comm);
+		u64 runtime_ms = snap[i].runtime_ns / NSEC_PER_MSEC;
+		u64 max_ms = snap[i].max_delta_ns / NSEC_PER_MSEC;
+
+		written += scnprintf(buf + written, len - written, fmt,
+				     name, snap[i].tgid,
+				     runtime_ms, snap[i].hit_count, max_ms);
+	}
+	return written;
+}
+
+#else  /* !CONFIG_RT_TOP_CONTRIBUTORS */
+
+static inline void rt_top_account(struct rt_rq *rt_rq,
+				  struct task_struct *curr,
+				  u64 delta_exec, u64 now) { }
+static inline void rt_top_reset(struct rt_rq *rt_rq) { }
+
+#endif /* CONFIG_RT_TOP_CONTRIBUTORS */
 
 static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun);
 
@@ -1043,6 +1292,7 @@ static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun)
 		if (!sched_feat(RT_RUNTIME_SHARE) && rt_rq->rt_runtime != RUNTIME_INF)
 			rt_rq->rt_runtime = rt_b->rt_runtime;
 		skip = !rt_rq->rt_time && !rt_rq->rt_nr_running;
+		rt_top_reset(rt_rq);
 		raw_spin_unlock(&rt_rq->rt_runtime_lock);
 		if (skip)
 			continue;
@@ -1145,7 +1395,7 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	struct task_struct *curr = rq_of_rt_rq(rt_rq)->curr;
 	struct rt_prio_array *array = &rt_rq->active;
 	struct sched_rt_entity *rt_se;
-	char buf[500];
+	char buf[1024];
 	char blame_buf[128];
 	char *process_list;
 	char *pos = buf;
@@ -1154,6 +1404,11 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	struct rt_bandwidth *rt_b = sched_rt_bandwidth(rt_rq);
 	char unknown_pid[] = "unknown_process";
 	char *tgid_comm = NULL;
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	struct rt_top_contrib snap[RT_TOP_CONTRIB_N];
+	int top_n;
+	char cmdline_scratch[RT_TOP_NAME_MAX];
+#endif
 
 	pos += snprintf(pos, sizeof(buf),
 		"sched: RT throttling activated for cpu %d\n",
@@ -1171,7 +1426,8 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	pos += snprintf(pos, end - pos, "potential CPU hogs:\n");
 #ifdef CONFIG_SCHED_INFO
 	if (sched_info_on()) {
-		struct task_struct *tgid_task = curr->tgid ?
+		struct task_struct *tgid_task =
+			(curr->tgid && task_active_pid_ns(current)) ?
 			get_pid_task(find_vpid(curr->tgid), PIDTYPE_PID) : NULL;
 		if (tgid_task != NULL) {
 			tgid_comm = kmalloc(PAGE_SIZE, GFP_ATOMIC);
@@ -1214,13 +1470,21 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 		idx = find_next_bit(array->bitmap, MAX_RT_PRIO, idx + 1);
 	}
 
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	/* Snapshot the top contributors table; consumed by both the SYSCTL
+	 * latch below and the printk-buf append at the end of this function.
+	 * cmdline_scratch is a small stack buffer (RT_TOP_NAME_MAX) reused
+	 * across both consumers to resolve cmdlines for printable names.
+	 */
+	top_n = rt_top_snapshot_sorted(rt_rq, snap);
+#endif /* CONFIG_RT_TOP_CONTRIBUTORS */
+
 #ifdef CONFIG_RT_THROTTLING_SYSCTL
 	/* latch rt throttling info if not already */
 	raw_spin_lock(&sysctl_rt_throttling_info.rt_lock);
 	if (!sysctl_rt_throttling_info.data_latched) {
 		int n = 0;
 		int len = sizeof(sysctl_rt_throttling_info.process_list);
-		char *process;
 
 		sysctl_rt_throttling_info.cpu_number = cpu_of(rq_of_rt_rq(rt_rq));
 		sysctl_rt_throttling_info.process_running_time_ns =
@@ -1234,19 +1498,39 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 			strscpy(sysctl_rt_throttling_info.process_name,
 				tgid_comm, sizeof(sysctl_rt_throttling_info.process_name));
 
-		while ((process = strsep(&process_list, "\t\n")) != NULL)
-			n += scnprintf(sysctl_rt_throttling_info.process_list + n,
-					len - n, "%s ", process);
+		/*
+		 * Tokenize a copy of the runnable-list region rather than buf
+		 * itself, so strsep's NUL-replacement does not corrupt the
+		 * printk buf that gets emitted at the end of this function.
+		 */
+		n += sysctl_pack_process_list(
+			sysctl_rt_throttling_info.process_list + n,
+			len - n, process_list);
+
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+		/* Format: <name> <tgid> <runtime_ms> <hits> <max_ms>\n  */
+		rt_top_format(sysctl_rt_throttling_info.top_contributors,
+			      sizeof(sysctl_rt_throttling_info.top_contributors),
+			      snap, top_n, "%s %d %llu %u %llu\n",
+			      cmdline_scratch);
+#endif
 
 		sysctl_rt_throttling_info.data_latched = 1;
 	}
 	raw_spin_unlock(&sysctl_rt_throttling_info.rt_lock);
 #endif /* CONFIG_RT_THROTTLING_SYSCTL */
 
-	/*
-	 * For lack of a better method to blame offending threads, at least
-	 * report which one triggered the throttling.
-	 */
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	/* Append the top contributors block to the printk buf. */
+	if (top_n && pos < end) {
+		pos += snprintf(pos, end - pos,
+				"top RT contributors this period (runtime_ms hits max_ms):\n");
+		pos += rt_top_format(pos, end - pos, snap, top_n,
+				     "\t%s (tgid %d) %llu %u %llu\n",
+				     cmdline_scratch);
+	}
+#endif /* CONFIG_RT_TOP_CONTRIBUTORS */
+
 	snprintf(blame_buf, sizeof(blame_buf), "Throttling triggered by thread \"%s\" process \"%s\"",
 			curr->comm, tgid_comm ?: unknown_pid);
 
@@ -1348,6 +1632,12 @@ static void update_curr_rt(struct rq *rq)
 		if (sched_rt_runtime(rt_rq) != RUNTIME_INF) {
 			raw_spin_lock(&rt_rq->rt_runtime_lock);
 			rt_rq->rt_time += delta_exec;
+#ifdef CONFIG_RT_GROUP_SCHED
+			if (!rt_se->parent)
+				rt_top_account(rt_rq, curr, delta_exec, now);
+#else
+			rt_top_account(rt_rq, curr, delta_exec, now);
+#endif
 			exceeded = sched_rt_runtime_exceeded(rt_rq);
 			if (exceeded)
 				resched_curr(rq);

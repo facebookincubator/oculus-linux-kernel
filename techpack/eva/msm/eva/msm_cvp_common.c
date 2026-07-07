@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/jiffies.h>
@@ -206,23 +207,33 @@ struct msm_cvp_inst *cvp_get_inst_validate(struct msm_cvp_core *core,
 {
 	int rc = 0;
 	struct cvp_hfi_device *hdev;
-	struct msm_cvp_inst *s;
-
-	s = cvp_get_inst(core, session_id);
-	if (!s) {
-		dprintk(CVP_ERR, "%s session doesn't exit\n",
-			__builtin_return_address(0));
+	struct msm_cvp_inst *inst;
+	void *sessObj = NULL;
+	if (!core || !session_id) {
+		dprintk(CVP_WARN, "%s invalid input\n", __func__);
+		return NULL;
+	}
+	inst = cvp_get_inst(core, session_id);
+	if (!inst) {
+		dprintk(CVP_WARN, "%s Inst doesn't exist\n", __func__);
 		return NULL;
 	}
 
-	hdev = s->core->device;
-	rc = call_hfi_op(hdev, validate_session, s->session, __func__);
-	if (rc) {
-		cvp_put_inst(s);
-		s = NULL;
+	sessObj = get_sessObj_from_idr(inst);
+	if (!sessObj || sessObj != inst->session) {
+		dprintk(CVP_ERR,
+			"Either sessionObj is null or not matching with inst->session\n");
+		return NULL;
 	}
 
-	return s;
+	hdev = inst->core->device;
+	rc = call_hfi_op(hdev, validate_session, sessObj, __func__);
+	if (rc) {
+		cvp_put_inst(inst);
+		inst = NULL;
+	}
+
+	return inst;
 }
 
 static void handle_session_set_buf_done(enum hal_command_response cmd,
@@ -473,11 +484,11 @@ static void handle_session_init_done(enum hal_command_response cmd, void *data)
 	if (response->status)
 		dprintk(CVP_ERR,
 			"Session %#x init err response from FW : 0x%x\n",
-			 hash32_ptr(inst->session), response->status);
+			 inst->sess_id, response->status);
 
 	else
 		dprintk(CVP_SESS, "%s: cvp session %#x\n", __func__,
-			hash32_ptr(inst->session));
+			inst->sess_id);
 
 	inst->error_code = response->status;
 	signal_session_msg_receipt(cmd, inst);
@@ -592,7 +603,7 @@ static void handle_session_error(enum hal_command_response cmd, void *data)
 
 	hdev = inst->core->device;
 	dprintk(CVP_ERR, "Sess error 0x%x received for inst %pK sess %x\n",
-		response->status, inst, hash32_ptr(inst->session));
+		response->status, inst, inst->sess_id);
 
 	cvp_put_inst(inst);
 }
@@ -893,7 +904,7 @@ static int msm_comm_session_abort(struct msm_cvp_inst *inst)
 	abort_completion = SESSION_MSG_INDEX(HAL_SESSION_ABORT_DONE);
 
 	dprintk(CVP_WARN, "%s: inst %pK session %x\n", __func__,
-		inst, hash32_ptr(inst->session));
+		inst, inst->sess_id);
 	rc = call_hfi_op(hdev, session_abort, (void *)inst->session);
 	if (rc) {
 		dprintk(CVP_ERR,
@@ -906,7 +917,7 @@ static int msm_comm_session_abort(struct msm_cvp_inst *inst)
 				inst->core->resources.msm_cvp_hw_rsp_timeout));
 	if (!rc) {
 		dprintk(CVP_ERR, "%s: inst %pK session %x abort timed out\n",
-				__func__, inst, hash32_ptr(inst->session));
+				__func__, inst, inst->sess_id);
 		call_hfi_op(hdev, flush_debug_queue, hdev->hfi_device_data);
 		dump_hfi_queue(hdev->hfi_device_data);
 		msm_cvp_comm_generate_sys_error(inst);
@@ -1239,7 +1250,7 @@ int msm_cvp_comm_try_state(struct msm_cvp_inst *inst, int state)
 	}
 	dprintk(CVP_SESS,
 		"Trying to move inst: %pK (%#x) from: %#x to %#x\n",
-		inst, hash32_ptr(inst->session), inst->state, state);
+		inst, inst->sess_id, inst->state, state);
 
 	mutex_lock(&inst->sync_lock);
 	if (inst->state == MSM_CVP_CORE_INVALID) {
@@ -1388,9 +1399,11 @@ void msm_cvp_ssr_handler(struct work_struct *work)
 		}
 
 		if (inst != NULL) {
-			s = cvp_get_inst_validate(inst->core, inst);
-			if (!s)
-				return;
+			s = cvp_get_inst_validate(core, inst);
+				if (!s) {
+					dprintk(CVP_WARN, "%s: Session is not valid\n", __func__);
+					return;
+				}
 
 			call_hfi_op(hdev, flush_debug_queue,
 				hdev->hfi_device_data);
@@ -1468,7 +1481,7 @@ int msm_cvp_comm_kill_session(struct msm_cvp_inst *inst)
 		return 0;
 	}
 	dprintk(CVP_WARN, "%s: inst %pK, session %x state %d\n", __func__,
-		inst, hash32_ptr(inst->session), inst->state);
+		inst, inst->sess_id, inst->state);
 	msm_eva_set_sw_pc(SW_PC_ENABLE);
 	/*
 	 * We're internally forcibly killing the session, if fw is aware of
@@ -1481,7 +1494,7 @@ int msm_cvp_comm_kill_session(struct msm_cvp_inst *inst)
 		if (rc) {
 			dprintk(CVP_ERR,
 				"%s: inst %pK session %x abort failed\n",
-				__func__, inst, hash32_ptr(inst->session));
+				__func__, inst, inst->sess_id);
 			change_cvp_inst_state(inst, MSM_CVP_CORE_INVALID);
 		} else {
 			change_cvp_inst_state(inst, MSM_CVP_CORE_UNINIT);

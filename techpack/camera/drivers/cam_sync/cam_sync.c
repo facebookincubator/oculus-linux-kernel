@@ -610,7 +610,7 @@ static int cam_sync_handle_signal(struct cam_private_ioctl_arg *k_ioctl)
 	int rc = 0;
 	struct cam_sync_signal sync_signal;
 	struct cam_sync_signal_param param;
-	uint32_t uid_validity;
+	uint32_t uid_validity, sync_obj;
 
 	if (k_ioctl->size != sizeof(struct cam_sync_signal))
 		return -EINVAL;
@@ -623,14 +623,22 @@ static int cam_sync_handle_signal(struct cam_private_ioctl_arg *k_ioctl)
 		k_ioctl->size))
 		return -EFAULT;
 
+	sync_obj = (uint32_t)sync_signal.sync_obj & sync_uid_access.fenceIdMask;
+
+	if (sync_obj >= CAM_SYNC_MAX_OBJS || sync_obj <= 0)
+		return -EINVAL;
+
+	spin_lock_bh(&sync_dev->row_spinlocks[sync_obj]);
 	uid_validity = cam_sync_check_uid_valid(sync_signal.sync_obj);
 	if (uid_validity == SYNC_UID_NEW) {
 		rc = cam_sync_reinit_object(sync_dev->sync_table, sync_signal.sync_obj);
 	} else if (uid_validity == SYNC_UID_OLD) {
+		spin_unlock_bh(&sync_dev->row_spinlocks[sync_obj]);
 		CAM_ERR(CAM_SYNC, "Signaling an old fence, sync : %d (0x%x)",
 			sync_signal.sync_obj, sync_signal.sync_obj);
 		return -EINVAL;
 	}
+	spin_unlock_bh(&sync_dev->row_spinlocks[sync_obj]);
 
 	/* need to get ref for UMD signaled fences */
 	rc = cam_sync_get_obj_ref(sync_signal.sync_obj);

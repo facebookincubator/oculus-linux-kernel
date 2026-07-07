@@ -33,6 +33,10 @@ DECLARE_HOOK(android_vh_check_bpf_syscall,
 	TP_PROTO(int cmd, const union bpf_attr *attr, unsigned int size),
 	TP_ARGS(cmd, attr, size));
 
+DECLARE_HOOK(android_vh_check_bpf_helper,
+	TP_PROTO(int func_id, int *ret),
+	TP_ARGS(func_id, ret));
+
 #endif /* _TRACE_HOOK_SYSCALL_CHECK_H */
 /* This part must be outside protection */
 #include <trace/define_trace.h>

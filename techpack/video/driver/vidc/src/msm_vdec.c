@@ -2698,6 +2698,15 @@ int msm_vdec_enum_fmt(struct msm_vidc_inst *inst, struct v4l2_fmtdesc *f)
 			if (formats & BIT(i)) {
 				if (idx >= ARRAY_SIZE(array))
 					break;
+				/*
+				 * Hide RGBA formats from enumeration so that
+				 * COLOR_FormatSurface does not select them by
+				 * default.  RGBA output is still accepted via
+				 * explicit S_FMT (the format remains in
+				 * step_or_mask).
+				 */
+				if (is_rgba_colorformat(BIT(i)))
+					continue;
 				if (msm_vdec_check_colorformat_supported(inst,
 						formats & BIT(i))) {
 					array[idx] = formats & BIT(i);

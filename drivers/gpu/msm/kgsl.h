@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2008-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef __KGSL_H
 #define __KGSL_H
@@ -159,8 +159,7 @@ struct kgsl_context;
  * @thread_list: List of open threads
  * @pagetable_list: LIst of open pagetables
  * @ptlock: Lock for accessing the pagetable list
- * @process_mutex: Mutex for accessing the process list
- * @proclist_lock: Lock for accessing the process list
+ * @process_mutex: Mutex for process list write serialization
  * @devlock: Mutex protecting the device list
  * @stats: Struct containing atomic memory statistics
  * @full_cache_threshold: the threshold that triggers a full cache flush
@@ -185,7 +184,6 @@ struct kgsl_driver {
 	struct list_head pagetable_list;
 	spinlock_t ptlock;
 	struct mutex process_mutex;
-	rwlock_t proclist_lock;
 	struct mutex devlock;
 	struct {
 		atomic_long_t vmalloc;
@@ -550,11 +548,11 @@ long kgsl_ioctl_allow_tid_maximum_priority(struct kgsl_device_private *dev_priv,
 
 void kgsl_mem_entry_destroy(struct kref *kref);
 
-struct kgsl_process_private *kgsl_get_allocator(struct kgsl_mem_entry *entry);
-
 void kgsl_get_egl_counts(struct kgsl_mem_entry *entry,
 			int *egl_surface_count, int *egl_image_count,
 			int *total_count);
+
+bool kgsl_dmabuf_pss_share(struct kgsl_mem_entry *entry, int *unique_procs);
 
 unsigned long kgsl_get_dmabuf_inode_number(struct kgsl_mem_entry *entry);
 
@@ -576,6 +574,8 @@ void kgsl_mmu_remove_global(struct kgsl_device *device,
 
 /* Helper functions */
 pgprot_t kgsl_pgprot_modify(struct kgsl_memdesc *memdesc, pgprot_t pgprot);
+
+unsigned long kgsl_get_align(struct kgsl_memdesc *memdesc);
 
 int kgsl_request_irq(struct platform_device *pdev, const  char *name,
 		irq_handler_t handler, void *data);

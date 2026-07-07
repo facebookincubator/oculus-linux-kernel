@@ -109,7 +109,7 @@ struct kgsl_threadstat_attribute {
 static ssize_t threadstat_attr_show(struct kgsl_thread_private *priv, int type,
 				    char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%ld\n", priv->stats[type]);
+	return snprintf(buf, PAGE_SIZE, "%llu\n", READ_ONCE(priv->stats[type]));
 }
 
 #define THREADSTAT_ATTR(_type, _name) \
@@ -124,9 +124,9 @@ threadstat_multiattr_show(
 	struct kgsl_thread_private *priv, int type, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, "%llu,%llu,%llu\n",
-		priv->stats[type],
-		priv->stats[type + 1],
-		priv->stats[type + 2]);
+		READ_ONCE(priv->stats[type]),
+		READ_ONCE(priv->stats[type + 1]),
+		READ_ONCE(priv->stats[type + 2]));
 }
 
 #define THREADSTAT_MULTIATTR(_type, _name) \
@@ -433,13 +433,13 @@ void kgsl_thread_retire_cmdobj(struct kgsl_thread_private *thread,
 
 		/* GPU ticks are on a 19.2 MHz timer. */
 		active_ktime = (active ? active : (end - start)) * 10000 / 192;
-		thread->stats[KGSL_THREADSTATS_ACTIVE_TIME] += active_ktime;
 
 		/*
 		 * Look this entry up in the history and update its consumed,
 		 * retired, and active times if found.
 		 */
 		spin_lock_irqsave(&thread->history_lock, flags);
+		thread->stats[KGSL_THREADSTATS_ACTIVE_TIME] += active_ktime;
 		list_for_each_entry(node, &thread->history_list, node) {
 			struct kgsl_threadstats_entry *entry = &node->entry;
 

@@ -59,6 +59,13 @@ Optional properties:
 - thermal-zone-scaling-factors : List of values to multiply the readings returned from component
         thermal zones by before use, in order to assure unit coherence. Default 1 if not defined.
 
+- averaging-delay : Period between averaged samples, in milliseconds. Must be specified together
+        with `averaging-count`. The associated thermal zone's polling-delay should be a multiple
+        of this value.
+- averaging-count : Number of samples over which to average the output temperature. Uses a
+        circular buffer to smooth noisy readings. Requires `averaging-delay` to be defined and
+        positive. Not used if undefined or <= 1.
+
 - fallback-thermal-zone : A thermal zone to use in lieu of the virtual sensor calculation in case
         the calculation varies too widely from this zone. Not used if undefined.
 - fallback-thermal-zone-scaling-factor : Value to multiply the reading returned by

@@ -104,6 +104,12 @@ static int usbvdm_glink_ext_msg(struct usbvdm_engine *engine,
 		rc = -ENODEV;
 		goto out;
 	}
+	if (data_len > PD_MAX_EXTENDED_MSG_LEN) {
+		dev_err(uv_dev->dev, "data_len %zu exceeds max %d\n",
+				data_len, PD_MAX_EXTENDED_MSG_LEN);
+		rc = -EINVAL;
+		goto out;
+	}
 
 	msg_hdr.owner = PMIC_GLINK_MSG_OWNER_OEM;
 	msg_hdr.type = MSG_TYPE_REQ_RESP;
@@ -149,6 +155,12 @@ static int usbvdm_glink_vdm(struct usbvdm_engine *engine,
 	if (uv_dev->state == PMIC_GLINK_STATE_DOWN) {
 		dev_err(uv_dev->dev, "Can't send vdm, Glink down");
 		rc = -ENODEV;
+		goto out;
+	}
+	if (num_vdos > VDO_MAX_OBJECTS) {
+		dev_err(uv_dev->dev, "num_vdos %u exceeds max %d\n",
+		num_vdos, VDO_MAX_OBJECTS);
+		rc = -EINVAL;
 		goto out;
 	}
 
@@ -280,6 +292,13 @@ static void usbvdm_glink_setup_work(struct work_struct *work)
 {
 	struct usbvdm_dev *uv_dev = container_of(work, struct usbvdm_dev,
 			setup_work);
+
+	mutex_lock(&uv_dev->state_lock);
+	if (uv_dev->state == PMIC_GLINK_STATE_DOWN) {
+		mutex_unlock(&uv_dev->state_lock);
+		return;
+	}
+	mutex_unlock(&uv_dev->state_lock);
 
 	usbvdm_glink_setup(uv_dev);
 }
@@ -428,6 +447,7 @@ static void usbvdm_glink_state_cb(void *priv, enum pmic_glink_state state)
 		break;
 	case PMIC_GLINK_STATE_DOWN:
 		usbvdm_unregister(uv_dev->engine);
+		uv_dev->engine = NULL;
 		break;
 	default:
 		break;
@@ -485,7 +505,11 @@ static int usbvdm_glink_remove(struct platform_device *pdev)
 	struct usbvdm_dev *uv_dev = platform_get_drvdata(pdev);
 
 	pmic_glink_unregister_client(uv_dev->client);
+	cancel_work_sync(&uv_dev->setup_work);
+	mutex_lock(&uv_dev->state_lock);
 	usbvdm_unregister(uv_dev->engine);
+	uv_dev->engine = NULL;
+	mutex_unlock(&uv_dev->state_lock);
 
 	mutex_destroy(&uv_dev->state_lock);
 

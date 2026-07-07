@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/mutex.h>
 #include <linux/spinlock.h>
@@ -136,6 +136,13 @@ static int cam_cre_mgr_process_cmd_io_buf_req(struct cam_cre_hw_mgr *hw_mgr,
 	struct   cam_buf_io_cfg *io_cfg_ptr = NULL;
 	struct   cam_cre_io_buf_info *acq_io_buf;
 
+	if (!ctx_data->cre_acquire.batch_size ||
+		(ctx_data->cre_acquire.batch_size > CRE_MAX_BATCH_SIZE)) {
+		CAM_ERR(CAM_CRE, "Invalid batch_size: %u ctx id: %u max_batch_size: %u",
+			ctx_data->cre_acquire.batch_size, ctx_data->ctx_id, CRE_MAX_BATCH_SIZE);
+		return -EINVAL;
+	}
+
 	io_cfg_ptr = (struct cam_buf_io_cfg *)((uint32_t *)&packet->payload +
 			packet->io_configs_offset / 4);
 
@@ -162,6 +169,17 @@ static int cam_cre_mgr_process_cmd_io_buf_req(struct cam_cre_hw_mgr *hw_mgr,
 			}
 
 			io_buf = cre_request->io_buf[i][j];
+
+			if (!acq_io_buf->num_planes ||
+				(acq_io_buf->num_planes > CAM_CRE_MAX_PLANES)) {
+				CAM_ERR(CAM_CRE,
+					"i %d j %d res_type %d Invalid num_planes: %u ctx id: %u max_planes: %u",
+					i, j, acq_io_buf->res_id, acq_io_buf->num_planes,
+					ctx_data->ctx_id, CAM_PACKET_MAX_PLANES);
+				cam_cre_free_io_config(cre_request);
+				return -EINVAL;
+			}
+
 			io_buf->num_planes = acq_io_buf->num_planes;
 			io_buf->resource_type = acq_io_buf->res_id;
 			io_buf->direction = acq_io_buf->direction;
@@ -1374,6 +1392,14 @@ static int cam_cre_mgr_process_io_cfg(struct cam_cre_hw_mgr *hw_mgr,
 				}
 			} else {
 				if (io_buf->fence != -1) {
+					if (k >= CAM_CTX_REQ_MAX) {
+						CAM_ERR(CAM_CRE,
+							"Couldn't update fence %d for out_res %d due to out_map_entries index %d greater than max %d",
+							io_buf->fence, io_buf->resource_type, k,
+							CAM_CTX_REQ_MAX);
+						rc = -EINVAL;
+						goto end;
+					}
 					prep_arg->out_map_entries[k].sync_id =
 						io_buf->fence;
 					k++;
@@ -1591,6 +1617,9 @@ static int cam_cre_get_acquire_info(struct cam_cre_hw_mgr *hw_mgr,
 		return -EFAULT;
 	}
 
+	if (cam_cre_validate_acquire_res_info(&ctx->cre_acquire))
+		return -EINVAL;
+
 	CAM_DBG(CAM_CRE, "top: %u %s %u %u %u",
 		ctx->cre_acquire.dev_type,
 		ctx->cre_acquire.dev_name,
@@ -1612,9 +1641,6 @@ static int cam_cre_get_acquire_info(struct cam_cre_hw_mgr *hw_mgr,
 		ctx->cre_acquire.out_res[i].height,
 		ctx->cre_acquire.out_res[i].format);
 	}
-
-	if (cam_cre_validate_acquire_res_info(&ctx->cre_acquire))
-		return -EINVAL;
 
 	return 0;
 }

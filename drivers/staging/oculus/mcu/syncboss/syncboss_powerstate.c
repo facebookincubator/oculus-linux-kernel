@@ -188,6 +188,26 @@ static void powerstate_set_enable(struct powerstate_dev_data *devdata, bool enab
 	int ret;
 	struct syncboss_consumer_ops *ops = devdata->syncboss_ops;
 
+	/*
+	 * Some devices don't require or cannot support prox configuration on
+	 * powerstate enable without other init/config steps. Simply return
+	 * without configuring prox. We'll handle it later on STREAMING_RESUMED
+	 * or STREAMING_STARTED.
+	 *
+	 * There is a gap here in that powerstate_set_enable(false) will not
+	 * result in a prox disable message being sent to the MCU. This
+	 * shouldn't be an issue, though, since we also disable the MCU
+	 * (cut power, etc.) after this call as part of disable_mcu(). It is
+	 * possible, however, to have syncboss0 open without
+	 * syncboss_powerstate0, in which case streaming would be enabled and
+	 * we would indeed be missing the prox config, but that shouldn't be
+	 * happening in prod outside of cli debug tools.
+	 */
+	if (!devdata->requires_prox_on_enable) {
+		devdata->powerstate_events_enabled = enable;
+		return;
+	}
+
 	devdata->prox_config_in_progress = true;
 	mb(); /* Ensure flag is set before streaming starts */
 
@@ -237,14 +257,7 @@ static int signal_powerstate_event(struct powerstate_dev_data *devdata, int evt)
 		.driver_message_data = evt,
 	};
 
-	if ((evt == SYNCBOSS_PROX_EVENT_SYSTEM_UP) &&
-	    devdata->eat_next_system_up_event) {
-		/* This is a manual reset, so no need to notify clients */
-		dev_info(devdata->dev, "eating prox system_up event on reset..yum!");
-		devdata->eat_next_system_up_event = false;
-		/* We don't want anyone who opens a powerstate handle to see this event. */
-		should_update_last_evt = false;
-	} else if (evt == SYNCBOSS_PROX_EVENT_PROX_ON && devdata->eat_prox_on_events) {
+	if (evt == SYNCBOSS_PROX_EVENT_PROX_ON && devdata->eat_prox_on_events) {
 		dev_info(devdata->dev, "sensor still covered. eating prox_on event..yum!");
 	} else if (devdata->prox_config_in_progress) {
 		dev_info(devdata->dev, "silencing powerstate event %d", evt);
@@ -300,7 +313,14 @@ static int syncboss_powerstate_open(struct inode *inode, struct file *f)
 	}
 
 	if (devdata->powerstate_client_count == 1) {
-		devdata->syncboss_ops->enable_mcu(devdata->dev);
+		ret = devdata->syncboss_ops->enable_mcu(devdata->dev);
+		if (ret) {
+			dev_err(devdata->dev,
+				"enable_mcu failed (%d), aborting powerstate open",
+				ret);
+			--devdata->powerstate_client_count;
+			goto out_fop_release;
+		}
 
 		if (devdata->has_prox)
 			read_prox_cal(devdata);
@@ -314,6 +334,11 @@ static int syncboss_powerstate_open(struct inode *inode, struct file *f)
 
 out:
 	mutex_unlock(&devdata->miscdevice_mutex);
+	return ret;
+
+out_fop_release:
+	mutex_unlock(&devdata->miscdevice_mutex);
+	miscfifo_fop_release(inode, f);
 	return ret;
 }
 
@@ -363,19 +388,6 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 
 	switch (event) {
 	/* Handlers not guaranteed to be calledfrom user thread context: */
-	case SYNCBOSS_EVENT_MCU_UP:
-		signal_powerstate_event(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_UP);
-		return NOTIFY_OK;
-	case SYNCBOSS_EVENT_MCU_DOWN:
-		signal_powerstate_event(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_DOWN);
-		return NOTIFY_OK;
-	case SYNCBOSS_EVENT_MCU_PIN_RESET:
-		/*
-		 * Since we're triggering a reset, no need to notify clients
-		 * when syncboss comes back up.
-		 */
-		devdata->eat_next_system_up_event = true;
-		return NOTIFY_OK;
 	case SYNCBOSS_EVENT_STREAMING_SUSPENDING:
 		if (devdata->powerstate_last_evt == SYNCBOSS_PROX_EVENT_PROX_ON) {
 			/*
@@ -415,9 +427,6 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 			/* read_prox_cal must be called from user context. */
 			read_prox_cal(devdata);
 		}
-		return NOTIFY_OK;
-	case SYNCBOSS_EVENT_STREAMING_STOPPED:
-		signal_powerstate_event(devdata, SYNCBOSS_PROX_EVENT_SYSTEM_DOWN);
 		return NOTIFY_OK;
 	case SYNCBOSS_EVENT_STREAMING_STARTED:
 		push_prox_cal_and_enable_wake(devdata, devdata->powerstate_events_enabled);
@@ -459,8 +468,11 @@ static int syncboss_powerstate_probe(struct platform_device *pdev)
 	    (!of_device_is_compatible(parent_node, "meta,syncboss") &&
 	     !of_device_is_compatible(parent_node, "meta,syncboss-spi"))) {
 		dev_err(dev, "failed to find compatible parent device");
+		if (parent_node)
+			of_node_put(parent_node);
 		return -ENODEV;
 	}
+	of_node_put(parent_node);
 
 	devdata = devm_kzalloc(dev, sizeof(struct powerstate_dev_data), GFP_KERNEL);
 	if (!devdata)
@@ -484,7 +496,11 @@ static int syncboss_powerstate_probe(struct platform_device *pdev)
 
 	devdata->has_prox = of_property_read_bool(node, "meta,syncboss-has-prox");
 	devdata->requires_prox_cal = !of_property_read_bool(node, "meta,syncboss-has-no-prox-cal");
-	dev_dbg(dev, "has-prox: %s", devdata->has_prox ? "true" : "false");
+	devdata->requires_prox_on_enable = !of_property_read_bool(node, "meta,syncboss-has-no-prox-on-enable");
+	dev_dbg(dev, "has-prox: %s, requires-prox-cal: %s, requires-prox-on-enable: %s",
+		devdata->has_prox ? "true" : "false",
+		devdata->requires_prox_cal ? "true" : "false",
+		devdata->requires_prox_on_enable ? "true" : "false");
 
 	devdata->prox_canc = INVALID_PROX_CAL_VALUE;
 	devdata->prox_thdl = INVALID_PROX_CAL_VALUE;

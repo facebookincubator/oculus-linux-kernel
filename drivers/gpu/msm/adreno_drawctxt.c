@@ -98,7 +98,12 @@ void adreno_drawctxt_dump(struct kgsl_device *device,
 			}
 		}
 
-		kgsl_drawobj_put(drawobj);
+		/*
+		 * Use the deferred variant because this function can be
+		 * called from softirq context (syncobj_timer via
+		 * kgsl_context_dump) and kgsl_context_destroy sleeps.
+		 */
+		kgsl_drawobj_put_deferred(drawobj);
 	}
 
 stats:
@@ -628,7 +633,7 @@ void adreno_drawctxt_destroy(struct kgsl_context *context)
 
 	if (gpudev->context_destroy)
 		gpudev->context_destroy(adreno_dev, drawctxt);
-	kfree(drawctxt);
+	/* kfree deferred to RCU callback — see kgsl_context_destroy() */
 }
 
 static void _drawctxt_switch_wait_callback(struct kgsl_device *device,

@@ -11,7 +11,7 @@ static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 	struct syncboss_dev_data *devdata =
 		(struct syncboss_dev_data *)dev_get_drvdata(dev);
 
-	if ((count >= 1) && (strtobool(buf, &should_reset) == 0) &&
+	if ((count >= 1) && (kstrtobool(buf, &should_reset) == 0) &&
 	    should_reset) {
 
 		status = mutex_lock_interruptible(&devdata->state_mutex);

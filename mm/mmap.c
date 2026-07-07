@@ -880,7 +880,15 @@ int __vma_adjust(struct vm_area_struct *vma, unsigned long start,
 		}
 	}
 again:
+	/*
+	 * Get rid of huge pages and shared page tables straddling the split
+	 * boundary.
+	 */
 	vma_adjust_trans_huge(orig_vma, start, end, adjust_next);
+	if (is_vm_hugetlb_page(orig_vma)) {
+		hugetlb_split(orig_vma, start);
+		hugetlb_split(orig_vma, end);
+	}
 
 	if (file) {
 		mapping = file->f_mapping;
@@ -2779,7 +2787,6 @@ static void unmap_region(struct mm_struct *mm,
 	struct mmu_gather tlb;
 	struct vm_area_struct *cur_vma;
 
-	lru_add_drain();
 	tlb_gather_mmu(&tlb, mm, start, end);
 	update_hiwater_rss(mm);
 	unmap_vmas(&tlb, vma, start, end);
@@ -3370,7 +3377,6 @@ void exit_mmap(struct mm_struct *mm)
 		return;
 	}
 
-	lru_add_drain();
 	flush_cache_mm(mm);
 	tlb_gather_mmu(&tlb, mm, 0, -1);
 	/* update_hiwater_rss(mm) here? but nobody should be looking */

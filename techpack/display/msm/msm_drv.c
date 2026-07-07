@@ -1058,6 +1058,22 @@ static void msm_postclose(struct drm_device *dev, struct drm_file *file)
 	if (!kms)
 		return;
 
+	/* Reset histogram if the owning process is closing its fd */
+	if (priv->crtcs[0]) {
+		struct sde_crtc *sde_crtc = to_sde_crtc(priv->crtcs[0]);
+
+		if (sde_crtc) {
+			unsigned long flags;
+
+			spin_lock_irqsave(&sde_crtc->spin_lock, flags);
+			if (sde_crtc->histogram_file == file) {
+				sde_crtc->histogram_enable = false;
+				sde_crtc->histogram_file = NULL;
+			}
+			spin_unlock_irqrestore(&sde_crtc->spin_lock, flags);
+		}
+	}
+
 	if (kms->funcs && kms->funcs->postclose)
 		kms->funcs->postclose(kms, file);
 
@@ -1874,9 +1890,8 @@ int msm_ioctl_brightness_scalar_control_ops(struct drm_device *dev, void *data,
 	SDE_EVT32(display_brightness_scalar->bl_scale_value);
 
 	/* Validate the range of brightness scalar. */
-	if ((display_brightness_scalar->bl_scale_value < 1) ||
-		(display_brightness_scalar->bl_scale_value > MAX_BL_SCALE_LEVEL_BRIGHTNESS)) {
-		DSI_ERR("Brightness Scalar: Input value out of range.\n");
+	if (display_brightness_scalar->bl_scale_value < 1) {
+		DSI_ERR("Brightness Scalar: Input value out of range (must be >= 1).\n");
 		return -EINVAL;
 	}
 
@@ -1982,7 +1997,6 @@ int msm_ioctl_dpu_histogram_control_ops(struct drm_device *dev, void *data,
 	struct drm_crtc *crtc = NULL;
 	struct sde_crtc *sde_crtc = NULL;
 	const int default_crtc_id = 0;
-	const int dpu_histogram_read_interval_max = 1000; /* 0 to 1000 msec */
 	int ret = 0;
 
 	SDE_ATRACE_BEGIN(__func__);
@@ -2010,20 +2024,24 @@ int msm_ioctl_dpu_histogram_control_ops(struct drm_device *dev, void *data,
 	/* Log the passed parameters. */
 	SDE_EVT32(dpu_histogram_control->histogram_enable);
 	SDE_EVT32(dpu_histogram_control->regdma_enable);
-	SDE_EVT32(dpu_histogram_control->read_interval_msec);
+	SDE_EVT32(dpu_histogram_control->read_interval_frames);
 
 	/* Validate the inputs values. */
-	if ((dpu_histogram_control->read_interval_msec < 1) ||
-	    (dpu_histogram_control->read_interval_msec >
-	     dpu_histogram_read_interval_max)) {
+	if (dpu_histogram_control->read_interval_frames < 1) {
 		DSI_ERR("DPU Histogram Read Interval: Input value for read out of range.\n");
 		ret = -EINVAL;
 	} else {
-		sde_crtc->histogram_interval_msec =
-			dpu_histogram_control->read_interval_msec;
+		unsigned long flags;
+
+		spin_lock_irqsave(&sde_crtc->spin_lock, flags);
+		sde_crtc->histogram_interval_frames =
+			dpu_histogram_control->read_interval_frames;
 		sde_crtc->histogram_enable =
 			dpu_histogram_control->histogram_enable;
 		sde_crtc->regdma_enable = dpu_histogram_control->regdma_enable;
+		sde_crtc->histogram_file =
+			dpu_histogram_control->histogram_enable ? file_priv : NULL;
+		spin_unlock_irqrestore(&sde_crtc->spin_lock, flags);
 	}
 
 out:

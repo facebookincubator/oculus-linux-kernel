@@ -59,7 +59,7 @@ struct a6xx_rgmu_device {
 	/** @flags: rgmu internal flags */
 	unsigned long flags;
 	/** @num_oob_perfcntr: Number of active oob_perfcntr requests */
-	u32 num_oob_perfcntr;
+	atomic_t num_oob_perfcntr;
 };
 
 /**

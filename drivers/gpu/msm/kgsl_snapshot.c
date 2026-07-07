@@ -884,6 +884,17 @@ done:
 	return (ret < 0) ? ret : itr.write;
 }
 
+/* Trigger a device snapshot when "dump" is written to */
+static ssize_t trigger_dump_store(struct kgsl_device *device,
+		const char *buf, size_t count)
+{
+	mutex_lock(&device->mutex);
+	kgsl_device_snapshot(device, NULL, NULL, false);
+	mutex_unlock(&device->mutex);
+
+	return count;
+}
+
 /* Show the total number of hangs since device boot */
 static ssize_t faultcount_show(struct kgsl_device *device, char *buf)
 {
@@ -1004,6 +1015,7 @@ struct kgsl_snapshot_attribute attr_##_name = { \
 	.store = _store, \
 }
 
+static SNAPSHOT_ATTR(trigger_dump, 0200, NULL, trigger_dump_store);
 static SNAPSHOT_ATTR(timestamp, 0444, timestamp_show, NULL);
 static SNAPSHOT_ATTR(faultcount, 0644, faultcount_show, faultcount_store);
 static SNAPSHOT_ATTR(force_panic, 0644, force_panic_show, force_panic_store);
@@ -1054,6 +1066,7 @@ static struct kobj_type ktype_snapshot = {
 };
 
 static const struct attribute *snapshot_attrs[] = {
+	&attr_trigger_dump.attr,
 	&attr_timestamp.attr,
 	&attr_faultcount.attr,
 	&attr_force_panic.attr,

@@ -218,7 +218,9 @@ struct task_struct init_task
 	.seccomp	= { .filter_count = ATOMIC_INIT(0) },
 #endif
 #ifdef CONFIG_HZOS_EXT
-	.hzos_ext	= { 0, },
+	.hzos_ext	= {
+		.lock = __MUTEX_INITIALIZER(init_task.hzos_ext.lock),
+	},
 #endif
 #ifdef CONFIG_ANDROID_VENDOR_OEM_DATA
 	.android_vendor_data1 = {0, },

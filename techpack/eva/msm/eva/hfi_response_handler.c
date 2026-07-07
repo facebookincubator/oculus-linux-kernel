@@ -401,7 +401,7 @@ static struct msm_cvp_inst *cvp_get_inst_from_id(struct msm_cvp_core *core,
 retry:
 	if (mutex_trylock(&core->lock)) {
 		list_for_each_entry(inst, &core->instances, list) {
-			if (hash32_ptr(inst->session) == session_id) {
+			if (inst->sess_id  == session_id) {
 				match = true;
 				break;
 			}
@@ -412,12 +412,24 @@ retry:
 	} else {
 		if (core->state == CVP_CORE_UNINIT)
 			return NULL;
-		usleep_range(100, 200);
+		// When count crosses 1000 increase the sleep to ~2ms and retry for another 100 loops
+		// This helps in giving more time for NRT thread to complete task and release the lock
 		count++;
-		if (count < 1000)
-			goto retry;
-		else
+		if (count == 1001)
+			dprintk(CVP_WARN, "retries count crossed 1000\n");
+
+		if (count <= 1000) {
+			usleep_range(100, 200);
+		}
+		else if (count <= 1100) {
+			usleep_range(2000, 3000);
+		}
+		else {
 			dprintk(CVP_ERR, "timeout locking core mutex\n");
+			return NULL;
+		}
+
+		goto retry;
 	}
 
 	return inst;
@@ -527,6 +539,8 @@ static int hfi_process_session_cvp_msg(u32 device_id,
 		trace_tracing_eva_frame_from_sw(aon_cycles,"EVA_KMD_REV_BEGIN",session_id,stream_id,pkt_id,t_id);
 	}
 
+
+		msm_cvp_msg_tracing_from_sw(pkt, "EVA_KMD_REV_BEGIN");
 
 	spin_lock(&sq->lock);
 	if (sq->msg_count >= MAX_NUM_MSGS_PER_SESSION) {

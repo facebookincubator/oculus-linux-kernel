@@ -95,7 +95,7 @@ struct gen7_gmu_device {
 	/** @rdpm_mx_virt: Pointer where the RDPM MX block is mapped */
 	void __iomem *rdpm_mx_virt;
 	/** @num_oob_perfcntr: Number of active oob_perfcntr requests */
-	u32 num_oob_perfcntr;
+	atomic_t num_oob_perfcntr;
 };
 
 struct gmu_mem_type_desc {

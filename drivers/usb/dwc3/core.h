@@ -1115,6 +1115,7 @@ struct dwc3_scratchpad_array {
  */
 struct dwc3 {
 	struct work_struct	drd_work;
+	struct work_struct	usb_reset_uevent_work;
 	struct dwc3_trb		*ep0_trb;
 	void			*bounce;
 	void			*scratchbuf;

@@ -187,7 +187,12 @@ static void log_profiling_info(struct adreno_device *adreno_dev, u32 *rcvd)
 	log_kgsl_cmdbatch_retired_event(context->id, cmd->ts,
 		context->priority, 0, cmd->sop, cmd->eop);
 
-	kgsl_context_put(context);
+	/*
+	 * Use the deferred variant because this function is called from
+	 * the HFI interrupt handler (hardirq context) via
+	 * gen7_hwsched_process_msgq, and kgsl_context_destroy sleeps.
+	 */
+	kgsl_context_put_deferred(context);
 }
 
 u32 gen7_hwsched_parse_payload(struct payload_section *payload, u32 key)
@@ -1885,7 +1890,7 @@ static int hfi_context_register(struct adreno_device *adreno_dev,
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	int ret;
 
-	if (context->gmu_registered)
+	if (READ_ONCE(context->gmu_registered))
 		return 0;
 
 	ret = send_context_register(adreno_dev, context);
@@ -1912,7 +1917,7 @@ static int hfi_context_register(struct adreno_device *adreno_dev,
 		return ret;
 	}
 
-	context->gmu_registered = true;
+	WRITE_ONCE(context->gmu_registered, true);
 	if (adreno_hwsched_context_queue_enabled(adreno_dev))
 		context->gmu_dispatch_queue = UINT_MAX;
 	else
@@ -2624,7 +2629,7 @@ static int send_context_unregister_hfi(struct adreno_device *adreno_dev,
 	int rc, ret;
 
 	/* Only send HFI if device is not in SLUMBER */
-	if (!context->gmu_registered ||
+	if (!READ_ONCE(context->gmu_registered) ||
 		!test_bit(GMU_PRIV_GPU_STARTED, &gmu->flags)) {
 		drain_context_hw_fence_cpu(adreno_dev, drawctxt);
 		return 0;
@@ -2733,7 +2738,7 @@ void gen7_hwsched_context_detach(struct adreno_context *drawctxt)
 		adreno_profile_process_results(adreno_dev);
 	}
 
-	context->gmu_registered = false;
+	WRITE_ONCE(context->gmu_registered, false);
 
 	mutex_unlock(&device->mutex);
 	rt_mutex_unlock(&hwsched->mutex);

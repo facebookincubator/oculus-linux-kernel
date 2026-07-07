@@ -274,7 +274,7 @@ static int snapshot_context_queue(int id, void *ptr, void *data)
 	struct adreno_context *drawctxt = ADRENO_CONTEXT(context);
 	struct gmu_mem_type_desc desc;
 
-	if (!context->gmu_registered)
+	if (!READ_ONCE(context->gmu_registered))
 		return 0;
 
 	desc.memdesc = &drawctxt->gmu_context_queue;
@@ -362,9 +362,9 @@ void gen7_hwsched_snapshot(struct adreno_device *adreno_dev,
 	if (!adreno_hwsched_context_queue_enabled(adreno_dev))
 		return;
 
-	read_lock(&device->context_lock);
+	rcu_read_lock();
 	idr_for_each(&device->context_idr, snapshot_context_queue, snapshot);
-	read_unlock(&device->context_lock);
+	rcu_read_unlock();
 }
 
 static int gen7_hwsched_gmu_first_boot(struct adreno_device *adreno_dev)
@@ -1329,14 +1329,15 @@ static struct kgsl_context *find_context_drain_hw_fence(struct adreno_device *ad
 	struct kgsl_context *context = NULL;
 	int id;
 
-	read_lock(&device->context_lock);
+	rcu_read_lock();
 	idr_for_each_entry(&device->context_idr, context, id) {
-		if (test_and_clear_bit(ADRENO_CONTEXT_DRAIN_HW_FENCE, &context->priv)) {
-			read_unlock(&device->context_lock);
+		if (test_and_clear_bit(ADRENO_CONTEXT_DRAIN_HW_FENCE, &context->priv) &&
+			kref_get_unless_zero(&context->refcount)) {
+			rcu_read_unlock();
 			return context;
 		}
 	}
-	read_unlock(&device->context_lock);
+	rcu_read_unlock();
 
 	return NULL;
 }
@@ -1357,6 +1358,9 @@ static int drain_context_hw_fence(struct adreno_device *adreno_dev)
 			break;
 
 		ret = gen7_hwsched_drain_context_hw_fences(adreno_dev, ADRENO_CONTEXT(context));
+
+		kgsl_context_put(context);
+
 		if (ret)
 			break;
 	}

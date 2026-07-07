@@ -2223,6 +2223,7 @@ static void ext_batt_dock_state_work(struct work_struct *work)
 	dock_state_vdo = pd->dock_state;
 	mutex_unlock(&pd->lock);
 	ext_batt_send_vdm_request(pd, EXT_BATT_FW_HMD_DOCKED, &dock_state_vdo, 1);
+	return;
 
 out:
 	mutex_unlock(&pd->lock);

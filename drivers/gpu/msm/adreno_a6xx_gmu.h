@@ -96,7 +96,7 @@ struct a6xx_gmu_device {
 	 */
 	u32 perf_ddr_bw;
 	/** @num_oob_perfcntr: Number of active oob_perfcntr requests */
-	u32 num_oob_perfcntr;
+	atomic_t num_oob_perfcntr;
 	/** @pdc_cfg_base: Base address of PDC cfg registers */
 	void __iomem *pdc_cfg_base;
 	/** @pdc_seq_base: Base address of PDC seq registers */
