@@ -279,7 +279,7 @@ out:
 
 out_cleanup:
 	ovl_cleanup(wdir, newdentry);
-	goto out;
+ 	goto out2;
 }
 
 /*
