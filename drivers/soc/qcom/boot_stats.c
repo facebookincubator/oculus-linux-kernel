@@ -17,6 +17,7 @@
 #include <linux/of_address.h>
 #include <linux/ktime.h>
 #include <linux/boot_stats.h>
+#include <linux/suspend.h>
 
 static int __init bootstatsdev_init(void);
 
@@ -207,6 +208,33 @@ static void print_boot_stats(void)
 		mpm_counter_freq);
 }
 
+static int boot_stats_pm_notifier(struct notifier_block *nb,
+				unsigned long event, void *unused)
+{
+	switch (event) {
+	case (PM_HIBERNATION_PREPARE):
+		bootstat_reset_hibernation_stats();
+		break;
+
+	case (PM_POST_HIBERNATION):
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_HIBERNATION_EXIT);
+		break;
+
+	case (PM_POST_THAW):
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_HIBERNATION_PROCESSES_THAW_DONE);
+		break;
+
+	default:
+		break;
+	}
+
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block boot_stats_pm_nb = {
+	.notifier_call = boot_stats_pm_notifier,
+};
+
 static int __init boot_stats_init(void)
 {
 	int ret;
@@ -220,6 +248,11 @@ static int __init boot_stats_init(void)
 	bootstatsdev_init();
 	bootstat_data.saved_boot_stats = *boot_stats;
 
+	ret = register_pm_notifier(&boot_stats_pm_nb);
+	if (ret) {
+		pr_err("%s: Failed to register nb: %d\n", __func__, ret);
+		return ret;
+	}
 	/*
 	 * Do not unmap boot_stats and mpm_counter_base. They will
 	 * be used in the hibernation resume paths.

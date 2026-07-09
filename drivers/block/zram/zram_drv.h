@@ -41,15 +41,20 @@
  */
 #define ZRAM_FLAG_SHIFT 24
 
+/* Only 2 bits are allowed for comp priority index */
+#define ZRAM_COMP_PRIORITY_MASK	0x3
+
 /* Flags for zram pages (table[page_no].flags) */
 enum zram_pageflags {
-	/* zram slot is locked */
-	ZRAM_LOCK = ZRAM_FLAG_SHIFT,
-	ZRAM_SAME,	/* Page consists the same element */
+	ZRAM_SAME = ZRAM_FLAG_SHIFT,	/* Page consists the same element */
 	ZRAM_WB,	/* page is stored on backing_device */
 	ZRAM_UNDER_WB,	/* page is under writeback */
 	ZRAM_HUGE,	/* Incompressible page */
 	ZRAM_IDLE,	/* not accessed page since last idle marking */
+	ZRAM_INCOMPRESSIBLE, /* none of the algorithms could compress it */
+
+	ZRAM_COMP_PRIORITY_BIT1, /* First bit of comp priority index */
+	ZRAM_COMP_PRIORITY_BIT2, /* Second bit of comp priority index */
 
 	__NR_ZRAM_PAGEFLAGS,
 };
@@ -62,7 +67,8 @@ struct zram_table_entry {
 		unsigned long handle;
 		unsigned long element;
 	};
-	unsigned long flags;
+	unsigned int flags;
+	spinlock_t lock;
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	ktime_t ac_time;
 #endif
@@ -78,6 +84,9 @@ struct zram_stats {
 	atomic64_t notify_free;	/* no. of swap slot free notifications */
 	atomic64_t same_pages;		/* no. of same element filled pages */
 	atomic64_t huge_pages;		/* no. of huge pages */
+	atomic64_t huge_pages_since;	/* no. of huge pages since zram set up */
+	atomic64_t pages_recompressed;	/* no. of pages recompressed */
+	atomic64_t pages_recompressed_since; /* no. of pages recompressed since zram set up */
 	atomic64_t pages_stored;	/* no. of pages currently stored */
 	atomic_long_t max_used_pages;	/* no. of maximum pages stored */
 	atomic64_t writestall;		/* no. of write slow paths */
@@ -89,10 +98,20 @@ struct zram_stats {
 #endif
 };
 
+#ifdef CONFIG_ZRAM_MULTI_COMP
+#define ZRAM_PRIMARY_COMP	0U
+#define ZRAM_SECONDARY_COMP	1U
+#define ZRAM_MAX_COMPS	4U
+#else
+#define ZRAM_PRIMARY_COMP	0U
+#define ZRAM_SECONDARY_COMP	0U
+#define ZRAM_MAX_COMPS	1U
+#endif
+
 struct zram {
 	struct zram_table_entry *table;
 	struct zs_pool *mem_pool;
-	struct zcomp *comp;
+	struct zcomp *comps[ZRAM_MAX_COMPS];
 	struct gendisk *disk;
 	/* Prevent concurrent execution of device init */
 	struct rw_semaphore init_lock;
@@ -107,7 +126,8 @@ struct zram {
 	 * we can store in a disk.
 	 */
 	u64 disksize;	/* bytes */
-	char compressor[CRYPTO_MAX_ALG_NAME];
+	const char *comp_algs[ZRAM_MAX_COMPS];
+	s8 num_active_comps;
 	/*
 	 * zram is claimed so open request will be failed
 	 */

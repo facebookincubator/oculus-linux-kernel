@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef _MSM_VIDC_INST_H_
@@ -138,6 +138,8 @@ struct msm_vidc_inst {
 	struct work_struct                 stability_work;
 	struct msm_vidc_stability          stability;
 	struct workqueue_struct           *response_workq;
+	struct work_struct                 alloc_work;
+	bool                               alloc_status;
 	struct list_head                   response_works; /* list of struct response_work */
 	struct list_head                   enc_input_crs;
 	struct list_head                   dmabuf_tracker; /* list of struct msm_memory_dmabuf */

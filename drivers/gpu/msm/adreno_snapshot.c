@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/utsname.h>
@@ -154,8 +154,8 @@ static int snapshot_freeze_obj_list(struct kgsl_snapshot *snapshot,
 				(ib_objs->gpuaddr + ib_objs->size)) &&
 				(objbuf[index].entry->priv == process)) {
 				freeze = 0;
-				objbuf[index].entry->memdesc.priv &=
-					~KGSL_MEMDESC_SKIP_RECLAIM;
+				CLEAR_FLAG(KGSL_MEMDESC_SKIP_RECLAIM,
+					&(objbuf[index].entry->memdesc.priv));
 				break;
 			}
 		}
@@ -916,7 +916,7 @@ size_t adreno_snapshot_global(struct kgsl_device *device, u8 *buf,
 	header->ptbase = MMU_DEFAULT_TTBR0(device);
 	header->type = SNAPSHOT_GPU_OBJECT_GLOBAL;
 
-	if ((memdesc->priv & KGSL_MEMDESC_IOMEM) != 0)
+	if (TEST_FLAG(KGSL_MEMDESC_IOMEM, &memdesc->priv))
 		memcpy_fromio(ptr, memdesc->hostptr, memdesc->size);
 	else
 		memcpy(ptr, memdesc->hostptr, memdesc->size);

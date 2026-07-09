@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef _MSM_VIDC_DRIVER_H_
@@ -255,6 +255,11 @@ static inline bool is_secure_region(enum msm_vidc_buffer_region region)
 {
 	return !(region == MSM_VIDC_NON_SECURE ||
 			region == MSM_VIDC_NON_SECURE_PIXEL);
+}
+
+static inline bool is_internal_alloc_enabled(struct msm_vidc_inst *inst)
+{
+	return !!(inst->capabilities->cap[ALLOC_INTERNAL].value);
 }
 
 const char *cap_name(enum msm_vidc_inst_capability_type cap);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <dt-bindings/soc/qcom,ipcc.h>
@@ -2437,7 +2437,7 @@ void adreno_hwsched_register_hw_fence(struct adreno_device *adreno_dev)
 	hw_fence->memdesc.physaddr = hw_fence->mem_descriptor.device_addr;
 	hw_fence->memdesc.size = hw_fence->mem_descriptor.size;
 	hw_fence->memdesc.hostptr = hw_fence->mem_descriptor.virtual_addr;
-	hw_fence->memdesc.priv |= KGSL_MEMDESC_IOMEM;
+	SET_FLAG(KGSL_MEMDESC_IOMEM, &hw_fence->memdesc.priv);
 
 	ret = kgsl_memdesc_sg_dma(&hw_fence->memdesc, hw_fence->memdesc.physaddr,
 		hw_fence->memdesc.size);

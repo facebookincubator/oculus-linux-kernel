@@ -13,16 +13,17 @@ dtbo-$(CONFIG_META_FLORIAN) += \
     mako-pvt2-overlay.dtbo \
     zebra-dev0-overlay.dtbo \
     zebra-dev0.1-overlay.dtbo \
-    zebra-poc-overlay.dtbo \
-    zebra-p0-overlay.dtbo \
-    zebra-p1-overlay.dtbo \
-    zebra-p2-overlay.dtbo \
     zebra-evt-rd-overlay.dtbo \
     zebra-dvt-rd-overlay.dtbo \
     zebra-pvt-rd-overlay.dtbo \
     zebra-evt-overlay.dtbo \
     zebra-dvt-overlay.dtbo \
     zebra-pvt-overlay.dtbo \
+    zebra-se-p1-overlay.dtbo \
+    zebra-se-p2-overlay.dtbo \
+    zebra-se-evt-overlay.dtbo \
+    zebra-se-dvt-overlay.dtbo \
+    zebra-se-pvt-overlay.dtbo \
     silvertip-p1-overlay.dtbo \
     silvertip-p2-overlay.dtbo \
     silvertip-evt-overlay.dtbo \
@@ -93,7 +94,11 @@ dtbo-$(CONFIG_META_OATMEAL) += \
 
 dtbo-$(CONFIG_META_GRANOLA_OATMEAL) += \
     granola-oatmeal-dvt1-overlay.dtbo \
-    granola-oatmeal-nff1-poc-overlay.dtbo
+    granola-oatmeal-nff1-poc-overlay.dtbo \
+    granola-oatmeal-nff2-d-overlay.dtbo
+
+dtbo-$(CONFIG_META_GRANOLA) += \
+    granola-nff1-overlay.dtbo
 
 dtbo-$(CONFIG_META_PROTOSTAR) += \
     protostar-ff2-overlay.dtbo
@@ -118,16 +123,17 @@ mako-pvt-overlay.dtbo-base := florian-base.dtb
 mako-pvt2-overlay.dtbo-base := florian-base.dtb
 zebra-dev0-overlay.dtbo-base := florian-base.dtb
 zebra-dev0.1-overlay.dtbo-base := florian-base.dtb
-zebra-poc-overlay.dtbo-base := florian-base.dtb
-zebra-p0-overlay.dtbo-base := florian-base.dtb
-zebra-p1-overlay.dtbo-base := florian-base.dtb
-zebra-p2-overlay.dtbo-base := florian-base.dtb
 zebra-evt-rd-overlay.dtbo-base := florian-base.dtb
 zebra-dvt-rd-overlay.dtbo-base := florian-base.dtb
 zebra-pvt-rd-overlay.dtbo-base := florian-base.dtb
 zebra-evt-overlay.dtbo-base := florian-base.dtb
 zebra-dvt-overlay.dtbo-base := florian-base.dtb
 zebra-pvt-overlay.dtbo-base := florian-base.dtb
+zebra-se-p1-overlay.dtbo-base := florian-base.dtb
+zebra-se-p2-overlay.dtbo-base := florian-base.dtb
+zebra-se-evt-overlay.dtbo-base := florian-base.dtb
+zebra-se-dvt-overlay.dtbo-base := florian-base.dtb
+zebra-se-pvt-overlay.dtbo-base := florian-base.dtb
 silvertip-p1-overlay.dtbo-base := florian-base.dtb
 silvertip-p2-overlay.dtbo-base := florian-base.dtb
 silvertip-evt-overlay.dtbo-base := florian-base.dtb
@@ -186,6 +192,8 @@ oatmeal-nff2-d-overlay.dtbo-base := oatmeal-base.dtb
 oatmeal-dvt1-overlay.dtbo-base := oatmeal-base.dtb
 granola-oatmeal-dvt1-overlay.dtbo-base := granola-oatmeal-base.dtb
 granola-oatmeal-nff1-poc-overlay.dtbo-base := granola-oatmeal-base.dtb
+granola-oatmeal-nff2-d-overlay.dtbo-base := granola-oatmeal-base.dtb
+granola-nff1-overlay.dtbo-base := granola-base.dtb
 protostar-ff2-overlay.dtbo-base := greatwhite-base.dtb
 hfd-overlay.dtbo-base := greatwhite-base.dtb
 meg2-phase1-overlay.dtbo-base := meg2-base.dtb

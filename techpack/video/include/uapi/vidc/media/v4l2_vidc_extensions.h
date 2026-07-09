@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __V4l2_VIDC_EXTENSIONS_H__
@@ -167,6 +167,9 @@ enum v4l2_mpeg_vidc_blur_types {
 #define V4L2_CID_MPEG_VIDC_CLIENT_ID                                          \
 	(V4L2_CID_MPEG_VIDC_BASE + 0x41)
 
+#define V4L2_CID_MPEG_VIDC_ENC_ALLOC_INTERNAL                                 \
+	(V4L2_CID_MPEG_VIDC_BASE + 0x42)
+
 /* Deprecate below controls once availble in gki and gsi bionic header */
 #ifndef V4L2_CID_MPEG_VIDEO_BASELAYER_PRIORITY_ID
 #define V4L2_CID_MPEG_VIDEO_BASELAYER_PRIORITY_ID                            \
@@ -320,5 +323,7 @@ enum meta_picture_type {
 };
 
 /* vendor controls end */
+
+#define V4L2_EVENT_ALLOC_STATUS 0x08000001
 
 #endif

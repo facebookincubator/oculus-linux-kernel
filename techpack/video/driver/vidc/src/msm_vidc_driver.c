@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2022 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/iommu.h>
@@ -180,6 +180,7 @@ static const struct msm_vidc_cap_name cap_name_arr[] = {
 	{PRIORITY,                       "PRIORITY"                   },
 	{ENC_IP_CR,                      "ENC_IP_CR"                  },
 	{DPB_LIST,                       "DPB_LIST"                   },
+	{ALLOC_INTERNAL,                 "ALLOC_INTERNAL"             },
 	{ALL_INTRA,                      "ALL_INTRA"                  },
 	{META_LTR_MARK_USE,              "META_LTR_MARK_USE"          },
 	{META_DPB_MISR,                  "META_DPB_MISR"              },

@@ -200,13 +200,13 @@ static bool is_dump_unreclaim_slabs(void)
 /**
  * oom_badness - heuristic function to determine which candidate task to kill
  * @p: task struct of which task we should calculate
- * @totalpages: total present RAM allowed for page allocation
+ * @oc: pointer to struct oom_control for context (totalpages, memcg, etc.)
  *
  * The heuristic for determining which task to kill is made to be as simple and
  * predictable as possible.  The goal is to return the highest value for the
  * task consuming the most memory to avoid subsequent oom failures.
  */
-long oom_badness(struct task_struct *p, unsigned long totalpages)
+long oom_badness(struct task_struct *p, struct oom_control *oc)
 {
 	long points;
 	long adj;
@@ -221,12 +221,17 @@ long oom_badness(struct task_struct *p, unsigned long totalpages)
 	/*
 	 * Do not even consider tasks which are explicitly marked oom
 	 * unkillable or have been already oom reaped or the are in
-	 * the middle of vfork
+	 * the middle of vfork except of tasks belong to a memcg.
+	 * Memcg task is killable even if adj == OOM_SCORE_ADJ_MIN when
+	 * memory.max != max.
 	 */
 	adj = (long)p->signal->oom_score_adj;
-	if (adj == OOM_SCORE_ADJ_MIN ||
-			test_bit(MMF_OOM_SKIP, &p->mm->flags) ||
-			in_vfork(p)) {
+	if (adj == OOM_SCORE_ADJ_MIN && !is_memcg_oom(oc)) {
+		task_unlock(p);
+		return LONG_MIN;
+	}
+
+	if (test_bit(MMF_OOM_SKIP, &p->mm->flags) || in_vfork(p)) {
 		task_unlock(p);
 		return LONG_MIN;
 	}
@@ -240,7 +245,7 @@ long oom_badness(struct task_struct *p, unsigned long totalpages)
 	task_unlock(p);
 
 	/* Normalize to oom_score_adj units */
-	adj *= totalpages / 1000;
+	adj *= oc->totalpages / 1000;
 	points += adj;
 
 	return points;
@@ -346,7 +351,7 @@ static int oom_evaluate_task(struct task_struct *task, void *arg)
 		goto select;
 	}
 
-	points = oom_badness(task, oc->totalpages);
+	points = oom_badness(task, oc);
 
 	if (points == LONG_MIN)
 		goto next;
@@ -1019,13 +1024,11 @@ static void __oom_kill_process(struct task_struct *victim, const char *message)
 #undef K
 
 /*
- * Kill provided task unless it's secured by setting
- * oom_score_adj to OOM_SCORE_ADJ_MIN.
+ * Kill provided task unless it's the global init process.
  */
 static int oom_kill_memcg_member(struct task_struct *task, void *message)
 {
-	if (task->signal->oom_score_adj != OOM_SCORE_ADJ_MIN &&
-	    !is_global_init(task)) {
+	if (!is_global_init(task)) {
 		get_task_struct(task);
 		__oom_kill_process(task, message);
 	}

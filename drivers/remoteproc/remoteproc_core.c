@@ -1800,6 +1800,9 @@ int rproc_boot(struct rproc *rproc)
 
 	dev = &rproc->dev;
 
+	dev_err(dev, "rproc_boot: state=%d power=%d\n",
+		rproc->state, atomic_read(&rproc->power));
+
 	ret = mutex_lock_interruptible(&rproc->lock);
 	if (ret) {
 		dev_err(dev, "can't lock rproc %s: %d\n", rproc->name, ret);

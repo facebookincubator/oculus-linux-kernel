@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <media/v4l2_vidc_extensions.h>
@@ -19,6 +19,7 @@
 #include "venus_hfi.h"
 #include "hfi_packet.h"
 
+extern struct msm_vidc_core *g_core;
 static const u32 msm_venc_input_set_prop[] = {
 	HFI_PROP_COLOR_FORMAT,
 	HFI_PROP_RAW_RESOLUTION,
@@ -817,6 +818,67 @@ int msm_venc_streamoff_input(struct msm_vidc_inst *inst)
 	return 0;
 }
 
+void msm_vidc_allocation_handler(struct work_struct *work)
+{
+	int rc = 0;
+	struct v4l2_event event = {0};
+	struct msm_vidc_inst *inst =
+		container_of(work, struct msm_vidc_inst, alloc_work);
+	inst = get_inst_ref(g_core, inst);
+	if (!inst) {
+		d_vpr_e("%s: invalid inst\n", __func__);
+		return;
+	}
+
+	inst_lock(inst, __func__);
+	if (is_session_error(inst)) {
+		rc = -EINVAL;
+		i_vpr_e(inst, "%s: failed. Session error\n", __func__);
+		goto error;
+	}
+
+	rc = msm_vidc_adjust_v4l2_properties(inst);
+	if (rc)
+		goto error;
+	rc = msm_venc_get_output_internal_buffers(inst);
+	if (rc)
+		goto error;
+	rc = msm_venc_create_output_internal_buffers(inst);
+	if (rc)
+		goto error;
+
+	inst->alloc_status = true;
+	event.type = V4L2_EVENT_ALLOC_STATUS;
+	event.u.ctrl.value = rc;
+
+	v4l2_event_queue_fh(&inst->event_handler, &event);
+	i_vpr_h(inst, "%s: internal buffer allocation completed\n", __func__);
+
+error:
+	if (rc)
+		msm_vidc_change_inst_state(inst, MSM_VIDC_ERROR, __func__);
+	inst_unlock(inst, __func__);
+	put_inst(inst);
+}
+
+int msm_venc_process_allocation_job(struct msm_vidc_inst *inst)
+{
+	int rc = 0;
+
+	if (!inst || !inst->capabilities || !inst->response_workq) {
+		d_vpr_e("%s: invalid params\n", __func__);
+		return -EINVAL;
+	}
+
+	if (inst->domain != MSM_VIDC_ENCODER) {
+		d_vpr_e("%s: prealloc supported for encoder session only\n", __func__);
+		return rc;
+	}
+	queue_work(inst->response_workq, &inst->alloc_work);
+
+	return rc;
+}
+
 int msm_venc_streamon_input(struct msm_vidc_inst *inst)
 {
 	int rc = 0;
@@ -996,6 +1058,7 @@ int msm_venc_streamoff_output(struct msm_vidc_inst *inst)
 int msm_venc_streamon_output(struct msm_vidc_inst *inst)
 {
 	int rc = 0;
+	bool alloc_mode = false;
 
 	if (!inst || !inst->core || !inst->capabilities) {
 		d_vpr_e("%s: invalid params\n", __func__);
@@ -1022,13 +1085,23 @@ int msm_venc_streamon_output(struct msm_vidc_inst *inst)
 	if (rc)
 		goto error;
 
-	rc = msm_venc_get_output_internal_buffers(inst);
-	if (rc)
-		goto error;
+	alloc_mode = is_internal_alloc_enabled(inst);
+	if (alloc_mode) {
+		if (!inst->alloc_status) {
+			i_vpr_e(inst, "%s: internal buffer allocation incomplete\n", __func__);
+			rc = -EINVAL;
+			goto error;
+		}
+		i_vpr_h(inst, "%s: internal buffer allocation successful\n", __func__);
+	} else {
+		rc = msm_venc_get_output_internal_buffers(inst);
+		if (rc)
+			goto error;
 
-	rc = msm_venc_create_output_internal_buffers(inst);
-	if (rc)
-		goto error;
+		rc = msm_venc_create_output_internal_buffers(inst);
+		if (rc)
+			goto error;
+	}
 
 	rc = msm_venc_queue_output_internal_buffers(inst);
 	if (rc)
@@ -1810,6 +1883,8 @@ int msm_venc_inst_init(struct msm_vidc_inst *inst)
 	i_vpr_h(inst, "%s()\n", __func__);
 
 	core = inst->core;
+	inst->alloc_status = false;
+	INIT_WORK(&inst->alloc_work, msm_vidc_allocation_handler);
 
 	if (core->capabilities[DCVS].value)
 		inst->power.dcvs_mode = true;
@@ -1911,6 +1986,7 @@ int msm_venc_inst_deinit(struct msm_vidc_inst *inst)
 		d_vpr_e("%s: invalid params\n", __func__);
 		return -EINVAL;
 	}
+	cancel_work_sync(&inst->alloc_work);
 	rc = msm_vidc_ctrl_handler_deinit(inst);
 	if (rc)
 		return rc;

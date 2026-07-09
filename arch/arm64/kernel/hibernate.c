@@ -91,6 +91,7 @@ static struct arch_hibernate_hdr {
 	phys_addr_t	__hyp_stub_vectors;
 
 	u64		sleep_cpu_mpidr;
+	u64		cpu_resume;
 } resume_hdr;
 
 static inline void arch_hdr_invariants(struct arch_hibernate_hdr_invariants *i)
@@ -127,6 +128,7 @@ int arch_hibernation_header_save(void *addr, unsigned int max_size)
 	arch_hdr_invariants(&hdr->invariants);
 	hdr->ttbr1_el1		= __pa_symbol(swapper_pg_dir);
 	hdr->reenter_kernel	= _cpu_resume;
+	hdr->cpu_resume	= __cpu_to_le64(__pa(cpu_resume));
 
 	/* We can't use __hyp_get_vectors() because kvm may still be loaded */
 	if (el2_reset_needed())

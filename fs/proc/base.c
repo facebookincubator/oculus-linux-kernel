@@ -590,8 +590,12 @@ static int proc_oom_score(struct seq_file *m, struct pid_namespace *ns,
 	unsigned long totalpages = totalram_pages() + total_swap_pages;
 	unsigned long points = 0;
 	long badness;
+	struct oom_control oc = {
+		.memcg = NULL,
+		.totalpages = totalpages,
+	};
 
-	badness = oom_badness(task, totalpages);
+	badness = oom_badness(task, &oc);
 	/*
 	 * Special case OOM_SCORE_ADJ_MIN for all others scale the
 	 * badness value into [0, 2000] range which we have been

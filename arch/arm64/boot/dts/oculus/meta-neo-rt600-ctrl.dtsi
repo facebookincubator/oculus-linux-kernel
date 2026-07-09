@@ -103,6 +103,19 @@
 			input-enabled;
 		};
 	};
+
+	rt600_assert_pin: rt600_assert_pin {
+		mux {
+			pins = "gpio80";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio80";
+			drive-strength = <2>;
+			output-low;
+		};
+	};
 };
 
 &soc {

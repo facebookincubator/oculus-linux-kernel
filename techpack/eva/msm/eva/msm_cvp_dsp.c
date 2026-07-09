@@ -273,11 +273,11 @@ static int delete_dsp_session(struct msm_cvp_inst *inst,
 			__func__,
 			inst->core->resources.pm_qos.off_vote_cnt);
 	hdev = inst->core->device;
+	spin_unlock(&inst->core->resources.pm_qos.lock);
 	//vote with default value if all sessions are deleted.
 	if(!inst->core->resources.pm_qos.off_vote_cnt){
 		call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data,PM_QOS_RESUME_LATENCY_DEFAULT_VALUE);
 	}
-	spin_unlock(&inst->core->resources.pm_qos.lock);
 
 	rc = msm_cvp_close(inst);
 	if (rc)
@@ -1519,12 +1519,12 @@ static void __dsp_cvp_sess_create(struct cvp_dsp_cmd_msg *cmd)
 	inst->core->resources.pm_qos.off_vote_cnt++;
 	hdev = inst->core->device;
 	dev = hdev->hfi_device_data;
+	spin_unlock(&inst->core->resources.pm_qos.lock);
 	//only vote if off_vote_cnt ==1, i.e no need to vote for next sessions.
 	if(inst->core->resources.pm_qos.off_vote_cnt == 1){
 		call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data,
 				dev->res->pm_qos.latency_us);
 	}
-	spin_unlock(&inst->core->resources.pm_qos.lock);
 	return;
 
 fail_get_pid:
@@ -1586,10 +1586,10 @@ static void __dsp_cvp_sess_delete(struct cvp_dsp_cmd_msg *cmd)
 			__func__,
 			inst->core->resources.pm_qos.off_vote_cnt);
 	hdev = inst->core->device;
+	spin_unlock(&inst->core->resources.pm_qos.lock);
 	if(!inst->core->resources.pm_qos.off_vote_cnt){
 		call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data,PM_QOS_RESUME_LATENCY_DEFAULT_VALUE);
 	}
-	spin_unlock(&inst->core->resources.pm_qos.lock);
 
 
 	rc = msm_cvp_close(inst);

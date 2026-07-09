@@ -18,7 +18,6 @@
 #include "common.h"
 #include "gdsc.h"
 #include "reset.h"
-#include "clk-pm.h"
 
 enum {
 	P_BI_TCXO,
@@ -969,11 +968,6 @@ static struct gdsc mdss_gdsc = {
 	.flags = HW_CTRL,
 };
 
-static struct critical_clk_offset critical_clk_list[] = {
-	{ .offset = 0x8000, .mask = BIT(4) },
-	{ .offset = 0x605c, .mask = BIT(0) },
-};
-
 static struct clk_regmap *disp_cc_sm8250_clocks[] = {
 	[DISP_CC_MDSS_AHB_CLK] = &disp_cc_mdss_ahb_clk.clkr,
 	[DISP_CC_MDSS_AHB_CLK_SRC] = &disp_cc_mdss_ahb_clk_src.clkr,
@@ -1042,7 +1036,7 @@ static const struct regmap_config disp_cc_sm8250_regmap_config = {
 	.fast_io	= true,
 };
 
-static struct qcom_cc_desc disp_cc_sm8250_desc = {
+static const struct qcom_cc_desc disp_cc_sm8250_desc = {
 	.config = &disp_cc_sm8250_regmap_config,
 	.clks = disp_cc_sm8250_clocks,
 	.num_clks = ARRAY_SIZE(disp_cc_sm8250_clocks),
@@ -1050,8 +1044,6 @@ static struct qcom_cc_desc disp_cc_sm8250_desc = {
 	.num_resets = ARRAY_SIZE(disp_cc_sm8250_resets),
 	.gdscs = disp_cc_sm8250_gdscs,
 	.num_gdscs = ARRAY_SIZE(disp_cc_sm8250_gdscs),
-	.critical_clk_en = critical_clk_list,
-	.num_critical_clk = ARRAY_SIZE(critical_clk_list),
 };
 
 static const struct of_device_id disp_cc_sm8250_match_table[] = {
@@ -1064,7 +1056,6 @@ MODULE_DEVICE_TABLE(of, disp_cc_sm8250_match_table);
 static int disp_cc_sm8250_probe(struct platform_device *pdev)
 {
 	struct regmap *regmap;
-	int ret;
 
 	regmap = qcom_cc_map(pdev, &disp_cc_sm8250_desc);
 	if (IS_ERR(regmap))
@@ -1092,19 +1083,7 @@ static int disp_cc_sm8250_probe(struct platform_device *pdev)
 	/* DISP_CC_XO_CLK always-on */
 	regmap_update_bits(regmap, 0x605c, BIT(0), BIT(0));
 
-	ret = qcom_cc_really_probe(pdev, &disp_cc_sm8250_desc, regmap);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to register DISP CC clocks\n");
-		return ret;
-	}
-
-	ret = register_qcom_clks_pm(pdev, false, &disp_cc_sm8250_desc);
-	if (ret)
-		dev_err(&pdev->dev, "Failed to register for pm ops\n");
-
-	dev_info(&pdev->dev, "Registered DISP CC clocks\n");
-
-	return 0;
+	return qcom_cc_really_probe(pdev, &disp_cc_sm8250_desc, regmap);
 }
 
 static struct platform_driver disp_cc_sm8250_driver = {

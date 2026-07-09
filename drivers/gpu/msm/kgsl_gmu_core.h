@@ -18,6 +18,10 @@
 #define MAX_CNOC_CMDS		6
 #define MAX_BW_CMDS		8
 #define INVALID_DCVS_IDX	0xFF
+#define INVALID_AB_VALUE	0xFFFF
+#define MAX_AB_VALUE		(0xFFFF - 1)
+#define INVALID_BW_VOTE		(INVALID_DCVS_IDX | \
+					(FIELD_PREP(GENMASK(31, 16), INVALID_AB_VALUE)))
 
 #if MAX_CNOC_LEVELS > MAX_GX_LEVELS
 #error "CNOC levels cannot exceed GX levels"

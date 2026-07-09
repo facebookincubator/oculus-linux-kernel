@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/of.h>
@@ -724,7 +724,7 @@ static struct msm_platform_inst_capability instance_data_neo[] = {
 		MIN_QP_10BIT, MAX_QP, 1, MAX_QP,
 		V4L2_CID_MPEG_VIDEO_HEVC_B_FRAME_MAX_QP},
 
-	{I_FRAME_QP, ENC, HEVC,
+	{I_FRAME_QP, ENC, HEVC|HEIC,
 		MIN_QP_10BIT, MAX_QP, 1, DEFAULT_QP,
 		V4L2_CID_MPEG_VIDEO_HEVC_I_FRAME_QP,
 		HFI_PROP_QP_PACKED,
@@ -742,7 +742,7 @@ static struct msm_platform_inst_capability instance_data_neo[] = {
 		{BITRATE_MODE}, {0},
 		NULL, msm_vidc_set_frame_qp},
 
-	{P_FRAME_QP, ENC, HEVC,
+	{P_FRAME_QP, ENC, HEVC|HEIC,
 		MIN_QP_10BIT, MAX_QP, 1, DEFAULT_QP,
 		V4L2_CID_MPEG_VIDEO_HEVC_P_FRAME_QP,
 		HFI_PROP_QP_PACKED,
@@ -760,7 +760,7 @@ static struct msm_platform_inst_capability instance_data_neo[] = {
 		{BITRATE_MODE}, {0},
 		NULL, msm_vidc_set_frame_qp},
 
-	{B_FRAME_QP, ENC, HEVC,
+	{B_FRAME_QP, ENC, HEVC|HEIC,
 		MIN_QP_10BIT, MAX_QP, 1, DEFAULT_QP,
 		V4L2_CID_MPEG_VIDEO_HEVC_B_FRAME_QP,
 		HFI_PROP_QP_PACKED,
@@ -1424,6 +1424,12 @@ static struct msm_platform_inst_capability instance_data_neo[] = {
 		V4L2_CID_MPEG_VIDC_ENC_INPUT_COMPRESSION_RATIO,
 		0, CAP_FLAG_DYNAMIC_ALLOWED},
 
+	{ALLOC_INTERNAL, ENC, CODECS_ALL,
+		V4L2_MPEG_MSM_VIDC_DISABLE, V4L2_MPEG_MSM_VIDC_ENABLE,
+		1, V4L2_MPEG_MSM_VIDC_DISABLE,
+		V4L2_CID_MPEG_VIDC_ENC_ALLOC_INTERNAL,
+		0, 0},
+
 	{DPB_LIST, DEC, CODECS_ALL,
 		V4L2_MPEG_MSM_VIDC_DISABLE, V4L2_MPEG_MSM_VIDC_ENABLE,
 		1, V4L2_MPEG_MSM_VIDC_DISABLE,
@@ -1592,7 +1598,8 @@ static struct msm_platform_inst_capability instance_data_neo[] = {
 		HFI_PROP_RATE_CONTROL,
 		CAP_FLAG_ROOT | CAP_FLAG_OUTPUT_PORT | CAP_FLAG_MENU,
 		{0},
-		{TIME_DELTA_BASED_RC, CONSTANT_QUALITY},
+		{TIME_DELTA_BASED_RC, CONSTANT_QUALITY, I_FRAME_QP,
+			P_FRAME_QP, B_FRAME_QP},
 		msm_vidc_adjust_bitrate_mode, msm_vidc_set_u32_enum},
 	{TIME_DELTA_BASED_RC, ENC, HEIC,
 		V4L2_MPEG_MSM_VIDC_DISABLE, V4L2_MPEG_MSM_VIDC_ENABLE,
@@ -1642,7 +1649,7 @@ static struct msm_platform_inst_capability instance_data_neo[] = {
 		0, 0,
 		CAP_FLAG_ROOT,
 		{0},
-		{PROFILE}},
+		{PROFILE, I_FRAME_QP, P_FRAME_QP, B_FRAME_QP}},
 	{HEVC_TIER, ENC|DEC, HEIC,
 		V4L2_MPEG_VIDEO_HEVC_TIER_MAIN,
 		V4L2_MPEG_VIDEO_HEVC_TIER_MAIN,

@@ -1014,6 +1014,7 @@ static int save_compressed_image(struct swap_map_handle *handle,
 
 			*(size_t *)data[thr].cmp = data[thr].cmp_len;
 
+
 			/*
 			 * Given we are writing one page at a time to disk, we
 			 * copy that much from the buffer, although the last
@@ -1041,7 +1042,7 @@ static int save_compressed_image(struct swap_map_handle *handle,
 
 out_finish:
 	if (!ret)
-		trace_android_vh_post_image_save(root_swap);
+		trace_android_rvh_post_image_save(root_swap);
 
 	err2 = hib_wait_io(&hb);
 	stop = ktime_get();
@@ -1329,7 +1330,7 @@ static int load_image(struct swap_map_handle *handle,
 		nr_pages++;
 	}
 	if (!ret)
-		trace_android_vh_post_image_save(root_swap);
+		trace_android_rvh_post_image_save(root_swap);
 
 	err2 = hib_wait_io(&hb);
 	hib_finish_batch(&hb);
@@ -1830,35 +1831,26 @@ put:
 
 int swsusp_read_stats(struct hib_entry_stats *stats)
 {
-        int error;
-        void *holder;
+	int error;
+	void *holder;
 
-        hib_resume_bdev = blkdev_get_by_dev(swsusp_resume_device,
-                                            FMODE_READ, &holder);
-        if (!IS_ERR(hib_resume_bdev)) {
-                set_blocksize(hib_resume_bdev, PAGE_SIZE);
-                clear_page(swsusp_header);
-                error = hib_submit_io(REQ_OP_READ, 0,
-                                        swsusp_resume_block,
-                                        swsusp_header, NULL);
-                if (error)
-                        goto put;
-		if (stats)
-			*stats = swsusp_header->stats;
+	if (!stats)
+		return -EINVAL;
 
-put:
-                if (error)
-                        blkdev_put(hib_resume_bdev, FMODE_READ);
-                else
-                        pr_debug("Image signature found, resuming\n");
-        } else {
-                error = PTR_ERR(hib_resume_bdev);
-        }
+	hib_resume_bdev = blkdev_get_by_dev(swsusp_resume_device,
+					FMODE_READ, &holder);
+	if (IS_ERR(hib_resume_bdev))
+		return PTR_ERR(hib_resume_bdev);
 
-	if (error)
-                pr_debug("Image not found (code %d)\n", error);
+	set_blocksize(hib_resume_bdev, PAGE_SIZE);
+	clear_page(swsusp_header);
+	error = hib_submit_io(REQ_OP_READ, 0, swsusp_resume_block,
+					swsusp_header, NULL);
+	if (!error)
+		*stats = swsusp_header->stats;
 
-        return error;
+	blkdev_put(hib_resume_bdev, FMODE_READ);
+	return error;
 }
 
 void populate_hib_entry_stats(struct hib_entry_stats *stats) {

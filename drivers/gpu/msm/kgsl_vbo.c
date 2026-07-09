@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/file.h>
@@ -287,7 +287,7 @@ int kgsl_sharedmem_allocate_vbo(struct kgsl_device *device,
 		return -EOPNOTSUPP;
 
 	kgsl_memdesc_init(device, memdesc, flags);
-	memdesc->priv = 0;
+	atomic_set(&memdesc->priv, 0);
 
 	memdesc->ops = &kgsl_vbo_ops;
 	memdesc->size = size;

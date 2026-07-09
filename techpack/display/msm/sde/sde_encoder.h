@@ -433,6 +433,8 @@ bool sde_encoder_is_dsc_merge(struct drm_encoder *drm_enc);
  */
 bool sde_encoder_check_curr_mode(struct drm_encoder *drm_enc, u32 mode);
 
+uint32_t sde_encoder_get_clones(struct drm_encoder *drm_enc);
+
 /**
  * sde_encoder_init - initialize virtual encoder object
  * @dev:        Pointer to drm device structure

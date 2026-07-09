@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/io.h>
@@ -232,6 +232,10 @@ static const struct mhi_controller_config cnss_mhi_config = {
 	.event_cfg = cnss_mhi_events,
 	.m2_no_db = true,
 };
+
+static void cnss_pci_update_link_event(struct cnss_pci_data *pci_priv,
+				       enum cnss_bus_event_type type,
+				       void *data);
 
 static struct cnss_pci_reg ce_src[] = {
 	{ "SRC_RING_BASE_LSB", CE_SRC_RING_BASE_LSB_OFFSET },
@@ -1110,6 +1114,8 @@ int cnss_resume_pci_link(struct cnss_pci_data *pci_priv)
 	ret = cnss_set_pci_link(pci_priv, PCI_LINK_UP);
 	if (ret) {
 		ret = -EAGAIN;
+		cnss_pci_update_link_event(pci_priv,
+					   BUS_EVENT_PCI_LINK_RESUME_FAIL, NULL);
 		goto out;
 	}
 
@@ -2187,7 +2193,6 @@ int cnss_pci_call_driver_probe(struct cnss_pci_data *pci_priv)
 			complete_all(&plat_priv->power_up_complete);
 			goto out;
 		}
-		clear_bit(CNSS_DRIVER_IDLE_RESTART, &plat_priv->driver_state);
 		complete_all(&plat_priv->power_up_complete);
 	} else {
 		complete(&plat_priv->power_up_complete);

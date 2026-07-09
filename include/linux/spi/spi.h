@@ -372,8 +372,6 @@ static inline void spi_unregister_driver(struct spi_driver *sdrv)
  * @queue: message queue
  * @idling: the device is entering idle state
  * @cur_msg: the currently in-flight message
- * @cur_msg_prepared: spi_prepare_message was called for the currently
- *                    in-flight message
  * @cur_msg_mapped: message has been mapped for DMA
  * @last_cs_enable: was enable true on the last call to set_cs.
  * @last_cs_mode_high: was (mode & SPI_CS_HIGH) true on the last call to set_cs.
@@ -458,6 +456,8 @@ static inline void spi_unregister_driver(struct spi_driver *sdrv)
  * @irq_flags: Interrupt enable state during PTP system timestamping
  * @fallback: fallback to pio if dma transfer return failure with
  *	SPI_TRANS_FAIL_NO_START.
+ * @queue_empty: signal green light for opportunistically skipping the queue
+ *	for spi_sync transfers.
  *
  * Each SPI controller can communicate with one or more @spi_device
  * children.  These make a small bus, sharing MOSI, MISO and SCK signals
@@ -610,7 +610,6 @@ struct spi_controller {
 	bool				running;
 	bool				rt;
 	bool				auto_runtime_pm;
-	bool                            cur_msg_prepared;
 	bool				cur_msg_mapped;
 	bool				last_cs_enable;
 	bool				last_cs_mode_high;
@@ -684,6 +683,9 @@ struct spi_controller {
 
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
+
+	/* Flag for enabling opportunistic skipping of the queue in spi_sync */
+	bool			queue_empty;
 };
 
 static inline void *spi_controller_get_devdata(struct spi_controller *ctlr)
@@ -1000,6 +1002,8 @@ struct spi_transfer {
  * @queue: for use by whichever driver currently owns the message
  * @state: for use by whichever driver currently owns the message
  * @resources: for resource management when the spi message is processed
+ * @prepared: spi_prepare_message was called for the this message
+ * @sync: this message took the direct sync path skipping the async queue
  *
  * A @spi_message is used to execute an atomic sequence of data transfers,
  * each represented by a struct spi_transfer.  The sequence is "atomic"
@@ -1051,6 +1055,12 @@ struct spi_message {
 	struct list_head        resources;
 
 	ANDROID_KABI_RESERVE(1);
+
+	/* spi_prepare_message was called for this message */
+	bool			prepared;
+
+	/* this message is skipping the async queue */
+	bool			sync;
 };
 
 static inline void spi_message_init_no_memset(struct spi_message *m)

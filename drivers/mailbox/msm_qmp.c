@@ -510,14 +510,18 @@ static void qmp_recv_data(struct qmp_mbox *mbox, u32 mbox_of)
  * init_mcore_state() - initialize the mcore state of a mailbox.
  * @mdev:	mailbox device to be initialized.
  */
-static void init_mcore_state(struct qmp_mbox *mbox)
+static void init_mcore_state(struct qmp_mbox *mbox, bool connected)
 {
 	struct channel_desc mcore;
 	u32 offset = offsetof(struct mbox_desc, mcore);
-
 	mcore.link_state = QMP_MBOX_LINK_UP;
-	mcore.link_state_ack = QMP_MBOX_LINK_DOWN;
-	mcore.ch_state = QMP_MBOX_CH_DISCONNECTED;
+	if (connected) {
+		mcore.link_state_ack = QMP_MBOX_LINK_UP;
+		mcore.ch_state = QMP_MBOX_CH_CONNECTED;
+	} else {
+		mcore.link_state_ack = QMP_MBOX_LINK_DOWN;
+		mcore.ch_state = QMP_MBOX_CH_DISCONNECTED;
+	}
 	mcore.ch_state_ack = QMP_MBOX_CH_DISCONNECTED;
 	mcore.mailbox_size = mbox->mcore_mbox_size;
 	mcore.mailbox_offset = mbox->mcore_mbox_offset;
@@ -571,13 +575,24 @@ static void __qmp_rx_worker(struct qmp_mbox *mbox)
 	case LINK_DISCONNECTED:
 		mbox->version.version = desc.version;
 		mbox->version.features = desc.features;
-		set_ucore_link_ack(mbox, desc.ucore.link_state);
 		if (desc.mcore.mailbox_size) {
 			mbox->mcore_mbox_size = desc.mcore.mailbox_size;
 			mbox->mcore_mbox_offset = desc.mcore.mailbox_offset;
 		}
-		init_mcore_state(mbox);
-		mbox->local_state = LINK_NEGOTIATION;
+		if (desc.ucore.link_state == QMP_MBOX_LINK_UP &&
+				desc.ucore.link_state_ack == QMP_MBOX_LINK_UP &&
+				desc.ucore.ch_state == QMP_MBOX_CH_CONNECTED) {
+			if (desc.ucore.ch_state != desc.ucore.ch_state_ack) {
+				set_ucore_ch_ack(mbox, desc.ucore.ch_state);
+			}
+			init_mcore_state(mbox, true);
+			complete_all(&mbox->link_complete);
+			mbox->local_state = LOCAL_CONNECTING;
+		} else {
+			set_ucore_link_ack(mbox, desc.ucore.link_state);
+			init_mcore_state(mbox, false);
+			mbox->local_state = LINK_NEGOTIATION;
+		}
 		mbox->rx_pkt.data = kzalloc(desc.ucore.mailbox_size,
 					    GFP_KERNEL);
 		if (!mbox->rx_pkt.data) {

@@ -483,6 +483,8 @@ static inline int is_hibernate_resume_dev(dev_t dev) { return 0; }
 #define PM_POST_SUSPEND		0x0004 /* Suspend finished */
 #define PM_RESTORE_PREPARE	0x0005 /* Going to restore a saved image */
 #define PM_POST_RESTORE		0x0006 /* Restore failed */
+#define PM_FREEZE_PREPARE	0x0007 /* Going to freeze processes */
+#define PM_POST_THAW		0x0008 /* Process thaw finished */
 
 extern struct mutex system_transition_mutex;
 

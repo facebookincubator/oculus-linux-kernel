@@ -18,7 +18,7 @@
 		regulator-name = "pmicOP03010";
 		reg = <0x40>;
 		status = "ok";
-		continouous-splash;
+		continuous-splash;
 		pmic-gpios = <&tlmm 116 GPIO_ACTIVE_HIGH>;
 	};
 

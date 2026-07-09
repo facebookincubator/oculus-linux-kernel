@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/kthread.h>
@@ -67,8 +67,7 @@ static int kgsl_memdesc_get_reclaimed_pages(struct kgsl_mem_entry *entry)
 
 	trace_kgsl_reclaim_memdesc(entry, false);
 
-	memdesc->priv &= ~KGSL_MEMDESC_RECLAIMED;
-	memdesc->priv &= ~KGSL_MEMDESC_SKIP_RECLAIM;
+	CLEAR_FLAG(KGSL_MEMDESC_RECLAIMED | KGSL_MEMDESC_SKIP_RECLAIM, &memdesc->priv);
 
 	return 0;
 }
@@ -95,7 +94,7 @@ int kgsl_reclaim_to_pinned_state(
 			break;
 		}
 
-		if (entry->memdesc.priv & KGSL_MEMDESC_RECLAIMED)
+		if (TEST_FLAG(KGSL_MEMDESC_RECLAIMED, &entry->memdesc.priv))
 			valid_entry = kgsl_mem_entry_get(entry);
 		spin_unlock(&process->mem_lock);
 
@@ -221,7 +220,7 @@ static u32 kgsl_reclaim_process(struct kgsl_process_private *process,
 {
 	struct kgsl_memdesc *memdesc;
 	struct kgsl_mem_entry *entry, *valid_entry;
-	u32 next = 0, remaining = pages_to_reclaim;
+	u32 next = 0, remaining = pages_to_reclaim, priv = 0;
 
 	/*
 	 * If we do not get the lock here, it means that the buffers are
@@ -254,10 +253,11 @@ static u32 kgsl_reclaim_process(struct kgsl_process_private *process,
 		}
 
 		memdesc = &entry->memdesc;
+		priv = atomic_read(&memdesc->priv);
 		if (!entry->pending_free &&
-				(memdesc->priv & KGSL_MEMDESC_CAN_RECLAIM) &&
-				!(memdesc->priv & KGSL_MEMDESC_RECLAIMED) &&
-				!(memdesc->priv & KGSL_MEMDESC_SKIP_RECLAIM))
+				(priv & KGSL_MEMDESC_CAN_RECLAIM) &&
+				!(priv & KGSL_MEMDESC_RECLAIMED) &&
+				!(priv & KGSL_MEMDESC_SKIP_RECLAIM))
 			valid_entry = kgsl_mem_entry_get(entry);
 		spin_unlock(&process->mem_lock);
 
@@ -318,7 +318,7 @@ static u32 kgsl_reclaim_process(struct kgsl_process_private *process,
 
 			reclaim_shmem_address_space(memdesc->shmem_filp->f_mapping);
 			mapping_set_unevictable(memdesc->shmem_filp->f_mapping);
-			memdesc->priv |= KGSL_MEMDESC_RECLAIMED;
+			SET_FLAG(KGSL_MEMDESC_RECLAIMED, &memdesc->priv);
 			trace_kgsl_reclaim_memdesc(entry, true);
 		}
 

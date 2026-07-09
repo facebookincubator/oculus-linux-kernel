@@ -416,7 +416,7 @@ static int find_vma_block(struct gen7_gmu_device *gmu, u32 addr, u32 size)
 {
 	int i;
 
-	for (i = 0; i < GMU_MEM_TYPE_MAX; i++) {
+	for (i = 0; i < gmu->num_vmas; i++) {
 		struct gmu_vma_entry *vma = &gmu->vma[i];
 
 		if ((addr >= vma->start) &&
@@ -1441,6 +1441,8 @@ static int gen7_gmu_notify_slumber(struct adreno_device *adreno_dev)
 	};
 	int ret;
 
+	req.bw |= gen7_bus_ab_quantize(adreno_dev, 0);
+
 	/* Disable the power counter so that the GMU is not busy */
 	gmu_core_regwrite(device, GEN7_GMU_CX_GMU_POWER_COUNTER_ENABLE, 0);
 
@@ -1474,7 +1476,7 @@ void gen7_gmu_suspend(struct adreno_device *adreno_dev)
 }
 
 static int gen7_gmu_dcvs_set(struct adreno_device *adreno_dev,
-		int gpu_pwrlevel, int bus_level)
+		int gpu_pwrlevel, int bus_level, u32 ab)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
@@ -1501,11 +1503,11 @@ static int gen7_gmu_dcvs_set(struct adreno_device *adreno_dev,
 	if (bus_level < pwr->ddr_table_count && bus_level > 0)
 		req.bw = bus_level;
 
+	req.bw |=  gen7_bus_ab_quantize(adreno_dev, ab);
+
 	/* GMU will vote for slumber levels through the sleep sequence */
-	if ((req.freq == INVALID_DCVS_IDX) &&
-		(req.bw == INVALID_DCVS_IDX)) {
+	if ((req.freq == INVALID_DCVS_IDX) && (req.bw == INVALID_BW_VOTE))
 		return 0;
-	}
 
 	ret = CMD_MSG_HDR(req, H2F_MSG_GX_BW_PERF_VOTE);
 	if (ret)
@@ -1535,7 +1537,7 @@ static int gen7_gmu_dcvs_set(struct adreno_device *adreno_dev,
 
 static int gen7_gmu_clock_set(struct adreno_device *adreno_dev, u32 pwrlevel)
 {
-	return gen7_gmu_dcvs_set(adreno_dev, pwrlevel, INVALID_DCVS_IDX);
+	return gen7_gmu_dcvs_set(adreno_dev, pwrlevel, INVALID_DCVS_IDX, INVALID_AB_VALUE);
 }
 
 static int gen7_gmu_ifpc_store(struct kgsl_device *device,
@@ -1850,6 +1852,11 @@ static int gen7_gmu_first_boot(struct adreno_device *adreno_dev)
 	if (ret)
 		goto err;
 
+	if (gen7_hfi_send_get_value(adreno_dev, HFI_VALUE_GMU_AB_VOTE, 0) == 1) {
+		adreno_dev->gmu_ab = true;
+		set_bit(ADRENO_DEVICE_GMU_AB, &adreno_dev->priv);
+	}
+
 	icc_set_bw(pwr->icc_path, 0, 0);
 
 	device->gmu_fault = false;
@@ -2051,22 +2058,81 @@ static int gen7_gmu_bus_set(struct adreno_device *adreno_dev, int buslevel,
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 	int ret = 0;
 
-	if (buslevel != pwr->cur_buslevel) {
-		ret = gen7_gmu_dcvs_set(adreno_dev, INVALID_DCVS_IDX, buslevel);
-		if (ret)
-			return ret;
+	if (buslevel == pwr->cur_buslevel)
+		buslevel = INVALID_DCVS_IDX;
 
+	if ((ab == pwr->cur_ab) || (ab == 0))
+		ab = INVALID_AB_VALUE;
+
+	if ((ab == INVALID_AB_VALUE) && (buslevel == INVALID_DCVS_IDX))
+		return 0;
+
+	ret = gen7_gmu_dcvs_set(adreno_dev, INVALID_DCVS_IDX,
+			buslevel, ab);
+	if (ret)
+		return ret;
+
+	if (buslevel != INVALID_DCVS_IDX) {
 		pwr->cur_buslevel = buslevel;
-
 		trace_kgsl_buslevel(device, pwr->active_pwrlevel, buslevel);
 	}
 
-	if (ab != pwr->cur_ab) {
-		icc_set_bw(pwr->icc_path, MBps_to_icc(ab), 0);
+	if (ab != INVALID_AB_VALUE) {
+		if (!adreno_dev->gmu_ab)
+			icc_set_bw(pwr->icc_path, MBps_to_icc(ab), 0);
 		pwr->cur_ab = ab;
 	}
 
 	return ret;
+}
+
+#define NUM_CHANNELS 4
+
+u32 gen7_bus_ab_quantize(struct adreno_device *adreno_dev, u32 ab)
+{
+	u16 vote = 0;
+	u32 max_bw, max_ab;
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
+
+	if (!adreno_dev->gmu_ab || (ab == INVALID_AB_VALUE))
+		return (FIELD_PREP(GENMASK(31, 16), INVALID_AB_VALUE));
+
+	/*
+	 * max ddr bandwidth (kbps) = (Max bw in kbps per channel * number of channel)
+	 * max ab (Mbps) = max ddr bandwidth (kbps) / 1000
+	 */
+	max_bw = pwr->ddr_table[pwr->ddr_table_count - 1] * NUM_CHANNELS;
+	max_ab = max_bw / 1000;
+
+	/*
+	 * If requested AB is higher than theoretical max bandwidth, set AB vote as max
+	 * allowable quantized AB value.
+	 *
+	 * Power FW supports a 16 bit AB BW level. We can quantize the entire vote-able BW
+	 * range to a 16 bit space and the quantized value can be used to vote for AB though
+	 * GMU. Quantization can be performed as below.
+	 *
+	 * quantized_vote = (ab vote (kbps) * 2^16) / max ddr bandwidth (kbps)
+	 */
+	if (ab >= max_ab)
+		vote = MAX_AB_VALUE;
+	else
+		vote = (u16)(((u64)ab * 1000 * (1 << 16)) / max_bw);
+
+	/*
+	 * Vote will be calculated as 0 for smaller AB values.
+	 * Set a minimum non-zero vote in such cases.
+	 */
+	if (ab && !vote)
+		vote = 0x1;
+
+	/*
+	 * Set ab enable mask and valid AB vote. req.bw is 32 bit value 0xABABENIB
+	 * and with this return we want to set the upper 16 bits and EN field specifies
+	 * if the AB vote is valid or not.
+	 */
+	return (FIELD_PREP(GENMASK(31, 16), vote) | FIELD_PREP(GENMASK(15, 8), 1));
 }
 
 static void gen7_free_gmu_globals(struct gen7_gmu_device *gmu)
@@ -2081,7 +2147,7 @@ static void gen7_free_gmu_globals(struct gen7_gmu_device *gmu)
 
 		iommu_unmap(gmu->domain, md->gmuaddr, md->size);
 
-		if (md->priv & KGSL_MEMDESC_SYSMEM)
+		if (TEST_FLAG(KGSL_MEMDESC_SYSMEM, &md->priv))
 			kgsl_sharedmem_free(md);
 
 		memset(md, 0, sizeof(*md));
@@ -2413,7 +2479,9 @@ int gen7_gmu_probe(struct kgsl_device *device,
 		goto error;
 
 	gmu->vma = gen7_gmu_vma;
-	for (i = 0; i < ARRAY_SIZE(gen7_gmu_vma); i++) {
+	gmu->num_vmas = ARRAY_SIZE(gen7_gmu_vma);
+
+	for (i = 0; i < gmu->num_vmas; i++) {
 		struct gmu_vma_entry *vma = &gen7_gmu_vma[i];
 
 		vma->vma_root = RB_ROOT;

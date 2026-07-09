@@ -7,7 +7,7 @@
 
 		config {
 			pins = "gpio11";
-			drive-strength = <8>;
+			drive-strength = <2>;
 			bias-disable;
 			output-low;
 		};
@@ -21,7 +21,7 @@
 
 		config {
 			pins = "gpio97";
-			drive-strength = <8>;
+			drive-strength = <2>;
 			bias-disable;
 			output-low;
 		};
@@ -35,7 +35,35 @@
 
 		config {
 			pins = "gpio116";
-			drive-strength = <8>;
+			drive-strength = <2>;
+			bias-disable;
+			output-low;
+		};
+	};
+
+	disp0_reset_n: disp0_reset_n {
+		mux {
+			pins = "gpio53";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio53";
+			drive-strength = <2>;
+			bias-disable;
+			output-low;
+		};
+	};
+
+	i2c_mux_sel: i2c_mux_sel {
+		mux {
+			pins = "gpio117";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio117";
+			drive-strength = <2>;
 			bias-disable;
 			output-low;
 		};
@@ -77,17 +105,22 @@
 	};
 };
 
-/* Display I2C on gpio20/21 */
+/* Display I2C on gpio20/21 - enable the controller */
 &qupv3_se4_i2c {
+	/* JBD2520 panels never ACK data bytes, need to ignore NACKs */
+	/* TODO(T255394617): Remove for next hardware iteration */
+	qcom,ignore-nack;
 	status = "ok";
-	jbd4021: jbd4021@5A {
-		compatible = "meta,jbd4021-i2c";
-		reg = <0x5A>;
+};
 
-		avdd-supply = <&disp_avdd_1p2>;
-		vddi-supply = <&disp_vddi_1p8>;
-		avee-supply = <&disp_avee_neg_2p2>;
+&display_panel_avdd {
+	status = "disabled";    // release gpio11
+};
 
-		status = "okay";
-	};
+&display_panel_avee {
+	status = "disabled";    // release gpio109
+};
+
+&display_1p8_1p2_pwr_en {
+	status = "disabled";    // release gpio116
 };

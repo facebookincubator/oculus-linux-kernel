@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/types.h>
@@ -142,8 +142,8 @@ static void tcs_cmd_data(struct bcm *bcms, int count, u32 ab, u32 ib,
 		/* Multiple the bandwidth by the width of the connection */
 		avg = ((u64) ab) * bcms[i].width;
 
-		/* And then divide by the total width across channels */
-		do_div(avg, bcms[i].buswidth * bcms[i].channels);
+		/* And then divide by the total width */
+		do_div(avg, bcms[i].buswidth);
 
 		peak = ((u64) ib) * bcms[i].width;
 		do_div(peak, bcms[i].buswidth);
@@ -243,7 +243,7 @@ static struct rpmh_bw_votes *build_rpmh_bw_votes(struct bcm *bcms,
 			return ERR_PTR(-ENOMEM);
 		}
 
-		tcs_cmd_data(bcms, bcm_count, 0, levels[i], votes->cmds[i]);
+		tcs_cmd_data(bcms, bcm_count, levels[i], levels[i], votes->cmds[i]);
 	}
 
 	return votes;

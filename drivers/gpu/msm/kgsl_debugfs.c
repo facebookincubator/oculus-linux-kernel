@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2002,2008-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/debugfs.h>
@@ -62,11 +62,11 @@ static int globals_show(struct seq_file *s, void *unused)
 		struct kgsl_memdesc *memdesc = &md->memdesc;
 		char flags[6];
 
-		flags[0] = memdesc->priv & KGSL_MEMDESC_PRIVILEGED ?  'p' : '-';
-		flags[1] = !(memdesc->flags & KGSL_MEMFLAGS_GPUREADONLY) ? 'w' : '-';
+		flags[0] = TEST_FLAG(KGSL_MEMDESC_PRIVILEGED, &memdesc->priv) ?  'p' : '-';
+		flags[1] = !(TEST_FLAG(KGSL_MEMFLAGS_GPUREADONLY, &memdesc->priv)) ? 'w' : '-';
 		flags[2] = kgsl_memdesc_is_secured(memdesc) ?  's' : '-';
-		flags[3] = memdesc->priv & KGSL_MEMDESC_RANDOM ?  'r' : '-';
-		flags[4] = memdesc->priv & KGSL_MEMDESC_UCODE ? 'u' : '-';
+		flags[3] = TEST_FLAG(KGSL_MEMDESC_RANDOM, &memdesc->priv) ?  'r' : '-';
+		flags[4] = TEST_FLAG(KGSL_MEMDESC_UCODE, &memdesc->priv) ? 'u' : '-';
 		flags[5] = '\0';
 
 		seq_printf(s, "0x%pK-0x%pK %16llu %5s %s\n",
@@ -158,7 +158,7 @@ static const char *memtype_str(int memtype)
 
 static char get_alignflag(const struct kgsl_memdesc *m)
 {
-	int align = kgsl_memdesc_get_align(m);
+	u32 align = kgsl_memdesc_get_align(m);
 
 	if (align >= ilog2(SZ_1M))
 		return 'L';

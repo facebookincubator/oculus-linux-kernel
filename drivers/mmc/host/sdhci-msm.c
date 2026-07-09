@@ -3,7 +3,7 @@
  * drivers/mmc/host/sdhci-msm.c - Qualcomm SDHCI Platform driver
  *
  * Copyright (c) 2013-2014,2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/module.h>
@@ -4622,19 +4622,6 @@ static void sdhci_msm_init_sysfs_gating_qos(struct device *dev)
 	}
 }
 
-static void sdhci_msm_setup_pm(struct platform_device *pdev,
-			struct sdhci_msm_host *msm_host)
-{
-	pm_runtime_get_noresume(&pdev->dev);
-	pm_runtime_set_active(&pdev->dev);
-	pm_runtime_enable(&pdev->dev);
-	if (!(msm_host->mmc->caps & MMC_CAP_SYNC_RUNTIME_PM)) {
-		pm_runtime_set_autosuspend_delay(&pdev->dev,
-					 MSM_MMC_AUTOSUSPEND_DELAY_MS);
-		pm_runtime_use_autosuspend(&pdev->dev);
-	}
-}
-
 static int sdhci_msm_setup_ice_clk(struct sdhci_msm_host *msm_host,
 						struct platform_device *pdev)
 {
@@ -4660,6 +4647,147 @@ static int sdhci_msm_setup_ice_clk(struct sdhci_msm_host *msm_host,
 	}
 
 	return ret;
+}
+
+static int sdhci_msm_setup_clocks_and_bus(struct sdhci_msm_host *msm_host)
+{
+	struct sdhci_host *host = mmc_priv(msm_host->mmc);
+	struct platform_device *pdev = msm_host->pdev;
+	struct clk *clk;
+	int ret;
+
+	/* Setup SDCC bus voter clock. */
+	msm_host->bus_clk = devm_clk_get(&pdev->dev, "bus");
+	if (!IS_ERR(msm_host->bus_clk)) {
+		/* Vote for max. clk rate for max. performance */
+		ret = clk_set_rate(msm_host->bus_clk, INT_MAX);
+		if (ret)
+			return ret;
+		ret = clk_prepare_enable(msm_host->bus_clk);
+		if (ret)
+			return ret;
+	}
+
+	/* Setup main peripheral bus clock */
+	clk = devm_clk_get(&pdev->dev, "iface");
+	if (IS_ERR(clk)) {
+		ret = PTR_ERR(clk);
+		dev_err(&pdev->dev, "Peripheral clk setup failed (%d)\n", ret);
+		goto bus_clk_disable;
+	}
+	msm_host->bulk_clks[1].clk = clk;
+
+	/* Setup SDC MMC clock */
+	clk = devm_clk_get(&pdev->dev, "core");
+	if (IS_ERR(clk)) {
+		ret = PTR_ERR(clk);
+		dev_err(&pdev->dev, "SDC MMC clk setup failed (%d)\n", ret);
+		goto bus_clk_disable;
+	}
+	msm_host->bulk_clks[0].clk = clk;
+
+	 /* Check for optional interconnect paths */
+	ret = dev_pm_opp_of_find_icc_paths(&pdev->dev, NULL);
+	if (ret)
+		goto bus_clk_disable;
+
+	msm_host->opp_table = dev_pm_opp_set_clkname(&pdev->dev, "core");
+	if (IS_ERR(msm_host->opp_table)) {
+		ret = PTR_ERR(msm_host->opp_table);
+		goto bus_clk_disable;
+	}
+
+	/* OPP table is optional */
+	ret = dev_pm_opp_of_add_table(&pdev->dev);
+	if (!ret) {
+		msm_host->has_opp_table = true;
+	} else if (ret != -ENODEV) {
+		dev_err(&pdev->dev, "Invalid OPP table in Device tree\n");
+		goto opp_cleanup;
+	}
+
+	/* Vote for maximum clock rate for maximum performance */
+	ret = dev_pm_opp_set_rate(&pdev->dev, INT_MAX);
+	if (ret)
+		dev_warn(&pdev->dev, "core clock boost failed\n");
+
+	ret = sdhci_msm_setup_ice_clk(msm_host, pdev);
+	if (ret)
+		goto bus_clk_disable;
+
+	clk = devm_clk_get(&pdev->dev, "cal");
+	if (IS_ERR(clk))
+		clk = NULL;
+	msm_host->bulk_clks[3].clk = clk;
+
+	clk = devm_clk_get(&pdev->dev, "sleep");
+	if (IS_ERR(clk))
+		clk = NULL;
+	msm_host->bulk_clks[4].clk = clk;
+
+	ret = clk_bulk_prepare_enable(ARRAY_SIZE(msm_host->bulk_clks),
+				      msm_host->bulk_clks);
+	if (ret)
+		goto opp_cleanup;
+	ret = qcom_clk_set_flags(msm_host->bulk_clks[0].clk,
+			CLKFLAG_NORETAIN_MEM);
+	if (ret)
+		dev_err(&pdev->dev, "Failed to set core clk NORETAIN_MEM: %d\n",
+				ret);
+	ret = qcom_clk_set_flags(msm_host->bulk_clks[2].clk,
+			CLKFLAG_RETAIN_MEM);
+	if (ret)
+		dev_err(&pdev->dev, "Failed to set ice clk RETAIN_MEM: %d\n",
+				ret);
+	/*
+	 * xo clock is needed for FLL feature of cm_dll.
+	 * In case if xo clock is not mentioned in DT, warn and proceed.
+	 */
+	msm_host->xo_clk = devm_clk_get(&pdev->dev, "xo");
+	if (IS_ERR(msm_host->xo_clk)) {
+		ret = PTR_ERR(msm_host->xo_clk);
+		dev_warn(&pdev->dev, "TCXO clk not present (%d)\n", ret);
+	}
+
+	INIT_DELAYED_WORK(&msm_host->clk_gating_work,
+			sdhci_msm_clkgate_bus_delayed_work);
+
+	ret = sdhci_msm_bus_register(msm_host, pdev);
+	if (ret && !msm_host->skip_bus_bw_voting) {
+		dev_err(&pdev->dev, "Bus registration failed (%d)\n", ret);
+		goto clk_disable;
+	}
+
+	if (!msm_host->skip_bus_bw_voting)
+		sdhci_msm_bus_voting(host, true);
+
+	return 0;
+
+clk_disable:
+	clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks),
+				   msm_host->bulk_clks);
+opp_cleanup:
+	if (msm_host->has_opp_table)
+		dev_pm_opp_of_remove_table(&pdev->dev);
+	dev_pm_opp_put_clkname(msm_host->opp_table);
+bus_clk_disable:
+	if (!IS_ERR(msm_host->bus_clk))
+		clk_disable_unprepare(msm_host->bus_clk);
+
+	return ret;
+}
+
+static void sdhci_msm_setup_pm(struct platform_device *pdev,
+			struct sdhci_msm_host *msm_host)
+{
+	pm_runtime_get_noresume(&pdev->dev);
+	pm_runtime_set_active(&pdev->dev);
+	pm_runtime_enable(&pdev->dev);
+	if (!(msm_host->mmc->caps & MMC_CAP_SYNC_RUNTIME_PM)) {
+		pm_runtime_set_autosuspend_delay(&pdev->dev,
+					 MSM_MMC_AUTOSUSPEND_DELAY_MS);
+		pm_runtime_use_autosuspend(&pdev->dev);
+	}
 }
 
 static void sdhci_msm_set_caps(struct sdhci_msm_host *msm_host)
@@ -4819,7 +4947,6 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	struct sdhci_host *host;
 	struct sdhci_pltfm_host *pltfm_host;
 	struct sdhci_msm_host *msm_host;
-	struct clk *clk;
 	int ret;
 	u16 host_version, core_minor;
 	u32 core_version, config;
@@ -4910,110 +5037,9 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		of_property_read_bool(dev->of_node,
 			"qcom,restore-after-cx-collapse");
 
-	/* Setup SDCC bus voter clock. */
-	msm_host->bus_clk = devm_clk_get(&pdev->dev, "bus");
-	if (!IS_ERR(msm_host->bus_clk)) {
-		/* Vote for max. clk rate for max. performance */
-		ret = clk_set_rate(msm_host->bus_clk, INT_MAX);
-		if (ret)
-			goto pltfm_free;
-		ret = clk_prepare_enable(msm_host->bus_clk);
-		if (ret)
-			goto pltfm_free;
-	}
-
-	/* Setup main peripheral bus clock */
-	clk = devm_clk_get(&pdev->dev, "iface");
-	if (IS_ERR(clk)) {
-		ret = PTR_ERR(clk);
-		dev_err(&pdev->dev, "Peripheral clk setup failed (%d)\n", ret);
-		goto bus_clk_disable;
-	}
-	msm_host->bulk_clks[1].clk = clk;
-
-	/* Setup SDC MMC clock */
-	clk = devm_clk_get(&pdev->dev, "core");
-	if (IS_ERR(clk)) {
-		ret = PTR_ERR(clk);
-		dev_err(&pdev->dev, "SDC MMC clk setup failed (%d)\n", ret);
-		goto bus_clk_disable;
-	}
-	msm_host->bulk_clks[0].clk = clk;
-
-	 /* Check for optional interconnect paths */
-	ret = dev_pm_opp_of_find_icc_paths(&pdev->dev, NULL);
+	ret = sdhci_msm_setup_clocks_and_bus(msm_host);
 	if (ret)
-		goto bus_clk_disable;
-
-	msm_host->opp_table = dev_pm_opp_set_clkname(&pdev->dev, "core");
-	if (IS_ERR(msm_host->opp_table)) {
-		ret = PTR_ERR(msm_host->opp_table);
-		goto bus_clk_disable;
-	}
-
-	/* OPP table is optional */
-	ret = dev_pm_opp_of_add_table(&pdev->dev);
-	if (!ret) {
-		msm_host->has_opp_table = true;
-	} else if (ret != -ENODEV) {
-		dev_err(&pdev->dev, "Invalid OPP table in Device tree\n");
-		goto opp_cleanup;
-	}
-
-	/* Vote for maximum clock rate for maximum performance */
-	ret = dev_pm_opp_set_rate(&pdev->dev, INT_MAX);
-	if (ret)
-		dev_warn(&pdev->dev, "core clock boost failed\n");
-
-	ret = sdhci_msm_setup_ice_clk(msm_host, pdev);
-	if (ret)
-		goto bus_clk_disable;
-
-	clk = devm_clk_get(&pdev->dev, "cal");
-	if (IS_ERR(clk))
-		clk = NULL;
-	msm_host->bulk_clks[3].clk = clk;
-
-	clk = devm_clk_get(&pdev->dev, "sleep");
-	if (IS_ERR(clk))
-		clk = NULL;
-	msm_host->bulk_clks[4].clk = clk;
-
-	ret = clk_bulk_prepare_enable(ARRAY_SIZE(msm_host->bulk_clks),
-				      msm_host->bulk_clks);
-	if (ret)
-		goto opp_cleanup;
-	ret = qcom_clk_set_flags(msm_host->bulk_clks[0].clk,
-			CLKFLAG_NORETAIN_MEM);
-	if (ret)
-		dev_err(&pdev->dev, "Failed to set core clk NORETAIN_MEM: %d\n",
-				ret);
-	ret = qcom_clk_set_flags(msm_host->bulk_clks[2].clk,
-			CLKFLAG_RETAIN_MEM);
-	if (ret)
-		dev_err(&pdev->dev, "Failed to set ice clk RETAIN_MEM: %d\n",
-				ret);
-	/*
-	 * xo clock is needed for FLL feature of cm_dll.
-	 * In case if xo clock is not mentioned in DT, warn and proceed.
-	 */
-	msm_host->xo_clk = devm_clk_get(&pdev->dev, "xo");
-	if (IS_ERR(msm_host->xo_clk)) {
-		ret = PTR_ERR(msm_host->xo_clk);
-		dev_warn(&pdev->dev, "TCXO clk not present (%d)\n", ret);
-	}
-
-	INIT_DELAYED_WORK(&msm_host->clk_gating_work,
-			sdhci_msm_clkgate_bus_delayed_work);
-
-	ret = sdhci_msm_bus_register(msm_host, pdev);
-	if (ret && !msm_host->skip_bus_bw_voting) {
-		dev_err(&pdev->dev, "Bus registration failed (%d)\n", ret);
-		goto clk_disable;
-	}
-
-	if (!msm_host->skip_bus_bw_voting)
-		sdhci_msm_bus_voting(host, true);
+		goto pltfm_free;
 
 	/* Setup regulators */
 	ret = sdhci_msm_vreg_init(&pdev->dev, msm_host, true);
@@ -5087,7 +5113,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 
 	ret = sdhci_msm_register_vreg(msm_host);
 	if (ret)
-		goto clk_disable;
+		goto vreg_deinit;
 
 	/*
 	 * Power on reset state may trigger power irq if previous status of
@@ -5206,14 +5232,11 @@ bus_unregister:
 		sdhci_msm_bus_get_and_set_vote(host, 0);
 		sdhci_msm_bus_unregister(&pdev->dev, msm_host);
 	}
-clk_disable:
 	clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks),
 				   msm_host->bulk_clks);
-opp_cleanup:
 	if (msm_host->has_opp_table)
 		dev_pm_opp_of_remove_table(&pdev->dev);
 	dev_pm_opp_put_clkname(msm_host->opp_table);
-bus_clk_disable:
 	if (!IS_ERR(msm_host->bus_clk))
 		clk_disable_unprepare(msm_host->bus_clk);
 pltfm_free:

@@ -2228,7 +2228,7 @@ static int iris_hfi_session_init(void *device, void *session_id,
 	/* Need to think if we can use core->lock or dev->lock or need a
 	 * different new lock for this?
 	 */
-	id = idr_alloc(&core->sess_idr, (void *)s, 0x7FFF0000, INT_MAX, GFP_NOWAIT);
+	id = idr_alloc_cyclic(&core->sess_idr, (void *)s, 0x7FFF0000, INT_MAX, GFP_NOWAIT);
 	idr_preload_end();
 	mutex_unlock(&core->idr_mtx);
 	if (id < 0) {

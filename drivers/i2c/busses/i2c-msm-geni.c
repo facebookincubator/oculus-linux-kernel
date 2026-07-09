@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/clk.h>
@@ -185,6 +185,8 @@ struct geni_i2c_dev {
 	bool panic_dump_collect; //panic dumps collection with dt based flag
 	bool clocks_on; //To check whether clocks were on/off
 	bool i2c_test_dev; //Set this DT flag to enable test bus dump for an SE
+	// TODO(T255394617): Remove temporary logic to ignore NACK errors
+	bool ignore_nack; //Optionally ignore NACK errors and continue I2C transfer
 };
 
 static struct geni_i2c_dev *gi2c_dev_dbg[MAX_SE];
@@ -709,11 +711,17 @@ static irqreturn_t geni_i2c_irq(int irq, void *dev)
 	geni_i2c_irq_handle_watermark(gi2c, m_stat);
 
 irqret:
-	if (!dma && is_clear_watermark)
+	if (!dma && is_clear_watermark) {
 		writel_relaxed(0, (gi2c->base + SE_GENI_TX_WATERMARK_REG));
+		/* Ensure TX watermark write completes before continuing */
+		wmb();
+	}
 
-	if (m_stat)
+	if (m_stat) {
 		writel_relaxed(m_stat, gi2c->base + SE_GENI_M_IRQ_CLEAR);
+		/* Ensure IRQ clear write completes before continuing */
+		wmb();
+	}
 
 	if (dma) {
 		if (dm_tx_st)
@@ -1399,6 +1407,7 @@ static int geni_i2c_xfer(struct i2c_adapter *adap,
 	struct geni_i2c_dev *gi2c = i2c_get_adapdata(adap);
 	int i, ret = 0, timeout = 0;
 	u32 geni_ios = 0;
+	const u32 ignore_nack = (gi2c->ignore_nack) ? IGNORE_ADD_NACK : 0;
 
 	gi2c->err = 0;
 	atomic_set(&gi2c->is_xfer_in_progress, 1);
@@ -1528,7 +1537,7 @@ static int geni_i2c_xfer(struct i2c_adapter *adap,
 
 	for (i = 0; i < num; i++) {
 		int stretch = (i < (num - 1));
-		u32 m_param = 0;
+		u32 m_param = ignore_nack;
 		u32 m_cmd = 0;
 		u8 *dma_buf = NULL;
 		dma_addr_t tx_dma = 0;
@@ -2089,6 +2098,11 @@ static int geni_i2c_probe(struct platform_device *pdev)
 
 	dev_info(&pdev->dev, "Bus frequency is set to %dHz.\n",
 						gi2c->i2c_rsc.clk_freq_out);
+
+	if (of_property_read_bool(pdev->dev.of_node, "qcom,ignore-nack")) {
+		gi2c->ignore_nack = true;
+		dev_info(&pdev->dev, "NACK errors will be ignored\n");
+	}
 
 	ret = geni_i2c_clk_map_idx(gi2c);
 	if (ret) {

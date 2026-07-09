@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef __ADRENO_GEN7_HFI_H
 #define __ADRENO_GEN7_HFI_H
@@ -109,6 +109,16 @@ int gen7_receive_ack_cmd(struct gen7_gmu_device *gmu, void *rcvd,
  */
 int gen7_hfi_send_feature_ctrl(struct adreno_device *adreno_dev,
 		u32 feature, u32 enable, u32 data);
+
+/**
+ * gen7_hfi_send_get_value - Send gmu get_values via hfi
+ * @adreno_dev: Pointer to the adreno device
+ * @type: GMU get_value type
+ * @subtype: GMU get_value subtype
+ *
+ * Return: 0 on success or negative error on failure
+ */
+int gen7_hfi_send_get_value(struct adreno_device *adreno_dev, u32 type, u32 subtype);
 
 /**
  * gen7_hfi_send_set_value - Send gmu set_values via hfi

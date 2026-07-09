@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/slab.h>
@@ -159,7 +159,7 @@ static int adreno_ib_add(struct kgsl_process_private *process,
 			&(ib_obj_list->obj_list[ib_obj_list->num_objs]));
 		ib_obj_list->num_objs++;
 		/* Skip reclaim for the memdesc until it is dumped */
-		entry->memdesc.priv |= KGSL_MEMDESC_SKIP_RECLAIM;
+		SET_FLAG(KGSL_MEMDESC_SKIP_RECLAIM, &entry->memdesc.priv);
 	}
 	return 0;
 }

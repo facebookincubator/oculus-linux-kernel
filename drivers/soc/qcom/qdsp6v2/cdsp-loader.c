@@ -66,6 +66,7 @@ static int cdsp_loader_do(struct platform_device *pdev)
 	if (rc)
 		goto fail;
 
+	pr_err("%s: cdsp_state=%d img_name=%s\n", __func__,cdsp_state, img_name);
 	if (!strcmp(img_name, "cdsp")) {
 		/* cdsp_state always returns "0".*/
 		if (cdsp_state == CDSP_SUBSYS_DOWN) {
@@ -128,6 +129,7 @@ static ssize_t cdsp_boot_store(struct kobject *kobj,
 	uint32_t boot = 0;
 
 	ret = kstrtou32(buf, 0, &boot);
+	pr_err("%s: boot=%d ret=%d\n", __func__, boot, ret);
 	if (ret) {
 		pr_debug("%s: invalid arguments for cdsp_loader.\n", __func__);
 		return ret;

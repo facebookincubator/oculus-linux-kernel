@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2008-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023,2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef __ADRENO_H
 #define __ADRENO_H
@@ -726,6 +726,8 @@ struct adreno_device {
 	struct dentry *bcl_debugfs_dir;
 	/** @bcl_throttle_time_us: Total time in us spent in BCL throttling */
 	u32 bcl_throttle_time_us;
+	/** @gmu_ab: Track if GMU supports ab vote */
+	bool gmu_ab;
 };
 
 /**
@@ -765,6 +767,8 @@ enum adreno_device_flags {
 	ADRENO_DEVICE_CORESIGHT_CX = 14,
 	/** @ADRENO_DEVICE_DMS: Set if DMS is enabled */
 	ADRENO_DEVICE_DMS = 15,
+	/** @ADRENO_DEVICE_GMU_AB: Set if AB vote via GMU is enabled */
+	ADRENO_DEVICE_GMU_AB = 16,
 };
 
 /**

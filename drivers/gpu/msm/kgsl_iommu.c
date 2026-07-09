@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2011-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/bitfield.h>
@@ -134,13 +134,13 @@ static int _iommu_get_protection_flags(struct iommu_domain *domain,
 	if (memdesc->flags & KGSL_MEMFLAGS_GPUREADONLY)
 		flags &= ~IOMMU_WRITE;
 
-	if (memdesc->priv & KGSL_MEMDESC_PRIVILEGED)
+	if (TEST_FLAG(KGSL_MEMDESC_PRIVILEGED, &memdesc->priv))
 		flags |= IOMMU_PRIV;
 
 	if (memdesc->flags & KGSL_MEMFLAGS_IOCOHERENT)
 		flags |= IOMMU_CACHE;
 
-	if (memdesc->priv & KGSL_MEMDESC_UCODE)
+	if (TEST_FLAG(KGSL_MEMDESC_UCODE, &memdesc->priv))
 		flags &= ~IOMMU_NOEXEC;
 
 	return flags;
@@ -578,7 +578,7 @@ static size_t _iommu_map_page_to_range(struct iommu_domain *domain,
 	return mapped;
 }
 
-static size_t _iommu_map_sg(struct iommu_domain *domain, u64 gpuaddr,
+static ssize_t _iommu_map_sg(struct iommu_domain *domain, u64 gpuaddr,
 		struct sg_table *sgt, int prot)
 {
 	/* Sign extend TTBR1 addresses all the way to avoid warning */
@@ -592,7 +592,8 @@ static int
 _kgsl_iommu_map(struct iommu_domain *domain, struct kgsl_memdesc *memdesc)
 {
 	int prot = _iommu_get_protection_flags(domain, memdesc);
-	size_t mapped, padding;
+	ssize_t mapped;
+	size_t padding;
 	int ret = 0;
 
 	/*
@@ -615,8 +616,9 @@ _kgsl_iommu_map(struct iommu_domain *domain, struct kgsl_memdesc *memdesc)
 		sg_free_table(&sgt);
 	}
 
-	if (!mapped)
-		return -ENOMEM;
+	/* Check for errors or no pages mapped */
+	if (mapped <= 0)
+		return mapped ? mapped : -ENOMEM;
 
 	padding = kgsl_memdesc_footprint(memdesc) - mapped;
 
@@ -810,7 +812,7 @@ static void kgsl_iommu_map_secure_global(struct kgsl_mmu *mmu,
 #define KGSL_GLOBAL_MEM_PAGES (KGSL_IOMMU_GLOBAL_MEM_SIZE >> PAGE_SHIFT)
 
 static u64 global_get_offset(struct kgsl_device *device, u64 size,
-		unsigned long priv)
+		atomic_t *priv)
 {
 	int start = 0, bit;
 
@@ -822,7 +824,7 @@ static u64 global_get_offset(struct kgsl_device *device, u64 size,
 			return (unsigned long) -ENOMEM;
 	}
 
-	if (priv & KGSL_MEMDESC_RANDOM) {
+	if (TEST_FLAG(KGSL_MEMDESC_RANDOM, priv)) {
 		u32 offset = KGSL_GLOBAL_MEM_PAGES - (size >> PAGE_SHIFT);
 
 		start = get_random_int() % offset;
@@ -857,15 +859,14 @@ static void kgsl_iommu_map_global(struct kgsl_mmu *mmu,
 
 	if (memdesc->flags & KGSL_MEMFLAGS_SECURE) {
 		kgsl_iommu_map_secure_global(mmu, memdesc);
-		memdesc->priv |= KGSL_MEMDESC_MAPPED;
+		SET_FLAG(KGSL_MEMDESC_MAPPED, &memdesc->priv);
 		return;
 	}
 
 	if (!memdesc->gpuaddr) {
 		u64 offset;
 
-		offset = global_get_offset(device, memdesc->size + padding,
-			memdesc->priv);
+		offset = global_get_offset(device, memdesc->size + padding, &memdesc->priv);
 
 		if (IS_ERR_VALUE(offset))
 			return;
@@ -875,7 +876,7 @@ static void kgsl_iommu_map_global(struct kgsl_mmu *mmu,
 	}
 
 	kgsl_iommu_default_map(mmu->defaultpagetable, memdesc);
-	memdesc->priv |= KGSL_MEMDESC_MAPPED;
+	SET_FLAG(KGSL_MEMDESC_MAPPED, &memdesc->priv);
 }
 
 /* Print the mem entry for the pagefault debugging */
@@ -894,7 +895,7 @@ static void print_entry(struct device *dev, struct kgsl_mem_entry *entry,
 	dev_err(dev, "[%016llX - %016llX] %s %s (pid = %d) (%s)\n",
 	      entry->memdesc.gpuaddr,
 	      entry->memdesc.gpuaddr + entry->memdesc.size - 1,
-	      entry->memdesc.priv & KGSL_MEMDESC_GUARD_PAGE ? "(+guard)" : "",
+	      TEST_FLAG(KGSL_MEMDESC_GUARD_PAGE, &entry->memdesc.priv) ? "(+guard)" : "",
 	      entry->pending_free ? "(pending free)" : "",
 	      pid, name);
 }
@@ -2174,8 +2175,7 @@ static int kgsl_iommu_get_gpuaddr(struct kgsl_pagetable *pagetable,
 
 	size = kgsl_memdesc_footprint(memdesc);
 
-	align = max_t(uint64_t, 1 << kgsl_memdesc_get_align(memdesc),
-			PAGE_SIZE);
+	align = kgsl_get_align(memdesc);
 
 	if (memdesc->flags & KGSL_MEMFLAGS_FORCE_32BIT) {
 		start = pagetable->compat_va_start;

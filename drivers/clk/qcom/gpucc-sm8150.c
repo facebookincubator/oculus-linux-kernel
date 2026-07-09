@@ -18,7 +18,6 @@
 #include "clk-regmap.h"
 #include "reset.h"
 #include "gdsc.h"
-#include "clk-pm.h"
 
 enum {
 	P_BI_TCXO,
@@ -234,10 +233,6 @@ static struct gdsc gpu_gx_gdsc = {
 	.flags = CLAMP_IO | AON_RESET | POLL_CFG_GDSCR,
 };
 
-static struct critical_clk_offset critical_clk_list[] = {
-	{ .offset = 0x1078,  .mask = BIT(0) },
-};
-
 static struct clk_regmap *gpu_cc_sm8150_clocks[] = {
 	[GPU_CC_AHB_CLK] = &gpu_cc_ahb_clk.clkr,
 	[GPU_CC_CRC_AHB_CLK] = &gpu_cc_crc_ahb_clk.clkr,
@@ -280,9 +275,6 @@ static const struct qcom_cc_desc gpu_cc_sm8150_desc = {
 	.num_resets = ARRAY_SIZE(gpu_cc_sm8150_resets),
 	.gdscs = gpu_cc_sm8150_gdscs,
 	.num_gdscs = ARRAY_SIZE(gpu_cc_sm8150_gdscs),
-	.critical_clk_en = critical_clk_list,
-	.num_critical_clk = ARRAY_SIZE(critical_clk_list),
-
 };
 
 static const struct of_device_id gpu_cc_sm8150_match_table[] = {
@@ -294,7 +286,6 @@ MODULE_DEVICE_TABLE(of, gpu_cc_sm8150_match_table);
 static int gpu_cc_sm8150_probe(struct platform_device *pdev)
 {
 	struct regmap *regmap;
-	int ret;
 
 	regmap = qcom_cc_map(pdev, &gpu_cc_sm8150_desc);
 	if (IS_ERR(regmap))
@@ -302,17 +293,7 @@ static int gpu_cc_sm8150_probe(struct platform_device *pdev)
 
 	clk_trion_pll_configure(&gpu_cc_pll1, regmap, &gpu_cc_pll1_config);
 
-	ret = qcom_cc_really_probe(pdev, &gpu_cc_sm8150_desc, regmap);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to register GPU CC clocks\n");
-		return ret;
-	}
-
-	ret = register_qcom_clks_pm(pdev, false, &gpu_cc_sm8150_desc);
-	if (ret)
-		dev_err(&pdev->dev, "Failed to register for pm ops\n");
-
-	return ret;
+	return qcom_cc_really_probe(pdev, &gpu_cc_sm8150_desc, regmap);
 }
 
 static struct platform_driver gpu_cc_sm8150_driver = {

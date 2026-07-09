@@ -13,10 +13,14 @@
 #include <linux/arfw_types.h>
 
 #ifndef __KERNEL__
+#include <stdbool.h>
 #include <sys/ioctl.h>
-#else
+#ifndef __packed
+#define __packed __attribute__((__packed__))
+#endif // !__packed
+#else // __KERNEL__
 #include <linux/ioctl.h>
-#endif
+#endif // !__KERNEL__
 
 /**
  * Structure used to pass queue creation parameters

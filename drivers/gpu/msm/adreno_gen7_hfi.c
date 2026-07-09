@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/delay.h>
@@ -436,6 +436,28 @@ int gen7_hfi_send_feature_ctrl(struct adreno_device *adreno_dev,
 				enable ? "enable" : "disable",
 				feature_to_string(feature),
 				feature);
+	return ret;
+}
+
+int gen7_hfi_send_get_value(struct adreno_device *adreno_dev, u32 type, u32 subtype)
+{
+	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
+	struct hfi_get_value_cmd cmd = {
+		.type = type,
+		.subtype = subtype,
+	};
+	int ret;
+
+	ret = CMD_MSG_HDR(cmd, H2F_MSG_GET_VALUE);
+	if (ret)
+		return ret;
+
+	ret = gen7_hfi_send_generic_req_v5(adreno_dev, &cmd, sizeof(cmd));
+	if (ret < 0)
+		dev_err(&gmu->pdev->dev,
+			"Unable to get HFI Value type: %d, subtype: %d, error = %d\n",
+			type, subtype, ret);
+
 	return ret;
 }
 

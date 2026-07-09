@@ -2,8 +2,7 @@
 /plugin/;
 
 #include "oatmeal-nff1-common.dtsi"
-#include "granola-oatmeal-panel.dtsi"
-#include "granola-oatmeal-nff1-poc-jbd4021-i2c.dtsi"
+#include "granola-oatmeal-nff1-poc-jbd4021-display.dtsi"
 
 / {
 	model = "Granola Oatmeal NFF1 POC";

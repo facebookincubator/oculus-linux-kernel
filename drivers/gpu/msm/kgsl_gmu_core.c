@@ -188,7 +188,7 @@ int gmu_core_timed_poll_check(struct kgsl_device *device,
 int gmu_core_map_memdesc(struct iommu_domain *domain, struct kgsl_memdesc *memdesc,
 		u64 gmuaddr, int attrs)
 {
-	size_t mapped;
+	ssize_t mapped;
 
 	if (!memdesc->pages) {
 		mapped = iommu_map_sg(domain, gmuaddr, memdesc->sgt->sgl,
@@ -207,7 +207,10 @@ int gmu_core_map_memdesc(struct iommu_domain *domain, struct kgsl_memdesc *memde
 		sg_free_table(&sgt);
 	}
 
-	return mapped == 0 ? -ENOMEM : 0;
+	if (!mapped)
+		mapped = -ENOMEM;
+
+	return (mapped < 0) ? mapped : 0;
 }
 
 void gmu_core_dev_force_first_boot(struct kgsl_device *device)

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2002,2007-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/component.h>
@@ -334,7 +334,7 @@ kgsl_mmu_map(struct kgsl_pagetable *pagetable,
 		return -EINVAL;
 	/* Only global mappings should be mapped multiple times */
 	if (!kgsl_memdesc_is_global(memdesc) &&
-			(KGSL_MEMDESC_MAPPED & memdesc->priv))
+			(TEST_FLAG(KGSL_MEMDESC_MAPPED, &memdesc->priv)))
 		return -EINVAL;
 
 	if (memdesc->flags & KGSL_MEMFLAGS_VBO)
@@ -359,7 +359,7 @@ kgsl_mmu_map(struct kgsl_pagetable *pagetable,
 			kgsl_trace_gpu_mem_total(device, size);
 		}
 
-		memdesc->priv |= KGSL_MEMDESC_MAPPED;
+		SET_FLAG(KGSL_MEMDESC_MAPPED, &memdesc->priv);
 	}
 
 	return 0;
@@ -448,7 +448,7 @@ kgsl_mmu_unmap(struct kgsl_pagetable *pagetable,
 		return -EINVAL;
 
 	/* Only global mappings should be mapped multiple times */
-	if (!(KGSL_MEMDESC_MAPPED & memdesc->priv))
+	if (!(TEST_FLAG(KGSL_MEMDESC_MAPPED, &memdesc->priv)))
 		return -EINVAL;
 
 	if (PT_OP_VALID(pagetable, mmu_unmap)) {
@@ -465,7 +465,7 @@ kgsl_mmu_unmap(struct kgsl_pagetable *pagetable,
 		kgsl_mmu_trace_gpu_mem_pagetable(pagetable);
 
 		if (!kgsl_memdesc_is_global(memdesc)) {
-			memdesc->priv &= ~KGSL_MEMDESC_MAPPED;
+			CLEAR_FLAG(KGSL_MEMDESC_MAPPED, &memdesc->priv);
 			if (!(memdesc->flags & KGSL_MEMFLAGS_USERMEM_ION))
 				kgsl_trace_gpu_mem_total(device, -(size));
 		}

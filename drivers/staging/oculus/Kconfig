@@ -84,6 +84,15 @@ config MAX17332_VOLTAGE_ADJUSTMENT
 	  not suitable for other products. So split them from the main logic
 	  and make it configurable.
 
+config MAX17332_CDEV
+	bool "MAX17332 thermal cooling device"
+	default n
+	depends on MAX17332 && THERMAL
+	help
+	  Say yes here to register the MAX17332 charger as a thermal cooling
+	  device. This allows the thermal framework to disable charging
+	  when the device temperature exceeds configured thresholds.
+
 config MAX77789
 	tristate "Maxim Integrated MAX77789 Charger IC"
 	default n

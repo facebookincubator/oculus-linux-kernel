@@ -5469,6 +5469,7 @@ static int _sde_hardware_post_caps(struct sde_mdss_cfg *sde_cfg,
 
 	sde_cfg->min_display_height = MIN_DISPLAY_HEIGHT;
 	sde_cfg->min_display_width = MIN_DISPLAY_WIDTH;
+	sde_cfg->max_cwb = min_t(u32, sde_cfg->wb_count, MAX_CWB_SESSIONS);
 
 	return rc;
 }

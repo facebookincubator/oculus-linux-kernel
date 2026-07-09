@@ -71,8 +71,8 @@ static void print_internal_buffer(u32 tag, const char *str,
 		cbuf->smem->device_addr);
 	} else {
 		dprintk(tag,
-		"%s: %x : idx %2d fd %d off %d size %d iova %#x",
-		str, inst->sess_id, cbuf->fd,
+		"%s: %x : idx %2d, fd %d, off %d, size %d, iova %#x",
+		str, inst->sess_id, cbuf->index, cbuf->fd,
 		cbuf->offset, cbuf->size, cbuf->smem->device_addr);
 	}
 }
@@ -1222,9 +1222,10 @@ int msm_cvp_register_buffer(struct msm_cvp_inst *inst,
 	struct cvp_hfi_device *hdev;
 	struct cvp_hal_session *session;
 	struct msm_cvp_inst *s;
+	struct msm_cvp_core *core = NULL;
 	int rc = 0;
 
-	if (!inst || !inst->core || !buf) {
+	if (!inst || !buf) {
 		dprintk(CVP_ERR, "%s: invalid params\n", __func__);
 		return -EINVAL;
 	}
@@ -1232,7 +1233,13 @@ int msm_cvp_register_buffer(struct msm_cvp_inst *inst,
 	if (!buf->index)
 		return 0;
 
-	s = cvp_get_inst_validate(inst->core, inst);
+	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
+	if (!core) {
+		dprintk(CVP_ERR, "%s: core is NULL", __func__);
+		return -EINVAL;
+	}
+
+	s = cvp_get_inst_validate(core, inst);
 	if (!s)
 		return -ECONNRESET;
 
@@ -1257,9 +1264,10 @@ int msm_cvp_unregister_buffer(struct msm_cvp_inst *inst,
 		struct eva_kmd_buffer *buf)
 {
 	struct msm_cvp_inst *s;
+	struct msm_cvp_core *core = NULL;
 	int rc = 0;
 
-	if (!inst || !inst->core || !buf) {
+	if (!inst || !buf) {
 		dprintk(CVP_ERR, "%s: invalid params\n", __func__);
 		return -EINVAL;
 	}
@@ -1267,7 +1275,13 @@ int msm_cvp_unregister_buffer(struct msm_cvp_inst *inst,
 	if (!buf->index)
 		return 0;
 
-	s = cvp_get_inst_validate(inst->core, inst);
+	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
+	if (!core) {
+		dprintk(CVP_ERR, "%s: core is NULL", __func__);
+		return -EINVAL;
+	}
+
+	s = cvp_get_inst_validate(core, inst);
 	if (!s)
 		return -ECONNRESET;
 

@@ -8,7 +8,7 @@
         regulator-name = "pmicDA9172";
         reg = <0x6A>;
         status = "ok";
-        continouous-splash;
+        continuous-splash;
         disp-gpios = <&tlmm 29 GPIO_ACTIVE_HIGH>;
         pmic-gpios = <&tlmm 116 GPIO_ACTIVE_HIGH>;
     };

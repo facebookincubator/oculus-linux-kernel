@@ -470,6 +470,9 @@ int hibernation_snapshot(int platform_mode)
 
 	bootstat_record_kernel2_event(HIBEVENT_KERN2_END_DEVICE_RESUME);
 
+	if (!in_suspend)
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_IMAGE_RESTORED);
+
  Close:
 	platform_end(platform_mode);
 	return error;
@@ -769,8 +772,6 @@ int hibernate(void)
 		pm_pr_dbg("Hibernation not available.\n");
 		return -EPERM;
 	}
-
-	bootstat_reset_hibernation_stats();
 
 	lock_system_sleep();
 	/*

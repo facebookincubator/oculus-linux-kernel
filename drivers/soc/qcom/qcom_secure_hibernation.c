@@ -699,7 +699,7 @@ static int __init qcom_secure_hibernattion_init(void)
 	register_trace_android_vh_init_aes_encrypt(init_aes_encrypt, NULL);
 	register_trace_android_vh_skip_swap_map_write(skip_swap_map_write, NULL);
 	register_trace_android_vh_store_auth_slot_num(store_auth_slot_num, NULL);
-	register_trace_android_vh_post_image_save(save_param_authtags, NULL);
+	register_trace_android_rvh_post_image_save(save_param_authtags, NULL);
 	register_trace_android_vh_hibernate_save_cmp_len(hibernate_save_cmp_len, NULL);
 	register_trace_android_vh_hibernated_do_mem_alloc(hibernated_do_mem_alloc, NULL);
 	register_trace_android_vh_decrypt_page(decrypt_page, NULL);

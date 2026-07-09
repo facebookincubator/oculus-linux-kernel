@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef _NET_CNSS2_H
@@ -97,6 +97,7 @@ enum cnss_driver_status {
 
 enum cnss_bus_event_type {
 	BUS_EVENT_PCI_LINK_DOWN = 0,
+	BUS_EVENT_PCI_LINK_RESUME_FAIL = 1,
 
 	BUS_EVENT_INVALID = 0xFFFF,
 };
@@ -140,7 +141,8 @@ struct cnss_wlan_driver {
 	int  (*suspend_noirq)(struct pci_dev *pdev);
 	int  (*resume_noirq)(struct pci_dev *pdev);
 	void (*modem_status)(struct pci_dev *pdev, int state);
-	void (*update_status)(struct pci_dev *pdev, uint32_t status);
+	void (*update_status)(struct pci_dev *pdev,
+			      enum cnss_driver_status status);
 	int  (*update_event)(struct pci_dev *pdev,
 			     struct cnss_uevent_data *uevent);
 	struct cnss_wlan_runtime_ops *runtime_ops;

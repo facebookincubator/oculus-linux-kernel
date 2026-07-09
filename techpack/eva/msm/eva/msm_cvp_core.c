@@ -280,16 +280,27 @@ static void msm_cvp_cleanup_instance(struct msm_cvp_inst *inst)
 	struct msm_cvp_frame *frame;
 	struct cvp_session_queue *sq, *sqf;
 	struct cvp_hfi_device *hdev;
-
+	struct msm_cvp_core *core = NULL;
+	struct msm_cvp_inst *s = NULL;
 	if (!inst) {
 		dprintk(CVP_ERR, "%s: invalid params\n", __func__);
 		return;
 	}
-
+	core = list_first_entry(&cvp_driver->cores, struct msm_cvp_core, list);
+	if (!core) {
+		dprintk(CVP_ERR, "%s: core is NULL", __func__);
+		return;
+	}
+	s = cvp_get_inst_validate(core, inst);
+	if (!s){
+		dprintk(CVP_ERR, "%s: Session is not valid\n",
+						__func__);
+		return;
+	}
 	sqf = &inst->session_queue_fence;
 	sq = &inst->session_queue;
 
-	max_retries =  inst->core->resources.msm_cvp_hw_rsp_timeout >> 5;
+	max_retries =  core->resources.msm_cvp_hw_rsp_timeout >> 5;
 	msm_cvp_session_queue_stop(inst);
 
 wait_dsp:
@@ -305,9 +316,9 @@ wait_dsp:
 
 	if (!empty)
 		dprintk(CVP_WARN, "Failed flush DSP frame retried %d\n",
-			(inst->core->resources.msm_cvp_hw_rsp_timeout >> 5)
+			(core->resources.msm_cvp_hw_rsp_timeout >> 5)
 			- max_retries);
-	max_retries =  inst->core->resources.msm_cvp_hw_rsp_timeout >> 1;
+	max_retries =  core->resources.msm_cvp_hw_rsp_timeout >> 1;
 wait:
 	mutex_lock(&inst->frames.lock);
 	empty = list_empty(&inst->frames.list);
@@ -331,25 +342,26 @@ wait:
 		mutex_unlock(&inst->frames.lock);
 		cvp_dump_fence_queue(inst);
 	}
-
-	if (cvp_release_arp_buffers(inst))
-		dprintk(CVP_ERR,
-			"Failed to release persist buffers\n");
-	spin_lock(&inst->core->resources.pm_qos.lock);
-	if (inst->core->resources.pm_qos.off_vote_cnt > 0){
-		inst->core->resources.pm_qos.off_vote_cnt--;
+	if (inst) {
+		if (cvp_release_arp_buffers(inst))
+			dprintk(CVP_ERR,
+				"Failed to release persist buffers\n");
+		spin_lock(&core->resources.pm_qos.lock);
+		if (core->resources.pm_qos.off_vote_cnt > 0){
+			core->resources.pm_qos.off_vote_cnt--;
+		}
+		else{
+			dprintk(CVP_INFO, "%s Unexpected pm_qos off vote %d\n",
+				__func__,
+			core->resources.pm_qos.off_vote_cnt);
+		}
+		spin_unlock(&core->resources.pm_qos.lock);
+		if(!core->resources.pm_qos.off_vote_cnt){
+			hdev = core->device;
+			call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data,PM_QOS_RESUME_LATENCY_DEFAULT_VALUE);
+		}
 	}
-	else{
-		dprintk(CVP_INFO, "%s Unexpected pm_qos off vote %d\n",
-			__func__,
-		inst->core->resources.pm_qos.off_vote_cnt);
-	}
-
-	if(!inst->core->resources.pm_qos.off_vote_cnt){
-		hdev = inst->core->device;
-		call_hfi_op(hdev, pm_qos_update, hdev->hfi_device_data,PM_QOS_RESUME_LATENCY_DEFAULT_VALUE);
-	}
-	spin_unlock(&inst->core->resources.pm_qos.lock);
+	cvp_put_inst(inst);
 }
 
 int msm_cvp_destroy(struct msm_cvp_inst *inst)

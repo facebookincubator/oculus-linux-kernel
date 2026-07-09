@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "oatmeal.dtsi"
+#include "granola-oatmeal-panel.dtsi"
+
+/ {
+	model = "Granola Oatmeal NFF2 D";
+	compatible = "meta,oatmeal", "meta,granola-oatmeal-nff2";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xcc>;
+};

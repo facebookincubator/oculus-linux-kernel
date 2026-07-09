@@ -63,6 +63,29 @@ config QCOM_BWPROF
 	  at regular intervals, providing the userspace clients with a detailed
 	  view of the current state of the system.
 
+config QCOM_BWPROF_SCMI
+	tristate "QCOM BWPROF SCMI Driver"
+	depends on ARCH_QCOM
+	default n
+	help
+	  This enables the QCOM BWPROF driver which monitors bandwidth counters
+	  and provides them to userspace clients at different time intervals for
+	  the intention of bandwidth profiling and DDR and LLCC frequency
+	  monitoring. The purpose of the driver is to enable the monitoring of
+	  the bandwidth usage at regular intervals, providing the userspace clients
+	  with a detailed view of the current state of the system.
+
+config QTI_HW_BWPROF_SCMI_CLIENT
+	tristate "Qualcomm Technologies Inc. SCMI client driver for BWPROF PROFILING"
+	depends on QCOM_BWPROF_SCMI && QTI_SCMI_BWPROF_PROTOCOL
+	default n
+	help
+	  SCMI client driver registers itself with SCMI framework for bandwidth
+	  vendor protocol, and also registers with the bandwidth interface driver
+	  This driver delivers the bandwidth vendor protocol handle to interface
+	  driver, and interface driver will use this handle to communicate with
+	  bandwidth profiling.
+
 config QCOM_BUS_LAT
 	tristate "QCOM BUS_latency Driver"
 	depends on ARCH_QCOM

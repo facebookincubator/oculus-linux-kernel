@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/notifier.h>
@@ -91,8 +91,8 @@ static void kgsl_snapshot_put_object(struct kgsl_snapshot_object *obj)
 {
 	list_del(&obj->node);
 
-	obj->entry->memdesc.priv &= ~KGSL_MEMDESC_FROZEN;
-	obj->entry->memdesc.priv &= ~KGSL_MEMDESC_SKIP_RECLAIM;
+	CLEAR_FLAG(KGSL_MEMDESC_FROZEN | KGSL_MEMDESC_SKIP_RECLAIM, &obj->entry->memdesc.priv);
+
 	kgsl_mem_entry_put(obj->entry);
 
 	kfree(obj);
@@ -261,14 +261,14 @@ int kgsl_snapshot_get_object(struct kgsl_snapshot *snapshot,
 	 * 0 so it doesn't get counted twice
 	 */
 
-	ret = (entry->memdesc.priv & KGSL_MEMDESC_FROZEN) ? 0
+	ret = (TEST_FLAG(KGSL_MEMDESC_FROZEN, &entry->memdesc.priv)) ? 0
 		: entry->memdesc.size;
 
-	entry->memdesc.priv |= KGSL_MEMDESC_FROZEN;
+	SET_FLAG(KGSL_MEMDESC_FROZEN, &entry->memdesc.priv);
 
 	return ret;
 err_put:
-	entry->memdesc.priv &= ~KGSL_MEMDESC_SKIP_RECLAIM;
+	CLEAR_FLAG(KGSL_MEMDESC_SKIP_RECLAIM, &entry->memdesc.priv);
 	kgsl_mem_entry_put(entry);
 	return ret;
 }

@@ -17,7 +17,6 @@
 #include "clk-regmap.h"
 #include "reset.h"
 #include "gdsc.h"
-#include "clk-pm.h"
 
 enum {
 	P_BI_TCXO,
@@ -195,11 +194,6 @@ static struct gdsc vcodec1_gdsc = {
 	.flags = HW_CTRL,
 	.pwrsts = PWRSTS_OFF_ON,
 };
-
-static struct critical_clk_offset critical_clk_list[] = {
-	{ .offset = 0x984, .mask = BIT(1) },
-};
-
 static struct clk_regmap *video_cc_sm8150_clocks[] = {
 	[VIDEO_CC_IRIS_AHB_CLK] = &video_cc_iris_ahb_clk.clkr,
 	[VIDEO_CC_IRIS_CLK_SRC] = &video_cc_iris_clk_src.clkr,
@@ -239,8 +233,6 @@ static const struct qcom_cc_desc video_cc_sm8150_desc = {
 	.num_resets = ARRAY_SIZE(video_cc_sm8150_resets),
 	.gdscs = video_cc_sm8150_gdscs,
 	.num_gdscs = ARRAY_SIZE(video_cc_sm8150_gdscs),
-	.critical_clk_en = critical_clk_list,
-	.num_critical_clk = ARRAY_SIZE(critical_clk_list),
 };
 
 static const struct of_device_id video_cc_sm8150_match_table[] = {
@@ -252,7 +244,6 @@ MODULE_DEVICE_TABLE(of, video_cc_sm8150_match_table);
 static int video_cc_sm8150_probe(struct platform_device *pdev)
 {
 	struct regmap *regmap;
-	int ret;
 
 	regmap = qcom_cc_map(pdev, &video_cc_sm8150_desc);
 	if (IS_ERR(regmap))
@@ -263,19 +254,7 @@ static int video_cc_sm8150_probe(struct platform_device *pdev)
 	/* Keep VIDEO_CC_XO_CLK ALWAYS-ON */
 	regmap_update_bits(regmap, 0x984, 0x1, 0x1);
 
-	ret = qcom_cc_really_probe(pdev, &video_cc_sm8150_desc, regmap);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to register VIDEO CC clocks\n");
-		return ret;
-	}
-
-	ret = register_qcom_clks_pm(pdev, false, &video_cc_sm8150_desc);
-	if (ret)
-		dev_err(&pdev->dev, "Failed to register for pm ops\n");
-
-	dev_info(&pdev->dev, "Registered VIDEO CC clocks\n");
-
-	return 0;
+	return qcom_cc_really_probe(pdev, &video_cc_sm8150_desc, regmap);
 }
 
 static struct platform_driver video_cc_sm8150_driver = {

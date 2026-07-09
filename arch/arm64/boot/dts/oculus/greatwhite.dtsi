@@ -146,6 +146,8 @@
         battery-count = <1>;
         mux-gpio = <&tlmm 30 0>;
         metabattery-alert-gpios = <&tlmm 7 GPIO_ACTIVE_HIGH>;
+        caching-enabled;
+		caching-refresh-interval-ms = <350>;
     };
     mcu_thermistor: mcu_thermistor {
         compatible = "meta,mcu_thermistor";

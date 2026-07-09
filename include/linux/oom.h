@@ -110,8 +110,7 @@ static inline vm_fault_t check_stable_address_space(struct mm_struct *mm)
 
 bool __oom_reap_task_mm(struct mm_struct *mm);
 
-long oom_badness(struct task_struct *p,
-		unsigned long totalpages);
+long oom_badness(struct task_struct *p, struct oom_control *oc);
 
 extern bool out_of_memory(struct oom_control *oc);
 

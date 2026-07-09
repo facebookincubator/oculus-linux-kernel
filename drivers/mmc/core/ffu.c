@@ -412,7 +412,6 @@ exit:
 #ifdef FFU_back
 extern u8 BIWIN_H07301[512*1024];
 #else
-extern u8 BIWIN_H07301[512*1024];
 extern u8 BIWIN_H07304[512*1024];
 #endif
 #define EXT_CSD_MODE_CONFIG		30	/* R/W */
@@ -488,9 +487,8 @@ int mmc_ffu_download(struct mmc_card *card, int step, int version)
 #else
 	switch (version) {
 		case G1_FW_VERSION:
-			pr_info("world mmc_ffu_download upgrading from BIWIN_G09251 to BIWIN_H07301.\n");
-			g_ffu_bin_buffer = BIWIN_H07301;
-			break;
+			WARN(1, "FFU from BIWIN_G09251 attempted. Not expected");
+			goto exit;
 		case H1_FW_VERSION:
 			pr_info("world mmc_ffu_download upgrading from BIWIN_H07301 to BIWIN_H07304.\n");
 			g_ffu_bin_buffer = BIWIN_H07304;

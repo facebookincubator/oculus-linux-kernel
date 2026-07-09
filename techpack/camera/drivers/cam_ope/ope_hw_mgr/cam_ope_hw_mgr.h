@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef CAM_OPE_HW_MGR_H
@@ -219,6 +220,7 @@ struct cdm_dmi_cmd {
 /**
  * struct ope_debug_buffer
  *
+ * @mem_handle:       Memory handle
  * @cpu_addr:         CPU address
  * @iova_addr:        IOVA address
  * @len:              Buffer length
@@ -226,6 +228,7 @@ struct cdm_dmi_cmd {
  * @offset:	      buffer offset
  */
 struct ope_debug_buffer {
+	uint32_t mem_handle;
 	uintptr_t cpu_addr;
 	dma_addr_t iova_addr;
 	size_t len;

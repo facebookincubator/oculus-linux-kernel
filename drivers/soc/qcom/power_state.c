@@ -437,6 +437,10 @@ static int ps_pm_cb(struct notifier_block *nb, unsigned long event, void *unused
 		send_uevent(drv, EXIT_HIBERNATE);
 		break;
 
+	case (PM_FREEZE_PREPARE):
+	case (PM_POST_THAW):
+		break;
+
 	default:
 		WARN_ONCE(1, "Default case: PM Notifier\n");
 		break;

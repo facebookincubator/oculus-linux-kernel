@@ -25,6 +25,7 @@
 
 &rt600_ctrl {
 	meta,rt700-override;
+	assert-gpio = <&tlmm 80 0>;
 };
 
 &usb_conn_gpio{

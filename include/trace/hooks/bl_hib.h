@@ -39,9 +39,9 @@ DECLARE_HOOK(android_vh_store_auth_slot_num,
 	TP_PROTO(uint32_t *auth_slot_num),
 	TP_ARGS(auth_slot_num));
 
-DECLARE_HOOK(android_vh_post_image_save,
+DECLARE_RESTRICTED_HOOK(android_rvh_post_image_save,
 	TP_PROTO(unsigned short root_swap),
-	TP_ARGS(root_swap));
+	TP_ARGS(root_swap), 1);
 
 DECLARE_HOOK(android_vh_hibernated_do_mem_alloc,
         TP_PROTO(unsigned long nr_pages, unsigned int swsusp_header_flags,

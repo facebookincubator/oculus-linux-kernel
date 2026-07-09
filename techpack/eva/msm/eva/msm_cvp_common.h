@@ -7,6 +7,7 @@
 #ifndef _MSM_CVP_COMMON_H_
 #define _MSM_CVP_COMMON_H_
 #include "msm_cvp_internal.h"
+#include "cvp_core_hfi.h"
 
 void cvp_put_inst(struct msm_cvp_inst *inst);
 struct msm_cvp_inst *cvp_get_inst(struct msm_cvp_core *core,
@@ -32,4 +33,5 @@ int wait_for_sess_signal_receipt(struct msm_cvp_inst *inst,
 int cvp_comm_set_arp_buffers(struct msm_cvp_inst *inst);
 int cvp_comm_release_persist_buffers(struct msm_cvp_inst *inst);
 int msm_cvp_noc_error_info(struct msm_cvp_core *core);
+void dump_hfi_queue(struct iris_hfi_device *device);
 #endif

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/bitmap.h>
@@ -2820,8 +2820,8 @@ static void msm_geni_serial_flush(struct uart_port *uport)
 static void msm_geni_serial_shutdown(struct uart_port *uport)
 {
 	struct msm_geni_serial_port *msm_port = GET_DEV_PORT(uport);
-	int usage_count = atomic_read(&uport->dev->power.usage_count);
 	int ret, j = 0;
+	int usage_count = atomic_read(&uport->dev->power.usage_count);
 
 	// META smartglasses Begin: Track serial port shutdown.
 	dev_err(uport->dev, "%s:msm_geni_serial_shutdown\n", __func__);

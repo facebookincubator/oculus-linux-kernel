@@ -70,6 +70,8 @@ struct gen7_gmu_device {
 	/** @global_entries: To keep track of number of gmu buffers */
 	u32 global_entries;
 	struct gmu_vma_entry *vma;
+	/** @num_vmas: Number of entries in the @vma array */
+	u32 num_vmas;
 	unsigned int log_wptr_retention;
 	/** @cm3_fault: whether gmu received a cm3 fault interrupt */
 	atomic_t cm3_fault;
@@ -490,5 +492,14 @@ size_t gen7_snapshot_gmu_mem(struct kgsl_device *device,
  * Return: 0 on success or negative error on failure
  */
 int gen7_gmu_register_gdsc_notifier(struct adreno_device *adreno_dev);
+
+/**
+ * gen7_bus_ab_quantize - Calculate the AB vote that needs to be sent to GMU
+ * @adreno_dev: Handle to the adreno device
+ * @ab: ab request that needs to be scaled in MBps
+ *
+ * Returns the AB value that needs to be prefixed to bandwidth vote in kbps
+ */
+u32 gen7_bus_ab_quantize(struct adreno_device *adreno_dev, u32 ab);
 
 #endif

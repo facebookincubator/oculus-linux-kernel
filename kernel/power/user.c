@@ -296,6 +296,7 @@ static long snapshot_ioctl(struct file *filp, unsigned int cmd,
 		data->free_bitmaps = false;
 		thaw_processes();
 		data->frozen = false;
+		error = pm_notifier_call_chain_robust(PM_POST_THAW, PM_FREEZE_PREPARE);
 		break;
 
 	case SNAPSHOT_CREATE_IMAGE:

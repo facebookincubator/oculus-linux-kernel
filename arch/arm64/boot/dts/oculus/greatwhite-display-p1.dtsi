@@ -45,7 +45,6 @@
 };
 
 &leddriver {
-    leddondof-gpio = <&tlmm 80 GPIO_ACTIVE_HIGH>;
-    interpolation-coeffs-high-res = <10000 82>;
-    interpolation-coeffs-low-res = <324010 2238>;
+	interpolation-coeffs-high-res = <10000 82>;
+	interpolation-coeffs-low-res = <324010 2238>;
 };

@@ -1,3 +1,8 @@
+/* This is not pretty design, but it does allow us to keep
+ * the STP channels and priorities in sync with MCU.
+ */
+#include "../../../../../../../../vendor/meta/prebuilts/libs/device/neo-common/libs/libstp/include/stp/channels.h"
+
 &tlmm {
 	stp_mcu_request_transaction: stp_mcu_request_transaction {
 		mux {
@@ -47,196 +52,196 @@
 		mcu-request-transaction = <&tlmm 18 0>;
 		soc-has-data = <&tlmm 19 0>;
 		channel@0 {
-			channel = <0>;
+			channel = <STP_CHANNEL_SERVER_LOOPBACK_TEST>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <30>;
+			priority = <STP_CHANNEL_SERVER_LOOPBACK_TEST_PRIORITY>;
 		};
 		channel@1 {
-			channel = <1>;
+			channel = <STP_CHANNEL_SERVER_STRESS_TEST>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <30>;
+			priority = <STP_CHANNEL_SERVER_STRESS_TEST_PRIORITY>;
 		};
 		channel@2 {
-			channel = <2>;
+			channel = <STP_CHANNEL_CLIENT_LOOPBACK_TEST>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <30>;
+			priority = <STP_CHANNEL_CLIENT_LOOPBACK_TEST_PRIORITY>;
 		};
 		channel@3 {
-			channel = <3>;
+			channel = <STP_CHANNEL_CLIENT_STRESS_TEST>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <30>;
+			priority = <STP_CHANNEL_CLIENT_STRESS_TEST_PRIORITY>;
 		};
 		channel@4 {
-			channel = <4>;
+			channel = <STP_CHANNEL_DATAX_CLIENT_LOOPBACK_TEST1>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <30>;
+			priority = <STP_CHANNEL_DATAX_CLIENT_LOOPBACK_TEST1_PRIORITY>;
 		};
 		channel@5 {
-			channel = <5>;
+			channel = <STP_CHANNEL_STP_RAW_HANLDER_STRESS>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <30>;
+			priority = <STP_CHANNEL_STP_RAW_HANLDER_STRESS_PRIORITY>;
 		};
 		channel@6 {
-			channel = <6>;
+			channel = <STP_CHANNEL_DATAX_SERVER_LOOPBACK_TEST1>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <30>;
+			priority = <STP_CHANNEL_DATAX_SERVER_LOOPBACK_TEST1_PRIORITY>;
 		};
 		channel@7 {
-			channel = <7>;
+			channel = <STP_CHANNEL_AUDIO_BLOB_TRANSFER>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <30>;
+			priority = <STP_CHANNEL_AUDIO_BLOB_TRANSFER_PRIORITY>;
 		};
 		channel@8 {
-			channel = <8>;
+			channel = <STP_CHANNEL_MFG_SENSOR_STREAM_DATA>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <20>;
+			priority = <STP_CHANNEL_MFG_SENSOR_STREAM_DATA_PRIORITY>;
 		};
 		channel@9 {
-			channel = <9>;
+			channel = <STP_CHANNEL_DATA_LOGGING>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <31>;
+			priority = <STP_CHANNEL_DATA_LOGGING_PRIORITY>;
 		};
 		channel@10 {
-			channel = <10>;
+			channel = <STP_CHANNEL_MCU_DIAGNOSTICS>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <1>;
+			priority = <STP_CHANNEL_MCU_DIAGNOSTICS_PRIORITY>;
 		};
 		channel@11 {
-			channel = <11>;
+			channel = <STP_CHANNEL_AUDIO>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <0>;
+			priority = <STP_CHANNEL_AUDIO_PRIORITY>;
 		};
 		channel@12 {
-			channel = <12>;
+			channel = <STP_CHANNEL_WW_PRE_ROLL_AUDIO>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <0>;
+			priority = <STP_CHANNEL_WW_PRE_ROLL_AUDIO_PRIORITY>;
 		};
 		channel@13 {
-			channel = <13>;
+			channel = <STP_CHANNEL_DSP_DIAGNOSTICS>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <1>;
+			priority = <STP_CHANNEL_DSP_DIAGNOSTICS_PRIORITY>;
 		};
 		channel@14 {
-			channel = <14>;
+			channel = <STP_CHANNEL_AUDIO_DATAX>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <31>;
+			priority = <STP_CHANNEL_AUDIO_DATAX_PRIORITY>;
 		};
 		channel@15 {
-			channel = <15>;
+			channel = <STP_CHANNEL_I2C_STP>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <31>;
+			priority = <STP_CHANNEL_I2C_STP_PRIORITY>;
 		};
 		channel@16 {
-			channel = <16>;
+			channel = <STP_CHANNEL_CAMERA>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <31>;
+			priority = <STP_CHANNEL_CAMERA_PRIORITY>;
 		};
 		channel@17 {
-			channel = <17>;
+			channel = <STP_CHANNEL_HEARING>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <31>;
+			priority = <STP_CHANNEL_HEARING_PRIORITY>;
 		};
 		channel@18 {
-			channel = <18>;
+			channel = <STP_CHANNEL_CONSOLE>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <2>;
+			priority = <STP_CHANNEL_CONSOLE_PRIORITY>;
 		};
 		channel@19 {
-			channel = <19>;
+			channel = <STP_CHANNEL_HWCLKSYNC>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <31>;
+			priority = <STP_CHANNEL_HWCLKSYNC_PRIORITY>;
 		};
 		channel@20 {
-			channel = <20>;
+			channel = <STP_CHANNEL_HYPEROFF>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <31>;
+			priority = <STP_CHANNEL_HYPEROFF_PRIORITY>;
 		};
 		channel@21 {
-			channel = <21>;
+			channel = <STP_CHANNEL_DISPLAY>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <31>;
+			priority = <STP_CHANNEL_DISPLAY_PRIORITY>;
 		};
 		channel@22 {
-			channel = <22>;
+			channel = <STP_CHANNEL_MOTION_SERVICE>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <31>;
+			priority = <STP_CHANNEL_MOTION_SERVICE_PRIORITY>;
 		};
 		channel@23 {
-			channel = <23>;
+			channel = <STP_CHANNEL_POWERSTATS>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <31>;
+			priority = <STP_CHANNEL_POWERSTATS_PRIORITY>;
 		};
 		channel@24 {
-			channel = <24>;
+			channel = <STP_CHANNEL_CLOCK>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <31>;
+			priority = <STP_CHANNEL_CLOCK_PRIORITY>;
 		};
 		channel@25 {
-			channel = <25>;
+			channel = <STP_CHANNEL_SYSTEM_ALS>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <0>;
+			priority = <STP_CHANNEL_SYSTEM_ALS_PRIORITY>;
 		};
 		channel@26 {
-			channel = <26>;
+			channel = <STP_CHANNEL_SYSTEM_GESTURES>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <0>;
+			priority = <STP_CHANNEL_SYSTEM_GESTURES_PRIORITY>;
 		};
 		channel@27 {
-			channel = <27>;
+			channel = <STP_CHANNEL_SYSTEM_IMU>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <0>;
+			priority = <STP_CHANNEL_SYSTEM_IMU_PRIORITY>;
 		};
 		channel@28 {
-			channel = <28>;
+			channel = <STP_CHANNEL_SYSTEM_USER_INPUT>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <1>;
+			priority = <STP_CHANNEL_SYSTEM_USER_INPUT_PRIORITY>;
 		};
 		channel@29 {
-			channel = <29>;
+			channel = <STP_CHANNEL_LED>;
 			tx_buffer_size = <4096>;
 			rx_buffer_size = <4096>;
-			priority = <0>;
+			priority = <STP_CHANNEL_LED_PRIORITY>;
 		};
 		channel@30 {
-			channel = <30>;
+			channel = <STP_CHANNEL_MFG>;
 			tx_buffer_size = <8192>;
 			rx_buffer_size = <8192>;
-			priority = <0>;
+			priority = <STP_CHANNEL_MFG_PRIORITY>;
 		};
 		channel@31 {
-			channel = <31>;
+			channel = <STP_CHANNEL_THROUGHPUT_FULLDUPLEX_TEST>;
 			tx_buffer_size = <8192>;
 			rx_buffer_size = <8192>;
-			priority = <30>;
+			priority = <STP_CHANNEL_THROUGHPUT_FULLDUPLEX_TEST_PRIORITY>;
 		};
 	};
 };

@@ -28,12 +28,12 @@ static void msm_cvp_comm_generate_session_error(struct msm_cvp_inst *inst)
 	dprintk(CVP_WARN, "%s function is deprecated\n");
 }
 
-static void dump_hfi_queue(struct iris_hfi_device *device)
+void dump_hfi_queue(struct iris_hfi_device *device)
 {
 	struct cvp_hfi_queue_header *queue;
 	struct cvp_iface_q_info *qinfo;
 	int i;
-	u32 *read_ptr, read_idx;
+	// u32 *read_ptr, read_idx;
 
 	dprintk(CVP_ERR, "HFI queues in order of cmd(rd, wr), msg and dbg:\n");
 
@@ -51,17 +51,20 @@ static void dump_hfi_queue(struct iris_hfi_device *device)
 			dprintk(CVP_ERR, "HFI queue not init, fail to dump\n");
 			return;
 		}
-		dprintk(CVP_ERR, "queue details: %d %d\n",
+		dprintk(CVP_ERR, "queue details: %u %pK %u %u\n %u %u %u %u\n %u %u %u %u\n %u %u\n",
+				queue->qhdr_status,   queue->qhdr_start_addr,   queue->qhdr_type,          queue->qhdr_q_size,
+				queue->qhdr_pkt_size, queue->qhdr_pkt_drop_cnt, queue->qhdr_rx_wm,         queue->qhdr_tx_wm,
+				queue->qhdr_rx_req,   queue->qhdr_tx_req,       queue->qhdr_rx_irq_status, queue->qhdr_tx_irq_status,
 				queue->qhdr_read_idx, queue->qhdr_write_idx);
-		if (queue->qhdr_read_idx != queue->qhdr_write_idx) {
-			read_idx = queue->qhdr_read_idx;
-			read_ptr = (u32 *)((qinfo->q_array.align_virtual_addr) +
-				(read_idx << 2));
-			dprintk(CVP_ERR, "queue payload: %x %x %x %x\n",
-				read_ptr[0], read_ptr[1],
-				read_ptr[2], read_ptr[3]);
-		}
 
+		// if (queue->qhdr_read_idx != queue->qhdr_write_idx) {
+		// 	read_idx = queue->qhdr_read_idx;
+		// 	read_ptr = (u32 *)((qinfo->q_array.align_virtual_addr) +
+		// 		(read_idx << 2));
+		// 	dprintk(CVP_ERR, "queue payload: %x %x %x %x\n",
+		// 		read_ptr[0], read_ptr[1],
+		// 		read_ptr[2], read_ptr[3]);
+		// }
 	}
 	mutex_unlock(&device->lock);
 }
@@ -1331,24 +1334,24 @@ void msm_cvp_ssr_handler(struct work_struct *work)
 
 		dprintk(CVP_ERR, "Session abort triggered\n");
 		list_for_each_entry(inst, &core->instances, list) {
-			dprintk(CVP_WARN,
-				"Session to abort: inst %#x ref %x\n",
-				inst, kref_read(&inst->kref));
+			if (inst != NULL) {
+				s = cvp_get_inst_validate(core, inst);
+				if (!s) {
+					dprintk(CVP_WARN, "%s: Session is not valid\n", __func__);
+					return;
+				}
+				dprintk(CVP_WARN,
+					"Session to abort: inst %#x ref %x\n",
+					inst, kref_read(&inst->kref));
+				call_hfi_op(hdev, flush_debug_queue,
+					hdev->hfi_device_data);
+				dump_hfi_queue(hdev->hfi_device_data);
+				msm_cvp_comm_kill_session(inst);
+				cvp_put_inst(s);
+			} else {
+				dprintk(CVP_WARN, "No active CVP session to abort\n");
+			}
 			break;
-		}
-
-		if (inst != NULL) {
-			s = cvp_get_inst_validate(inst->core, inst);
-			if (!s)
-				return;
-
-			call_hfi_op(hdev, flush_debug_queue,
-				hdev->hfi_device_data);
-			dump_hfi_queue(hdev->hfi_device_data);
-			msm_cvp_comm_kill_session(inst);
-			cvp_put_inst(s);
-		} else {
-			dprintk(CVP_WARN, "No active CVP session to abort\n");
 		}
 
 		return;

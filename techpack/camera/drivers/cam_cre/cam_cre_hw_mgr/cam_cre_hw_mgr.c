@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/mutex.h>
 #include <linux/spinlock.h>
@@ -135,6 +136,13 @@ static int cam_cre_mgr_process_cmd_io_buf_req(struct cam_cre_hw_mgr *hw_mgr,
 	struct   cam_buf_io_cfg *io_cfg_ptr = NULL;
 	struct   cam_cre_io_buf_info *acq_io_buf;
 
+	if (!ctx_data->cre_acquire.batch_size ||
+		(ctx_data->cre_acquire.batch_size > CRE_MAX_BATCH_SIZE)) {
+		CAM_ERR(CAM_CRE, "Invalid batch_size: %u ctx id: %u max_batch_size: %u",
+			ctx_data->cre_acquire.batch_size, ctx_data->ctx_id, CRE_MAX_BATCH_SIZE);
+		return -EINVAL;
+	}
+
 	io_cfg_ptr = (struct cam_buf_io_cfg *)((uint32_t *)&packet->payload +
 			packet->io_configs_offset / 4);
 
@@ -161,6 +169,17 @@ static int cam_cre_mgr_process_cmd_io_buf_req(struct cam_cre_hw_mgr *hw_mgr,
 			}
 
 			io_buf = cre_request->io_buf[i][j];
+
+			if (!acq_io_buf->num_planes ||
+				(acq_io_buf->num_planes > CAM_PACKET_MAX_PLANES)) {
+				CAM_ERR(CAM_CRE,
+					"i %d j %d res_type %d Invalid num_planes: %u ctx id: %u max_planes: %u",
+					i, j, acq_io_buf->res_id, acq_io_buf->num_planes,
+					ctx_data->ctx_id, CAM_PACKET_MAX_PLANES);
+				cam_cre_free_io_config(cre_request);
+				return -EINVAL;
+			}
+
 			io_buf->num_planes = acq_io_buf->num_planes;
 			io_buf->resource_type = acq_io_buf->res_id;
 			io_buf->direction = acq_io_buf->direction;

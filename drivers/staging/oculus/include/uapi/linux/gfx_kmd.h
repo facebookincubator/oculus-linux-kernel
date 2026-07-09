@@ -14,7 +14,16 @@
 #ifndef GFX_KMD_H
 #define GFX_KMD_H
 
+#ifndef __KERNEL__
+#include <stdint.h>
+#include <sys/ioctl.h>
+#ifndef __packed
+#define __packed __attribute__((__packed__))
+#endif // !__packed
+#else // __KERNEL__
 #include <linux/ioctl.h>
+#include <linux/types.h>
+#endif // !__KERNEL__
 
 // Types of events that kernel notifies libgfx about.
 enum gfx_kmd_event_type {
