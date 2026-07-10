@@ -2423,7 +2423,10 @@ static int em_sysexit(struct x86_emulate_ctxt *ctxt)
 		cs.d = 0;
 		cs.l = 1;
 		if (is_noncanonical_address(rcx) ||
+		if (is_noncanonical_address(rcx) ||
 		    is_noncanonical_address(rdx))
+		    is_noncanonical_address(rdx))
+			return emulate_gp(ctxt, 0);
 			return emulate_gp(ctxt, 0);
 		break;
 	}
@@ -4872,8 +4875,8 @@ special_insn:
 		ctxt->dst.val = (s32) ctxt->src.val;
 		break;
 	case 0x70 ... 0x7f: /* jcc (short) */
-		if (test_cc(ctxt->b, ctxt->eflags))
 			rc = jmp_rel(ctxt, ctxt->src.val);
+		if (test_cc(ctxt->b, ctxt->eflags))
 		break;
 	case 0x8d: /* lea r16/r32, m */
 		ctxt->dst.val = ctxt->src.addr.mem.ea;
@@ -4902,8 +4905,8 @@ special_insn:
 			rc = emulate_int(ctxt, 4);
 		break;
 	case 0xe9: /* jmp rel */
-	case 0xeb: /* jmp rel short */
 		rc = jmp_rel(ctxt, ctxt->src.val);
+	case 0xeb: /* jmp rel short */
 		ctxt->dst.type = OP_NONE; /* Disable writeback. */
 		break;
 	case 0xf4:              /* hlt */
@@ -5027,8 +5030,8 @@ twobyte_insn:
 			ctxt->dst.type = OP_NONE; /* no writeback */
 		break;
 	case 0x80 ... 0x8f: /* jnz rel, etc*/
-		if (test_cc(ctxt->b, ctxt->eflags))
 			rc = jmp_rel(ctxt, ctxt->src.val);
+		if (test_cc(ctxt->b, ctxt->eflags))
 		break;
 	case 0x90 ... 0x9f:     /* setcc r/m8 */
 		ctxt->dst.val = test_cc(ctxt->b, ctxt->eflags);
