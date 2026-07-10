@@ -759,8 +759,8 @@ void oz_hcd_get_desc_cnf(void *hport, u8 req_id, int status, const u8 *desc,
 	if (!urb)
 		return;
 	if (status == 0) {
-		int copy_len;
-		int required_size = urb->transfer_buffer_length;
+		unsigned int copy_len;
+		unsigned int required_size = urb->transfer_buffer_length;
 
 		if (required_size > total_size)
 			required_size = total_size;
