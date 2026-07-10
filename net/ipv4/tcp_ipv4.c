@@ -1305,6 +1305,7 @@ struct sock *tcp_v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 	struct tcp_md5sig_key *key;
 #endif
 	struct ip_options_rcu *inet_opt;
+	struct ip_options_rcu *inet_opt;
 
 	if (sk_acceptq_is_full(sk))
 		goto exit_overflow;
