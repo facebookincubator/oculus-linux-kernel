@@ -591,6 +591,9 @@ static int fwnet_incoming_packet(struct fwnet_device *dev, __be32 *buf, int len,
 	int retval;
 	u16 ether_type;
 
+	if (len <= RFC2374_UNFRAG_HDR_SIZE)
+		return 0;
+
 	hdr.w0 = be32_to_cpu(buf[0]);
 	lf = fwnet_get_hdr_lf(&hdr);
 	if (lf == RFC2374_HDR_UNFRAG) {
@@ -615,6 +618,10 @@ static int fwnet_incoming_packet(struct fwnet_device *dev, __be32 *buf, int len,
 		return fwnet_finish_incoming_packet(net, skb, source_node_id,
 						    is_broadcast, ether_type);
 	}
+
+	if (len <= RFC2374_FRAG_HDR_SIZE)
+		return 0;
+
 	/* A datagram fragment has been received, now the fun begins. */
 	hdr.w1 = ntohl(buf[1]);
 	buf += 2;
@@ -628,6 +635,9 @@ static int fwnet_incoming_packet(struct fwnet_device *dev, __be32 *buf, int len,
 	}
 	datagram_label = fwnet_get_hdr_dgl(&hdr);
 	dg_size = fwnet_get_hdr_dg_size(&hdr); /* ??? + 1 */
+
+	if (fg_off + len > dg_size)
+		return 0;
 
 	spin_lock_irqsave(&dev->lock, flags);
 
