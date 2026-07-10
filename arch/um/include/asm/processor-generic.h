@@ -1,6 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /* 
  * Copyright (C) 2000 - 2007 Jeff Dike (jdike@{addtoit,linux.intel}.com)
- * Licensed under the GPL
  */
 
 #ifndef __UM_PROCESSOR_GENERIC_H
@@ -58,14 +58,10 @@ static inline void release_thread(struct task_struct *task)
 {
 }
 
-extern unsigned long thread_saved_pc(struct task_struct *t);
-
 static inline void mm_copy_segments(struct mm_struct *from_mm,
 				    struct mm_struct *new_mm)
 {
 }
-
-#define init_stack	(init_thread_union.stack)
 
 /*
  * User space process size: 3GB (default).
@@ -98,16 +94,8 @@ struct cpuinfo_um {
 
 extern struct cpuinfo_um boot_cpu_data;
 
-#define my_cpu_data		cpu_data[smp_processor_id()]
-
-#ifdef CONFIG_SMP
-extern struct cpuinfo_um cpu_data[];
-#define current_cpu_data cpu_data[smp_processor_id()]
-#else
 #define cpu_data (&boot_cpu_data)
 #define current_cpu_data boot_cpu_data
-#endif
-
 
 #define KSTK_REG(tsk, reg) get_thread_reg(reg, &tsk->thread.switch_buf)
 extern unsigned long get_wchan(struct task_struct *p);

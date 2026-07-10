@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2005 Intel Corporation
  * Copyright (C) 2009 Hewlett-Packard Development Company, L.P.
@@ -52,10 +53,7 @@ static bool __init processor_physically_present(acpi_handle handle)
 	type = (acpi_type == ACPI_TYPE_DEVICE) ? 1 : 0;
 	cpuid = acpi_get_cpuid(handle, type, acpi_id);
 
-	if (cpuid == -1)
-		return false;
-
-	return true;
+	return !invalid_logical_cpuid(cpuid);
 }
 
 static void acpi_set_pdc_bits(u32 *buf)
@@ -176,7 +174,7 @@ static int __init set_no_mwait(const struct dmi_system_id *id)
 	return 0;
 }
 
-static struct dmi_system_id processor_idle_dmi_table[] __initdata = {
+static const struct dmi_system_id processor_idle_dmi_table[] __initconst = {
 	{
 	set_no_mwait, "Extensa 5220", {
 	DMI_MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies LTD"),

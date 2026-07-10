@@ -21,7 +21,7 @@
  *
  * Authors: Alex Deucher
  */
-#include <drm/drmP.h>
+
 #include "radeon.h"
 #include "radeon_asic.h"
 #include "r600d.h"
@@ -261,7 +261,7 @@ int r600_dma_ring_test(struct radeon_device *rdev,
 		tmp = le32_to_cpu(rdev->wb.wb[index/4]);
 		if (tmp == 0xDEADBEEF)
 			break;
-		DRM_UDELAY(1);
+		udelay(1);
 	}
 
 	if (i < rdev->usec_timeout) {
@@ -368,16 +368,21 @@ int r600_dma_ib_test(struct radeon_device *rdev, struct radeon_ring *ring)
 		DRM_ERROR("radeon: failed to schedule ib (%d).\n", r);
 		return r;
 	}
-	r = radeon_fence_wait(ib.fence, false);
-	if (r) {
+	r = radeon_fence_wait_timeout(ib.fence, false, usecs_to_jiffies(
+		RADEON_USEC_IB_TEST_TIMEOUT));
+	if (r < 0) {
 		DRM_ERROR("radeon: fence wait failed (%d).\n", r);
 		return r;
+	} else if (r == 0) {
+		DRM_ERROR("radeon: fence wait timed out.\n");
+		return -ETIMEDOUT;
 	}
+	r = 0;
 	for (i = 0; i < rdev->usec_timeout; i++) {
 		tmp = le32_to_cpu(rdev->wb.wb[index/4]);
 		if (tmp == 0xDEADBEEF)
 			break;
-		DRM_UDELAY(1);
+		udelay(1);
 	}
 	if (i < rdev->usec_timeout) {
 		DRM_INFO("ib test on ring %d succeeded in %u usecs\n", ib.fence->ring, i);
@@ -439,33 +444,29 @@ void r600_dma_ring_ib_execute(struct radeon_device *rdev, struct radeon_ib *ib)
 struct radeon_fence *r600_copy_dma(struct radeon_device *rdev,
 				   uint64_t src_offset, uint64_t dst_offset,
 				   unsigned num_gpu_pages,
-				   struct reservation_object *resv)
+				   struct dma_resv *resv)
 {
-	struct radeon_semaphore *sem = NULL;
 	struct radeon_fence *fence;
+	struct radeon_sync sync;
 	int ring_index = rdev->asic->copy.dma_ring_index;
 	struct radeon_ring *ring = &rdev->ring[ring_index];
 	u32 size_in_dw, cur_size_in_dw;
 	int i, num_loops;
 	int r = 0;
 
-	r = radeon_semaphore_create(rdev, &sem);
-	if (r) {
-		DRM_ERROR("radeon: moving bo (%d).\n", r);
-		return ERR_PTR(r);
-	}
+	radeon_sync_create(&sync);
 
 	size_in_dw = (num_gpu_pages << RADEON_GPU_PAGE_SHIFT) / 4;
 	num_loops = DIV_ROUND_UP(size_in_dw, 0xFFFE);
 	r = radeon_ring_lock(rdev, ring, num_loops * 4 + 8);
 	if (r) {
 		DRM_ERROR("radeon: moving bo (%d).\n", r);
-		radeon_semaphore_free(rdev, &sem, NULL);
+		radeon_sync_free(rdev, &sync, NULL);
 		return ERR_PTR(r);
 	}
 
-	radeon_semaphore_sync_resv(rdev, sem, resv, false);
-	radeon_semaphore_sync_rings(rdev, sem, ring->idx);
+	radeon_sync_resv(rdev, &sync, resv, false);
+	radeon_sync_rings(rdev, &sync, ring->idx);
 
 	for (i = 0; i < num_loops; i++) {
 		cur_size_in_dw = size_in_dw;
@@ -484,12 +485,12 @@ struct radeon_fence *r600_copy_dma(struct radeon_device *rdev,
 	r = radeon_fence_emit(rdev, &fence, ring->idx);
 	if (r) {
 		radeon_ring_unlock_undo(rdev, ring);
-		radeon_semaphore_free(rdev, &sem, NULL);
+		radeon_sync_free(rdev, &sync, NULL);
 		return ERR_PTR(r);
 	}
 
 	radeon_ring_unlock_commit(rdev, ring, false);
-	radeon_semaphore_free(rdev, &sem, fence);
+	radeon_sync_free(rdev, &sync, fence);
 
 	return fence;
 }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/mach-pxa/icontrol.c
  *
@@ -7,25 +8,22 @@
  * Copyright (C) 2009 TMT Services & Supplies (Pty) Ltd.
  *
  * 2010-01-21 Hennie van der Merve <hvdmerwe@tmtservies.co.za>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/irq.h>
 #include <linux/platform_device.h>
+#include <linux/property.h>
 #include <linux/gpio.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 
-#include <mach/pxa320.h>
-#include <mach/mxm8x10.h>
+#include "pxa320.h"
+#include "mxm8x10.h"
 
 #include <linux/spi/spi.h>
 #include <linux/spi/pxa2xx_spi.h>
-#include <linux/can/platform/mcp251x.h>
+#include <linux/regulator/machine.h>
 
 #include "generic.h"
 
@@ -71,8 +69,9 @@ static struct pxa2xx_spi_chip mcp251x_chip_info4 = {
 	.gpio_cs        = ICONTROL_MCP251x_nCS4
 };
 
-static struct mcp251x_platform_data mcp251x_info = {
-	.oscillator_frequency = 16E6,
+static const struct property_entry mcp251x_properties[] = {
+	PROPERTY_ENTRY_U32("clock-frequency", 16000000),
+	{}
 };
 
 static struct spi_board_info mcp251x_board_info[] = {
@@ -81,7 +80,7 @@ static struct spi_board_info mcp251x_board_info[] = {
 		.max_speed_hz    = 6500000,
 		.bus_num         = 3,
 		.chip_select     = 0,
-		.platform_data   = &mcp251x_info,
+		.properties      = mcp251x_properties,
 		.controller_data = &mcp251x_chip_info1,
 		.irq             = PXA_GPIO_TO_IRQ(ICONTROL_MCP251x_nIRQ1)
 	},
@@ -90,7 +89,7 @@ static struct spi_board_info mcp251x_board_info[] = {
 		.max_speed_hz    = 6500000,
 		.bus_num         = 3,
 		.chip_select     = 1,
-		.platform_data   = &mcp251x_info,
+		.properties      = mcp251x_properties,
 		.controller_data = &mcp251x_chip_info2,
 		.irq             = PXA_GPIO_TO_IRQ(ICONTROL_MCP251x_nIRQ2)
 	},
@@ -99,7 +98,7 @@ static struct spi_board_info mcp251x_board_info[] = {
 		.max_speed_hz    = 6500000,
 		.bus_num         = 4,
 		.chip_select     = 0,
-		.platform_data   = &mcp251x_info,
+		.properties      = mcp251x_properties,
 		.controller_data = &mcp251x_chip_info3,
 		.irq             = PXA_GPIO_TO_IRQ(ICONTROL_MCP251x_nIRQ3)
 	},
@@ -108,20 +107,18 @@ static struct spi_board_info mcp251x_board_info[] = {
 		.max_speed_hz    = 6500000,
 		.bus_num         = 4,
 		.chip_select     = 1,
-		.platform_data   = &mcp251x_info,
+		.properties      = mcp251x_properties,
 		.controller_data = &mcp251x_chip_info4,
 		.irq             = PXA_GPIO_TO_IRQ(ICONTROL_MCP251x_nIRQ4)
 	}
 };
 
-static struct pxa2xx_spi_master pxa_ssp3_spi_master_info = {
-	.clock_enable   = CKEN_SSP3,
+static struct pxa2xx_spi_controller pxa_ssp3_spi_master_info = {
 	.num_chipselect = 2,
 	.enable_dma     = 1
 };
 
-static struct pxa2xx_spi_master pxa_ssp4_spi_master_info = {
-	.clock_enable   = CKEN_SSP4,
+static struct pxa2xx_spi_controller pxa_ssp4_spi_master_info = {
 	.num_chipselect = 2,
 	.enable_dma     = 1
 };
@@ -185,6 +182,8 @@ static void __init icontrol_init(void)
 	mxm_8x10_mmc_init();
 
 	icontrol_can_init();
+
+	regulator_has_full_constraints();
 }
 
 MACHINE_START(ICONTROL, "iControl/SafeTcam boards using Embedian MXM-8x10 CoM")

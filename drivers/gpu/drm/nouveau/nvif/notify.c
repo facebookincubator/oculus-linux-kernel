@@ -92,7 +92,7 @@ nvif_notify_func(struct nvif_notify *notify, bool keep)
 {
 	int ret = notify->func(notify);
 	if (ret == NVIF_NOTIFY_KEEP ||
-	    !test_and_clear_bit(NVKM_NOTIFY_USER, &notify->flags)) {
+	    !test_and_clear_bit(NVIF_NOTIFY_USER, &notify->flags)) {
 		if (!keep)
 			atomic_dec(&notify->putcnt);
 		else
@@ -124,7 +124,7 @@ nvif_notify(const void *header, u32 length, const void *data, u32 size)
 	}
 
 	if (!WARN_ON(notify == NULL)) {
-		struct nvif_client *client = nvif_client(notify->object);
+		struct nvif_client *client = notify->object->client;
 		if (!WARN_ON(notify->size != size)) {
 			atomic_inc(&notify->putcnt);
 			if (test_bit(NVIF_NOTIFY_WORK, &notify->flags)) {
@@ -142,7 +142,7 @@ nvif_notify(const void *header, u32 length, const void *data, u32 size)
 }
 
 int
-nvif_notify_fini(struct nvif_notify *notify)
+nvif_notify_dtor(struct nvif_notify *notify)
 {
 	struct nvif_object *object = notify->object;
 	struct {
@@ -155,16 +155,14 @@ nvif_notify_fini(struct nvif_notify *notify)
 	int ret = nvif_notify_put(notify);
 	if (ret >= 0 && object) {
 		ret = nvif_object_ioctl(object, &args, sizeof(args), NULL);
-		if (ret == 0) {
-			nvif_object_ref(NULL, &notify->object);
-			kfree((void *)notify->data);
-		}
+		notify->object = NULL;
+		kfree((void *)notify->data);
 	}
 	return ret;
 }
 
 int
-nvif_notify_init(struct nvif_object *object, void (*dtor)(struct nvif_notify *),
+nvif_notify_ctor(struct nvif_object *object, const char *name,
 		 int (*func)(struct nvif_notify *), bool work, u8 event,
 		 void *data, u32 size, u32 reply, struct nvif_notify *notify)
 {
@@ -175,11 +173,10 @@ nvif_notify_init(struct nvif_object *object, void (*dtor)(struct nvif_notify *),
 	} *args;
 	int ret = -ENOMEM;
 
-	notify->object = NULL;
-	nvif_object_ref(object, &notify->object);
+	notify->object = object;
+	notify->name = name ? name : "nvifNotify";
 	notify->flags = 0;
 	atomic_set(&notify->putcnt, 1);
-	notify->dtor = dtor;
 	notify->func = func;
 	notify->data = NULL;
 	notify->size = reply;
@@ -208,41 +205,6 @@ nvif_notify_init(struct nvif_object *object, void (*dtor)(struct nvif_notify *),
 	kfree(args);
 done:
 	if (ret)
-		nvif_notify_fini(notify);
+		nvif_notify_dtor(notify);
 	return ret;
-}
-
-static void
-nvif_notify_del(struct nvif_notify *notify)
-{
-	nvif_notify_fini(notify);
-	kfree(notify);
-}
-
-void
-nvif_notify_ref(struct nvif_notify *notify, struct nvif_notify **pnotify)
-{
-	BUG_ON(notify != NULL);
-	if (*pnotify)
-		(*pnotify)->dtor(*pnotify);
-	*pnotify = notify;
-}
-
-int
-nvif_notify_new(struct nvif_object *object, int (*func)(struct nvif_notify *),
-		bool work, u8 type, void *data, u32 size, u32 reply,
-		struct nvif_notify **pnotify)
-{
-	struct nvif_notify *notify = kzalloc(sizeof(*notify), GFP_KERNEL);
-	if (notify) {
-		int ret = nvif_notify_init(object, nvif_notify_del, func, work,
-					   type, data, size, reply, notify);
-		if (ret) {
-			kfree(notify);
-			notify = NULL;
-		}
-		*pnotify = notify;
-		return ret;
-	}
-	return -ENOMEM;
 }

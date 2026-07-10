@@ -1,22 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*-*-linux-c-*-*/
 
 /*
   Copyright (C) 2006 Lennart Poettering <mzxreary (at) 0pointer (dot) de>
 
-  This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; either version 2 of the License, or
-  (at your option) any later version.
-
-  This program is distributed in the hope that it will be useful, but
-  WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-  General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-  02110-1301, USA.
  */
 
 /*
@@ -64,6 +51,7 @@
 #include <linux/i8042.h>
 #include <linux/input.h>
 #include <linux/input/sparse-keymap.h>
+#include <acpi/video.h>
 
 #define MSI_DRIVER_VERSION "0.5"
 
@@ -562,18 +550,17 @@ static struct attribute *msipf_old_attributes[] = {
 	NULL
 };
 
-static struct attribute_group msipf_attribute_group = {
+static const struct attribute_group msipf_attribute_group = {
 	.attrs = msipf_attributes
 };
 
-static struct attribute_group msipf_old_attribute_group = {
+static const struct attribute_group msipf_old_attribute_group = {
 	.attrs = msipf_old_attributes
 };
 
 static struct platform_driver msipf_driver = {
 	.driver = {
 		.name = "msi-laptop-pf",
-		.owner = THIS_MODULE,
 		.pm = &msi_laptop_pm,
 	},
 };
@@ -605,15 +592,14 @@ static int dmi_check_cb(const struct dmi_system_id *dmi)
 	return 1;
 }
 
-static struct dmi_system_id __initdata msi_dmi_table[] = {
+static const struct dmi_system_id msi_dmi_table[] __initconst = {
 	{
 		.ident = "MSI S270",
 		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "MICRO-STAR INT'L CO.,LTD"),
+			DMI_MATCH(DMI_SYS_VENDOR, "MICRO-STAR INT"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "MS-1013"),
 			DMI_MATCH(DMI_PRODUCT_VERSION, "0131"),
-			DMI_MATCH(DMI_CHASSIS_VENDOR,
-				  "MICRO-STAR INT'L CO.,LTD")
+			DMI_MATCH(DMI_CHASSIS_VENDOR, "MICRO-STAR INT")
 		},
 		.driver_data = &quirk_old_ec_model,
 		.callback = dmi_check_cb
@@ -646,8 +632,7 @@ static struct dmi_system_id __initdata msi_dmi_table[] = {
 			DMI_MATCH(DMI_SYS_VENDOR, "NOTEBOOK"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "SAM2000"),
 			DMI_MATCH(DMI_PRODUCT_VERSION, "0131"),
-			DMI_MATCH(DMI_CHASSIS_VENDOR,
-				  "MICRO-STAR INT'L CO.,LTD")
+			DMI_MATCH(DMI_CHASSIS_VENDOR, "MICRO-STAR INT")
 		},
 		.driver_data = &quirk_old_ec_model,
 		.callback = dmi_check_cb
@@ -821,7 +806,7 @@ static bool msi_laptop_i8042_filter(unsigned char data, unsigned char str,
 {
 	static bool extended;
 
-	if (str & 0x20)
+	if (str & I8042_STR_AUXDATA)
 		return false;
 
 	/* 0x54 wwan, 0x62 bluetooth, 0x76 wlan, 0xE4 touchpad toggle*/
@@ -976,21 +961,13 @@ static int __init msi_laptop_input_setup(void)
 
 	err = input_register_device(msi_laptop_input_dev);
 	if (err)
-		goto err_free_keymap;
+		goto err_free_dev;
 
 	return 0;
 
-err_free_keymap:
-	sparse_keymap_free(msi_laptop_input_dev);
 err_free_dev:
 	input_free_device(msi_laptop_input_dev);
 	return err;
-}
-
-static void msi_laptop_input_destroy(void)
-{
-	sparse_keymap_free(msi_laptop_input_dev);
-	input_unregister_device(msi_laptop_input_dev);
 }
 
 static int __init load_scm_model_init(struct platform_device *sdev)
@@ -1037,7 +1014,7 @@ static int __init load_scm_model_init(struct platform_device *sdev)
 	return 0;
 
 fail_filter:
-	msi_laptop_input_destroy();
+	input_unregister_device(msi_laptop_input_dev);
 
 fail_input:
 	rfkill_cleanup();
@@ -1069,10 +1046,8 @@ static int __init msi_init(void)
 		return -EINVAL;
 
 	/* Register backlight stuff */
-
-	if (!quirks->old_ec_model || acpi_video_backlight_support()) {
-		pr_info("Brightness ignored, must be controlled by ACPI video driver\n");
-	} else {
+	if (quirks->old_ec_model &&
+	    acpi_video_get_backlight_type() == acpi_backlight_vendor) {
 		struct backlight_properties props;
 		memset(&props, 0, sizeof(struct backlight_properties));
 		props.type = BACKLIGHT_PLATFORM;
@@ -1139,6 +1114,8 @@ fail_create_attr:
 fail_create_group:
 	if (quirks->load_scm_model) {
 		i8042_remove_filter(msi_laptop_i8042_filter);
+		cancel_delayed_work_sync(&msi_touchpad_dwork);
+		input_unregister_device(msi_laptop_input_dev);
 		cancel_delayed_work_sync(&msi_rfkill_dwork);
 		cancel_work_sync(&msi_rfkill_work);
 		rfkill_cleanup();
@@ -1159,7 +1136,8 @@ static void __exit msi_cleanup(void)
 {
 	if (quirks->load_scm_model) {
 		i8042_remove_filter(msi_laptop_i8042_filter);
-		msi_laptop_input_destroy();
+		cancel_delayed_work_sync(&msi_touchpad_dwork);
+		input_unregister_device(msi_laptop_input_dev);
 		cancel_delayed_work_sync(&msi_rfkill_dwork);
 		cancel_work_sync(&msi_rfkill_work);
 		rfkill_cleanup();

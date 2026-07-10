@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * IPVS         An implementation of the IP virtual server support for the
  *              LINUX operating system.  IPVS is now implemented as a module
@@ -8,13 +9,7 @@
  * Authors:     Wensong Zhang <wensong@linuxvirtualserver.org>
  *              Peter Kese <peter.kese@ijs.si>
  *
- *              This program is free software; you can redistribute it and/or
- *              modify it under the terms of the GNU General Public License
- *              as published by the Free Software Foundation; either version
- *              2 of the License, or (at your option) any later version.
- *
  * Changes:
- *
  */
 
 #define KMSG_COMPONENT "IPVS"
@@ -104,8 +99,7 @@ static struct ip_vs_scheduler *ip_vs_sched_getbyname(const char *sched_name)
 			mutex_unlock(&ip_vs_sched_mutex);
 			return sched;
 		}
-		if (sched->module)
-			module_put(sched->module);
+		module_put(sched->module);
 	}
 
 	mutex_unlock(&ip_vs_sched_mutex);
@@ -138,7 +132,7 @@ struct ip_vs_scheduler *ip_vs_scheduler_get(const char *sched_name)
 
 void ip_vs_scheduler_put(struct ip_vs_scheduler *scheduler)
 {
-	if (scheduler && scheduler->module)
+	if (scheduler)
 		module_put(scheduler->module);
 }
 
@@ -185,7 +179,8 @@ int register_ip_vs_scheduler(struct ip_vs_scheduler *scheduler)
 	}
 
 	/* increase the module use count */
-	ip_vs_use_count_inc();
+	if (!ip_vs_use_count_inc())
+		return -ENOENT;
 
 	mutex_lock(&ip_vs_sched_mutex);
 

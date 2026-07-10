@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* -*- mode: c; c-basic-offset: 8; -*-
  * vim: noexpandtab sw=8 ts=8 sts=0:
  *
@@ -6,15 +7,6 @@
  * Code which interfaces ocfs2 with fs/dlm and a userspace stack.
  *
  * Copyright (C) 2007 Oracle.  All rights reserved.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public
- * License as published by the Free Software Foundation, version 2.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -24,7 +16,7 @@
 #include <linux/slab.h>
 #include <linux/reboot.h>
 #include <linux/sched.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include "stackglue.h"
 
@@ -398,7 +390,7 @@ static int ocfs2_control_do_setnode_msg(struct file *file,
 
 static int ocfs2_control_do_setversion_msg(struct file *file,
 					   struct ocfs2_control_message_setv *msg)
- {
+{
 	long major, minor;
 	char *ptr = NULL;
 	struct ocfs2_control_private *p = file->private_data;
@@ -655,14 +647,7 @@ static int ocfs2_control_init(void)
 
 static void ocfs2_control_exit(void)
 {
-	int rc;
-
-	rc = misc_deregister(&ocfs2_control_device);
-	if (rc)
-		printk(KERN_ERR
-		       "ocfs2: Unable to deregister ocfs2_control device "
-		       "(errno %d)\n",
-		       -rc);
+	misc_deregister(&ocfs2_control_device);
 }
 
 static void fsdlm_lock_ast_wrapper(void *astarg)
@@ -1004,10 +989,8 @@ static int user_cluster_connect(struct ocfs2_cluster_connection *conn)
 	BUG_ON(conn == NULL);
 
 	lc = kzalloc(sizeof(struct ocfs2_live_connection), GFP_KERNEL);
-	if (!lc) {
-		rc = -ENOMEM;
-		goto out;
-	}
+	if (!lc)
+		return -ENOMEM;
 
 	init_waitqueue_head(&lc->oc_wait);
 	init_completion(&lc->oc_sync_wait);
@@ -1016,10 +999,17 @@ static int user_cluster_connect(struct ocfs2_cluster_connection *conn)
 	lc->oc_type = NO_CONTROLD;
 
 	rc = dlm_new_lockspace(conn->cc_name, conn->cc_cluster_name,
-			       DLM_LSFL_FS, DLM_LVB_LEN,
+			       DLM_LSFL_FS | DLM_LSFL_NEWEXCL, DLM_LVB_LEN,
 			       &ocfs2_ls_ops, conn, &ops_rv, &fsdlm);
-	if (rc)
+	if (rc) {
+		if (rc == -EEXIST || rc == -EPROTO)
+			printk(KERN_ERR "ocfs2: Unable to create the "
+				"lockspace %s (%d), because a ocfs2-tools "
+				"program is running on this file system "
+				"with the same name lockspace\n",
+				conn->cc_name, rc);
 		goto out;
+	}
 
 	if (ops_rv == -EOPNOTSUPP) {
 		lc->oc_type = WITH_CONTROLD;
@@ -1063,7 +1053,7 @@ static int user_cluster_connect(struct ocfs2_cluster_connection *conn)
 	}
 
 out:
-	if (rc && lc)
+	if (rc)
 		kfree(lc);
 	return rc;
 }

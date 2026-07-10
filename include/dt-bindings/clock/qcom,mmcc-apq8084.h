@@ -1,14 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2014, The Linux Foundation. All rights reserved.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #ifndef _DT_BINDINGS_CLK_APQ_MMCC_8084_H
@@ -179,5 +171,15 @@
 #define VPU_MAPLE_CLK			162
 #define VPU_SLEEP_CLK			163
 #define VPU_VDP_CLK			164
+
+/* GDSCs */
+#define VENUS0_GDSC			0
+#define VENUS0_CORE0_GDSC		1
+#define VENUS0_CORE1_GDSC		2
+#define MDSS_GDSC			3
+#define CAMSS_JPEG_GDSC			4
+#define CAMSS_VFE_GDSC			5
+#define OXILI_GDSC			6
+#define OXILICX_GDSC			7
 
 #endif

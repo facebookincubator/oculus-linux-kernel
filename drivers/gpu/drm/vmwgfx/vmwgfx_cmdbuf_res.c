@@ -1,7 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0 OR MIT
 /**************************************************************************
  *
- * Copyright © 2014 VMware, Inc., Palo Alto, CA., USA
- * All Rights Reserved.
+ * Copyright 2014-2015 VMware, Inc., Palo Alto, CA., USA
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -26,14 +26,9 @@
  **************************************************************************/
 
 #include "vmwgfx_drv.h"
+#include "vmwgfx_resource_priv.h"
 
 #define VMW_CMDBUF_RES_MAN_HT_ORDER 12
-
-enum vmw_cmdbuf_res_state {
-	VMW_CMDBUF_RES_COMMITED,
-	VMW_CMDBUF_RES_ADD,
-	VMW_CMDBUF_RES_DEL
-};
 
 /**
  * struct vmw_cmdbuf_res - Command buffer managed resource entry.
@@ -94,8 +89,7 @@ vmw_cmdbuf_res_lookup(struct vmw_cmdbuf_res_manager *man,
 	if (unlikely(ret != 0))
 		return ERR_PTR(ret);
 
-	return vmw_resource_reference
-		(drm_hash_entry(hash, struct vmw_cmdbuf_res, hash)->res);
+	return drm_hash_entry(hash, struct vmw_cmdbuf_res, hash)->res;
 }
 
 /**
@@ -132,9 +126,12 @@ void vmw_cmdbuf_res_commit(struct list_head *list)
 
 	list_for_each_entry_safe(entry, next, list, head) {
 		list_del(&entry->head);
+		if (entry->res->func->commit_notify)
+			entry->res->func->commit_notify(entry->res,
+							entry->state);
 		switch (entry->state) {
 		case VMW_CMDBUF_RES_ADD:
-			entry->state = VMW_CMDBUF_RES_COMMITED;
+			entry->state = VMW_CMDBUF_RES_COMMITTED;
 			list_add_tail(&entry->head, &entry->man->list);
 			break;
 		case VMW_CMDBUF_RES_DEL:
@@ -175,7 +172,7 @@ void vmw_cmdbuf_res_revert(struct list_head *list)
 						 &entry->hash);
 			list_del(&entry->head);
 			list_add_tail(&entry->head, &entry->man->list);
-			entry->state = VMW_CMDBUF_RES_COMMITED;
+			entry->state = VMW_CMDBUF_RES_COMMITTED;
 			break;
 		default:
 			BUG();
@@ -207,13 +204,15 @@ int vmw_cmdbuf_res_add(struct vmw_cmdbuf_res_manager *man,
 	int ret;
 
 	cres = kzalloc(sizeof(*cres), GFP_KERNEL);
-	if (unlikely(cres == NULL))
+	if (unlikely(!cres))
 		return -ENOMEM;
 
 	cres->hash.key = user_key | (res_type << 24);
 	ret = drm_ht_insert_item(&man->resources, &cres->hash);
-	if (unlikely(ret != 0))
+	if (unlikely(ret != 0)) {
+		kfree(cres);
 		goto out_invalid_key;
+	}
 
 	cres->state = VMW_CMDBUF_RES_ADD;
 	cres->res = vmw_resource_reference(res);
@@ -231,6 +230,9 @@ out_invalid_key:
  * @res_type: The resource type.
  * @user_key: The user-space id of the resource.
  * @list: The staging list.
+ * @res_p: If the resource is in an already committed state, points to the
+ * struct vmw_resource on successful return. The pointer will be
+ * non ref-counted.
  *
  * This function looks up the struct vmw_cmdbuf_res entry from the manager
  * hash table and, if it exists, removes it. Depending on its current staging
@@ -240,7 +242,8 @@ out_invalid_key:
 int vmw_cmdbuf_res_remove(struct vmw_cmdbuf_res_manager *man,
 			  enum vmw_cmdbuf_res_type res_type,
 			  u32 user_key,
-			  struct list_head *list)
+			  struct list_head *list,
+			  struct vmw_resource **res_p)
 {
 	struct vmw_cmdbuf_res *entry;
 	struct drm_hash_item *hash;
@@ -256,12 +259,14 @@ int vmw_cmdbuf_res_remove(struct vmw_cmdbuf_res_manager *man,
 	switch (entry->state) {
 	case VMW_CMDBUF_RES_ADD:
 		vmw_cmdbuf_res_free(man, entry);
+		*res_p = NULL;
 		break;
-	case VMW_CMDBUF_RES_COMMITED:
+	case VMW_CMDBUF_RES_COMMITTED:
 		(void) drm_ht_remove_item(&man->resources, &entry->hash);
 		list_del(&entry->head);
 		entry->state = VMW_CMDBUF_RES_DEL;
 		list_add_tail(&entry->head, list);
+		*res_p = entry->res;
 		break;
 	default:
 		BUG();
@@ -287,7 +292,7 @@ vmw_cmdbuf_res_man_create(struct vmw_private *dev_priv)
 	int ret;
 
 	man = kzalloc(sizeof(*man), GFP_KERNEL);
-	if (man == NULL)
+	if (!man)
 		return ERR_PTR(-ENOMEM);
 
 	man->dev_priv = dev_priv;
@@ -317,6 +322,7 @@ void vmw_cmdbuf_res_man_destroy(struct vmw_cmdbuf_res_manager *man)
 	list_for_each_entry_safe(entry, next, &man->list, head)
 		vmw_cmdbuf_res_free(man, entry);
 
+	drm_ht_remove(&man->resources);
 	kfree(man);
 }
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/fs/hfsplus/options.c
  *
@@ -139,6 +140,8 @@ int hfsplus_parse_options(char *input, struct hfsplus_sb_info *sbi)
 			if (!uid_valid(sbi->uid)) {
 				pr_err("invalid uid specified\n");
 				return 0;
+			} else {
+				set_bit(HFSPLUS_SB_UID, &sbi->flags);
 			}
 			break;
 		case opt_gid:
@@ -150,6 +153,8 @@ int hfsplus_parse_options(char *input, struct hfsplus_sb_info *sbi)
 			if (!gid_valid(sbi->gid)) {
 				pr_err("invalid gid specified\n");
 				return 0;
+			} else {
+				set_bit(HFSPLUS_SB_GID, &sbi->flags);
 			}
 			break;
 		case opt_part:
@@ -218,9 +223,9 @@ int hfsplus_show_options(struct seq_file *seq, struct dentry *root)
 	struct hfsplus_sb_info *sbi = HFSPLUS_SB(root->d_sb);
 
 	if (sbi->creator != HFSPLUS_DEF_CR_TYPE)
-		seq_printf(seq, ",creator=%.4s", (char *)&sbi->creator);
+		seq_show_option_n(seq, "creator", (char *)&sbi->creator, 4);
 	if (sbi->type != HFSPLUS_DEF_CR_TYPE)
-		seq_printf(seq, ",type=%.4s", (char *)&sbi->type);
+		seq_show_option_n(seq, "type", (char *)&sbi->type, 4);
 	seq_printf(seq, ",umask=%o,uid=%u,gid=%u", sbi->umask,
 			from_kuid_munged(&init_user_ns, sbi->uid),
 			from_kgid_munged(&init_user_ns, sbi->gid));

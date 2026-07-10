@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
+
+#include <linux/pci.h>
+
+#include <drm/drm_drv.h>
+#include <drm/drm_fourcc.h>
 
 #include "bochs.h"
 
@@ -47,15 +49,72 @@ static void bochs_dispi_write(struct bochs_device *bochs, u16 reg, u16 val)
 	}
 }
 
-int bochs_hw_init(struct drm_device *dev, uint32_t flags)
+static void bochs_hw_set_big_endian(struct bochs_device *bochs)
+{
+	if (bochs->qext_size < 8)
+		return;
+
+	writel(0xbebebebe, bochs->mmio + 0x604);
+}
+
+static void bochs_hw_set_little_endian(struct bochs_device *bochs)
+{
+	if (bochs->qext_size < 8)
+		return;
+
+	writel(0x1e1e1e1e, bochs->mmio + 0x604);
+}
+
+#ifdef __BIG_ENDIAN
+#define bochs_hw_set_native_endian(_b) bochs_hw_set_big_endian(_b)
+#else
+#define bochs_hw_set_native_endian(_b) bochs_hw_set_little_endian(_b)
+#endif
+
+static int bochs_get_edid_block(void *data, u8 *buf,
+				unsigned int block, size_t len)
+{
+	struct bochs_device *bochs = data;
+	size_t i, start = block * EDID_LENGTH;
+
+	if (start + len > 0x400 /* vga register offset */)
+		return -1;
+
+	for (i = 0; i < len; i++) {
+		buf[i] = readb(bochs->mmio + start + i);
+	}
+	return 0;
+}
+
+int bochs_hw_load_edid(struct bochs_device *bochs)
+{
+	u8 header[8];
+
+	if (!bochs->mmio)
+		return -1;
+
+	/* check header to detect whenever edid support is enabled in qemu */
+	bochs_get_edid_block(bochs, header, 0, ARRAY_SIZE(header));
+	if (drm_edid_header_is_valid(header) != 8)
+		return -1;
+
+	kfree(bochs->edid);
+	bochs->edid = drm_do_get_edid(&bochs->connector,
+				      bochs_get_edid_block, bochs);
+	if (bochs->edid == NULL)
+		return -1;
+
+	return 0;
+}
+
+int bochs_hw_init(struct drm_device *dev)
 {
 	struct bochs_device *bochs = dev->dev_private;
 	struct pci_dev *pdev = dev->pdev;
 	unsigned long addr, size, mem, ioaddr, iosize;
 	u16 id;
 
-	if (/* (ent->driver_data == BOCHS_QEMU_STDVGA) && */
-	    (pdev->resource[2].flags & IORESOURCE_MEM)) {
+	if (pdev->resource[2].flags & IORESOURCE_MEM) {
 		/* mmio bar with vga and bochs registers present */
 		if (pci_request_region(pdev, 2, "bochs-drm") != 0) {
 			DRM_ERROR("Cannot request mmio region\n");
@@ -98,10 +157,8 @@ int bochs_hw_init(struct drm_device *dev, uint32_t flags)
 		size = min(size, mem);
 	}
 
-	if (pci_request_region(pdev, 0, "bochs-drm") != 0) {
-		DRM_ERROR("Cannot request framebuffer\n");
-		return -EBUSY;
-	}
+	if (pci_request_region(pdev, 0, "bochs-drm") != 0)
+		DRM_WARN("Cannot request framebuffer, boot fb still active?\n");
 
 	bochs->fb_map = ioremap(addr, size);
 	if (bochs->fb_map == NULL) {
@@ -116,12 +173,27 @@ int bochs_hw_init(struct drm_device *dev, uint32_t flags)
 		 size / 1024, addr,
 		 bochs->ioports ? "ioports" : "mmio",
 		 ioaddr);
+
+	if (bochs->mmio && pdev->revision >= 2) {
+		bochs->qext_size = readl(bochs->mmio + 0x600);
+		if (bochs->qext_size < 4 || bochs->qext_size > iosize) {
+			bochs->qext_size = 0;
+			goto noext;
+		}
+		DRM_DEBUG("Found qemu ext regs, size %ld\n",
+			  bochs->qext_size);
+		bochs_hw_set_native_endian(bochs);
+	}
+
+noext:
 	return 0;
 }
 
 void bochs_hw_fini(struct drm_device *dev)
 {
 	struct bochs_device *bochs = dev->dev_private;
+
+	/* TODO: shot down existing vram mappings */
 
 	if (bochs->mmio)
 		iounmap(bochs->mmio);
@@ -130,11 +202,17 @@ void bochs_hw_fini(struct drm_device *dev)
 	if (bochs->fb_map)
 		iounmap(bochs->fb_map);
 	pci_release_regions(dev->pdev);
+	kfree(bochs->edid);
 }
 
 void bochs_hw_setmode(struct bochs_device *bochs,
 		      struct drm_display_mode *mode)
 {
+	int idx;
+
+	if (!drm_dev_enter(bochs->dev, &idx))
+		return;
+
 	bochs->xres = mode->hdisplay;
 	bochs->yres = mode->vdisplay;
 	bochs->bpp = 32;
@@ -147,6 +225,7 @@ void bochs_hw_setmode(struct bochs_device *bochs,
 
 	bochs_vga_writeb(bochs, 0x3c0, 0x20); /* unblank */
 
+	bochs_dispi_write(bochs, VBE_DISPI_INDEX_ENABLE,      0);
 	bochs_dispi_write(bochs, VBE_DISPI_INDEX_BPP,         bochs->bpp);
 	bochs_dispi_write(bochs, VBE_DISPI_INDEX_XRES,        bochs->xres);
 	bochs_dispi_write(bochs, VBE_DISPI_INDEX_YRES,        bochs->yres);
@@ -159,19 +238,63 @@ void bochs_hw_setmode(struct bochs_device *bochs,
 
 	bochs_dispi_write(bochs, VBE_DISPI_INDEX_ENABLE,
 			  VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
+
+	drm_dev_exit(idx);
+}
+
+void bochs_hw_setformat(struct bochs_device *bochs,
+			const struct drm_format_info *format)
+{
+	int idx;
+
+	if (!drm_dev_enter(bochs->dev, &idx))
+		return;
+
+	DRM_DEBUG_DRIVER("format %c%c%c%c\n",
+			 (format->format >>  0) & 0xff,
+			 (format->format >>  8) & 0xff,
+			 (format->format >> 16) & 0xff,
+			 (format->format >> 24) & 0xff);
+
+	switch (format->format) {
+	case DRM_FORMAT_XRGB8888:
+		bochs_hw_set_little_endian(bochs);
+		break;
+	case DRM_FORMAT_BGRX8888:
+		bochs_hw_set_big_endian(bochs);
+		break;
+	default:
+		/* should not happen */
+		DRM_ERROR("%s: Huh? Got framebuffer format 0x%x",
+			  __func__, format->format);
+		break;
+	}
+
+	drm_dev_exit(idx);
 }
 
 void bochs_hw_setbase(struct bochs_device *bochs,
-		      int x, int y, u64 addr)
+		      int x, int y, int stride, u64 addr)
 {
-	unsigned long offset = (unsigned long)addr +
+	unsigned long offset;
+	unsigned int vx, vy, vwidth, idx;
+
+	if (!drm_dev_enter(bochs->dev, &idx))
+		return;
+
+	bochs->stride = stride;
+	offset = (unsigned long)addr +
 		y * bochs->stride +
 		x * (bochs->bpp / 8);
-	int vy = offset / bochs->stride;
-	int vx = (offset % bochs->stride) * 8 / bochs->bpp;
+	vy = offset / bochs->stride;
+	vx = (offset % bochs->stride) * 8 / bochs->bpp;
+	vwidth = stride * 8 / bochs->bpp;
 
 	DRM_DEBUG_DRIVER("x %d, y %d, addr %llx -> offset %lx, vx %d, vy %d\n",
 			 x, y, addr, offset, vx, vy);
+	bochs_dispi_write(bochs, VBE_DISPI_INDEX_VIRT_WIDTH, vwidth);
 	bochs_dispi_write(bochs, VBE_DISPI_INDEX_X_OFFSET, vx);
 	bochs_dispi_write(bochs, VBE_DISPI_INDEX_Y_OFFSET, vy);
+
+	drm_dev_exit(idx);
 }

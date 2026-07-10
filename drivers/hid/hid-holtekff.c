@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Force feedback support for Holtek On Line Grip based gamepads
  *
@@ -8,19 +9,6 @@
  */
 
 /*
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
 #include <linux/hid.h>
@@ -31,10 +19,6 @@
 #include "hid-ids.h"
 
 #ifdef CONFIG_HOLTEK_FF
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Anssi Hannula <anssi.hannula@iki.fi>");
-MODULE_DESCRIPTION("Force feedback support for Holtek On Line Grip based devices");
 
 /*
  * These commands and parameters are currently known:
@@ -47,7 +31,7 @@ MODULE_DESCRIPTION("Force feedback support for Holtek On Line Grip based devices
  * 	06  stop all effects
  * 	(the difference between 04 and 06 isn't known; win driver
  * 	 sends 06,04 on application init, and 06 otherwise)
- *
+ * 
  * Commands 01 and 02 need to be sent as pairs, i.e. you need to send 01
  * before each 02.
  *
@@ -146,7 +130,7 @@ static int holtekff_init(struct hid_device *hid)
 	struct input_dev *dev;
 	int error;
 
-if (list_empty(&hid->inputs)) {
+	if (list_empty(&hid->inputs)) {
 		hid_err(hid, "no inputs found\n");
 		return -ENODEV;
 	}
@@ -229,3 +213,7 @@ static struct hid_driver holtek_driver = {
 	.probe = holtek_probe,
 };
 module_hid_driver(holtek_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Anssi Hannula <anssi.hannula@iki.fi>");
+MODULE_DESCRIPTION("Force feedback support for Holtek On Line Grip based devices");

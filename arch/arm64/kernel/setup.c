@@ -1,39 +1,24 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Based on arch/arm/kernel/setup.c
  *
  * Copyright (C) 1995-2001 Russell King
  * Copyright (C) 2012 ARM Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/acpi.h>
 #include <linux/export.h>
 #include <linux/kernel.h>
 #include <linux/stddef.h>
 #include <linux/ioport.h>
 #include <linux/delay.h>
-#include <linux/utsname.h>
 #include <linux/initrd.h>
 #include <linux/console.h>
 #include <linux/cache.h>
-#include <linux/bootmem.h>
-#include <linux/seq_file.h>
 #include <linux/screen_info.h>
 #include <linux/init.h>
 #include <linux/kexec.h>
-#include <linux/crash_dump.h>
 #include <linux/root_dev.h>
-#include <linux/clk-provider.h>
 #include <linux/cpu.h>
 #include <linux/interrupt.h>
 #include <linux/smp.h>
@@ -41,42 +26,34 @@
 #include <linux/proc_fs.h>
 #include <linux/memblock.h>
 #include <linux/of_fdt.h>
-#include <linux/of_platform.h>
 #include <linux/efi.h>
-#include <linux/personality.h>
-#include <linux/dma-mapping.h>
+#include <linux/psci.h>
+#include <linux/sched/task.h>
+#include <linux/mm.h>
 
+#include <asm/acpi.h>
 #include <asm/fixmap.h>
 #include <asm/cpu.h>
 #include <asm/cputype.h>
+#include <asm/daifflags.h>
 #include <asm/elf.h>
 #include <asm/cpufeature.h>
 #include <asm/cpu_ops.h>
 #include <asm/kasan.h>
+#include <asm/numa.h>
 #include <asm/sections.h>
 #include <asm/setup.h>
 #include <asm/smp_plat.h>
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 #include <asm/traps.h>
-#include <asm/memblock.h>
-#include <asm/psci.h>
 #include <asm/efi.h>
+#include <asm/xen/hypervisor.h>
+#include <asm/mmu_context.h>
 
-unsigned int processor_id;
-EXPORT_SYMBOL(processor_id);
+static int num_standard_resources;
+static struct resource *standard_resources;
 
-char* (*arch_read_hardware_id)(void);
-EXPORT_SYMBOL(arch_read_hardware_id);
-
-unsigned int boot_reason;
-EXPORT_SYMBOL(boot_reason);
-
-unsigned int cold_boot;
-EXPORT_SYMBOL(cold_boot);
-
-static const char *cpu_name;
-static const char *machine_name;
 phys_addr_t __fdt_pointer __initdata;
 
 /*
@@ -87,30 +64,18 @@ static struct resource mem_res[] = {
 		.name = "Kernel code",
 		.start = 0,
 		.end = 0,
-		.flags = IORESOURCE_MEM
+		.flags = IORESOURCE_SYSTEM_RAM
 	},
 	{
 		.name = "Kernel data",
 		.start = 0,
 		.end = 0,
-		.flags = IORESOURCE_MEM
+		.flags = IORESOURCE_SYSTEM_RAM
 	}
 };
 
 #define kernel_code mem_res[0]
 #define kernel_data mem_res[1]
-
-void __init early_print(const char *str, ...)
-{
-	char buf[256];
-	va_list ap;
-
-	va_start(ap, str);
-	vsnprintf(buf, sizeof(buf), str, ap);
-	va_end(ap);
-
-	printk("%s", buf);
-}
 
 /*
  * The recorded values of x0 .. x3 upon kernel entry.
@@ -119,12 +84,17 @@ u64 __cacheline_aligned boot_args[4];
 
 void __init smp_setup_processor_id(void)
 {
+	u64 mpidr = read_cpuid_mpidr() & MPIDR_HWID_BITMASK;
+	set_cpu_logical_map(0, mpidr);
+
 	/*
 	 * clear __my_cpu_offset on boot CPU to avoid hang caused by
 	 * using percpu variable early, for example, lockdep will
 	 * access percpu variable inside lock_release
 	 */
 	set_my_cpu_offset(0);
+	pr_info("Booting Linux on physical CPU 0x%010lx [0x%08x]\n",
+		(unsigned long)mpidr, read_cpuid_id());
 }
 
 bool arch_match_cpu_phys_id(int cpu, u64 phys_id)
@@ -196,71 +166,83 @@ static void __init smp_build_mpidr_hash(void)
 	 */
 	if (mpidr_hash_size() > 4 * num_possible_cpus())
 		pr_warn("Large number of MPIDR hash buckets detected\n");
-	__flush_dcache_area(&mpidr_hash, sizeof(struct mpidr_hash));
 }
 
-static void __init setup_processor(void)
+static void *early_fdt_ptr __initdata;
+
+void __init *get_early_fdt_ptr(void)
 {
-	pr_info("Boot CPU: AArch64 Processor [%08x]\n", read_cpuid_id());
-	sprintf(init_utsname()->machine, ELF_PLATFORM);
-	cpuinfo_store_boot_cpu();
+	return early_fdt_ptr;
+}
+
+asmlinkage void __init early_fdt_map(u64 dt_phys)
+{
+	int fdt_size;
+
+	early_fixmap_init();
+	early_fdt_ptr = fixmap_remap_fdt(dt_phys, &fdt_size, PAGE_KERNEL);
 }
 
 static void __init setup_machine_fdt(phys_addr_t dt_phys)
 {
-	if (!dt_phys || !early_init_dt_scan(phys_to_virt(dt_phys))) {
-		early_print("\n"
-			"Error: invalid device tree blob at physical address 0x%p (virtual address 0x%p)\n"
-			"The dtb must be 8-byte aligned and passed in the first 512MB of memory\n"
-			"\nPlease check your bootloader.\n",
-			dt_phys, phys_to_virt(dt_phys));
+	int size;
+	void *dt_virt = fixmap_remap_fdt(dt_phys, &size, PAGE_KERNEL);
+	const char *name;
+
+	if (dt_virt)
+		memblock_reserve(dt_phys, size);
+
+	if (!dt_virt || !early_init_dt_scan(dt_virt)) {
+		pr_crit("\n"
+			"Error: invalid device tree blob at physical address %pa (virtual address 0x%p)\n"
+			"The dtb must be 8-byte aligned and must not exceed 2 MB in size\n"
+			"\nPlease check your bootloader.",
+			&dt_phys, dt_virt);
 
 		while (true)
 			cpu_relax();
 	}
 
-	machine_name = of_flat_dt_get_machine_name();
-	if (machine_name) {
-		dump_stack_set_arch_desc("%s (DT)", machine_name);
-		pr_info("Machine: %s\n", machine_name);
-	}
+	/* Early fixups are done, map the FDT as read-only now */
+	fixmap_remap_fdt(dt_phys, &size, PAGE_KERNEL_RO);
+
+	name = of_flat_dt_get_machine_name();
+	if (!name)
+		return;
+
+	pr_info("Machine model: %s\n", name);
+	dump_stack_set_arch_desc("%s (DT)", name);
 }
-
-/*
- * Limit the memory size that was specified via FDT.
- */
-static int __init early_mem(char *p)
-{
-	phys_addr_t limit;
-
-	if (!p)
-		return 1;
-
-	limit = memparse(p, &p) & PAGE_MASK;
-	pr_notice("Memory limited to %lldMB\n", limit >> 20);
-
-	memblock_enforce_memory_limit(limit);
-
-	return 0;
-}
-early_param("mem", early_mem);
 
 static void __init request_standard_resources(void)
 {
 	struct memblock_region *region;
 	struct resource *res;
+	unsigned long i = 0;
+	size_t res_size;
 
-	kernel_code.start   = virt_to_phys(_text);
-	kernel_code.end     = virt_to_phys(__init_begin - 1);
-	kernel_data.start   = virt_to_phys(_sdata);
-	kernel_data.end     = virt_to_phys(_end - 1);
+	kernel_code.start   = __pa_symbol(_text);
+	kernel_code.end     = __pa_symbol(__init_begin - 1);
+	kernel_data.start   = __pa_symbol(_sdata);
+	kernel_data.end     = __pa_symbol(_end - 1);
 
-	for_each_memblock(memory, region) {
-		res = alloc_bootmem_low(sizeof(*res));
-		res->name  = "System RAM";
+	num_standard_resources = memblock.memory.cnt;
+	res_size = num_standard_resources * sizeof(*standard_resources);
+	standard_resources = memblock_alloc(res_size, SMP_CACHE_BYTES);
+	if (!standard_resources)
+		panic("%s: Failed to allocate %zu bytes\n", __func__, res_size);
+
+	for_each_mem_region(region) {
+		res = &standard_resources[i++];
+		if (memblock_is_nomap(region)) {
+			res->name  = "reserved";
+			res->flags = IORESOURCE_MEM;
+		} else {
+			res->name  = "System RAM";
+			res->flags = IORESOURCE_SYSTEM_RAM | IORESOURCE_BUSY;
+		}
 		res->start = __pfn_to_phys(memblock_region_memory_base_pfn(region));
 		res->end = __pfn_to_phys(memblock_region_memory_end_pfn(region)) - 1;
-		res->flags = IORESOURCE_MEM | IORESOURCE_BUSY;
 
 		request_resource(&iomem_resource, res);
 
@@ -270,82 +252,52 @@ static void __init request_standard_resources(void)
 		if (kernel_data.start >= res->start &&
 		    kernel_data.end <= res->end)
 			request_resource(res, &kernel_data);
-	}
-}
-
-#ifdef CONFIG_BLK_DEV_INITRD
-/*
- * Relocate initrd if it is not completely within the linear mapping.
- * This would be the case if mem= cuts out all or part of it.
- */
-static void __init relocate_initrd(void)
-{
-	phys_addr_t orig_start = __virt_to_phys(initrd_start);
-	phys_addr_t orig_end = __virt_to_phys(initrd_end);
-	phys_addr_t ram_end = memblock_end_of_DRAM();
-	phys_addr_t new_start;
-	unsigned long size, to_free = 0;
-	void *dest;
-
-	if (orig_end <= ram_end)
-		return;
-
-	/*
-	 * Any of the original initrd which overlaps the linear map should
-	 * be freed after relocating.
-	 */
-	if (orig_start < ram_end)
-		to_free = ram_end - orig_start;
-
-	size = orig_end - orig_start;
-	if (!size)
-		return;
-
-	/* initrd needs to be relocated completely inside linear mapping */
-	new_start = memblock_find_in_range(0, PFN_PHYS(max_pfn),
-					   size, PAGE_SIZE);
-	if (!new_start)
-		panic("Cannot relocate initrd of size %ld\n", size);
-	memblock_reserve(new_start, size);
-
-	initrd_start = __phys_to_virt(new_start);
-	initrd_end   = initrd_start + size;
-
-	pr_info("Moving initrd from [%llx-%llx] to [%llx-%llx]\n",
-		orig_start, orig_start + size - 1,
-		new_start, new_start + size - 1);
-
-	dest = (void *)initrd_start;
-
-	if (to_free) {
-		memcpy(dest, (void *)__phys_to_virt(orig_start), to_free);
-		dest += to_free;
-	}
-
-	copy_from_early_mem(dest, orig_start + to_free, size - to_free);
-
-	if (to_free) {
-		pr_info("Freeing original RAMDISK from [%llx-%llx]\n",
-			orig_start, orig_start + to_free - 1);
-		memblock_free(orig_start, to_free);
-	}
-}
-#else
-static inline void __init relocate_initrd(void)
-{
-}
+#ifdef CONFIG_KEXEC_CORE
+		/* Userspace will find "Crash kernel" region in /proc/iomem. */
+		if (crashk_res.end && crashk_res.start >= res->start &&
+		    crashk_res.end <= res->end)
+			request_resource(res, &crashk_res);
 #endif
+	}
+}
+
+static int __init reserve_memblock_reserved_regions(void)
+{
+	u64 i, j;
+
+	for (i = 0; i < num_standard_resources; ++i) {
+		struct resource *mem = &standard_resources[i];
+		phys_addr_t r_start, r_end, mem_size = resource_size(mem);
+
+		if (!memblock_is_region_reserved(mem->start, mem_size))
+			continue;
+
+		for_each_reserved_mem_range(j, &r_start, &r_end) {
+			resource_size_t start, end;
+
+			start = max(PFN_PHYS(PFN_DOWN(r_start)), mem->start);
+			end = min(PFN_PHYS(PFN_UP(r_end)) - 1, mem->end);
+
+			if (start > mem->end || end < mem->start)
+				continue;
+
+			reserve_region_with_split(mem, start, end, "reserved");
+		}
+	}
+
+	return 0;
+}
+arch_initcall(reserve_memblock_reserved_regions);
 
 u64 __cpu_logical_map[NR_CPUS] = { [0 ... NR_CPUS-1] = INVALID_HWID };
 
-void __init __weak init_random_pool(void) { }
-
-void __init setup_arch(char **cmdline_p)
+u64 cpu_logical_map(unsigned int cpu)
 {
-	setup_processor();
+	return __cpu_logical_map[cpu];
+}
 
-	setup_machine_fdt(__fdt_pointer);
-
+void __init __no_sanitize_address setup_arch(char **cmdline_p)
+{
 	init_mm.start_code = (unsigned long) _text;
 	init_mm.end_code   = (unsigned long) _etext;
 	init_mm.end_data   = (unsigned long) _edata;
@@ -353,22 +305,57 @@ void __init setup_arch(char **cmdline_p)
 
 	*cmdline_p = boot_command_line;
 
+	/*
+	 * If know now we are going to need KPTI then use non-global
+	 * mappings from the start, avoiding the cost of rewriting
+	 * everything later.
+	 */
+	arm64_use_ng_mappings = kaslr_requires_kpti();
+
 	early_fixmap_init();
 	early_ioremap_init();
 
+	setup_machine_fdt(__fdt_pointer);
+
+	/*
+	 * Initialise the static keys early as they may be enabled by the
+	 * cpufeature code and early parameters.
+	 */
+	jump_label_init();
 	parse_early_param();
 
 	/*
-	 *  Unmask asynchronous aborts after bringing up possible earlycon.
-	 * (Report possible System Errors once we can report this occurred)
+	 * Unmask asynchronous aborts and fiq after bringing up possible
+	 * earlycon. (Report possible System Errors once we can report this
+	 * occurred).
 	 */
-	local_async_enable();
+	local_daif_restore(DAIF_PROCCTX_NOIRQ);
 
+	/*
+	 * TTBR0 is only used for the identity mapping at this stage. Make it
+	 * point to zero page to avoid speculatively fetching new entries.
+	 */
+	cpu_uninstall_idmap();
+
+	xen_early_init();
 	efi_init();
+
+	if (!efi_enabled(EFI_BOOT) && ((u64)_text % MIN_KIMG_ALIGN) != 0)
+	     pr_warn(FW_BUG "Kernel image misaligned at boot, please fix your bootloader!");
+
 	arm64_memblock_init();
 
 	paging_init();
-	relocate_initrd();
+
+	acpi_table_upgrade();
+
+	/* Parse the ACPI tables for possible boot-time configuration */
+	acpi_boot_table_init();
+
+	if (acpi_disabled)
+		unflatten_device_tree();
+
+	bootmem_init();
 
 	kasan_init();
 
@@ -376,14 +363,17 @@ void __init setup_arch(char **cmdline_p)
 
 	early_ioremap_reset();
 
-	unflatten_device_tree();
+	if (acpi_disabled)
+		psci_dt_init();
+	else
+		psci_acpi_init();
 
-	psci_init();
-
-	cpu_logical_map(0) = read_cpuid_mpidr() & MPIDR_HWID_BITMASK;
-	cpu_read_bootcpu_ops();
+	init_bootcpu_ops();
 	smp_init_cpus();
 	smp_build_mpidr_hash();
+
+	/* Init percpu seeds for random tags after cpus are set up. */
+	kasan_init_sw_tags();
 
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
 	/*
@@ -391,17 +381,9 @@ void __init setup_arch(char **cmdline_p)
 	 * faults in case uaccess_enable() is inadvertently called by the init
 	 * thread.
 	 */
-	init_thread_info.ttbr0 = virt_to_phys(empty_zero_page);
+	init_task.thread_info.ttbr0 = phys_to_ttbr(__pa_symbol(reserved_pg_dir));
 #endif
 
-#ifdef CONFIG_VT
-#if defined(CONFIG_VGA_CONSOLE)
-	conswitchp = &vga_con;
-#elif defined(CONFIG_DUMMY_CONSOLE)
-	conswitchp = &dummy_con;
-#endif
-#endif
-	init_random_pool();
 	if (boot_args[1] || boot_args[2] || boot_args[3]) {
 		pr_err("WARNING: x1-x3 nonzero in violation of boot protocol:\n"
 			"\tx1: %016llx\n\tx2: %016llx\n\tx3: %016llx\n"
@@ -410,163 +392,64 @@ void __init setup_arch(char **cmdline_p)
 	}
 }
 
-static int __init arm64_device_init(void)
+static inline bool cpu_can_disable(unsigned int cpu)
 {
-	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
-	return 0;
+#ifdef CONFIG_HOTPLUG_CPU
+	const struct cpu_operations *ops = get_cpu_ops(cpu);
+
+	if (ops && ops->cpu_can_disable)
+		return ops->cpu_can_disable(cpu);
+#endif
+	return false;
 }
-arch_initcall_sync(arm64_device_init);
 
 static int __init topology_init(void)
 {
 	int i;
 
+	for_each_online_node(i)
+		register_one_node(i);
+
 	for_each_possible_cpu(i) {
 		struct cpu *cpu = &per_cpu(cpu_data.cpu, i);
-		cpu->hotpluggable = 1;
+		cpu->hotpluggable = cpu_can_disable(i);
 		register_cpu(cpu, i);
 	}
 
 	return 0;
 }
-postcore_initcall(topology_init);
+subsys_initcall(topology_init);
 
-static const char *hwcap_str[] = {
-	"fp",
-	"asimd",
-	"evtstrm",
-	"aes",
-	"pmull",
-	"sha1",
-	"sha2",
-	"crc32",
-	NULL
-};
-
-#ifdef CONFIG_COMPAT
-static const char *compat_hwcap_str[] = {
-	"swp",
-	"half",
-	"thumb",
-	"26bit",
-	"fastmult",
-	"fpa",
-	"vfp",
-	"edsp",
-	"java",
-	"iwmmxt",
-	"crunch",
-	"thumbee",
-	"neon",
-	"vfpv3",
-	"vfpv3d16",
-	"tls",
-	"vfpv4",
-	"idiva",
-	"idivt",
-	"vfpd32",
-	"lpae",
-	"evtstrm",
-	NULL
-};
-
-static const char *compat_hwcap2_str[] = {
-	"aes",
-	"pmull",
-	"sha1",
-	"sha2",
-	"crc32",
-	NULL
-};
-#endif /* CONFIG_COMPAT */
-
-static int c_show(struct seq_file *m, void *v)
+static void dump_kernel_offset(void)
 {
-	int i, j;
+	const unsigned long offset = kaslr_offset();
 
-	seq_printf(m, "Processor\t: %s rev %d (%s)\n",
-		cpu_name, read_cpuid_id() & 15, ELF_PLATFORM);
-	for_each_present_cpu(i) {
-		struct cpuinfo_arm64 *cpuinfo = &per_cpu(cpu_data, i);
-		u32 midr = cpuinfo->reg_midr;
-
-		/*
-		 * glibc reads /proc/cpuinfo to determine the number of
-		 * online processors, looking for lines beginning with
-		 * "processor".  Give glibc what it expects.
-		 */
-#ifdef CONFIG_SMP
-		seq_printf(m, "processor\t: %d\n", i);
-#endif
-
-		seq_printf(m, "BogoMIPS\t: %lu.%02lu\n",
-			   loops_per_jiffy / (500000UL/HZ),
-			   loops_per_jiffy / (5000UL/HZ) % 100);
-
-		/*
-		 * Dump out the common processor features in a single line.
-		 * Userspace should read the hwcaps with getauxval(AT_HWCAP)
-		 * rather than attempting to parse this, but there's a body of
-		 * software which does already (at least for 32-bit).
-		 */
-		seq_puts(m, "Features\t:");
-		if (personality(current->personality) == PER_LINUX32) {
-#ifdef CONFIG_COMPAT
-			for (j = 0; compat_hwcap_str[j]; j++)
-				if (compat_elf_hwcap & (1 << j))
-					seq_printf(m, " %s", compat_hwcap_str[j]);
-
-			for (j = 0; compat_hwcap2_str[j]; j++)
-				if (compat_elf_hwcap2 & (1 << j))
-					seq_printf(m, " %s", compat_hwcap2_str[j]);
-#endif /* CONFIG_COMPAT */
-		} else {
-			for (j = 0; hwcap_str[j]; j++)
-				if (elf_hwcap & (1 << j))
-					seq_printf(m, " %s", hwcap_str[j]);
-		}
-		seq_puts(m, "\n");
-
-		seq_printf(m, "CPU implementer\t: 0x%02x\n",
-			   MIDR_IMPLEMENTOR(midr));
-		seq_printf(m, "CPU architecture: 8\n");
-		seq_printf(m, "CPU variant\t: 0x%x\n", MIDR_VARIANT(midr));
-		seq_printf(m, "CPU part\t: 0x%03x\n", MIDR_PARTNUM(midr));
-		seq_printf(m, "CPU revision\t: %d\n\n", MIDR_REVISION(midr));
+	if (IS_ENABLED(CONFIG_RANDOMIZE_BASE) && offset > 0) {
+		pr_emerg("Kernel Offset: 0x%lx from 0x%lx\n",
+			 offset, KIMAGE_VADDR);
+		pr_emerg("PHYS_OFFSET: 0x%llx\n", PHYS_OFFSET);
+	} else {
+		pr_emerg("Kernel Offset: disabled\n");
 	}
+}
 
-	if (!arch_read_hardware_id)
-		seq_printf(m, "Hardware\t: %s\n", machine_name);
-	else
-		seq_printf(m, "Hardware\t: %s\n", arch_read_hardware_id());
-
+static int arm64_panic_block_dump(struct notifier_block *self,
+				  unsigned long v, void *p)
+{
+	dump_kernel_offset();
+	dump_cpu_features();
+	dump_mem_limit();
 	return 0;
 }
 
-static void *c_start(struct seq_file *m, loff_t *pos)
-{
-	return *pos < 1 ? (void *)1 : NULL;
-}
-
-static void *c_next(struct seq_file *m, void *v, loff_t *pos)
-{
-	++*pos;
-	return NULL;
-}
-
-static void c_stop(struct seq_file *m, void *v)
-{
-}
-
-const struct seq_operations cpuinfo_op = {
-	.start	= c_start,
-	.next	= c_next,
-	.stop	= c_stop,
-	.show	= c_show
+static struct notifier_block arm64_panic_block = {
+	.notifier_call = arm64_panic_block_dump
 };
 
-void arch_setup_pdev_archdata(struct platform_device *pdev)
+static int __init register_arm64_panic_block(void)
 {
-	pdev->archdata.dma_mask = DMA_BIT_MASK(32);
-	pdev->dev.dma_mask = &pdev->archdata.dma_mask;
+	atomic_notifier_chain_register(&panic_notifier_list,
+				       &arm64_panic_block);
+	return 0;
 }
+device_initcall(register_arm64_panic_block);

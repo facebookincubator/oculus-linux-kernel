@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_GENERIC_NETLINK_H
 #define __LINUX_GENERIC_NETLINK_H
 
@@ -8,8 +9,12 @@
 extern void genl_lock(void);
 extern void genl_unlock(void);
 #ifdef CONFIG_LOCKDEP
-extern int lockdep_genl_is_held(void);
+extern bool lockdep_genl_is_held(void);
 #endif
+
+/* for synchronisation between af_netlink and genetlink */
+extern atomic_t genl_sk_destructing_cnt;
+extern wait_queue_head_t genl_sk_destructing_waitq;
 
 /**
  * rcu_dereference_genl - rcu_dereference with debug checking
@@ -26,8 +31,7 @@ extern int lockdep_genl_is_held(void);
  * @p: The pointer to read, prior to dereferencing
  *
  * Return the value of the specified RCU-protected pointer, but omit
- * both the smp_read_barrier_depends() and the ACCESS_ONCE(), because
- * caller holds genl mutex.
+ * the READ_ONCE(), because caller holds genl mutex.
  */
 #define genl_dereference(p)					\
 	rcu_dereference_protected(p, lockdep_genl_is_held())

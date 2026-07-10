@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+
+#include "vendor-base/qcom/neo_la.dtsi"
+#include "vendor-base/qcom/neo-idp.dtsi"
+#include "meta-neo-base.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO-LA";
+	compatible = "qcom,neo";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <0 0>;
+};

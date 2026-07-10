@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * inode.c
  *
@@ -151,6 +152,7 @@ struct inode *efs_iget(struct super_block *super, unsigned long ino)
 			break;
 		case S_IFLNK:
 			inode->i_op = &page_symlink_inode_operations;
+			inode_nohighmem(inode);
 			inode->i_data.a_ops = &efs_symlink_aops;
 			break;
 		case S_IFCHR:
@@ -309,3 +311,4 @@ efs_block_t efs_map_block(struct inode *inode, efs_block_t block) {
 }  
 
 MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS(ANDROID_GKI_VFS_EXPORT_ONLY);

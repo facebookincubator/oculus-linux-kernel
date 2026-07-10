@@ -1,22 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Driver for the Auvitek USB bridge
  *
  *  Copyright (c) 2008 Steven Toth <stoth@linuxtv.org>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #include "au0828.h"
@@ -44,7 +30,7 @@ static void hvr950q_cs5340_audio(void *priv, int enable)
 struct au0828_board au0828_boards[] = {
 	[AU0828_BOARD_UNKNOWN] = {
 		.name	= "Unknown board",
-		.tuner_type = UNSET,
+		.tuner_type = -1U,
 		.tuner_addr = ADDR_UNSET,
 	},
 	[AU0828_BOARD_HAUPPAUGE_HVR850] = {
@@ -157,7 +143,7 @@ static void hauppauge_eeprom(struct au0828_dev *dev, u8 *eeprom_data)
 {
 	struct tveeprom tv;
 
-	tveeprom_hauppauge_analog(&dev->i2c_client, &tv, eeprom_data);
+	tveeprom_hauppauge_analog(&tv, eeprom_data);
 	dev->board.tuner_type = tv.tuner_type;
 
 	/* Make sure we support the board model */
@@ -194,8 +180,6 @@ void au0828_card_setup(struct au0828_dev *dev)
 	static u8 eeprom[256];
 
 	dprintk(1, "%s()\n", __func__);
-
-	dev->board = au0828_boards[dev->boardnr];
 
 	if (dev->i2c_rc == 0) {
 		dev->i2c_client.addr = 0xa0 >> 1;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Allwinner sunxi AHCI SATA platform driver
  * Copyright 2013 Olliver Schinagl <oliver@schinagl.nl>
@@ -6,15 +7,6 @@
  * based on the AHCI SATA platform driver by Jeff Garzik and Anton Vorontsov
  * Based on code from Allwinner Technology Co., Ltd. <www.allwinnertech.com>,
  * Daniel Wang <danielwang@allwinnertech.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
  */
 
 #include <linux/ahci_platform.h>
@@ -26,6 +18,14 @@
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
 #include "ahci.h"
+
+#define DRV_NAME "ahci-sunxi"
+
+/* Insmod parameters */
+static bool enable_pmp;
+module_param(enable_pmp, bool, 0);
+MODULE_PARM_DESC(enable_pmp,
+	"Enable support for sata port multipliers, only use if you use a pmp!");
 
 #define AHCI_BISTAFR	0x00a0
 #define AHCI_BISTCR	0x00a4
@@ -149,18 +149,65 @@ static void ahci_sunxi_start_engine(struct ata_port *ap)
 	void __iomem *port_mmio = ahci_port_base(ap);
 	struct ahci_host_priv *hpriv = ap->host->private_data;
 
-	/* Setup DMA before DMA start */
-	sunxi_clrsetbits(hpriv->mmio + AHCI_P0DMACR, 0x0000ff00, 0x00004400);
+	/* Setup DMA before DMA start
+	 *
+	 * NOTE: A similar SoC with SATA/AHCI by Texas Instruments documents
+	 *   this Vendor Specific Port (P0DMACR, aka PxDMACR) in its
+	 *   User's Guide document (TMS320C674x/OMAP-L1x Processor
+	 *   Serial ATA (SATA) Controller, Literature Number: SPRUGJ8C,
+	 *   March 2011, Chapter 4.33 Port DMA Control Register (P0DMACR),
+	 *   p.68, https://www.ti.com/lit/ug/sprugj8c/sprugj8c.pdf)
+	 *   as equivalent to the following struct:
+	 *
+	 *   struct AHCI_P0DMACR_t
+	 *   {
+	 *     unsigned TXTS     : 4;
+	 *     unsigned RXTS     : 4;
+	 *     unsigned TXABL    : 4;
+	 *     unsigned RXABL    : 4;
+	 *     unsigned Reserved : 16;
+	 *   };
+	 *
+	 *   TXTS: Transmit Transaction Size (TX_TRANSACTION_SIZE).
+	 *     This field defines the DMA transaction size in DWORDs for
+	 *     transmit (system bus read, device write) operation. [...]
+	 *
+	 *   RXTS: Receive Transaction Size (RX_TRANSACTION_SIZE).
+	 *     This field defines the Port DMA transaction size in DWORDs
+	 *     for receive (system bus write, device read) operation. [...]
+	 *
+	 *   TXABL: Transmit Burst Limit.
+	 *     This field allows software to limit the VBUSP master read
+	 *     burst size. [...]
+	 *
+	 *   RXABL: Receive Burst Limit.
+	 *     Allows software to limit the VBUSP master write burst
+	 *     size. [...]
+	 *
+	 *   Reserved: Reserved.
+	 *
+	 *
+	 * NOTE: According to the above document, the following alternative
+	 *   to the code below could perhaps be a better option
+	 *   (or preparation) for possible further improvements later:
+	 *     sunxi_clrsetbits(hpriv->mmio + AHCI_P0DMACR, 0x0000ffff,
+	 *		0x00000033);
+	 */
+	sunxi_clrsetbits(hpriv->mmio + AHCI_P0DMACR, 0x0000ffff, 0x00004433);
 
 	/* Start DMA */
 	sunxi_setbits(port_mmio + PORT_CMD, PORT_CMD_START);
 }
 
 static const struct ata_port_info ahci_sunxi_port_info = {
-	.flags		= AHCI_FLAG_COMMON | ATA_FLAG_NCQ,
+	.flags		= AHCI_FLAG_COMMON | ATA_FLAG_NCQ | ATA_FLAG_NO_DIPM,
 	.pio_mask	= ATA_PIO4,
 	.udma_mask	= ATA_UDMA6,
 	.port_ops	= &ahci_platform_ops,
+};
+
+static struct scsi_host_template ahci_platform_sht = {
+	AHCI_SHT(DRV_NAME),
 };
 
 static int ahci_sunxi_probe(struct platform_device *pdev)
@@ -169,7 +216,7 @@ static int ahci_sunxi_probe(struct platform_device *pdev)
 	struct ahci_host_priv *hpriv;
 	int rc;
 
-	hpriv = ahci_platform_get_resources(pdev);
+	hpriv = ahci_platform_get_resources(pdev, AHCI_PLATFORM_GET_RESETS);
 	if (IS_ERR(hpriv))
 		return PTR_ERR(hpriv);
 
@@ -184,9 +231,18 @@ static int ahci_sunxi_probe(struct platform_device *pdev)
 		goto disable_resources;
 
 	hpriv->flags = AHCI_HFLAG_32BIT_ONLY | AHCI_HFLAG_NO_MSI |
-		       AHCI_HFLAG_NO_PMP | AHCI_HFLAG_YES_NCQ;
+		       AHCI_HFLAG_YES_NCQ;
 
-	rc = ahci_platform_init_host(pdev, hpriv, &ahci_sunxi_port_info);
+	/*
+	 * The sunxi sata controller seems to be unable to successfully do a
+	 * soft reset if no pmp is attached, so disable pmp use unless
+	 * requested, otherwise directly attached disks do not work.
+	 */
+	if (!enable_pmp)
+		hpriv->flags |= AHCI_HFLAG_NO_PMP;
+
+	rc = ahci_platform_init_host(pdev, hpriv, &ahci_sunxi_port_info,
+				     &ahci_platform_sht);
 	if (rc)
 		goto disable_resources;
 
@@ -229,6 +285,7 @@ static SIMPLE_DEV_PM_OPS(ahci_sunxi_pm_ops, ahci_platform_suspend,
 
 static const struct of_device_id ahci_sunxi_of_match[] = {
 	{ .compatible = "allwinner,sun4i-a10-ahci", },
+	{ .compatible = "allwinner,sun8i-r40-ahci", },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, ahci_sunxi_of_match);
@@ -237,8 +294,7 @@ static struct platform_driver ahci_sunxi_driver = {
 	.probe = ahci_sunxi_probe,
 	.remove = ata_platform_remove_one,
 	.driver = {
-		.name = "ahci-sunxi",
-		.owner = THIS_MODULE,
+		.name = DRV_NAME,
 		.of_match_table = ahci_sunxi_of_match,
 		.pm = &ahci_sunxi_pm_ops,
 	},

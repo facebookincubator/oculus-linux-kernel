@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/sound/soc/pxa/palm27x.c
  *
@@ -6,11 +7,6 @@
  * based on tosa.c
  *
  * Copyright (C) 2008 Marek Vasut <marek.vasut@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 
 #include <linux/module.h>
@@ -26,9 +22,6 @@
 #include <asm/mach-types.h>
 #include <mach/audio.h>
 #include <linux/platform_data/asoc-palm27x.h>
-
-#include "../codecs/wm9712.h"
-#include "pxa2xx-ac97.h"
 
 static struct snd_soc_jack hs_jack;
 
@@ -68,34 +61,19 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	{"Ext. Speaker", NULL, "ROUT2"},
 
 	/* mic connected to MIC1 */
-	{"Ext. Microphone", NULL, "MIC1"},
+	{"MIC1", NULL, "Ext. Microphone"},
 };
 
 static struct snd_soc_card palm27x_asoc;
 
 static int palm27x_ac97_init(struct snd_soc_pcm_runtime *rtd)
 {
-	struct snd_soc_codec *codec = rtd->codec;
-	struct snd_soc_dapm_context *dapm = &codec->dapm;
 	int err;
 
-	/* not connected pins */
-	snd_soc_dapm_nc_pin(dapm, "OUT3");
-	snd_soc_dapm_nc_pin(dapm, "MONOOUT");
-	snd_soc_dapm_nc_pin(dapm, "LINEINL");
-	snd_soc_dapm_nc_pin(dapm, "LINEINR");
-	snd_soc_dapm_nc_pin(dapm, "PCBEEP");
-	snd_soc_dapm_nc_pin(dapm, "PHONE");
-	snd_soc_dapm_nc_pin(dapm, "MIC2");
-
 	/* Jack detection API stuff */
-	err = snd_soc_jack_new(codec, "Headphone Jack",
-				SND_JACK_HEADPHONE, &hs_jack);
-	if (err)
-		return err;
-
-	err = snd_soc_jack_add_pins(&hs_jack, ARRAY_SIZE(hs_jack_pins),
-				hs_jack_pins);
+	err = snd_soc_card_jack_new(rtd->card, "Headphone Jack",
+				    SND_JACK_HEADPHONE, &hs_jack, hs_jack_pins,
+				    ARRAY_SIZE(hs_jack_pins));
 	if (err)
 		return err;
 
@@ -105,23 +83,27 @@ static int palm27x_ac97_init(struct snd_soc_pcm_runtime *rtd)
 	return err;
 }
 
+SND_SOC_DAILINK_DEFS(hifi,
+	DAILINK_COMP_ARRAY(COMP_CPU("pxa2xx-ac97")),
+	DAILINK_COMP_ARRAY(COMP_CODEC("wm9712-codec", "wm9712-hifi")),
+	DAILINK_COMP_ARRAY(COMP_PLATFORM("pxa-pcm-audio")));
+
+SND_SOC_DAILINK_DEFS(aux,
+	DAILINK_COMP_ARRAY(COMP_CPU("pxa2xx-ac97-aux")),
+	DAILINK_COMP_ARRAY(COMP_CODEC("wm9712-codec", "wm9712-aux")),
+	DAILINK_COMP_ARRAY(COMP_PLATFORM("pxa-pcm-audio")));
+
 static struct snd_soc_dai_link palm27x_dai[] = {
 {
 	.name = "AC97 HiFi",
 	.stream_name = "AC97 HiFi",
-	.cpu_dai_name = "pxa2xx-ac97",
-	.codec_dai_name =  "wm9712-hifi",
-	.codec_name = "wm9712-codec",
-	.platform_name = "pxa-pcm-audio",
 	.init = palm27x_ac97_init,
+	SND_SOC_DAILINK_REG(hifi),
 },
 {
 	.name = "AC97 Aux",
 	.stream_name = "AC97 Aux",
-	.cpu_dai_name = "pxa2xx-ac97-aux",
-	.codec_dai_name = "wm9712-aux",
-	.codec_name = "wm9712-codec",
-	.platform_name = "pxa-pcm-audio",
+	SND_SOC_DAILINK_REG(aux),
 },
 };
 
@@ -133,7 +115,8 @@ static struct snd_soc_card palm27x_asoc = {
 	.dapm_widgets = palm27x_dapm_widgets,
 	.num_dapm_widgets = ARRAY_SIZE(palm27x_dapm_widgets),
 	.dapm_routes = audio_map,
-	.num_dapm_routes = ARRAY_SIZE(audio_map)
+	.num_dapm_routes = ARRAY_SIZE(audio_map),
+	.fully_routed = true,
 };
 
 static int palm27x_asoc_probe(struct platform_device *pdev)
@@ -154,25 +137,17 @@ static int palm27x_asoc_probe(struct platform_device *pdev)
 
 	palm27x_asoc.dev = &pdev->dev;
 
-	ret = snd_soc_register_card(&palm27x_asoc);
+	ret = devm_snd_soc_register_card(&pdev->dev, &palm27x_asoc);
 	if (ret)
 		dev_err(&pdev->dev, "snd_soc_register_card() failed: %d\n",
 			ret);
 	return ret;
 }
 
-static int palm27x_asoc_remove(struct platform_device *pdev)
-{
-	snd_soc_unregister_card(&palm27x_asoc);
-	return 0;
-}
-
 static struct platform_driver palm27x_wm9712_driver = {
 	.probe		= palm27x_asoc_probe,
-	.remove		= palm27x_asoc_remove,
 	.driver		= {
 		.name		= "palm27x-asoc",
-		.owner		= THIS_MODULE,
 		.pm     = &snd_soc_pm_ops,
 	},
 };
@@ -183,3 +158,4 @@ module_platform_driver(palm27x_wm9712_driver);
 MODULE_AUTHOR("Marek Vasut <marek.vasut@gmail.com>");
 MODULE_DESCRIPTION("ALSA SoC Palm T|X, T5 and LifeDrive");
 MODULE_LICENSE("GPL");
+MODULE_ALIAS("platform:palm27x-asoc");

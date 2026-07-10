@@ -153,13 +153,11 @@ static int _kdb_bp_install(struct pt_regs *regs, kdb_bp_t *bp)
 	} else {
 		kdb_printf("%s: failed to set breakpoint at 0x%lx\n",
 			   __func__, bp->bp_addr);
-#ifdef CONFIG_DEBUG_RODATA
 		if (!bp->bp_type) {
 			kdb_printf("Software breakpoints are unavailable.\n"
-				   "  Change the kernel CONFIG_DEBUG_RODATA=n\n"
+				   "  Boot the kernel with rodata=off\n"
 				   "  OR use hw breaks: help bph\n");
 		}
-#endif
 		return 1;
 	}
 	return 0;
@@ -244,11 +242,11 @@ static void kdb_printbp(kdb_bp_t *bp, int i)
 	kdb_symbol_print(bp->bp_addr, NULL, KDB_SP_DEFAULT);
 
 	if (bp->bp_enabled)
-		kdb_printf("\n    is enabled");
+		kdb_printf("\n    is enabled ");
 	else
 		kdb_printf("\n    is disabled");
 
-	kdb_printf("\taddr at %016lx, hardtype=%d installed=%d\n",
+	kdb_printf("  addr at %016lx, hardtype=%d installed=%d\n",
 		   bp->bp_addr, bp->bp_type, bp->bp_installed);
 
 	kdb_printf("\n");
@@ -307,6 +305,15 @@ static int kdb_bp(int argc, const char **argv)
 		return diag;
 	if (!template.bp_addr)
 		return KDB_BADINT;
+
+	/*
+	 * This check is redundant (since the breakpoint machinery should
+	 * be doing the same check during kdb_bp_install) but gives the
+	 * user immediate feedback.
+	 */
+	diag = kgdb_validate_break_address(template.bp_addr);
+	if (diag)
+		return diag;
 
 	/*
 	 * Find an empty bp structure to allocate
@@ -414,7 +421,6 @@ static int kdb_bc(int argc, const char **argv)
 		 * assume that the breakpoint number is desired.
 		 */
 		if (addr < KDB_MAXBPT) {
-			bp = &kdb_breakpoints[addr];
 			lowbp = highbp = addr;
 			highbp++;
 		} else {
@@ -531,22 +537,29 @@ void __init kdb_initbptab(void)
 	for (i = 0, bp = kdb_breakpoints; i < KDB_MAXBPT; i++, bp++)
 		bp->bp_free = 1;
 
-	kdb_register_repeat("bp", kdb_bp, "[<vaddr>]",
-		"Set/Display breakpoints", 0, KDB_REPEAT_NO_ARGS);
-	kdb_register_repeat("bl", kdb_bp, "[<vaddr>]",
-		"Display breakpoints", 0, KDB_REPEAT_NO_ARGS);
+	kdb_register_flags("bp", kdb_bp, "[<vaddr>]",
+		"Set/Display breakpoints", 0,
+		KDB_ENABLE_FLOW_CTRL | KDB_REPEAT_NO_ARGS);
+	kdb_register_flags("bl", kdb_bp, "[<vaddr>]",
+		"Display breakpoints", 0,
+		KDB_ENABLE_FLOW_CTRL | KDB_REPEAT_NO_ARGS);
 	if (arch_kgdb_ops.flags & KGDB_HW_BREAKPOINT)
-		kdb_register_repeat("bph", kdb_bp, "[<vaddr>]",
-		"[datar [length]|dataw [length]]   Set hw brk", 0, KDB_REPEAT_NO_ARGS);
-	kdb_register_repeat("bc", kdb_bc, "<bpnum>",
-		"Clear Breakpoint", 0, KDB_REPEAT_NONE);
-	kdb_register_repeat("be", kdb_bc, "<bpnum>",
-		"Enable Breakpoint", 0, KDB_REPEAT_NONE);
-	kdb_register_repeat("bd", kdb_bc, "<bpnum>",
-		"Disable Breakpoint", 0, KDB_REPEAT_NONE);
+		kdb_register_flags("bph", kdb_bp, "[<vaddr>]",
+		"[datar [length]|dataw [length]]   Set hw brk", 0,
+		KDB_ENABLE_FLOW_CTRL | KDB_REPEAT_NO_ARGS);
+	kdb_register_flags("bc", kdb_bc, "<bpnum>",
+		"Clear Breakpoint", 0,
+		KDB_ENABLE_FLOW_CTRL);
+	kdb_register_flags("be", kdb_bc, "<bpnum>",
+		"Enable Breakpoint", 0,
+		KDB_ENABLE_FLOW_CTRL);
+	kdb_register_flags("bd", kdb_bc, "<bpnum>",
+		"Disable Breakpoint", 0,
+		KDB_ENABLE_FLOW_CTRL);
 
-	kdb_register_repeat("ss", kdb_ss, "",
-		"Single Step", 1, KDB_REPEAT_NO_ARGS);
+	kdb_register_flags("ss", kdb_ss, "",
+		"Single Step", 1,
+		KDB_ENABLE_FLOW_CTRL | KDB_REPEAT_NO_ARGS);
 	/*
 	 * Architecture dependent initialization.
 	 */

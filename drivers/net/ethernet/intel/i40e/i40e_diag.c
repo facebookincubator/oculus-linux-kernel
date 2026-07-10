@@ -1,28 +1,5 @@
-/*******************************************************************************
- *
- * Intel Ethernet Controller XL710 Family Linux Driver
- * Copyright(c) 2013 - 2014 Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The full GNU General Public License is included in this distribution in
- * the file called "COPYING".
- *
- * Contact Information:
- * e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
- * Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
- *
- ******************************************************************************/
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright(c) 2013 - 2018 Intel Corporation. */
 
 #include "i40e_diag.h"
 #include "i40e_prototype.h"
@@ -36,7 +13,9 @@
 static i40e_status i40e_diag_reg_pattern_test(struct i40e_hw *hw,
 							u32 reg, u32 mask)
 {
-	const u32 patterns[] = {0x5A5A5A5A, 0xA5A5A5A5, 0x00000000, 0xFFFFFFFF};
+	static const u32 patterns[] = {
+		0x5A5A5A5A, 0xA5A5A5A5, 0x00000000, 0xFFFFFFFF
+	};
 	u32 pat, val, orig_val;
 	int i;
 
@@ -144,11 +123,8 @@ i40e_status i40e_diag_eeprom_test(struct i40e_hw *hw)
 	ret_code = i40e_read_nvm_word(hw, I40E_SR_NVM_CONTROL_WORD, &reg_val);
 	if (!ret_code &&
 	    ((reg_val & I40E_SR_CONTROL_WORD_1_MASK) ==
-	     (0x01 << I40E_SR_CONTROL_WORD_1_SHIFT))) {
-		ret_code = i40e_validate_nvm_checksum(hw, NULL);
-	} else {
-		ret_code = I40E_ERR_DIAG_TEST_FAILED;
-	}
-
-	return ret_code;
+	     BIT(I40E_SR_CONTROL_WORD_1_SHIFT)))
+		return i40e_validate_nvm_checksum(hw, NULL);
+	else
+		return I40E_ERR_DIAG_TEST_FAILED;
 }

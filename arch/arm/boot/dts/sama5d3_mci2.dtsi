@@ -1,10 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * at91sama5d3_mci2.dtsi - Device Tree Include file for AT91SAM9x5 SoC with
+ * sama5d3_mci2.dtsi - Device Tree Include file for SAMA5D3 SoC with
  * 3 MMC ports
  *
  * Copyright (C) 2013 Boris BREZILLON <b.brezillon@overkiz.com>
- *
- * Licensed under GPLv2.
  */
 
 #include <dt-bindings/pinctrl/at91.h>
@@ -24,18 +23,9 @@
 					};
 					pinctrl_mmc2_dat1_3: mmc2_dat1_3 {
 						atmel,pins =
-							<AT91_PIOC 12 AT91_PERIPH_A AT91_PINCTRL_NONE	/* PC12 periph A MCI2_DA1 with pullup, conflicts with TIOA1 */
-							 AT91_PIOC 13 AT91_PERIPH_A AT91_PINCTRL_NONE	/* PC13 periph A MCI2_DA2 with pullup, conflicts with TIOB1 */
-							 AT91_PIOC 14 AT91_PERIPH_A AT91_PINCTRL_NONE>;	/* PC14 periph A MCI2_DA3 with pullup, conflicts with TCLK1 */
-					};
-				};
-			};
-
-			pmc: pmc@fffffc00 {
-				periphck {
-					mci2_clk: mci2_clk {
-						#clock-cells = <0>;
-						reg = <23>;
+							<AT91_PIOC 12 AT91_PERIPH_A AT91_PINCTRL_PULL_UP	/* PC12 periph A MCI2_DA1 with pullup, conflicts with TIOA1 */
+							 AT91_PIOC 13 AT91_PERIPH_A AT91_PINCTRL_PULL_UP	/* PC13 periph A MCI2_DA2 with pullup, conflicts with TIOB1 */
+							 AT91_PIOC 14 AT91_PERIPH_A AT91_PINCTRL_PULL_UP>;	/* PC14 periph A MCI2_DA3 with pullup, conflicts with TCLK1 */
 					};
 				};
 			};
@@ -48,7 +38,7 @@
 				dma-names = "rxtx";
 				pinctrl-names = "default";
 				pinctrl-0 = <&pinctrl_mmc2_clk_cmd_dat0 &pinctrl_mmc2_dat1_3>;
-				clocks = <&mci2_clk>;
+				clocks = <&pmc PMC_TYPE_PERIPHERAL 23>;
 				clock-names = "mci_clk";
 				status = "disabled";
 				#address-cells = <1>;

@@ -1,18 +1,16 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Register map access API internal header
  *
  * Copyright 2011 Wolfson Microelectronics plc
  *
  * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef _REGMAP_INTERNAL_H
 #define _REGMAP_INTERNAL_H
 
+#include <linux/device.h>
 #include <linux/regmap.h>
 #include <linux/fs.h>
 #include <linux/list.h>
@@ -51,9 +49,11 @@ struct regmap_async {
 struct regmap {
 	union {
 		struct mutex mutex;
-		spinlock_t spinlock;
+		struct {
+			spinlock_t spinlock;
+			unsigned long spinlock_flags;
+		};
 	};
-	unsigned long spinlock_flags;
 	regmap_lock lock;
 	regmap_unlock unlock;
 	void *lock_arg; /* This is passed to lock/unlock functions */
@@ -73,7 +73,8 @@ struct regmap {
 	struct list_head async_free;
 	int async_ret;
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_REGMAP_DEBUG
+	bool debugfs_disable;
 	struct dentry *debugfs;
 	const char *debugfs_name;
 
@@ -90,22 +91,29 @@ struct regmap {
 	bool (*readable_reg)(struct device *dev, unsigned int reg);
 	bool (*volatile_reg)(struct device *dev, unsigned int reg);
 	bool (*precious_reg)(struct device *dev, unsigned int reg);
+	bool (*writeable_noinc_reg)(struct device *dev, unsigned int reg);
+	bool (*readable_noinc_reg)(struct device *dev, unsigned int reg);
 	const struct regmap_access_table *wr_table;
 	const struct regmap_access_table *rd_table;
 	const struct regmap_access_table *volatile_table;
 	const struct regmap_access_table *precious_table;
+	const struct regmap_access_table *wr_noinc_table;
+	const struct regmap_access_table *rd_noinc_table;
 
 	int (*reg_read)(void *context, unsigned int reg, unsigned int *val);
 	int (*reg_write)(void *context, unsigned int reg, unsigned int val);
+	int (*reg_update_bits)(void *context, unsigned int reg,
+			       unsigned int mask, unsigned int val);
 
 	bool defer_caching;
 
-	u8 read_flag_mask;
-	u8 write_flag_mask;
+	unsigned long read_flag_mask;
+	unsigned long write_flag_mask;
 
 	/* number of bits to (left) shift the reg value when formatting*/
 	int reg_shift;
 	int reg_stride;
+	int reg_stride_order;
 
 	/* regcache specific members */
 	const struct regcache_ops *cache_ops;
@@ -121,27 +129,41 @@ struct regmap {
 	unsigned int num_reg_defaults_raw;
 
 	/* if set, only the cache is modified not the HW */
-	u32 cache_only;
+	bool cache_only;
 	/* if set, only the HW is modified not the cache */
-	u32 cache_bypass;
+	bool cache_bypass;
 	/* if set, remember to free reg_defaults_raw */
 	bool cache_free;
 
 	struct reg_default *reg_defaults;
 	const void *reg_defaults_raw;
 	void *cache;
-	u32 cache_dirty;
+	/* if set, the cache contains newer data than the HW */
+	bool cache_dirty;
+	/* if set, the HW registers are known to match map->reg_defaults */
+	bool no_sync_defaults;
 
-	struct reg_default *patch;
+	struct reg_sequence *patch;
 	int patch_regs;
 
-	/* if set, converts bulk rw to single rw */
-	bool use_single_rw;
+	/* if set, converts bulk read to single read */
+	bool use_single_read;
+	/* if set, converts bulk write to single write */
+	bool use_single_write;
 	/* if set, the device supports multi write mode */
 	bool can_multi_write;
 
+	/* if set, raw reads/writes are limited to this size */
+	size_t max_raw_read;
+	size_t max_raw_write;
+
 	struct rb_root range_tree;
 	void *selector_work_buf;	/* Scratch buffer used for selector */
+
+	struct hwspinlock *hwlock;
+
+	/* if set, the regmap core can sleep */
+	bool can_sleep;
 };
 
 struct regcache_ops {
@@ -149,7 +171,7 @@ struct regcache_ops {
 	enum regcache_type type;
 	int (*init)(struct regmap *map);
 	int (*exit)(struct regmap *map);
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_REGMAP_DEBUG
 	void (*debugfs_init)(struct regmap *map);
 #endif
 	int (*read)(struct regmap *map, unsigned int reg, unsigned int *value);
@@ -158,10 +180,13 @@ struct regcache_ops {
 	int (*drop)(struct regmap *map, unsigned int min, unsigned int max);
 };
 
+bool regmap_cached(struct regmap *map, unsigned int reg);
 bool regmap_writeable(struct regmap *map, unsigned int reg);
 bool regmap_readable(struct regmap *map, unsigned int reg);
 bool regmap_volatile(struct regmap *map, unsigned int reg);
 bool regmap_precious(struct regmap *map, unsigned int reg);
+bool regmap_writeable_noinc(struct regmap *map, unsigned int reg);
+bool regmap_readable_noinc(struct regmap *map, unsigned int reg);
 
 int _regmap_write(struct regmap *map, unsigned int reg,
 		  unsigned int val);
@@ -193,14 +218,21 @@ struct regmap_field {
 	unsigned int id_offset;
 };
 
-#ifdef CONFIG_DEBUG_FS
+#ifdef CONFIG_REGMAP_DEBUG
 extern void regmap_debugfs_initcall(void);
-extern void regmap_debugfs_init(struct regmap *map, const char *name);
+extern void regmap_debugfs_init(struct regmap *map);
 extern void regmap_debugfs_exit(struct regmap *map);
+
+static inline void regmap_debugfs_disable(struct regmap *map)
+{
+	map->debugfs_disable = true;
+}
+
 #else
 static inline void regmap_debugfs_initcall(void) { }
-static inline void regmap_debugfs_init(struct regmap *map, const char *name) { }
+static inline void regmap_debugfs_init(struct regmap *map) { }
 static inline void regmap_debugfs_exit(struct regmap *map) { }
+static inline void regmap_debugfs_disable(struct regmap *map) { }
 #endif
 
 /* regcache core declarations */
@@ -230,13 +262,13 @@ bool regcache_set_val(struct regmap *map, void *base, unsigned int idx,
 int regcache_lookup_reg(struct regmap *map, unsigned int reg);
 
 int _regmap_raw_write(struct regmap *map, unsigned int reg,
-		      const void *val, size_t val_len);
-
-int _regmap_raw_multi_reg_write(struct regmap *map,
-				const struct reg_default *regs,
-				size_t num_regs);
+		      const void *val, size_t val_len, bool noinc);
 
 void regmap_async_complete_cb(struct regmap_async *async, int ret);
+
+enum regmap_endian regmap_get_val_endian(struct device *dev,
+					 const struct regmap_bus *bus,
+					 const struct regmap_config *config);
 
 extern struct regcache_ops regcache_rbtree_ops;
 extern struct regcache_ops regcache_lzo_ops;
@@ -248,6 +280,21 @@ static inline const char *regmap_name(const struct regmap *map)
 		return dev_name(map->dev);
 
 	return map->name;
+}
+
+static inline unsigned int regmap_get_offset(const struct regmap *map,
+					     unsigned int index)
+{
+	if (map->reg_stride_order >= 0)
+		return index << map->reg_stride_order;
+	else
+		return index * map->reg_stride;
+}
+
+static inline unsigned int regcache_get_index_by_order(const struct regmap *map,
+						       unsigned int reg)
+{
+	return reg >> map->reg_stride_order;
 }
 
 #endif

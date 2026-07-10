@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * max98088.c -- MAX98088 ALSA SoC Audio driver
  *
  * Copyright 2010 Maxim Integrated Products
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -16,6 +13,7 @@
 #include <linux/pm.h>
 #include <linux/i2c.h>
 #include <linux/regmap.h>
+#include <linux/clk.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -42,6 +40,8 @@ struct max98088_priv {
 	struct regmap *regmap;
 	enum max98088_type devtype;
 	struct max98088_pdata *pdata;
+	struct clk *mclk;
+	unsigned char mclk_prescaler;
 	unsigned int sysclk;
 	struct max98088_cdata dai[2];
 	int eq_textcnt;
@@ -258,292 +258,36 @@ static const struct reg_default max98088_reg[] = {
 	{ 0xc9, 0x00 }, /* C9 DAI2 biquad */
 };
 
-static struct {
-       int readable;
-       int writable;
-       int vol;
-} max98088_access[M98088_REG_CNT] = {
-       { 0xFF, 0xFF, 1 }, /* 00 IRQ status */
-       { 0xFF, 0x00, 1 }, /* 01 MIC status */
-       { 0xFF, 0x00, 1 }, /* 02 jack status */
-       { 0x1F, 0x1F, 1 }, /* 03 battery voltage */
-       { 0xFF, 0xFF, 0 }, /* 04 */
-       { 0xFF, 0xFF, 0 }, /* 05 */
-       { 0xFF, 0xFF, 0 }, /* 06 */
-       { 0xFF, 0xFF, 0 }, /* 07 */
-       { 0xFF, 0xFF, 0 }, /* 08 */
-       { 0xFF, 0xFF, 0 }, /* 09 */
-       { 0xFF, 0xFF, 0 }, /* 0A */
-       { 0xFF, 0xFF, 0 }, /* 0B */
-       { 0xFF, 0xFF, 0 }, /* 0C */
-       { 0xFF, 0xFF, 0 }, /* 0D */
-       { 0xFF, 0xFF, 0 }, /* 0E */
-       { 0xFF, 0xFF, 0 }, /* 0F interrupt enable */
-
-       { 0xFF, 0xFF, 0 }, /* 10 master clock */
-       { 0xFF, 0xFF, 0 }, /* 11 DAI1 clock mode */
-       { 0xFF, 0xFF, 0 }, /* 12 DAI1 clock control */
-       { 0xFF, 0xFF, 0 }, /* 13 DAI1 clock control */
-       { 0xFF, 0xFF, 0 }, /* 14 DAI1 format */
-       { 0xFF, 0xFF, 0 }, /* 15 DAI1 clock */
-       { 0xFF, 0xFF, 0 }, /* 16 DAI1 config */
-       { 0xFF, 0xFF, 0 }, /* 17 DAI1 TDM */
-       { 0xFF, 0xFF, 0 }, /* 18 DAI1 filters */
-       { 0xFF, 0xFF, 0 }, /* 19 DAI2 clock mode */
-       { 0xFF, 0xFF, 0 }, /* 1A DAI2 clock control */
-       { 0xFF, 0xFF, 0 }, /* 1B DAI2 clock control */
-       { 0xFF, 0xFF, 0 }, /* 1C DAI2 format */
-       { 0xFF, 0xFF, 0 }, /* 1D DAI2 clock */
-       { 0xFF, 0xFF, 0 }, /* 1E DAI2 config */
-       { 0xFF, 0xFF, 0 }, /* 1F DAI2 TDM */
-
-       { 0xFF, 0xFF, 0 }, /* 20 DAI2 filters */
-       { 0xFF, 0xFF, 0 }, /* 21 data config */
-       { 0xFF, 0xFF, 0 }, /* 22 DAC mixer */
-       { 0xFF, 0xFF, 0 }, /* 23 left ADC mixer */
-       { 0xFF, 0xFF, 0 }, /* 24 right ADC mixer */
-       { 0xFF, 0xFF, 0 }, /* 25 left HP mixer */
-       { 0xFF, 0xFF, 0 }, /* 26 right HP mixer */
-       { 0xFF, 0xFF, 0 }, /* 27 HP control */
-       { 0xFF, 0xFF, 0 }, /* 28 left REC mixer */
-       { 0xFF, 0xFF, 0 }, /* 29 right REC mixer */
-       { 0xFF, 0xFF, 0 }, /* 2A REC control */
-       { 0xFF, 0xFF, 0 }, /* 2B left SPK mixer */
-       { 0xFF, 0xFF, 0 }, /* 2C right SPK mixer */
-       { 0xFF, 0xFF, 0 }, /* 2D SPK control */
-       { 0xFF, 0xFF, 0 }, /* 2E sidetone */
-       { 0xFF, 0xFF, 0 }, /* 2F DAI1 playback level */
-
-       { 0xFF, 0xFF, 0 }, /* 30 DAI1 playback level */
-       { 0xFF, 0xFF, 0 }, /* 31 DAI2 playback level */
-       { 0xFF, 0xFF, 0 }, /* 32 DAI2 playbakc level */
-       { 0xFF, 0xFF, 0 }, /* 33 left ADC level */
-       { 0xFF, 0xFF, 0 }, /* 34 right ADC level */
-       { 0xFF, 0xFF, 0 }, /* 35 MIC1 level */
-       { 0xFF, 0xFF, 0 }, /* 36 MIC2 level */
-       { 0xFF, 0xFF, 0 }, /* 37 INA level */
-       { 0xFF, 0xFF, 0 }, /* 38 INB level */
-       { 0xFF, 0xFF, 0 }, /* 39 left HP volume */
-       { 0xFF, 0xFF, 0 }, /* 3A right HP volume */
-       { 0xFF, 0xFF, 0 }, /* 3B left REC volume */
-       { 0xFF, 0xFF, 0 }, /* 3C right REC volume */
-       { 0xFF, 0xFF, 0 }, /* 3D left SPK volume */
-       { 0xFF, 0xFF, 0 }, /* 3E right SPK volume */
-       { 0xFF, 0xFF, 0 }, /* 3F MIC config */
-
-       { 0xFF, 0xFF, 0 }, /* 40 MIC threshold */
-       { 0xFF, 0xFF, 0 }, /* 41 excursion limiter filter */
-       { 0xFF, 0xFF, 0 }, /* 42 excursion limiter threshold */
-       { 0xFF, 0xFF, 0 }, /* 43 ALC */
-       { 0xFF, 0xFF, 0 }, /* 44 power limiter threshold */
-       { 0xFF, 0xFF, 0 }, /* 45 power limiter config */
-       { 0xFF, 0xFF, 0 }, /* 46 distortion limiter config */
-       { 0xFF, 0xFF, 0 }, /* 47 audio input */
-       { 0xFF, 0xFF, 0 }, /* 48 microphone */
-       { 0xFF, 0xFF, 0 }, /* 49 level control */
-       { 0xFF, 0xFF, 0 }, /* 4A bypass switches */
-       { 0xFF, 0xFF, 0 }, /* 4B jack detect */
-       { 0xFF, 0xFF, 0 }, /* 4C input enable */
-       { 0xFF, 0xFF, 0 }, /* 4D output enable */
-       { 0xFF, 0xFF, 0 }, /* 4E bias control */
-       { 0xFF, 0xFF, 0 }, /* 4F DAC power */
-
-       { 0xFF, 0xFF, 0 }, /* 50 DAC power */
-       { 0xFF, 0xFF, 0 }, /* 51 system */
-       { 0xFF, 0xFF, 0 }, /* 52 DAI1 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 53 DAI1 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 54 DAI1 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 55 DAI1 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 56 DAI1 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 57 DAI1 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 58 DAI1 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 59 DAI1 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 5A DAI1 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 5B DAI1 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 5C DAI1 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 5D DAI1 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 5E DAI1 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 5F DAI1 EQ2 */
-
-       { 0xFF, 0xFF, 0 }, /* 60 DAI1 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 61 DAI1 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 62 DAI1 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 63 DAI1 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 64 DAI1 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 65 DAI1 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 66 DAI1 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 67 DAI1 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 68 DAI1 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 69 DAI1 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 6A DAI1 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 6B DAI1 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 6C DAI1 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 6D DAI1 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 6E DAI1 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 6F DAI1 EQ3 */
-
-       { 0xFF, 0xFF, 0 }, /* 70 DAI1 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* 71 DAI1 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* 72 DAI1 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* 73 DAI1 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* 74 DAI1 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* 75 DAI1 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* 76 DAI1 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* 77 DAI1 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* 78 DAI1 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* 79 DAI1 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* 7A DAI1 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* 7B DAI1 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* 7C DAI1 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* 7D DAI1 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* 7E DAI1 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* 7F DAI1 EQ5 */
-
-       { 0xFF, 0xFF, 0 }, /* 80 DAI1 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* 81 DAI1 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* 82 DAI1 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* 83 DAI1 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* 84 DAI2 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 85 DAI2 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 86 DAI2 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 87 DAI2 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 88 DAI2 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 89 DAI2 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 8A DAI2 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 8B DAI2 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 8C DAI2 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 8D DAI2 EQ1 */
-       { 0xFF, 0xFF, 0 }, /* 8E DAI2 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 8F DAI2 EQ2 */
-
-       { 0xFF, 0xFF, 0 }, /* 90 DAI2 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 91 DAI2 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 92 DAI2 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 93 DAI2 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 94 DAI2 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 95 DAI2 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 96 DAI2 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 97 DAI2 EQ2 */
-       { 0xFF, 0xFF, 0 }, /* 98 DAI2 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 99 DAI2 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 9A DAI2 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 9B DAI2 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 9C DAI2 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 9D DAI2 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 9E DAI2 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* 9F DAI2 EQ3 */
-
-       { 0xFF, 0xFF, 0 }, /* A0 DAI2 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* A1 DAI2 EQ3 */
-       { 0xFF, 0xFF, 0 }, /* A2 DAI2 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* A3 DAI2 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* A4 DAI2 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* A5 DAI2 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* A6 DAI2 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* A7 DAI2 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* A8 DAI2 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* A9 DAI2 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* AA DAI2 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* AB DAI2 EQ4 */
-       { 0xFF, 0xFF, 0 }, /* AC DAI2 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* AD DAI2 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* AE DAI2 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* AF DAI2 EQ5 */
-
-       { 0xFF, 0xFF, 0 }, /* B0 DAI2 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* B1 DAI2 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* B2 DAI2 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* B3 DAI2 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* B4 DAI2 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* B5 DAI2 EQ5 */
-       { 0xFF, 0xFF, 0 }, /* B6 DAI1 biquad */
-       { 0xFF, 0xFF, 0 }, /* B7 DAI1 biquad */
-       { 0xFF, 0xFF, 0 }, /* B8 DAI1 biquad */
-       { 0xFF, 0xFF, 0 }, /* B9 DAI1 biquad */
-       { 0xFF, 0xFF, 0 }, /* BA DAI1 biquad */
-       { 0xFF, 0xFF, 0 }, /* BB DAI1 biquad */
-       { 0xFF, 0xFF, 0 }, /* BC DAI1 biquad */
-       { 0xFF, 0xFF, 0 }, /* BD DAI1 biquad */
-       { 0xFF, 0xFF, 0 }, /* BE DAI1 biquad */
-       { 0xFF, 0xFF, 0 }, /* BF DAI1 biquad */
-
-       { 0xFF, 0xFF, 0 }, /* C0 DAI2 biquad */
-       { 0xFF, 0xFF, 0 }, /* C1 DAI2 biquad */
-       { 0xFF, 0xFF, 0 }, /* C2 DAI2 biquad */
-       { 0xFF, 0xFF, 0 }, /* C3 DAI2 biquad */
-       { 0xFF, 0xFF, 0 }, /* C4 DAI2 biquad */
-       { 0xFF, 0xFF, 0 }, /* C5 DAI2 biquad */
-       { 0xFF, 0xFF, 0 }, /* C6 DAI2 biquad */
-       { 0xFF, 0xFF, 0 }, /* C7 DAI2 biquad */
-       { 0xFF, 0xFF, 0 }, /* C8 DAI2 biquad */
-       { 0xFF, 0xFF, 0 }, /* C9 DAI2 biquad */
-       { 0x00, 0x00, 0 }, /* CA */
-       { 0x00, 0x00, 0 }, /* CB */
-       { 0x00, 0x00, 0 }, /* CC */
-       { 0x00, 0x00, 0 }, /* CD */
-       { 0x00, 0x00, 0 }, /* CE */
-       { 0x00, 0x00, 0 }, /* CF */
-
-       { 0x00, 0x00, 0 }, /* D0 */
-       { 0x00, 0x00, 0 }, /* D1 */
-       { 0x00, 0x00, 0 }, /* D2 */
-       { 0x00, 0x00, 0 }, /* D3 */
-       { 0x00, 0x00, 0 }, /* D4 */
-       { 0x00, 0x00, 0 }, /* D5 */
-       { 0x00, 0x00, 0 }, /* D6 */
-       { 0x00, 0x00, 0 }, /* D7 */
-       { 0x00, 0x00, 0 }, /* D8 */
-       { 0x00, 0x00, 0 }, /* D9 */
-       { 0x00, 0x00, 0 }, /* DA */
-       { 0x00, 0x00, 0 }, /* DB */
-       { 0x00, 0x00, 0 }, /* DC */
-       { 0x00, 0x00, 0 }, /* DD */
-       { 0x00, 0x00, 0 }, /* DE */
-       { 0x00, 0x00, 0 }, /* DF */
-
-       { 0x00, 0x00, 0 }, /* E0 */
-       { 0x00, 0x00, 0 }, /* E1 */
-       { 0x00, 0x00, 0 }, /* E2 */
-       { 0x00, 0x00, 0 }, /* E3 */
-       { 0x00, 0x00, 0 }, /* E4 */
-       { 0x00, 0x00, 0 }, /* E5 */
-       { 0x00, 0x00, 0 }, /* E6 */
-       { 0x00, 0x00, 0 }, /* E7 */
-       { 0x00, 0x00, 0 }, /* E8 */
-       { 0x00, 0x00, 0 }, /* E9 */
-       { 0x00, 0x00, 0 }, /* EA */
-       { 0x00, 0x00, 0 }, /* EB */
-       { 0x00, 0x00, 0 }, /* EC */
-       { 0x00, 0x00, 0 }, /* ED */
-       { 0x00, 0x00, 0 }, /* EE */
-       { 0x00, 0x00, 0 }, /* EF */
-
-       { 0x00, 0x00, 0 }, /* F0 */
-       { 0x00, 0x00, 0 }, /* F1 */
-       { 0x00, 0x00, 0 }, /* F2 */
-       { 0x00, 0x00, 0 }, /* F3 */
-       { 0x00, 0x00, 0 }, /* F4 */
-       { 0x00, 0x00, 0 }, /* F5 */
-       { 0x00, 0x00, 0 }, /* F6 */
-       { 0x00, 0x00, 0 }, /* F7 */
-       { 0x00, 0x00, 0 }, /* F8 */
-       { 0x00, 0x00, 0 }, /* F9 */
-       { 0x00, 0x00, 0 }, /* FA */
-       { 0x00, 0x00, 0 }, /* FB */
-       { 0x00, 0x00, 0 }, /* FC */
-       { 0x00, 0x00, 0 }, /* FD */
-       { 0x00, 0x00, 0 }, /* FE */
-       { 0xFF, 0x00, 1 }, /* FF */
-};
-
 static bool max98088_readable_register(struct device *dev, unsigned int reg)
 {
-       return max98088_access[reg].readable;
+	switch (reg) {
+	case M98088_REG_00_IRQ_STATUS ... 0xC9:
+	case M98088_REG_FF_REV_ID:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool max98088_writeable_register(struct device *dev, unsigned int reg)
+{
+	switch (reg) {
+	case M98088_REG_03_BATTERY_VOLTAGE ... 0xC9:
+		return true;
+	default:
+		return false;
+	}
 }
 
 static bool max98088_volatile_register(struct device *dev, unsigned int reg)
 {
-       return max98088_access[reg].vol;
+	switch (reg) {
+	case M98088_REG_00_IRQ_STATUS ... M98088_REG_03_BATTERY_VOLTAGE:
+	case M98088_REG_FF_REV_ID:
+		return true;
+	default:
+		return false;
+	}
 }
 
 static const struct regmap_config max98088_regmap = {
@@ -551,6 +295,7 @@ static const struct regmap_config max98088_regmap = {
 	.val_bits = 8,
 
 	.readable_reg = max98088_readable_register,
+	.writeable_reg = max98088_writeable_register,
 	.volatile_reg = max98088_volatile_register,
 	.max_register = 0xff,
 
@@ -562,7 +307,7 @@ static const struct regmap_config max98088_regmap = {
 /*
  * Load equalizer DSP coefficient configurations registers
  */
-static void m98088_eq_band(struct snd_soc_codec *codec, unsigned int dai,
+static void m98088_eq_band(struct snd_soc_component *component, unsigned int dai,
                    unsigned int band, u16 *coefs)
 {
        unsigned int eq_reg;
@@ -580,8 +325,8 @@ static void m98088_eq_band(struct snd_soc_codec *codec, unsigned int dai,
 
        /* Step through the registers and coefs */
        for (i = 0; i < M98088_COEFS_PER_BAND; i++) {
-               snd_soc_write(codec, eq_reg++, M98088_BYTE1(coefs[i]));
-               snd_soc_write(codec, eq_reg++, M98088_BYTE0(coefs[i]));
+               snd_soc_component_write(component, eq_reg++, M98088_BYTE1(coefs[i]));
+               snd_soc_component_write(component, eq_reg++, M98088_BYTE0(coefs[i]));
        }
 }
 
@@ -635,12 +380,12 @@ static SOC_ENUM_SINGLE_DECL(max98088_dai1_adc_filter_enum,
 static int max98088_mic1pre_set(struct snd_kcontrol *kcontrol,
                                struct snd_ctl_elem_value *ucontrol)
 {
-       struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        unsigned int sel = ucontrol->value.integer.value[0];
 
        max98088->mic1pre = sel;
-       snd_soc_update_bits(codec, M98088_REG_35_LVL_MIC1, M98088_MICPRE_MASK,
+       snd_soc_component_update_bits(component, M98088_REG_35_LVL_MIC1, M98088_MICPRE_MASK,
                (1+sel)<<M98088_MICPRE_SHIFT);
 
        return 0;
@@ -649,8 +394,8 @@ static int max98088_mic1pre_set(struct snd_kcontrol *kcontrol,
 static int max98088_mic1pre_get(struct snd_kcontrol *kcontrol,
                                struct snd_ctl_elem_value *ucontrol)
 {
-       struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
 
        ucontrol->value.integer.value[0] = max98088->mic1pre;
        return 0;
@@ -659,12 +404,12 @@ static int max98088_mic1pre_get(struct snd_kcontrol *kcontrol,
 static int max98088_mic2pre_set(struct snd_kcontrol *kcontrol,
                                struct snd_ctl_elem_value *ucontrol)
 {
-       struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        unsigned int sel = ucontrol->value.integer.value[0];
 
        max98088->mic2pre = sel;
-       snd_soc_update_bits(codec, M98088_REG_36_LVL_MIC2, M98088_MICPRE_MASK,
+       snd_soc_component_update_bits(component, M98088_REG_36_LVL_MIC2, M98088_MICPRE_MASK,
                (1+sel)<<M98088_MICPRE_SHIFT);
 
        return 0;
@@ -673,36 +418,33 @@ static int max98088_mic2pre_set(struct snd_kcontrol *kcontrol,
 static int max98088_mic2pre_get(struct snd_kcontrol *kcontrol,
                                struct snd_ctl_elem_value *ucontrol)
 {
-       struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
 
        ucontrol->value.integer.value[0] = max98088->mic2pre;
        return 0;
 }
 
-static const unsigned int max98088_micboost_tlv[] = {
-       TLV_DB_RANGE_HEAD(2),
-       0, 1, TLV_DB_SCALE_ITEM(0, 2000, 0),
-       2, 2, TLV_DB_SCALE_ITEM(3000, 0, 0),
-};
+static const DECLARE_TLV_DB_RANGE(max98088_micboost_tlv,
+	0, 1, TLV_DB_SCALE_ITEM(0, 2000, 0),
+	2, 2, TLV_DB_SCALE_ITEM(3000, 0, 0)
+);
 
-static const unsigned int max98088_hp_tlv[] = {
-	TLV_DB_RANGE_HEAD(5),
+static const DECLARE_TLV_DB_RANGE(max98088_hp_tlv,
 	0, 6, TLV_DB_SCALE_ITEM(-6700, 400, 0),
 	7, 14, TLV_DB_SCALE_ITEM(-4000, 300, 0),
 	15, 21, TLV_DB_SCALE_ITEM(-1700, 200, 0),
 	22, 27, TLV_DB_SCALE_ITEM(-400, 100, 0),
-	28, 31, TLV_DB_SCALE_ITEM(150, 50, 0),
-};
+	28, 31, TLV_DB_SCALE_ITEM(150, 50, 0)
+);
 
-static const unsigned int max98088_spk_tlv[] = {
-	TLV_DB_RANGE_HEAD(5),
+static const DECLARE_TLV_DB_RANGE(max98088_spk_tlv,
 	0, 6, TLV_DB_SCALE_ITEM(-6200, 400, 0),
 	7, 14, TLV_DB_SCALE_ITEM(-3500, 300, 0),
 	15, 21, TLV_DB_SCALE_ITEM(-1200, 200, 0),
 	22, 27, TLV_DB_SCALE_ITEM(100, 100, 0),
-	28, 31, TLV_DB_SCALE_ITEM(650, 50, 0),
-};
+	28, 31, TLV_DB_SCALE_ITEM(650, 50, 0)
+);
 
 static const struct snd_kcontrol_new max98088_snd_controls[] = {
 
@@ -875,21 +617,21 @@ static const struct snd_kcontrol_new max98088_right_ADC_mixer_controls[] = {
 static int max98088_mic_event(struct snd_soc_dapm_widget *w,
                             struct snd_kcontrol *kcontrol, int event)
 {
-       struct snd_soc_codec *codec = w->codec;
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
 
        switch (event) {
        case SND_SOC_DAPM_POST_PMU:
                if (w->reg == M98088_REG_35_LVL_MIC1) {
-                       snd_soc_update_bits(codec, w->reg, M98088_MICPRE_MASK,
+                       snd_soc_component_update_bits(component, w->reg, M98088_MICPRE_MASK,
                                (1+max98088->mic1pre)<<M98088_MICPRE_SHIFT);
                } else {
-                       snd_soc_update_bits(codec, w->reg, M98088_MICPRE_MASK,
+                       snd_soc_component_update_bits(component, w->reg, M98088_MICPRE_MASK,
                                (1+max98088->mic2pre)<<M98088_MICPRE_SHIFT);
                }
                break;
        case SND_SOC_DAPM_POST_PMD:
-               snd_soc_update_bits(codec, w->reg, M98088_MICPRE_MASK, 0);
+               snd_soc_component_update_bits(component, w->reg, M98088_MICPRE_MASK, 0);
                break;
        default:
                return -EINVAL;
@@ -905,8 +647,8 @@ static int max98088_mic_event(struct snd_soc_dapm_widget *w,
 static int max98088_line_pga(struct snd_soc_dapm_widget *w,
                             int event, int line, u8 channel)
 {
-       struct snd_soc_codec *codec = w->codec;
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        u8 *state;
 
 	if (WARN_ON(!(channel == 1 || channel == 2)))
@@ -926,13 +668,13 @@ static int max98088_line_pga(struct snd_soc_dapm_widget *w,
        switch (event) {
        case SND_SOC_DAPM_POST_PMU:
                *state |= channel;
-               snd_soc_update_bits(codec, w->reg,
+               snd_soc_component_update_bits(component, w->reg,
                        (1 << w->shift), (1 << w->shift));
                break;
        case SND_SOC_DAPM_POST_PMD:
                *state &= ~channel;
                if (*state == 0) {
-                       snd_soc_update_bits(codec, w->reg,
+                       snd_soc_component_update_bits(component, w->reg,
                                (1 << w->shift), 0);
                }
                break;
@@ -1221,8 +963,8 @@ static int max98088_dai1_hw_params(struct snd_pcm_substream *substream,
                                   struct snd_pcm_hw_params *params,
                                   struct snd_soc_dai *dai)
 {
-       struct snd_soc_codec *codec = dai->codec;
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = dai->component;
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        struct max98088_cdata *cdata;
        unsigned long long ni;
        unsigned int rate;
@@ -1234,51 +976,54 @@ static int max98088_dai1_hw_params(struct snd_pcm_substream *substream,
 
        switch (params_width(params)) {
        case 16:
-               snd_soc_update_bits(codec, M98088_REG_14_DAI1_FORMAT,
+               snd_soc_component_update_bits(component, M98088_REG_14_DAI1_FORMAT,
                        M98088_DAI_WS, 0);
                break;
        case 24:
-               snd_soc_update_bits(codec, M98088_REG_14_DAI1_FORMAT,
+               snd_soc_component_update_bits(component, M98088_REG_14_DAI1_FORMAT,
                        M98088_DAI_WS, M98088_DAI_WS);
                break;
        default:
                return -EINVAL;
        }
 
-       snd_soc_update_bits(codec, M98088_REG_51_PWR_SYS, M98088_SHDNRUN, 0);
+       snd_soc_component_update_bits(component, M98088_REG_51_PWR_SYS, M98088_SHDNRUN, 0);
 
        if (rate_value(rate, &regval))
                return -EINVAL;
 
-       snd_soc_update_bits(codec, M98088_REG_11_DAI1_CLKMODE,
+       snd_soc_component_update_bits(component, M98088_REG_11_DAI1_CLKMODE,
                M98088_CLKMODE_MASK, regval);
        cdata->rate = rate;
 
        /* Configure NI when operating as master */
-       if (snd_soc_read(codec, M98088_REG_14_DAI1_FORMAT)
+       if (snd_soc_component_read(component, M98088_REG_14_DAI1_FORMAT)
                & M98088_DAI_MAS) {
+               unsigned long pclk;
+
                if (max98088->sysclk == 0) {
-                       dev_err(codec->dev, "Invalid system clock frequency\n");
+                       dev_err(component->dev, "Invalid system clock frequency\n");
                        return -EINVAL;
                }
                ni = 65536ULL * (rate < 50000 ? 96ULL : 48ULL)
                                * (unsigned long long int)rate;
-               do_div(ni, (unsigned long long int)max98088->sysclk);
-               snd_soc_write(codec, M98088_REG_12_DAI1_CLKCFG_HI,
+               pclk = DIV_ROUND_CLOSEST(max98088->sysclk, max98088->mclk_prescaler);
+               ni = DIV_ROUND_CLOSEST_ULL(ni, pclk);
+               snd_soc_component_write(component, M98088_REG_12_DAI1_CLKCFG_HI,
                        (ni >> 8) & 0x7F);
-               snd_soc_write(codec, M98088_REG_13_DAI1_CLKCFG_LO,
+               snd_soc_component_write(component, M98088_REG_13_DAI1_CLKCFG_LO,
                        ni & 0xFF);
        }
 
        /* Update sample rate mode */
        if (rate < 50000)
-               snd_soc_update_bits(codec, M98088_REG_18_DAI1_FILTERS,
+               snd_soc_component_update_bits(component, M98088_REG_18_DAI1_FILTERS,
                        M98088_DAI_DHF, 0);
        else
-               snd_soc_update_bits(codec, M98088_REG_18_DAI1_FILTERS,
+               snd_soc_component_update_bits(component, M98088_REG_18_DAI1_FILTERS,
                        M98088_DAI_DHF, M98088_DAI_DHF);
 
-       snd_soc_update_bits(codec, M98088_REG_51_PWR_SYS, M98088_SHDNRUN,
+       snd_soc_component_update_bits(component, M98088_REG_51_PWR_SYS, M98088_SHDNRUN,
                M98088_SHDNRUN);
 
        return 0;
@@ -1288,8 +1033,8 @@ static int max98088_dai2_hw_params(struct snd_pcm_substream *substream,
                                   struct snd_pcm_hw_params *params,
                                   struct snd_soc_dai *dai)
 {
-       struct snd_soc_codec *codec = dai->codec;
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = dai->component;
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        struct max98088_cdata *cdata;
        unsigned long long ni;
        unsigned int rate;
@@ -1301,51 +1046,54 @@ static int max98088_dai2_hw_params(struct snd_pcm_substream *substream,
 
        switch (params_width(params)) {
        case 16:
-               snd_soc_update_bits(codec, M98088_REG_1C_DAI2_FORMAT,
+               snd_soc_component_update_bits(component, M98088_REG_1C_DAI2_FORMAT,
                        M98088_DAI_WS, 0);
                break;
        case 24:
-               snd_soc_update_bits(codec, M98088_REG_1C_DAI2_FORMAT,
+               snd_soc_component_update_bits(component, M98088_REG_1C_DAI2_FORMAT,
                        M98088_DAI_WS, M98088_DAI_WS);
                break;
        default:
                return -EINVAL;
        }
 
-       snd_soc_update_bits(codec, M98088_REG_51_PWR_SYS, M98088_SHDNRUN, 0);
+       snd_soc_component_update_bits(component, M98088_REG_51_PWR_SYS, M98088_SHDNRUN, 0);
 
        if (rate_value(rate, &regval))
                return -EINVAL;
 
-       snd_soc_update_bits(codec, M98088_REG_19_DAI2_CLKMODE,
+       snd_soc_component_update_bits(component, M98088_REG_19_DAI2_CLKMODE,
                M98088_CLKMODE_MASK, regval);
        cdata->rate = rate;
 
        /* Configure NI when operating as master */
-       if (snd_soc_read(codec, M98088_REG_1C_DAI2_FORMAT)
+       if (snd_soc_component_read(component, M98088_REG_1C_DAI2_FORMAT)
                & M98088_DAI_MAS) {
+               unsigned long pclk;
+
                if (max98088->sysclk == 0) {
-                       dev_err(codec->dev, "Invalid system clock frequency\n");
+                       dev_err(component->dev, "Invalid system clock frequency\n");
                        return -EINVAL;
                }
                ni = 65536ULL * (rate < 50000 ? 96ULL : 48ULL)
                                * (unsigned long long int)rate;
-               do_div(ni, (unsigned long long int)max98088->sysclk);
-               snd_soc_write(codec, M98088_REG_1A_DAI2_CLKCFG_HI,
+               pclk = DIV_ROUND_CLOSEST(max98088->sysclk, max98088->mclk_prescaler);
+               ni = DIV_ROUND_CLOSEST_ULL(ni, pclk);
+               snd_soc_component_write(component, M98088_REG_1A_DAI2_CLKCFG_HI,
                        (ni >> 8) & 0x7F);
-               snd_soc_write(codec, M98088_REG_1B_DAI2_CLKCFG_LO,
+               snd_soc_component_write(component, M98088_REG_1B_DAI2_CLKCFG_LO,
                        ni & 0xFF);
        }
 
        /* Update sample rate mode */
        if (rate < 50000)
-               snd_soc_update_bits(codec, M98088_REG_20_DAI2_FILTERS,
+               snd_soc_component_update_bits(component, M98088_REG_20_DAI2_FILTERS,
                        M98088_DAI_DHF, 0);
        else
-               snd_soc_update_bits(codec, M98088_REG_20_DAI2_FILTERS,
+               snd_soc_component_update_bits(component, M98088_REG_20_DAI2_FILTERS,
                        M98088_DAI_DHF, M98088_DAI_DHF);
 
-       snd_soc_update_bits(codec, M98088_REG_51_PWR_SYS, M98088_SHDNRUN,
+       snd_soc_component_update_bits(component, M98088_REG_51_PWR_SYS, M98088_SHDNRUN,
                M98088_SHDNRUN);
 
        return 0;
@@ -1354,30 +1102,37 @@ static int max98088_dai2_hw_params(struct snd_pcm_substream *substream,
 static int max98088_dai_set_sysclk(struct snd_soc_dai *dai,
                                   int clk_id, unsigned int freq, int dir)
 {
-       struct snd_soc_codec *codec = dai->codec;
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = dai->component;
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
 
        /* Requested clock frequency is already setup */
        if (freq == max98088->sysclk)
                return 0;
+
+	if (!IS_ERR(max98088->mclk)) {
+		freq = clk_round_rate(max98088->mclk, freq);
+		clk_set_rate(max98088->mclk, freq);
+	}
 
        /* Setup clocks for slave mode, and using the PLL
         * PSCLK = 0x01 (when master clk is 10MHz to 20MHz)
         *         0x02 (when master clk is 20MHz to 30MHz)..
         */
        if ((freq >= 10000000) && (freq < 20000000)) {
-               snd_soc_write(codec, M98088_REG_10_SYS_CLK, 0x10);
+               snd_soc_component_write(component, M98088_REG_10_SYS_CLK, 0x10);
+               max98088->mclk_prescaler = 1;
        } else if ((freq >= 20000000) && (freq < 30000000)) {
-               snd_soc_write(codec, M98088_REG_10_SYS_CLK, 0x20);
+               snd_soc_component_write(component, M98088_REG_10_SYS_CLK, 0x20);
+               max98088->mclk_prescaler = 2;
        } else {
-               dev_err(codec->dev, "Invalid master clock frequency\n");
+               dev_err(component->dev, "Invalid master clock frequency\n");
                return -EINVAL;
        }
 
-       if (snd_soc_read(codec, M98088_REG_51_PWR_SYS)  & M98088_SHDNRUN) {
-               snd_soc_update_bits(codec, M98088_REG_51_PWR_SYS,
+       if (snd_soc_component_read(component, M98088_REG_51_PWR_SYS)  & M98088_SHDNRUN) {
+               snd_soc_component_update_bits(component, M98088_REG_51_PWR_SYS,
                        M98088_SHDNRUN, 0);
-               snd_soc_update_bits(codec, M98088_REG_51_PWR_SYS,
+               snd_soc_component_update_bits(component, M98088_REG_51_PWR_SYS,
                        M98088_SHDNRUN, M98088_SHDNRUN);
        }
 
@@ -1390,8 +1145,8 @@ static int max98088_dai_set_sysclk(struct snd_soc_dai *dai,
 static int max98088_dai1_set_fmt(struct snd_soc_dai *codec_dai,
                                 unsigned int fmt)
 {
-       struct snd_soc_codec *codec = codec_dai->codec;
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = codec_dai->component;
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        struct max98088_cdata *cdata;
        u8 reg15val;
        u8 reg14val = 0;
@@ -1404,9 +1159,9 @@ static int max98088_dai1_set_fmt(struct snd_soc_dai *codec_dai,
                switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
                case SND_SOC_DAIFMT_CBS_CFS:
                        /* Slave mode PLL */
-                       snd_soc_write(codec, M98088_REG_12_DAI1_CLKCFG_HI,
+                       snd_soc_component_write(component, M98088_REG_12_DAI1_CLKCFG_HI,
                                0x80);
-                       snd_soc_write(codec, M98088_REG_13_DAI1_CLKCFG_LO,
+                       snd_soc_component_write(component, M98088_REG_13_DAI1_CLKCFG_LO,
                                0x00);
                        break;
                case SND_SOC_DAIFMT_CBM_CFM:
@@ -1416,7 +1171,7 @@ static int max98088_dai1_set_fmt(struct snd_soc_dai *codec_dai,
                case SND_SOC_DAIFMT_CBS_CFM:
                case SND_SOC_DAIFMT_CBM_CFS:
                default:
-                       dev_err(codec->dev, "Clock mode unsupported");
+                       dev_err(component->dev, "Clock mode unsupported");
                        return -EINVAL;
                }
 
@@ -1446,14 +1201,14 @@ static int max98088_dai1_set_fmt(struct snd_soc_dai *codec_dai,
                        return -EINVAL;
                }
 
-               snd_soc_update_bits(codec, M98088_REG_14_DAI1_FORMAT,
+               snd_soc_component_update_bits(component, M98088_REG_14_DAI1_FORMAT,
                        M98088_DAI_MAS | M98088_DAI_DLY | M98088_DAI_BCI |
                        M98088_DAI_WCI, reg14val);
 
                reg15val = M98088_DAI_BSEL64;
                if (max98088->digmic)
                        reg15val |= M98088_DAI_OSR64;
-               snd_soc_write(codec, M98088_REG_15_DAI1_CLOCK, reg15val);
+               snd_soc_component_write(component, M98088_REG_15_DAI1_CLOCK, reg15val);
        }
 
        return 0;
@@ -1462,8 +1217,8 @@ static int max98088_dai1_set_fmt(struct snd_soc_dai *codec_dai,
 static int max98088_dai2_set_fmt(struct snd_soc_dai *codec_dai,
                                 unsigned int fmt)
 {
-       struct snd_soc_codec *codec = codec_dai->codec;
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = codec_dai->component;
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        struct max98088_cdata *cdata;
        u8 reg1Cval = 0;
 
@@ -1475,9 +1230,9 @@ static int max98088_dai2_set_fmt(struct snd_soc_dai *codec_dai,
                switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
                case SND_SOC_DAIFMT_CBS_CFS:
                        /* Slave mode PLL */
-                       snd_soc_write(codec, M98088_REG_1A_DAI2_CLKCFG_HI,
+                       snd_soc_component_write(component, M98088_REG_1A_DAI2_CLKCFG_HI,
                                0x80);
-                       snd_soc_write(codec, M98088_REG_1B_DAI2_CLKCFG_LO,
+                       snd_soc_component_write(component, M98088_REG_1B_DAI2_CLKCFG_LO,
                                0x00);
                        break;
                case SND_SOC_DAIFMT_CBM_CFM:
@@ -1487,7 +1242,7 @@ static int max98088_dai2_set_fmt(struct snd_soc_dai *codec_dai,
                case SND_SOC_DAIFMT_CBS_CFM:
                case SND_SOC_DAIFMT_CBM_CFS:
                default:
-                       dev_err(codec->dev, "Clock mode unsupported");
+                       dev_err(component->dev, "Clock mode unsupported");
                        return -EINVAL;
                }
 
@@ -1517,20 +1272,21 @@ static int max98088_dai2_set_fmt(struct snd_soc_dai *codec_dai,
                        return -EINVAL;
                }
 
-               snd_soc_update_bits(codec, M98088_REG_1C_DAI2_FORMAT,
+               snd_soc_component_update_bits(component, M98088_REG_1C_DAI2_FORMAT,
                        M98088_DAI_MAS | M98088_DAI_DLY | M98088_DAI_BCI |
                        M98088_DAI_WCI, reg1Cval);
 
-               snd_soc_write(codec, M98088_REG_1D_DAI2_CLOCK,
+               snd_soc_component_write(component, M98088_REG_1D_DAI2_CLOCK,
                        M98088_DAI_BSEL64);
        }
 
        return 0;
 }
 
-static int max98088_dai1_digital_mute(struct snd_soc_dai *codec_dai, int mute)
+static int max98088_dai1_mute(struct snd_soc_dai *codec_dai, int mute,
+			      int direction)
 {
-       struct snd_soc_codec *codec = codec_dai->codec;
+       struct snd_soc_component *component = codec_dai->component;
        int reg;
 
        if (mute)
@@ -1538,14 +1294,15 @@ static int max98088_dai1_digital_mute(struct snd_soc_dai *codec_dai, int mute)
        else
                reg = 0;
 
-       snd_soc_update_bits(codec, M98088_REG_2F_LVL_DAI1_PLAY,
+       snd_soc_component_update_bits(component, M98088_REG_2F_LVL_DAI1_PLAY,
                            M98088_DAI_MUTE_MASK, reg);
        return 0;
 }
 
-static int max98088_dai2_digital_mute(struct snd_soc_dai *codec_dai, int mute)
+static int max98088_dai2_mute(struct snd_soc_dai *codec_dai, int mute,
+			      int direction)
 {
-       struct snd_soc_codec *codec = codec_dai->codec;
+       struct snd_soc_component *component = codec_dai->component;
        int reg;
 
        if (mute)
@@ -1553,38 +1310,51 @@ static int max98088_dai2_digital_mute(struct snd_soc_dai *codec_dai, int mute)
        else
                reg = 0;
 
-       snd_soc_update_bits(codec, M98088_REG_31_LVL_DAI2_PLAY,
+       snd_soc_component_update_bits(component, M98088_REG_31_LVL_DAI2_PLAY,
                            M98088_DAI_MUTE_MASK, reg);
        return 0;
 }
 
-static int max98088_set_bias_level(struct snd_soc_codec *codec,
+static int max98088_set_bias_level(struct snd_soc_component *component,
                                   enum snd_soc_bias_level level)
 {
-	struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+	struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
 
 	switch (level) {
 	case SND_SOC_BIAS_ON:
 		break;
 
 	case SND_SOC_BIAS_PREPARE:
+		/*
+		 * SND_SOC_BIAS_PREPARE is called while preparing for a
+		 * transition to ON or away from ON. If current bias_level
+		 * is SND_SOC_BIAS_ON, then it is preparing for a transition
+		 * away from ON. Disable the clock in that case, otherwise
+		 * enable it.
+		 */
+		if (!IS_ERR(max98088->mclk)) {
+			if (snd_soc_component_get_bias_level(component) ==
+			    SND_SOC_BIAS_ON)
+				clk_disable_unprepare(max98088->mclk);
+			else
+				clk_prepare_enable(max98088->mclk);
+		}
 		break;
 
 	case SND_SOC_BIAS_STANDBY:
-		if (codec->dapm.bias_level == SND_SOC_BIAS_OFF)
+		if (snd_soc_component_get_bias_level(component) == SND_SOC_BIAS_OFF)
 			regcache_sync(max98088->regmap);
 
-		snd_soc_update_bits(codec, M98088_REG_4C_PWR_EN_IN,
+		snd_soc_component_update_bits(component, M98088_REG_4C_PWR_EN_IN,
 				   M98088_MBEN, M98088_MBEN);
 		break;
 
 	case SND_SOC_BIAS_OFF:
-		snd_soc_update_bits(codec, M98088_REG_4C_PWR_EN_IN,
+		snd_soc_component_update_bits(component, M98088_REG_4C_PWR_EN_IN,
 				    M98088_MBEN, 0);
 		regcache_mark_dirty(max98088->regmap);
 		break;
 	}
-	codec->dapm.bias_level = level;
 	return 0;
 }
 
@@ -1595,14 +1365,16 @@ static const struct snd_soc_dai_ops max98088_dai1_ops = {
        .set_sysclk = max98088_dai_set_sysclk,
        .set_fmt = max98088_dai1_set_fmt,
        .hw_params = max98088_dai1_hw_params,
-       .digital_mute = max98088_dai1_digital_mute,
+       .mute_stream = max98088_dai1_mute,
+       .no_capture_mute = 1,
 };
 
 static const struct snd_soc_dai_ops max98088_dai2_ops = {
        .set_sysclk = max98088_dai_set_sysclk,
        .set_fmt = max98088_dai2_set_fmt,
        .hw_params = max98088_dai2_hw_params,
-       .digital_mute = max98088_dai2_digital_mute,
+       .mute_stream = max98088_dai2_mute,
+       .no_capture_mute = 1,
 };
 
 static struct snd_soc_dai_driver max98088_dai[] = {
@@ -1639,22 +1411,19 @@ static struct snd_soc_dai_driver max98088_dai[] = {
 
 static const char *eq_mode_name[] = {"EQ1 Mode", "EQ2 Mode"};
 
-static int max98088_get_channel(struct snd_soc_codec *codec, const char *name)
+static int max98088_get_channel(struct snd_soc_component *component, const char *name)
 {
-	int i;
+	int ret;
 
-	for (i = 0; i < ARRAY_SIZE(eq_mode_name); i++)
-		if (strcmp(name, eq_mode_name[i]) == 0)
-			return i;
-
-	/* Shouldn't happen */
-	dev_err(codec->dev, "Bad EQ channel name '%s'\n", name);
-	return -EINVAL;
+	ret = match_string(eq_mode_name, ARRAY_SIZE(eq_mode_name), name);
+	if (ret < 0)
+		dev_err(component->dev, "Bad EQ channel name '%s'\n", name);
+	return ret;
 }
 
-static void max98088_setup_eq1(struct snd_soc_codec *codec)
+static void max98088_setup_eq1(struct snd_soc_component *component)
 {
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        struct max98088_pdata *pdata = max98088->pdata;
        struct max98088_eq_cfg *coef_set;
        int best, best_val, save, i, sel, fs;
@@ -1679,29 +1448,29 @@ static void max98088_setup_eq1(struct snd_soc_codec *codec)
                }
        }
 
-       dev_dbg(codec->dev, "Selected %s/%dHz for %dHz sample rate\n",
+       dev_dbg(component->dev, "Selected %s/%dHz for %dHz sample rate\n",
                pdata->eq_cfg[best].name,
                pdata->eq_cfg[best].rate, fs);
 
        /* Disable EQ while configuring, and save current on/off state */
-       save = snd_soc_read(codec, M98088_REG_49_CFG_LEVEL);
-       snd_soc_update_bits(codec, M98088_REG_49_CFG_LEVEL, M98088_EQ1EN, 0);
+       save = snd_soc_component_read(component, M98088_REG_49_CFG_LEVEL);
+       snd_soc_component_update_bits(component, M98088_REG_49_CFG_LEVEL, M98088_EQ1EN, 0);
 
        coef_set = &pdata->eq_cfg[sel];
 
-       m98088_eq_band(codec, 0, 0, coef_set->band1);
-       m98088_eq_band(codec, 0, 1, coef_set->band2);
-       m98088_eq_band(codec, 0, 2, coef_set->band3);
-       m98088_eq_band(codec, 0, 3, coef_set->band4);
-       m98088_eq_band(codec, 0, 4, coef_set->band5);
+       m98088_eq_band(component, 0, 0, coef_set->band1);
+       m98088_eq_band(component, 0, 1, coef_set->band2);
+       m98088_eq_band(component, 0, 2, coef_set->band3);
+       m98088_eq_band(component, 0, 3, coef_set->band4);
+       m98088_eq_band(component, 0, 4, coef_set->band5);
 
        /* Restore the original on/off state */
-       snd_soc_update_bits(codec, M98088_REG_49_CFG_LEVEL, M98088_EQ1EN, save);
+       snd_soc_component_update_bits(component, M98088_REG_49_CFG_LEVEL, M98088_EQ1EN, save);
 }
 
-static void max98088_setup_eq2(struct snd_soc_codec *codec)
+static void max98088_setup_eq2(struct snd_soc_component *component)
 {
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        struct max98088_pdata *pdata = max98088->pdata;
        struct max98088_eq_cfg *coef_set;
        int best, best_val, save, i, sel, fs;
@@ -1726,36 +1495,36 @@ static void max98088_setup_eq2(struct snd_soc_codec *codec)
                }
        }
 
-       dev_dbg(codec->dev, "Selected %s/%dHz for %dHz sample rate\n",
+       dev_dbg(component->dev, "Selected %s/%dHz for %dHz sample rate\n",
                pdata->eq_cfg[best].name,
                pdata->eq_cfg[best].rate, fs);
 
        /* Disable EQ while configuring, and save current on/off state */
-       save = snd_soc_read(codec, M98088_REG_49_CFG_LEVEL);
-       snd_soc_update_bits(codec, M98088_REG_49_CFG_LEVEL, M98088_EQ2EN, 0);
+       save = snd_soc_component_read(component, M98088_REG_49_CFG_LEVEL);
+       snd_soc_component_update_bits(component, M98088_REG_49_CFG_LEVEL, M98088_EQ2EN, 0);
 
        coef_set = &pdata->eq_cfg[sel];
 
-       m98088_eq_band(codec, 1, 0, coef_set->band1);
-       m98088_eq_band(codec, 1, 1, coef_set->band2);
-       m98088_eq_band(codec, 1, 2, coef_set->band3);
-       m98088_eq_band(codec, 1, 3, coef_set->band4);
-       m98088_eq_band(codec, 1, 4, coef_set->band5);
+       m98088_eq_band(component, 1, 0, coef_set->band1);
+       m98088_eq_band(component, 1, 1, coef_set->band2);
+       m98088_eq_band(component, 1, 2, coef_set->band3);
+       m98088_eq_band(component, 1, 3, coef_set->band4);
+       m98088_eq_band(component, 1, 4, coef_set->band5);
 
        /* Restore the original on/off state */
-       snd_soc_update_bits(codec, M98088_REG_49_CFG_LEVEL, M98088_EQ2EN,
+       snd_soc_component_update_bits(component, M98088_REG_49_CFG_LEVEL, M98088_EQ2EN,
                save);
 }
 
 static int max98088_put_eq_enum(struct snd_kcontrol *kcontrol,
                                 struct snd_ctl_elem_value *ucontrol)
 {
-       struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        struct max98088_pdata *pdata = max98088->pdata;
-       int channel = max98088_get_channel(codec, kcontrol->id.name);
+       int channel = max98088_get_channel(component, kcontrol->id.name);
        struct max98088_cdata *cdata;
-       int sel = ucontrol->value.integer.value[0];
+	int sel = ucontrol->value.enumerated.item[0];
 
        if (channel < 0)
 	       return channel;
@@ -1769,10 +1538,10 @@ static int max98088_put_eq_enum(struct snd_kcontrol *kcontrol,
 
        switch (channel) {
        case 0:
-               max98088_setup_eq1(codec);
+               max98088_setup_eq1(component);
                break;
        case 1:
-               max98088_setup_eq2(codec);
+               max98088_setup_eq2(component);
                break;
        }
 
@@ -1782,9 +1551,9 @@ static int max98088_put_eq_enum(struct snd_kcontrol *kcontrol,
 static int max98088_get_eq_enum(struct snd_kcontrol *kcontrol,
                                 struct snd_ctl_elem_value *ucontrol)
 {
-       struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
-       int channel = max98088_get_channel(codec, kcontrol->id.name);
+       struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
+       int channel = max98088_get_channel(component, kcontrol->id.name);
        struct max98088_cdata *cdata;
 
        if (channel < 0)
@@ -1795,9 +1564,9 @@ static int max98088_get_eq_enum(struct snd_kcontrol *kcontrol,
        return 0;
 }
 
-static void max98088_handle_eq_pdata(struct snd_soc_codec *codec)
+static void max98088_handle_eq_pdata(struct snd_soc_component *component)
 {
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        struct max98088_pdata *pdata = max98088->pdata;
        struct max98088_eq_cfg *cfg;
        unsigned int cfgcnt;
@@ -1850,19 +1619,19 @@ static void max98088_handle_eq_pdata(struct snd_soc_codec *codec)
        max98088->eq_enum.texts = max98088->eq_texts;
        max98088->eq_enum.items = max98088->eq_textcnt;
 
-       ret = snd_soc_add_codec_controls(codec, controls, ARRAY_SIZE(controls));
+       ret = snd_soc_add_component_controls(component, controls, ARRAY_SIZE(controls));
        if (ret != 0)
-               dev_err(codec->dev, "Failed to add EQ control: %d\n", ret);
+               dev_err(component->dev, "Failed to add EQ control: %d\n", ret);
 }
 
-static void max98088_handle_pdata(struct snd_soc_codec *codec)
+static void max98088_handle_pdata(struct snd_soc_component *component)
 {
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        struct max98088_pdata *pdata = max98088->pdata;
        u8 regval = 0;
 
        if (!pdata) {
-               dev_dbg(codec->dev, "No platform data\n");
+               dev_dbg(component->dev, "No platform data\n");
                return;
        }
 
@@ -1875,40 +1644,21 @@ static void max98088_handle_pdata(struct snd_soc_codec *codec)
 
        max98088->digmic = (regval ? 1 : 0);
 
-       snd_soc_write(codec, M98088_REG_48_CFG_MIC, regval);
+       snd_soc_component_write(component, M98088_REG_48_CFG_MIC, regval);
 
        /* Configure receiver output */
        regval = ((pdata->receiver_mode) ? M98088_REC_LINEMODE : 0);
-       snd_soc_update_bits(codec, M98088_REG_2A_MIC_REC_CNTL,
+       snd_soc_component_update_bits(component, M98088_REG_2A_MIC_REC_CNTL,
                M98088_REC_LINEMODE_MASK, regval);
 
        /* Configure equalizers */
        if (pdata->eq_cfgcnt)
-               max98088_handle_eq_pdata(codec);
+               max98088_handle_eq_pdata(component);
 }
 
-#ifdef CONFIG_PM
-static int max98088_suspend(struct snd_soc_codec *codec)
+static int max98088_probe(struct snd_soc_component *component)
 {
-       max98088_set_bias_level(codec, SND_SOC_BIAS_OFF);
-
-       return 0;
-}
-
-static int max98088_resume(struct snd_soc_codec *codec)
-{
-       max98088_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
-
-       return 0;
-}
-#else
-#define max98088_suspend NULL
-#define max98088_resume NULL
-#endif
-
-static int max98088_probe(struct snd_soc_codec *codec)
-{
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
        struct max98088_cdata *cdata;
        int ret = 0;
 
@@ -1936,62 +1686,59 @@ static int max98088_probe(struct snd_soc_codec *codec)
        max98088->mic1pre = 0;
        max98088->mic2pre = 0;
 
-       ret = snd_soc_read(codec, M98088_REG_FF_REV_ID);
+       ret = snd_soc_component_read(component, M98088_REG_FF_REV_ID);
        if (ret < 0) {
-               dev_err(codec->dev, "Failed to read device revision: %d\n",
+               dev_err(component->dev, "Failed to read device revision: %d\n",
                        ret);
                goto err_access;
        }
-       dev_info(codec->dev, "revision %c\n", ret - 0x40 + 'A');
+       dev_info(component->dev, "revision %c\n", ret - 0x40 + 'A');
 
-       snd_soc_write(codec, M98088_REG_51_PWR_SYS, M98088_PWRSV);
+       snd_soc_component_write(component, M98088_REG_51_PWR_SYS, M98088_PWRSV);
 
-       /* initialize registers cache to hardware default */
-       max98088_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
+       snd_soc_component_write(component, M98088_REG_0F_IRQ_ENABLE, 0x00);
 
-       snd_soc_write(codec, M98088_REG_0F_IRQ_ENABLE, 0x00);
-
-       snd_soc_write(codec, M98088_REG_22_MIX_DAC,
+       snd_soc_component_write(component, M98088_REG_22_MIX_DAC,
                M98088_DAI1L_TO_DACL|M98088_DAI2L_TO_DACL|
                M98088_DAI1R_TO_DACR|M98088_DAI2R_TO_DACR);
 
-       snd_soc_write(codec, M98088_REG_4E_BIAS_CNTL, 0xF0);
-       snd_soc_write(codec, M98088_REG_50_DAC_BIAS2, 0x0F);
+       snd_soc_component_write(component, M98088_REG_4E_BIAS_CNTL, 0xF0);
+       snd_soc_component_write(component, M98088_REG_50_DAC_BIAS2, 0x0F);
 
-       snd_soc_write(codec, M98088_REG_16_DAI1_IOCFG,
+       snd_soc_component_write(component, M98088_REG_16_DAI1_IOCFG,
                M98088_S1NORMAL|M98088_SDATA);
 
-       snd_soc_write(codec, M98088_REG_1E_DAI2_IOCFG,
+       snd_soc_component_write(component, M98088_REG_1E_DAI2_IOCFG,
                M98088_S2NORMAL|M98088_SDATA);
 
-       max98088_handle_pdata(codec);
+       max98088_handle_pdata(component);
 
 err_access:
        return ret;
 }
 
-static int max98088_remove(struct snd_soc_codec *codec)
+static void max98088_remove(struct snd_soc_component *component)
 {
-       struct max98088_priv *max98088 = snd_soc_codec_get_drvdata(codec);
+       struct max98088_priv *max98088 = snd_soc_component_get_drvdata(component);
 
-       max98088_set_bias_level(codec, SND_SOC_BIAS_OFF);
        kfree(max98088->eq_texts);
-
-       return 0;
 }
 
-static struct snd_soc_codec_driver soc_codec_dev_max98088 = {
-	.probe   = max98088_probe,
-	.remove  = max98088_remove,
-	.suspend = max98088_suspend,
-	.resume  = max98088_resume,
-	.set_bias_level = max98088_set_bias_level,
-	.controls = max98088_snd_controls,
-	.num_controls = ARRAY_SIZE(max98088_snd_controls),
-	.dapm_widgets = max98088_dapm_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(max98088_dapm_widgets),
-	.dapm_routes = max98088_audio_map,
-	.num_dapm_routes = ARRAY_SIZE(max98088_audio_map),
+static const struct snd_soc_component_driver soc_component_dev_max98088 = {
+	.probe			= max98088_probe,
+	.remove			= max98088_remove,
+	.set_bias_level		= max98088_set_bias_level,
+	.controls		= max98088_snd_controls,
+	.num_controls		= ARRAY_SIZE(max98088_snd_controls),
+	.dapm_widgets		= max98088_dapm_widgets,
+	.num_dapm_widgets	= ARRAY_SIZE(max98088_dapm_widgets),
+	.dapm_routes		= max98088_audio_map,
+	.num_dapm_routes	= ARRAY_SIZE(max98088_audio_map),
+	.suspend_bias_off	= 1,
+	.idle_bias_on		= 1,
+	.use_pmdown_time	= 1,
+	.endianness		= 1,
+	.non_legacy_dai_naming	= 1,
 };
 
 static int max98088_i2c_probe(struct i2c_client *i2c,
@@ -2009,20 +1756,19 @@ static int max98088_i2c_probe(struct i2c_client *i2c,
        if (IS_ERR(max98088->regmap))
 	       return PTR_ERR(max98088->regmap);
 
+	max98088->mclk = devm_clk_get(&i2c->dev, "mclk");
+	if (IS_ERR(max98088->mclk))
+		if (PTR_ERR(max98088->mclk) == -EPROBE_DEFER)
+			return PTR_ERR(max98088->mclk);
+
        max98088->devtype = id->driver_data;
 
        i2c_set_clientdata(i2c, max98088);
        max98088->pdata = i2c->dev.platform_data;
 
-       ret = snd_soc_register_codec(&i2c->dev,
-                       &soc_codec_dev_max98088, &max98088_dai[0], 2);
+       ret = devm_snd_soc_register_component(&i2c->dev,
+                       &soc_component_dev_max98088, &max98088_dai[0], 2);
        return ret;
-}
-
-static int max98088_i2c_remove(struct i2c_client *client)
-{
-       snd_soc_unregister_codec(&client->dev);
-       return 0;
 }
 
 static const struct i2c_device_id max98088_i2c_id[] = {
@@ -2032,13 +1778,21 @@ static const struct i2c_device_id max98088_i2c_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, max98088_i2c_id);
 
+#if defined(CONFIG_OF)
+static const struct of_device_id max98088_of_match[] = {
+	{ .compatible = "maxim,max98088" },
+	{ .compatible = "maxim,max98089" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, max98088_of_match);
+#endif
+
 static struct i2c_driver max98088_i2c_driver = {
 	.driver = {
 		.name = "max98088",
-		.owner = THIS_MODULE,
+		.of_match_table = of_match_ptr(max98088_of_match),
 	},
 	.probe  = max98088_i2c_probe,
-	.remove = max98088_i2c_remove,
 	.id_table = max98088_i2c_id,
 };
 

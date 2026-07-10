@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *
  * arch/xtensa/platforms/iss/network.c
@@ -8,13 +9,9 @@
  * Based on work form the UML team.
  *
  * Copyright 2005 Tensilica Inc.
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
- *
  */
+
+#define pr_fmt(fmt) "%s: " fmt, __func__
 
 #include <linux/list.h>
 #include <linux/irq.h>
@@ -28,7 +25,7 @@
 #include <linux/etherdevice.h>
 #include <linux/interrupt.h>
 #include <linux/ioctl.h>
-#include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/ethtool.h>
 #include <linux/rtnetlink.h>
 #include <linux/platform_device.h>
@@ -105,13 +102,17 @@ static char *split_if_spec(char *str, ...)
 
 	va_start(ap, str);
 	while ((arg = va_arg(ap, char**)) != NULL) {
-		if (*str == '\0')
+		if (*str == '\0') {
+			va_end(ap);
 			return NULL;
+		}
 		end = strchr(str, ',');
 		if (end != str)
 			*arg = str;
-		if (end == NULL)
+		if (end == NULL) {
+			va_end(ap);
 			return NULL;
+		}
 		*end++ = '\0';
 		str = end;
 	}
@@ -345,9 +346,9 @@ static int iss_net_poll(void)
 }
 
 
-static void iss_net_timer(unsigned long priv)
+static void iss_net_timer(struct timer_list *t)
 {
-	struct iss_net_private *lp = (struct iss_net_private *)priv;
+	struct iss_net_private *lp = from_timer(lp, t, timer);
 
 	iss_net_poll();
 	spin_lock(&lp->lock);
@@ -382,10 +383,8 @@ static int iss_net_open(struct net_device *dev)
 	spin_unlock_bh(&opened_lock);
 	spin_lock_bh(&lp->lock);
 
-	init_timer(&lp->timer);
+	timer_setup(&lp->timer, iss_net_timer, 0);
 	lp->timer_val = ISS_NET_TIMER_VALUE;
-	lp->timer.data = (unsigned long) lp;
-	lp->timer.function = iss_net_timer;
 	mod_timer(&lp->timer, jiffies + lp->timer_val);
 
 out:
@@ -424,7 +423,7 @@ static int iss_net_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (len == skb->len) {
 		lp->stats.tx_packets++;
 		lp->stats.tx_bytes += skb->len;
-		dev->trans_start = jiffies;
+		netif_trans_update(dev);
 		netif_start_queue(dev);
 
 		/* this is normally done in the interrupt when tx finishes */
@@ -456,7 +455,7 @@ static void iss_net_set_multicast_list(struct net_device *dev)
 {
 }
 
-static void iss_net_tx_timeout(struct net_device *dev)
+static void iss_net_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 }
 
@@ -478,7 +477,7 @@ static int iss_net_change_mtu(struct net_device *dev, int new_mtu)
 	return -EINVAL;
 }
 
-void iss_net_user_timer_expire(unsigned long _conn)
+void iss_net_user_timer_expire(struct timer_list *unused)
 {
 }
 
@@ -503,16 +502,24 @@ static const struct net_device_ops iss_netdev_ops = {
 	.ndo_set_rx_mode	= iss_net_set_multicast_list,
 };
 
-static int iss_net_configure(int index, char *init)
+static void iss_net_pdev_release(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct iss_net_private *lp =
+		container_of(pdev, struct iss_net_private, pdev);
+
+	free_netdev(lp->dev);
+}
+
+static void iss_net_configure(int index, char *init)
 {
 	struct net_device *dev;
 	struct iss_net_private *lp;
-	int err;
 
 	dev = alloc_etherdev(sizeof(*lp));
 	if (dev == NULL) {
 		pr_err("eth_configure: failed to allocate device\n");
-		return 1;
+		return;
 	}
 
 	/* Initialize private element. */
@@ -541,7 +548,7 @@ static int iss_net_configure(int index, char *init)
 	if (!tuntap_probe(lp, index, init)) {
 		pr_err("%s: invalid arguments. Skipping device!\n",
 		       dev->name);
-		goto errout;
+		goto err_free_netdev;
 	}
 
 	pr_info("Netdevice %d (%pM)\n", index, dev->dev_addr);
@@ -549,7 +556,8 @@ static int iss_net_configure(int index, char *init)
 	/* sysfs register */
 
 	if (!driver_registered) {
-		platform_driver_register(&iss_net_driver);
+		if (platform_driver_register(&iss_net_driver))
+			goto err_free_netdev;
 		driver_registered = 1;
 	}
 
@@ -559,7 +567,9 @@ static int iss_net_configure(int index, char *init)
 
 	lp->pdev.id = index;
 	lp->pdev.name = DRIVER_NAME;
-	platform_device_register(&lp->pdev);
+	lp->pdev.dev.release = iss_net_pdev_release;
+	if (platform_device_register(&lp->pdev))
+		goto err_free_netdev;
 	SET_NETDEV_DEV(dev, &lp->pdev.dev);
 
 	dev->netdev_ops = &iss_netdev_ops;
@@ -568,24 +578,20 @@ static int iss_net_configure(int index, char *init)
 	dev->irq = -1;
 
 	rtnl_lock();
-	err = register_netdevice(dev);
+	if (register_netdevice(dev)) {
+		rtnl_unlock();
+		pr_err("%s: error registering net device!\n", dev->name);
+		platform_device_unregister(&lp->pdev);
+		return;
+	}
 	rtnl_unlock();
 
-	if (err) {
-		pr_err("%s: error registering net device!\n", dev->name);
-		/* XXX: should we call ->remove() here? */
-		free_netdev(dev);
-		return 1;
-	}
+	timer_setup(&lp->tl, iss_net_user_timer_expire, 0);
 
-	init_timer(&lp->tl);
-	lp->tl.function = iss_net_user_timer_expire;
+	return;
 
-	return 0;
-
-errout:
-	/* FIXME: unregister; free, etc.. */
-	return -EIO;
+err_free_netdev:
+	free_netdev(dev);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -605,8 +611,6 @@ struct iss_net_init {
  * those fields. They will be later initialized in iss_net_init.
  */
 
-#define ERR KERN_ERR "iss_net_setup: "
-
 static int __init iss_net_setup(char *str)
 {
 	struct iss_net_private *device = NULL;
@@ -618,14 +622,14 @@ static int __init iss_net_setup(char *str)
 
 	end = strchr(str, '=');
 	if (!end) {
-		printk(ERR "Expected '=' after device number\n");
+		pr_err("Expected '=' after device number\n");
 		return 1;
 	}
 	*end = 0;
 	rc = kstrtouint(str, 0, &n);
 	*end = '=';
 	if (rc < 0) {
-		printk(ERR "Failed to parse '%s'\n", str);
+		pr_err("Failed to parse '%s'\n", str);
 		return 1;
 	}
 	str = end;
@@ -641,13 +645,13 @@ static int __init iss_net_setup(char *str)
 	spin_unlock(&devices_lock);
 
 	if (device && device->index == n) {
-		printk(ERR "Device %u already configured\n", n);
+		pr_err("Device %u already configured\n", n);
 		return 1;
 	}
 
-	new = alloc_bootmem(sizeof(*new));
+	new = memblock_alloc(sizeof(*new), SMP_CACHE_BYTES);
 	if (new == NULL) {
-		printk(ERR "Alloc_bootmem failed\n");
+		pr_err("Alloc_bootmem failed\n");
 		return 1;
 	}
 
@@ -658,8 +662,6 @@ static int __init iss_net_setup(char *str)
 	list_add_tail(&new->list, &eth_cmd_line);
 	return 1;
 }
-
-#undef ERR
 
 __setup("eth", iss_net_setup);
 
@@ -681,6 +683,4 @@ static int iss_net_init(void)
 
 	return 1;
 }
-
-module_init(iss_net_init);
-
+device_initcall(iss_net_init);

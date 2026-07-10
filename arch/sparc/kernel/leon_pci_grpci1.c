@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * leon_pci_grpci1.c: GRPCI1 Host PCI driver
  *
@@ -357,7 +358,7 @@ static struct irq_chip grpci1_irq = {
 };
 
 /* Handle one or multiple IRQs from the PCI core */
-static void grpci1_pci_flow_irq(unsigned int irq, struct irq_desc *desc)
+static void grpci1_pci_flow_irq(struct irq_desc *desc)
 {
 	struct grpci1_priv *priv = grpci1priv;
 	int i, ack = 0;
@@ -695,7 +696,7 @@ err1:
 	return err;
 }
 
-static struct of_device_id grpci1_of_match[] = {
+static const struct of_device_id grpci1_of_match[] __initconst = {
 	{
 	 .name = "GAISLER_PCIFBRG",
 	 },
@@ -708,7 +709,6 @@ static struct of_device_id grpci1_of_match[] = {
 static struct platform_driver grpci1_of_driver = {
 	.driver = {
 		.name = "grpci1",
-		.owner = THIS_MODULE,
 		.of_match_table = grpci1_of_match,
 	},
 	.probe = grpci1_of_probe,

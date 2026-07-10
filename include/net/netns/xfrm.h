@@ -1,17 +1,19 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __NETNS_XFRM_H
 #define __NETNS_XFRM_H
 
 #include <linux/list.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
+#include <linux/rhashtable-types.h>
 #include <linux/xfrm.h>
+#include <linux/android_kabi.h>
 #include <net/dst_ops.h>
-#include <net/flowcache.h>
 
 struct ctl_table_header;
 
 struct xfrm_policy_hash {
-	struct hlist_head	*table;
+	struct hlist_head	__rcu *table;
 	unsigned int		hmask;
 	u8			dbits4;
 	u8			sbits4;
@@ -38,23 +40,22 @@ struct netns_xfrm {
 	 * mode. Also, it can be used by ah/esp icmp error handler to find
 	 * offending SA.
 	 */
-	struct hlist_head	*state_bydst;
-	struct hlist_head	*state_bysrc;
-	struct hlist_head	*state_byspi;
+	struct hlist_head	__rcu *state_bydst;
+	struct hlist_head	__rcu *state_bysrc;
+	struct hlist_head	__rcu *state_byspi;
 	unsigned int		state_hmask;
 	unsigned int		state_num;
 	struct work_struct	state_hash_work;
-	struct hlist_head	state_gc_list;
-	struct work_struct	state_gc_work;
 
 	struct list_head	policy_all;
 	struct hlist_head	*policy_byidx;
 	unsigned int		policy_idx_hmask;
-	struct hlist_head	policy_inexact[XFRM_POLICY_MAX * 2];
-	struct xfrm_policy_hash	policy_bydst[XFRM_POLICY_MAX * 2];
+	struct hlist_head	policy_inexact[XFRM_POLICY_MAX];
+	struct xfrm_policy_hash	policy_bydst[XFRM_POLICY_MAX];
 	unsigned int		policy_count[XFRM_POLICY_MAX * 2];
 	struct work_struct	policy_hash_work;
 	struct xfrm_policy_hthresh policy_hthresh;
+	struct list_head	inexact_bins;
 
 
 	struct sock		*nlsk;
@@ -72,18 +73,13 @@ struct netns_xfrm {
 #if IS_ENABLED(CONFIG_IPV6)
 	struct dst_ops		xfrm6_dst_ops;
 #endif
-	spinlock_t xfrm_state_lock;
-	rwlock_t xfrm_policy_lock;
+	spinlock_t		xfrm_state_lock;
+	seqcount_t		xfrm_state_hash_generation;
+
+	spinlock_t xfrm_policy_lock;
 	struct mutex xfrm_cfg_mutex;
 
-	/* flow cache part */
-	struct flow_cache	flow_cache_global;
-	atomic_t		flow_cache_genid;
-	struct list_head	flow_cache_gc_list;
-	spinlock_t		flow_cache_gc_lock;
-	struct work_struct	flow_cache_gc_work;
-	struct work_struct	flow_cache_flush_work;
-	struct mutex		flow_flush_sem;
+	ANDROID_KABI_RESERVE(1);
 };
 
 #endif

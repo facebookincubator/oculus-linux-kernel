@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Motion Eye video4linux driver for Sony Vaio PictureBook
  *
@@ -11,20 +12,6 @@
  *
  * Some parts borrowed from various video4linux drivers, especially
  * bttv-driver.c and zoran.c, see original files for credits.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #ifndef _MEYE_PRIV_H_
@@ -281,11 +268,11 @@
 struct meye_grab_buffer {
 	int state;			/* state of buffer */
 	unsigned long size;		/* size of jpg frame */
-	struct timeval timestamp;	/* timestamp */
+	u64 ts;				/* timestamp */
 	unsigned long sequence;		/* sequence number */
 };
 
-/* size of kfifos containings buffer indices */
+/* size of kfifos containing buffer indices */
 #define MEYE_QUEUE_SIZE	MEYE_MAX_BUFNBRS
 
 /* Motion Eye device structure */
@@ -311,16 +298,14 @@ struct meye {
 	struct kfifo doneq;		/* queue for grabbed buffers */
 	spinlock_t doneq_lock;		/* lock protecting the queue */
 	wait_queue_head_t proc_list;	/* wait queue */
-	struct video_device *vdev;	/* video device parameters */
+	struct video_device vdev;	/* video device parameters */
 	u16 brightness;
 	u16 hue;
 	u16 contrast;
 	u16 colour;
 	struct meye_params params;	/* additional parameters */
 	unsigned long in_use;		/* set to 1 if the device is in use */
-#ifdef CONFIG_PM
 	u8 pm_mchip_mode;		/* old mchip mode */
-#endif
 };
 
 #endif

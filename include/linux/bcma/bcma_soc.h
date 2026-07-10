@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef LINUX_BCMA_SOC_H_
 #define LINUX_BCMA_SOC_H_
 
@@ -5,8 +6,7 @@
 
 struct bcma_soc {
 	struct bcma_bus bus;
-	struct bcma_device core_cc;
-	struct bcma_device core_mips;
+	struct device *dev;
 };
 
 int __init bcma_host_soc_register(struct bcma_soc *soc);

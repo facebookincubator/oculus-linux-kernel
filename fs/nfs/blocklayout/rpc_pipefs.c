@@ -79,7 +79,7 @@ bl_resolve_deviceid(struct nfs_server *server, struct pnfs_block_volume *b,
 		goto out_free_data;
 
 	bl_msg = msg->data;
-	bl_msg->type = BL_DEVICE_MOUNT,
+	bl_msg->type = BL_DEVICE_MOUNT;
 	bl_msg->totallen = b->simple.len;
 	nfs4_encode_simple(msg->data + sizeof(*bl_msg), b);
 
@@ -112,7 +112,7 @@ out_unlock:
 static ssize_t bl_pipe_downcall(struct file *filp, const char __user *src,
 			 size_t mlen)
 {
-	struct nfs_net *nn = net_generic(filp->f_dentry->d_sb->s_fs_info,
+	struct nfs_net *nn = net_generic(file_inode(filp)->i_sb->s_fs_info,
 					 nfs_net_id);
 
 	if (mlen != sizeof (struct bl_dev_msg))
@@ -281,7 +281,7 @@ out:
 	return ret;
 }
 
-void __exit bl_cleanup_pipefs(void)
+void bl_cleanup_pipefs(void)
 {
 	rpc_pipefs_notifier_unregister(&nfs4blocklayout_block);
 	unregister_pernet_subsys(&nfs4blocklayout_net_ops);

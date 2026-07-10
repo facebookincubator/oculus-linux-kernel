@@ -1,24 +1,19 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/drivers/irqchip/irq-zevio.c
  *
  *  Copyright (C) 2013 Daniel Tang <tangrs@tangrs.id.au>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2, as
- * published by the Free Software Foundation.
- *
  */
 
 #include <linux/io.h>
 #include <linux/irq.h>
+#include <linux/irqchip.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 
 #include <asm/mach/irq.h>
 #include <asm/exception.h>
-
-#include "irqchip.h"
 
 #define IO_STATUS	0x000
 #define IO_RAW_STATUS	0x004
@@ -44,8 +39,7 @@ static void __iomem *zevio_irq_io;
 static void zevio_irq_ack(struct irq_data *irqd)
 {
 	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(irqd);
-	struct irq_chip_regs *regs =
-		&container_of(irqd->chip, struct irq_chip_type, chip)->regs;
+	struct irq_chip_regs *regs = &irq_data_get_chip_type(irqd)->regs;
 
 	readl(gc->reg_base + regs->ack);
 }
@@ -57,7 +51,7 @@ static void __exception_irq_entry zevio_handle_irq(struct pt_regs *regs)
 	while (readl(zevio_irq_io + IO_STATUS)) {
 		irqnr = readl(zevio_irq_io + IO_CURRENT);
 		handle_domain_irq(zevio_irq_domain, irqnr, regs);
-	};
+	}
 }
 
 static void __init zevio_init_irq_base(void __iomem *base)

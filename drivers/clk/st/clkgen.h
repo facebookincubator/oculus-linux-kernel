@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /************************************************************************
 File  : Clock H/w specific Information
 
@@ -8,6 +9,8 @@ Copyright (C) 2014 STMicroelectronics
 
 #ifndef __CLKGEN_INFO_H
 #define __CLKGEN_INFO_H
+
+extern spinlock_t clkgen_a9_lock;
 
 struct clkgen_field {
 	unsigned int offset;

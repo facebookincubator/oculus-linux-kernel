@@ -1,17 +1,15 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  linux/arch/arm/lib/memcpy.S
  *
  *  Author:	Nicolas Pitre
  *  Created:	Sep 28, 2005
  *  Copyright:	MontaVista Software, Inc.
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2 as
- *  published by the Free Software Foundation.
  */
 
 #include <linux/linkage.h>
 #include <asm/assembler.h>
+#include <asm/unwind.h>
 
 #define LDR1W_SHIFT	0
 #define STR1W_SHIFT	0
@@ -29,7 +27,7 @@
 	.endm
 
 	.macro ldr1b ptr reg cond=al abort
-	ldr\cond\()b \reg, [\ptr], #1
+	ldrb\cond \reg, [\ptr], #1
 	.endm
 
 	.macro str1w ptr reg abort
@@ -41,11 +39,15 @@
 	.endm
 
 	.macro str1b ptr reg cond=al abort
-	str\cond\()b \reg, [\ptr], #1
+	strb\cond \reg, [\ptr], #1
 	.endm
 
 	.macro enter reg1 reg2
 	stmdb sp!, {r0, \reg1, \reg2}
+	.endm
+
+	.macro usave reg1 reg2
+	UNWIND(	.save	{r0, \reg1, \reg2}	)
 	.endm
 
 	.macro exit reg1 reg2
@@ -56,8 +58,10 @@
 
 /* Prototype: void *memcpy(void *dest, const void *src, size_t n); */
 
+ENTRY(mmiocpy)
 ENTRY(memcpy)
 
 #include "copy_template.S"
 
 ENDPROC(memcpy)
+ENDPROC(mmiocpy)

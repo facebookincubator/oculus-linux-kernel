@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * comedi/drivers/cb_pcidda.c
  * Driver for the ComputerBoards / MeasurementComputing PCI-DDA series.
@@ -7,27 +8,15 @@
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 1997-8 David A. Schleef <ds@schleef.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
  * Driver: cb_pcidda
  * Description: MeasurementComputing PCI-DDA series
- * Devices: (Measurement Computing) PCI-DDA08/12 [pci-dda08/12]
- *	    (Measurement Computing) PCI-DDA04/12 [pci-dda04/12]
- *	    (Measurement Computing) PCI-DDA02/12 [pci-dda02/12]
- *	    (Measurement Computing) PCI-DDA08/16 [pci-dda08/16]
- *	    (Measurement Computing) PCI-DDA04/16 [pci-dda04/16]
- *	    (Measurement Computing) PCI-DDA02/16 [pci-dda02/16]
+ * Devices: [Measurement Computing] PCI-DDA08/12 (pci-dda08/12),
+ *   PCI-DDA04/12 (pci-dda04/12), PCI-DDA02/12 (pci-dda02/12),
+ *   PCI-DDA08/16 (pci-dda08/16), PCI-DDA04/16 (pci-dda04/16),
+ *   PCI-DDA02/16 (pci-dda02/16)
  * Author: Ivan Martinez <ivanmr@altavista.com>
  *	   Frank Mori Hess <fmhess@users.sourceforge.net>
  * Status: works
@@ -38,11 +27,9 @@
  */
 
 #include <linux/module.h>
-#include <linux/pci.h>
 
-#include "../comedidev.h"
+#include "../comedi_pci.h"
 
-#include "comedi_fc.h"
 #include "8255.h"
 
 #define EEPROM_SIZE	128	/*  number of entries in eeprom */
@@ -55,13 +42,13 @@
 
 /* DAC registers */
 #define CB_DDA_DA_CTRL_REG		0x00	   /* D/A Control Register  */
-#define CB_DDA_DA_CTRL_SU		(1 << 0)   /*  Simultaneous update  */
-#define CB_DDA_DA_CTRL_EN		(1 << 1)   /*  Enable specified DAC */
+#define CB_DDA_DA_CTRL_SU		BIT(0)   /*  Simultaneous update  */
+#define CB_DDA_DA_CTRL_EN		BIT(1)   /*  Enable specified DAC */
 #define CB_DDA_DA_CTRL_DAC(x)		((x) << 2) /*  Specify DAC channel  */
 #define CB_DDA_DA_CTRL_RANGE2V5		(0 << 6)   /*  2.5V range           */
 #define CB_DDA_DA_CTRL_RANGE5V		(2 << 6)   /*  5V range             */
 #define CB_DDA_DA_CTRL_RANGE10V		(3 << 6)   /*  10V range            */
-#define CB_DDA_DA_CTRL_UNIP		(1 << 8)   /*  Unipolar range       */
+#define CB_DDA_DA_CTRL_UNIP		BIT(8)   /*  Unipolar range       */
 
 #define DACALIBRATION1	4	/*  D/A CALIBRATION REGISTER 1 */
 /* write bits */
@@ -252,8 +239,8 @@ static void cb_pcidda_write_caldac(struct comedi_device *dev,
 	cb_pcidda_serial_out(dev, value, num_caldac_bits);
 
 /*
-* latch stream into appropriate caldac deselect reference dac
-*/
+ * latch stream into appropriate caldac deselect reference dac
+ */
 	cal2_bits = DESELECT_REF_DAC_BIT | DUMMY_BIT;
 	/*  deactivate caldacs (one caldac for every two channels) */
 	for (i = 0; i < max_num_caldacs; i++)
@@ -304,6 +291,7 @@ static int cb_pcidda_ao_insn_write(struct comedi_device *dev,
 	unsigned int channel = CR_CHAN(insn->chanspec);
 	unsigned int range = CR_RANGE(insn->chanspec);
 	unsigned int ctrl;
+	unsigned int i;
 
 	if (range != devpriv->ao_range[channel])
 		cb_pcidda_calibrate(dev, channel, range);
@@ -330,7 +318,8 @@ static int cb_pcidda_ao_insn_write(struct comedi_device *dev,
 
 	outw(ctrl, devpriv->daqio + CB_DDA_DA_CTRL_REG);
 
-	outw(data[0], devpriv->daqio + CB_DDA_DA_DATA_REG(channel));
+	for (i = 0; i < insn->n; i++)
+		outw(data[i], devpriv->daqio + CB_DDA_DA_DATA_REG(channel));
 
 	return insn->n;
 }
@@ -339,18 +328,18 @@ static int cb_pcidda_auto_attach(struct comedi_device *dev,
 				 unsigned long context)
 {
 	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
-	const struct cb_pcidda_board *thisboard = NULL;
+	const struct cb_pcidda_board *board = NULL;
 	struct cb_pcidda_private *devpriv;
 	struct comedi_subdevice *s;
 	int i;
 	int ret;
 
 	if (context < ARRAY_SIZE(cb_pcidda_boards))
-		thisboard = &cb_pcidda_boards[context];
-	if (!thisboard)
+		board = &cb_pcidda_boards[context];
+	if (!board)
 		return -ENODEV;
-	dev->board_ptr = thisboard;
-	dev->board_name = thisboard->name;
+	dev->board_ptr = board;
+	dev->board_name = board->name;
 
 	devpriv = comedi_alloc_devpriv(dev, sizeof(*devpriv));
 	if (!devpriv)
@@ -370,8 +359,8 @@ static int cb_pcidda_auto_attach(struct comedi_device *dev,
 	/* analog output subdevice */
 	s->type = COMEDI_SUBD_AO;
 	s->subdev_flags = SDF_WRITABLE;
-	s->n_chan = thisboard->ao_chans;
-	s->maxdata = (1 << thisboard->ao_bits) - 1;
+	s->n_chan = board->ao_chans;
+	s->maxdata = (1 << board->ao_bits) - 1;
 	s->range_table = &cb_pcidda_ranges;
 	s->insn_write = cb_pcidda_ao_insn_write;
 
@@ -388,7 +377,7 @@ static int cb_pcidda_auto_attach(struct comedi_device *dev,
 		devpriv->eeprom_data[i] = cb_pcidda_read_eeprom(dev, i);
 
 	/*  set calibrations dacs */
-	for (i = 0; i < thisboard->ao_chans; i++)
+	for (i = 0; i < board->ao_chans; i++)
 		cb_pcidda_calibrate(dev, i, devpriv->ao_range[i]);
 
 	return 0;
@@ -427,6 +416,6 @@ static struct pci_driver cb_pcidda_pci_driver = {
 };
 module_comedi_pci_driver(cb_pcidda_driver, cb_pcidda_pci_driver);
 
-MODULE_AUTHOR("Comedi http://www.comedi.org");
+MODULE_AUTHOR("Comedi https://www.comedi.org");
 MODULE_DESCRIPTION("Comedi low-level driver");
 MODULE_LICENSE("GPL");

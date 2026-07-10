@@ -1,27 +1,18 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * Copyright (C) 2010-2013 Bluecherry, LLC <http://www.bluecherrydvr.com>
+ * Copyright (C) 2010-2013 Bluecherry, LLC <https://www.bluecherrydvr.com>
  *
  * Original author:
  * Ben Collins <bcollins@ubuntu.com>
  *
  * Additional work by:
  * John Brooks <john.brooks@bluecherry.net>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #ifndef __SOLO6X10_JPEG_H
 #define __SOLO6X10_JPEG_H
 
-static const unsigned char jpeg_header[] = {
+static const u8 jpeg_header[] = {
 	0xff, 0xd8, 0xff, 0xfe, 0x00, 0x0d, 0x42, 0x6c,
 	0x75, 0x65, 0x63, 0x68, 0x65, 0x72, 0x72, 0x79,
 	0x20, 0xff, 0xdb, 0x00, 0x43, 0x00, 0x20, 0x16,
@@ -106,7 +97,7 @@ static const unsigned char jpeg_header[] = {
 /* This is the byte marker for the start of the DQT */
 #define DQT_START	17
 #define DQT_LEN		138
-static const unsigned char jpeg_dqt[4][DQT_LEN] = {
+static const u8 jpeg_dqt[4][DQT_LEN] = {
 	{
 		0xff, 0xdb, 0x00, 0x43, 0x00,
 		0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08, 0x07,

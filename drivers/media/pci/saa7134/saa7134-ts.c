@@ -1,24 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *
  * device driver for philips saa7134 based TV cards
  * video4linux video interface
  *
  * (c) 2001,02 Gerd Knorr <kraxel@bytesex.org> [SuSE Labs]
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+
+#include "saa7134.h"
+#include "saa7134-reg.h"
 
 #include <linux/init.h>
 #include <linux/list.h>
@@ -26,17 +16,16 @@
 #include <linux/kernel.h>
 #include <linux/delay.h>
 
-#include "saa7134-reg.h"
-#include "saa7134.h"
-
 /* ------------------------------------------------------------------ */
 
 static unsigned int ts_debug;
 module_param(ts_debug, int, 0644);
 MODULE_PARM_DESC(ts_debug,"enable debug messages [ts]");
 
-#define dprintk(fmt, arg...)	if (ts_debug) \
-	printk(KERN_DEBUG "%s/ts: " fmt, dev->name , ## arg)
+#define ts_dbg(fmt, arg...) do { \
+	if (ts_debug) \
+		printk(KERN_DEBUG pr_fmt("ts: " fmt), ## arg); \
+	} while (0)
 
 /* ------------------------------------------------------------------ */
 static int buffer_activate(struct saa7134_dev *dev,
@@ -44,7 +33,7 @@ static int buffer_activate(struct saa7134_dev *dev,
 			   struct saa7134_buf *next)
 {
 
-	dprintk("buffer_activate [%p]",buf);
+	ts_dbg("buffer_activate [%p]", buf);
 	buf->top_seen = 0;
 
 	if (!dev->ts_started)
@@ -53,12 +42,12 @@ static int buffer_activate(struct saa7134_dev *dev,
 	if (NULL == next)
 		next = buf;
 	if (V4L2_FIELD_TOP == dev->ts_field) {
-		dprintk("- [top]     buf=%p next=%p\n",buf,next);
+		ts_dbg("- [top]     buf=%p next=%p\n", buf, next);
 		saa_writel(SAA7134_RS_BA1(5),saa7134_buffer_base(buf));
 		saa_writel(SAA7134_RS_BA2(5),saa7134_buffer_base(next));
 		dev->ts_field = V4L2_FIELD_BOTTOM;
 	} else {
-		dprintk("- [bottom]  buf=%p next=%p\n",buf,next);
+		ts_dbg("- [bottom]  buf=%p next=%p\n", buf, next);
 		saa_writel(SAA7134_RS_BA1(5),saa7134_buffer_base(next));
 		saa_writel(SAA7134_RS_BA2(5),saa7134_buffer_base(buf));
 		dev->ts_field = V4L2_FIELD_TOP;
@@ -77,8 +66,9 @@ static int buffer_activate(struct saa7134_dev *dev,
 
 int saa7134_ts_buffer_init(struct vb2_buffer *vb2)
 {
+	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb2);
 	struct saa7134_dmaqueue *dmaq = vb2->vb2_queue->drv_priv;
-	struct saa7134_buf *buf = container_of(vb2, struct saa7134_buf, vb2);
+	struct saa7134_buf *buf = container_of(vbuf, struct saa7134_buf, vb2);
 
 	dmaq->curr = NULL;
 	buf->activate = buffer_activate;
@@ -89,14 +79,14 @@ EXPORT_SYMBOL_GPL(saa7134_ts_buffer_init);
 
 int saa7134_ts_buffer_prepare(struct vb2_buffer *vb2)
 {
+	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb2);
 	struct saa7134_dmaqueue *dmaq = vb2->vb2_queue->drv_priv;
 	struct saa7134_dev *dev = dmaq->dev;
-	struct saa7134_buf *buf = container_of(vb2, struct saa7134_buf, vb2);
+	struct saa7134_buf *buf = container_of(vbuf, struct saa7134_buf, vb2);
 	struct sg_table *dma = vb2_dma_sg_plane_desc(vb2, 0);
 	unsigned int lines, llength, size;
-	int ret;
 
-	dprintk("buffer_prepare [%p]\n", buf);
+	ts_dbg("buffer_prepare [%p]\n", buf);
 
 	llength = TS_PACKET_SIZE;
 	lines = dev->ts.nr_packets;
@@ -106,30 +96,16 @@ int saa7134_ts_buffer_prepare(struct vb2_buffer *vb2)
 		return -EINVAL;
 
 	vb2_set_plane_payload(vb2, 0, size);
-	vb2->v4l2_buf.field = dev->field;
+	vbuf->field = dev->field;
 
-	ret = dma_map_sg(&dev->pci->dev, dma->sgl, dma->nents, DMA_FROM_DEVICE);
-	if (!ret)
-		return -EIO;
 	return saa7134_pgtable_build(dev->pci, &dmaq->pt, dma->sgl, dma->nents,
 				    saa7134_buffer_startpage(buf));
 }
 EXPORT_SYMBOL_GPL(saa7134_ts_buffer_prepare);
 
-void saa7134_ts_buffer_finish(struct vb2_buffer *vb2)
-{
-	struct saa7134_dmaqueue *dmaq = vb2->vb2_queue->drv_priv;
-	struct saa7134_dev *dev = dmaq->dev;
-	struct saa7134_buf *buf = container_of(vb2, struct saa7134_buf, vb2);
-	struct sg_table *dma = vb2_dma_sg_plane_desc(&buf->vb2, 0);
-
-	dma_unmap_sg(&dev->pci->dev, dma->sgl, dma->nents, DMA_FROM_DEVICE);
-}
-EXPORT_SYMBOL_GPL(saa7134_ts_buffer_finish);
-
-int saa7134_ts_queue_setup(struct vb2_queue *q, const struct v4l2_format *fmt,
+int saa7134_ts_queue_setup(struct vb2_queue *q,
 			   unsigned int *nbuffers, unsigned int *nplanes,
-			   unsigned int sizes[], void *alloc_ctxs[])
+			   unsigned int sizes[], struct device *alloc_devs[])
 {
 	struct saa7134_dmaqueue *dmaq = q->drv_priv;
 	struct saa7134_dev *dev = dmaq->dev;
@@ -160,10 +136,12 @@ int saa7134_ts_start_streaming(struct vb2_queue *vq, unsigned int count)
 
 		list_for_each_entry_safe(buf, tmp, &dmaq->queue, entry) {
 			list_del(&buf->entry);
-			vb2_buffer_done(&buf->vb2, VB2_BUF_STATE_QUEUED);
+			vb2_buffer_done(&buf->vb2.vb2_buf,
+					VB2_BUF_STATE_QUEUED);
 		}
 		if (dmaq->curr) {
-			vb2_buffer_done(&dmaq->curr->vb2, VB2_BUF_STATE_QUEUED);
+			vb2_buffer_done(&dmaq->curr->vb2.vb2_buf,
+					VB2_BUF_STATE_QUEUED);
 			dmaq->curr = NULL;
 		}
 		return -EBUSY;
@@ -187,7 +165,6 @@ struct vb2_ops saa7134_ts_qops = {
 	.queue_setup	= saa7134_ts_queue_setup,
 	.buf_init	= saa7134_ts_buffer_init,
 	.buf_prepare	= saa7134_ts_buffer_prepare,
-	.buf_finish	= saa7134_ts_buffer_finish,
 	.buf_queue	= saa7134_vb2_buffer_queue,
 	.wait_prepare	= vb2_ops_wait_prepare,
 	.wait_finish	= vb2_ops_wait_finish,
@@ -227,8 +204,8 @@ int saa7134_ts_init1(struct saa7134_dev *dev)
 	/* sanitycheck insmod options */
 	if (tsbufs < 2)
 		tsbufs = 2;
-	if (tsbufs > VB2_MAX_FRAME)
-		tsbufs = VB2_MAX_FRAME;
+	if (tsbufs > VIDEO_MAX_FRAME)
+		tsbufs = VIDEO_MAX_FRAME;
 	if (ts_nr_packets < 4)
 		ts_nr_packets = 4;
 	if (ts_nr_packets > 312)
@@ -237,9 +214,7 @@ int saa7134_ts_init1(struct saa7134_dev *dev)
 	dev->ts.nr_packets = ts_nr_packets;
 
 	INIT_LIST_HEAD(&dev->ts_q.queue);
-	init_timer(&dev->ts_q.timeout);
-	dev->ts_q.timeout.function = saa7134_buffer_timeout;
-	dev->ts_q.timeout.data     = (unsigned long)(&dev->ts_q);
+	timer_setup(&dev->ts_q.timeout, saa7134_buffer_timeout, 0);
 	dev->ts_q.dev              = dev;
 	dev->ts_q.need_two         = 1;
 	dev->ts_started            = 0;
@@ -254,7 +229,7 @@ int saa7134_ts_init1(struct saa7134_dev *dev)
 /* Function for stop TS */
 int saa7134_ts_stop(struct saa7134_dev *dev)
 {
-	dprintk("TS stop\n");
+	ts_dbg("TS stop\n");
 
 	if (!dev->ts_started)
 		return 0;
@@ -276,7 +251,7 @@ int saa7134_ts_stop(struct saa7134_dev *dev)
 /* Function for start TS */
 int saa7134_ts_start(struct saa7134_dev *dev)
 {
-	dprintk("TS start\n");
+	ts_dbg("TS start\n");
 
 	if (WARN_ON(dev->ts_started))
 		return 0;

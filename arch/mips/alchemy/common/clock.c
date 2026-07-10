@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Alchemy clocks.
  *
@@ -35,9 +36,9 @@
 
 #include <linux/init.h>
 #include <linux/io.h>
+#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/clkdev.h>
-#include <linux/clk-private.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
@@ -136,7 +137,13 @@ static unsigned long alchemy_clk_cpu_recalc(struct clk_hw *hw,
 	return t;
 }
 
-static struct clk_ops alchemy_clkops_cpu = {
+void __init alchemy_set_lpj(void)
+{
+	preset_lpj = alchemy_clk_cpu_recalc(NULL, ALCHEMY_ROOTCLK_RATE);
+	preset_lpj /= 2 * HZ;
+}
+
+static const struct clk_ops alchemy_clkops_cpu = {
 	.recalc_rate	= alchemy_clk_cpu_recalc,
 };
 
@@ -145,6 +152,7 @@ static struct clk __init *alchemy_clk_setup_cpu(const char *parent_name,
 {
 	struct clk_init_data id;
 	struct clk_hw *h;
+	struct clk *clk;
 
 	h = kzalloc(sizeof(*h), GFP_KERNEL);
 	if (!h)
@@ -153,11 +161,17 @@ static struct clk __init *alchemy_clk_setup_cpu(const char *parent_name,
 	id.name = ALCHEMY_CPU_CLK;
 	id.parent_names = &parent_name;
 	id.num_parents = 1;
-	id.flags = CLK_IS_BASIC;
+	id.flags = 0;
 	id.ops = &alchemy_clkops_cpu;
 	h->init = &id;
 
-	return clk_register(NULL, h);
+	clk = clk_register(NULL, h);
+	if (IS_ERR(clk)) {
+		pr_err("failed to register clock\n");
+		kfree(h);
+	}
+
+	return clk;
 }
 
 /* AUXPLLs ************************************************************/
@@ -217,7 +231,7 @@ static long alchemy_clk_aux_roundr(struct clk_hw *hw,
 	return (*parent_rate) * mult;
 }
 
-static struct clk_ops alchemy_clkops_aux = {
+static const struct clk_ops alchemy_clkops_aux = {
 	.recalc_rate	= alchemy_clk_aux_recalc,
 	.set_rate	= alchemy_clk_aux_setr,
 	.round_rate	= alchemy_clk_aux_roundr,
@@ -318,17 +332,26 @@ static struct clk __init *alchemy_clk_setup_mem(const char *pn, int ct)
 
 /* lrclk: external synchronous static bus clock ***********************/
 
-static struct clk __init *alchemy_clk_setup_lrclk(const char *pn)
+static struct clk __init *alchemy_clk_setup_lrclk(const char *pn, int t)
 {
-	/* MEM_STCFG0[15:13] = divisor.
+	/* Au1000, Au1500: MEM_STCFG0[11]: If bit is set, lrclk=pclk/5,
+	 * otherwise lrclk=pclk/4.
+	 * All other variants: MEM_STCFG0[15:13] = divisor.
 	 * L/RCLK = periph_clk / (divisor + 1)
 	 * On Au1000, Au1500, Au1100 it's called LCLK,
 	 * on later models it's called RCLK, but it's the same thing.
 	 */
 	struct clk *c;
-	unsigned long v = alchemy_rdsmem(AU1000_MEM_STCFG0) >> 13;
+	unsigned long v = alchemy_rdsmem(AU1000_MEM_STCFG0);
 
-	v = (v & 7) + 1;
+	switch (t) {
+	case ALCHEMY_CPU_AU1000:
+	case ALCHEMY_CPU_AU1500:
+		v = 4 + ((v >> 11) & 1);
+		break;
+	default:	/* all other models */
+		v = ((v >> 13) & 7) + 1;
+	}
 	c = clk_register_fixed_factor(NULL, ALCHEMY_LR_CLK,
 				      pn, 0, 1, v);
 	if (!IS_ERR(c))
@@ -375,12 +398,11 @@ static long alchemy_calc_div(unsigned long rate, unsigned long prate,
 	return div1;
 }
 
-static long alchemy_clk_fgcs_detr(struct clk_hw *hw, unsigned long rate,
-					unsigned long *best_parent_rate,
-					struct clk **best_parent_clk,
-					int scale, int maxdiv)
+static int alchemy_clk_fgcs_detr(struct clk_hw *hw,
+				 struct clk_rate_request *req,
+				 int scale, int maxdiv)
 {
-	struct clk *pc, *bpc, *free;
+	struct clk_hw *pc, *bpc, *free;
 	long tdv, tpr, pr, nr, br, bpr, diff, lastdiff;
 	int j;
 
@@ -394,28 +416,28 @@ static long alchemy_clk_fgcs_detr(struct clk_hw *hw, unsigned long rate,
 	 * the one that gets closest to but not over the requested rate.
 	 */
 	for (j = 0; j < 7; j++) {
-		pc = clk_get_parent_by_index(hw->clk, j);
+		pc = clk_hw_get_parent_by_index(hw, j);
 		if (!pc)
 			break;
 
 		/* if this parent is currently unused, remember it.
-		 * XXX: I know it's a layering violation, but it works
-		 * so well.. (if (!clk_has_active_children(pc)) )
+		 * XXX: we would actually want clk_has_active_children()
+		 * but this is a good-enough approximation for now.
 		 */
-		if (pc->prepare_count == 0) {
+		if (!clk_hw_is_prepared(pc)) {
 			if (!free)
 				free = pc;
 		}
 
-		pr = clk_get_rate(pc);
-		if (pr < rate)
+		pr = clk_hw_get_rate(pc);
+		if (pr < req->rate)
 			continue;
 
 		/* what can hardware actually provide */
-		tdv = alchemy_calc_div(rate, pr, scale, maxdiv, NULL);
+		tdv = alchemy_calc_div(req->rate, pr, scale, maxdiv, NULL);
 		nr = pr / tdv;
-		diff = rate - nr;
-		if (nr > rate)
+		diff = req->rate - nr;
+		if (nr > req->rate)
 			continue;
 
 		if (diff < lastdiff) {
@@ -434,15 +456,16 @@ static long alchemy_clk_fgcs_detr(struct clk_hw *hw, unsigned long rate,
 	 */
 	if (lastdiff && free) {
 		for (j = (maxdiv == 4) ? 1 : scale; j <= maxdiv; j += scale) {
-			tpr = rate * j;
+			tpr = req->rate * j;
 			if (tpr < 0)
 				break;
-			pr = clk_round_rate(free, tpr);
+			pr = clk_hw_round_rate(free, tpr);
 
-			tdv = alchemy_calc_div(rate, pr, scale, maxdiv, NULL);
+			tdv = alchemy_calc_div(req->rate, pr, scale, maxdiv,
+					       NULL);
 			nr = pr / tdv;
-			diff = rate - nr;
-			if (nr > rate)
+			diff = req->rate - nr;
+			if (nr > req->rate)
 				continue;
 			if (diff < lastdiff) {
 				lastdiff = diff;
@@ -455,9 +478,14 @@ static long alchemy_clk_fgcs_detr(struct clk_hw *hw, unsigned long rate,
 		}
 	}
 
-	*best_parent_rate = bpr;
-	*best_parent_clk = bpc;
-	return br;
+	if (br < 0)
+		return br;
+
+	req->best_parent_rate = bpr;
+	req->best_parent_hw = bpc;
+	req->rate = br;
+
+	return 0;
 }
 
 static int alchemy_clk_fgv1_en(struct clk_hw *hw)
@@ -548,16 +576,14 @@ static unsigned long alchemy_clk_fgv1_recalc(struct clk_hw *hw,
 	return parent_rate / v;
 }
 
-static long alchemy_clk_fgv1_detr(struct clk_hw *hw, unsigned long rate,
-					unsigned long *best_parent_rate,
-					struct clk **best_parent_clk)
+static int alchemy_clk_fgv1_detr(struct clk_hw *hw,
+				 struct clk_rate_request *req)
 {
-	return alchemy_clk_fgcs_detr(hw, rate, best_parent_rate,
-				     best_parent_clk, 2, 512);
+	return alchemy_clk_fgcs_detr(hw, req, 2, 512);
 }
 
 /* Au1000, Au1100, Au15x0, Au12x0 */
-static struct clk_ops alchemy_clkops_fgenv1 = {
+static const struct clk_ops alchemy_clkops_fgenv1 = {
 	.recalc_rate	= alchemy_clk_fgv1_recalc,
 	.determine_rate	= alchemy_clk_fgv1_detr,
 	.set_rate	= alchemy_clk_fgv1_setr,
@@ -680,9 +706,8 @@ static unsigned long alchemy_clk_fgv2_recalc(struct clk_hw *hw,
 	return t;
 }
 
-static long alchemy_clk_fgv2_detr(struct clk_hw *hw, unsigned long rate,
-					unsigned long *best_parent_rate,
-					struct clk **best_parent_clk)
+static int alchemy_clk_fgv2_detr(struct clk_hw *hw,
+				 struct clk_rate_request *req)
 {
 	struct alchemy_fgcs_clk *c = to_fgcs_clk(hw);
 	int scale, maxdiv;
@@ -695,12 +720,11 @@ static long alchemy_clk_fgv2_detr(struct clk_hw *hw, unsigned long rate,
 		maxdiv = 512;
 	}
 
-	return alchemy_clk_fgcs_detr(hw, rate, best_parent_rate,
-				     best_parent_clk, scale, maxdiv);
+	return alchemy_clk_fgcs_detr(hw, req, scale, maxdiv);
 }
 
 /* Au1300 larger input mux, no separate disable bit, flexible divider */
-static struct clk_ops alchemy_clkops_fgenv2 = {
+static const struct clk_ops alchemy_clkops_fgenv2 = {
 	.recalc_rate	= alchemy_clk_fgv2_recalc,
 	.determine_rate	= alchemy_clk_fgv2_detr,
 	.set_rate	= alchemy_clk_fgv2_setr,
@@ -734,12 +758,12 @@ static int __init alchemy_clk_init_fgens(int ctype)
 	switch (ctype) {
 	case ALCHEMY_CPU_AU1000...ALCHEMY_CPU_AU1200:
 		id.ops = &alchemy_clkops_fgenv1;
-		id.parent_names = (const char **)alchemy_clk_fgv1_parents;
+		id.parent_names = alchemy_clk_fgv1_parents;
 		id.num_parents = 2;
 		break;
 	case ALCHEMY_CPU_AU1300:
 		id.ops = &alchemy_clkops_fgenv2;
-		id.parent_names = (const char **)alchemy_clk_fgv2_parents;
+		id.parent_names = alchemy_clk_fgv2_parents;
 		id.num_parents = 3;
 		break;
 	default:
@@ -899,18 +923,16 @@ static int alchemy_clk_csrc_setr(struct clk_hw *hw, unsigned long rate,
 	return 0;
 }
 
-static long alchemy_clk_csrc_detr(struct clk_hw *hw, unsigned long rate,
-					unsigned long *best_parent_rate,
-					struct clk **best_parent_clk)
+static int alchemy_clk_csrc_detr(struct clk_hw *hw,
+				 struct clk_rate_request *req)
 {
 	struct alchemy_fgcs_clk *c = to_fgcs_clk(hw);
 	int scale = c->dt[2] == 3 ? 1 : 2; /* au1300 check */
 
-	return alchemy_clk_fgcs_detr(hw, rate, best_parent_rate,
-				     best_parent_clk, scale, 4);
+	return alchemy_clk_fgcs_detr(hw, req, scale, 4);
 }
 
-static struct clk_ops alchemy_clkops_csrc = {
+static const struct clk_ops alchemy_clkops_csrc = {
 	.recalc_rate	= alchemy_clk_csrc_recalc,
 	.determine_rate	= alchemy_clk_csrc_detr,
 	.set_rate	= alchemy_clk_csrc_setr,
@@ -941,7 +963,7 @@ static int __init alchemy_clk_setup_imux(int ctype)
 	struct clk *c;
 
 	id.ops = &alchemy_clkops_csrc;
-	id.parent_names = (const char **)alchemy_clk_csrc_parents;
+	id.parent_names = alchemy_clk_csrc_parents;
 	id.num_parents = 7;
 	id.flags = CLK_SET_RATE_PARENT | CLK_GET_RATE_NOCACHE;
 
@@ -970,7 +992,7 @@ static int __init alchemy_clk_setup_imux(int ctype)
 		return -ENODEV;
 	}
 
-	a = kzalloc((sizeof(*a)) * 6, GFP_KERNEL);
+	a = kcalloc(6, sizeof(*a), GFP_KERNEL);
 	if (!a)
 		return -ENOMEM;
 
@@ -1029,8 +1051,7 @@ static int __init alchemy_clk_init(void)
 
 	/* Root of the Alchemy clock tree: external 12MHz crystal osc */
 	c = clk_register_fixed_rate(NULL, ALCHEMY_ROOT_CLK, NULL,
-					   CLK_IS_ROOT,
-					   ALCHEMY_ROOTCLK_RATE);
+					   0, ALCHEMY_ROOTCLK_RATE);
 	ERRCK(c)
 
 	/* CPU core clock */
@@ -1063,7 +1084,7 @@ static int __init alchemy_clk_init(void)
 	ERRCK(c)
 
 	/* L/RCLK: external static bus clock for synchronous mode */
-	c = alchemy_clk_setup_lrclk(ALCHEMY_PERIPH_CLK);
+	c = alchemy_clk_setup_lrclk(ALCHEMY_PERIPH_CLK, ctype);
 	ERRCK(c)
 
 	/* Frequency dividers 0-5 */

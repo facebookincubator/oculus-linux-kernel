@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/mach-pxa/pxa3xx-ulpi.c
  *
@@ -7,10 +8,6 @@
  *
  * 2010-13-07: Igor Grinberg <grinberg@compulab.co.il>
  *             initial version: pxa310 USB Host mode support
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -26,7 +23,7 @@
 #include <linux/usb/otg.h>
 
 #include <mach/hardware.h>
-#include <mach/regs-u2d.h>
+#include "regs-u2d.h"
 #include <linux/platform_data/usb-pxa3xx-ulpi.h>
 
 struct pxa3xx_u2d_ulpi {
@@ -74,7 +71,7 @@ static int pxa310_ulpi_poll(void)
 		cpu_relax();
 	}
 
-	pr_warning("%s: ULPI access timed out!\n", __func__);
+	pr_warn("%s: ULPI access timed out!\n", __func__);
 
 	return -ETIMEDOUT;
 }
@@ -84,7 +81,7 @@ static int pxa310_ulpi_read(struct usb_phy *otg, u32 reg)
 	int err;
 
 	if (pxa310_ulpi_get_phymode() != SYNCH) {
-		pr_warning("%s: PHY is not in SYNCH mode!\n", __func__);
+		pr_warn("%s: PHY is not in SYNCH mode!\n", __func__);
 		return -EBUSY;
 	}
 
@@ -101,7 +98,7 @@ static int pxa310_ulpi_read(struct usb_phy *otg, u32 reg)
 static int pxa310_ulpi_write(struct usb_phy *otg, u32 val, u32 reg)
 {
 	if (pxa310_ulpi_get_phymode() != SYNCH) {
-		pr_warning("%s: PHY is not in SYNCH mode!\n", __func__);
+		pr_warn("%s: PHY is not in SYNCH mode!\n", __func__);
 		return -EBUSY;
 	}
 
@@ -256,7 +253,7 @@ int pxa3xx_u2d_start_hc(struct usb_bus *host)
 	if (!u2d)
 		return 0;
 
-	clk_enable(u2d->clk);
+	clk_prepare_enable(u2d->clk);
 
 	if (cpu_is_pxa310()) {
 		pxa310_u2d_setup_otg_hc();
@@ -276,7 +273,7 @@ void pxa3xx_u2d_stop_hc(struct usb_bus *host)
 	if (cpu_is_pxa310())
 		pxa310_stop_otg_hc();
 
-	clk_disable(u2d->clk);
+	clk_disable_unprepare(u2d->clk);
 }
 EXPORT_SYMBOL_GPL(pxa3xx_u2d_stop_hc);
 
@@ -286,11 +283,9 @@ static int pxa3xx_u2d_probe(struct platform_device *pdev)
 	struct resource *r;
 	int err;
 
-	u2d = kzalloc(sizeof(struct pxa3xx_u2d_ulpi), GFP_KERNEL);
-	if (!u2d) {
-		dev_err(&pdev->dev, "failed to allocate memory\n");
+	u2d = kzalloc(sizeof(*u2d), GFP_KERNEL);
+	if (!u2d)
 		return -ENOMEM;
-	}
 
 	u2d->clk = clk_get(&pdev->dev, NULL);
 	if (IS_ERR(u2d->clk)) {
@@ -333,7 +328,7 @@ static int pxa3xx_u2d_probe(struct platform_device *pdev)
 			goto err_free_plat;
 	}
 
-	platform_set_drvdata(pdev, &u2d);
+	platform_set_drvdata(pdev, u2d);
 
 	return 0;
 
@@ -379,7 +374,6 @@ static int pxa3xx_u2d_remove(struct platform_device *pdev)
 static struct platform_driver pxa3xx_u2d_ulpi_driver = {
         .driver		= {
                 .name   = "pxa3xx-u2d",
-		.owner	= THIS_MODULE,
         },
         .probe          = pxa3xx_u2d_probe,
         .remove         = pxa3xx_u2d_remove,

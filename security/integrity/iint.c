@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2008 IBM Corporation
  *
  * Authors:
  * Mimi Zohar <zohar@us.ibm.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation, version 2 of the
- * License.
  *
  * File: integrity_iint.c
  *	- implements the integrity hooks: integrity_inode_alloc,
@@ -16,16 +12,20 @@
  *	  using a rbtree tree.
  */
 #include <linux/slab.h>
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/spinlock.h>
 #include <linux/rbtree.h>
+#include <linux/file.h>
+#include <linux/uaccess.h>
+#include <linux/security.h>
+#include <linux/lsm_hooks.h>
 #include "integrity.h"
 
 static struct rb_root integrity_iint_tree = RB_ROOT;
 static DEFINE_RWLOCK(integrity_iint_lock);
 static struct kmem_cache *iint_cache __read_mostly;
 
-int iint_initialized;
+struct dentry *integrity_dir;
 
 /*
  * __integrity_iint_find - return the iint associated with an inode
@@ -74,11 +74,14 @@ static void iint_free(struct integrity_iint_cache *iint)
 	iint->ima_hash = NULL;
 	iint->version = 0;
 	iint->flags = 0UL;
+	iint->atomic_flags = 0UL;
 	iint->ima_file_status = INTEGRITY_UNKNOWN;
 	iint->ima_mmap_status = INTEGRITY_UNKNOWN;
 	iint->ima_bprm_status = INTEGRITY_UNKNOWN;
-	iint->ima_module_status = INTEGRITY_UNKNOWN;
+	iint->ima_read_status = INTEGRITY_UNKNOWN;
+	iint->ima_creds_status = INTEGRITY_UNKNOWN;
 	iint->evm_status = INTEGRITY_UNKNOWN;
+	iint->measured_pcrs = 0;
 	kmem_cache_free(iint_cache, iint);
 }
 
@@ -94,6 +97,14 @@ struct integrity_iint_cache *integrity_inode_get(struct inode *inode)
 	struct rb_node **p;
 	struct rb_node *node, *parent = NULL;
 	struct integrity_iint_cache *iint, *test_iint;
+
+	/*
+	 * The integrity's "iint_cache" is initialized at security_init(),
+	 * unless it is not included in the ordered list of LSMs enabled
+	 * on the boot command line.
+	 */
+	if (!iint_cache)
+		panic("%s: lsm=integrity required.\n", __func__);
 
 	iint = integrity_iint_find(inode);
 	if (iint)
@@ -152,13 +163,13 @@ static void init_once(void *foo)
 	struct integrity_iint_cache *iint = foo;
 
 	memset(iint, 0, sizeof(*iint));
-	iint->version = 0;
-	iint->flags = 0UL;
 	iint->ima_file_status = INTEGRITY_UNKNOWN;
 	iint->ima_mmap_status = INTEGRITY_UNKNOWN;
 	iint->ima_bprm_status = INTEGRITY_UNKNOWN;
-	iint->ima_module_status = INTEGRITY_UNKNOWN;
+	iint->ima_read_status = INTEGRITY_UNKNOWN;
+	iint->ima_creds_status = INTEGRITY_UNKNOWN;
 	iint->evm_status = INTEGRITY_UNKNOWN;
+	mutex_init(&iint->mutex);
 }
 
 static int __init integrity_iintcache_init(void)
@@ -166,7 +177,54 @@ static int __init integrity_iintcache_init(void)
 	iint_cache =
 	    kmem_cache_create("iint_cache", sizeof(struct integrity_iint_cache),
 			      0, SLAB_PANIC, init_once);
-	iint_initialized = 1;
 	return 0;
 }
-security_initcall(integrity_iintcache_init);
+DEFINE_LSM(integrity) = {
+	.name = "integrity",
+	.init = integrity_iintcache_init,
+};
+
+
+/*
+ * integrity_kernel_read - read data from the file
+ *
+ * This is a function for reading file content instead of kernel_read().
+ * It does not perform locking checks to ensure it cannot be blocked.
+ * It does not perform security checks because it is irrelevant for IMA.
+ *
+ */
+int integrity_kernel_read(struct file *file, loff_t offset,
+			  void *addr, unsigned long count)
+{
+	return __kernel_read(file, addr, count, &offset);
+}
+
+/*
+ * integrity_load_keys - load integrity keys hook
+ *
+ * Hooks is called from init/main.c:kernel_init_freeable()
+ * when rootfs is ready
+ */
+void __init integrity_load_keys(void)
+{
+	ima_load_x509();
+	evm_load_x509();
+}
+
+static int __init integrity_fs_init(void)
+{
+	integrity_dir = securityfs_create_dir("integrity", NULL);
+	if (IS_ERR(integrity_dir)) {
+		int ret = PTR_ERR(integrity_dir);
+
+		if (ret != -ENODEV)
+			pr_err("Unable to create integrity sysfs dir: %d\n",
+			       ret);
+		integrity_dir = NULL;
+		return ret;
+	}
+
+	return 0;
+}
+
+late_initcall(integrity_fs_init)

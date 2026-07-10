@@ -1,0 +1,291 @@
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
+#include "vendor-base/qcom/neo-pmic-overlay.dtsi"
+#include "vendor-base/qcom/neo-thermal-overlay.dtsi"
+
+#include "meta-neo-audio.dtsi"
+#include "meta-neo-camera-imx681.dtsi"
+#include "meta-neo-rt600-ctrl.dtsi"
+#include "meta-neo-spi-stp.dtsi"
+#include "meta-neo-thermal.dtsi"
+
+/delete-node/ &battery;
+/delete-node/ &battery_630mAh;
+/delete-node/ &battery_645mAh;
+/delete-node/ &bq27421;
+/delete-node/ &charger;
+
+&aliases {
+	/* A fixed ordering of SPI major numbers is required by
+	 * some userspace components (e.g. tesserd).
+	 *
+	 * Normally we would use a label reference here:
+	 *       spi0 = &qupv3_se0_spi;
+	 * Unfortunately the DTBO overlay compiler complains that
+	 * the label cannot be found. So put it directly as a string.
+	 */
+	spi0 = "/soc/spi@980000";	/* STP driver. */
+	spi9 = "/soc/spi@a8c000";	/* Hyperoff on greatwhite. */
+};
+
+&qupv3_se8_i2c {
+	mfi343s00176: mfi343s00176@10 {
+		compatible = "meta,mfi-i2c";
+		reg = <0x10>;
+		status = "ok";
+	};
+
+	st60a3g1: st60a3g1@6d {
+		compatible = "meta,st60-i2c";
+		reg = <0x6d>;
+		st60_link_pu = <&tlmm 72 0x0>;
+		status = "disabled";
+	};
+
+	rt6160: rt6160@75 {
+		compatible = "richtek,rt6160";
+		reg = <0x75>;
+		regulator-name = "rt6160-buckboost";
+		regulator-min-microvolt = <2025000>;
+		regulator-max-microvolt = <5200000>;
+		status = "ok";
+	};
+
+	aw2026_led: aw2026@64 {
+		compatible = "awinic,aw2026_led";
+		reg = <0x64>;
+		status = "ok";
+
+		aw2026,white {
+			aw2026,name = "white";
+			aw2026,id = <0>;
+			aw2026,imax = <1>;
+			aw2026,led-current = <21>;
+			aw2026,max-brightness = <255>;
+			aw2026,rise-time-ms = <1>;
+			aw2026,hold-time-ms = <2>;
+			aw2026,fall-time-ms = <4>;
+			aw2026,off-time-ms = <1>;
+		};
+	};
+
+	pm8008i@8 {
+		status = "disabled";
+	};
+
+	pm8008i@9 {
+		status = "disabled";
+	};
+};
+
+&qupv3_se10_i2c {
+	qcom,bus-recovery;
+
+	max77813: max77813@18 {
+		compatible = "maxim,max77813";
+		reg = <0x18>;
+		status = "ok";
+	};
+
+	/**
+	 * This is a stub to guarantee that it gets probed before max17332.
+	 * Parameters are set in oatmeal.dtsi.
+	 */
+	mp28167: mp28167@60 {
+		compatible = "mps,mp28167";
+		reg = <0x60>;
+		status = "disabled";
+	};
+};
+
+/**
+ * This needs to come after the BOB nodes because I2C probe order is
+ * determined by the order of the device tree nodes and max77132 needs to
+ * request the BOB regulator during probe.
+ */
+#include "meta-neo-max17332-fg.dtsi"
+
+&qupv3_se4_i2c {
+
+
+
+};
+
+&qupv3_se0_spi_active {
+	mux {
+		pins = "gpio0", "gpio1", "gpio2";
+		function = "qup0_se0";
+	};
+
+	config {
+		pins = "gpio0", "gpio1", "gpio2";
+		drive-strength = <4>;
+		bias-disable;
+	};
+};
+
+&qupv3_se0_spi_sleep {
+	mux {
+		pins = "gpio0", "gpio1";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio0", "gpio1";
+		drive-strength = <4>;
+		bias-pull-down;
+	};
+};
+
+&qupv3_se0_spi_pins {
+	qupv3_se0_spi_clk_sleep: qupv3_se0_spi_clk_sleep {
+		mux {
+			pins = "gpio2";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio2";
+			drive-strength = <4>;
+			bias-disable;
+		};
+	};
+
+	qupv3_se0_spi_cs_active: qupv3_se0_spi_cs_active {
+		mux {
+			pins = "gpio3";
+			function = "qup0_se0";
+		};
+
+		config {
+			pins = "gpio3";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+
+	qupv3_se0_spi_cs_sleep: qupv3_se0_spi_cs_sleep {
+		mux {
+			pins = "gpio3";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio3";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+};
+
+&qupv3_se0_spi {
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&qupv3_se0_spi_active &qupv3_se0_spi_cs_active>;
+	pinctrl-1 = <&qupv3_se0_spi_sleep &qupv3_se0_spi_clk_sleep &qupv3_se0_spi_cs_sleep>;
+};
+
+&qupv3_se5_i2c {
+	status = "okay";
+};
+
+&bluetooth {
+	qcom,bt-vdd-rfa2-config   = <1930000 1980000 0 1>;
+};
+
+&L17A {
+	qcom,init-enable = <0>;
+};
+
+&S5A {
+	regulator-min-microvolt = <1930000>;
+	regulator-max-microvolt = <1980000>;
+	qcom,init-voltage = <1930000>;
+};
+
+&apps_rsc {
+	rpmh-regulator-ldoa16 {
+		compatible = "qcom,rpmh-vrm-regulator";
+		qcom,resource-name = "ldoa16";
+		qcom,regulator-type = "pmic5-ldo";
+		qcom,supported-modes =
+			<RPMH_REGULATOR_MODE_LPM
+			RPMH_REGULATOR_MODE_HPM>;
+		qcom,mode-threshold-currents = <0 10000>;
+		L16A:
+		pm8150_l16: regulator-pm8150-l16 {
+			regulator-name = "pm8150_l16";
+			qcom,set = <RPMH_REGULATOR_SET_ALL>;
+			regulator-min-microvolt = <1504000>;
+			regulator-max-microvolt = <3300000>;
+			qcom,init-voltage = <2500000>;
+			qcom,init-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+	};
+};
+
+&reserved_memory {
+	ramoops: ramoops@a6c00000 {
+		compatible = "ramoops";
+		reg = <0 0xa6c00000 0 0x00090000>;
+		record-size = <131072>;
+		console-size = <131072>;
+		pmsg-size = <131072>;
+	};
+};
+
+&soc {
+	generic_virtual_sensor: generic-virtual-sensor {
+		compatible = "oculus,generic-virtual-sensor";
+		#thermal-sensor-cells = <0>;
+		status = "ok";
+		offset = <7651>;
+		zones {
+			zone0 {
+				type = "therm-rf-usr";
+				// 32 bit 2's complement -690
+				coefficient = <4294966606>;
+			};
+			zone1 {
+				type = "therm-in-temp-usr";
+				coefficient = <1522>;
+			};
+			zone2 {
+				type = "therm-soc-usr";
+				// 32 bit 2's complement -113
+				coefficient = <4294967183>;
+			};
+			zone3 {
+				type = "therm-quiet-usr";
+				coefficient = <75>;
+			};
+		};
+	};
+
+	outdoor_virtual_sensor: outdoor-virtual-sensor {
+		compatible = "oculus,generic-virtual-sensor";
+		#thermal-sensor-cells = <0>;
+		status = "ok";
+		offset = <7651>;
+		zones {
+			zone0 {
+				type = "therm-rf-usr";
+				// 32 bit 2's complement -690
+				coefficient = <4294966606>;
+			};
+			zone1 {
+				type = "therm-in-temp-usr";
+				coefficient = <1522>;
+			};
+			zone2 {
+				type = "therm-soc-usr";
+				// 32 bit 2's complement -113
+				coefficient = <4294967183>;
+			};
+			zone3 {
+				type = "therm-quiet-usr";
+				coefficient = <75>;
+			};
+		};
+	};
+};

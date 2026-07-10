@@ -1,25 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * ke_counter.c
  * Comedi driver for Kolter-Electronic PCI Counter 1 Card
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 2000 David A. Schleef <ds@schleef.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
  * Driver: ke_counter
  * Description: Driver for Kolter Electronic Counter Card
- * Devices: (Kolter Electronic) PCI Counter Card [ke_counter]
+ * Devices: [Kolter Electronic] PCI Counter Card (ke_counter)
  * Author: Michael Hillmann
  * Updated: Mon, 14 Apr 2008 15:42:42 +0100
  * Status: tested
@@ -28,9 +19,8 @@
  */
 
 #include <linux/module.h>
-#include <linux/pci.h>
 
-#include "../comedidev.h"
+#include "../comedi_pci.h"
 
 /*
  * PCI BAR 0 Register I/O map
@@ -42,9 +32,10 @@
 #define KE_MSB_REG(x)			(0x0c + ((x) * 0x20))
 #define KE_SIGN_REG(x)			(0x10 + ((x) * 0x20))
 #define KE_OSC_SEL_REG			0xf8
-#define KE_OSC_SEL_EXT			(1 << 0)
-#define KE_OSC_SEL_4MHZ			(2 << 0)
-#define KE_OSC_SEL_20MHZ		(3 << 0)
+#define KE_OSC_SEL_CLK(x)		(((x) & 0x3) << 0)
+#define KE_OSC_SEL_EXT			KE_OSC_SEL_CLK(1)
+#define KE_OSC_SEL_4MHZ			KE_OSC_SEL_CLK(2)
+#define KE_OSC_SEL_20MHZ		KE_OSC_SEL_CLK(3)
 #define KE_DO_REG			0xfc
 
 static int ke_counter_insn_write(struct comedi_device *dev,
@@ -236,6 +227,6 @@ static struct pci_driver ke_counter_pci_driver = {
 };
 module_comedi_pci_driver(ke_counter_driver, ke_counter_pci_driver);
 
-MODULE_AUTHOR("Comedi http://www.comedi.org");
+MODULE_AUTHOR("Comedi https://www.comedi.org");
 MODULE_DESCRIPTION("Comedi driver for Kolter Electronic Counter Card");
 MODULE_LICENSE("GPL");

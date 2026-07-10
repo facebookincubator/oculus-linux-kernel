@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  Copyright (C) 1995, 1996  Gero Kuhlmann <gero@gkminix.han.de>
  *
@@ -87,10 +88,16 @@
 #define NFS_ROOT		"/tftpboot/%s"
 
 /* Default NFSROOT mount options. */
-#define NFS_DEF_OPTIONS		"vers=2,udp,rsize=4096,wsize=4096"
+#if defined(CONFIG_NFS_V2)
+#define NFS_DEF_OPTIONS		"vers=2,tcp,rsize=4096,wsize=4096"
+#elif defined(CONFIG_NFS_V3)
+#define NFS_DEF_OPTIONS		"vers=3,tcp,rsize=4096,wsize=4096"
+#else
+#define NFS_DEF_OPTIONS		"vers=4,tcp,rsize=4096,wsize=4096"
+#endif
 
 /* Parameters passed from the kernel command line */
-static char nfs_root_parms[256] __initdata = "";
+static char nfs_root_parms[NFS_MAXPATHLEN + 1] __initdata = "";
 
 /* Text-based mount options passed to super.c */
 static char nfs_root_options[256] __initdata = NFS_DEF_OPTIONS;
@@ -261,11 +268,11 @@ static int __init root_nfs_data(char *cmdline)
 	 */
 	len = snprintf(nfs_export_path, sizeof(nfs_export_path),
 				tmp, utsname()->nodename);
-	if (len > (int)sizeof(nfs_export_path))
+	if (len >= (int)sizeof(nfs_export_path))
 		goto out_devnametoolong;
 	len = snprintf(nfs_root_device, sizeof(nfs_root_device),
 				"%pI4:%s", &servaddr, nfs_export_path);
-	if (len > (int)sizeof(nfs_root_device))
+	if (len >= (int)sizeof(nfs_root_device))
 		goto out_devnametoolong;
 
 	retval = 0;

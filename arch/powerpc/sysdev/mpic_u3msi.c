@@ -1,16 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2006, Segher Boessenkool, IBM Corporation.
  * Copyright 2006-2007, Michael Ellerman, IBM Corporation.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; version 2 of the
- * License.
- *
  */
 
 #include <linux/irq.h>
-#include <linux/bootmem.h>
 #include <linux/msi.h>
 #include <asm/mpic.h>
 #include <asm/prom.h>
@@ -110,8 +104,8 @@ static void u3msi_teardown_msi_irqs(struct pci_dev *pdev)
 	struct msi_desc *entry;
 	irq_hw_number_t hwirq;
 
-        list_for_each_entry(entry, &pdev->msi_list, list) {
-		if (entry->irq == NO_IRQ)
+	for_each_pci_msi_entry(entry, pdev) {
+		if (!entry->irq)
 			continue;
 
 		hwirq = virq_to_hw(entry->irq);
@@ -142,7 +136,7 @@ static int u3msi_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 		return -ENXIO;
 	}
 
-	list_for_each_entry(entry, &pdev->msi_list, list) {
+	for_each_pci_msi_entry(entry, pdev) {
 		hwirq = msi_bitmap_alloc_hwirqs(&msi_mpic->msi_bitmap, 1);
 		if (hwirq < 0) {
 			pr_debug("u3msi: failed allocating hwirq\n");
@@ -156,7 +150,7 @@ static int u3msi_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 		msg.address_hi = addr >> 32;
 
 		virq = irq_create_mapping(msi_mpic->irqhost, hwirq);
-		if (virq == NO_IRQ) {
+		if (!virq) {
 			pr_debug("u3msi: failed mapping hwirq 0x%x\n", hwirq);
 			msi_bitmap_free_hwirqs(&msi_mpic->msi_bitmap, hwirq, 1);
 			return -ENOSPC;
@@ -183,6 +177,7 @@ static int u3msi_setup_msi_irqs(struct pci_dev *pdev, int nvec, int type)
 int mpic_u3msi_init(struct mpic *mpic)
 {
 	int rc;
+	struct pci_controller *phb;
 
 	rc = mpic_msi_init_allocator(mpic);
 	if (rc) {
@@ -195,9 +190,11 @@ int mpic_u3msi_init(struct mpic *mpic)
 	BUG_ON(msi_mpic);
 	msi_mpic = mpic;
 
-	WARN_ON(ppc_md.setup_msi_irqs);
-	ppc_md.setup_msi_irqs = u3msi_setup_msi_irqs;
-	ppc_md.teardown_msi_irqs = u3msi_teardown_msi_irqs;
+	list_for_each_entry(phb, &hose_list, list_node) {
+		WARN_ON(phb->controller_ops.setup_msi_irqs);
+		phb->controller_ops.setup_msi_irqs = u3msi_setup_msi_irqs;
+		phb->controller_ops.teardown_msi_irqs = u3msi_teardown_msi_irqs;
+	}
 
 	return 0;
 }

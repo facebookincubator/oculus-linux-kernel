@@ -1,29 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Generic Syscon LEDs Driver
  *
  * Copyright (c) 2014, Linaro Limited
  * Author: Linus Walleij <linus.walleij@linaro.org>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; either version 2 of
- * the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
- * MA 02111-1307 USA
- *
- * This driver provides system reboot functionality for APM X-Gene SoC.
- * For system shutdown, this is board specify. If a board designer
- * implements GPIO shutdown, use the gpio-poweroff.c driver.
  */
 #include <linux/io.h>
+#include <linux/init.h>
 #include <linux/of_device.h>
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
@@ -70,97 +53,88 @@ static void syscon_led_set(struct led_classdev *led_cdev,
 		dev_err(sled->cdev.dev, "error updating LED status\n");
 }
 
-static const struct of_device_id syscon_match[] = {
-	{ .compatible = "syscon", },
+static int syscon_led_probe(struct platform_device *pdev)
+{
+	struct led_init_data init_data = {};
+	struct device *dev = &pdev->dev;
+	struct device_node *np = dev_of_node(dev);
+	struct device *parent;
+	struct regmap *map;
+	struct syscon_led *sled;
+	const char *state;
+	int ret;
+
+	parent = dev->parent;
+	if (!parent) {
+		dev_err(dev, "no parent for syscon LED\n");
+		return -ENODEV;
+	}
+	map = syscon_node_to_regmap(dev_of_node(parent));
+	if (IS_ERR(map)) {
+		dev_err(dev, "no regmap for syscon LED parent\n");
+		return PTR_ERR(map);
+	}
+
+	sled = devm_kzalloc(dev, sizeof(*sled), GFP_KERNEL);
+	if (!sled)
+		return -ENOMEM;
+
+	sled->map = map;
+
+	if (of_property_read_u32(np, "offset", &sled->offset))
+		return -EINVAL;
+	if (of_property_read_u32(np, "mask", &sled->mask))
+		return -EINVAL;
+
+	state = of_get_property(np, "default-state", NULL);
+	if (state) {
+		if (!strcmp(state, "keep")) {
+			u32 val;
+
+			ret = regmap_read(map, sled->offset, &val);
+			if (ret < 0)
+				return ret;
+			sled->state = !!(val & sled->mask);
+		} else if (!strcmp(state, "on")) {
+			sled->state = true;
+			ret = regmap_update_bits(map, sled->offset,
+						 sled->mask,
+						 sled->mask);
+			if (ret < 0)
+				return ret;
+		} else {
+			sled->state = false;
+			ret = regmap_update_bits(map, sled->offset,
+						 sled->mask, 0);
+			if (ret < 0)
+				return ret;
+		}
+	}
+	sled->cdev.brightness_set = syscon_led_set;
+
+	init_data.fwnode = of_fwnode_handle(np);
+
+	ret = devm_led_classdev_register_ext(dev, &sled->cdev, &init_data);
+	if (ret < 0)
+		return ret;
+
+	platform_set_drvdata(pdev, sled);
+	dev_info(dev, "registered LED %s\n", sled->cdev.name);
+
+	return 0;
+}
+
+static const struct of_device_id of_syscon_leds_match[] = {
+	{ .compatible = "register-bit-led", },
 	{},
 };
 
-static int __init syscon_leds_init(void)
-{
-	const struct of_device_id *devid;
-	struct device_node *np;
-	struct device_node *child;
-	struct regmap *map;
-	struct platform_device *pdev;
-	struct device *dev;
-	int ret;
-
-	np = of_find_matching_node_and_match(NULL, syscon_match,
-					     &devid);
-	if (!np)
-		return -ENODEV;
-
-	map = syscon_node_to_regmap(np);
-	if (IS_ERR(map))
-		return PTR_ERR(map);
-
-	/*
-	 * If the map is there, the device should be there, we allocate
-	 * memory on the syscon device's behalf here.
-	 */
-	pdev = of_find_device_by_node(np);
-	if (!pdev)
-		return -ENODEV;
-	dev = &pdev->dev;
-
-	for_each_available_child_of_node(np, child) {
-		struct syscon_led *sled;
-		const char *state;
-
-		/* Only check for register-bit-leds */
-		if (of_property_match_string(child, "compatible",
-					     "register-bit-led") < 0)
-			continue;
-
-		sled = devm_kzalloc(dev, sizeof(*sled), GFP_KERNEL);
-		if (!sled)
-			return -ENOMEM;
-
-		sled->map = map;
-
-		if (of_property_read_u32(child, "offset", &sled->offset))
-			return -EINVAL;
-		if (of_property_read_u32(child, "mask", &sled->mask))
-			return -EINVAL;
-		sled->cdev.name =
-			of_get_property(child, "label", NULL) ? : child->name;
-		sled->cdev.default_trigger =
-			of_get_property(child, "linux,default-trigger", NULL);
-
-		state = of_get_property(child, "default-state", NULL);
-		if (state) {
-			if (!strcmp(state, "keep")) {
-				u32 val;
-
-				ret = regmap_read(map, sled->offset, &val);
-				if (ret < 0)
-					return ret;
-				sled->state = !!(val & sled->mask);
-			} else if (!strcmp(state, "on")) {
-				sled->state = true;
-				ret = regmap_update_bits(map, sled->offset,
-							 sled->mask,
-							 sled->mask);
-				if (ret < 0)
-					return ret;
-			} else {
-				sled->state = false;
-				ret = regmap_update_bits(map, sled->offset,
-							 sled->mask, 0);
-				if (ret < 0)
-					return ret;
-			}
-
-		}
-		sled->cdev.brightness_set = syscon_led_set;
-
-		ret = led_classdev_register(dev, &sled->cdev);
-		if (ret < 0)
-			return ret;
-
-		dev_info(dev, "registered LED %s\n", sled->cdev.name);
-	}
-
-       return 0;
-}
-device_initcall(syscon_leds_init);
+static struct platform_driver syscon_led_driver = {
+	.probe		= syscon_led_probe,
+	.driver		= {
+		.name	= "leds-syscon",
+		.of_match_table = of_syscon_leds_match,
+		.suppress_bind_attrs = true,
+	},
+};
+builtin_platform_driver(syscon_led_driver);

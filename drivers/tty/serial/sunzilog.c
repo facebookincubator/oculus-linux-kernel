@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /* sunzilog.c: Zilog serial driver for Sparc systems.
  *
  * Driver for Zilog serial chips found on Sun workstations and
@@ -38,10 +39,6 @@
 #include <asm/irq.h>
 #include <asm/prom.h>
 #include <asm/setup.h>
-
-#if defined(CONFIG_SERIAL_SUNZILOG_CONSOLE) && defined(CONFIG_MAGIC_SYSRQ)
-#define SUPPORT_SYSRQ
-#endif
 
 #include <linux/serial_core.h>
 #include <linux/sunserialcore.h>
@@ -309,7 +306,7 @@ static void sunzilog_kbdms_receive_chars(struct uart_sunzilog_port *up,
 		switch (ret) {
 		case 2:
 			sunzilog_change_mouse_baud(up);
-			/* fallthru */
+			fallthrough;
 		case 1:
 			break;
 
@@ -644,7 +641,8 @@ static unsigned int sunzilog_get_mctrl(struct uart_port *port)
 /* The port lock is held and interrupts are disabled.  */
 static void sunzilog_set_mctrl(struct uart_port *port, unsigned int mctrl)
 {
-	struct uart_sunzilog_port *up = (struct uart_sunzilog_port *) port;
+	struct uart_sunzilog_port *up =
+		container_of(port, struct uart_sunzilog_port, port);
 	struct zilog_channel __iomem *channel = ZILOG_CHANNEL_FROM_PORT(port);
 	unsigned char set_bits, clear_bits;
 
@@ -668,7 +666,8 @@ static void sunzilog_set_mctrl(struct uart_port *port, unsigned int mctrl)
 /* The port lock is held and interrupts are disabled.  */
 static void sunzilog_stop_tx(struct uart_port *port)
 {
-	struct uart_sunzilog_port *up = (struct uart_sunzilog_port *) port;
+	struct uart_sunzilog_port *up =
+		container_of(port, struct uart_sunzilog_port, port);
 
 	up->flags |= SUNZILOG_FLAG_TX_STOPPED;
 }
@@ -676,7 +675,8 @@ static void sunzilog_stop_tx(struct uart_port *port)
 /* The port lock is held and interrupts are disabled.  */
 static void sunzilog_start_tx(struct uart_port *port)
 {
-	struct uart_sunzilog_port *up = (struct uart_sunzilog_port *) port;
+	struct uart_sunzilog_port *up =
+		container_of(port, struct uart_sunzilog_port, port);
 	struct zilog_channel __iomem *channel = ZILOG_CHANNEL_FROM_PORT(port);
 	unsigned char status;
 
@@ -736,7 +736,8 @@ static void sunzilog_stop_rx(struct uart_port *port)
 /* The port lock is held.  */
 static void sunzilog_enable_ms(struct uart_port *port)
 {
-	struct uart_sunzilog_port *up = (struct uart_sunzilog_port *) port;
+	struct uart_sunzilog_port *up =
+		container_of(port, struct uart_sunzilog_port, port);
 	struct zilog_channel __iomem *channel = ZILOG_CHANNEL_FROM_PORT(port);
 	unsigned char new_reg;
 
@@ -752,7 +753,8 @@ static void sunzilog_enable_ms(struct uart_port *port)
 /* The port lock is not held.  */
 static void sunzilog_break_ctl(struct uart_port *port, int break_state)
 {
-	struct uart_sunzilog_port *up = (struct uart_sunzilog_port *) port;
+	struct uart_sunzilog_port *up =
+		container_of(port, struct uart_sunzilog_port, port);
 	struct zilog_channel __iomem *channel = ZILOG_CHANNEL_FROM_PORT(port);
 	unsigned char set_bits, clear_bits, new_reg;
 	unsigned long flags;
@@ -938,7 +940,8 @@ static void
 sunzilog_set_termios(struct uart_port *port, struct ktermios *termios,
 		     struct ktermios *old)
 {
-	struct uart_sunzilog_port *up = (struct uart_sunzilog_port *) port;
+	struct uart_sunzilog_port *up =
+		container_of(port, struct uart_sunzilog_port, port);
 	unsigned long flags;
 	int baud, brg;
 
@@ -998,7 +1001,8 @@ static int sunzilog_verify_port(struct uart_port *port, struct serial_struct *se
 static int sunzilog_get_poll_char(struct uart_port *port)
 {
 	unsigned char ch, r1;
-	struct uart_sunzilog_port *up = (struct uart_sunzilog_port *) port;
+	struct uart_sunzilog_port *up =
+		container_of(port, struct uart_sunzilog_port, port);
 	struct zilog_channel __iomem *channel
 		= ZILOG_CHANNEL_FROM_PORT(&up->port);
 
@@ -1032,13 +1036,14 @@ static int sunzilog_get_poll_char(struct uart_port *port)
 static void sunzilog_put_poll_char(struct uart_port *port,
 			unsigned char ch)
 {
-	struct uart_sunzilog_port *up = (struct uart_sunzilog_port *)port;
+	struct uart_sunzilog_port *up =
+		container_of(port, struct uart_sunzilog_port, port);
 
 	sunzilog_putchar(&up->port, ch);
 }
 #endif /* CONFIG_CONSOLE_POLL */
 
-static struct uart_ops sunzilog_pops = {
+static const struct uart_ops sunzilog_pops = {
 	.tx_empty	=	sunzilog_tx_empty,
 	.set_mctrl	=	sunzilog_set_mctrl,
 	.get_mctrl	=	sunzilog_get_mctrl,
@@ -1216,7 +1221,7 @@ static int __init sunzilog_console_setup(struct console *con, char *options)
 	int baud, brg;
 
 	if (up->port.type != PORT_SUNZILOG)
-		return -1;
+		return -EINVAL;
 
 	printk(KERN_INFO "Console: ttyS%d (SunZilog zs%d)\n",
 	       (sunzilog_reg.minor - 64) + con->index, con->index);
@@ -1435,6 +1440,7 @@ static int zs_probe(struct platform_device *op)
 	up[0].port.line = (inst * 2) + 0;
 	up[0].port.dev = &op->dev;
 	up[0].flags |= SUNZILOG_FLAG_IS_CHANNEL_A;
+	up[0].port.has_sysrq = IS_ENABLED(CONFIG_SERIAL_SUNZILOG_CONSOLE);
 	if (keyboard_mouse)
 		up[0].flags |= SUNZILOG_FLAG_CONS_KEYB;
 	sunzilog_init_hw(&up[0]);
@@ -1452,6 +1458,7 @@ static int zs_probe(struct platform_device *op)
 	up[1].port.line = (inst * 2) + 1;
 	up[1].port.dev = &op->dev;
 	up[1].flags |= 0;
+	up[1].port.has_sysrq = IS_ENABLED(CONFIG_SERIAL_SUNZILOG_CONSOLE);
 	if (keyboard_mouse)
 		up[1].flags |= SUNZILOG_FLAG_CONS_MOUSE;
 	sunzilog_init_hw(&up[1]);
@@ -1533,7 +1540,6 @@ MODULE_DEVICE_TABLE(of, zs_match);
 static struct platform_driver zs_driver = {
 	.driver = {
 		.name = "zs",
-		.owner = THIS_MODULE,
 		.of_match_table = zs_match,
 	},
 	.probe		= zs_probe,

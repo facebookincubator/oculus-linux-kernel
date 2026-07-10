@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /* $XFree86: xc/programs/Xserver/hw/xfree86/drivers/nv/nv_proto.h,v 1.10 2003/07/31 20:24:29 mvojkovi Exp $ */
 
 #ifndef __NV_PROTO_H__
@@ -42,16 +43,8 @@ int nvidia_probe_i2c_connector(struct fb_info *info, int conn,
 #define nvidia_probe_i2c_connector(p, c, edid) (-1)
 #endif
 
-#ifdef CONFIG_PPC_OF
 int nvidia_probe_of_connector(struct fb_info *info, int conn,
 			      u8 ** out_edid);
-#else
-static inline int nvidia_probe_of_connector(struct fb_info *info, int conn,
-				      u8 ** out_edid)
-{
-	return -1;
-}
-#endif
 
 /* in nv_accel.c */
 extern void NVResetGraphics(struct fb_info *info);

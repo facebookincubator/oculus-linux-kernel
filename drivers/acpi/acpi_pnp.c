@@ -1,26 +1,23 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ACPI support for PNP bus type
  *
  * Copyright (C) 2014, Intel Corporation
  * Authors: Zhang Rui <rui.zhang@intel.com>
  *          Rafael J. Wysocki <rafael.j.wysocki@intel.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/ctype.h>
 
+#include "internal.h"
+
 static const struct acpi_device_id acpi_pnp_device_ids[] = {
 	/* pata_isapnp */
 	{"PNP0600"},		/* Generic ESDI/IDE/ATA compatible hard disk controller */
 	/* floppy */
 	{"PNP0700"},
-	/* ipmi_si */
-	{"IPI0001"},
 	/* tpm_inf_pnp */
 	{"IFX0101"},		/* Infineon TPMs */
 	{"IFX0102"},		/* Infineon TPMs */
@@ -153,6 +150,7 @@ static const struct acpi_device_id acpi_pnp_device_ids[] = {
 	{"AEI0250"},		/* PROLiNK 1456VH ISA PnP K56flex Fax Modem */
 	{"AEI1240"},		/* Actiontec ISA PNP 56K X2 Fax Modem */
 	{"AKY1021"},		/* Rockwell 56K ACF II Fax+Data+Voice Modem */
+	{"ALI5123"},		/* ALi Fast Infrared Controller */
 	{"AZT4001"},		/* AZT3005 PnP SOUND DEVICE */
 	{"BDP3336"},		/* Best Data Products Inc. Smart One 336F PnP Modem */
 	{"BRI0A49"},		/* Boca Complete Ofc Communicator 14.4 Data-FAX */
@@ -317,9 +315,12 @@ static const struct acpi_device_id acpi_pnp_device_ids[] = {
 	{""},
 };
 
-static bool matching_id(char *idstr, char *list_id)
+static bool matching_id(const char *idstr, const char *list_id)
 {
 	int i;
+
+	if (strlen(idstr) != strlen(list_id))
+		return false;
 
 	if (memcmp(idstr, list_id, 3))
 		return false;
@@ -334,7 +335,7 @@ static bool matching_id(char *idstr, char *list_id)
 	return true;
 }
 
-static bool acpi_pnp_match(char *idstr, const struct acpi_device_id **matchid)
+static bool acpi_pnp_match(const char *idstr, const struct acpi_device_id **matchid)
 {
 	const struct acpi_device_id *devid;
 
@@ -368,7 +369,7 @@ static struct acpi_scan_handler acpi_pnp_handler = {
  */
 static int is_cmos_rtc_device(struct acpi_device *adev)
 {
-	struct acpi_device_id ids[] = {
+	static const struct acpi_device_id ids[] = {
 		{ "PNP0B00" },
 		{ "PNP0B01" },
 		{ "PNP0B02" },

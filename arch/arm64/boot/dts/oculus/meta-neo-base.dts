@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+
+#include "vendor-base/qcom/neo_la.dtsi"
+#include "vendor-base/qcom/neo-idp.dtsi"
+#include "vendor-base/qcom/audio/neo-audio.dtsi"
+#include "vendor-base/qcom/audio/waipio-lpi.dtsi"
+#include "vendor-base/qcom/camera/neo_la-camera.dtsi"
+#include "vendor-base/qcom/eva/neo-eva.dtsi"
+#include "vendor-base/qcom/video/neo-vidc.dtsi"
+#include "vendor-base/qcom/mmrm/neo-mmrm.dtsi"
+#include "neo-prune.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO-LA";
+	compatible = "qcom,neo";
+	qcom,board-id = <0 0>;
+};

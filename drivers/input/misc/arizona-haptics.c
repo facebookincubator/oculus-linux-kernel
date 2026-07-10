@@ -1,13 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Arizona haptics driver
  *
  * Copyright 2012 Wolfson Microelectronics plc
  *
  * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -37,6 +34,8 @@ static void arizona_haptics_work(struct work_struct *work)
 						       struct arizona_haptics,
 						       work);
 	struct arizona *arizona = haptics->arizona;
+	struct snd_soc_component *component =
+		snd_soc_dapm_to_component(arizona->dapm);
 	int ret;
 
 	if (!haptics->arizona->dapm) {
@@ -66,7 +65,7 @@ static void arizona_haptics_work(struct work_struct *work)
 			return;
 		}
 
-		ret = snd_soc_dapm_enable_pin(arizona->dapm, "HAPTICS");
+		ret = snd_soc_component_enable_pin(component, "HAPTICS");
 		if (ret != 0) {
 			dev_err(arizona->dev, "Failed to start HAPTICS: %d\n",
 				ret);
@@ -81,7 +80,7 @@ static void arizona_haptics_work(struct work_struct *work)
 		}
 	} else {
 		/* This disable sequence will be a noop if already enabled */
-		ret = snd_soc_dapm_disable_pin(arizona->dapm, "HAPTICS");
+		ret = snd_soc_component_disable_pin(component, "HAPTICS");
 		if (ret != 0) {
 			dev_err(arizona->dev, "Failed to disable HAPTICS: %d\n",
 				ret);
@@ -97,8 +96,7 @@ static void arizona_haptics_work(struct work_struct *work)
 
 		ret = regmap_update_bits(arizona->regmap,
 					 ARIZONA_HAPTICS_CONTROL_1,
-					 ARIZONA_HAP_CTRL_MASK,
-					 1 << ARIZONA_HAP_CTRL_SHIFT);
+					 ARIZONA_HAP_CTRL_MASK, 0);
 		if (ret != 0) {
 			dev_err(arizona->dev, "Failed to stop haptics: %d\n",
 				ret);
@@ -141,11 +139,14 @@ static int arizona_haptics_play(struct input_dev *input, void *data,
 static void arizona_haptics_close(struct input_dev *input)
 {
 	struct arizona_haptics *haptics = input_get_drvdata(input);
+	struct snd_soc_component *component;
 
 	cancel_work_sync(&haptics->work);
 
-	if (haptics->arizona->dapm)
-		snd_soc_dapm_disable_pin(haptics->arizona->dapm, "HAPTICS");
+	if (haptics->arizona->dapm) {
+		component = snd_soc_dapm_to_component(haptics->arizona->dapm);
+		snd_soc_component_disable_pin(component, "HAPTICS");
+	}
 }
 
 static int arizona_haptics_probe(struct platform_device *pdev)
@@ -170,8 +171,8 @@ static int arizona_haptics_probe(struct platform_device *pdev)
 
 	INIT_WORK(&haptics->work, arizona_haptics_work);
 
-	haptics->input_dev = input_allocate_device();
-	if (haptics->input_dev == NULL) {
+	haptics->input_dev = devm_input_allocate_device(&pdev->dev);
+	if (!haptics->input_dev) {
 		dev_err(arizona->dev, "Failed to allocate input device\n");
 		return -ENOMEM;
 	}
@@ -179,7 +180,6 @@ static int arizona_haptics_probe(struct platform_device *pdev)
 	input_set_drvdata(haptics->input_dev, haptics);
 
 	haptics->input_dev->name = "arizona:haptics";
-	haptics->input_dev->dev.parent = pdev->dev.parent;
 	haptics->input_dev->close = arizona_haptics_close;
 	__set_bit(FF_RUMBLE, haptics->input_dev->ffbit);
 
@@ -188,44 +188,23 @@ static int arizona_haptics_probe(struct platform_device *pdev)
 	if (ret < 0) {
 		dev_err(arizona->dev, "input_ff_create_memless() failed: %d\n",
 			ret);
-		goto err_ialloc;
+		return ret;
 	}
 
 	ret = input_register_device(haptics->input_dev);
 	if (ret < 0) {
 		dev_err(arizona->dev, "couldn't register input device: %d\n",
 			ret);
-		goto err_iff;
+		return ret;
 	}
-
-	platform_set_drvdata(pdev, haptics);
-
-	return 0;
-
-err_iff:
-	if (haptics->input_dev)
-		input_ff_destroy(haptics->input_dev);
-err_ialloc:
-	input_free_device(haptics->input_dev);
-
-	return ret;
-}
-
-static int arizona_haptics_remove(struct platform_device *pdev)
-{
-	struct arizona_haptics *haptics = platform_get_drvdata(pdev);
-
-	input_unregister_device(haptics->input_dev);
 
 	return 0;
 }
 
 static struct platform_driver arizona_haptics_driver = {
 	.probe		= arizona_haptics_probe,
-	.remove		= arizona_haptics_remove,
 	.driver		= {
 		.name	= "arizona-haptics",
-		.owner	= THIS_MODULE,
 	},
 };
 module_platform_driver(arizona_haptics_driver);

@@ -1,31 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Universal Interface for Intel High Definition Audio Codec
  *
  * HD audio interface patch for C-Media CMI9880
  *
  * Copyright (c) 2004 Takashi Iwai <tiwai@suse.de>
- *
- *
- *  This driver is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This driver is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <sound/core.h>
-#include "hda_codec.h"
+#include <sound/hda_codec.h>
 #include "hda_local.h"
 #include "hda_auto_parser.h"
 #include "hda_jack.h"
@@ -57,6 +43,7 @@ static int patch_cmi9880(struct hda_codec *codec)
 		return -ENOMEM;
 
 	codec->spec = spec;
+	codec->patch_ops = cmi_auto_patch_ops;
 	cfg = &spec->gen.autocfg;
 	snd_hda_gen_spec_init(&spec->gen);
 
@@ -67,7 +54,6 @@ static int patch_cmi9880(struct hda_codec *codec)
 	if (err < 0)
 		goto error;
 
-	codec->patch_ops = cmi_auto_patch_ops;
 	return 0;
 
  error:
@@ -86,6 +72,7 @@ static int patch_cmi8888(struct hda_codec *codec)
 		return -ENOMEM;
 
 	codec->spec = spec;
+	codec->patch_ops = cmi_auto_patch_ops;
 	cfg = &spec->gen.autocfg;
 	snd_hda_gen_spec_init(&spec->gen);
 
@@ -112,7 +99,6 @@ static int patch_cmi8888(struct hda_codec *codec)
 		}
 	}
 
-	codec->patch_ops = cmi_auto_patch_ops;
 	return 0;
 
  error:
@@ -123,34 +109,19 @@ static int patch_cmi8888(struct hda_codec *codec)
 /*
  * patch entries
  */
-static const struct hda_codec_preset snd_hda_preset_cmedia[] = {
-	{ .id = 0x13f68888, .name = "CMI8888", .patch = patch_cmi8888 },
-	{ .id = 0x13f69880, .name = "CMI9880", .patch = patch_cmi9880 },
- 	{ .id = 0x434d4980, .name = "CMI9880", .patch = patch_cmi9880 },
+static const struct hda_device_id snd_hda_id_cmedia[] = {
+	HDA_CODEC_ENTRY(0x13f68888, "CMI8888", patch_cmi8888),
+	HDA_CODEC_ENTRY(0x13f69880, "CMI9880", patch_cmi9880),
+	HDA_CODEC_ENTRY(0x434d4980, "CMI9880", patch_cmi9880),
 	{} /* terminator */
 };
-
-MODULE_ALIAS("snd-hda-codec-id:13f68888");
-MODULE_ALIAS("snd-hda-codec-id:13f69880");
-MODULE_ALIAS("snd-hda-codec-id:434d4980");
+MODULE_DEVICE_TABLE(hdaudio, snd_hda_id_cmedia);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("C-Media HD-audio codec");
 
-static struct hda_codec_preset_list cmedia_list = {
-	.preset = snd_hda_preset_cmedia,
-	.owner = THIS_MODULE,
+static struct hda_codec_driver cmedia_driver = {
+	.id = snd_hda_id_cmedia,
 };
 
-static int __init patch_cmedia_init(void)
-{
-	return snd_hda_add_codec_preset(&cmedia_list);
-}
-
-static void __exit patch_cmedia_exit(void)
-{
-	snd_hda_delete_codec_preset(&cmedia_list);
-}
-
-module_init(patch_cmedia_init)
-module_exit(patch_cmedia_exit)
+module_hda_codec_driver(cmedia_driver);

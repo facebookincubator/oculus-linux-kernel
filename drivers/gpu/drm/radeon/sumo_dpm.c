@@ -21,7 +21,6 @@
  *
  */
 
-#include "drmP.h"
 #include "radeon.h"
 #include "radeon_asic.h"
 #include "sumod.h"
@@ -787,8 +786,8 @@ static void sumo_program_acpi_power_level(struct radeon_device *rdev)
 	struct atom_clock_dividers dividers;
 	int ret;
 
-        ret = radeon_atom_get_clock_dividers(rdev, COMPUTE_ENGINE_PLL_PARAM,
-                                             pi->acpi_pl.sclk,
+	ret = radeon_atom_get_clock_dividers(rdev, COMPUTE_ENGINE_PLL_PARAM,
+					     pi->acpi_pl.sclk,
 					     false, &dividers);
 	if (ret)
 		return;
@@ -1338,6 +1337,7 @@ void sumo_dpm_post_set_power_state(struct radeon_device *rdev)
 	sumo_update_current_ps(rdev, new_ps);
 }
 
+#if 0
 void sumo_dpm_reset_asic(struct radeon_device *rdev)
 {
 	sumo_program_bootup_state(rdev);
@@ -1349,6 +1349,7 @@ void sumo_dpm_reset_asic(struct radeon_device *rdev)
 	sumo_set_forced_mode_enabled(rdev);
 	sumo_set_forced_mode_disabled(rdev);
 }
+#endif
 
 void sumo_dpm_setup_asic(struct radeon_device *rdev)
 {
@@ -1460,7 +1461,7 @@ static int sumo_parse_power_table(struct radeon_device *rdev)
 	struct _NonClockInfoArray *non_clock_info_array;
 	union power_info *power_info;
 	int index = GetIndexIntoMasterTable(DATA, PowerPlayInfo);
-        u16 data_offset;
+	u16 data_offset;
 	u8 frev, crev;
 	u8 *power_state_offset;
 	struct sumo_ps *ps;
@@ -1480,8 +1481,9 @@ static int sumo_parse_power_table(struct radeon_device *rdev)
 		(mode_info->atom_context->bios + data_offset +
 		 le16_to_cpu(power_info->pplib.usNonClockInfoArrayOffset));
 
-	rdev->pm.dpm.ps = kzalloc(sizeof(struct radeon_ps) *
-				  state_array->ucNumEntries, GFP_KERNEL);
+	rdev->pm.dpm.ps = kcalloc(state_array->ucNumEntries,
+				  sizeof(struct radeon_ps),
+				  GFP_KERNEL);
 	if (!rdev->pm.dpm.ps)
 		return -ENOMEM;
 	power_state_offset = (u8 *)state_array->states;
@@ -1537,6 +1539,7 @@ u32 sumo_convert_vid2_to_vid7(struct radeon_device *rdev,
 	return vid_mapping_table->entries[vid_mapping_table->num_entries - 1].vid_7bit;
 }
 
+#if 0
 u32 sumo_convert_vid7_to_vid2(struct radeon_device *rdev,
 			      struct sumo_vid_mapping_table *vid_mapping_table,
 			      u32 vid_7bit)
@@ -1550,6 +1553,7 @@ u32 sumo_convert_vid7_to_vid2(struct radeon_device *rdev,
 
 	return vid_mapping_table->entries[vid_mapping_table->num_entries - 1].vid_2bit;
 }
+#endif
 
 static u16 sumo_convert_voltage_index_to_value(struct radeon_device *rdev,
 					       u32 vid_2bit)
@@ -1831,6 +1835,34 @@ void sumo_dpm_debugfs_print_current_performance_level(struct radeon_device *rdev
 			   current_index, pl->sclk,
 			   sumo_convert_voltage_index_to_value(rdev, pl->vddc_index));
 	}
+}
+
+u32 sumo_dpm_get_current_sclk(struct radeon_device *rdev)
+{
+	struct sumo_power_info *pi = sumo_get_pi(rdev);
+	struct radeon_ps *rps = &pi->current_rps;
+	struct sumo_ps *ps = sumo_get_ps(rps);
+	struct sumo_pl *pl;
+	u32 current_index =
+		(RREG32(TARGET_AND_CURRENT_PROFILE_INDEX) & CURR_INDEX_MASK) >>
+		CURR_INDEX_SHIFT;
+
+	if (current_index == BOOST_DPM_LEVEL) {
+		pl = &pi->boost_pl;
+		return pl->sclk;
+	} else if (current_index >= ps->num_levels) {
+		return 0;
+	} else {
+		pl = &ps->levels[current_index];
+		return pl->sclk;
+	}
+}
+
+u32 sumo_dpm_get_current_mclk(struct radeon_device *rdev)
+{
+	struct sumo_power_info *pi = sumo_get_pi(rdev);
+
+	return pi->sys_info.bootup_uma_clk;
 }
 
 void sumo_dpm_fini(struct radeon_device *rdev)

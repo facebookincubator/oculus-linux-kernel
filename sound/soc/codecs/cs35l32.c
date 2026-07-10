@@ -1,19 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * cs35l32.c -- CS35L32 ALSA SoC audio driver
  *
  * Copyright 2014 CirrusLogic, Inc.
  *
  * Author: Brian Austin <brian.austin@cirrus.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 
 #include <linux/module.h>
 #include <linux/moduleparam.h>
-#include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/delay.h>
@@ -44,7 +39,7 @@ static const char *const cs35l32_supply_names[CS35L32_NUM_SUPPLIES] = {
 
 struct  cs35l32_private {
 	struct regmap *regmap;
-	struct snd_soc_codec *codec;
+	struct snd_soc_component *component;
 	struct regulator_bulk_data supplies[CS35L32_NUM_SUPPLIES];
 	struct cs35l32_platform_data pdata;
 	struct gpio_desc *reset_gpio;
@@ -75,33 +70,8 @@ static const struct reg_default cs35l32_reg_defaults[] = {
 static bool cs35l32_readable_register(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
-	case CS35L32_DEVID_AB:
-	case CS35L32_DEVID_CD:
-	case CS35L32_DEVID_E:
-	case CS35L32_FAB_ID:
-	case CS35L32_REV_ID:
-	case CS35L32_PWRCTL1:
-	case CS35L32_PWRCTL2:
-	case CS35L32_CLK_CTL:
-	case CS35L32_BATT_THRESHOLD:
-	case CS35L32_VMON:
-	case CS35L32_BST_CPCP_CTL:
-	case CS35L32_IMON_SCALING:
-	case CS35L32_AUDIO_LED_MNGR:
-	case CS35L32_ADSP_CTL:
-	case CS35L32_CLASSD_CTL:
-	case CS35L32_PROTECT_CTL:
-	case CS35L32_INT_MASK_1:
-	case CS35L32_INT_MASK_2:
-	case CS35L32_INT_MASK_3:
-	case CS35L32_INT_STATUS_1:
-	case CS35L32_INT_STATUS_2:
-	case CS35L32_INT_STATUS_3:
-	case CS35L32_LED_STATUS:
-	case CS35L32_FLASH_MODE:
-	case CS35L32_MOVIE_MODE:
-	case CS35L32_FLASH_TIMER:
-	case CS35L32_FLASH_INHIBIT:
+	case CS35L32_DEVID_AB ... CS35L32_AUDIO_LED_MNGR:
+	case CS35L32_ADSP_CTL ... CS35L32_FLASH_INHIBIT:
 		return true;
 	default:
 		return false;
@@ -111,15 +81,8 @@ static bool cs35l32_readable_register(struct device *dev, unsigned int reg)
 static bool cs35l32_volatile_register(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
-	case CS35L32_DEVID_AB:
-	case CS35L32_DEVID_CD:
-	case CS35L32_DEVID_E:
-	case CS35L32_FAB_ID:
-	case CS35L32_REV_ID:
-	case CS35L32_INT_STATUS_1:
-	case CS35L32_INT_STATUS_2:
-	case CS35L32_INT_STATUS_3:
-	case CS35L32_LED_STATUS:
+	case CS35L32_DEVID_AB ... CS35L32_REV_ID:
+	case CS35L32_INT_STATUS_1 ... CS35L32_LED_STATUS:
 		return true;
 	default:
 		return false;
@@ -129,10 +92,7 @@ static bool cs35l32_volatile_register(struct device *dev, unsigned int reg)
 static bool cs35l32_precious_register(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
-	case CS35L32_INT_STATUS_1:
-	case CS35L32_INT_STATUS_2:
-	case CS35L32_INT_STATUS_3:
-	case CS35L32_LED_STATUS:
+	case CS35L32_INT_STATUS_1 ... CS35L32_LED_STATUS:
 		return true;
 	default:
 		return false;
@@ -190,16 +150,16 @@ static const struct snd_soc_dapm_route cs35l32_audio_map[] = {
 
 static int cs35l32_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 {
-	struct snd_soc_codec *codec = codec_dai->codec;
+	struct snd_soc_component *component = codec_dai->component;
 
 	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
 	case SND_SOC_DAIFMT_CBM_CFM:
-		snd_soc_update_bits(codec, CS35L32_ADSP_CTL,
+		snd_soc_component_update_bits(component, CS35L32_ADSP_CTL,
 				    CS35L32_ADSP_MASTER_MASK,
 				CS35L32_ADSP_MASTER_MASK);
 		break;
 	case SND_SOC_DAIFMT_CBS_CFS:
-		snd_soc_update_bits(codec, CS35L32_ADSP_CTL,
+		snd_soc_component_update_bits(component, CS35L32_ADSP_CTL,
 				    CS35L32_ADSP_MASTER_MASK, 0);
 		break;
 	default:
@@ -211,9 +171,9 @@ static int cs35l32_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 
 static int cs35l32_set_tristate(struct snd_soc_dai *dai, int tristate)
 {
-	struct snd_soc_codec *codec = dai->codec;
+	struct snd_soc_component *component = dai->component;
 
-	return snd_soc_update_bits(codec, CS35L32_PWRCTL2,
+	return snd_soc_component_update_bits(component, CS35L32_PWRCTL2,
 					CS35L32_SDOUT_3ST, tristate << 3);
 }
 
@@ -238,7 +198,7 @@ static struct snd_soc_dai_driver cs35l32_dai[] = {
 	}
 };
 
-static int cs35l32_codec_set_sysclk(struct snd_soc_codec *codec,
+static int cs35l32_component_set_sysclk(struct snd_soc_component *component,
 			      int clk_id, int source, unsigned int freq, int dir)
 {
 	unsigned int val;
@@ -260,24 +220,26 @@ static int cs35l32_codec_set_sysclk(struct snd_soc_codec *codec,
 		return -EINVAL;
 	}
 
-	return snd_soc_update_bits(codec, CS35L32_CLK_CTL,
+	return snd_soc_component_update_bits(component, CS35L32_CLK_CTL,
 			CS35L32_MCLK_DIV2_MASK | CS35L32_MCLK_RATIO_MASK, val);
 }
 
-static struct snd_soc_codec_driver soc_codec_dev_cs35l32 = {
-	.set_sysclk = cs35l32_codec_set_sysclk,
-
-	.dapm_widgets = cs35l32_dapm_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(cs35l32_dapm_widgets),
-	.dapm_routes = cs35l32_audio_map,
-	.num_dapm_routes = ARRAY_SIZE(cs35l32_audio_map),
-
-	.controls = cs35l32_snd_controls,
-	.num_controls = ARRAY_SIZE(cs35l32_snd_controls),
+static const struct snd_soc_component_driver soc_component_dev_cs35l32 = {
+	.set_sysclk		= cs35l32_component_set_sysclk,
+	.controls		= cs35l32_snd_controls,
+	.num_controls		= ARRAY_SIZE(cs35l32_snd_controls),
+	.dapm_widgets		= cs35l32_dapm_widgets,
+	.num_dapm_widgets	= ARRAY_SIZE(cs35l32_dapm_widgets),
+	.dapm_routes		= cs35l32_audio_map,
+	.num_dapm_routes	= ARRAY_SIZE(cs35l32_audio_map),
+	.idle_bias_on		= 1,
+	.use_pmdown_time	= 1,
+	.endianness		= 1,
+	.non_legacy_dai_naming	= 1,
 };
 
 /* Current and threshold powerup sequence Pg37 in datasheet */
-static const struct reg_default cs35l32_monitor_patch[] = {
+static const struct reg_sequence cs35l32_monitor_patch[] = {
 
 	{ 0x00, 0x99 },
 	{ 0x48, 0x17 },
@@ -288,7 +250,7 @@ static const struct reg_default cs35l32_monitor_patch[] = {
 	{ 0x00, 0x00 },
 };
 
-static struct regmap_config cs35l32_regmap = {
+static const struct regmap_config cs35l32_regmap = {
 	.reg_bits = 8,
 	.val_bits = 8,
 
@@ -310,7 +272,9 @@ static int cs35l32_handle_of_data(struct i2c_client *i2c_client,
 	if (of_property_read_u32(np, "cirrus,sdout-share", &val) >= 0)
 		pdata->sdout_share = val;
 
-	of_property_read_u32(np, "cirrus,boost-manager", &val);
+	if (of_property_read_u32(np, "cirrus,boost-manager", &val))
+		val = -1u;
+
 	switch (val) {
 	case CS35L32_BOOST_MGR_AUTO:
 	case CS35L32_BOOST_MGR_AUTO_AUDIO:
@@ -318,13 +282,15 @@ static int cs35l32_handle_of_data(struct i2c_client *i2c_client,
 	case CS35L32_BOOST_MGR_FIXED:
 		pdata->boost_mng = val;
 		break;
+	case -1u:
 	default:
 		dev_err(&i2c_client->dev,
 			"Wrong cirrus,boost-manager DT value %d\n", val);
 		pdata->boost_mng = CS35L32_BOOST_MGR_BYPASS;
 	}
 
-	of_property_read_u32(np, "cirrus,sdout-datacfg", &val);
+	if (of_property_read_u32(np, "cirrus,sdout-datacfg", &val))
+		val = -1u;
 	switch (val) {
 	case CS35L32_DATA_CFG_LR_VP:
 	case CS35L32_DATA_CFG_LR_STAT:
@@ -332,13 +298,15 @@ static int cs35l32_handle_of_data(struct i2c_client *i2c_client,
 	case CS35L32_DATA_CFG_LR_VPSTAT:
 		pdata->sdout_datacfg = val;
 		break;
+	case -1u:
 	default:
 		dev_err(&i2c_client->dev,
 			"Wrong cirrus,sdout-datacfg DT value %d\n", val);
 		pdata->sdout_datacfg = CS35L32_DATA_CFG_LR;
 	}
 
-	of_property_read_u32(np, "cirrus,battery-threshold", &val);
+	if (of_property_read_u32(np, "cirrus,battery-threshold", &val))
+		val = -1u;
 	switch (val) {
 	case CS35L32_BATT_THRESH_3_1V:
 	case CS35L32_BATT_THRESH_3_2V:
@@ -346,13 +314,15 @@ static int cs35l32_handle_of_data(struct i2c_client *i2c_client,
 	case CS35L32_BATT_THRESH_3_4V:
 		pdata->batt_thresh = val;
 		break;
+	case -1u:
 	default:
 		dev_err(&i2c_client->dev,
 			"Wrong cirrus,battery-threshold DT value %d\n", val);
 		pdata->batt_thresh = CS35L32_BATT_THRESH_3_3V;
 	}
 
-	of_property_read_u32(np, "cirrus,battery-recovery", &val);
+	if (of_property_read_u32(np, "cirrus,battery-recovery", &val))
+		val = -1u;
 	switch (val) {
 	case CS35L32_BATT_RECOV_3_1V:
 	case CS35L32_BATT_RECOV_3_2V:
@@ -362,6 +332,7 @@ static int cs35l32_handle_of_data(struct i2c_client *i2c_client,
 	case CS35L32_BATT_RECOV_3_6V:
 		pdata->batt_recov = val;
 		break;
+	case -1u:
 	default:
 		dev_err(&i2c_client->dev,
 			"Wrong cirrus,battery-recovery DT value %d\n", val);
@@ -381,13 +352,9 @@ static int cs35l32_i2c_probe(struct i2c_client *i2c_client,
 	unsigned int devid = 0;
 	unsigned int reg;
 
-
-	cs35l32 = devm_kzalloc(&i2c_client->dev, sizeof(struct cs35l32_private),
-			       GFP_KERNEL);
-	if (!cs35l32) {
-		dev_err(&i2c_client->dev, "could not allocate codec\n");
+	cs35l32 = devm_kzalloc(&i2c_client->dev, sizeof(*cs35l32), GFP_KERNEL);
+	if (!cs35l32)
 		return -ENOMEM;
-	}
 
 	i2c_set_clientdata(i2c_client, cs35l32);
 
@@ -401,13 +368,11 @@ static int cs35l32_i2c_probe(struct i2c_client *i2c_client,
 	if (pdata) {
 		cs35l32->pdata = *pdata;
 	} else {
-		pdata = devm_kzalloc(&i2c_client->dev,
-				     sizeof(struct cs35l32_platform_data),
-				GFP_KERNEL);
-		if (!pdata) {
-			dev_err(&i2c_client->dev, "could not allocate pdata\n");
+		pdata = devm_kzalloc(&i2c_client->dev, sizeof(*pdata),
+				     GFP_KERNEL);
+		if (!pdata)
 			return -ENOMEM;
-		}
+
 		if (i2c_client->dev.of_node) {
 			ret = cs35l32_handle_of_data(i2c_client,
 						     &cs35l32->pdata);
@@ -437,20 +402,12 @@ static int cs35l32_i2c_probe(struct i2c_client *i2c_client,
 	}
 
 	/* Reset the Device */
-	cs35l32->reset_gpio = devm_gpiod_get(&i2c_client->dev,
-		"reset-gpios");
-	if (IS_ERR(cs35l32->reset_gpio)) {
-		ret = PTR_ERR(cs35l32->reset_gpio);
-		if (ret != -ENOENT && ret != -ENOSYS)
-			return ret;
+	cs35l32->reset_gpio = devm_gpiod_get_optional(&i2c_client->dev,
+		"reset", GPIOD_OUT_LOW);
+	if (IS_ERR(cs35l32->reset_gpio))
+		return PTR_ERR(cs35l32->reset_gpio);
 
-		cs35l32->reset_gpio = NULL;
-	} else {
-		ret = gpiod_direction_output(cs35l32->reset_gpio, 0);
-		if (ret)
-			return ret;
-		gpiod_set_value_cansleep(cs35l32->reset_gpio, 1);
-	}
+	gpiod_set_value_cansleep(cs35l32->reset_gpio, 1);
 
 	/* initialize codec */
 	ret = regmap_read(cs35l32->regmap, CS35L32_DEVID_AB, &reg);
@@ -523,8 +480,8 @@ static int cs35l32_i2c_probe(struct i2c_client *i2c_client,
 	/* Clear MCLK Error Bit since we don't have the clock yet */
 	ret = regmap_read(cs35l32->regmap, CS35L32_INT_STATUS_1, &reg);
 
-	ret =  snd_soc_register_codec(&i2c_client->dev,
-			&soc_codec_dev_cs35l32, cs35l32_dai,
+	ret = devm_snd_soc_register_component(&i2c_client->dev,
+			&soc_component_dev_cs35l32, cs35l32_dai,
 			ARRAY_SIZE(cs35l32_dai));
 	if (ret < 0)
 		goto err_disable;
@@ -541,16 +498,13 @@ static int cs35l32_i2c_remove(struct i2c_client *i2c_client)
 {
 	struct cs35l32_private *cs35l32 = i2c_get_clientdata(i2c_client);
 
-	snd_soc_unregister_codec(&i2c_client->dev);
-
 	/* Hold down reset */
-	if (cs35l32->reset_gpio)
-		gpiod_set_value_cansleep(cs35l32->reset_gpio, 0);
+	gpiod_set_value_cansleep(cs35l32->reset_gpio, 0);
 
 	return 0;
 }
 
-#ifdef CONFIG_PM_RUNTIME
+#ifdef CONFIG_PM
 static int cs35l32_runtime_suspend(struct device *dev)
 {
 	struct cs35l32_private *cs35l32 = dev_get_drvdata(dev);
@@ -559,8 +513,7 @@ static int cs35l32_runtime_suspend(struct device *dev)
 	regcache_mark_dirty(cs35l32->regmap);
 
 	/* Hold down reset */
-	if (cs35l32->reset_gpio)
-		gpiod_set_value_cansleep(cs35l32->reset_gpio, 0);
+	gpiod_set_value_cansleep(cs35l32->reset_gpio, 0);
 
 	/* remove power */
 	regulator_bulk_disable(ARRAY_SIZE(cs35l32->supplies),
@@ -583,8 +536,7 @@ static int cs35l32_runtime_resume(struct device *dev)
 		return ret;
 	}
 
-	if (cs35l32->reset_gpio)
-		gpiod_set_value_cansleep(cs35l32->reset_gpio, 1);
+	gpiod_set_value_cansleep(cs35l32->reset_gpio, 1);
 
 	regcache_cache_only(cs35l32->regmap, false);
 	regcache_sync(cs35l32->regmap);
@@ -615,7 +567,6 @@ MODULE_DEVICE_TABLE(i2c, cs35l32_id);
 static struct i2c_driver cs35l32_i2c_driver = {
 	.driver = {
 		   .name = "cs35l32",
-		   .owner = THIS_MODULE,
 		   .pm = &cs35l32_runtime_pm,
 		   .of_match_table = cs35l32_of_match,
 		   },

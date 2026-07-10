@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/drivers/pcmcia/sa1100_badge4.c
  *
@@ -6,11 +7,6 @@
  *   Christopher Hoover <ch@hpl.hp.com>
  *
  * Copyright (C) 2002 Hewlett-Packard Company
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -132,24 +128,19 @@ static struct pcmcia_low_level badge4_pcmcia_ops = {
 	.nr			= 2,
 };
 
-int pcmcia_badge4_init(struct device *dev)
+int pcmcia_badge4_init(struct sa1111_dev *dev)
 {
-	int ret = -ENODEV;
+	printk(KERN_INFO
+	       "%s: badge4_pcmvcc=%d, badge4_pcmvpp=%d, badge4_cfvcc=%d\n",
+	       __func__,
+	       badge4_pcmvcc, badge4_pcmvpp, badge4_cfvcc);
 
-	if (machine_is_badge4()) {
-		printk(KERN_INFO
-		       "%s: badge4_pcmvcc=%d, badge4_pcmvpp=%d, badge4_cfvcc=%d\n",
-		       __func__,
-		       badge4_pcmvcc, badge4_pcmvpp, badge4_cfvcc);
-
-		sa11xx_drv_pcmcia_ops(&badge4_pcmcia_ops);
-		ret = sa1111_pcmcia_add(dev, &badge4_pcmcia_ops,
-				sa11xx_drv_pcmcia_add_one);
-	}
-
-	return ret;
+	sa11xx_drv_pcmcia_ops(&badge4_pcmcia_ops);
+	return sa1111_pcmcia_add(dev, &badge4_pcmcia_ops,
+				 sa11xx_drv_pcmcia_add_one);
 }
 
+#ifndef MODULE
 static int __init pcmv_setup(char *s)
 {
 	int v[4];
@@ -164,3 +155,4 @@ static int __init pcmv_setup(char *s)
 }
 
 __setup("pcmv=", pcmv_setup);
+#endif

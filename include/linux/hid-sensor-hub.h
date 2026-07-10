@@ -1,20 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * HID Sensors Driver
  * Copyright (c) 2012, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
- *
  */
 #ifndef _HID_SENSORS_HUB_H
 #define _HID_SENSORS_HUB_H
@@ -33,6 +20,8 @@
  * @units:		Measurment unit for this attribute.
  * @unit_expo:		Exponent used in the data.
  * @size:		Size in bytes for data size.
+ * @logical_minimum:	Logical minimum value for this attribute.
+ * @logical_maximum:	Logical maximum value for this attribute.
  */
 struct hid_sensor_hub_attribute_info {
 	u32 usage_id;
@@ -47,19 +36,43 @@ struct hid_sensor_hub_attribute_info {
 };
 
 /**
+ * struct sensor_hub_pending - Synchronous read pending information
+ * @status:		Pending status true/false.
+ * @ready:		Completion synchronization data.
+ * @usage_id:		Usage id for physical device, E.g. Gyro usage id.
+ * @attr_usage_id:	Usage Id of a field, E.g. X-AXIS for a gyro.
+ * @raw_size:		Response size for a read request.
+ * @raw_data:		Place holder for received response.
+ */
+struct sensor_hub_pending {
+	bool status;
+	struct completion ready;
+	u32 usage_id;
+	u32 attr_usage_id;
+	int raw_size;
+	u8  *raw_data;
+};
+
+/**
  * struct hid_sensor_hub_device - Stores the hub instance data
  * @hdev:		Stores the hid instance.
  * @vendor_id:		Vendor id of hub device.
  * @product_id:		Product id of hub device.
+ * @usage:		Usage id for this hub device instance.
  * @start_collection_index: Starting index for a phy type collection
  * @end_collection_index: Last index for a phy type collection
+ * @mutex_ptr:		synchronizing mutex pointer.
+ * @pending:		Holds information of pending sync read request.
  */
 struct hid_sensor_hub_device {
 	struct hid_device *hdev;
 	u32 vendor_id;
 	u32 product_id;
+	u32 usage;
 	int start_collection_index;
 	int end_collection_index;
+	struct mutex *mutex_ptr;
+	struct sensor_hub_pending pending;
 };
 
 /**
@@ -146,41 +159,57 @@ int sensor_hub_input_get_attribute_info(struct hid_sensor_hub_device *hsdev,
 
 /**
 * sensor_hub_input_attr_get_raw_value() - Synchronous read request
+* @hsdev:	Hub device instance.
 * @usage_id:	Attribute usage id of parent physical device as per spec
 * @attr_usage_id:	Attribute usage id as per spec
 * @report_id:	Report id to look for
+* @flag:      Synchronous or asynchronous read
+* @is_signed:   If true then fields < 32 bits will be sign-extended
 *
-* Issues a synchronous read request for an input attribute. Returns
-* data upto 32 bits. Since client can get events, so this call should
-* not be used for data paths, this will impact performance.
+* Issues a synchronous or asynchronous read request for an input attribute.
+* Returns data upto 32 bits.
 */
 
+enum sensor_hub_read_flags {
+	SENSOR_HUB_SYNC,
+	SENSOR_HUB_ASYNC,
+};
+
 int sensor_hub_input_attr_get_raw_value(struct hid_sensor_hub_device *hsdev,
-			u32 usage_id,
-			u32 attr_usage_id, u32 report_id);
+ 					u32 usage_id,
+ 					u32 attr_usage_id, u32 report_id,
+					enum sensor_hub_read_flags flag,
+					bool is_signed
+);
+
 /**
 * sensor_hub_set_feature() - Feature set request
+* @hsdev:	Hub device instance.
 * @report_id:	Report id to look for
 * @field_index:	Field index inside a report
-* @value:	Value to set
+* @buffer_size: size of the buffer
+* @buffer:	buffer to use in the feature set
 *
 * Used to set a field in feature report. For example this can set polling
 * interval, sensitivity, activate/deactivate state.
 */
 int sensor_hub_set_feature(struct hid_sensor_hub_device *hsdev, u32 report_id,
-			u32 field_index, s32 value);
+			   u32 field_index, int buffer_size, void *buffer);
 
 /**
 * sensor_hub_get_feature() - Feature get request
+* @hsdev:	Hub device instance.
 * @report_id:	Report id to look for
 * @field_index:	Field index inside a report
-* @value:	Place holder for return value
+* @buffer_size:	size of the buffer
+* @buffer:	buffer to copy output
 *
 * Used to get a field in feature report. For example this can get polling
-* interval, sensitivity, activate/deactivate state.
+* interval, sensitivity, activate/deactivate state. On success it returns
+* number of bytes copied to buffer. On failure, it returns value < 0.
 */
 int sensor_hub_get_feature(struct hid_sensor_hub_device *hsdev, u32 report_id,
-			u32 field_index, s32 *value);
+			   u32 field_index, int buffer_size, void *buffer);
 
 /* hid-sensor-attributes */
 
@@ -190,11 +219,19 @@ struct hid_sensor_common {
 	struct platform_device *pdev;
 	unsigned usage_id;
 	atomic_t data_ready;
+	atomic_t user_requested_state;
+	atomic_t runtime_pm_enable;
+	int poll_interval;
+	int raw_hystersis;
+	int latency_ms;
 	struct iio_trigger *trigger;
+	int timestamp_ns_scale;
 	struct hid_sensor_hub_attribute_info poll;
 	struct hid_sensor_hub_attribute_info report_state;
 	struct hid_sensor_hub_attribute_info power_state;
 	struct hid_sensor_hub_attribute_info sensitivity;
+	struct hid_sensor_hub_attribute_info report_latency;
+	struct work_struct work;
 };
 
 /* Convert from hid unit expo to regular exponent */
@@ -228,5 +265,11 @@ int hid_sensor_format_scale(u32 usage_id,
 			    int *val0, int *val1);
 
 s32 hid_sensor_read_poll_value(struct hid_sensor_common *st);
+
+int64_t hid_sensor_convert_timestamp(struct hid_sensor_common *st,
+				     int64_t raw_value);
+bool hid_sensor_batch_mode_supported(struct hid_sensor_common *st);
+int hid_sensor_set_report_latency(struct hid_sensor_common *st, int latency);
+int hid_sensor_get_report_latency(struct hid_sensor_common *st);
 
 #endif

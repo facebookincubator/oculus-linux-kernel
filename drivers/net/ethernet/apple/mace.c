@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Network device driver for the MACE ethernet controller on
  * Apple Powermacs.  Assumes it's under a DBDMA controller.
@@ -18,10 +19,10 @@
 #include <linux/spinlock.h>
 #include <linux/bitrev.h>
 #include <linux/slab.h>
+#include <linux/pgtable.h>
 #include <asm/prom.h>
 #include <asm/dbdma.h>
 #include <asm/io.h>
-#include <asm/pgtable.h>
 #include <asm/macio.h>
 
 #include "mace.h"
@@ -78,7 +79,7 @@ struct mace_data {
 
 static int mace_open(struct net_device *dev);
 static int mace_close(struct net_device *dev);
-static int mace_xmit_start(struct sk_buff *skb, struct net_device *dev);
+static netdev_tx_t mace_xmit_start(struct sk_buff *skb, struct net_device *dev);
 static void mace_set_multicast(struct net_device *dev);
 static void mace_reset(struct net_device *dev);
 static int mace_set_address(struct net_device *dev, void *addr);
@@ -86,7 +87,7 @@ static irqreturn_t mace_interrupt(int irq, void *dev_id);
 static irqreturn_t mace_txdma_intr(int irq, void *dev_id);
 static irqreturn_t mace_rxdma_intr(int irq, void *dev_id);
 static void mace_set_timeout(struct net_device *dev);
-static void mace_tx_timeout(unsigned long data);
+static void mace_tx_timeout(struct timer_list *t);
 static inline void dbdma_reset(volatile struct dbdma_regs __iomem *dma);
 static inline void mace_clean_rings(struct mace_data *mp);
 static void __mace_set_address(struct net_device *dev, void *addr);
@@ -102,7 +103,6 @@ static const struct net_device_ops mace_netdev_ops = {
 	.ndo_start_xmit		= mace_xmit_start,
 	.ndo_set_rx_mode	= mace_set_multicast,
 	.ndo_set_mac_address	= mace_set_address,
-	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_validate_addr	= eth_validate_addr,
 };
 
@@ -115,8 +115,8 @@ static int mace_probe(struct macio_dev *mdev, const struct of_device_id *match)
 	int j, rev, rc = -EBUSY;
 
 	if (macio_resource_count(mdev) != 3 || macio_irq_count(mdev) != 3) {
-		printk(KERN_ERR "can't use MACE %s: need 3 addrs and 3 irqs\n",
-		       mace->full_name);
+		printk(KERN_ERR "can't use MACE %pOF: need 3 addrs and 3 irqs\n",
+		       mace);
 		return -ENODEV;
 	}
 
@@ -124,8 +124,8 @@ static int mace_probe(struct macio_dev *mdev, const struct of_device_id *match)
 	if (addr == NULL) {
 		addr = of_get_property(mace, "local-mac-address", NULL);
 		if (addr == NULL) {
-			printk(KERN_ERR "Can't get mac-address for MACE %s\n",
-			       mace->full_name);
+			printk(KERN_ERR "Can't get mac-address for MACE %pOF\n",
+			       mace);
 			return -ENODEV;
 		}
 	}
@@ -197,7 +197,7 @@ static int mace_probe(struct macio_dev *mdev, const struct of_device_id *match)
 
 	memset((char *) mp->tx_cmds, 0,
 	       (NCMDS_TX*N_TX_RING + N_RX_RING + 2) * sizeof(struct dbdma_cmd));
-	init_timer(&mp->tx_timeout);
+	timer_setup(&mp->tx_timeout, mace_tx_timeout, 0);
 	spin_lock_init(&mp->lock);
 	mp->timeout_active = 0;
 
@@ -310,7 +310,7 @@ static void dbdma_reset(volatile struct dbdma_regs __iomem *dma)
      * way on some machines.
      */
     for (i = 200; i > 0; --i)
-	if (ld_le32(&dma->control) & RUN)
+	if (le32_to_cpu(dma->control) & RUN)
 	    udelay(1);
 }
 
@@ -452,21 +452,21 @@ static int mace_open(struct net_device *dev)
 	    data = skb->data;
 	}
 	mp->rx_bufs[i] = skb;
-	st_le16(&cp->req_count, RX_BUFLEN);
-	st_le16(&cp->command, INPUT_LAST + INTR_ALWAYS);
-	st_le32(&cp->phy_addr, virt_to_bus(data));
+	cp->req_count = cpu_to_le16(RX_BUFLEN);
+	cp->command = cpu_to_le16(INPUT_LAST + INTR_ALWAYS);
+	cp->phy_addr = cpu_to_le32(virt_to_bus(data));
 	cp->xfer_status = 0;
 	++cp;
     }
     mp->rx_bufs[i] = NULL;
-    st_le16(&cp->command, DBDMA_STOP);
+    cp->command = cpu_to_le16(DBDMA_STOP);
     mp->rx_fill = i;
     mp->rx_empty = 0;
 
     /* Put a branch back to the beginning of the receive command list */
     ++cp;
-    st_le16(&cp->command, DBDMA_NOP + BR_ALWAYS);
-    st_le32(&cp->cmd_dep, virt_to_bus(mp->rx_cmds));
+    cp->command = cpu_to_le16(DBDMA_NOP + BR_ALWAYS);
+    cp->cmd_dep = cpu_to_le32(virt_to_bus(mp->rx_cmds));
 
     /* start rx dma */
     out_le32(&rd->control, (RUN|PAUSE|FLUSH|WAKE) << 16); /* clear run bit */
@@ -475,8 +475,8 @@ static int mace_open(struct net_device *dev)
 
     /* put a branch at the end of the tx command list */
     cp = mp->tx_cmds + NCMDS_TX * N_TX_RING;
-    st_le16(&cp->command, DBDMA_NOP + BR_ALWAYS);
-    st_le32(&cp->cmd_dep, virt_to_bus(mp->tx_cmds));
+    cp->command = cpu_to_le16(DBDMA_NOP + BR_ALWAYS);
+    cp->cmd_dep = cpu_to_le32(virt_to_bus(mp->tx_cmds));
 
     /* reset tx dma */
     out_le32(&td->control, (RUN|PAUSE|FLUSH|WAKE) << 16);
@@ -507,8 +507,8 @@ static int mace_close(struct net_device *dev)
     out_8(&mb->imr, 0xff);		/* disable all intrs */
 
     /* disable rx and tx dma */
-    st_le32(&rd->control, (RUN|PAUSE|FLUSH|WAKE) << 16); /* clear run bit */
-    st_le32(&td->control, (RUN|PAUSE|FLUSH|WAKE) << 16); /* clear run bit */
+    rd->control = cpu_to_le32((RUN|PAUSE|FLUSH|WAKE) << 16); /* clear run bit */
+    td->control = cpu_to_le32((RUN|PAUSE|FLUSH|WAKE) << 16); /* clear run bit */
 
     mace_clean_rings(mp);
 
@@ -522,13 +522,11 @@ static inline void mace_set_timeout(struct net_device *dev)
     if (mp->timeout_active)
 	del_timer(&mp->tx_timeout);
     mp->tx_timeout.expires = jiffies + TX_TIMEOUT;
-    mp->tx_timeout.function = mace_tx_timeout;
-    mp->tx_timeout.data = (unsigned long) dev;
     add_timer(&mp->tx_timeout);
     mp->timeout_active = 1;
 }
 
-static int mace_xmit_start(struct sk_buff *skb, struct net_device *dev)
+static netdev_tx_t mace_xmit_start(struct sk_buff *skb, struct net_device *dev)
 {
     struct mace_data *mp = netdev_priv(dev);
     volatile struct dbdma_regs __iomem *td = mp->tx_dma;
@@ -558,8 +556,8 @@ static int mace_xmit_start(struct sk_buff *skb, struct net_device *dev)
     }
     mp->tx_bufs[fill] = skb;
     cp = mp->tx_cmds + NCMDS_TX * fill;
-    st_le16(&cp->req_count, len);
-    st_le32(&cp->phy_addr, virt_to_bus(skb->data));
+    cp->req_count = cpu_to_le16(len);
+    cp->phy_addr = cpu_to_le32(virt_to_bus(skb->data));
 
     np = mp->tx_cmds + NCMDS_TX * next;
     out_le16(&np->command, DBDMA_STOP);
@@ -691,7 +689,7 @@ static irqreturn_t mace_interrupt(int irq, void *dev_id)
 	    out_8(&mb->xmtfc, AUTO_PAD_XMIT);
 	    continue;
 	}
-	dstat = ld_le32(&td->status);
+	dstat = le32_to_cpu(td->status);
 	/* stop DMA controller */
 	out_le32(&td->control, RUN << 16);
 	/*
@@ -720,11 +718,11 @@ static irqreturn_t mace_interrupt(int irq, void *dev_id)
 	    mace_reset(dev);
 		/*
 		 * XXX mace likes to hang the machine after a xmtfs error.
-		 * This is hard to reproduce, reseting *may* help
+		 * This is hard to reproduce, resetting *may* help
 		 */
 	}
 	cp = mp->tx_cmds + NCMDS_TX * i;
-	stat = ld_le16(&cp->xfer_status);
+	stat = le16_to_cpu(cp->xfer_status);
 	if ((fs & (UFLO|LCOL|LCAR|RTRY)) || (dstat & DEAD) || xcount == 0) {
 	    /*
 	     * Check whether there were in fact 2 bytes written to
@@ -767,7 +765,7 @@ static irqreturn_t mace_interrupt(int irq, void *dev_id)
 	    dev->stats.tx_bytes += mp->tx_bufs[i]->len;
 	    ++dev->stats.tx_packets;
 	}
-	dev_kfree_skb_irq(mp->tx_bufs[i]);
+	dev_consume_skb_irq(mp->tx_bufs[i]);
 	--mp->tx_active;
 	if (++i >= N_TX_RING)
 	    i = 0;
@@ -802,10 +800,10 @@ static irqreturn_t mace_interrupt(int irq, void *dev_id)
     return IRQ_HANDLED;
 }
 
-static void mace_tx_timeout(unsigned long data)
+static void mace_tx_timeout(struct timer_list *t)
 {
-    struct net_device *dev = (struct net_device *) data;
-    struct mace_data *mp = netdev_priv(dev);
+    struct mace_data *mp = from_timer(mp, t, tx_timeout);
+    struct net_device *dev = macio_get_drvdata(mp->mdev);
     volatile struct mace __iomem *mb = mp->mace;
     volatile struct dbdma_regs __iomem *td = mp->tx_dma;
     volatile struct dbdma_regs __iomem *rd = mp->rx_dma;
@@ -830,7 +828,7 @@ static void mace_tx_timeout(unsigned long data)
     mace_reset(dev);
 
     /* restart rx dma */
-    cp = bus_to_virt(ld_le32(&rd->cmdptr));
+    cp = bus_to_virt(le32_to_cpu(rd->cmdptr));
     dbdma_reset(rd);
     out_le16(&cp->xfer_status, 0);
     out_le32(&rd->cmdptr, virt_to_bus(cp));
@@ -843,7 +841,7 @@ static void mace_tx_timeout(unsigned long data)
     if (mp->tx_bad_runt) {
 	mp->tx_bad_runt = 0;
     } else if (i != mp->tx_fill) {
-	dev_kfree_skb(mp->tx_bufs[i]);
+	dev_kfree_skb_irq(mp->tx_bufs[i]);
 	if (++i >= N_TX_RING)
 	    i = 0;
 	mp->tx_empty = i;
@@ -889,20 +887,20 @@ static irqreturn_t mace_rxdma_intr(int irq, void *dev_id)
     spin_lock_irqsave(&mp->lock, flags);
     for (i = mp->rx_empty; i != mp->rx_fill; ) {
 	cp = mp->rx_cmds + i;
-	stat = ld_le16(&cp->xfer_status);
+	stat = le16_to_cpu(cp->xfer_status);
 	if ((stat & ACTIVE) == 0) {
 	    next = i + 1;
 	    if (next >= N_RX_RING)
 		next = 0;
 	    np = mp->rx_cmds + next;
 	    if (next != mp->rx_fill &&
-		(ld_le16(&np->xfer_status) & ACTIVE) != 0) {
+		(le16_to_cpu(np->xfer_status) & ACTIVE) != 0) {
 		printk(KERN_DEBUG "mace: lost a status word\n");
 		++mace_lost_status;
 	    } else
 		break;
 	}
-	nb = ld_le16(&cp->req_count) - ld_le16(&cp->res_count);
+	nb = le16_to_cpu(cp->req_count) - le16_to_cpu(cp->res_count);
 	out_le16(&cp->command, DBDMA_STOP);
 	/* got a packet, have a look at it */
 	skb = mp->rx_bufs[i];
@@ -962,13 +960,13 @@ static irqreturn_t mace_rxdma_intr(int irq, void *dev_id)
 		mp->rx_bufs[i] = skb;
 	    }
 	}
-	st_le16(&cp->req_count, RX_BUFLEN);
+	cp->req_count = cpu_to_le16(RX_BUFLEN);
 	data = skb? skb->data: dummy_buf;
-	st_le32(&cp->phy_addr, virt_to_bus(data));
+	cp->phy_addr = cpu_to_le32(virt_to_bus(data));
 	out_le16(&cp->xfer_status, 0);
 	out_le16(&cp->command, INPUT_LAST + INTR_ALWAYS);
 #if 0
-	if ((ld_le32(&rd->status) & ACTIVE) != 0) {
+	if ((le32_to_cpu(rd->status) & ACTIVE) != 0) {
 	    out_le32(&rd->control, (PAUSE << 16) | PAUSE);
 	    while ((in_le32(&rd->status) & ACTIVE) != 0)
 		;
@@ -984,7 +982,7 @@ static irqreturn_t mace_rxdma_intr(int irq, void *dev_id)
     return IRQ_HANDLED;
 }
 
-static struct of_device_id mace_match[] =
+static const struct of_device_id mace_match[] =
 {
 	{
 	.name 		= "mace",

@@ -1,12 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * OMAP WakeupGen header file
  *
  * Copyright (C) 2011 Texas Instruments, Inc.
  *	Santosh Shilimkar <santosh.shilimkar@ti.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #ifndef OMAP_ARCH_WAKEUPGEN_H
 #define OMAP_ARCH_WAKEUPGEN_H
@@ -33,7 +30,6 @@
 #define OMAP_TIMESTAMPCYCLELO			0xc08
 #define OMAP_TIMESTAMPCYCLEHI			0xc0c
 
-extern int __init omap_wakeupgen_init(void);
 extern void __iomem *omap_get_wakeupgen_base(void);
 extern int omap_secure_apis_support(void);
 #endif

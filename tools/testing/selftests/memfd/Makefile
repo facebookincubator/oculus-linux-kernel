@@ -1,20 +1,30 @@
+# SPDX-License-Identifier: GPL-2.0
 CFLAGS += -D_FILE_OFFSET_BITS=64
 CFLAGS += -I../../../../include/uapi/
 CFLAGS += -I../../../../include/
+CFLAGS += -I../../../../usr/include/
 
-all:
-	gcc $(CFLAGS) memfd_test.c -o memfd_test
+TEST_GEN_PROGS := memfd_test
+TEST_PROGS := run_fuse_test.sh run_hugetlbfs_test.sh
+TEST_GEN_FILES := fuse_test fuse_mnt
 
-run_tests: all
-	gcc $(CFLAGS) memfd_test.c -o memfd_test
-	@./memfd_test || echo "memfd_test: [FAIL]"
+VAR_CFLAGS := $(shell pkg-config fuse --cflags 2>/dev/null)
+ifeq ($(VAR_CFLAGS),)
+VAR_CFLAGS := -D_FILE_OFFSET_BITS=64 -I/usr/include/fuse
+endif
 
-build_fuse:
-	gcc $(CFLAGS) fuse_mnt.c `pkg-config fuse --cflags --libs` -o fuse_mnt
-	gcc $(CFLAGS) fuse_test.c -o fuse_test
+VAR_LDLIBS := $(shell pkg-config fuse --libs 2>/dev/null)
+ifeq ($(VAR_LDLIBS),)
+VAR_LDLIBS := -lfuse -pthread
+endif
 
-run_fuse: build_fuse
-	@./run_fuse_test.sh || echo "fuse_test: [FAIL]"
+fuse_mnt.o: CFLAGS += $(VAR_CFLAGS)
 
-clean:
-	$(RM) memfd_test fuse_test
+include ../lib.mk
+
+$(OUTPUT)/fuse_mnt: LDLIBS += $(VAR_LDLIBS)
+
+$(OUTPUT)/memfd_test: memfd_test.c common.c
+$(OUTPUT)/fuse_test: fuse_test.c common.c
+
+EXTRA_CLEAN = $(OUTPUT)/common.o

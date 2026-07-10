@@ -1,0 +1,88 @@
+/dts-v1/;
+/plugin/;
+
+#include "oatmeal.dtsi"
+
+/ {
+	model = "Oatmeal NFF0";
+	compatible = "meta,oatmeal", "meta,oatmeal-nff0";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xc0>;
+};
+
+&tlmm {
+	soc_alive_led_on: soc_alive_led_on {
+		mux {
+			pins = "gpio128";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio128";
+			drive-strength = <8>;
+			bias-disable;
+		};
+	};
+};
+
+&soc {
+
+	gpio_leds {
+		compatible = "gpio-leds";
+		pinctrl-names = "default";
+		pinctrl-0 = <&soc_alive_led_on>;
+
+		soc_alive {
+			gpios = <&tlmm 128 GPIO_ACTIVE_HIGH>;
+			default-state = "on";
+			retain-state-suspended;
+		};
+	};
+};
+
+&wlan_kiwi {
+	qcom,board-id-override = /bits/ 8 <0xc0>;
+};
+
+&mp28167 {
+	status = "disabled";
+};
+
+&max77813 {
+	status = "ok";
+};
+
+&max17332 {
+	max17332,max-bob-voltage-uv = <4580000>;
+};
+
+&stusb4500 {
+	compatible = "st,stusb4500";
+};
+
+/* Clock generator for Acro and SubGHz radio */
+&clk_generator_acro {
+	mux {
+		pins = "gpio73", "gpio75";
+	};
+
+	config {
+		pins = "gpio73", "gpio75";
+	};
+};
+
+&wcn_temp_sensor {
+	status = "disabled";
+};
+
+&acro_temp_sensor {
+	status = "disabled";
+};
+
+&wcn_temp_zone {
+	status = "disabled";
+};
+
+&acro_temp_zone {
+	status = "disabled";
+};

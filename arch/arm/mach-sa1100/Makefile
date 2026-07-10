@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the linux kernel.
 #
 
 # Common support
-obj-y := clock.o generic.o irq.o time.o #nmi-oopser.o
+obj-y := clock.o generic.o #nmi-oopser.o
 
 # Specific board support
 obj-$(CONFIG_SA1100_ASSABET)		+= assabet.o

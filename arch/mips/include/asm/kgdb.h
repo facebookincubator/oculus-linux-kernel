@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_KGDB_H_
 #define __ASM_KGDB_H_
 
@@ -33,7 +34,6 @@
 #define CACHE_FLUSH_IS_SAFE	0
 
 extern void arch_kgdb_breakpoint(void);
-extern int kgdb_early_setup;
 extern void *saved_vectors[32];
 extern void handle_exception(struct pt_regs *regs);
 extern void breakinst(void);

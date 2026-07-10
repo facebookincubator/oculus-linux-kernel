@@ -1,22 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /* -*- mode: c; c-basic-offset: 8; -*-
  * vim: noexpandtab sw=8 ts=8 sts=0:
  *
  * Copyright (C) 2004, 2005 Oracle.  All rights reserved.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public
- * License along with this program; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
- * Boston, MA 021110-1307, USA.
  */
 
 #include <linux/module.h>
@@ -24,7 +10,7 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/string.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include "masklog.h"
 
@@ -63,6 +49,40 @@ static ssize_t mlog_mask_store(u64 mask, const char *buf, size_t count)
 
 	return count;
 }
+
+void __mlog_printk(const u64 *mask, const char *func, int line,
+		   const char *fmt, ...)
+{
+	struct va_format vaf;
+	va_list args;
+	const char *level;
+	const char *prefix = "";
+
+	if (!__mlog_test_u64(*mask, mlog_and_bits) ||
+	    __mlog_test_u64(*mask, mlog_not_bits))
+		return;
+
+	if (*mask & ML_ERROR) {
+		level = KERN_ERR;
+		prefix = "ERROR: ";
+	} else if (*mask & ML_NOTICE) {
+		level = KERN_NOTICE;
+	} else {
+		level = KERN_INFO;
+	}
+
+	va_start(args, fmt);
+
+	vaf.fmt = fmt;
+	vaf.va = &args;
+
+	printk("%s(%s,%u,%u):%s:%d %s%pV",
+	       level, current->comm, task_pid_nr(current),
+	       raw_smp_processor_id(), func, line, prefix, &vaf);
+
+	va_end(args);
+}
+EXPORT_SYMBOL_GPL(__mlog_printk);
 
 struct mlog_attribute {
 	struct attribute attr;

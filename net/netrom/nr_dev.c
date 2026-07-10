@@ -1,8 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  *
  * Copyright Jonathan Naylor G4KLX (g4klx@g4klx.demon.co.uk)
  */
@@ -64,36 +61,6 @@ int nr_rx_ip(struct sk_buff *skb, struct net_device *dev)
 
 	return 1;
 }
-
-#ifdef CONFIG_INET
-
-static int nr_rebuild_header(struct sk_buff *skb)
-{
-	unsigned char *bp = skb->data;
-
-	if (arp_find(bp + 7, skb))
-		return 1;
-
-	bp[6] &= ~AX25_CBIT;
-	bp[6] &= ~AX25_EBIT;
-	bp[6] |= AX25_SSSID_SPARE;
-	bp    += AX25_ADDR_LEN;
-
-	bp[6] &= ~AX25_CBIT;
-	bp[6] |= AX25_EBIT;
-	bp[6] |= AX25_SSSID_SPARE;
-
-	return 0;
-}
-
-#else
-
-static int nr_rebuild_header(struct sk_buff *skb)
-{
-	return 1;
-}
-
-#endif
 
 static int nr_header(struct sk_buff *skb, struct net_device *dev,
 		     unsigned short type,
@@ -188,7 +155,6 @@ static netdev_tx_t nr_xmit(struct sk_buff *skb, struct net_device *dev)
 
 static const struct header_ops nr_header_ops = {
 	.create	= nr_header,
-	.rebuild= nr_rebuild_header,
 };
 
 static const struct net_device_ops nr_netdev_ops = {

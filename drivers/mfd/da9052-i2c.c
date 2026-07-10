@@ -1,15 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * I2C access for DA9052 PMICs.
  *
  * Copyright(c) 2011 Dialog Semiconductor Ltd.
  *
  * Author: David Dajun Chen <dchen@diasemi.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
  */
 
 #include <linux/device.h>
@@ -70,7 +65,7 @@ static int da9052_i2c_fix(struct da9052 *da9052, unsigned char reg)
 	case DA9053_BA:
 	case DA9053_BB:
 		/* A dummy read to a safe register address. */
-	if (!i2c_safe_reg(reg))
+		if (!i2c_safe_reg(reg))
 			return regmap_read(da9052->regmap,
 					   DA9052_PARK_REGISTER,
 					   &val);
@@ -118,6 +113,7 @@ static const struct i2c_device_id da9052_i2c_id[] = {
 	{"da9053-bc", DA9053_BC},
 	{}
 };
+MODULE_DEVICE_TABLE(i2c, da9052_i2c_id);
 
 #ifdef CONFIG_OF
 static const struct of_device_id dialog_dt_ids[] = {
@@ -174,11 +170,7 @@ static int da9052_i2c_probe(struct i2c_client *client,
 		return ret;
 	}
 
-	ret = da9052_device_init(da9052, id->driver_data);
-	if (ret != 0)
-		return ret;
-
-	return 0;
+	return da9052_device_init(da9052, id->driver_data);
 }
 
 static int da9052_i2c_remove(struct i2c_client *client)
@@ -195,7 +187,6 @@ static struct i2c_driver da9052_i2c_driver = {
 	.id_table = da9052_i2c_id,
 	.driver = {
 		.name = "da9052",
-		.owner = THIS_MODULE,
 #ifdef CONFIG_OF
 		.of_match_table = dialog_dt_ids,
 #endif

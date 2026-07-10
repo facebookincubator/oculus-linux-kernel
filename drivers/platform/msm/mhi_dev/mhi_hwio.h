@@ -1,19 +1,10 @@
-/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- */
+/* SPDX-License-Identifier: GPL-2.0-only */
+/* Copyright (c) 2015, 2017-2020, The Linux Foundation. All rights reserved.*/
 
 #ifndef _MHI_HWIO_
 #define _MHI_HWIO_
 
-/* MHI register defintion */
+/* MHI register definition */
 #define MHI_CTRL_INT_STATUS_A7				(0x0004)
 #define MHI_CTRL_INT_STATUS_A7_STATUS_MASK		0xffffffff
 #define MHI_CTRL_INT_STATUS_A7_STATUS_SHIFT		0x0
@@ -29,6 +20,7 @@
 #define MHI_CTRL_INT_CLEAR_A7				(0x004C)
 #define MHI_CTRL_INT_CLEAR_A7_CLEAR_MASK		0xffffffff
 #define MHI_CTRL_INT_CLEAR_A7_CLEAR_SHIFT		0x0
+#define MHI_CTRL_INT_MMIO_WR_CLEAR			BIT(2)
 #define MHI_CTRL_INT_CRDB_CLEAR				BIT(1)
 #define MHI_CTRL_INT_CRDB_MHICTRL_CLEAR			BIT(0)
 
@@ -65,8 +57,8 @@
 #define MHIVER_MHIVER_SHIFT				0x0
 
 #define MHICFG						(0x0110)
-#define MHICFG_RESERVED_BITS31_24_MASK			0xff000000
-#define MHICFG_RESERVED_BITS31_24_SHIFT			0x18
+#define MHICFG_NHWER_MASK			0xff000000
+#define MHICFG_NHWER_SHIFT			0x18
 #define MHICFG_NER_MASK					0xff0000
 #define MHICFG_NER_SHIFT				0x10
 #define MHICFG_RESERVED_BITS15_8_MASK			0xff00
@@ -184,8 +176,14 @@
 #define ERDB_HIGHER_n_ERDB_HIGHER_MASK			0xffffffff
 #define ERDB_HIGHER_n_ERDB_HIGHER_SHIFT			0x0
 
+#define BHI_INTVEC					(0x220)
+#define BHI_INTVEC_MASK					0xFFFFFFFF
+#define BHI_INTVEC_SHIFT				0
+
 #define BHI_EXECENV					(0x228)
 #define BHI_EXECENV_MASK				0xFFFFFFFF
 #define BHI_EXECENV_SHIFT				0
+
+#define BHI_IMGTXDB					(0x218)
 
 #endif

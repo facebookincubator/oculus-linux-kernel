@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * au1550 psc spi controller driver
  * may work also with au1200, au1210, au1250
@@ -5,20 +6,6 @@
  *
  * Copyright (c) 2006 ATRON electronic GmbH
  * Author: Jan Nikitenko <jan.nikitenko@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/init.h>
@@ -237,13 +224,12 @@ static int au1550_spi_setupxfer(struct spi_device *spi, struct spi_transfer *t)
 	unsigned bpw, hz;
 	u32 cfg, stat;
 
-	bpw = spi->bits_per_word;
-	hz = spi->max_speed_hz;
 	if (t) {
-		if (t->bits_per_word)
-			bpw = t->bits_per_word;
-		if (t->speed_hz)
-			hz = t->speed_hz;
+		bpw = t->bits_per_word;
+		hz = t->speed_hz;
+	} else {
+		bpw = spi->bits_per_word;
+		hz = spi->max_speed_hz;
 	}
 
 	if (!hz)
@@ -965,7 +951,6 @@ static struct platform_driver au1550_spi_drv = {
 	.remove = au1550_spi_remove,
 	.driver = {
 		.name = "au1550-spi",
-		.owner = THIS_MODULE,
 	},
 };
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/kernel.h>
 #include <linux/pinctrl/pinctrl.h>
 #include "pinctrl-nomadik.h"
@@ -355,25 +356,6 @@ static const struct pinctrl_pin_desc nmk_db8500_pins[] = {
 	PINCTRL_PIN(DB8500_PIN_AC27, "GPIO267_AC27"),
 };
 
-#define DB8500_GPIO_RANGE(a, b, c) { .name = "DB8500", .id = a, .base = b, \
-			.pin_base = b, .npins = c }
-
-/*
- * This matches the 32-pin gpio chips registered by the GPIO portion. This
- * cannot be const since we assign the struct gpio_chip * pointer at runtime.
- */
-static struct pinctrl_gpio_range nmk_db8500_ranges[] = {
-	DB8500_GPIO_RANGE(0, 0, 32),
-	DB8500_GPIO_RANGE(1, 32, 5),
-	DB8500_GPIO_RANGE(2, 64, 32),
-	DB8500_GPIO_RANGE(3, 96, 2),
-	DB8500_GPIO_RANGE(4, 128, 32),
-	DB8500_GPIO_RANGE(5, 160, 12),
-	DB8500_GPIO_RANGE(6, 192, 32),
-	DB8500_GPIO_RANGE(7, 224, 7),
-	DB8500_GPIO_RANGE(8, 256, 12),
-};
-
 /*
  * Read the pin group names like this:
  * u0_a_1    = first groups of pins for uart0 on alt function a
@@ -398,13 +380,33 @@ static const unsigned msp0txrx_a_1_pins[] = { DB8500_PIN_AC4, DB8500_PIN_AC3 };
 static const unsigned msp0tfstck_a_1_pins[] = { DB8500_PIN_AF3, DB8500_PIN_AE3 };
 static const unsigned msp0rfsrck_a_1_pins[] = { DB8500_PIN_AD3, DB8500_PIN_AD4 };
 /* Basic pins of the MMC/SD card 0 interface */
-static const unsigned mc0_a_1_pins[] = { DB8500_PIN_AC2, DB8500_PIN_AC1,
-	DB8500_PIN_AB4, DB8500_PIN_AA3, DB8500_PIN_AA4, DB8500_PIN_AB2,
-	DB8500_PIN_Y4, DB8500_PIN_Y2, DB8500_PIN_AA2, DB8500_PIN_AA1 };
+static const unsigned mc0_a_1_pins[] = { DB8500_PIN_AC2, /* MC0_CMDDIR */
+					 DB8500_PIN_AC1, /* MC0_DAT0DIR */
+					 DB8500_PIN_AB4, /* MC0_DAT2DIR */
+					 DB8500_PIN_AA3, /* MC0_FBCLK */
+					 DB8500_PIN_AA4, /* MC0_CLK */
+					 DB8500_PIN_AB2, /* MC0_CMD */
+					 DB8500_PIN_Y4,  /* MC0_DAT0 */
+					 DB8500_PIN_Y2,  /* MC0_DAT1 */
+					 DB8500_PIN_AA2, /* MC0_DAT2 */
+					 DB8500_PIN_AA1  /* MC0_DAT3 */
+};
+/* MMC/SD card 0 interface without CMD/DAT0/DAT2 direction control */
+static const unsigned mc0_a_2_pins[] = { DB8500_PIN_AA3, /* MC0_FBCLK */
+					 DB8500_PIN_AA4, /* MC0_CLK */
+					 DB8500_PIN_AB2, /* MC0_CMD */
+					 DB8500_PIN_Y4,  /* MC0_DAT0 */
+					 DB8500_PIN_Y2,  /* MC0_DAT1 */
+					 DB8500_PIN_AA2, /* MC0_DAT2 */
+					 DB8500_PIN_AA1  /* MC0_DAT3 */
+};
 /* Often only 4 bits are used, then these are not needed (only used for MMC) */
-static const unsigned mc0_dat47_a_1_pins[] = { DB8500_PIN_W2, DB8500_PIN_W3,
-	DB8500_PIN_V3, DB8500_PIN_V2};
-static const unsigned mc0dat31dir_a_1_pins[] = { DB8500_PIN_AB3 };
+static const unsigned mc0_dat47_a_1_pins[] = { DB8500_PIN_W2, /* MC0_DAT4 */
+					       DB8500_PIN_W3, /* MC0_DAT5 */
+					       DB8500_PIN_V3, /* MC0_DAT6 */
+					       DB8500_PIN_V2  /* MC0_DAT7 */
+};
+static const unsigned mc0dat31dir_a_1_pins[] = { DB8500_PIN_AB3 }; /* MC0_DAT31DIR */
 /* MSP1 can only be on these pins, but TXD and RXD can be flipped */
 static const unsigned msp1txrx_a_1_pins[] = { DB8500_PIN_AF2, DB8500_PIN_AG2 };
 static const unsigned msp1_a_1_pins[] = { DB8500_PIN_AE1, DB8500_PIN_AE2 };
@@ -677,6 +679,7 @@ static const struct nmk_pingroup nmk_db8500_groups[] = {
 	DB8500_PIN_GROUP(msp0tfstck_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(msp0rfsrck_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(mc0_a_1, NMK_GPIO_ALT_A),
+	DB8500_PIN_GROUP(mc0_a_2, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(mc0_dat47_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(mc0dat31dir_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(msp1txrx_a_1, NMK_GPIO_ALT_A),
@@ -688,18 +691,21 @@ static const struct nmk_pingroup nmk_db8500_groups[] = {
 	DB8500_PIN_GROUP(lcd_d8_d11_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(lcd_d12_d23_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(kp_a_1, NMK_GPIO_ALT_A),
+	DB8500_PIN_GROUP(kpskaskb_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(mc2_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(ssp1_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(ssp0_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(i2c0_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(ipgpio0_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(ipgpio1_a_1, NMK_GPIO_ALT_A),
+	DB8500_PIN_GROUP(modem_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(kp_a_2, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(msp2sck_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(msp2_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(mc4_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(mc1_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(mc1_a_2, NMK_GPIO_ALT_A),
+	DB8500_PIN_GROUP(mc1dir_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(hsir_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(hsit_a_1, NMK_GPIO_ALT_A),
 	DB8500_PIN_GROUP(hsit_a_2, NMK_GPIO_ALT_A),
@@ -757,7 +763,7 @@ static const struct nmk_pingroup nmk_db8500_groups[] = {
 	DB8500_PIN_GROUP(u0_c_1, NMK_GPIO_ALT_C),
 	DB8500_PIN_GROUP(ipgpio4_c_1, NMK_GPIO_ALT_C),
 	DB8500_PIN_GROUP(ipgpio5_c_1, NMK_GPIO_ALT_C),
-	DB8500_PIN_GROUP(ipgpio6_c_1, NMK_GPIO_ALT_C),
+	DB8500_PIN_GROUP(ipgpio6_c_2, NMK_GPIO_ALT_C),
 	DB8500_PIN_GROUP(ipgpio7_c_1, NMK_GPIO_ALT_C),
 	DB8500_PIN_GROUP(smcleale_c_1, NMK_GPIO_ALT_C),
 	DB8500_PIN_GROUP(stmape_c_1, NMK_GPIO_ALT_C),
@@ -835,7 +841,7 @@ DB8500_FUNC_GROUPS(ipi2c, "ipi2c_a_1", "ipi2c_a_2");
  */
 DB8500_FUNC_GROUPS(msp0, "msp0txrx_a_1", "msp0tfstck_a_1", "msp0rfstck_a_1",
 		   "msp0txrx_b_1", "msp0sck_b_1");
-DB8500_FUNC_GROUPS(mc0, "mc0_a_1", "mc0_dat47_a_1", "mc0dat31dir_a_1");
+DB8500_FUNC_GROUPS(mc0, "mc0_a_1", "mc0_a_2", "mc0_dat47_a_1", "mc0dat31dir_a_1");
 /* MSP0 can swap RX/TX like MSP0 but has no SCK pin available */
 DB8500_FUNC_GROUPS(msp1, "msp1txrx_a_1", "msp1_a_1", "msp1txrx_b_1");
 DB8500_FUNC_GROUPS(lcdb, "lcdb_a_1");
@@ -952,6 +958,7 @@ static const struct nmk_function nmk_db8500_functions[] = {
 	FUNCTION(spi0),
 	FUNCTION(spi2),
 	FUNCTION(remap),
+	FUNCTION(sbag),
 	FUNCTION(ptm),
 	FUNCTION(rf),
 	FUNCTION(hx),
@@ -1238,8 +1245,6 @@ static const u16 db8500_prcm_gpiocr_regs[] = {
 };
 
 static const struct nmk_pinctrl_soc_data nmk_db8500_soc = {
-	.gpio_ranges = nmk_db8500_ranges,
-	.gpio_num_ranges = ARRAY_SIZE(nmk_db8500_ranges),
 	.pins = nmk_db8500_pins,
 	.npins = ARRAY_SIZE(nmk_db8500_pins),
 	.functions = nmk_db8500_functions,

@@ -28,13 +28,9 @@
 #include <linux/i2c.h>
 #include <linux/i2c-algo-bit.h>
 
-#ifdef CONFIG_MTRR
-#include <asm/mtrr.h>
-#endif
-
 struct s3fb_info {
 	int chip, rev, mclk_freq;
-	int mtrr_reg;
+	int wc_cookie;
 	struct vgastate state;
 	struct mutex open_lock;
 	unsigned int ref_count;
@@ -154,11 +150,7 @@ static const struct svga_timing_regs s3_timing_regs     = {
 
 
 static char *mode_option;
-
-#ifdef CONFIG_MTRR
 static int mtrr = 1;
-#endif
-
 static int fasttext = 1;
 
 
@@ -170,11 +162,8 @@ module_param(mode_option, charp, 0444);
 MODULE_PARM_DESC(mode_option, "Default video mode ('640x480-8@60', etc)");
 module_param_named(mode, mode_option, charp, 0444);
 MODULE_PARM_DESC(mode, "Default video mode ('640x480-8@60', etc) (deprecated)");
-
-#ifdef CONFIG_MTRR
 module_param(mtrr, int, 0444);
 MODULE_PARM_DESC(mtrr, "Enable write-combining with MTRR (1=enable, 0=disable, default=1)");
-#endif
 
 module_param(fasttext, int, 0644);
 MODULE_PARM_DESC(fasttext, "Enable S3 fast text mode (1=enable, 0=disable, default=1)");
@@ -913,6 +902,8 @@ static int s3fb_set_par(struct fb_info *info)
 	value = clamp((htotal + hsstart + 1) / 2 + 2, hsstart + 4, htotal + 1);
 	svga_wcrt_multi(par->state.vgabase, s3_dtpc_regs, value);
 
+	if (screen_size > info->screen_size)
+		screen_size = info->screen_size;
 	memset_io(info->screen_base, 0x00, screen_size);
 	/* Device and screen back on */
 	svga_wcrt_mask(par->state.vgabase, 0x17, 0x80, 0x80);
@@ -1048,7 +1039,7 @@ static int s3fb_pan_display(struct fb_var_screeninfo *var, struct fb_info *info)
 
 /* Frame buffer operations */
 
-static struct fb_ops s3fb_ops = {
+static const struct fb_ops s3fb_ops = {
 	.owner		= THIS_MODULE,
 	.fb_open	= s3fb_open,
 	.fb_release	= s3fb_release,
@@ -1139,10 +1130,8 @@ static int s3_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 
 	/* Allocate and fill driver data structure */
 	info = framebuffer_alloc(sizeof(struct s3fb_info), &(dev->dev));
-	if (!info) {
-		dev_err(&(dev->dev), "cannot allocate memory\n");
+	if (!info)
 		return -ENOMEM;
-	}
 
 	par = info->par;
 	mutex_init(&par->open_lock);
@@ -1168,7 +1157,7 @@ static int s3_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	info->fix.smem_len = pci_resource_len(dev, 0);
 
 	/* Map physical IO memory address into kernel space */
-	info->screen_base = pci_iomap(dev, 0, 0);
+	info->screen_base = pci_iomap_wc(dev, 0, 0);
 	if (! info->screen_base) {
 		rc = -ENOMEM;
 		dev_err(info->device, "iomap for framebuffer failed\n");
@@ -1182,7 +1171,7 @@ static int s3_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 
 	pcibios_bus_to_resource(dev->bus, &vga_res, &bus_reg);
 
-	par->state.vgabase = (void __iomem *) vga_res.start;
+	par->state.vgabase = (void __iomem *) (unsigned long) vga_res.start;
 
 	/* Unlock regs */
 	cr38 = vga_rcrt(par->state.vgabase, 0x38);
@@ -1365,12 +1354,9 @@ static int s3_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	/* Record a reference to the driver data */
 	pci_set_drvdata(dev, info);
 
-#ifdef CONFIG_MTRR
-	if (mtrr) {
-		par->mtrr_reg = -1;
-		par->mtrr_reg = mtrr_add(info->fix.smem_start, info->fix.smem_len, MTRR_TYPE_WRCOMB, 1);
-	}
-#endif
+	if (mtrr)
+		par->wc_cookie = arch_phys_wc_add(info->fix.smem_start,
+						  info->fix.smem_len);
 
 	return 0;
 
@@ -1405,14 +1391,7 @@ static void s3_pci_remove(struct pci_dev *dev)
 
 	if (info) {
 		par = info->par;
-
-#ifdef CONFIG_MTRR
-		if (par->mtrr_reg >= 0) {
-			mtrr_del(par->mtrr_reg, 0, 0);
-			par->mtrr_reg = -1;
-		}
-#endif
-
+		arch_phys_wc_del(par->wc_cookie);
 		unregister_framebuffer(info);
 		fb_dealloc_cmap(&info->cmap);
 
@@ -1433,9 +1412,9 @@ static void s3_pci_remove(struct pci_dev *dev)
 
 /* PCI suspend */
 
-static int s3_pci_suspend(struct pci_dev* dev, pm_message_t state)
+static int __maybe_unused s3_pci_suspend(struct device *dev)
 {
-	struct fb_info *info = pci_get_drvdata(dev);
+	struct fb_info *info = dev_get_drvdata(dev);
 	struct s3fb_info *par = info->par;
 
 	dev_info(info->device, "suspend\n");
@@ -1443,17 +1422,13 @@ static int s3_pci_suspend(struct pci_dev* dev, pm_message_t state)
 	console_lock();
 	mutex_lock(&(par->open_lock));
 
-	if ((state.event == PM_EVENT_FREEZE) || (par->ref_count == 0)) {
+	if (par->ref_count == 0) {
 		mutex_unlock(&(par->open_lock));
 		console_unlock();
 		return 0;
 	}
 
 	fb_set_suspend(info, 1);
-
-	pci_save_state(dev);
-	pci_disable_device(dev);
-	pci_set_power_state(dev, pci_choose_state(dev, state));
 
 	mutex_unlock(&(par->open_lock));
 	console_unlock();
@@ -1464,11 +1439,10 @@ static int s3_pci_suspend(struct pci_dev* dev, pm_message_t state)
 
 /* PCI resume */
 
-static int s3_pci_resume(struct pci_dev* dev)
+static int __maybe_unused s3_pci_resume(struct device *dev)
 {
-	struct fb_info *info = pci_get_drvdata(dev);
+	struct fb_info *info = dev_get_drvdata(dev);
 	struct s3fb_info *par = info->par;
-	int err;
 
 	dev_info(info->device, "resume\n");
 
@@ -1481,17 +1455,6 @@ static int s3_pci_resume(struct pci_dev* dev)
 		return 0;
 	}
 
-	pci_set_power_state(dev, PCI_D0);
-	pci_restore_state(dev);
-	err = pci_enable_device(dev);
-	if (err) {
-		mutex_unlock(&(par->open_lock));
-		console_unlock();
-		dev_err(info->device, "error %d enabling device for resume\n", err);
-		return err;
-	}
-	pci_set_master(dev);
-
 	s3fb_set_par(info);
 	fb_set_suspend(info, 0);
 
@@ -1501,10 +1464,20 @@ static int s3_pci_resume(struct pci_dev* dev)
 	return 0;
 }
 
+static const struct dev_pm_ops s3_pci_pm_ops = {
+#ifdef CONFIG_PM_SLEEP
+	.suspend	= s3_pci_suspend,
+	.resume		= s3_pci_resume,
+	.freeze		= NULL,
+	.thaw		= s3_pci_resume,
+	.poweroff	= s3_pci_suspend,
+	.restore	= s3_pci_resume,
+#endif
+};
 
 /* List of boards that we are trying to support */
 
-static struct pci_device_id s3_devices[] = {
+static const struct pci_device_id s3_devices[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_S3, 0x8810), .driver_data = CHIP_XXX_TRIO},
 	{PCI_DEVICE(PCI_VENDOR_ID_S3, 0x8811), .driver_data = CHIP_XXX_TRIO},
 	{PCI_DEVICE(PCI_VENDOR_ID_S3, 0x8812), .driver_data = CHIP_M65_AURORA64VP},
@@ -1533,8 +1506,7 @@ static struct pci_driver s3fb_pci_driver = {
 	.id_table	= s3_devices,
 	.probe		= s3_pci_probe,
 	.remove		= s3_pci_remove,
-	.suspend	= s3_pci_suspend,
-	.resume		= s3_pci_resume,
+	.driver.pm	= &s3_pci_pm_ops,
 };
 
 /* Parse user specified options */
@@ -1551,10 +1523,8 @@ static int  __init s3fb_setup(char *options)
 
 		if (!*opt)
 			continue;
-#ifdef CONFIG_MTRR
 		else if (!strncmp(opt, "mtrr:", 5))
 			mtrr = simple_strtoul(opt + 5, NULL, 0);
-#endif
 		else if (!strncmp(opt, "fasttext:", 9))
 			fasttext = simple_strtoul(opt + 9, NULL, 0);
 		else

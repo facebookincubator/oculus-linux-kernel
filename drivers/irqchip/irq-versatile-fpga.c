@@ -1,9 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  Support for Versatile FPGA-based IRQ controllers
  */
 #include <linux/bitops.h>
 #include <linux/irq.h>
 #include <linux/io.h>
+#include <linux/irqchip.h>
+#include <linux/irqchip/chained_irq.h>
 #include <linux/irqchip/versatile-fpga.h>
 #include <linux/irqdomain.h>
 #include <linux/module.h>
@@ -13,8 +16,6 @@
 
 #include <asm/exception.h>
 #include <asm/mach/irq.h>
-
-#include "irqchip.h"
 
 #define IRQ_STATUS		0x00
 #define IRQ_RAW_STATUS		0x04
@@ -66,21 +67,29 @@ static void fpga_irq_unmask(struct irq_data *d)
 	writel(mask, f->base + IRQ_ENABLE_SET);
 }
 
-static void fpga_irq_handle(unsigned int irq, struct irq_desc *desc)
+static void fpga_irq_handle(struct irq_desc *desc)
 {
+	struct irq_chip *chip = irq_desc_get_chip(desc);
 	struct fpga_irq_data *f = irq_desc_get_handler_data(desc);
-	u32 status = readl(f->base + IRQ_STATUS);
+	u32 status;
 
+	chained_irq_enter(chip, desc);
+
+	status = readl(f->base + IRQ_STATUS);
 	if (status == 0) {
-		do_bad_IRQ(irq, desc);
-		return;
+		do_bad_IRQ(desc);
+		goto out;
 	}
 
 	do {
-		irq = ffs(status) - 1;
+		unsigned int irq = ffs(status) - 1;
+
 		status &= ~(1 << irq);
 		generic_handle_irq(irq_find_mapping(f->domain, irq));
 	} while (status);
+
+out:
+	chained_irq_exit(chip, desc);
 }
 
 /*
@@ -128,11 +137,11 @@ static int fpga_irqdomain_map(struct irq_domain *d, unsigned int irq,
 	irq_set_chip_data(irq, f);
 	irq_set_chip_and_handler(irq, &f->chip,
 				handle_level_irq);
-	set_irq_flags(irq, IRQF_VALID | IRQF_PROBE);
+	irq_set_probe(irq);
 	return 0;
 }
 
-static struct irq_domain_ops fpga_irqdomain_ops = {
+static const struct irq_domain_ops fpga_irqdomain_ops = {
 	.map = fpga_irqdomain_map,
 	.xlate = irq_domain_xlate_onetwocell,
 };
@@ -156,8 +165,8 @@ void __init fpga_irq_init(void __iomem *base, const char *name, int irq_start,
 	f->valid = valid;
 
 	if (parent_irq != -1) {
-		irq_set_handler_data(parent_irq, f);
-		irq_set_chained_handler(parent_irq, fpga_irq_handle);
+		irq_set_chained_handler_and_data(parent_irq, fpga_irq_handle,
+						 f);
 	}
 
 	/* This will also allocate irq descriptors */
@@ -203,6 +212,9 @@ int __init fpga_irq_of_init(struct device_node *node,
 	if (of_property_read_u32(node, "valid-mask", &valid_mask))
 		valid_mask = 0;
 
+	writel(clear_mask, base + IRQ_ENABLE_CLEAR);
+	writel(clear_mask, base + FIQ_ENABLE_CLEAR);
+
 	/* Some chips are cascaded from a parent IRQ */
 	parent_irq = irq_of_parse_and_map(node, 0);
 	if (!parent_irq) {
@@ -211,9 +223,6 @@ int __init fpga_irq_of_init(struct device_node *node,
 	}
 
 	fpga_irq_init(base, node->name, 0, parent_irq, valid_mask, node);
-
-	writel(clear_mask, base + IRQ_ENABLE_CLEAR);
-	writel(clear_mask, base + FIQ_ENABLE_CLEAR);
 
 	/*
 	 * On Versatile AB/PB, some secondary interrupts have a direct
@@ -227,4 +236,5 @@ int __init fpga_irq_of_init(struct device_node *node,
 }
 IRQCHIP_DECLARE(arm_fpga, "arm,versatile-fpga-irq", fpga_irq_of_init);
 IRQCHIP_DECLARE(arm_fpga_sic, "arm,versatile-sic", fpga_irq_of_init);
+IRQCHIP_DECLARE(ox810se_rps, "oxsemi,ox810se-rps-irq", fpga_irq_of_init);
 #endif

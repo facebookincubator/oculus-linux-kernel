@@ -1,11 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (C) 2005 - 2014 Emulex
+ * Copyright (C) 2005 - 2016 Broadcom
  * All rights reserved.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version 2
- * as published by the Free Software Foundation. The full GNU General
- * Public License is included in this distribution in the file called COPYING.
  *
  * Contact Information:
  * linux-drivers@emulex.com
@@ -60,9 +56,7 @@ struct ocrdma_driver {
 	void (*state_change_handler) (struct ocrdma_dev *, u32 new_state);
 };
 
-enum {
-	BE_DEV_UP	= 0,
-	BE_DEV_DOWN	= 1,
+enum be_roce_event {
 	BE_DEV_SHUTDOWN = 2
 };
 

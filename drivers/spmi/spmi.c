@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 #include <linux/kernel.h>
 #include <linux/errno.h>
@@ -22,7 +14,10 @@
 #include <linux/pm_runtime.h>
 
 #include <dt-bindings/spmi/spmi.h>
+#define CREATE_TRACE_POINTS
+#include <trace/events/spmi.h>
 
+static bool is_registered;
 static DEFINE_IDA(ctrl_ida);
 
 static void spmi_dev_release(struct device *dev)
@@ -96,28 +91,42 @@ EXPORT_SYMBOL_GPL(spmi_device_remove);
 static inline int
 spmi_cmd(struct spmi_controller *ctrl, u8 opcode, u8 sid)
 {
+	int ret;
+
 	if (!ctrl || !ctrl->cmd || ctrl->dev.type != &spmi_ctrl_type)
 		return -EINVAL;
 
-	return ctrl->cmd(ctrl, opcode, sid);
+	ret = ctrl->cmd(ctrl, opcode, sid);
+	trace_spmi_cmd(opcode, sid, ret);
+	return ret;
 }
 
 static inline int spmi_read_cmd(struct spmi_controller *ctrl, u8 opcode,
 				u8 sid, u16 addr, u8 *buf, size_t len)
 {
+	int ret;
+
 	if (!ctrl || !ctrl->read_cmd || ctrl->dev.type != &spmi_ctrl_type)
 		return -EINVAL;
 
-	return ctrl->read_cmd(ctrl, opcode, sid, addr, buf, len);
+	trace_spmi_read_begin(opcode, sid, addr);
+	ret = ctrl->read_cmd(ctrl, opcode, sid, addr, buf, len);
+	trace_spmi_read_end(opcode, sid, addr, ret, len, buf);
+	return ret;
 }
 
 static inline int spmi_write_cmd(struct spmi_controller *ctrl, u8 opcode,
 				 u8 sid, u16 addr, const u8 *buf, size_t len)
 {
+	int ret;
+
 	if (!ctrl || !ctrl->write_cmd || ctrl->dev.type != &spmi_ctrl_type)
 		return -EINVAL;
 
-	return ctrl->write_cmd(ctrl, opcode, sid, addr, buf, len);
+	trace_spmi_write_begin(opcode, sid, addr, len, buf);
+	ret = ctrl->write_cmd(ctrl, opcode, sid, addr, buf, len);
+	trace_spmi_write_end(opcode, sid, addr, ret);
+	return ret;
 }
 
 /**
@@ -348,11 +357,23 @@ static int spmi_drv_remove(struct device *dev)
 	return 0;
 }
 
+static int spmi_drv_uevent(struct device *dev, struct kobj_uevent_env *env)
+{
+	int ret;
+
+	ret = of_device_uevent_modalias(dev, env);
+	if (ret != -ENODEV)
+		return ret;
+
+	return 0;
+}
+
 static struct bus_type spmi_bus_type = {
 	.name		= "spmi",
 	.match		= spmi_device_match,
 	.probe		= spmi_drv_probe,
 	.remove		= spmi_drv_remove,
+	.uevent		= spmi_drv_uevent,
 };
 
 /**
@@ -437,27 +458,25 @@ static void of_spmi_register_devices(struct spmi_controller *ctrl)
 		struct spmi_device *sdev;
 		u32 reg[2];
 
-		dev_dbg(&ctrl->dev, "adding child %s\n", node->full_name);
+		dev_dbg(&ctrl->dev, "adding child %pOF\n", node);
 
 		err = of_property_read_u32_array(node, "reg", reg, 2);
 		if (err) {
 			dev_err(&ctrl->dev,
-				"node %s err (%d) does not have 'reg' property\n",
-				node->full_name, err);
+				"node %pOF err (%d) does not have 'reg' property\n",
+				node, err);
 			continue;
 		}
 
 		if (reg[1] != SPMI_USID) {
 			dev_err(&ctrl->dev,
-				"node %s contains unsupported 'reg' entry\n",
-				node->full_name);
+				"node %pOF contains unsupported 'reg' entry\n",
+				node);
 			continue;
 		}
 
 		if (reg[0] >= SPMI_MAX_SLAVE_ID) {
-			dev_err(&ctrl->dev,
-				"invalid usid on node %s\n",
-				node->full_name);
+			dev_err(&ctrl->dev, "invalid usid on node %pOF\n", node);
 			continue;
 		}
 
@@ -491,7 +510,7 @@ int spmi_controller_add(struct spmi_controller *ctrl)
 	int ret;
 
 	/* Can't register until after driver model init */
-	if (WARN_ON(!spmi_bus_type.p))
+	if (WARN_ON(!is_registered))
 		return -EAGAIN;
 
 	ret = device_add(&ctrl->dev);
@@ -544,12 +563,13 @@ EXPORT_SYMBOL_GPL(spmi_controller_remove);
  * This API will register the client driver with the SPMI framework.
  * It is typically called from the driver's module-init function.
  */
-int spmi_driver_register(struct spmi_driver *sdrv)
+int __spmi_driver_register(struct spmi_driver *sdrv, struct module *owner)
 {
 	sdrv->driver.bus = &spmi_bus_type;
+	sdrv->driver.owner = owner;
 	return driver_register(&sdrv->driver);
 }
-EXPORT_SYMBOL_GPL(spmi_driver_register);
+EXPORT_SYMBOL_GPL(__spmi_driver_register);
 
 static void __exit spmi_exit(void)
 {
@@ -559,7 +579,14 @@ module_exit(spmi_exit);
 
 static int __init spmi_init(void)
 {
-	return bus_register(&spmi_bus_type);
+	int ret;
+
+	ret = bus_register(&spmi_bus_type);
+	if (ret)
+		return ret;
+
+	is_registered = true;
+	return 0;
 }
 postcore_initcall(spmi_init);
 

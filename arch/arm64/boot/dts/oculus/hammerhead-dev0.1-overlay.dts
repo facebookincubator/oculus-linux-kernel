@@ -1,0 +1,53 @@
+/dts-v1/;
+/plugin/;
+
+#include "hammerhead.dtsi"
+
+/ {
+	model = "Hammerhead Dev0.1";
+	compatible = "meta,hammerhead", "meta,hammerhead-dev0.1";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <34 0xa2>;
+};
+
+&max17332 {
+	interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&fg_mux_defaults>;
+};
+
+&qupv3_se0_spi_active {
+	config {
+		drive-strength = <10>;
+	};
+};
+
+&qupv3_se0_spi_sleep {
+	config {
+		drive-strength = <10>;
+	};
+};
+
+&qupv3_se0_spi_clk_sleep {
+	config {
+		drive-strength = <10>;
+	};
+};
+
+&qupv3_se0_spi_pins {
+	qupv3_se0_spi_cs_active {
+		config {
+			drive-strength = <6>;
+		};
+	};
+
+	qupv3_se0_spi_cs_sleep {
+		config {
+			drive-strength = <6>;
+		};
+	};
+};
+
+&usb_conn_gpio {
+	meta,suspend-disable;
+};

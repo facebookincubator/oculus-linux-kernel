@@ -95,7 +95,7 @@ static int asiliantfb_set_par(struct fb_info *info);
 static int asiliantfb_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
 				u_int transp, struct fb_info *info);
 
-static struct fb_ops asiliantfb_ops = {
+static const struct fb_ops asiliantfb_ops = {
 	.owner		= THIS_MODULE,
 	.fb_check_var	= asiliantfb_check_var,
 	.fb_set_par	= asiliantfb_set_par,
@@ -226,6 +226,9 @@ static int asiliantfb_check_var(struct fb_var_screeninfo *var,
 			     struct fb_info *p)
 {
 	unsigned long Ftarget, ratio, remainder;
+
+	if (!var->pixclock)
+		return -EINVAL;
 
 	ratio = 1000000 / var->pixclock;
 	remainder = 1000000 % var->pixclock;
@@ -474,7 +477,7 @@ static void chips_hw_init(struct fb_info *p)
 		write_fr(chips_init_fr[i].addr, chips_init_fr[i].data);
 }
 
-static struct fb_fix_screeninfo asiliantfb_fix = {
+static const struct fb_fix_screeninfo asiliantfb_fix = {
 	.id =		"Asiliant 69000",
 	.type =		FB_TYPE_PACKED_PIXELS,
 	.visual =	FB_VISUAL_PSEUDOCOLOR,
@@ -483,7 +486,7 @@ static struct fb_fix_screeninfo asiliantfb_fix = {
 	.smem_len =	0x200000,	/* 2MB */
 };
 
-static struct fb_var_screeninfo asiliantfb_var = {
+static const struct fb_var_screeninfo asiliantfb_var = {
 	.xres 		= 640,
 	.yres 		= 480,
 	.xres_virtual 	= 640,
@@ -592,7 +595,7 @@ static void asiliantfb_remove(struct pci_dev *dp)
 	framebuffer_release(p);
 }
 
-static struct pci_device_id asiliantfb_pci_tbl[] = {
+static const struct pci_device_id asiliantfb_pci_tbl[] = {
 	{ PCI_VENDOR_ID_CT, PCI_DEVICE_ID_CT_69000, PCI_ANY_ID, PCI_ANY_ID },
 	{ 0 }
 };

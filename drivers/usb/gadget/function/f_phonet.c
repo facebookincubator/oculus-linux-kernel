@@ -1,13 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * f_phonet.c -- USB CDC Phonet function
  *
  * Copyright (C) 2007-2008 Nokia Corporation. All rights reserved.
  *
  * Author: Rémi Denis-Courmont
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
  */
 
 #include <linux/mm.h>
@@ -51,7 +48,7 @@ struct f_phonet {
 	struct usb_ep			*in_ep, *out_ep;
 
 	struct usb_request		*in_req;
-	struct usb_request		*out_reqv[0];
+	struct usb_request		*out_reqv[];
 };
 
 static int phonet_rxq_size = 17;
@@ -215,6 +212,7 @@ static void pn_tx_complete(struct usb_ep *ep, struct usb_request *req)
 	case -ESHUTDOWN: /* disconnected */
 	case -ECONNRESET: /* disabled */
 		dev->stats.tx_aborted_errors++;
+		fallthrough;
 	default:
 		dev->stats.tx_errors++;
 	}
@@ -223,7 +221,7 @@ static void pn_tx_complete(struct usb_ep *ep, struct usb_request *req)
 	netif_wake_queue(dev);
 }
 
-static int pn_net_xmit(struct sk_buff *skb, struct net_device *dev)
+static netdev_tx_t pn_net_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct phonet_port *port = netdev_priv(dev);
 	struct f_phonet *fp;
@@ -261,19 +259,10 @@ out:
 	return NETDEV_TX_OK;
 }
 
-static int pn_net_mtu(struct net_device *dev, int new_mtu)
-{
-	if ((new_mtu < PHONET_MIN_MTU) || (new_mtu > PHONET_MAX_MTU))
-		return -EINVAL;
-	dev->mtu = new_mtu;
-	return 0;
-}
-
 static const struct net_device_ops pn_netdev_ops = {
 	.ndo_open	= pn_net_open,
 	.ndo_stop	= pn_net_close,
 	.ndo_start_xmit	= pn_net_xmit,
-	.ndo_change_mtu	= pn_net_mtu,
 };
 
 static void pn_net_setup(struct net_device *dev)
@@ -282,13 +271,15 @@ static void pn_net_setup(struct net_device *dev)
 	dev->type		= ARPHRD_PHONET;
 	dev->flags		= IFF_POINTOPOINT | IFF_NOARP;
 	dev->mtu		= PHONET_DEV_MTU;
+	dev->min_mtu		= PHONET_MIN_MTU;
+	dev->max_mtu		= PHONET_MAX_MTU;
 	dev->hard_header_len	= 1;
 	dev->dev_addr[0]	= PN_MEDIA_USB;
 	dev->addr_len		= 1;
 	dev->tx_queue_len	= 1;
 
 	dev->netdev_ops		= &pn_netdev_ops;
-	dev->destructor		= free_netdev;
+	dev->needs_free_netdev	= true;
 	dev->header_ops		= &phonet_header_ops;
 }
 
@@ -303,7 +294,7 @@ pn_rx_submit(struct f_phonet *fp, struct usb_request *req, gfp_t gfp_flags)
 	struct page *page;
 	int err;
 
-	page = __skb_alloc_page(gfp_flags | __GFP_NOMEMALLOC, NULL);
+	page = __dev_alloc_page(gfp_flags | __GFP_NOMEMALLOC);
 	if (!page)
 		return -ENOMEM;
 
@@ -343,7 +334,7 @@ static void pn_rx_complete(struct usb_ep *ep, struct usb_request *req)
 			skb->protocol = htons(ETH_P_PHONET);
 			skb_reset_mac_header(skb);
 			/* Can't use pskb_pull() on page in IRQ */
-			memcpy(skb_put(skb, 1), page_address(page), 1);
+			skb_put_data(skb, page_address(page), 1);
 		}
 
 		skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page,
@@ -369,6 +360,7 @@ static void pn_rx_complete(struct usb_ep *ep, struct usb_request *req)
 	/* Do resubmit in these cases: */
 	case -EOVERFLOW: /* request buffer overflow */
 		dev->stats.rx_over_errors++;
+		fallthrough;
 	default:
 		dev->stats.rx_errors++;
 		break;
@@ -377,7 +369,7 @@ static void pn_rx_complete(struct usb_ep *ep, struct usb_request *req)
 	if (page)
 		put_page(page);
 	if (req)
-		pn_rx_submit(fp, req, GFP_ATOMIC | __GFP_COLD);
+		pn_rx_submit(fp, req, GFP_ATOMIC);
 }
 
 /*-------------------------------------------------------------------------*/
@@ -417,7 +409,10 @@ static int pn_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			return -EINVAL;
 
 		spin_lock(&port->lock);
-		__pn_reset(f);
+
+		if (fp->in_ep->enabled)
+			__pn_reset(f);
+
 		if (alt == 1) {
 			int i;
 
@@ -437,7 +432,7 @@ static int pn_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 
 			netif_carrier_on(dev);
 			for (i = 0; i < phonet_rxq_size; i++)
-				pn_rx_submit(fp, fp->out_reqv[i], GFP_ATOMIC | __GFP_COLD);
+				pn_rx_submit(fp, fp->out_reqv[i], GFP_ATOMIC);
 		}
 		spin_unlock(&port->lock);
 		return 0;
@@ -527,20 +522,18 @@ static int pn_bind(struct usb_configuration *c, struct usb_function *f)
 	if (!ep)
 		goto err;
 	fp->out_ep = ep;
-	ep->driver_data = fp; /* Claim */
 
 	ep = usb_ep_autoconfig(gadget, &pn_fs_source_desc);
 	if (!ep)
 		goto err;
 	fp->in_ep = ep;
-	ep->driver_data = fp; /* Claim */
 
 	pn_hs_sink_desc.bEndpointAddress = pn_fs_sink_desc.bEndpointAddress;
 	pn_hs_source_desc.bEndpointAddress = pn_fs_source_desc.bEndpointAddress;
 
 	/* Do not try to bind Phonet twice... */
 	status = usb_assign_descriptors(f, fs_pn_function, hs_pn_function,
-			NULL);
+			NULL, NULL);
 	if (status)
 		goto err;
 
@@ -572,10 +565,6 @@ err_req:
 		usb_ep_free_request(fp->out_ep, fp->out_reqv[i]);
 	usb_free_all_descriptors(f);
 err:
-	if (fp->out_ep)
-		fp->out_ep->driver_data = NULL;
-	if (fp->in_ep)
-		fp->in_ep->driver_data = NULL;
 	ERROR(cdev, "USB CDC Phonet: cannot autoconfigure\n");
 	return status;
 }
@@ -584,21 +573,6 @@ static inline struct f_phonet_opts *to_f_phonet_opts(struct config_item *item)
 {
 	return container_of(to_config_group(item), struct f_phonet_opts,
 			func_inst.group);
-}
-
-CONFIGFS_ATTR_STRUCT(f_phonet_opts);
-static ssize_t f_phonet_attr_show(struct config_item *item,
-				struct configfs_attribute *attr,
-				char *page)
-{
-	struct f_phonet_opts *opts = to_f_phonet_opts(item);
-	struct f_phonet_opts_attribute *f_phonet_opts_attr =
-		container_of(attr, struct f_phonet_opts_attribute, attr);
-	ssize_t ret = 0;
-
-	if (f_phonet_opts_attr->show)
-		ret = f_phonet_opts_attr->show(opts, page);
-	return ret;
 }
 
 static void phonet_attr_release(struct config_item *item)
@@ -610,23 +584,21 @@ static void phonet_attr_release(struct config_item *item)
 
 static struct configfs_item_operations phonet_item_ops = {
 	.release		= phonet_attr_release,
-	.show_attribute		= f_phonet_attr_show,
 };
 
-static ssize_t f_phonet_ifname_show(struct f_phonet_opts *opts, char *page)
+static ssize_t f_phonet_ifname_show(struct config_item *item, char *page)
 {
-	return gether_get_ifname(opts->net, page, PAGE_SIZE);
+	return gether_get_ifname(to_f_phonet_opts(item)->net, page, PAGE_SIZE);
 }
 
-static struct f_phonet_opts_attribute f_phonet_ifname =
-	__CONFIGFS_ATTR_RO(ifname, f_phonet_ifname_show);
+CONFIGFS_ATTR_RO(f_phonet_, ifname);
 
 static struct configfs_attribute *phonet_attrs[] = {
-	&f_phonet_ifname.attr,
+	&f_phonet_attr_ifname,
 	NULL,
 };
 
-static struct config_item_type phonet_func_type = {
+static const struct config_item_type phonet_func_type = {
 	.ct_item_ops	= &phonet_item_ops,
 	.ct_attrs	= phonet_attrs,
 	.ct_owner	= THIS_MODULE,

@@ -15,7 +15,8 @@
 #include <linux/of_address.h>
 #include <linux/io.h>
 #include <linux/resource.h>
-#include "armada-370-xp.h"
+
+#include "common.h"
 
 static void __iomem *cpu_reset_base;
 static size_t cpu_reset_size;

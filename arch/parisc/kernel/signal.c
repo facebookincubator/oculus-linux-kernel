@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/arch/parisc/kernel/signal.c: Architecture-specific signal
  *  handling support.
@@ -9,11 +10,11 @@
  *
  *  Like the IA-64, we are a recent enough port (we are *starting*
  *  with glibc2.2) that we do not need to support the old non-realtime
- *  Linux signals.  Therefore we don't.  HP/UX signals will go in
- *  arch/parisc/hpux/signal.c when we figure out how to do them.
+ *  Linux signals.  Therefore we don't.
  */
 
 #include <linux/sched.h>
+#include <linux/sched/debug.h>
 #include <linux/mm.h>
 #include <linux/smp.h>
 #include <linux/kernel.h>
@@ -28,8 +29,7 @@
 #include <linux/elf.h>
 #include <asm/ucontext.h>
 #include <asm/rt_sigframe.h>
-#include <asm/uaccess.h>
-#include <asm/pgalloc.h>
+#include <linux/uaccess.h>
 #include <asm/cacheflush.h>
 #include <asm/asm-offsets.h>
 
@@ -64,7 +64,6 @@
 #define INSN_LDI_R25_1	 0x34190002 /* ldi  1,%r25 (in_syscall=1) */
 #define INSN_LDI_R20	 0x3414015a /* ldi  __NR_rt_sigreturn,%r20 */
 #define INSN_BLE_SR2_R0  0xe4008200 /* be,l 0x100(%sr2,%r0),%sr0,%r31 */
-#define INSN_NOP	 0x08000240 /* nop */
 /* For debugging */
 #define INSN_DIE_HORRIBLY 0x68000ccc /* stw %r0,0x666(%sr0,%r0) */
 
@@ -92,14 +91,13 @@ sys_rt_sigreturn(struct pt_regs *regs, int in_syscall)
 	unsigned long usp = (regs->gr[30] & ~(0x01UL));
 	unsigned long sigframe_size = PARISC_RT_SIGFRAME_SIZE;
 #ifdef CONFIG_64BIT
-	compat_sigset_t compat_set;
 	struct compat_rt_sigframe __user * compat_frame;
 	
 	if (is_compat_task())
 		sigframe_size = PARISC_RT_SIGFRAME_SIZE32;
 #endif
 
-	current_thread_info()->restart_block.fn = do_no_restart_syscall;
+	current->restart_block.fn = do_no_restart_syscall;
 
 	/* Unwind the user stack to get the rt_sigframe structure. */
 	frame = (struct rt_sigframe __user *)
@@ -113,9 +111,8 @@ sys_rt_sigreturn(struct pt_regs *regs, int in_syscall)
 	
 	if (is_compat_task()) {
 		DBG(2,"sys_rt_sigreturn: ELF32 process.\n");
-		if (__copy_from_user(&compat_set, &compat_frame->uc.uc_sigmask, sizeof(compat_set)))
+		if (get_compat_sigset(&set, &compat_frame->uc.uc_sigmask))
 			goto give_sigsegv;
-		sigset_32to64(&set,&compat_set);
 	} else
 #endif
 	{
@@ -166,7 +163,7 @@ sys_rt_sigreturn(struct pt_regs *regs, int in_syscall)
 
 give_sigsegv:
 	DBG(1,"sys_rt_sigreturn: Sending SIGSEGV\n");
-	force_sig(SIGSEGV, current);
+	force_sig(SIGSEGV);
 	return;
 }
 
@@ -233,13 +230,19 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs,
 	struct rt_sigframe __user *frame;
 	unsigned long rp, usp;
 	unsigned long haddr, sigframe_size;
+	unsigned long start, end;
 	int err = 0;
 #ifdef CONFIG_64BIT
 	struct compat_rt_sigframe __user * compat_frame;
-	compat_sigset_t compat_set;
 #endif
 	
 	usp = (regs->gr[30] & ~(0x01UL));
+#ifdef CONFIG_64BIT
+	if (is_compat_task()) {
+		/* The gcc alloca implementation leaves garbage in the upper 32 bits of sp */
+		usp = (compat_uint_t)usp;
+	}
+#endif
 	/*FIXME: frame_size parameter is unused, remove it. */
 	frame = get_sigframe(&ksig->ka, usp, sizeof(*frame));
 
@@ -259,8 +262,8 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs,
 		DBG(1,"setup_rt_frame: frame->uc.uc_mcontext = 0x%p\n", &compat_frame->uc.uc_mcontext);
 		err |= setup_sigcontext32(&compat_frame->uc.uc_mcontext, 
 					&compat_frame->regs, regs, in_syscall);
-		sigset_64to32(&compat_set,set);
-		err |= __copy_to_user(&compat_frame->uc.uc_sigmask, &compat_set, sizeof(compat_set));
+		err |= put_compat_sigset(&compat_frame->uc.uc_sigmask, set,
+					 sizeof(compat_sigset_t));
 	} else
 #endif
 	{	
@@ -300,10 +303,10 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs,
 	}
 #endif
 
-	flush_user_dcache_range((unsigned long) &frame->tramp[0],
-			   (unsigned long) &frame->tramp[TRAMP_SIZE]);
-	flush_user_icache_range((unsigned long) &frame->tramp[0],
-			   (unsigned long) &frame->tramp[TRAMP_SIZE]);
+	start = (unsigned long) &frame->tramp[0];
+	end = (unsigned long) &frame->tramp[TRAMP_SIZE];
+	flush_user_dcache_range_asm(start, end);
+	flush_user_icache_range_asm(start, end);
 
 	/* TRAMP Words 0-4, Length 5 = SIGRESTARTBLOCK_TRAMP
 	 * TRAMP Words 5-9, Length 4 = SIGRETURN_TRAMP
@@ -436,6 +439,55 @@ handle_signal(struct ksignal *ksig, struct pt_regs *regs, int in_syscall)
 		regs->gr[28]);
 }
 
+/*
+ * Check how the syscall number gets loaded into %r20 within
+ * the delay branch in userspace and adjust as needed.
+ */
+
+static void check_syscallno_in_delay_branch(struct pt_regs *regs)
+{
+	u32 opcode, source_reg;
+	u32 __user *uaddr;
+	int err;
+
+	/* Usually we don't have to restore %r20 (the system call number)
+	 * because it gets loaded in the delay slot of the branch external
+	 * instruction via the ldi instruction.
+	 * In some cases a register-to-register copy instruction might have
+	 * been used instead, in which case we need to copy the syscall
+	 * number into the source register before returning to userspace.
+	 */
+
+	/* A syscall is just a branch, so all we have to do is fiddle the
+	 * return pointer so that the ble instruction gets executed again.
+	 */
+	regs->gr[31] -= 8; /* delayed branching */
+
+	/* Get assembler opcode of code in delay branch */
+	uaddr = (unsigned int *) ((regs->gr[31] & ~3) + 4);
+	err = get_user(opcode, uaddr);
+	if (err)
+		return;
+
+	/* Check if delay branch uses "ldi int,%r20" */
+	if ((opcode & 0xffff0000) == 0x34140000)
+		return;	/* everything ok, just return */
+
+	/* Check if delay branch uses "nop" */
+	if (opcode == INSN_NOP)
+		return;
+
+	/* Check if delay branch uses "copy %rX,%r20" */
+	if ((opcode & 0xffe0ffff) == 0x08000254) {
+		source_reg = (opcode >> 16) & 31;
+		regs->gr[source_reg] = regs->gr[20];
+		return;
+	}
+
+	pr_warn("syscall restart: %s (pid %d): unexpected opcode 0x%08x\n",
+		current->comm, task_pid_nr(current), opcode);
+}
+
 static inline void
 syscall_restart(struct pt_regs *regs, struct k_sigaction *ka)
 {
@@ -456,12 +508,9 @@ syscall_restart(struct pt_regs *regs, struct k_sigaction *ka)
 			regs->gr[28] = -EINTR;
 			break;
 		}
-		/* fallthrough */
+		fallthrough;
 	case -ERESTARTNOINTR:
-		/* A syscall is just a branch, so all
-		 * we have to do is fiddle the return pointer.
-		 */
-		regs->gr[31] -= 8; /* delayed branching */
+		check_syscallno_in_delay_branch(regs);
 		break;
 	}
 }
@@ -476,6 +525,9 @@ insert_restart_trampoline(struct pt_regs *regs)
 	case -ERESTART_RESTARTBLOCK: {
 		/* Restart the system call - no handlers present */
 		unsigned int *usp = (unsigned int *)regs->gr[30];
+		unsigned long start = (unsigned long) &usp[2];
+		unsigned long end  = (unsigned long) &usp[5];
+		long err = 0;
 
 		/* Setup a trampoline to restart the syscall
 		 * with __NR_restart_syscall
@@ -487,38 +539,30 @@ insert_restart_trampoline(struct pt_regs *regs)
 		 * 16: ldi __NR_restart_syscall, %r20
 		 */
 #ifdef CONFIG_64BIT
-		put_user(regs->gr[31] >> 32, &usp[0]);
-		put_user(regs->gr[31] & 0xffffffff, &usp[1]);
-		put_user(0x0fc010df, &usp[2]);
+		err |= put_user(regs->gr[31] >> 32, &usp[0]);
+		err |= put_user(regs->gr[31] & 0xffffffff, &usp[1]);
+		err |= put_user(0x0fc010df, &usp[2]);
 #else
-		put_user(regs->gr[31], &usp[0]);
-		put_user(0x0fc0109f, &usp[2]);
+		err |= put_user(regs->gr[31], &usp[0]);
+		err |= put_user(0x0fc0109f, &usp[2]);
 #endif
-		put_user(0xe0008200, &usp[3]);
-		put_user(0x34140000, &usp[4]);
+		err |= put_user(0xe0008200, &usp[3]);
+		err |= put_user(0x34140000, &usp[4]);
 
-		/* Stack is 64-byte aligned, and we only need
-		 * to flush 1 cache line.
-		 * Flushing one cacheline is cheap.
-		 * "sync" on bigger (> 4 way) boxes is not.
-		 */
-		flush_user_dcache_range(regs->gr[30], regs->gr[30] + 4);
-		flush_user_icache_range(regs->gr[30], regs->gr[30] + 4);
+		WARN_ON(err);
+
+		/* flush data/instruction cache for new insns */
+		flush_user_dcache_range_asm(start, end);
+		flush_user_icache_range_asm(start, end);
 
 		regs->gr[31] = regs->gr[30] + 8;
 		return;
 	}
 	case -ERESTARTNOHAND:
 	case -ERESTARTSYS:
-	case -ERESTARTNOINTR: {
-		/* Hooray for delayed branching.  We don't
-		 * have to restore %r20 (the system call
-		 * number) because it gets loaded in the delay
-		 * slot of the branch external instruction.
-		 */
-		regs->gr[31] -= 8;
+	case -ERESTARTNOINTR:
+		check_syscallno_in_delay_branch(regs);
 		return;
-	}
 	default:
 		break;
 	}
@@ -565,11 +609,10 @@ do_signal(struct pt_regs *regs, long in_syscall)
 
 void do_notify_resume(struct pt_regs *regs, long in_syscall)
 {
-	if (test_thread_flag(TIF_SIGPENDING))
+	if (test_thread_flag(TIF_SIGPENDING) ||
+	    test_thread_flag(TIF_NOTIFY_SIGNAL))
 		do_signal(regs, in_syscall);
 
-	if (test_thread_flag(TIF_NOTIFY_RESUME)) {
-		clear_thread_flag(TIF_NOTIFY_RESUME);
+	if (test_thread_flag(TIF_NOTIFY_RESUME))
 		tracehook_notify_resume(regs);
-	}
 }

@@ -1,3 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+static inline void init_mmu(void)
+{
+}
+
+static inline void init_kio(void)
+{
+}
+
 static inline void enter_lazy_tlb(struct mm_struct *mm, struct task_struct *tsk)
 {
 }

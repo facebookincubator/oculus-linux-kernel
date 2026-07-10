@@ -1,11 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Ralink RT3662/RT3883 SoC register definitions
  *
  * Copyright (C) 2011-2012 Gabor Juhos <juhosg@openwrt.org>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
  */
 
 #ifndef _RT3883_REGS_H_
@@ -112,8 +109,6 @@
 #define RT3883_CLKCFG1_PCI_CLK_EN	BIT(19)
 #define RT3883_CLKCFG1_UPHY0_CLK_EN	BIT(18)
 
-#define RT3883_GPIO_MODE_I2C		BIT(0)
-#define RT3883_GPIO_MODE_SPI		BIT(1)
 #define RT3883_GPIO_MODE_UART0_SHIFT	2
 #define RT3883_GPIO_MODE_UART0_MASK	0x7
 #define RT3883_GPIO_MODE_UART0(x)	((x) << RT3883_GPIO_MODE_UART0_SHIFT)
@@ -125,11 +120,15 @@
 #define RT3883_GPIO_MODE_GPIO_UARTF	0x5
 #define RT3883_GPIO_MODE_GPIO_I2S	0x6
 #define RT3883_GPIO_MODE_GPIO		0x7
-#define RT3883_GPIO_MODE_UART1		BIT(5)
-#define RT3883_GPIO_MODE_JTAG		BIT(6)
-#define RT3883_GPIO_MODE_MDIO		BIT(7)
-#define RT3883_GPIO_MODE_GE1		BIT(9)
-#define RT3883_GPIO_MODE_GE2		BIT(10)
+
+#define RT3883_GPIO_MODE_I2C		0
+#define RT3883_GPIO_MODE_SPI		1
+#define RT3883_GPIO_MODE_UART1		5
+#define RT3883_GPIO_MODE_JTAG		6
+#define RT3883_GPIO_MODE_MDIO		7
+#define RT3883_GPIO_MODE_GE1		9
+#define RT3883_GPIO_MODE_GE2		10
+
 #define RT3883_GPIO_MODE_PCI_SHIFT	11
 #define RT3883_GPIO_MODE_PCI_MASK	0x7
 #define RT3883_GPIO_MODE_PCI		(RT3883_GPIO_MODE_PCI_MASK << RT3883_GPIO_MODE_PCI_SHIFT)

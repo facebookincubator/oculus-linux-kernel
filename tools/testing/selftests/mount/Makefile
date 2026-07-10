@@ -1,17 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0
 # Makefile for mount selftests.
+CFLAGS = -Wall \
+         -O2
 
-all: unprivileged-remount-test
+TEST_PROGS := run_unprivileged_remount.sh run_nosymfollow.sh
+TEST_GEN_FILES := unprivileged-remount-test nosymfollow-test
 
-unprivileged-remount-test: unprivileged-remount-test.c
-	gcc -Wall -O2 unprivileged-remount-test.c -o unprivileged-remount-test
-
-# Allow specific tests to be selected.
-test_unprivileged_remount: unprivileged-remount-test
-	@if [ -f /proc/self/uid_map ] ; then ./unprivileged-remount-test ; fi
-
-run_tests: all test_unprivileged_remount
-
-clean:
-	rm -f unprivileged-remount-test
-
-.PHONY: all test_unprivileged_remount
+include ../lib.mk

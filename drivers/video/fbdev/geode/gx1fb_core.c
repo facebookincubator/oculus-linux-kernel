@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * drivers/video/geode/gx1fb_core.c
  *   -- Geode GX1 framebuffer driver
  *
  * Copyright (C) 2005 Arcom Control Systems Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/module.h>
@@ -256,7 +252,7 @@ static int parse_panel_option(struct fb_info *info)
 	return 0;
 }
 
-static struct fb_ops gx1fb_ops = {
+static const struct fb_ops gx1fb_ops = {
 	.owner		= THIS_MODULE,
 	.fb_check_var	= gx1fb_check_var,
 	.fb_set_par	= gx1fb_set_par,
@@ -374,10 +370,8 @@ static int gx1fb_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		release_mem_region(gx1_gx_base() + 0x8300, 0x100);
 	}
 
-	if (info) {
-		fb_dealloc_cmap(&info->cmap);
-		framebuffer_release(info);
-	}
+	fb_dealloc_cmap(&info->cmap);
+	framebuffer_release(info);
 
 	return ret;
 }

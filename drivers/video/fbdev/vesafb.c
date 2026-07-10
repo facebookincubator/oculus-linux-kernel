@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * framebuffer driver for VBE 2.0 compliant graphic boards
  *
@@ -19,15 +20,20 @@
 #include <linux/init.h>
 #include <linux/platform_device.h>
 #include <linux/screen_info.h>
+#include <linux/io.h>
 
 #include <video/vga.h>
-#include <asm/io.h>
-#include <asm/mtrr.h>
 
 #define dac_reg	(0x3c8)
 #define dac_val	(0x3c9)
 
 /* --------------------------------------------------------------------- */
+
+struct vesafb_par {
+	u32 pseudo_palette[256];
+	int wc_cookie;
+	struct resource *region;
+};
 
 static struct fb_var_screeninfo vesafb_defined = {
 	.activate	= FB_ACTIVATE_NOW,
@@ -175,7 +181,10 @@ static int vesafb_setcolreg(unsigned regno, unsigned red, unsigned green,
 
 static void vesafb_destroy(struct fb_info *info)
 {
+	struct vesafb_par *par = info->par;
+
 	fb_dealloc_cmap(&info->cmap);
+	arch_phys_wc_del(par->wc_cookie);
 	if (info->screen_base)
 		iounmap(info->screen_base);
 	release_mem_region(info->apertures->ranges[0].base, info->apertures->ranges[0].size);
@@ -228,6 +237,7 @@ static int vesafb_setup(char *options)
 static int vesafb_probe(struct platform_device *dev)
 {
 	struct fb_info *info;
+	struct vesafb_par *par;
 	int i, err;
 	unsigned int size_vmode;
 	unsigned int size_remap;
@@ -291,14 +301,14 @@ static int vesafb_probe(struct platform_device *dev)
 		   spaces our resource handlers simply don't know about */
 	}
 
-	info = framebuffer_alloc(sizeof(u32) * 256, &dev->dev);
+	info = framebuffer_alloc(sizeof(struct vesafb_par), &dev->dev);
 	if (!info) {
 		release_mem_region(vesafb_fix.smem_start, size_total);
 		return -ENOMEM;
 	}
 	platform_set_drvdata(dev, info);
-	info->pseudo_palette = info->par;
-	info->par = NULL;
+	par = info->par;
+	info->pseudo_palette = par->pseudo_palette;
 
 	/* set vesafb aperture size for generic probing */
 	info->apertures = alloc_apertures(1);
@@ -328,8 +338,8 @@ static int vesafb_probe(struct platform_device *dev)
 		printk(KERN_INFO "vesafb: pmi: set display start = %p, set palette = %p\n",pmi_start,pmi_pal);
 		if (pmi_base[3]) {
 			printk(KERN_INFO "vesafb: pmi: ports = ");
-				for (i = pmi_base[3]/2; pmi_base[i] != 0xffff; i++)
-					printk("%x ",pmi_base[i]);
+			for (i = pmi_base[3]/2; pmi_base[i] != 0xffff; i++)
+				printk("%x ", pmi_base[i]);
 			printk("\n");
 			if (pmi_base[i] != 0xffff) {
 				/*
@@ -402,68 +412,35 @@ static int vesafb_probe(struct platform_device *dev)
 
 	/* request failure does not faze us, as vgacon probably has this
 	 * region already (FIXME) */
-	request_region(0x3c0, 32, "vesafb");
+	par->region = request_region(0x3c0, 32, "vesafb");
 
-#ifdef CONFIG_MTRR
-	if (mtrr) {
+	if (mtrr == 3) {
 		unsigned int temp_size = size_total;
-		unsigned int type = 0;
 
-		switch (mtrr) {
-		case 1:
-			type = MTRR_TYPE_UNCACHABLE;
-			break;
-		case 2:
-			type = MTRR_TYPE_WRBACK;
-			break;
-		case 3:
-			type = MTRR_TYPE_WRCOMB;
-			break;
-		case 4:
-			type = MTRR_TYPE_WRTHROUGH;
-			break;
-		default:
-			type = 0;
-			break;
-		}
+		/* Find the largest power-of-two */
+		temp_size = roundup_pow_of_two(temp_size);
 
-		if (type) {
-			int rc;
+		/* Try and find a power of two to add */
+		do {
+			par->wc_cookie =
+				arch_phys_wc_add(vesafb_fix.smem_start,
+						 temp_size);
+			temp_size >>= 1;
+		} while (temp_size >= PAGE_SIZE && par->wc_cookie < 0);
 
-			/* Find the largest power-of-two */
-			temp_size = roundup_pow_of_two(temp_size);
-
-			/* Try and find a power of two to add */
-			do {
-				rc = mtrr_add(vesafb_fix.smem_start, temp_size,
-					      type, 1);
-				temp_size >>= 1;
-			} while (temp_size >= PAGE_SIZE && rc == -EINVAL);
-		}
-	}
-#endif
-	
-	switch (mtrr) {
-	case 1: /* uncachable */
-		info->screen_base = ioremap_nocache(vesafb_fix.smem_start, vesafb_fix.smem_len);
-		break;
-	case 2: /* write-back */
-		info->screen_base = ioremap_cache(vesafb_fix.smem_start, vesafb_fix.smem_len);
-		break;
-	case 3: /* write-combining */
 		info->screen_base = ioremap_wc(vesafb_fix.smem_start, vesafb_fix.smem_len);
-		break;
-	case 4: /* write-through */
-	default:
+	} else {
+		if (mtrr && mtrr != 3)
+			WARN_ONCE(1, "Only MTRR_TYPE_WRCOMB (3) make sense\n");
 		info->screen_base = ioremap(vesafb_fix.smem_start, vesafb_fix.smem_len);
-		break;
 	}
+
 	if (!info->screen_base) {
 		printk(KERN_ERR
 		       "vesafb: abort, cannot ioremap video memory 0x%x @ 0x%lx\n",
 			vesafb_fix.smem_len, vesafb_fix.smem_start);
 		err = -EIO;
-		goto err;
+		goto err_release_region;
 	}
 
 	printk(KERN_INFO "vesafb: framebuffer at 0x%lx, mapped to 0x%p, "
@@ -471,29 +448,33 @@ static int vesafb_probe(struct platform_device *dev)
 	       vesafb_fix.smem_start, info->screen_base,
 	       size_remap/1024, size_total/1024);
 
+	if (!ypan)
+		vesafb_ops.fb_pan_display = NULL;
+
 	info->fbops = &vesafb_ops;
 	info->var = vesafb_defined;
 	info->fix = vesafb_fix;
 	info->flags = FBINFO_FLAG_DEFAULT | FBINFO_MISC_FIRMWARE |
 		(ypan ? FBINFO_HWACCEL_YPAN : 0);
 
-	if (!ypan)
-		info->fbops->fb_pan_display = NULL;
-
 	if (fb_alloc_cmap(&info->cmap, 256, 0) < 0) {
 		err = -ENOMEM;
-		goto err;
+		goto err_release_region;
 	}
 	if (register_framebuffer(info)<0) {
 		err = -EINVAL;
 		fb_dealloc_cmap(&info->cmap);
-		goto err;
+		goto err_release_region;
 	}
 	fb_info(info, "%s frame buffer device\n", info->fix.id);
 	return 0;
-err:
+err_release_region:
+	arch_phys_wc_del(par->wc_cookie);
 	if (info->screen_base)
 		iounmap(info->screen_base);
+	if (par->region)
+		release_region(0x3c0, 32);
+err:
 	framebuffer_release(info);
 	release_mem_region(vesafb_fix.smem_start, size_total);
 	return err;
@@ -504,6 +485,8 @@ static int vesafb_remove(struct platform_device *pdev)
 	struct fb_info *info = platform_get_drvdata(pdev);
 
 	unregister_framebuffer(info);
+	if (((struct vesafb_par *)(info->par))->region)
+		release_region(0x3c0, 32);
 	framebuffer_release(info);
 
 	return 0;
@@ -512,7 +495,6 @@ static int vesafb_remove(struct platform_device *pdev)
 static struct platform_driver vesafb_driver = {
 	.driver = {
 		.name = "vesa-framebuffer",
-		.owner = THIS_MODULE,
 	},
 	.probe = vesafb_probe,
 	.remove = vesafb_remove,

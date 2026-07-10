@@ -1,14 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
    Copyright (c) 2011,2012 Intel Corp.
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License version 2 and
-   only version 2 as published by the Free Software Foundation.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
 */
 
 #ifndef __AMP_H
@@ -44,6 +37,20 @@ void amp_create_phylink(struct hci_dev *hdev, struct amp_mgr *mgr,
 			struct hci_conn *hcon);
 void amp_accept_phylink(struct hci_dev *hdev, struct amp_mgr *mgr,
 			struct hci_conn *hcon);
+
+#if IS_ENABLED(CONFIG_BT_HS)
+void amp_create_logical_link(struct l2cap_chan *chan);
+void amp_disconnect_logical_link(struct hci_chan *hchan);
+#else
+static inline void amp_create_logical_link(struct l2cap_chan *chan)
+{
+}
+
+static inline void amp_disconnect_logical_link(struct hci_chan *hchan)
+{
+}
+#endif
+
 void amp_write_remote_assoc(struct hci_dev *hdev, u8 handle);
 void amp_write_rem_assoc_continue(struct hci_dev *hdev, u8 handle);
 void amp_physical_cfm(struct hci_conn *bredr_hcon, struct hci_conn *hs_hcon);

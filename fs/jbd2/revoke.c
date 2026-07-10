@@ -1,13 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * linux/fs/jbd2/revoke.c
  *
  * Written by Stephen C. Tweedie <sct@redhat.com>, 2000
  *
  * Copyright 2000 Red Hat corp --- All Rights Reserved
- *
- * This file is part of the Linux kernel and is made available under
- * the terms of the GNU General Public License, version 2, or at your
- * option, any later version, incorporated herein by reference.
  *
  * Journal revoke routines for the generic filesystem journaling code;
  * part of the ext2fs journaling system.
@@ -122,11 +119,11 @@ struct jbd2_revoke_table_s
 
 
 #ifdef __KERNEL__
-static void write_one_revoke_record(journal_t *, transaction_t *,
+static void write_one_revoke_record(transaction_t *,
 				    struct list_head *,
 				    struct buffer_head **, int *,
-				    struct jbd2_revoke_record_s *, int);
-static void flush_descriptor(journal_t *, struct buffer_head *, int, int);
+				    struct jbd2_revoke_record_s *);
+static void flush_descriptor(journal_t *, struct buffer_head *, int);
 #endif
 
 /* Utility functions to maintain the revoke table */
@@ -141,11 +138,13 @@ static int insert_revoke_hash(journal_t *journal, unsigned long long blocknr,
 {
 	struct list_head *hash_list;
 	struct jbd2_revoke_record_s *record;
+	gfp_t gfp_mask = GFP_NOFS;
 
-repeat:
-	record = kmem_cache_alloc(jbd2_revoke_record_cache, GFP_NOFS);
+	if (journal_oom_retry)
+		gfp_mask |= __GFP_NOFAIL;
+	record = kmem_cache_alloc(jbd2_revoke_record_cache, gfp_mask);
 	if (!record)
-		goto oom;
+		return -ENOMEM;
 
 	record->sequence = seq;
 	record->blocknr = blocknr;
@@ -154,13 +153,6 @@ repeat:
 	list_add(&record->hash, hash_list);
 	spin_unlock(&journal->j_revoke_lock);
 	return 0;
-
-oom:
-	if (!journal_oom_retry)
-		return -ENOMEM;
-	jbd_debug(1, "ENOMEM in %s, retrying\n", __func__);
-	yield();
-	goto repeat;
 }
 
 /* Find a revoke record in the journal's hash table. */
@@ -186,37 +178,41 @@ static struct jbd2_revoke_record_s *find_revoke_record(journal_t *journal,
 	return NULL;
 }
 
-void jbd2_journal_destroy_revoke_caches(void)
+void jbd2_journal_destroy_revoke_record_cache(void)
 {
-	if (jbd2_revoke_record_cache) {
-		kmem_cache_destroy(jbd2_revoke_record_cache);
-		jbd2_revoke_record_cache = NULL;
-	}
-	if (jbd2_revoke_table_cache) {
-		kmem_cache_destroy(jbd2_revoke_table_cache);
-		jbd2_revoke_table_cache = NULL;
-	}
+	kmem_cache_destroy(jbd2_revoke_record_cache);
+	jbd2_revoke_record_cache = NULL;
 }
 
-int __init jbd2_journal_init_revoke_caches(void)
+void jbd2_journal_destroy_revoke_table_cache(void)
+{
+	kmem_cache_destroy(jbd2_revoke_table_cache);
+	jbd2_revoke_table_cache = NULL;
+}
+
+int __init jbd2_journal_init_revoke_record_cache(void)
 {
 	J_ASSERT(!jbd2_revoke_record_cache);
-	J_ASSERT(!jbd2_revoke_table_cache);
-
 	jbd2_revoke_record_cache = KMEM_CACHE(jbd2_revoke_record_s,
 					SLAB_HWCACHE_ALIGN|SLAB_TEMPORARY);
-	if (!jbd2_revoke_record_cache)
-		goto record_cache_failure;
 
+	if (!jbd2_revoke_record_cache) {
+		pr_emerg("JBD2: failed to create revoke_record cache\n");
+		return -ENOMEM;
+	}
+	return 0;
+}
+
+int __init jbd2_journal_init_revoke_table_cache(void)
+{
+	J_ASSERT(!jbd2_revoke_table_cache);
 	jbd2_revoke_table_cache = KMEM_CACHE(jbd2_revoke_table_s,
 					     SLAB_TEMPORARY);
-	if (!jbd2_revoke_table_cache)
-		goto table_cache_failure;
-	return 0;
-table_cache_failure:
-	jbd2_journal_destroy_revoke_caches();
-record_cache_failure:
+	if (!jbd2_revoke_table_cache) {
+		pr_emerg("JBD2: failed to create revoke_table cache\n");
 		return -ENOMEM;
+	}
+	return 0;
 }
 
 static struct jbd2_revoke_table_s *jbd2_journal_init_revoke_table(int hash_size)
@@ -235,7 +231,7 @@ static struct jbd2_revoke_table_s *jbd2_journal_init_revoke_table(int hash_size)
 	table->hash_size = hash_size;
 	table->hash_shift = shift;
 	table->hash_table =
-		kmalloc(hash_size * sizeof(struct list_head), GFP_KERNEL);
+		kmalloc_array(hash_size, sizeof(struct list_head), GFP_KERNEL);
 	if (!table->hash_table) {
 		kmem_cache_free(jbd2_revoke_table_cache, table);
 		table = NULL;
@@ -285,6 +281,7 @@ int jbd2_journal_init_revoke(journal_t *journal, int hash_size)
 
 fail1:
 	jbd2_journal_destroy_revoke_table(journal->j_revoke_table[0]);
+	journal->j_revoke_table[0] = NULL;
 fail0:
 	return -ENOMEM;
 }
@@ -374,6 +371,11 @@ int jbd2_journal_revoke(handle_t *handle, unsigned long long blocknr,
 	}
 #endif
 
+	if (WARN_ON_ONCE(handle->h_revoke_credits <= 0)) {
+		if (!bh_in)
+			brelse(bh);
+		return -EIO;
+	}
 	/* We really ought not ever to revoke twice in a row without
            first having the revoke cancelled: it's illegal to free a
            block twice without allocating it in between! */
@@ -394,6 +396,7 @@ int jbd2_journal_revoke(handle_t *handle, unsigned long long blocknr,
 			__brelse(bh);
 		}
 	}
+	handle->h_revoke_credits--;
 
 	jbd_debug(2, "insert revoke for block %llu, bh_in=%p\n",blocknr, bh_in);
 	err = insert_revoke_hash(journal, blocknr,
@@ -524,11 +527,10 @@ void jbd2_journal_switch_revoke_table(journal_t *journal)
  * Write revoke records to the journal for all entries in the current
  * revoke hash, deleting the entries as we go.
  */
-void jbd2_journal_write_revoke_records(journal_t *journal,
-				       transaction_t *transaction,
-				       struct list_head *log_bufs,
-				       int write_op)
+void jbd2_journal_write_revoke_records(transaction_t *transaction,
+				       struct list_head *log_bufs)
 {
+	journal_t *journal = transaction->t_journal;
 	struct buffer_head *descriptor;
 	struct jbd2_revoke_record_s *record;
 	struct jbd2_revoke_table_s *revoke;
@@ -549,16 +551,15 @@ void jbd2_journal_write_revoke_records(journal_t *journal,
 		while (!list_empty(hash_list)) {
 			record = (struct jbd2_revoke_record_s *)
 				hash_list->next;
-			write_one_revoke_record(journal, transaction, log_bufs,
-						&descriptor, &offset,
-						record, write_op);
+			write_one_revoke_record(transaction, log_bufs,
+						&descriptor, &offset, record);
 			count++;
 			list_del(&record->hash);
 			kmem_cache_free(jbd2_revoke_record_cache, record);
 		}
 	}
 	if (descriptor)
-		flush_descriptor(journal, descriptor, offset, write_op);
+		flush_descriptor(journal, descriptor, offset);
 	jbd_debug(1, "Wrote %d revoke records\n", count);
 }
 
@@ -567,18 +568,16 @@ void jbd2_journal_write_revoke_records(journal_t *journal,
  * block if the old one is full or if we have not already created one.
  */
 
-static void write_one_revoke_record(journal_t *journal,
-				    transaction_t *transaction,
+static void write_one_revoke_record(transaction_t *transaction,
 				    struct list_head *log_bufs,
 				    struct buffer_head **descriptorp,
 				    int *offsetp,
-				    struct jbd2_revoke_record_s *record,
-				    int write_op)
+				    struct jbd2_revoke_record_s *record)
 {
+	journal_t *journal = transaction->t_journal;
 	int csum_size = 0;
 	struct buffer_head *descriptor;
 	int sz, offset;
-	journal_header_t *header;
 
 	/* If we are already aborting, this all becomes a noop.  We
            still need to go round the loop in
@@ -592,9 +591,9 @@ static void write_one_revoke_record(journal_t *journal,
 
 	/* Do we need to leave space at the end for a checksum? */
 	if (jbd2_journal_has_csum_v2or3(journal))
-		csum_size = sizeof(struct jbd2_journal_revoke_tail);
+		csum_size = sizeof(struct jbd2_journal_block_tail);
 
-	if (JBD2_HAS_INCOMPAT_FEATURE(journal, JBD2_FEATURE_INCOMPAT_64BIT))
+	if (jbd2_has_feature_64bit(journal))
 		sz = 8;
 	else
 		sz = 4;
@@ -602,19 +601,16 @@ static void write_one_revoke_record(journal_t *journal,
 	/* Make sure we have a descriptor with space left for the record */
 	if (descriptor) {
 		if (offset + sz > journal->j_blocksize - csum_size) {
-			flush_descriptor(journal, descriptor, offset, write_op);
+			flush_descriptor(journal, descriptor, offset);
 			descriptor = NULL;
 		}
 	}
 
 	if (!descriptor) {
-		descriptor = jbd2_journal_get_descriptor_buffer(journal);
+		descriptor = jbd2_journal_get_descriptor_buffer(transaction,
+							JBD2_REVOKE_BLOCK);
 		if (!descriptor)
 			return;
-		header = (journal_header_t *)descriptor->b_data;
-		header->h_magic     = cpu_to_be32(JBD2_MAGIC_NUMBER);
-		header->h_blocktype = cpu_to_be32(JBD2_REVOKE_BLOCK);
-		header->h_sequence  = cpu_to_be32(transaction->t_tid);
 
 		/* Record it so that we can wait for IO completion later */
 		BUFFER_TRACE(descriptor, "file in log_bufs");
@@ -624,7 +620,7 @@ static void write_one_revoke_record(journal_t *journal,
 		*descriptorp = descriptor;
 	}
 
-	if (JBD2_HAS_INCOMPAT_FEATURE(journal, JBD2_FEATURE_INCOMPAT_64BIT))
+	if (jbd2_has_feature_64bit(journal))
 		* ((__be64 *)(&descriptor->b_data[offset])) =
 			cpu_to_be64(record->blocknr);
 	else
@@ -633,21 +629,6 @@ static void write_one_revoke_record(journal_t *journal,
 	offset += sz;
 
 	*offsetp = offset;
-}
-
-static void jbd2_revoke_csum_set(journal_t *j, struct buffer_head *bh)
-{
-	struct jbd2_journal_revoke_tail *tail;
-	__u32 csum;
-
-	if (!jbd2_journal_has_csum_v2or3(j))
-		return;
-
-	tail = (struct jbd2_journal_revoke_tail *)(bh->b_data + j->j_blocksize -
-			sizeof(struct jbd2_journal_revoke_tail));
-	tail->r_checksum = 0;
-	csum = jbd2_chksum(j, j->j_csum_seed, bh->b_data, j->j_blocksize);
-	tail->r_checksum = cpu_to_be32(csum);
 }
 
 /*
@@ -659,23 +640,21 @@ static void jbd2_revoke_csum_set(journal_t *j, struct buffer_head *bh)
 
 static void flush_descriptor(journal_t *journal,
 			     struct buffer_head *descriptor,
-			     int offset, int write_op)
+			     int offset)
 {
 	jbd2_journal_revoke_header_t *header;
 
-	if (is_journal_aborted(journal)) {
-		put_bh(descriptor);
+	if (is_journal_aborted(journal))
 		return;
-	}
 
 	header = (jbd2_journal_revoke_header_t *)descriptor->b_data;
 	header->r_count = cpu_to_be32(offset);
-	jbd2_revoke_csum_set(journal, descriptor);
+	jbd2_descriptor_block_csum_set(journal, descriptor);
 
 	set_buffer_jwrite(descriptor);
 	BUFFER_TRACE(descriptor, "write");
 	set_buffer_dirty(descriptor);
-	write_dirty_buffer(descriptor, write_op);
+	write_dirty_buffer(descriptor, REQ_SYNC);
 }
 #endif
 

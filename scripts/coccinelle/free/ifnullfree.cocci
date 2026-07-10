@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /// NULL check before some freeing functions is not needed.
 ///
 /// Based on checkpatch warning
 /// "kfree(NULL) is safe this check is probably not required"
 /// and kfreeaddr.cocci by Julia Lawall.
 ///
-// Copyright: (C) 2014 Fabian Frederick.  GPLv2.
+// Copyright: (C) 2014 Fabian Frederick.
 // Comments: -
 // Options: --no-includes --include-headers
 
@@ -16,19 +17,29 @@ virtual context
 @r2 depends on patch@
 expression E;
 @@
-- if (E)
+- if (E != NULL)
 (
--	kfree(E);
-+ kfree(E);
+  kfree(E);
 |
--	debugfs_remove(E);
-+ debugfs_remove(E);
+  kvfree(E);
 |
--	debugfs_remove_recursive(E);
-+ debugfs_remove_recursive(E);
+  kfree_sensitive(E);
 |
--	usb_free_urb(E);
-+ usb_free_urb(E);
+  kvfree_sensitive(E, ...);
+|
+  vfree(E);
+|
+  debugfs_remove(E);
+|
+  debugfs_remove_recursive(E);
+|
+  usb_free_urb(E);
+|
+  kmem_cache_destroy(E);
+|
+  mempool_destroy(E);
+|
+  dma_pool_destroy(E);
 )
 
 @r depends on context || report || org @
@@ -36,8 +47,11 @@ expression E;
 position p;
 @@
 
-* if (E)
-*	\(kfree@p\|debugfs_remove@p\|debugfs_remove_recursive@p\|usb_free_urb\)(E);
+* if (E != NULL)
+*	\(kfree@p\|kvfree@p\|kfree_sensitive@p\|kvfree_sensitive@p\|vfree@p\|
+*         debugfs_remove@p\|debugfs_remove_recursive@p\|
+*         usb_free_urb@p\|kmem_cache_destroy@p\|mempool_destroy@p\|
+*         dma_pool_destroy@p\)(E, ...);
 
 @script:python depends on org@
 p << r.p;
@@ -49,5 +63,5 @@ cocci.print_main("NULL check before that freeing function is not needed", p)
 p << r.p;
 @@
 
-msg = "WARNING: NULL check before freeing functions like kfree, debugfs_remove, debugfs_remove_recursive or usb_free_urb is not needed. Maybe consider reorganizing relevant code to avoid passing NULL values."
+msg = "WARNING: NULL check before some freeing functions is not needed."
 coccilib.report.print_report(p[0], msg)

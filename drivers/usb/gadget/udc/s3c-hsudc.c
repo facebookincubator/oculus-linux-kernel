@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /* linux/drivers/usb/gadget/s3c-hsudc.c
  *
  * Copyright (c) 2010 Samsung Electronics Co., Ltd.
@@ -8,11 +9,7 @@
  * The S3C24XX USB 2.0 high-speed USB controller supports upto 9 endpoints.
  * Each endpoint can be configured as either in or out endpoint. Endpoints
  * can be configured for Bulk or Interrupt transfer mode.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+ */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -32,8 +29,6 @@
 #include <linux/platform_data/s3c-hsudc.h>
 #include <linux/regulator/consumer.h>
 #include <linux/pm_runtime.h>
-
-#include <mach/regs-s3c2443-clock.h>
 
 #define S3C_HSUDC_REG(x)	(x)
 
@@ -187,53 +182,6 @@ static inline void set_index(struct s3c_hsudc *hsudc, int ep_addr)
 static inline void __orr32(void __iomem *ptr, u32 val)
 {
 	writel(readl(ptr) | val, ptr);
-}
-
-static void s3c_hsudc_init_phy(void)
-{
-	u32 cfg;
-
-	cfg = readl(S3C2443_PWRCFG) | S3C2443_PWRCFG_USBPHY;
-	writel(cfg, S3C2443_PWRCFG);
-
-	cfg = readl(S3C2443_URSTCON);
-	cfg |= (S3C2443_URSTCON_FUNCRST | S3C2443_URSTCON_PHYRST);
-	writel(cfg, S3C2443_URSTCON);
-	mdelay(1);
-
-	cfg = readl(S3C2443_URSTCON);
-	cfg &= ~(S3C2443_URSTCON_FUNCRST | S3C2443_URSTCON_PHYRST);
-	writel(cfg, S3C2443_URSTCON);
-
-	cfg = readl(S3C2443_PHYCTRL);
-	cfg &= ~(S3C2443_PHYCTRL_CLKSEL | S3C2443_PHYCTRL_DSPORT);
-	cfg |= (S3C2443_PHYCTRL_EXTCLK | S3C2443_PHYCTRL_PLLSEL);
-	writel(cfg, S3C2443_PHYCTRL);
-
-	cfg = readl(S3C2443_PHYPWR);
-	cfg &= ~(S3C2443_PHYPWR_FSUSPEND | S3C2443_PHYPWR_PLL_PWRDN |
-		S3C2443_PHYPWR_XO_ON | S3C2443_PHYPWR_PLL_REFCLK |
-		S3C2443_PHYPWR_ANALOG_PD);
-	cfg |= S3C2443_PHYPWR_COMMON_ON;
-	writel(cfg, S3C2443_PHYPWR);
-
-	cfg = readl(S3C2443_UCLKCON);
-	cfg |= (S3C2443_UCLKCON_DETECT_VBUS | S3C2443_UCLKCON_FUNC_CLKEN |
-		S3C2443_UCLKCON_TCLKEN);
-	writel(cfg, S3C2443_UCLKCON);
-}
-
-static void s3c_hsudc_uninit_phy(void)
-{
-	u32 cfg;
-
-	cfg = readl(S3C2443_PWRCFG) & ~S3C2443_PWRCFG_USBPHY;
-	writel(cfg, S3C2443_PWRCFG);
-
-	writel(S3C2443_PHYPWR_FSUSPEND, S3C2443_PHYPWR);
-
-	cfg = readl(S3C2443_UCLKCON) & ~S3C2443_UCLKCON_FUNC_CLKEN;
-	writel(cfg, S3C2443_UCLKCON);
 }
 
 /**
@@ -569,7 +517,7 @@ static int s3c_hsudc_handle_reqfeat(struct s3c_hsudc *hsudc,
 		hsep = &hsudc->ep[ep_num];
 		switch (le16_to_cpu(ctrl->wValue)) {
 		case USB_ENDPOINT_HALT:
-			if (set || (!set && !hsep->wedge))
+			if (set || !hsep->wedge)
 				s3c_hsudc_set_halt(&hsep->ep, set);
 			return 0;
 		}
@@ -954,7 +902,7 @@ static int s3c_hsudc_dequeue(struct usb_ep *_ep, struct usb_request *_req)
 	return 0;
 }
 
-static struct usb_ep_ops s3c_hsudc_ep_ops = {
+static const struct usb_ep_ops s3c_hsudc_ep_ops = {
 	.enable = s3c_hsudc_ep_enable,
 	.disable = s3c_hsudc_ep_disable,
 	.alloc_request = s3c_hsudc_alloc_request,
@@ -1004,6 +952,21 @@ static void s3c_hsudc_initep(struct s3c_hsudc *hsudc,
 	hsep->ep.desc = NULL;
 	hsep->stopped = 0;
 	hsep->wedge = 0;
+
+	if (epnum == 0) {
+		hsep->ep.caps.type_control = true;
+		hsep->ep.caps.dir_in = true;
+		hsep->ep.caps.dir_out = true;
+	} else {
+		hsep->ep.caps.type_iso = true;
+		hsep->ep.caps.type_bulk = true;
+		hsep->ep.caps.type_int = true;
+	}
+
+	if (epnum & 1)
+		hsep->ep.caps.dir_in = true;
+	else
+		hsep->ep.caps.dir_out = true;
 
 	set_index(hsudc, epnum);
 	writel(hsep->ep.maxpacket, hsudc->regs + S3C_MPR);
@@ -1172,13 +1135,12 @@ static int s3c_hsudc_start(struct usb_gadget *gadget,
 	}
 
 	enable_irq(hsudc->irq);
-	dev_info(hsudc->dev, "bound driver %s\n", driver->driver.name);
-
 	s3c_hsudc_reconfig(hsudc);
 
 	pm_runtime_get_sync(hsudc->dev);
 
-	s3c_hsudc_init_phy();
+	if (hsudc->pd->phy_init)
+		hsudc->pd->phy_init();
 	if (hsudc->pd->gpio_init)
 		hsudc->pd->gpio_init();
 
@@ -1190,8 +1152,7 @@ err_supplies:
 	return ret;
 }
 
-static int s3c_hsudc_stop(struct usb_gadget *gadget,
-		struct usb_gadget_driver *driver)
+static int s3c_hsudc_stop(struct usb_gadget *gadget)
 {
 	struct s3c_hsudc *hsudc = to_hsudc(gadget);
 	unsigned long flags;
@@ -1199,13 +1160,10 @@ static int s3c_hsudc_stop(struct usb_gadget *gadget,
 	if (!hsudc)
 		return -ENODEV;
 
-	if (!driver || driver != hsudc->driver)
-		return -EINVAL;
-
 	spin_lock_irqsave(&hsudc->lock, flags);
-	hsudc->driver = NULL;
 	hsudc->gadget.speed = USB_SPEED_UNKNOWN;
-	s3c_hsudc_uninit_phy();
+	if (hsudc->pd->phy_uninit)
+		hsudc->pd->phy_uninit();
 
 	pm_runtime_put(hsudc->dev);
 
@@ -1220,9 +1178,8 @@ static int s3c_hsudc_stop(struct usb_gadget *gadget,
 	disable_irq(hsudc->irq);
 
 	regulator_bulk_disable(ARRAY_SIZE(hsudc->supplies), hsudc->supplies);
+	hsudc->driver = NULL;
 
-	dev_info(hsudc->dev, "unregistered gadget driver '%s'\n",
-			driver->driver.name);
 	return 0;
 }
 
@@ -1259,7 +1216,6 @@ static const struct usb_gadget_ops s3c_hsudc_gadget_ops = {
 static int s3c_hsudc_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct resource *res;
 	struct s3c_hsudc *hsudc;
 	struct s3c24xx_hsudc_platdata *pd = dev_get_platdata(&pdev->dev);
 	int ret, i;
@@ -1267,10 +1223,8 @@ static int s3c_hsudc_probe(struct platform_device *pdev)
 	hsudc = devm_kzalloc(&pdev->dev, sizeof(struct s3c_hsudc) +
 			sizeof(struct s3c_hsudc_ep) * pd->epnum,
 			GFP_KERNEL);
-	if (!hsudc) {
-		dev_err(dev, "cannot allocate memory\n");
+	if (!hsudc)
 		return -ENOMEM;
-	}
 
 	platform_set_drvdata(pdev, dev);
 	hsudc->dev = dev;
@@ -1284,13 +1238,12 @@ static int s3c_hsudc_probe(struct platform_device *pdev)
 	ret = devm_regulator_bulk_get(dev, ARRAY_SIZE(hsudc->supplies),
 				 hsudc->supplies);
 	if (ret != 0) {
-		dev_err(dev, "failed to request supplies: %d\n", ret);
+		if (ret != -EPROBE_DEFER)
+			dev_err(dev, "failed to request supplies: %d\n", ret);
 		goto err_supplies;
 	}
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-
-	hsudc->regs = devm_ioremap_resource(&pdev->dev, res);
+	hsudc->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(hsudc->regs)) {
 		ret = PTR_ERR(hsudc->regs);
 		goto err_res;
@@ -1309,10 +1262,8 @@ static int s3c_hsudc_probe(struct platform_device *pdev)
 	s3c_hsudc_setup_ep(hsudc);
 
 	ret = platform_get_irq(pdev, 0);
-	if (ret < 0) {
-		dev_err(dev, "unable to obtain IRQ number\n");
+	if (ret < 0)
 		goto err_res;
-	}
 	hsudc->irq = ret;
 
 	ret = devm_request_irq(&pdev->dev, hsudc->irq, s3c_hsudc_irq, 0,
@@ -1354,7 +1305,6 @@ err_supplies:
 
 static struct platform_driver s3c_hsudc_driver = {
 	.driver		= {
-		.owner	= THIS_MODULE,
 		.name	= "s3c-hsudc",
 	},
 	.probe		= s3c_hsudc_probe,

@@ -1,18 +1,12 @@
-/* CAN driver for Geschwister Schneider USB/CAN devices.
+// SPDX-License-Identifier: GPL-2.0-only
+/* CAN driver for Geschwister Schneider USB/CAN devices
+ * and bytewerk.org candleLight USB CAN interfaces.
  *
- * Copyright (C) 2013 Geschwister Schneider Technologie-,
+ * Copyright (C) 2013-2016 Geschwister Schneider Technologie-,
  * Entwicklungs- und Vertriebs UG (Haftungsbeschränkt).
+ * Copyright (C) 2016 Hubert Denkmair
  *
  * Many thanks to all socketcan devs!
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published
- * by the Free Software Foundation; version 2 of the License.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
  */
 
 #include <linux/init.h>
@@ -29,6 +23,9 @@
 #define USB_GSUSB_1_VENDOR_ID      0x1d50
 #define USB_GSUSB_1_PRODUCT_ID     0x606f
 
+#define USB_CANDLELIGHT_VENDOR_ID  0x1209
+#define USB_CANDLELIGHT_PRODUCT_ID 0x2323
+
 #define GSUSB_ENDPOINT_IN          1
 #define GSUSB_ENDPOINT_OUT         2
 
@@ -39,7 +36,9 @@ enum gs_usb_breq {
 	GS_USB_BREQ_MODE,
 	GS_USB_BREQ_BERR,
 	GS_USB_BREQ_BT_CONST,
-	GS_USB_BREQ_DEVICE_CONFIG
+	GS_USB_BREQ_DEVICE_CONFIG,
+	GS_USB_BREQ_TIMESTAMP,
+	GS_USB_BREQ_IDENTIFY,
 };
 
 enum gs_can_mode {
@@ -58,72 +57,89 @@ enum gs_can_state {
 	GS_CAN_STATE_SLEEPING
 };
 
+enum gs_can_identify_mode {
+	GS_CAN_IDENTIFY_OFF = 0,
+	GS_CAN_IDENTIFY_ON
+};
+
 /* data types passed between host and device */
-struct gs_host_config {
-	u32 byte_order;
-} __packed;
-/* All data exchanged between host and device is exchanged in host byte order,
- * thanks to the struct gs_host_config byte_order member, which is sent first
- * to indicate the desired byte order.
+
+/* The firmware on the original USB2CAN by Geschwister Schneider
+ * Technologie Entwicklungs- und Vertriebs UG exchanges all data
+ * between the host and the device in host byte order. This is done
+ * with the struct gs_host_config::byte_order member, which is sent
+ * first to indicate the desired byte order.
+ *
+ * The widely used open source firmware candleLight doesn't support
+ * this feature and exchanges the data in little endian byte order.
  */
+struct gs_host_config {
+	__le32 byte_order;
+} __packed;
 
 struct gs_device_config {
 	u8 reserved1;
 	u8 reserved2;
 	u8 reserved3;
 	u8 icount;
-	u32 sw_version;
-	u32 hw_version;
+	__le32 sw_version;
+	__le32 hw_version;
 } __packed;
 
 #define GS_CAN_MODE_NORMAL               0
-#define GS_CAN_MODE_LISTEN_ONLY          (1<<0)
-#define GS_CAN_MODE_LOOP_BACK            (1<<1)
-#define GS_CAN_MODE_TRIPLE_SAMPLE        (1<<2)
-#define GS_CAN_MODE_ONE_SHOT             (1<<3)
+#define GS_CAN_MODE_LISTEN_ONLY          BIT(0)
+#define GS_CAN_MODE_LOOP_BACK            BIT(1)
+#define GS_CAN_MODE_TRIPLE_SAMPLE        BIT(2)
+#define GS_CAN_MODE_ONE_SHOT             BIT(3)
 
 struct gs_device_mode {
-	u32 mode;
-	u32 flags;
+	__le32 mode;
+	__le32 flags;
 } __packed;
 
 struct gs_device_state {
-	u32 state;
-	u32 rxerr;
-	u32 txerr;
+	__le32 state;
+	__le32 rxerr;
+	__le32 txerr;
 } __packed;
 
 struct gs_device_bittiming {
-	u32 prop_seg;
-	u32 phase_seg1;
-	u32 phase_seg2;
-	u32 sjw;
-	u32 brp;
+	__le32 prop_seg;
+	__le32 phase_seg1;
+	__le32 phase_seg2;
+	__le32 sjw;
+	__le32 brp;
 } __packed;
 
-#define GS_CAN_FEATURE_LISTEN_ONLY      (1<<0)
-#define GS_CAN_FEATURE_LOOP_BACK        (1<<1)
-#define GS_CAN_FEATURE_TRIPLE_SAMPLE    (1<<2)
-#define GS_CAN_FEATURE_ONE_SHOT         (1<<3)
+struct gs_identify_mode {
+	__le32 mode;
+} __packed;
+
+#define GS_CAN_FEATURE_LISTEN_ONLY      BIT(0)
+#define GS_CAN_FEATURE_LOOP_BACK        BIT(1)
+#define GS_CAN_FEATURE_TRIPLE_SAMPLE    BIT(2)
+#define GS_CAN_FEATURE_ONE_SHOT         BIT(3)
+#define GS_CAN_FEATURE_HW_TIMESTAMP     BIT(4)
+#define GS_CAN_FEATURE_IDENTIFY         BIT(5)
 
 struct gs_device_bt_const {
-	u32 feature;
-	u32 fclk_can;
-	u32 tseg1_min;
-	u32 tseg1_max;
-	u32 tseg2_min;
-	u32 tseg2_max;
-	u32 sjw_max;
-	u32 brp_min;
-	u32 brp_max;
-	u32 brp_inc;
+	__le32 feature;
+	__le32 fclk_can;
+	__le32 tseg1_min;
+	__le32 tseg1_max;
+	__le32 tseg2_min;
+	__le32 tseg2_max;
+	__le32 sjw_max;
+	__le32 brp_min;
+	__le32 brp_max;
+	__le32 brp_inc;
 } __packed;
 
 #define GS_CAN_FLAG_OVERFLOW 1
 
 struct gs_host_frame {
 	u32 echo_id;
-	u32 can_id;
+	__le32 can_id;
 
 	u8 can_dlc;
 	u8 channel;
@@ -162,20 +178,22 @@ struct gs_can {
 	struct can_bittiming_const bt_const;
 	unsigned int channel;	/* channel number */
 
-	/* This lock prevents a race condition between xmit and recieve. */
+	/* This lock prevents a race condition between xmit and receive. */
 	spinlock_t tx_ctx_lock;
 	struct gs_tx_context tx_context[GS_MAX_TX_URBS];
 
 	struct usb_anchor tx_submitted;
 	atomic_t active_tx_urbs;
+	void *rxbuf[GS_MAX_RX_URBS];
+	dma_addr_t rxbuf_dma[GS_MAX_RX_URBS];
 };
 
 /* usb interface struct */
 struct gs_usb {
 	struct gs_can *canch[GS_MAX_INTF];
 	struct usb_anchor rx_submitted;
-	atomic_t active_channels;
 	struct usb_device *udev;
+	u8 active_channels;
 };
 
 /* 'allocate' a tx context.
@@ -209,7 +227,8 @@ static void gs_free_tx_context(struct gs_tx_context *txc)
 
 /* Get a tx context by id.
  */
-static struct gs_tx_context *gs_get_tx_context(struct gs_can *dev, unsigned int id)
+static struct gs_tx_context *gs_get_tx_context(struct gs_can *dev,
+					       unsigned int id)
 {
 	unsigned long flags;
 
@@ -224,7 +243,7 @@ static struct gs_tx_context *gs_get_tx_context(struct gs_can *dev, unsigned int 
 	return NULL;
 }
 
-static int gs_cmd_reset(struct gs_usb *gsusb, struct gs_can *gsdev)
+static int gs_cmd_reset(struct gs_can *gsdev)
 {
 	struct gs_device_mode *dm;
 	struct usb_interface *intf = gsdev->iface;
@@ -239,12 +258,14 @@ static int gs_cmd_reset(struct gs_usb *gsusb, struct gs_can *gsdev)
 	rc = usb_control_msg(interface_to_usbdev(intf),
 			     usb_sndctrlpipe(interface_to_usbdev(intf), 0),
 			     GS_USB_BREQ_MODE,
-			     USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_INTERFACE,
+			     USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_INTERFACE,
 			     gsdev->channel,
 			     0,
 			     dm,
 			     sizeof(*dm),
 			     1000);
+
+	kfree(dm);
 
 	return rc;
 }
@@ -274,7 +295,7 @@ static void gs_update_state(struct gs_can *dev, struct can_frame *cf)
 	}
 }
 
-static void gs_usb_recieve_bulk_callback(struct urb *urb)
+static void gs_usb_receive_bulk_callback(struct urb *urb)
 {
 	struct gs_usb *usbcan = urb->context;
 	struct gs_can *dev;
@@ -301,7 +322,7 @@ static void gs_usb_recieve_bulk_callback(struct urb *urb)
 
 	/* device reports out of range channel id */
 	if (hf->channel >= GS_MAX_INTF)
-		goto resubmit_urb;
+		goto device_detach;
 
 	dev = usbcan->canch[hf->channel];
 
@@ -316,13 +337,13 @@ static void gs_usb_recieve_bulk_callback(struct urb *urb)
 		if (!skb)
 			return;
 
-		cf->can_id = hf->can_id;
+		cf->can_id = le32_to_cpu(hf->can_id);
 
 		cf->can_dlc = get_can_dlc(hf->can_dlc);
 		memcpy(cf->data, hf->data, 8);
 
 		/* ERROR frames tell us information about the controller */
-		if (hf->can_id & CAN_ERR_FLAG)
+		if (le32_to_cpu(hf->can_id) & CAN_ERR_FLAG)
 			gs_update_state(dev, cf);
 
 		netdev->stats.rx_packets++;
@@ -354,6 +375,8 @@ static void gs_usb_recieve_bulk_callback(struct urb *urb)
 
 		gs_free_tx_context(txc);
 
+		atomic_dec(&dev->active_tx_urbs);
+
 		netif_wake_queue(netdev);
 	}
 
@@ -376,7 +399,7 @@ static void gs_usb_recieve_bulk_callback(struct urb *urb)
 			  usb_rcvbulkpipe(usbcan->udev, GSUSB_ENDPOINT_IN),
 			  hf,
 			  sizeof(struct gs_host_frame),
-			  gs_usb_recieve_bulk_callback,
+			  gs_usb_receive_bulk_callback,
 			  usbcan
 			  );
 
@@ -384,6 +407,7 @@ static void gs_usb_recieve_bulk_callback(struct urb *urb)
 
 	/* USB failure take down all interfaces */
 	if (rc == -ENODEV) {
+ device_detach:
 		for (rc = 0; rc < GS_MAX_INTF; rc++) {
 			if (usbcan->canch[rc])
 				netif_device_detach(usbcan->canch[rc]->netdev);
@@ -403,17 +427,17 @@ static int gs_usb_set_bittiming(struct net_device *netdev)
 	if (!dbt)
 		return -ENOMEM;
 
-	dbt->prop_seg = bt->prop_seg;
-	dbt->phase_seg1 = bt->phase_seg1;
-	dbt->phase_seg2 = bt->phase_seg2;
-	dbt->sjw = bt->sjw;
-	dbt->brp = bt->brp;
+	dbt->prop_seg = cpu_to_le32(bt->prop_seg);
+	dbt->phase_seg1 = cpu_to_le32(bt->phase_seg1);
+	dbt->phase_seg2 = cpu_to_le32(bt->phase_seg2);
+	dbt->sjw = cpu_to_le32(bt->sjw);
+	dbt->brp = cpu_to_le32(bt->brp);
 
 	/* request bit timings */
 	rc = usb_control_msg(interface_to_usbdev(intf),
 			     usb_sndctrlpipe(interface_to_usbdev(intf), 0),
 			     GS_USB_BREQ_BITTIMING,
-			     USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_INTERFACE,
+			     USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_INTERFACE,
 			     dev->channel,
 			     0,
 			     dbt,
@@ -426,7 +450,7 @@ static int gs_usb_set_bittiming(struct net_device *netdev)
 		dev_err(netdev->dev.parent, "Couldn't set bittimings (err=%d)",
 			rc);
 
-	return rc;
+	return (rc > 0) ? 0 : rc;
 }
 
 static void gs_usb_xmit_callback(struct urb *urb)
@@ -442,17 +466,10 @@ static void gs_usb_xmit_callback(struct urb *urb)
 			  urb->transfer_buffer_length,
 			  urb->transfer_buffer,
 			  urb->transfer_dma);
-
-	atomic_dec(&dev->active_tx_urbs);
-
-	if (!netif_device_present(netdev))
-		return;
-
-	if (netif_queue_stopped(netdev))
-		netif_wake_queue(netdev);
 }
 
-static netdev_tx_t gs_can_start_xmit(struct sk_buff *skb, struct net_device *netdev)
+static netdev_tx_t gs_can_start_xmit(struct sk_buff *skb,
+				     struct net_device *netdev)
 {
 	struct gs_can *dev = netdev_priv(netdev);
 	struct net_device_stats *stats = &dev->netdev->stats;
@@ -473,10 +490,8 @@ static netdev_tx_t gs_can_start_xmit(struct sk_buff *skb, struct net_device *net
 
 	/* create a URB, and a buffer for it */
 	urb = usb_alloc_urb(0, GFP_ATOMIC);
-	if (!urb) {
-		netdev_err(netdev, "No memory left for URB\n");
+	if (!urb)
 		goto nomem_urb;
-	}
 
 	hf = usb_alloc_coherent(dev->udev, sizeof(*hf), GFP_ATOMIC,
 				&urb->transfer_dma);
@@ -494,10 +509,12 @@ static netdev_tx_t gs_can_start_xmit(struct sk_buff *skb, struct net_device *net
 
 	hf->echo_id = idx;
 	hf->channel = dev->channel;
+	hf->flags = 0;
+	hf->reserved = 0;
 
 	cf = (struct can_frame *)skb->data;
 
-	hf->can_id = cf->can_id;
+	hf->can_id = cpu_to_le32(cf->can_id);
 	hf->can_dlc = cf->can_dlc;
 	memcpy(hf->data, cf->data, cf->can_dlc);
 
@@ -527,7 +544,6 @@ static netdev_tx_t gs_can_start_xmit(struct sk_buff *skb, struct net_device *net
 				  sizeof(*hf),
 				  hf,
 				  urb->transfer_dma);
-
 
 		if (rc == -ENODEV) {
 			netif_device_detach(netdev);
@@ -568,35 +584,36 @@ static int gs_can_open(struct net_device *netdev)
 	int rc, i;
 	struct gs_device_mode *dm;
 	u32 ctrlmode;
+	u32 flags = 0;
 
 	rc = open_candev(netdev);
 	if (rc)
 		return rc;
 
-	if (atomic_add_return(1, &parent->active_channels) == 1) {
+	if (!parent->active_channels) {
 		for (i = 0; i < GS_MAX_RX_URBS; i++) {
 			struct urb *urb;
 			u8 *buf;
+			dma_addr_t buf_dma;
 
 			/* alloc rx urb */
 			urb = usb_alloc_urb(0, GFP_KERNEL);
-			if (!urb) {
-				netdev_err(netdev,
-					   "No memory left for URB\n");
+			if (!urb)
 				return -ENOMEM;
-			}
 
 			/* alloc rx buffer */
 			buf = usb_alloc_coherent(dev->udev,
 						 sizeof(struct gs_host_frame),
 						 GFP_KERNEL,
-						 &urb->transfer_dma);
+						 &buf_dma);
 			if (!buf) {
 				netdev_err(netdev,
 					   "No memory left for USB buffer\n");
 				usb_free_urb(urb);
 				return -ENOMEM;
 			}
+
+			urb->transfer_dma = buf_dma;
 
 			/* fill, anchor, and submit rx urb */
 			usb_fill_bulk_urb(urb,
@@ -605,7 +622,7 @@ static int gs_can_open(struct net_device *netdev)
 							  GSUSB_ENDPOINT_IN),
 					  buf,
 					  sizeof(struct gs_host_frame),
-					  gs_usb_recieve_bulk_callback,
+					  gs_usb_receive_bulk_callback,
 					  parent);
 			urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
@@ -621,8 +638,16 @@ static int gs_can_open(struct net_device *netdev)
 					   rc);
 
 				usb_unanchor_urb(urb);
+				usb_free_coherent(dev->udev,
+						  sizeof(struct gs_host_frame),
+						  buf,
+						  buf_dma);
+				usb_free_urb(urb);
 				break;
 			}
+
+			dev->rxbuf[i] = buf;
+			dev->rxbuf_dma[i] = buf_dma;
 
 			/* Drop reference,
 			 * USB core will take care of freeing it
@@ -637,28 +662,30 @@ static int gs_can_open(struct net_device *netdev)
 
 	/* flags */
 	ctrlmode = dev->can.ctrlmode;
-	dm->flags = 0;
 
 	if (ctrlmode & CAN_CTRLMODE_LOOPBACK)
-		dm->flags |= GS_CAN_MODE_LOOP_BACK;
+		flags |= GS_CAN_MODE_LOOP_BACK;
 	else if (ctrlmode & CAN_CTRLMODE_LISTENONLY)
-		dm->flags |= GS_CAN_MODE_LISTEN_ONLY;
+		flags |= GS_CAN_MODE_LISTEN_ONLY;
 
 	/* Controller is not allowed to retry TX
 	 * this mode is unavailable on atmels uc3c hardware
 	 */
 	if (ctrlmode & CAN_CTRLMODE_ONE_SHOT)
-		dm->flags |= GS_CAN_MODE_ONE_SHOT;
+		flags |= GS_CAN_MODE_ONE_SHOT;
 
 	if (ctrlmode & CAN_CTRLMODE_3_SAMPLES)
-		dm->flags |= GS_CAN_MODE_TRIPLE_SAMPLE;
+		flags |= GS_CAN_MODE_TRIPLE_SAMPLE;
 
 	/* finally start device */
-	dm->mode = GS_CAN_MODE_START;
+	dev->can.state = CAN_STATE_ERROR_ACTIVE;
+	dm->mode = cpu_to_le32(GS_CAN_MODE_START);
+	dm->flags = cpu_to_le32(flags);
 	rc = usb_control_msg(interface_to_usbdev(dev->iface),
 			     usb_sndctrlpipe(interface_to_usbdev(dev->iface), 0),
 			     GS_USB_BREQ_MODE,
-			     USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_INTERFACE,
+			     USB_DIR_OUT | USB_TYPE_VENDOR |
+			     USB_RECIP_INTERFACE,
 			     dev->channel,
 			     0,
 			     dm,
@@ -668,13 +695,13 @@ static int gs_can_open(struct net_device *netdev)
 	if (rc < 0) {
 		netdev_err(netdev, "Couldn't start device (err=%d)\n", rc);
 		kfree(dm);
+		dev->can.state = CAN_STATE_STOPPED;
 		return rc;
 	}
 
 	kfree(dm);
 
-	dev->can.state = CAN_STATE_ERROR_ACTIVE;
-
+	parent->active_channels++;
 	if (!(dev->can.ctrlmode & CAN_CTRLMODE_LISTENONLY))
 		netif_start_queue(netdev);
 
@@ -686,19 +713,27 @@ static int gs_can_close(struct net_device *netdev)
 	int rc;
 	struct gs_can *dev = netdev_priv(netdev);
 	struct gs_usb *parent = dev->parent;
+	unsigned int i;
 
 	netif_stop_queue(netdev);
 
 	/* Stop polling */
-	if (atomic_dec_and_test(&parent->active_channels))
+	parent->active_channels--;
+	if (!parent->active_channels) {
 		usb_kill_anchored_urbs(&parent->rx_submitted);
+		for (i = 0; i < GS_MAX_RX_URBS; i++)
+			usb_free_coherent(dev->udev,
+					  sizeof(struct gs_host_frame),
+					  dev->rxbuf[i],
+					  dev->rxbuf_dma[i]);
+	}
 
 	/* Stop sending URBs */
 	usb_kill_anchored_urbs(&dev->tx_submitted);
 	atomic_set(&dev->active_tx_urbs, 0);
 
 	/* reset the device */
-	rc = gs_cmd_reset(parent, dev);
+	rc = gs_cmd_reset(dev);
 	if (rc < 0)
 		netdev_warn(netdev, "Couldn't shutdown device (err=%d)", rc);
 
@@ -721,12 +756,72 @@ static const struct net_device_ops gs_usb_netdev_ops = {
 	.ndo_change_mtu = can_change_mtu,
 };
 
-static struct gs_can *gs_make_candev(unsigned int channel, struct usb_interface *intf)
+static int gs_usb_set_identify(struct net_device *netdev, bool do_identify)
+{
+	struct gs_can *dev = netdev_priv(netdev);
+	struct gs_identify_mode *imode;
+	int rc;
+
+	imode = kmalloc(sizeof(*imode), GFP_KERNEL);
+
+	if (!imode)
+		return -ENOMEM;
+
+	if (do_identify)
+		imode->mode = cpu_to_le32(GS_CAN_IDENTIFY_ON);
+	else
+		imode->mode = cpu_to_le32(GS_CAN_IDENTIFY_OFF);
+
+	rc = usb_control_msg(interface_to_usbdev(dev->iface),
+			     usb_sndctrlpipe(interface_to_usbdev(dev->iface),
+					     0),
+			     GS_USB_BREQ_IDENTIFY,
+			     USB_DIR_OUT | USB_TYPE_VENDOR |
+			     USB_RECIP_INTERFACE,
+			     dev->channel,
+			     0,
+			     imode,
+			     sizeof(*imode),
+			     100);
+
+	kfree(imode);
+
+	return (rc > 0) ? 0 : rc;
+}
+
+/* blink LED's for finding the this interface */
+static int gs_usb_set_phys_id(struct net_device *dev,
+			      enum ethtool_phys_id_state state)
+{
+	int rc = 0;
+
+	switch (state) {
+	case ETHTOOL_ID_ACTIVE:
+		rc = gs_usb_set_identify(dev, GS_CAN_IDENTIFY_ON);
+		break;
+	case ETHTOOL_ID_INACTIVE:
+		rc = gs_usb_set_identify(dev, GS_CAN_IDENTIFY_OFF);
+		break;
+	default:
+		break;
+	}
+
+	return rc;
+}
+
+static const struct ethtool_ops gs_usb_ethtool_ops = {
+	.set_phys_id = gs_usb_set_phys_id,
+};
+
+static struct gs_can *gs_make_candev(unsigned int channel,
+				     struct usb_interface *intf,
+				     struct gs_device_config *dconf)
 {
 	struct gs_can *dev;
 	struct net_device *netdev;
 	int rc;
 	struct gs_device_bt_const *bt_const;
+	u32 feature;
 
 	bt_const = kmalloc(sizeof(*bt_const), GFP_KERNEL);
 	if (!bt_const)
@@ -736,7 +831,7 @@ static struct gs_can *gs_make_candev(unsigned int channel, struct usb_interface 
 	rc = usb_control_msg(interface_to_usbdev(intf),
 			     usb_rcvctrlpipe(interface_to_usbdev(intf), 0),
 			     GS_USB_BREQ_BT_CONST,
-			     USB_DIR_IN|USB_TYPE_VENDOR|USB_RECIP_INTERFACE,
+			     USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_INTERFACE,
 			     channel,
 			     0,
 			     bt_const,
@@ -765,16 +860,16 @@ static struct gs_can *gs_make_candev(unsigned int channel, struct usb_interface 
 
 	netdev->flags |= IFF_ECHO; /* we support full roundtrip echo */
 
-	/* dev settup */
+	/* dev setup */
 	strcpy(dev->bt_const.name, "gs_usb");
-	dev->bt_const.tseg1_min = bt_const->tseg1_min;
-	dev->bt_const.tseg1_max = bt_const->tseg1_max;
-	dev->bt_const.tseg2_min = bt_const->tseg2_min;
-	dev->bt_const.tseg2_max = bt_const->tseg2_max;
-	dev->bt_const.sjw_max = bt_const->sjw_max;
-	dev->bt_const.brp_min = bt_const->brp_min;
-	dev->bt_const.brp_max = bt_const->brp_max;
-	dev->bt_const.brp_inc = bt_const->brp_inc;
+	dev->bt_const.tseg1_min = le32_to_cpu(bt_const->tseg1_min);
+	dev->bt_const.tseg1_max = le32_to_cpu(bt_const->tseg1_max);
+	dev->bt_const.tseg2_min = le32_to_cpu(bt_const->tseg2_min);
+	dev->bt_const.tseg2_max = le32_to_cpu(bt_const->tseg2_max);
+	dev->bt_const.sjw_max = le32_to_cpu(bt_const->sjw_max);
+	dev->bt_const.brp_min = le32_to_cpu(bt_const->brp_min);
+	dev->bt_const.brp_max = le32_to_cpu(bt_const->brp_max);
+	dev->bt_const.brp_inc = le32_to_cpu(bt_const->brp_inc);
 
 	dev->udev = interface_to_usbdev(intf);
 	dev->iface = intf;
@@ -789,29 +884,34 @@ static struct gs_can *gs_make_candev(unsigned int channel, struct usb_interface 
 		dev->tx_context[rc].echo_id = GS_MAX_TX_URBS;
 	}
 
-	/* can settup */
+	/* can setup */
 	dev->can.state = CAN_STATE_STOPPED;
-	dev->can.clock.freq = bt_const->fclk_can;
+	dev->can.clock.freq = le32_to_cpu(bt_const->fclk_can);
 	dev->can.bittiming_const = &dev->bt_const;
 	dev->can.do_set_bittiming = gs_usb_set_bittiming;
 
 	dev->can.ctrlmode_supported = 0;
 
-	if (bt_const->feature & GS_CAN_FEATURE_LISTEN_ONLY)
+	feature = le32_to_cpu(bt_const->feature);
+	if (feature & GS_CAN_FEATURE_LISTEN_ONLY)
 		dev->can.ctrlmode_supported |= CAN_CTRLMODE_LISTENONLY;
 
-	if (bt_const->feature & GS_CAN_FEATURE_LOOP_BACK)
+	if (feature & GS_CAN_FEATURE_LOOP_BACK)
 		dev->can.ctrlmode_supported |= CAN_CTRLMODE_LOOPBACK;
 
-	if (bt_const->feature & GS_CAN_FEATURE_TRIPLE_SAMPLE)
+	if (feature & GS_CAN_FEATURE_TRIPLE_SAMPLE)
 		dev->can.ctrlmode_supported |= CAN_CTRLMODE_3_SAMPLES;
 
-	if (bt_const->feature & GS_CAN_FEATURE_ONE_SHOT)
+	if (feature & GS_CAN_FEATURE_ONE_SHOT)
 		dev->can.ctrlmode_supported |= CAN_CTRLMODE_ONE_SHOT;
 
-	kfree(bt_const);
-
 	SET_NETDEV_DEV(netdev, &intf->dev);
+
+	if (le32_to_cpu(dconf->sw_version) > 1)
+		if (feature & GS_CAN_FEATURE_IDENTIFY)
+			netdev->ethtool_ops = &gs_usb_ethtool_ops;
+
+	kfree(bt_const);
 
 	rc = register_candev(dev->netdev);
 	if (rc) {
@@ -830,7 +930,8 @@ static void gs_destroy_candev(struct gs_can *dev)
 	free_candev(dev->netdev);
 }
 
-static int gs_usb_probe(struct usb_interface *intf, const struct usb_device_id *id)
+static int gs_usb_probe(struct usb_interface *intf,
+			const struct usb_device_id *id)
 {
 	struct gs_usb *dev;
 	int rc = -ENOMEM;
@@ -842,15 +943,15 @@ static int gs_usb_probe(struct usb_interface *intf, const struct usb_device_id *
 	if (!hconf)
 		return -ENOMEM;
 
-	hconf->byte_order = 0x0000beef;
+	hconf->byte_order = cpu_to_le32(0x0000beef);
 
 	/* send host config */
 	rc = usb_control_msg(interface_to_usbdev(intf),
 			     usb_sndctrlpipe(interface_to_usbdev(intf), 0),
 			     GS_USB_BREQ_HOST_FORMAT,
-			     USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_INTERFACE,
+			     USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_INTERFACE,
 			     1,
-			     intf->altsetting[0].desc.bInterfaceNumber,
+			     intf->cur_altsetting->desc.bInterfaceNumber,
 			     hconf,
 			     sizeof(*hconf),
 			     1000);
@@ -871,44 +972,43 @@ static int gs_usb_probe(struct usb_interface *intf, const struct usb_device_id *
 	rc = usb_control_msg(interface_to_usbdev(intf),
 			     usb_rcvctrlpipe(interface_to_usbdev(intf), 0),
 			     GS_USB_BREQ_DEVICE_CONFIG,
-			     USB_DIR_IN|USB_TYPE_VENDOR|USB_RECIP_INTERFACE,
+			     USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_INTERFACE,
 			     1,
-			     intf->altsetting[0].desc.bInterfaceNumber,
+			     intf->cur_altsetting->desc.bInterfaceNumber,
 			     dconf,
 			     sizeof(*dconf),
 			     1000);
 	if (rc < 0) {
 		dev_err(&intf->dev, "Couldn't get device config: (err=%d)\n",
 			rc);
-
 		kfree(dconf);
-
 		return rc;
 	}
 
-	icount = dconf->icount+1;
-
-	kfree(dconf);
-
+	icount = dconf->icount + 1;
 	dev_info(&intf->dev, "Configuring for %d interfaces\n", icount);
 
 	if (icount > GS_MAX_INTF) {
 		dev_err(&intf->dev,
 			"Driver cannot handle more that %d CAN interfaces\n",
 			GS_MAX_INTF);
+		kfree(dconf);
 		return -EINVAL;
 	}
 
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
-	init_usb_anchor(&dev->rx_submitted);
+	if (!dev) {
+		kfree(dconf);
+		return -ENOMEM;
+	}
 
-	atomic_set(&dev->active_channels, 0);
+	init_usb_anchor(&dev->rx_submitted);
 
 	usb_set_intfdata(intf, dev);
 	dev->udev = interface_to_usbdev(intf);
 
 	for (i = 0; i < icount; i++) {
-		dev->canch[i] = gs_make_candev(i, intf);
+		dev->canch[i] = gs_make_candev(i, intf, dconf);
 		if (IS_ERR_OR_NULL(dev->canch[i])) {
 			/* save error code to return later */
 			rc = PTR_ERR(dev->canch[i]);
@@ -919,11 +1019,14 @@ static int gs_usb_probe(struct usb_interface *intf, const struct usb_device_id *
 				gs_destroy_candev(dev->canch[i]);
 
 			usb_kill_anchored_urbs(&dev->rx_submitted);
+			kfree(dconf);
 			kfree(dev);
 			return rc;
 		}
 		dev->canch[i]->parent = dev;
 	}
+
+	kfree(dconf);
 
 	return 0;
 }
@@ -948,7 +1051,10 @@ static void gs_usb_disconnect(struct usb_interface *intf)
 }
 
 static const struct usb_device_id gs_usb_table[] = {
-	{USB_DEVICE(USB_GSUSB_1_VENDOR_ID, USB_GSUSB_1_PRODUCT_ID)},
+	{ USB_DEVICE_INTERFACE_NUMBER(USB_GSUSB_1_VENDOR_ID,
+				      USB_GSUSB_1_PRODUCT_ID, 0) },
+	{ USB_DEVICE_INTERFACE_NUMBER(USB_CANDLELIGHT_VENDOR_ID,
+				      USB_CANDLELIGHT_PRODUCT_ID, 0) },
 	{} /* Terminating entry */
 };
 
@@ -966,5 +1072,6 @@ module_usb_driver(gs_usb_driver);
 MODULE_AUTHOR("Maximilian Schneider <mws@schneidersoft.net>");
 MODULE_DESCRIPTION(
 "Socket CAN device driver for Geschwister Schneider Technologie-, "
-"Entwicklungs- und Vertriebs UG. USB2.0 to CAN interfaces.");
+"Entwicklungs- und Vertriebs UG. USB2.0 to CAN interfaces\n"
+"and bytewerk.org candleLight USB CAN interfaces.");
 MODULE_LICENSE("GPL v2");

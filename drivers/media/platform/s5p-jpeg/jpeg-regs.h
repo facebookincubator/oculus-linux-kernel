@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* linux/drivers/media/platform/s5p-jpeg/jpeg-regs.h
  *
  * Register definition file for Samsung JPEG codec driver
@@ -5,12 +6,8 @@
  * Copyright (c) 2011-2014 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
- * Author: Andrzej Pietrasiewicz <andrzej.p@samsung.com>
+ * Author: Andrzej Pietrasiewicz <andrzejtp2010@gmail.com>
  * Author: Jacek Anaszewski <j.anaszewski@samsung.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef JPEG_REGS_H_
@@ -124,14 +121,14 @@
 
 /* JPEG timer setting register */
 #define S5P_JPG_TIMER_SE		0x7c
-#define S5P_TIMER_INT_EN_MASK		(0x1 << 31)
-#define S5P_TIMER_INT_EN		(0x1 << 31)
+#define S5P_TIMER_INT_EN_MASK		(0x1UL << 31)
+#define S5P_TIMER_INT_EN		(0x1UL << 31)
 #define S5P_TIMER_INIT_MASK		0x7fffffff
 
 /* JPEG timer status register */
 #define S5P_JPG_TIMER_ST		0x80
 #define S5P_TIMER_INT_STAT_SHIFT	31
-#define S5P_TIMER_INT_STAT_MASK		(0x1 << S5P_TIMER_INT_STAT_SHIFT)
+#define S5P_TIMER_INT_STAT_MASK		(0x1UL << S5P_TIMER_INT_STAT_SHIFT)
 #define S5P_TIMER_CNT_SHIFT		0
 #define S5P_TIMER_CNT_MASK		0x7fffffff
 
@@ -231,12 +228,14 @@
 
 /* JPEG INT Register bit */
 #define EXYNOS4_INT_EN_MASK		(0x1f << 0)
+#define EXYNOS5433_INT_EN_MASK		(0x1ff << 0)
 #define EXYNOS4_PROT_ERR_INT_EN		(1 << 0)
 #define EXYNOS4_IMG_COMPLETION_INT_EN	(1 << 1)
 #define EXYNOS4_DEC_INVALID_FORMAT_EN	(1 << 2)
 #define EXYNOS4_MULTI_SCAN_ERROR_EN	(1 << 3)
 #define EXYNOS4_FRAME_ERR_EN		(1 << 4)
 #define EXYNOS4_INT_EN_ALL		(0x1f << 0)
+#define EXYNOS5433_INT_EN_ALL		(0x1b6 << 0)
 
 #define EXYNOS4_MOD_REG_PROC_ENC	(0 << 3)
 #define EXYNOS4_MOD_REG_PROC_DEC	(1 << 3)
@@ -296,6 +295,8 @@
 
 #define EXYNOS4_ENC_FMT_SHIFT			24
 #define EXYNOS4_ENC_FMT_MASK			(3 << EXYNOS4_ENC_FMT_SHIFT)
+#define EXYNOS5433_ENC_FMT_MASK			(7 << EXYNOS4_ENC_FMT_SHIFT)
+
 #define EXYNOS4_ENC_FMT_GRAY			(0 << EXYNOS4_ENC_FMT_SHIFT)
 #define EXYNOS4_ENC_FMT_YUV_444			(1 << EXYNOS4_ENC_FMT_SHIFT)
 #define EXYNOS4_ENC_FMT_YUV_422			(2 << EXYNOS4_ENC_FMT_SHIFT)
@@ -305,6 +306,8 @@
 
 #define EXYNOS4_SWAP_CHROMA_CRCB		(1 << 26)
 #define EXYNOS4_SWAP_CHROMA_CBCR		(0 << 26)
+#define EXYNOS5433_SWAP_CHROMA_CRCB		(1 << 27)
+#define EXYNOS5433_SWAP_CHROMA_CBCR		(0 << 27)
 
 /* JPEG HUFF count Register bit */
 #define EXYNOS4_HUFF_COUNT_MASK			0xffff
@@ -316,35 +319,56 @@
 #define EXYNOS4_DECODED_IMG_FMT_MASK		0x3
 
 /* JPEG TBL SEL Register bit */
-#define EXYNOS4_Q_TBL_COMP1_0		(0 << 0)
-#define EXYNOS4_Q_TBL_COMP1_1		(1 << 0)
-#define EXYNOS4_Q_TBL_COMP1_2		(2 << 0)
-#define EXYNOS4_Q_TBL_COMP1_3		(3 << 0)
+#define EXYNOS4_Q_TBL_COMP(c, n)	((n) << (((c) - 1) << 1))
 
-#define EXYNOS4_Q_TBL_COMP2_0		(0 << 2)
-#define EXYNOS4_Q_TBL_COMP2_1		(1 << 2)
-#define EXYNOS4_Q_TBL_COMP2_2		(2 << 2)
-#define EXYNOS4_Q_TBL_COMP2_3		(3 << 2)
+#define EXYNOS4_Q_TBL_COMP1_0		EXYNOS4_Q_TBL_COMP(1, 0)
+#define EXYNOS4_Q_TBL_COMP1_1		EXYNOS4_Q_TBL_COMP(1, 1)
+#define EXYNOS4_Q_TBL_COMP1_2		EXYNOS4_Q_TBL_COMP(1, 2)
+#define EXYNOS4_Q_TBL_COMP1_3		EXYNOS4_Q_TBL_COMP(1, 3)
 
-#define EXYNOS4_Q_TBL_COMP3_0		(0 << 4)
-#define EXYNOS4_Q_TBL_COMP3_1		(1 << 4)
-#define EXYNOS4_Q_TBL_COMP3_2		(2 << 4)
-#define EXYNOS4_Q_TBL_COMP3_3		(3 << 4)
+#define EXYNOS4_Q_TBL_COMP2_0		EXYNOS4_Q_TBL_COMP(2, 0)
+#define EXYNOS4_Q_TBL_COMP2_1		EXYNOS4_Q_TBL_COMP(2, 1)
+#define EXYNOS4_Q_TBL_COMP2_2		EXYNOS4_Q_TBL_COMP(2, 2)
+#define EXYNOS4_Q_TBL_COMP2_3		EXYNOS4_Q_TBL_COMP(2, 3)
 
-#define EXYNOS4_HUFF_TBL_COMP1_AC_0_DC_0	(0 << 6)
-#define EXYNOS4_HUFF_TBL_COMP1_AC_0_DC_1	(1 << 6)
-#define EXYNOS4_HUFF_TBL_COMP1_AC_1_DC_0	(2 << 6)
-#define EXYNOS4_HUFF_TBL_COMP1_AC_1_DC_1	(3 << 6)
+#define EXYNOS4_Q_TBL_COMP3_0		EXYNOS4_Q_TBL_COMP(3, 0)
+#define EXYNOS4_Q_TBL_COMP3_1		EXYNOS4_Q_TBL_COMP(3, 1)
+#define EXYNOS4_Q_TBL_COMP3_2		EXYNOS4_Q_TBL_COMP(3, 2)
+#define EXYNOS4_Q_TBL_COMP3_3		EXYNOS4_Q_TBL_COMP(3, 3)
 
-#define EXYNOS4_HUFF_TBL_COMP2_AC_0_DC_0	(0 << 8)
-#define EXYNOS4_HUFF_TBL_COMP2_AC_0_DC_1	(1 << 8)
-#define EXYNOS4_HUFF_TBL_COMP2_AC_1_DC_0	(2 << 8)
-#define EXYNOS4_HUFF_TBL_COMP2_AC_1_DC_1	(3 << 8)
+#define EXYNOS4_HUFF_TBL_COMP(c, n)	((n) << ((((c) - 1) << 1) + 6))
 
-#define EXYNOS4_HUFF_TBL_COMP3_AC_0_DC_0	(0 << 10)
-#define EXYNOS4_HUFF_TBL_COMP3_AC_0_DC_1	(1 << 10)
-#define EXYNOS4_HUFF_TBL_COMP3_AC_1_DC_0	(2 << 10)
-#define EXYNOS4_HUFF_TBL_COMP3_AC_1_DC_1	(3 << 10)
+#define EXYNOS4_HUFF_TBL_COMP1_AC_0_DC_0	\
+	EXYNOS4_HUFF_TBL_COMP(1, 0)
+#define EXYNOS4_HUFF_TBL_COMP1_AC_0_DC_1	\
+	EXYNOS4_HUFF_TBL_COMP(1, 1)
+#define EXYNOS4_HUFF_TBL_COMP1_AC_1_DC_0	\
+	EXYNOS4_HUFF_TBL_COMP(1, 2)
+#define EXYNOS4_HUFF_TBL_COMP1_AC_1_DC_1	\
+	EXYNOS4_HUFF_TBL_COMP(1, 3)
+
+#define EXYNOS4_HUFF_TBL_COMP2_AC_0_DC_0	\
+	EXYNOS4_HUFF_TBL_COMP(2, 0)
+#define EXYNOS4_HUFF_TBL_COMP2_AC_0_DC_1	\
+	EXYNOS4_HUFF_TBL_COMP(2, 1)
+#define EXYNOS4_HUFF_TBL_COMP2_AC_1_DC_0	\
+	EXYNOS4_HUFF_TBL_COMP(2, 2)
+#define EXYNOS4_HUFF_TBL_COMP2_AC_1_DC_1	\
+	EXYNOS4_HUFF_TBL_COMP(2, 3)
+
+#define EXYNOS4_HUFF_TBL_COMP3_AC_0_DC_0	\
+	EXYNOS4_HUFF_TBL_COMP(3, 0)
+#define EXYNOS4_HUFF_TBL_COMP3_AC_0_DC_1	\
+	EXYNOS4_HUFF_TBL_COMP(3, 1)
+#define EXYNOS4_HUFF_TBL_COMP3_AC_1_DC_0	\
+	EXYNOS4_HUFF_TBL_COMP(3, 2)
+#define EXYNOS4_HUFF_TBL_COMP3_AC_1_DC_1	\
+	EXYNOS4_HUFF_TBL_COMP(3, 3)
+
+#define EXYNOS4_NF_SHIFT			16
+#define EXYNOS4_NF_MASK				0xff
+#define EXYNOS4_NF(x)				\
+	(((x) & EXYNOS4_NF_MASK) << EXYNOS4_NF_SHIFT)
 
 /* JPEG quantizer table register */
 #define EXYNOS4_QTBL_CONTENT(n)	(0x100 + (n) * 0x40)
@@ -538,13 +562,13 @@
 /* JPEG timer setting register */
 #define EXYNOS3250_TIMER_SE			0x148
 #define EXYNOS3250_TIMER_INT_EN_SHIFT		31
-#define EXYNOS3250_TIMER_INT_EN			(1 << EXYNOS3250_TIMER_INT_EN_SHIFT)
+#define EXYNOS3250_TIMER_INT_EN			(1UL << EXYNOS3250_TIMER_INT_EN_SHIFT)
 #define EXYNOS3250_TIMER_INIT_MASK		0x7fffffff
 
 /* JPEG timer status register */
 #define EXYNOS3250_TIMER_ST			0x14c
 #define EXYNOS3250_TIMER_INT_STAT_SHIFT		31
-#define EXYNOS3250_TIMER_INT_STAT		(1 << EXYNOS3250_TIMER_INT_STAT_SHIFT)
+#define EXYNOS3250_TIMER_INT_STAT		(1UL << EXYNOS3250_TIMER_INT_STAT_SHIFT)
 #define EXYNOS3250_TIMER_CNT_SHIFT		0
 #define EXYNOS3250_TIMER_CNT_MASK		0x7fffffff
 

@@ -31,8 +31,8 @@
 #define HCI_TIME_STAMP	3
 
 /* CMSG flags */
-#define HCI_CMSG_DIR	0x0001
-#define HCI_CMSG_TSTAMP	0x0002
+#define HCI_CMSG_DIR	0x01
+#define HCI_CMSG_TSTAMP	0x02
 
 struct sockaddr_hci {
 	sa_family_t    hci_family;
@@ -45,6 +45,7 @@ struct sockaddr_hci {
 #define HCI_CHANNEL_USER	1
 #define HCI_CHANNEL_MONITOR	2
 #define HCI_CHANNEL_CONTROL	3
+#define HCI_CHANNEL_LOGGING	4
 
 struct hci_filter {
 	unsigned long type_mask;
@@ -143,19 +144,19 @@ struct hci_dev_req {
 
 struct hci_dev_list_req {
 	__u16  dev_num;
-	struct hci_dev_req dev_req[0];	/* hci_dev_req structures */
+	struct hci_dev_req dev_req[];	/* hci_dev_req structures */
 };
 
 struct hci_conn_list_req {
 	__u16  dev_id;
 	__u16  conn_num;
-	struct hci_conn_info conn_info[0];
+	struct hci_conn_info conn_info[];
 };
 
 struct hci_conn_info_req {
 	bdaddr_t bdaddr;
 	__u8     type;
-	struct   hci_conn_info conn_info[0];
+	struct   hci_conn_info conn_info[];
 };
 
 struct hci_auth_info_req {

@@ -42,8 +42,8 @@
 
 */
 
-static char version[] = "atarilance.c: v1.3 04/04/96 "
-					   "Roman.Hodek@informatik.uni-erlangen.de\n";
+static const char version[] = "atarilance.c: v1.3 04/04/96 "
+			      "Roman.Hodek@informatik.uni-erlangen.de\n";
 
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
@@ -156,7 +156,7 @@ struct lance_memory {
 	struct lance_init_block	init;
 	struct lance_tx_head	tx_head[TX_RING_SIZE];
 	struct lance_rx_head	rx_head[RX_RING_SIZE];
-	char					packet_area[0];	/* packet data follow after the
+	char					packet_area[];	/* packet data follow after the
 											 * init block and the ring
 											 * descriptors and are located
 											 * at runtime */
@@ -339,13 +339,14 @@ static unsigned long lance_probe1( struct net_device *dev, struct lance_addr
                                    *init_rec );
 static int lance_open( struct net_device *dev );
 static void lance_init_ring( struct net_device *dev );
-static int lance_start_xmit( struct sk_buff *skb, struct net_device *dev );
+static netdev_tx_t lance_start_xmit(struct sk_buff *skb,
+				    struct net_device *dev);
 static irqreturn_t lance_interrupt( int irq, void *dev_id );
 static int lance_rx( struct net_device *dev );
 static int lance_close( struct net_device *dev );
 static void set_multicast_list( struct net_device *dev );
 static int lance_set_mac_address( struct net_device *dev, void *addr );
-static void lance_tx_timeout (struct net_device *dev);
+static void lance_tx_timeout (struct net_device *dev, unsigned int txqueue);
 
 /************************* End of Prototypes **************************/
 
@@ -460,7 +461,6 @@ static const struct net_device_ops lance_netdev_ops = {
 	.ndo_set_mac_address	= lance_set_mac_address,
 	.ndo_tx_timeout		= lance_tx_timeout,
 	.ndo_validate_addr	= eth_validate_addr,
-	.ndo_change_mtu		= eth_change_mtu,
 };
 
 static unsigned long __init lance_probe1( struct net_device *dev,
@@ -553,8 +553,8 @@ static unsigned long __init lance_probe1( struct net_device *dev,
 	if (lp->cardtype == PAM_CARD ||
 		memaddr == (unsigned short *)0xffe00000) {
 		/* PAMs card and Riebl on ST use level 5 autovector */
-		if (request_irq(IRQ_AUTO_5, lance_interrupt, IRQ_TYPE_PRIO,
-		            "PAM,Riebl-ST Ethernet", dev)) {
+		if (request_irq(IRQ_AUTO_5, lance_interrupt, 0,
+				"PAM,Riebl-ST Ethernet", dev)) {
 			printk( "Lance: request for irq %d failed\n", IRQ_AUTO_5 );
 			return 0;
 		}
@@ -567,8 +567,8 @@ static unsigned long __init lance_probe1( struct net_device *dev,
 			printk( "Lance: request for VME interrupt failed\n" );
 			return 0;
 		}
-		if (request_irq(irq, lance_interrupt, IRQ_TYPE_PRIO,
-		            "Riebl-VME Ethernet", dev)) {
+		if (request_irq(irq, lance_interrupt, 0, "Riebl-VME Ethernet",
+				dev)) {
 			printk( "Lance: request for irq %u failed\n", irq );
 			return 0;
 		}
@@ -727,7 +727,7 @@ static void lance_init_ring( struct net_device *dev )
 /* XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX */
 
 
-static void lance_tx_timeout (struct net_device *dev)
+static void lance_tx_timeout (struct net_device *dev, unsigned int txqueue)
 {
 	struct lance_private *lp = netdev_priv(dev);
 	struct lance_ioreg	 *IO = lp->iobase;
@@ -764,13 +764,14 @@ static void lance_tx_timeout (struct net_device *dev)
 	/* lance_restart, essentially */
 	lance_init_ring(dev);
 	REGA( CSR0 ) = CSR0_INEA | CSR0_INIT | CSR0_STRT;
-	dev->trans_start = jiffies; /* prevent tx timeout */
+	netif_trans_update(dev); /* prevent tx timeout */
 	netif_wake_queue(dev);
 }
 
 /* XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX */
 
-static int lance_start_xmit( struct sk_buff *skb, struct net_device *dev )
+static netdev_tx_t
+lance_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct lance_private *lp = netdev_priv(dev);
 	struct lance_ioreg	 *IO = lp->iobase;
@@ -824,7 +825,7 @@ static int lance_start_xmit( struct sk_buff *skb, struct net_device *dev )
 	lp->memcpy_f( PKTBUF_ADDR(head), (void *)skb->data, skb->len );
 	head->flag = TMD1_OWN_CHIP | TMD1_ENP | TMD1_STP;
 	dev->stats.tx_bytes += skb->len;
-	dev_kfree_skb( skb );
+	dev_consume_skb_irq(skb);
 	lp->cur_tx++;
 	while( lp->cur_tx >= TX_RING_SIZE && lp->dirty_tx >= TX_RING_SIZE ) {
 		lp->cur_tx -= TX_RING_SIZE;
@@ -1013,13 +1014,9 @@ static int lance_rx( struct net_device *dev )
 					u_char *data = PKTBUF_ADDR(head);
 
 					printk(KERN_DEBUG "%s: RX pkt type 0x%04x from %pM to %pM "
-						   "data %02x %02x %02x %02x %02x %02x %02x %02x "
-						   "len %d\n",
+						   "data %8ph len %d\n",
 						   dev->name, ((u_short *)data)[6],
-						   &data[6], data,
-						   data[15], data[16], data[17], data[18],
-						   data[19], data[20], data[21], data[22],
-						   pkt_len);
+						   &data[6], data, &data[15], pkt_len);
 				}
 
 				skb_reserve( skb, 2 );	/* 16 byte align */

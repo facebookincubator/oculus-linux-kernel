@@ -25,17 +25,17 @@ struct ath_buf;
 struct fft_sample_tlv;
 
 #ifdef CONFIG_ATH9K_DEBUGFS
-#define TX_STAT_INC(q, c) sc->debug.stats.txstats[q].c++
-#define RX_STAT_INC(c) (sc->debug.stats.rxstats.c++)
-#define RESET_STAT_INC(sc, type) sc->debug.stats.reset[type]++
-#define ANT_STAT_INC(i, c) sc->debug.stats.ant_stats[i].c++
-#define ANT_LNA_INC(i, c) sc->debug.stats.ant_stats[i].lna_recv_cnt[c]++;
+#define TX_STAT_INC(sc, q, c)	 do { (sc)->debug.stats.txstats[q].c++; } while (0)
+#define RX_STAT_INC(sc, c)	 do { (sc)->debug.stats.rxstats.c++; } while (0)
+#define RESET_STAT_INC(sc, type) do { (sc)->debug.stats.reset[type]++; } while (0)
+#define ANT_STAT_INC(sc, i, c)	 do { (sc)->debug.stats.ant_stats[i].c++; } while (0)
+#define ANT_LNA_INC(sc, i, c)	 do { (sc)->debug.stats.ant_stats[i].lna_recv_cnt[c]++; } while (0)
 #else
-#define TX_STAT_INC(q, c) do { } while (0)
-#define RX_STAT_INC(c)
-#define RESET_STAT_INC(sc, type) do { } while (0)
-#define ANT_STAT_INC(i, c) do { } while (0)
-#define ANT_LNA_INC(i, c) do { } while (0)
+#define TX_STAT_INC(sc, q, c)	 do { (void)(sc); } while (0)
+#define RX_STAT_INC(sc, c)	 do { (void)(sc); } while (0)
+#define RESET_STAT_INC(sc, type) do { (void)(sc); } while (0)
+#define ANT_STAT_INC(sc, i, c)	 do { (void)(sc); } while (0)
+#define ANT_LNA_INC(sc, i, c)	 do { (void)(sc); } while (0)
 #endif
 
 enum ath_reset_type {
@@ -49,6 +49,9 @@ enum ath_reset_type {
 	RESET_TYPE_MAC_HANG,
 	RESET_TYPE_BEACON_STUCK,
 	RESET_TYPE_MCI,
+	RESET_TYPE_CALIBRATION,
+	RESET_TX_DMA_ERROR,
+	RESET_RX_DMA_ERROR,
 	__RESET_TYPE_MAX
 };
 
@@ -144,7 +147,6 @@ struct ath_interrupt_stats {
  * @completed: Total MPDUs (non-aggr) completed
  * @a_aggr: Total no. of aggregates queued
  * @a_queued_hw: Total AMPDUs queued to hardware
- * @a_queued_sw: Total AMPDUs queued to software queues
  * @a_completed: Total AMPDUs completed
  * @a_retries: No. of AMPDUs retried (SW)
  * @a_xretries: No. of AMPDUs dropped due to xretries
@@ -171,7 +173,6 @@ struct ath_tx_stats {
 	u32 xretries;
 	u32 a_aggr;
 	u32 a_queued_hw;
-	u32 a_queued_sw;
 	u32 a_completed;
 	u32 a_retries;
 	u32 a_xretries;
@@ -195,12 +196,11 @@ struct ath_tx_stats {
 #define TXSTATS sc->debug.stats.txstats
 #define PR(str, elem)							\
 	do {								\
-		len += scnprintf(buf + len, size - len,			\
-				 "%s%13u%11u%10u%10u\n", str,		\
-				 TXSTATS[PR_QNUM(IEEE80211_AC_BE)].elem,\
-				 TXSTATS[PR_QNUM(IEEE80211_AC_BK)].elem,\
-				 TXSTATS[PR_QNUM(IEEE80211_AC_VI)].elem,\
-				 TXSTATS[PR_QNUM(IEEE80211_AC_VO)].elem); \
+		seq_printf(file, "%s%13u%11u%10u%10u\n", str,		\
+			   TXSTATS[PR_QNUM(IEEE80211_AC_BE)].elem,\
+			   TXSTATS[PR_QNUM(IEEE80211_AC_BK)].elem,\
+			   TXSTATS[PR_QNUM(IEEE80211_AC_VI)].elem,\
+			   TXSTATS[PR_QNUM(IEEE80211_AC_VO)].elem); \
 	} while(0)
 
 struct ath_rx_rate_stats {
@@ -219,6 +219,11 @@ struct ath_rx_rate_stats {
 		u32 cck_lp_cnt;
 		u32 cck_sp_cnt;
 	} cck_stats[4];
+};
+
+struct ath_airtime_stats {
+	u32 rx_airtime;
+	u32 tx_airtime;
 };
 
 #define ANT_MAIN 0

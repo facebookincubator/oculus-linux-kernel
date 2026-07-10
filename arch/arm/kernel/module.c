@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/kernel/module.c
  *
  *  Copyright (C) 2002 Russell King.
  *  Modified for nommu by Hyok S. Choi
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * Module allocation method suggested by Andi Kleen.
  */
@@ -20,7 +17,6 @@
 #include <linux/string.h>
 #include <linux/gfp.h>
 
-#include <asm/pgtable.h>
 #include <asm/sections.h>
 #include <asm/smp_plat.h>
 #include <asm/unwind.h>
@@ -34,17 +30,43 @@
  * recompiling the whole kernel when CONFIG_XIP_KERNEL is turned on/off.
  */
 #undef MODULES_VADDR
-#define MODULES_VADDR	(((unsigned long)_etext + ~PMD_MASK) & PMD_MASK)
+#define MODULES_VADDR	(((unsigned long)_exiprom + ~PMD_MASK) & PMD_MASK)
 #endif
 
 #ifdef CONFIG_MMU
 void *module_alloc(unsigned long size)
 {
-	return __vmalloc_node_range(size, 1, MODULES_VADDR, MODULES_END,
+	gfp_t gfp_mask = GFP_KERNEL;
+	void *p;
+
+	/* Silence the initial allocation */
+	if (IS_ENABLED(CONFIG_ARM_MODULE_PLTS))
+		gfp_mask |= __GFP_NOWARN;
+
+	p = __vmalloc_node_range(size, 1, MODULES_VADDR, MODULES_END,
+				gfp_mask, PAGE_KERNEL_EXEC, 0, NUMA_NO_NODE,
+				__builtin_return_address(0));
+	if (!IS_ENABLED(CONFIG_ARM_MODULE_PLTS) || p)
+		return p;
+	return __vmalloc_node_range(size, 1,  VMALLOC_START, VMALLOC_END,
 				GFP_KERNEL, PAGE_KERNEL_EXEC, 0, NUMA_NO_NODE,
 				__builtin_return_address(0));
 }
 #endif
+
+bool module_init_section(const char *name)
+{
+	return strstarts(name, ".init") ||
+		strstarts(name, ".ARM.extab.init") ||
+		strstarts(name, ".ARM.exidx.init");
+}
+
+bool module_exit_section(const char *name)
+{
+	return strstarts(name, ".exit") ||
+		strstarts(name, ".ARM.extab.exit") ||
+		strstarts(name, ".ARM.exidx.exit");
+}
 
 int
 apply_relocate(Elf32_Shdr *sechdrs, const char *strtab, unsigned int symindex,
@@ -98,14 +120,33 @@ apply_relocate(Elf32_Shdr *sechdrs, const char *strtab, unsigned int symindex,
 		case R_ARM_PC24:
 		case R_ARM_CALL:
 		case R_ARM_JUMP24:
+			if (sym->st_value & 3) {
+				pr_err("%s: section %u reloc %u sym '%s': unsupported interworking call (ARM -> Thumb)\n",
+				       module->name, relindex, i, symname);
+				return -ENOEXEC;
+			}
+
 			offset = __mem_to_opcode_arm(*(u32 *)loc);
 			offset = (offset & 0x00ffffff) << 2;
 			if (offset & 0x02000000)
 				offset -= 0x04000000;
 
 			offset += sym->st_value - loc;
-			if (offset & 3 ||
-			    offset <= (s32)0xfe000000 ||
+
+			/*
+			 * Route through a PLT entry if 'offset' exceeds the
+			 * supported range. Note that 'offset + loc + 8'
+			 * contains the absolute jump target, i.e.,
+			 * @sym + addend, corrected for the +8 PC bias.
+			 */
+			if (IS_ENABLED(CONFIG_ARM_MODULE_PLTS) &&
+			    (offset <= (s32)0xfe000000 ||
+			     offset >= (s32)0x02000000))
+				offset = get_module_plt(module, loc,
+							offset + loc + 8)
+					 - loc - 8;
+
+			if (offset <= (s32)0xfe000000 ||
 			    offset >= (s32)0x02000000) {
 				pr_err("%s: section %u reloc %u sym '%s': relocation %u out of range (%#lx -> %#x)\n",
 				       module->name, relindex, i, symname,
@@ -131,8 +172,17 @@ apply_relocate(Elf32_Shdr *sechdrs, const char *strtab, unsigned int symindex,
 		       break;
 
 		case R_ARM_PREL31:
-			offset = *(u32 *)loc + sym->st_value - loc;
-			*(u32 *)loc = offset & 0x7fffffff;
+			offset = (*(s32 *)loc << 1) >> 1; /* sign extend */
+			offset += sym->st_value - loc;
+			if (offset >= 0x40000000 || offset < -0x40000000) {
+				pr_err("%s: section %u reloc %u sym '%s': relocation %u out of range (%#lx -> %#x)\n",
+				       module->name, relindex, i, symname,
+				       ELF32_R_TYPE(rel->r_info), loc,
+				       sym->st_value);
+				return -ENOEXEC;
+			}
+			*(u32 *)loc &= 0x80000000;
+			*(u32 *)loc |= offset & 0x7fffffff;
 			break;
 
 		case R_ARM_MOVW_ABS_NC:
@@ -155,6 +205,22 @@ apply_relocate(Elf32_Shdr *sechdrs, const char *strtab, unsigned int symindex,
 #ifdef CONFIG_THUMB2_KERNEL
 		case R_ARM_THM_CALL:
 		case R_ARM_THM_JUMP24:
+			/*
+			 * For function symbols, only Thumb addresses are
+			 * allowed (no interworking).
+			 *
+			 * For non-function symbols, the destination
+			 * has no specific ARM/Thumb disposition, so
+			 * the branch is resolved under the assumption
+			 * that interworking is not required.
+			 */
+			if (ELF32_ST_TYPE(sym->st_info) == STT_FUNC &&
+			    !(sym->st_value & 1)) {
+				pr_err("%s: section %u reloc %u sym '%s': unsupported interworking call (Thumb -> ARM)\n",
+				       module->name, relindex, i, symname);
+				return -ENOEXEC;
+			}
+
 			upper = __mem_to_opcode_thumb16(*(u16 *)loc);
 			lower = __mem_to_opcode_thumb16(*(u16 *)(loc + 2));
 
@@ -183,17 +249,17 @@ apply_relocate(Elf32_Shdr *sechdrs, const char *strtab, unsigned int symindex,
 			offset += sym->st_value - loc;
 
 			/*
-			 * For function symbols, only Thumb addresses are
-			 * allowed (no interworking).
-			 *
-			 * For non-function symbols, the destination
-			 * has no specific ARM/Thumb disposition, so
-			 * the branch is resolved under the assumption
-			 * that interworking is not required.
+			 * Route through a PLT entry if 'offset' exceeds the
+			 * supported range.
 			 */
-			if ((ELF32_ST_TYPE(sym->st_info) == STT_FUNC &&
-				!(offset & 1)) ||
-			    offset <= (s32)0xff000000 ||
+			if (IS_ENABLED(CONFIG_ARM_MODULE_PLTS) &&
+			    (offset <= (s32)0xff000000 ||
+			     offset >= (s32)0x01000000))
+				offset = get_module_plt(module, loc,
+							offset + loc + 4)
+					 - loc - 4;
+
+			if (offset <= (s32)0xff000000 ||
 			    offset >= (s32)0x01000000) {
 				pr_err("%s: section %u reloc %u sym '%s': relocation %u out of range (%#lx -> %#x)\n",
 				       module->name, relindex, i, symname,
@@ -251,7 +317,7 @@ apply_relocate(Elf32_Shdr *sechdrs, const char *strtab, unsigned int symindex,
 #endif
 
 		default:
-			printk(KERN_ERR "%s: unknown relocation: %u\n",
+			pr_err("%s: unknown relocation: %u\n",
 			       module->name, ELF32_R_TYPE(rel->r_info));
 			return -ENOEXEC;
 		}
@@ -308,8 +374,6 @@ int module_finalize(const Elf32_Ehdr *hdr, const Elf_Shdr *sechdrs,
 			maps[ARM_SEC_UNLIKELY].unw_sec = s;
 		else if (strcmp(".ARM.exidx.text.hot", secname) == 0)
 			maps[ARM_SEC_HOT].unw_sec = s;
-		else if (strcmp(".ARM.exidx.ref.text", secname) == 0)
-			maps[ARM_SEC_REF].unw_sec = s;
 		else if (strcmp(".init.text", secname) == 0)
 			maps[ARM_SEC_INIT].txt_sec = s;
 		else if (strcmp(".text", secname) == 0)
@@ -320,8 +384,6 @@ int module_finalize(const Elf32_Ehdr *hdr, const Elf_Shdr *sechdrs,
 			maps[ARM_SEC_UNLIKELY].txt_sec = s;
 		else if (strcmp(".text.hot", secname) == 0)
 			maps[ARM_SEC_HOT].txt_sec = s;
-		else if (strcmp(".ref.text", secname) == 0)
-			maps[ARM_SEC_REF].txt_sec = s;
 	}
 
 	for (i = 0; i < ARM_SEC_MAX; i++)
@@ -353,8 +415,17 @@ module_arch_cleanup(struct module *mod)
 #ifdef CONFIG_ARM_UNWIND
 	int i;
 
-	for (i = 0; i < ARM_SEC_MAX; i++)
-		if (mod->arch.unwind[i])
-			unwind_table_del(mod->arch.unwind[i]);
+	for (i = 0; i < ARM_SEC_MAX; i++) {
+		unwind_table_del(mod->arch.unwind[i]);
+		mod->arch.unwind[i] = NULL;
+	}
+#endif
+}
+
+void __weak module_arch_freeing_init(struct module *mod)
+{
+#ifdef CONFIG_ARM_UNWIND
+	unwind_table_del(mod->arch.unwind[ARM_SEC_INIT]);
+	mod->arch.unwind[ARM_SEC_INIT] = NULL;
 #endif
 }

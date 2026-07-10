@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2014, Michael Ellerman, IBM Corp.
- * Licensed under GPLv2.
  */
 
 #include <signal.h>
@@ -40,6 +40,8 @@ int cpu_event_vs_ebb(void)
 	struct event event;
 	int cpu, rc;
 	pid_t pid;
+
+	SKIP_IF(!ebb_is_supported());
 
 	cpu = pick_online_cpu();
 	FAIL_IF(cpu < 0);

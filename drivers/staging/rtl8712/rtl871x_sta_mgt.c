@@ -1,21 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /******************************************************************************
  * rtl871x_sta_mgt.c
  *
  * Copyright(c) 2007 - 2010 Realtek Corporation. All rights reserved.
  * Linux device driver for RTL8192SU
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
  *
  * Modifications for inclusion into the Linux staging tree are
  * Copyright(c) 2010 Larry Finger. All rights reserved.
@@ -37,7 +25,7 @@
 static void _init_stainfo(struct sta_info *psta)
 {
 	memset((u8 *)psta, 0, sizeof(struct sta_info));
-	 spin_lock_init(&psta->lock);
+	spin_lock_init(&psta->lock);
 	INIT_LIST_HEAD(&psta->list);
 	INIT_LIST_HEAD(&psta->hash_list);
 	_r8712_init_sta_xmit_priv(&psta->sta_xmitpriv);
@@ -46,15 +34,15 @@ static void _init_stainfo(struct sta_info *psta)
 	INIT_LIST_HEAD(&psta->auth_list);
 }
 
-u32 _r8712_init_sta_priv(struct	sta_priv *pstapriv)
+int _r8712_init_sta_priv(struct	sta_priv *pstapriv)
 {
 	struct sta_info *psta;
 	s32 i;
 
 	pstapriv->pallocated_stainfo_buf = kmalloc(sizeof(struct sta_info) *
 						   NUM_STA + 4, GFP_ATOMIC);
-	if (pstapriv->pallocated_stainfo_buf == NULL)
-		return _FAIL;
+	if (!pstapriv->pallocated_stainfo_buf)
+		return -ENOMEM;
 	pstapriv->pstainfo_buf = pstapriv->pallocated_stainfo_buf + 4 -
 		((addr_t)(pstapriv->pallocated_stainfo_buf) & 3);
 	_init_queue(&pstapriv->free_sta_queue);
@@ -71,7 +59,7 @@ u32 _r8712_init_sta_priv(struct	sta_priv *pstapriv)
 	}
 	INIT_LIST_HEAD(&pstapriv->asoc_list);
 	INIT_LIST_HEAD(&pstapriv->auth_list);
-	return _SUCCESS;
+	return 0;
 }
 
 /* this function is used to free the memory of lock || sema for all stainfos */
@@ -79,37 +67,27 @@ static void mfree_all_stainfo(struct sta_priv *pstapriv)
 {
 	unsigned long irqL;
 	struct list_head *plist, *phead;
-	struct sta_info *psta = NULL;
 
 	spin_lock_irqsave(&pstapriv->sta_hash_lock, irqL);
 	phead = &pstapriv->free_sta_queue.queue;
 	plist = phead->next;
-	while ((end_of_queue_search(phead, plist)) == false) {
-		psta = LIST_CONTAINOR(plist, struct sta_info, list);
+	while (!end_of_queue_search(phead, plist))
 		plist = plist->next;
-	}
 
 	spin_unlock_irqrestore(&pstapriv->sta_hash_lock, irqL);
 }
 
-
-static void mfree_sta_priv_lock(struct	sta_priv *pstapriv)
-{
-	 mfree_all_stainfo(pstapriv); /* be done before free sta_hash_lock */
-}
-
-u32 _r8712_free_sta_priv(struct sta_priv *pstapriv)
+void _r8712_free_sta_priv(struct sta_priv *pstapriv)
 {
 	if (pstapriv) {
-		mfree_sta_priv_lock(pstapriv);
+		/* be done before free sta_hash_lock */
+		mfree_all_stainfo(pstapriv);
 		kfree(pstapriv->pallocated_stainfo_buf);
 	}
-	return _SUCCESS;
 }
 
 struct sta_info *r8712_alloc_stainfo(struct sta_priv *pstapriv, u8 *hwaddr)
 {
-	uint tmp_aid;
 	s32	index;
 	struct list_head *phash_list;
 	struct sta_info	*psta;
@@ -120,14 +98,11 @@ struct sta_info *r8712_alloc_stainfo(struct sta_priv *pstapriv, u8 *hwaddr)
 	unsigned long flags;
 
 	pfree_sta_queue = &pstapriv->free_sta_queue;
-	spin_lock_irqsave(&(pfree_sta_queue->lock), flags);
-	if (list_empty(&pfree_sta_queue->queue))
-		psta = NULL;
-	else {
-		psta = LIST_CONTAINOR(pfree_sta_queue->queue.next,
-				      struct sta_info, list);
-		list_del_init(&(psta->list));
-		tmp_aid = psta->aid;
+	spin_lock_irqsave(&pfree_sta_queue->lock, flags);
+	psta = list_first_entry_or_null(&pfree_sta_queue->queue,
+					struct sta_info, list);
+	if (psta) {
+		list_del_init(&psta->list);
 		_init_stainfo(psta);
 		memcpy(psta->hwaddr, hwaddr, ETH_ALEN);
 		index = wifi_mac_hash(hwaddr);
@@ -135,7 +110,7 @@ struct sta_info *r8712_alloc_stainfo(struct sta_priv *pstapriv, u8 *hwaddr)
 			psta = NULL;
 			goto exit;
 		}
-		phash_list = &(pstapriv->sta_hash[index]);
+		phash_list = &pstapriv->sta_hash[index];
 		list_add_tail(&psta->hash_list, phash_list);
 		pstapriv->asoc_sta_count++;
 
@@ -159,7 +134,7 @@ struct sta_info *r8712_alloc_stainfo(struct sta_priv *pstapriv, u8 *hwaddr)
 		}
 	}
 exit:
-	spin_unlock_irqrestore(&(pfree_sta_queue->lock), flags);
+	spin_unlock_irqrestore(&pfree_sta_queue->lock, flags);
 	return psta;
 }
 
@@ -174,7 +149,7 @@ void r8712_free_stainfo(struct _adapter *padapter, struct sta_info *psta)
 	struct	xmit_priv *pxmitpriv = &padapter->xmitpriv;
 	struct	sta_priv *pstapriv = &padapter->stapriv;
 
-	if (psta == NULL)
+	if (!psta)
 		return;
 	pfree_sta_queue = &pstapriv->free_sta_queue;
 	pstaxmitpriv = &psta->sta_xmitpriv;
@@ -200,10 +175,11 @@ void r8712_free_stainfo(struct _adapter *padapter, struct sta_info *psta)
 	_r8712_init_sta_xmit_priv(&psta->sta_xmitpriv);
 	_r8712_init_sta_recv_priv(&psta->sta_recvpriv);
 	/* for A-MPDU Rx reordering buffer control,
-	 * cancel reordering_ctrl_timer */
+	 * cancel reordering_ctrl_timer
+	 */
 	for (i = 0; i < 16; i++) {
 		preorder_ctrl = &psta->recvreorder_ctrl[i];
-		_cancel_timer_ex(&preorder_ctrl->reordering_ctrl_timer);
+		del_timer(&preorder_ctrl->reordering_ctrl_timer);
 	}
 	spin_lock(&(pfree_sta_queue->lock));
 	/* insert into free_sta_queue; 20061114 */
@@ -227,12 +203,12 @@ void r8712_free_all_stainfo(struct _adapter *padapter)
 	for (index = 0; index < NUM_STA; index++) {
 		phead = &(pstapriv->sta_hash[index]);
 		plist = phead->next;
-		while ((end_of_queue_search(phead, plist)) == false) {
-			psta = LIST_CONTAINOR(plist,
-					      struct sta_info, hash_list);
+		while (!end_of_queue_search(phead, plist)) {
+			psta = container_of(plist,
+					    struct sta_info, hash_list);
 			plist = plist->next;
 			if (pbcmc_stainfo != psta)
-				r8712_free_stainfo(padapter , psta);
+				r8712_free_stainfo(padapter, psta);
 		}
 	}
 	spin_unlock_irqrestore(&pstapriv->sta_hash_lock, irqL);
@@ -246,14 +222,14 @@ struct sta_info *r8712_get_stainfo(struct sta_priv *pstapriv, u8 *hwaddr)
 	struct sta_info *psta = NULL;
 	u32	index;
 
-	if (hwaddr == NULL)
+	if (!hwaddr)
 		return NULL;
 	index = wifi_mac_hash(hwaddr);
 	spin_lock_irqsave(&pstapriv->sta_hash_lock, irqL);
 	phead = &(pstapriv->sta_hash[index]);
 	plist = phead->next;
-	while ((end_of_queue_search(phead, plist)) == false) {
-		psta = LIST_CONTAINOR(plist, struct sta_info, hash_list);
+	while (!end_of_queue_search(phead, plist)) {
+		psta = container_of(plist, struct sta_info, hash_list);
 		if ((!memcmp(psta->hwaddr, hwaddr, ETH_ALEN))) {
 			/* if found the matched address */
 			break;
@@ -267,25 +243,18 @@ struct sta_info *r8712_get_stainfo(struct sta_priv *pstapriv, u8 *hwaddr)
 
 void r8712_init_bcmc_stainfo(struct _adapter *padapter)
 {
-	struct sta_info	*psta;
-	struct tx_servq	*ptxservq;
 	unsigned char bcast_addr[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	struct	sta_priv *pstapriv = &padapter->stapriv;
 
-	psta = r8712_alloc_stainfo(pstapriv, bcast_addr);
-	if (psta == NULL)
-		return;
-	ptxservq = &(psta->sta_xmitpriv.be_q);
+	r8712_alloc_stainfo(pstapriv, bcast_addr);
 }
 
 struct sta_info *r8712_get_bcmc_stainfo(struct _adapter *padapter)
 {
-	struct sta_info *psta;
 	struct sta_priv *pstapriv = &padapter->stapriv;
 	u8 bc_addr[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
-	psta = r8712_get_stainfo(pstapriv, bc_addr);
-	return psta;
+	return r8712_get_stainfo(pstapriv, bc_addr);
 }
 
 

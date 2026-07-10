@@ -1,18 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2005-2006 Micronas USA Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (Version 2) as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
  */
 
 #include <linux/module.h>
@@ -388,7 +376,6 @@ MODULE_DEVICE_TABLE(i2c, sony_btf_mpx_id);
 
 static struct i2c_driver sony_btf_mpx_driver = {
 	.driver = {
-		.owner	= THIS_MODULE,
 		.name	= "sony-btf-mpx",
 	},
 	.probe = sony_btf_mpx_probe,

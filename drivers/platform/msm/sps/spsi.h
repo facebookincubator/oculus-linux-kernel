@@ -1,15 +1,7 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2011-2020, The Linux Foundation. All rights reserved.
  */
-
 /**
  * Smart-Peripheral-Switch (SPS) internal API.
  */
@@ -117,116 +109,120 @@ extern u8 logging_option;
 extern u8 debug_level_option;
 extern u8 print_limit_option;
 
-#define SPS_IPC(idx, dev, msg, args...) do { \
+#define SPS_IPC(idx, dev, msg, ...) do { \
 		if (dev) { \
-			if ((idx == 0) && (dev)->ipc_log0) \
+			if (idx == 0) \
 				ipc_log_string((dev)->ipc_log0, \
-					"%s: " msg, __func__, args); \
-			else if ((idx == 1) && (dev)->ipc_log1) \
+					"%s: " msg, __func__, ##__VA_ARGS__); \
+			else if (idx == 1) \
 				ipc_log_string((dev)->ipc_log1, \
-					"%s: " msg, __func__, args); \
-			else if ((idx == 2) && (dev)->ipc_log2) \
+					"%s: " msg, __func__, ##__VA_ARGS__); \
+			else if (idx == 2) \
 				ipc_log_string((dev)->ipc_log2, \
-					"%s: " msg, __func__, args); \
-			else if ((idx == 3) && (dev)->ipc_log3) \
+					"%s: " msg, __func__, ##__VA_ARGS__); \
+			else if (idx == 3) \
 				ipc_log_string((dev)->ipc_log3, \
-					"%s: " msg, __func__, args); \
-			else if ((idx == 4) && (dev)->ipc_log4) \
+					"%s: " msg, __func__, ##__VA_ARGS__); \
+			else if (idx == 4) \
 				ipc_log_string((dev)->ipc_log4, \
-					"%s: " msg, __func__, args); \
-			else \
-				pr_debug("sps: no such IPC logging index!\n"); \
+					"%s: " msg, __func__, ##__VA_ARGS__); \
 		} \
 	} while (0)
-#define SPS_DUMP(msg, args...) do {					\
-		SPS_IPC(4, sps, msg, args); \
+#define SPS_DUMP(msg, ...) do {					\
+		SPS_IPC(4, sps, msg, ##__VA_ARGS__); \
 		if (sps) { \
 			if (sps->ipc_log4 == NULL) \
-				pr_info(msg, ##args);	\
+				pr_info("%s: " msg, __func__, ##__VA_ARGS__); \
 		} \
 	} while (0)
-#define SPS_ERR(dev, msg, args...) do {					\
+#define SPS_ERR(dev, msg, ...) do {					\
 		if (logging_option != 1) {	\
 			if (unlikely(print_limit_option > 2))	\
-				pr_err_ratelimited(msg, ##args);	\
+				pr_err_ratelimited( \
+				"%s: " msg, __func__, ##__VA_ARGS__);	\
 			else	\
-				pr_err(msg, ##args);	\
+				pr_err("%s: " msg, __func__, ##__VA_ARGS__); \
 		}	\
-		SPS_IPC(3, dev, msg, args); \
+		SPS_IPC(3, dev, msg, ##__VA_ARGS__); \
 	} while (0)
-#define SPS_INFO(dev, msg, args...) do {				\
+#define SPS_INFO(dev, msg, ...) do {				\
 		if (logging_option != 1) {	\
 			if (unlikely(print_limit_option > 1))	\
-				pr_info_ratelimited(msg, ##args);	\
+				pr_info_ratelimited( \
+				"%s: " msg, __func__, ##__VA_ARGS__);	\
 			else	\
-				pr_info(msg, ##args);	\
+				pr_info("%s: " msg, __func__, ##__VA_ARGS__); \
 		}	\
-		SPS_IPC(3, dev, msg, args); \
+		SPS_IPC(3, dev, msg, ##__VA_ARGS__); \
 	} while (0)
-#define SPS_DBG(dev, msg, args...) do {					\
+#define SPS_DBG(dev, msg, ...) do {					\
 		if ((unlikely(logging_option > 1))	\
 			&& (unlikely(debug_level_option > 3))) {\
 			if (unlikely(print_limit_option > 0))	\
-				pr_info_ratelimited(msg, ##args);	\
+				pr_info_ratelimited( \
+					"%s: " msg, __func__, ##__VA_ARGS__); \
 			else	\
-				pr_info(msg, ##args);	\
+				pr_info("%s: " msg, __func__, ##__VA_ARGS__); \
 		} else	\
-			pr_debug(msg, ##args);	\
+			pr_debug("%s: " msg, __func__, ##__VA_ARGS__);	\
 		if (dev) { \
 			if ((dev)->ipc_loglevel <= 0)	\
-				SPS_IPC(0, dev, msg, args); \
+				SPS_IPC(0, dev, msg, ##__VA_ARGS__); \
 		}	\
 	} while (0)
-#define SPS_DBG1(dev, msg, args...) do {				\
+#define SPS_DBG1(dev, msg, ...) do {				\
 		if ((unlikely(logging_option > 1))	\
 			&& (unlikely(debug_level_option > 2))) {\
 			if (unlikely(print_limit_option > 0))	\
-				pr_info_ratelimited(msg, ##args);	\
+				pr_info_ratelimited( \
+					"%s: " msg, __func__, ##__VA_ARGS__); \
 			else	\
-				pr_info(msg, ##args);	\
+				pr_info("%s: " msg, __func__, ##__VA_ARGS__); \
 		} else	\
-			pr_debug(msg, ##args);	\
+			pr_debug("%s: " msg, __func__, ##__VA_ARGS__);	\
 		if (dev) { \
 			if ((dev)->ipc_loglevel <= 1)	\
-				SPS_IPC(1, dev, msg, args);	\
+				SPS_IPC(1, dev, msg, ##__VA_ARGS__);	\
 		}	\
 	} while (0)
-#define SPS_DBG2(dev, msg, args...) do {				\
+#define SPS_DBG2(dev, msg, ...) do {				\
 		if ((unlikely(logging_option > 1))	\
 			&& (unlikely(debug_level_option > 1))) {\
 			if (unlikely(print_limit_option > 0))	\
-				pr_info_ratelimited(msg, ##args);	\
+				pr_info_ratelimited( \
+					"%s: " msg, __func__, ##__VA_ARGS__); \
 			else	\
-				pr_info(msg, ##args);	\
+				pr_info("%s: " msg, __func__, ##__VA_ARGS__); \
 		} else	\
-			pr_debug(msg, ##args);	\
+			pr_debug("%s: " msg, __func__, ##__VA_ARGS__);	\
 		if (dev) { \
 			if ((dev)->ipc_loglevel <= 2)	\
-				SPS_IPC(2, dev, msg, args); \
+				SPS_IPC(2, dev, msg, ##__VA_ARGS__); \
 		}	\
 	} while (0)
-#define SPS_DBG3(dev, msg, args...) do {				\
+#define SPS_DBG3(dev, msg, ...) do {				\
 		if ((unlikely(logging_option > 1))	\
 			&& (unlikely(debug_level_option > 0))) {\
 			if (unlikely(print_limit_option > 0))	\
-				pr_info_ratelimited(msg, ##args);	\
+				pr_info_ratelimited( \
+					"%s: " msg, __func__, ##__VA_ARGS__); \
 			else	\
-				pr_info(msg, ##args);	\
+				pr_info("%s: " msg, __func__, ##__VA_ARGS__); \
 		} else	\
-			pr_debug(msg, ##args);	\
+			pr_debug("%s: " msg, __func__, ##__VA_ARGS__);	\
 		if (dev) { \
 			if ((dev)->ipc_loglevel <= 3)	\
-				SPS_IPC(3, dev, msg, args); \
+				SPS_IPC(3, dev, msg, ##__VA_ARGS__); \
 		}	\
 	} while (0)
 #else
-#define	SPS_DBG3(x...)		pr_debug(x)
-#define	SPS_DBG2(x...)		pr_debug(x)
-#define	SPS_DBG1(x...)		pr_debug(x)
-#define	SPS_DBG(x...)		pr_debug(x)
-#define	SPS_INFO(x...)		pr_info(x)
-#define	SPS_ERR(x...)		pr_err(x)
-#define	SPS_DUMP(x...)		pr_info(x)
+#define SPS_DBG3(dev, msg, args...)             pr_debug(msg, ##args)
+#define SPS_DBG2(dev, msg, args...)             pr_debug(msg, ##args)
+#define SPS_DBG1(dev, msg, args...)             pr_debug(msg, ##args)
+#define SPS_DBG(dev, msg, args...)              pr_debug(msg, ##args)
+#define SPS_INFO(dev, msg, args...)             pr_info(msg, ##args)
+#define SPS_ERR(dev, msg, args...)              pr_err(msg, ##args)
+#define SPS_DUMP(msg, args...)                  pr_info(msg, ##args)
 #endif
 
 /* End point parameters */
@@ -259,7 +255,7 @@ struct sps_connection {
 	void *client_dest;
 	int refs;		/* Reference counter */
 
-	/* Dynamically allocated resouces, if required */
+	/* Dynamically allocated resources, if required */
 	u32 alloc_src_pipe;	/* Source pipe index */
 	u32 alloc_dest_pipe;	/* Destination pipe index */
 	/* Physical address of descriptor FIFO */
@@ -291,29 +287,29 @@ enum sps_bam_type {
 
 #ifdef CONFIG_DEBUG_FS
 /* record debug info for debugfs */
-void sps_debugfs_record(const char *);
+void sps_debugfs_record(const char *msg);
 #endif
 
 /* output the content of BAM-level registers */
-void print_bam_reg(void *);
+void print_bam_reg(void *virt_addr);
 
 /* output the content of BAM pipe registers */
-void print_bam_pipe_reg(void *, u32);
+void print_bam_pipe_reg(void *virt_addr, u32 pipe_index);
 
 /* output the content of selected BAM-level registers */
-void print_bam_selected_reg(void *, u32);
+void print_bam_selected_reg(void *virt_addr, u32 pipe_index);
 
 /* output the content of selected BAM pipe registers */
-void print_bam_pipe_selected_reg(void *, u32);
+void print_bam_pipe_selected_reg(void *virt_addr, u32 pipe_index);
 
 /* output descriptor FIFO of a pipe */
-void print_bam_pipe_desc_fifo(void *, u32, u32);
+void print_bam_pipe_desc_fifo(void *virt_addr, u32 pipe_index, u32 option);
 
 /* output BAM_TEST_BUS_REG */
-void print_bam_test_bus_reg(void *, u32);
+void print_bam_test_bus_reg(void *base, u32 tb_sel);
 
 /* halt and un-halt a pipe */
-void bam_pipe_halt(void *, u32, bool);
+void bam_pipe_halt(void *base, u32 pipe, bool halt);
 
 /**
  * Translate physical to virtual address

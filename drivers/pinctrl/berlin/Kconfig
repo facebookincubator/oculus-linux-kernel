@@ -1,20 +1,34 @@
-if ARCH_BERLIN
+# SPDX-License-Identifier: GPL-2.0-only
+if (ARCH_BERLIN || COMPILE_TEST)
 
 config PINCTRL_BERLIN
 	bool
 	select PINMUX
 	select REGMAP_MMIO
 
+config PINCTRL_AS370
+	bool "Synaptics as370 pin controller driver"
+	depends on OF
+	select PINCTRL_BERLIN
+
 config PINCTRL_BERLIN_BG2
-	bool
+	def_bool MACH_BERLIN_BG2
+	depends on OF
 	select PINCTRL_BERLIN
 
 config PINCTRL_BERLIN_BG2CD
-	bool
+	def_bool MACH_BERLIN_BG2CD
+	depends on OF
 	select PINCTRL_BERLIN
 
 config PINCTRL_BERLIN_BG2Q
-	bool
+	def_bool MACH_BERLIN_BG2Q
+	depends on OF
+	select PINCTRL_BERLIN
+
+config PINCTRL_BERLIN_BG4CT
+	bool "Marvell berlin4ct pin controller driver"
+	depends on OF
 	select PINCTRL_BERLIN
 
 endif

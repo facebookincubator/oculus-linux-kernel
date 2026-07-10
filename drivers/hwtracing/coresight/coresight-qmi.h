@@ -1,19 +1,12 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2014-2017, 2019 The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CORESIGHT_QMI_H
 #define _CORESIGHT_QMI_H
 
-#include <soc/qcom/msm_qmi_interface.h>
+#include <linux/soc/qcom/qmi.h>
 
 #define CORESIGHT_QMI_SVC_ID			(0x33)
 #define CORESIGHT_QMI_VERSION			(1)
@@ -69,12 +62,12 @@ struct coresight_set_etm_resp_msg_v01 {
 	struct qmi_response_type_v01 resp;
 };
 
-static struct elem_info coresight_set_etm_req_msg_v01_ei[] = {
+static struct qmi_elem_info coresight_set_etm_req_msg_v01_ei[] = {
 	{
 		.data_type = QMI_UNSIGNED_4_BYTE,
 		.elem_len  = 1,
 		.elem_size = sizeof(enum coresight_etm_state_enum_type_v01),
-		.is_array  = NO_ARRAY,
+		.array_type  = NO_ARRAY,
 		.tlv_type  = 0x01,
 		.offset    = offsetof(struct coresight_set_etm_req_msg_v01,
 				      state),
@@ -84,29 +77,29 @@ static struct elem_info coresight_set_etm_req_msg_v01_ei[] = {
 		.data_type = QMI_EOTI,
 		.elem_len  = 0,
 		.elem_size = 0,
-		.is_array  = NO_ARRAY,
+		.array_type  = NO_ARRAY,
 		.tlv_type  = 0,
 		.offset    = 0,
 		.ei_array  = NULL,
 	},
 };
 
-static struct elem_info coresight_set_etm_resp_msg_v01_ei[] = {
+static struct qmi_elem_info coresight_set_etm_resp_msg_v01_ei[] = {
 	{
 		.data_type = QMI_STRUCT,
 		.elem_len  = 1,
 		.elem_size = sizeof(struct qmi_response_type_v01),
-		.is_array  = NO_ARRAY,
+		.array_type  = NO_ARRAY,
 		.tlv_type  = 0x02,
 		.offset    = offsetof(struct coresight_set_etm_resp_msg_v01,
 				      resp),
-		.ei_array  = get_qmi_response_type_v01_ei(),
+		.ei_array  = qmi_response_type_v01_ei,
 	},
 	{
 		.data_type = QMI_EOTI,
 		.elem_len  = 0,
 		.elem_size = 0,
-		.is_array  = NO_ARRAY,
+		.array_type  = NO_ARRAY,
 		.tlv_type  = 0,
 		.offset    = 0,
 		.ei_array  = NULL,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * drivers/mtd/maps/ixp4xx.c
  *
@@ -226,7 +227,7 @@ static int ixp4xx_flash_probe(struct platform_device *dev)
 		err = -ENXIO;
 		goto Error;
 	}
-	info->mtd->owner = THIS_MODULE;
+	info->mtd->dev.parent = &dev->dev;
 
 	/* Use the fast version */
 	info->map.write = ixp4xx_write16;
@@ -250,7 +251,6 @@ static struct platform_driver ixp4xx_flash_driver = {
 	.remove		= ixp4xx_flash_remove,
 	.driver		= {
 		.name	= "IXP4XX-Flash",
-		.owner	= THIS_MODULE,
 	},
 };
 

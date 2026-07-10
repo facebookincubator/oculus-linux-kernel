@@ -1,25 +1,19 @@
-/*
- * Core driver for the imx pin controller in imx1/21/27
- *
- * Copyright (C) 2013 Pengutronix
- * Author: Markus Pargmann <mpa@pengutronix.de>
- *
- * Based on pinctrl-imx.c:
- *	Author: Dong Aisheng <dong.aisheng@linaro.org>
- *	Copyright (C) 2012 Freescale Semiconductor, Inc.
- *	Copyright (C) 2012 Linaro Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- */
+// SPDX-License-Identifier: GPL-2.0+
+//
+// Core driver for the imx pin controller in imx1/21/27
+//
+// Copyright (C) 2013 Pengutronix
+// Author: Markus Pargmann <mpa@pengutronix.de>
+//
+// Based on pinctrl-imx.c:
+//	Author: Dong Aisheng <dong.aisheng@linaro.org>
+//	Copyright (C) 2012 Freescale Semiconductor, Inc.
+//	Copyright (C) 2012 Linaro Ltd.
 
 #include <linux/bitops.h>
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/io.h>
-#include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/pinctrl/machine.h>
@@ -66,7 +60,7 @@ struct imx1_pinctrl {
 
 /*
  * IMX1 IOMUXC manages the pins based on ports. Each port has 32 pins. IOMUX
- * control register are seperated into function, output configuration, input
+ * control registers are separated into function, output configuration, input
  * configuration A, input configuration B, GPIO in use and data direction.
  *
  * Those controls that are represented by 1 bit have a direct mapping between
@@ -157,7 +151,7 @@ static int imx1_read_bit(struct imx1_pinctrl *ipctl, unsigned int pin_id,
 	return !!(readl(reg) & BIT(offset));
 }
 
-static const inline struct imx1_pin_group *imx1_pinctrl_find_group_by_name(
+static inline const struct imx1_pin_group *imx1_pinctrl_find_group_by_name(
 				const struct imx1_pinctrl_soc_info *info,
 				const char *name)
 {
@@ -239,15 +233,16 @@ static int imx1_dt_node_to_map(struct pinctrl_dev *pctldev,
 	 */
 	grp = imx1_pinctrl_find_group_by_name(info, np->name);
 	if (!grp) {
-		dev_err(info->dev, "unable to find group for node %s\n",
-			np->name);
+		dev_err(info->dev, "unable to find group for node %pOFn\n",
+			np);
 		return -EINVAL;
 	}
 
 	for (i = 0; i < grp->npins; i++)
 		map_num++;
 
-	new_map = kmalloc(sizeof(struct pinctrl_map) * map_num, GFP_KERNEL);
+	new_map = kmalloc_array(map_num, sizeof(struct pinctrl_map),
+				GFP_KERNEL);
 	if (!new_map)
 		return -ENOMEM;
 
@@ -295,7 +290,6 @@ static const struct pinctrl_ops imx1_pctrl_ops = {
 	.pin_dbg_show = imx1_pin_dbg_show,
 	.dt_node_to_map = imx1_dt_node_to_map,
 	.dt_free_map = imx1_dt_free_map,
-
 };
 
 static int imx1_pmx_set(struct pinctrl_dev *pctldev, unsigned selector,
@@ -403,14 +397,13 @@ static int imx1_pinconf_set(struct pinctrl_dev *pctldev,
 			     unsigned num_configs)
 {
 	struct imx1_pinctrl *ipctl = pinctrl_dev_get_drvdata(pctldev);
-	const struct imx1_pinctrl_soc_info *info = ipctl->info;
 	int i;
 
 	for (i = 0; i != num_configs; ++i) {
 		imx1_write_bit(ipctl, pin_id, configs[i] & 0x01, MX1_PUEN);
 
 		dev_dbg(ipctl->dev, "pinconf set pullup pin %s\n",
-			info->pins[pin_id].name);
+			pin_desc_get(pctldev, pin_id)->name);
 	}
 
 	return 0;
@@ -435,7 +428,7 @@ static void imx1_pinconf_group_dbg_show(struct pinctrl_dev *pctldev,
 	const char *name;
 	int i, ret;
 
-	if (group > info->ngroups)
+	if (group >= info->ngroups)
 		return;
 
 	seq_puts(s, "\n");
@@ -472,7 +465,7 @@ static int imx1_pinctrl_parse_groups(struct device_node *np,
 	const __be32 *list;
 	int i;
 
-	dev_dbg(info->dev, "group(%d): %s\n", index, np->name);
+	dev_dbg(info->dev, "group(%d): %pOFn\n", index, np);
 
 	/* Initialise group */
 	grp->name = np->name;
@@ -483,16 +476,16 @@ static int imx1_pinctrl_parse_groups(struct device_node *np,
 	list = of_get_property(np, "fsl,pins", &size);
 	/* we do not check return since it's safe node passed down */
 	if (!size || size % 12) {
-		dev_notice(info->dev, "Not a valid fsl,pins property (%s)\n",
-				np->name);
+		dev_notice(info->dev, "Not a valid fsl,pins property (%pOFn)\n",
+				np);
 		return -EINVAL;
 	}
 
 	grp->npins = size / 12;
-	grp->pins = devm_kzalloc(info->dev,
-			grp->npins * sizeof(struct imx1_pin), GFP_KERNEL);
-	grp->pin_ids = devm_kzalloc(info->dev,
-			grp->npins * sizeof(unsigned int), GFP_KERNEL);
+	grp->pins = devm_kcalloc(info->dev,
+			grp->npins, sizeof(struct imx1_pin), GFP_KERNEL);
+	grp->pin_ids = devm_kcalloc(info->dev,
+			grp->npins, sizeof(unsigned int), GFP_KERNEL);
 
 	if (!grp->pins || !grp->pin_ids)
 		return -ENOMEM;
@@ -519,7 +512,7 @@ static int imx1_pinctrl_parse_functions(struct device_node *np,
 	static u32 grp_index;
 	u32 i = 0;
 
-	dev_dbg(info->dev, "parse function(%d): %s\n", index, np->name);
+	dev_dbg(info->dev, "parse function(%d): %pOFn\n", index, np);
 
 	func = &info->functions[index];
 
@@ -529,8 +522,8 @@ static int imx1_pinctrl_parse_functions(struct device_node *np,
 	if (func->num_groups == 0)
 		return -EINVAL;
 
-	func->groups = devm_kzalloc(info->dev,
-			func->num_groups * sizeof(char *), GFP_KERNEL);
+	func->groups = devm_kcalloc(info->dev,
+			func->num_groups, sizeof(char *), GFP_KERNEL);
 
 	if (!func->groups)
 		return -ENOMEM;
@@ -539,8 +532,10 @@ static int imx1_pinctrl_parse_functions(struct device_node *np,
 		func->groups[i] = child->name;
 		grp = &info->groups[grp_index++];
 		ret = imx1_pinctrl_parse_groups(child, grp, info, i++);
-		if (ret == -ENOMEM)
+		if (ret == -ENOMEM) {
+			of_node_put(child);
 			return ret;
+		}
 	}
 
 	return 0;
@@ -570,12 +565,12 @@ static int imx1_pinctrl_parse_dt(struct platform_device *pdev,
 	}
 
 	info->nfunctions = nfuncs;
-	info->functions = devm_kzalloc(&pdev->dev,
-			nfuncs * sizeof(struct imx1_pmx_func), GFP_KERNEL);
+	info->functions = devm_kcalloc(&pdev->dev,
+			nfuncs, sizeof(struct imx1_pmx_func), GFP_KERNEL);
 
 	info->ngroups = ngroups;
-	info->groups = devm_kzalloc(&pdev->dev,
-			ngroups * sizeof(struct imx1_pin_group), GFP_KERNEL);
+	info->groups = devm_kcalloc(&pdev->dev,
+			ngroups, sizeof(struct imx1_pin_group), GFP_KERNEL);
 
 
 	if (!info->functions || !info->groups)
@@ -583,8 +578,10 @@ static int imx1_pinctrl_parse_dt(struct platform_device *pdev,
 
 	for_each_child_of_node(np, child) {
 		ret = imx1_pinctrl_parse_functions(child, info, ifunc++);
-		if (ret == -ENOMEM)
+		if (ret == -ENOMEM) {
+			of_node_put(child);
 			return -ENOMEM;
+		}
 	}
 
 	return 0;
@@ -613,7 +610,7 @@ int imx1_pinctrl_core_probe(struct platform_device *pdev,
 	if (!res)
 		return -ENOENT;
 
-	ipctl->base = devm_ioremap_nocache(&pdev->dev, res->start,
+	ipctl->base = devm_ioremap(&pdev->dev, res->start,
 			resource_size(res));
 	if (!ipctl->base)
 		return -ENOMEM;
@@ -632,29 +629,19 @@ int imx1_pinctrl_core_probe(struct platform_device *pdev,
 	ipctl->info = info;
 	ipctl->dev = info->dev;
 	platform_set_drvdata(pdev, ipctl);
-	ipctl->pctl = pinctrl_register(pctl_desc, &pdev->dev, ipctl);
-	if (!ipctl->pctl) {
+	ipctl->pctl = devm_pinctrl_register(&pdev->dev, pctl_desc, ipctl);
+	if (IS_ERR(ipctl->pctl)) {
 		dev_err(&pdev->dev, "could not register IMX pinctrl driver\n");
-		return -EINVAL;
+		return PTR_ERR(ipctl->pctl);
 	}
 
 	ret = of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
 	if (ret) {
-		pinctrl_unregister(ipctl->pctl);
 		dev_err(&pdev->dev, "Failed to populate subdevices\n");
 		return ret;
 	}
 
 	dev_info(&pdev->dev, "initialized IMX pinctrl driver\n");
-
-	return 0;
-}
-
-int imx1_pinctrl_core_remove(struct platform_device *pdev)
-{
-	struct imx1_pinctrl *ipctl = platform_get_drvdata(pdev);
-
-	pinctrl_unregister(ipctl->pctl);
 
 	return 0;
 }

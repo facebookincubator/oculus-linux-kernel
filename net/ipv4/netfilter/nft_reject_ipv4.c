@@ -1,10 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2008-2009 Patrick McHardy <kaber@trash.net>
  * Copyright (c) 2013 Eric Leblond <eric@regit.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * Development of this code funded by Astaro AG (http://www.astaro.com/)
  */
@@ -19,24 +16,25 @@
 #include <net/netfilter/ipv4/nf_reject.h>
 #include <net/netfilter/nft_reject.h>
 
-void nft_reject_ipv4_eval(const struct nft_expr *expr,
-			  struct nft_data data[NFT_REG_MAX + 1],
-			  const struct nft_pktinfo *pkt)
+static void nft_reject_ipv4_eval(const struct nft_expr *expr,
+				 struct nft_regs *regs,
+				 const struct nft_pktinfo *pkt)
 {
 	struct nft_reject *priv = nft_expr_priv(expr);
 
 	switch (priv->type) {
 	case NFT_REJECT_ICMP_UNREACH:
-		nf_send_unreach(pkt->skb, priv->icmp_code);
+		nf_send_unreach(pkt->skb, priv->icmp_code, nft_hook(pkt));
 		break;
 	case NFT_REJECT_TCP_RST:
-		nf_send_reset(pkt->skb, pkt->ops->hooknum);
+		nf_send_reset(nft_net(pkt), pkt->skb, nft_hook(pkt));
+		break;
+	default:
 		break;
 	}
 
-	data[NFT_REG_VERDICT].verdict = NF_DROP;
+	regs->verdict.code = NF_DROP;
 }
-EXPORT_SYMBOL_GPL(nft_reject_ipv4_eval);
 
 static struct nft_expr_type nft_reject_ipv4_type;
 static const struct nft_expr_ops nft_reject_ipv4_ops = {
@@ -45,6 +43,7 @@ static const struct nft_expr_ops nft_reject_ipv4_ops = {
 	.eval		= nft_reject_ipv4_eval,
 	.init		= nft_reject_init,
 	.dump		= nft_reject_dump,
+	.validate	= nft_reject_validate,
 };
 
 static struct nft_expr_type nft_reject_ipv4_type __read_mostly = {
@@ -72,3 +71,4 @@ module_exit(nft_reject_ipv4_module_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Patrick McHardy <kaber@trash.net>");
 MODULE_ALIAS_NFT_AF_EXPR(AF_INET, "reject");
+MODULE_DESCRIPTION("IPv4 packet rejection for nftables");

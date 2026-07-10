@@ -1,21 +1,36 @@
-/*******************************************************************
- * This file is part of the Emulex RoCE Device Driver for          *
- * RoCE (RDMA over Converged Ethernet) adapters.                   *
- * Copyright (C) 2008-2012 Emulex. All rights reserved.            *
- * EMULEX and SLI are trademarks of Emulex.                        *
- * www.emulex.com                                                  *
- *                                                                 *
- * This program is free software; you can redistribute it and/or   *
- * modify it under the terms of version 2 of the GNU General       *
- * Public License as published by the Free Software Foundation.    *
- * This program is distributed in the hope that it will be useful. *
- * ALL EXPRESS OR IMPLIED CONDITIONS, REPRESENTATIONS AND          *
- * WARRANTIES, INCLUDING ANY IMPLIED WARRANTY OF MERCHANTABILITY,  *
- * FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT, ARE      *
- * DISCLAIMED, EXCEPT TO THE EXTENT THAT SUCH DISCLAIMERS ARE HELD *
- * TO BE LEGALLY INVALID.  See the GNU General Public License for  *
- * more details, a copy of which can be found in the file COPYING  *
- * included with this package.                                     *
+/* This file is part of the Emulex RoCE Device Driver for
+ * RoCE (RDMA over Converged Ethernet) adapters.
+ * Copyright (C) 2012-2015 Emulex. All rights reserved.
+ * EMULEX and SLI are trademarks of Emulex.
+ * www.emulex.com
+ *
+ * This software is available to you under a choice of one of two licenses.
+ * You may choose to be licensed under the terms of the GNU General Public
+ * License (GPL) Version 2, available from the file COPYING in the main
+ * directory of this source tree, or the BSD license below:
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * - Redistributions of source code must retain the above copyright notice,
+ *   this list of conditions and the following disclaimer.
+ *
+ * - Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in
+ *   the documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  * Contact Information:
  * linux-drivers@emulex.com
@@ -23,7 +38,7 @@
  * Emulex
  * 3333 Susan Street
  * Costa Mesa, CA 92626
- *******************************************************************/
+ */
 
 #ifndef __OCRDMA_SLI_H__
 #define __OCRDMA_SLI_H__
@@ -75,6 +90,8 @@ enum {
 	OCRDMA_CMD_DESTROY_RBQ = 26,
 
 	OCRDMA_CMD_GET_RDMA_STATS = 27,
+	OCRDMA_CMD_ALLOC_PD_RANGE = 28,
+	OCRDMA_CMD_DEALLOC_PD_RANGE = 29,
 
 	OCRDMA_CMD_MAX
 };
@@ -87,6 +104,7 @@ enum {
 	OCRDMA_CMD_CREATE_MQ		= 21,
 	OCRDMA_CMD_GET_CTRL_ATTRIBUTES  = 32,
 	OCRDMA_CMD_GET_FW_VER		= 35,
+	OCRDMA_CMD_MODIFY_EQ_DELAY      = 41,
 	OCRDMA_CMD_DELETE_MQ		= 53,
 	OCRDMA_CMD_DELETE_CQ		= 54,
 	OCRDMA_CMD_DELETE_EQ		= 55,
@@ -101,7 +119,7 @@ enum {
 	QTYPE_MCCQ	= 3
 };
 
-#define OCRDMA_MAX_SGID		8
+#define OCRDMA_MAX_SGID		16
 
 #define OCRDMA_MAX_QP    2048
 #define OCRDMA_MAX_CQ    2048
@@ -120,6 +138,12 @@ enum {
 
 	OCRDMA_DB_SQ_SHIFT		= 16,
 	OCRDMA_DB_RQ_SHIFT		= 24
+};
+
+enum {
+	OCRDMA_L3_TYPE_IB_GRH   = 0x00,
+	OCRDMA_L3_TYPE_IPV4     = 0x01,
+	OCRDMA_L3_TYPE_IPV6     = 0x02
 };
 
 #define OCRDMA_DB_CQ_RING_ID_MASK       0x3FF	/* bits 0 - 9 */
@@ -314,6 +338,29 @@ struct ocrdma_create_eq_rsp {
 
 #define OCRDMA_EQ_MINOR_OTHER	0x1
 
+struct ocrmda_set_eqd {
+	u32 eq_id;
+	u32 phase;
+	u32 delay_multiplier;
+};
+
+struct ocrdma_modify_eqd_cmd {
+	struct ocrdma_mbx_hdr req;
+	u32 num_eq;
+	struct ocrmda_set_eqd set_eqd[8];
+} __packed;
+
+struct ocrdma_modify_eqd_req {
+	struct ocrdma_mqe_hdr hdr;
+	struct ocrdma_modify_eqd_cmd cmd;
+};
+
+
+struct ocrdma_modify_eq_delay_rsp {
+	struct ocrdma_mbx_rsp hdr;
+	u32 rsvd0;
+} __packed;
+
 enum {
 	OCRDMA_MCQE_STATUS_SHIFT	= 0,
 	OCRDMA_MCQE_STATUS_MASK		= 0xFFFF,
@@ -422,8 +469,11 @@ struct ocrdma_ae_qp_mcqe {
 	u32 valid_ae_event;
 };
 
-#define OCRDMA_ASYNC_RDMA_EVE_CODE 0x14
-#define OCRDMA_ASYNC_GRP5_EVE_CODE 0x5
+enum ocrdma_async_event_code {
+	OCRDMA_ASYNC_LINK_EVE_CODE	= 0x01,
+	OCRDMA_ASYNC_GRP5_EVE_CODE	= 0x05,
+	OCRDMA_ASYNC_RDMA_EVE_CODE	= 0x14
+};
 
 enum ocrdma_async_grp5_events {
 	OCRDMA_ASYNC_EVENT_QOS_VALUE	= 0x01,
@@ -441,7 +491,47 @@ enum OCRDMA_ASYNC_EVENT_TYPE {
 	OCRDMA_DEVICE_FATAL_EVENT	= 0x08,
 	OCRDMA_SRQCAT_ERROR		= 0x0E,
 	OCRDMA_SRQ_LIMIT_EVENT		= 0x0F,
-	OCRDMA_QP_LAST_WQE_EVENT	= 0x10
+	OCRDMA_QP_LAST_WQE_EVENT	= 0x10,
+
+	OCRDMA_MAX_ASYNC_ERRORS
+};
+
+struct ocrdma_ae_lnkst_mcqe {
+	u32 speed_state_ptn;
+	u32 qos_reason_falut;
+	u32 evt_tag;
+	u32 valid_ae_event;
+};
+
+enum {
+	OCRDMA_AE_LSC_PORT_NUM_MASK	= 0x3F,
+	OCRDMA_AE_LSC_PT_SHIFT		= 0x06,
+	OCRDMA_AE_LSC_PT_MASK		= (0x03 <<
+			OCRDMA_AE_LSC_PT_SHIFT),
+	OCRDMA_AE_LSC_LS_SHIFT		= 0x08,
+	OCRDMA_AE_LSC_LS_MASK		= (0xFF <<
+			OCRDMA_AE_LSC_LS_SHIFT),
+	OCRDMA_AE_LSC_LD_SHIFT		= 0x10,
+	OCRDMA_AE_LSC_LD_MASK		= (0xFF <<
+			OCRDMA_AE_LSC_LD_SHIFT),
+	OCRDMA_AE_LSC_PPS_SHIFT		= 0x18,
+	OCRDMA_AE_LSC_PPS_MASK		= (0xFF <<
+			OCRDMA_AE_LSC_PPS_SHIFT),
+	OCRDMA_AE_LSC_PPF_MASK		= 0xFF,
+	OCRDMA_AE_LSC_ER_SHIFT		= 0x08,
+	OCRDMA_AE_LSC_ER_MASK		= (0xFF <<
+			OCRDMA_AE_LSC_ER_SHIFT),
+	OCRDMA_AE_LSC_QOS_SHIFT		= 0x10,
+	OCRDMA_AE_LSC_QOS_MASK		= (0xFFFF <<
+			OCRDMA_AE_LSC_QOS_SHIFT)
+};
+
+enum {
+	OCRDMA_AE_LSC_PLINK_DOWN	= 0x00,
+	OCRDMA_AE_LSC_PLINK_UP		= 0x01,
+	OCRDMA_AE_LSC_LLINK_DOWN	= 0x02,
+	OCRDMA_AE_LSC_LLINK_MASK	= 0x02,
+	OCRDMA_AE_LSC_LLINK_UP		= 0x03
 };
 
 /* mailbox command request and responses */
@@ -460,12 +550,13 @@ enum {
 	OCRDMA_MBX_QUERY_CFG_CA_ACK_DELAY_SHIFT		= 8,
 	OCRDMA_MBX_QUERY_CFG_CA_ACK_DELAY_MASK		= 0xFF <<
 				OCRDMA_MBX_QUERY_CFG_CA_ACK_DELAY_SHIFT,
-
+	OCRDMA_MBX_QUERY_CFG_L3_TYPE_SHIFT		= 3,
+	OCRDMA_MBX_QUERY_CFG_L3_TYPE_MASK		= 0x18,
 	OCRDMA_MBX_QUERY_CFG_MAX_SEND_SGE_SHIFT		= 0,
 	OCRDMA_MBX_QUERY_CFG_MAX_SEND_SGE_MASK		= 0xFFFF,
-	OCRDMA_MBX_QUERY_CFG_MAX_WRITE_SGE_SHIFT	= 16,
-	OCRDMA_MBX_QUERY_CFG_MAX_WRITE_SGE_MASK		= 0xFFFF <<
-				OCRDMA_MBX_QUERY_CFG_MAX_WRITE_SGE_SHIFT,
+	OCRDMA_MBX_QUERY_CFG_MAX_RECV_SGE_SHIFT	= 16,
+	OCRDMA_MBX_QUERY_CFG_MAX_RECV_SGE_MASK		= 0xFFFF <<
+				OCRDMA_MBX_QUERY_CFG_MAX_RECV_SGE_SHIFT,
 
 	OCRDMA_MBX_QUERY_CFG_MAX_ORD_PER_QP_SHIFT	= 0,
 	OCRDMA_MBX_QUERY_CFG_MAX_ORD_PER_QP_MASK	= 0xFFFF,
@@ -521,6 +612,8 @@ enum {
 	OCRDMA_MBX_QUERY_CFG_MAX_SRQ_SGE_OFFSET		= 0,
 	OCRDMA_MBX_QUERY_CFG_MAX_SRQ_SGE_MASK		= 0xFFFF <<
 				OCRDMA_MBX_QUERY_CFG_MAX_SRQ_SGE_OFFSET,
+	OCRDMA_MBX_QUERY_CFG_MAX_RD_SGE_SHIFT		= 0,
+	OCRDMA_MBX_QUERY_CFG_MAX_RD_SGE_MASK		= 0xFFFF,
 };
 
 struct ocrdma_mbx_query_config {
@@ -528,7 +621,7 @@ struct ocrdma_mbx_query_config {
 	struct ocrdma_mbx_rsp rsp;
 	u32 qp_srq_cq_ird_ord;
 	u32 max_pd_ca_ack_delay;
-	u32 max_write_send_sge;
+	u32 max_recv_send_sge;
 	u32 max_ird_ord_per_qp;
 	u32 max_shared_ird_ord;
 	u32 max_mr;
@@ -548,6 +641,8 @@ struct ocrdma_mbx_query_config {
 	u32 max_wqes_rqes_per_q;
 	u32 max_cq_cqes_per_cq;
 	u32 max_srq_rqe_sge;
+	u32 max_wr_rd_sge;
+	u32 ird_pgsz_num_pages;
 };
 
 struct ocrdma_fw_ver_rsp {
@@ -631,7 +726,7 @@ enum {
 	OCRDMA_PHY_PFLT_SHIFT	= 0x18,
 	OCRDMA_QOS_LNKSP_MASK	= 0xFFFF0000,
 	OCRDMA_QOS_LNKSP_SHIFT	= 0x10,
-	OCRDMA_LLST_MASK	= 0xFF,
+	OCRDMA_LINK_ST_MASK	= 0x01,
 	OCRDMA_PLFC_MASK	= 0x00000400,
 	OCRDMA_PLFC_SHIFT	= 0x8,
 	OCRDMA_PLRFC_MASK	= 0x00000200,
@@ -646,7 +741,7 @@ struct ocrdma_get_link_speed_rsp {
 
 	u32 pflt_pps_ld_pnum;
 	u32 qos_lsp;
-	u32 res_lls;
+	u32 res_lnk_st;
 };
 
 enum {
@@ -1021,6 +1116,8 @@ enum {
 	OCRDMA_QP_PARAMS_STATE_MASK		= BIT(5) | BIT(6) | BIT(7),
 	OCRDMA_QP_PARAMS_FLAGS_SQD_ASYNC	= BIT(8),
 	OCRDMA_QP_PARAMS_FLAGS_INB_ATEN		= BIT(9),
+	OCRDMA_QP_PARAMS_FLAGS_L3_TYPE_SHIFT    = 11,
+	OCRDMA_QP_PARAMS_FLAGS_L3_TYPE_MASK     = BIT(11) | BIT(12) | BIT(13),
 	OCRDMA_QP_PARAMS_MAX_SGE_RECV_SHIFT	= 16,
 	OCRDMA_QP_PARAMS_MAX_SGE_RECV_MASK	= 0xFFFF <<
 					OCRDMA_QP_PARAMS_MAX_SGE_RECV_SHIFT,
@@ -1148,6 +1245,8 @@ struct ocrdma_query_qp_rsp {
 	struct ocrdma_mqe_hdr hdr;
 	struct ocrdma_mbx_rsp rsp;
 	struct ocrdma_qp_params params;
+	u32 dpp_credits_cqid;
+	u32 rbq_id;
 };
 
 enum {
@@ -1295,6 +1394,37 @@ struct ocrdma_dealloc_pd {
 struct ocrdma_dealloc_pd_rsp {
 	struct ocrdma_mqe_hdr hdr;
 	struct ocrdma_mbx_rsp rsp;
+};
+
+struct ocrdma_alloc_pd_range {
+	struct ocrdma_mqe_hdr hdr;
+	struct ocrdma_mbx_hdr req;
+	u32 enable_dpp_rsvd;
+	u32 pd_count;
+};
+
+struct ocrdma_alloc_pd_range_rsp {
+	struct ocrdma_mqe_hdr hdr;
+	struct ocrdma_mbx_rsp rsp;
+	u32 dpp_page_pdid;
+	u32 pd_count;
+};
+
+enum {
+	OCRDMA_ALLOC_PD_RNG_RSP_START_PDID_MASK = 0xFFFF,
+};
+
+struct ocrdma_dealloc_pd_range {
+	struct ocrdma_mqe_hdr hdr;
+	struct ocrdma_mbx_hdr req;
+	u32 start_pd_id;
+	u32 pd_count;
+};
+
+struct ocrdma_dealloc_pd_range_rsp {
+	struct ocrdma_mqe_hdr hdr;
+	struct ocrdma_mbx_hdr req;
+	u32 rsvd;
 };
 
 enum {
@@ -1565,10 +1695,17 @@ struct ocrdma_delete_ah_tbl_rsp {
 enum {
 	OCRDMA_EQE_VALID_SHIFT		= 0,
 	OCRDMA_EQE_VALID_MASK		= BIT(0),
+	OCRDMA_EQE_MAJOR_CODE_MASK      = 0x0E,
+	OCRDMA_EQE_MAJOR_CODE_SHIFT     = 0x01,
 	OCRDMA_EQE_FOR_CQE_MASK		= 0xFFFE,
 	OCRDMA_EQE_RESOURCE_ID_SHIFT	= 16,
 	OCRDMA_EQE_RESOURCE_ID_MASK	= 0xFFFF <<
 				OCRDMA_EQE_RESOURCE_ID_SHIFT,
+};
+
+enum major_code {
+	OCRDMA_MAJOR_CODE_COMPLETION    = 0x00,
+	OCRDMA_MAJOR_CODE_SENTINAL      = 0x01
 };
 
 struct ocrdma_eqe {
@@ -1597,7 +1734,9 @@ enum OCRDMA_CQE_STATUS {
 	OCRDMA_CQE_INV_EEC_STATE_ERR,
 	OCRDMA_CQE_FATAL_ERR,
 	OCRDMA_CQE_RESP_TIMEOUT_ERR,
-	OCRDMA_CQE_GENERAL_ERR
+	OCRDMA_CQE_GENERAL_ERR,
+
+	OCRDMA_MAX_CQE_ERR
 };
 
 enum {
@@ -1607,8 +1746,11 @@ enum {
 
 	/* w1 */
 	OCRDMA_CQE_UD_XFER_LEN_SHIFT	= 16,
+	OCRDMA_CQE_UD_XFER_LEN_MASK     = 0x1FFF,
 	OCRDMA_CQE_PKEY_SHIFT		= 0,
 	OCRDMA_CQE_PKEY_MASK		= 0xFFFF,
+	OCRDMA_CQE_UD_L3TYPE_SHIFT      = 29,
+	OCRDMA_CQE_UD_L3TYPE_MASK       = 0x07,
 
 	/* w2 */
 	OCRDMA_CQE_QPN_SHIFT		= 0,
@@ -1673,6 +1815,7 @@ enum {
 	OCRDMA_FLAG_FENCE_R	= 0x8,
 	OCRDMA_FLAG_SOLICIT	= 0x10,
 	OCRDMA_FLAG_IMM		= 0x20,
+	OCRDMA_FLAG_AH_VLAN_PR  = 0x40,
 
 	/* Stag flags */
 	OCRDMA_LKEY_FLAG_LOCAL_WR	= 0x1,
@@ -1732,7 +1875,7 @@ struct ocrdma_ewqe_ud_hdr {
 	u32 rsvd_dest_qpn;
 	u32 qkey;
 	u32 rsvd_ahid;
-	u32 rsvd;
+	u32 hdr_type;
 };
 
 /* extended wqe followed by hdr_wqe for Fast Memory register */
@@ -1758,7 +1901,6 @@ struct ocrdma_eth_vlan {
 	u8 smac[6];
 	__be16 eth_type;
 	__be16 vlan_tag;
-#define OCRDMA_ROCE_ETH_TYPE 0x8915
 	__be16 roce_eth_type;
 } __packed;
 
@@ -1892,7 +2034,7 @@ struct ocrdma_rx_stats {
 };
 
 struct ocrdma_rx_qp_err_stats {
-	u32 nak_invalid_requst_errors;
+	u32 nak_invalid_request_errors;
 	u32 nak_remote_operation_errors;
 	u32 nak_count_remote_access_errors;
 	u32 local_length_errors;
@@ -2034,10 +2176,6 @@ enum OCRDMA_DCBX_PARAM_TYPE {
 	OCRDMA_PARAMETER_TYPE_ADMIN	= 0x00,
 	OCRDMA_PARAMETER_TYPE_OPER	= 0x01,
 	OCRDMA_PARAMETER_TYPE_PEER	= 0x02
-};
-
-enum OCRDMA_DCBX_APP_PROTO {
-	OCRDMA_APP_PROTO_ROCE	= 0x8915
 };
 
 enum OCRDMA_DCBX_PROTO {

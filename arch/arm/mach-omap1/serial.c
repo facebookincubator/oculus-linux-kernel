@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/mach-omap1/serial.c
  *
  * OMAP1 serial support.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #include <linux/gpio.h>
 #include <linux/module.h>
@@ -25,6 +22,7 @@
 #include <mach/mux.h>
 
 #include "pm.h"
+#include "soc.h"
 
 static struct clk * uart1_ck;
 static struct clk * uart2_ck;

@@ -1,16 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Keystone2 based boards and SOC related code.
  *
  * Copyright 2013 Texas Instruments, Inc.
  *	Cyril Chemparathy <cyril@ti.com>
  *	Santosh Shilimkar <santosh.shillimkar@ti.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
  */
 #include <linux/io.h>
 #include <linux/of.h>
+#include <linux/dma-mapping.h>
 #include <linux/init.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
@@ -27,9 +25,7 @@
 
 #include "keystone.h"
 
-static struct notifier_block platform_nb;
-static unsigned long keystone_dma_pfn_offset __read_mostly;
-
+#ifdef CONFIG_ARM_LPAE
 static int keystone_platform_notifier(struct notifier_block *nb,
 				      unsigned long event, void *data)
 {
@@ -42,32 +38,34 @@ static int keystone_platform_notifier(struct notifier_block *nb,
 		return NOTIFY_BAD;
 
 	if (!dev->of_node) {
-		dev->dma_pfn_offset = keystone_dma_pfn_offset;
-		dev_err(dev, "set dma_pfn_offset%08lx\n",
-			dev->dma_pfn_offset);
+		int ret = dma_direct_set_offset(dev, KEYSTONE_HIGH_PHYS_START,
+						KEYSTONE_LOW_PHYS_START,
+						KEYSTONE_HIGH_PHYS_SIZE);
+		dev_err(dev, "set dma_offset%08llx%s\n",
+			KEYSTONE_HIGH_PHYS_START - KEYSTONE_LOW_PHYS_START,
+			ret ? " failed" : "");
 	}
 	return NOTIFY_OK;
 }
 
+static struct notifier_block platform_nb = {
+	.notifier_call = keystone_platform_notifier,
+};
+#endif /* CONFIG_ARM_LPAE */
+
 static void __init keystone_init(void)
 {
-	keystone_pm_runtime_init();
-	if (platform_nb.notifier_call)
+#ifdef CONFIG_ARM_LPAE
+	if (PHYS_OFFSET >= KEYSTONE_HIGH_PHYS_START)
 		bus_register_notifier(&platform_bus_type, &platform_nb);
-	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
+#endif
+	keystone_pm_runtime_init();
 }
 
-static phys_addr_t keystone_virt_to_idmap(unsigned long x)
+static long long __init keystone_pv_fixup(void)
 {
-	return (phys_addr_t)(x) - CONFIG_PAGE_OFFSET + KEYSTONE_LOW_PHYS_START;
-}
-
-static void __init keystone_init_meminfo(void)
-{
-	bool lpae = IS_ENABLED(CONFIG_ARM_LPAE);
-	bool pvpatch = IS_ENABLED(CONFIG_ARM_PATCH_PHYS_VIRT);
-	phys_addr_t offset = PHYS_OFFSET - KEYSTONE_LOW_PHYS_START;
-	phys_addr_t mem_start, mem_end;
+	long long offset;
+	u64 mem_start, mem_end;
 
 	mem_start = memblock_start_of_DRAM();
 	mem_end = memblock_end_of_DRAM();
@@ -75,35 +73,28 @@ static void __init keystone_init_meminfo(void)
 	/* nothing to do if we are running out of the <32-bit space */
 	if (mem_start >= KEYSTONE_LOW_PHYS_START &&
 	    mem_end   <= KEYSTONE_LOW_PHYS_END)
-		return;
-
-	if (!lpae || !pvpatch) {
-		pr_crit("Enable %s%s%s to run outside 32-bit space\n",
-		      !lpae ? __stringify(CONFIG_ARM_LPAE) : "",
-		      (!lpae && !pvpatch) ? " and " : "",
-		      !pvpatch ? __stringify(CONFIG_ARM_PATCH_PHYS_VIRT) : "");
-	}
+		return 0;
 
 	if (mem_start < KEYSTONE_HIGH_PHYS_START ||
 	    mem_end   > KEYSTONE_HIGH_PHYS_END) {
 		pr_crit("Invalid address space for memory (%08llx-%08llx)\n",
-		      (u64)mem_start, (u64)mem_end);
+		        mem_start, mem_end);
+		return 0;
 	}
 
-	offset += KEYSTONE_HIGH_PHYS_START;
-	__pv_phys_pfn_offset = PFN_DOWN(offset);
-	__pv_offset = (offset - PAGE_OFFSET);
+	offset = KEYSTONE_HIGH_PHYS_START - KEYSTONE_LOW_PHYS_START;
 
 	/* Populate the arch idmap hook */
-	arch_virt_to_idmap = keystone_virt_to_idmap;
-	platform_nb.notifier_call = keystone_platform_notifier;
-	keystone_dma_pfn_offset = PFN_DOWN(KEYSTONE_HIGH_PHYS_START -
-						KEYSTONE_LOW_PHYS_START);
+	arch_phys_to_idmap_offset = -offset;
 
-	pr_info("Switching to high address space at 0x%llx\n", (u64)offset);
+	return offset;
 }
 
-static const char *keystone_match[] __initconst = {
+static const char *const keystone_match[] __initconst = {
+	"ti,k2hk",
+	"ti,k2e",
+	"ti,k2l",
+	"ti,k2g",
 	"ti,keystone",
 	NULL,
 };
@@ -115,5 +106,5 @@ DT_MACHINE_START(KEYSTONE, "Keystone")
 	.smp		= smp_ops(keystone_smp_ops),
 	.init_machine	= keystone_init,
 	.dt_compat	= keystone_match,
-	.init_meminfo   = keystone_init_meminfo,
+	.pv_fixup	= keystone_pv_fixup,
 MACHINE_END

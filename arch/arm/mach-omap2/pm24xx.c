@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * OMAP2 Power Management Routines
  *
@@ -12,12 +13,9 @@
  * Igor Stoppa <igor.stoppa@nokia.com>
  *
  * Based on pm.c for omap1
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
+#include <linux/cpu_pm.h>
 #include <linux/suspend.h>
 #include <linux/sched.h>
 #include <linux/proc_fs.h>
@@ -25,11 +23,10 @@
 #include <linux/sysfs.h>
 #include <linux/module.h>
 #include <linux/delay.h>
+#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/irq.h>
 #include <linux/time.h>
-#include <linux/gpio.h>
-#include <linux/platform_data/gpio-omap.h>
 
 #include <asm/fncpy.h>
 
@@ -75,9 +72,9 @@ static int omap2_enter_full_retention(void)
 
 	/* Clear old wake-up events */
 	/* REVISIT: These write to reserved bits? */
-	omap2xxx_prm_clear_mod_irqs(CORE_MOD, PM_WKST1, ~0);
-	omap2xxx_prm_clear_mod_irqs(CORE_MOD, OMAP24XX_PM_WKST2, ~0);
-	omap2xxx_prm_clear_mod_irqs(WKUP_MOD, PM_WKST, ~0);
+	omap_prm_clear_mod_irqs(CORE_MOD, PM_WKST1, ~0);
+	omap_prm_clear_mod_irqs(CORE_MOD, OMAP24XX_PM_WKST2, ~0);
+	omap_prm_clear_mod_irqs(WKUP_MOD, PM_WKST, ~0);
 
 	pwrdm_set_next_pwrst(core_pwrdm, PWRDM_POWER_RET);
 	pwrdm_set_next_pwrst(mpu_pwrdm, PWRDM_POWER_RET);
@@ -85,8 +82,6 @@ static int omap2_enter_full_retention(void)
 	/* Workaround to kill USB */
 	l = omap_ctrl_readl(OMAP2_CONTROL_DEVCONF0) | OMAP24XX_USBSTANDBYCTRL;
 	omap_ctrl_writel(l, OMAP2_CONTROL_DEVCONF0);
-
-	omap2_gpio_prepare_for_idle(0);
 
 	/* One last check for pending IRQs to avoid extra latency due
 	 * to sleeping unnecessarily. */
@@ -99,23 +94,19 @@ static int omap2_enter_full_retention(void)
 			   OMAP_SDRC_REGADDR(SDRC_POWER));
 
 no_sleep:
-	omap2_gpio_resume_after_idle();
-
 	clk_enable(osc_ck);
 
 	/* clear CORE wake-up events */
-	omap2xxx_prm_clear_mod_irqs(CORE_MOD, PM_WKST1, ~0);
-	omap2xxx_prm_clear_mod_irqs(CORE_MOD, OMAP24XX_PM_WKST2, ~0);
+	omap_prm_clear_mod_irqs(CORE_MOD, PM_WKST1, ~0);
+	omap_prm_clear_mod_irqs(CORE_MOD, OMAP24XX_PM_WKST2, ~0);
 
 	/* wakeup domain events - bit 1: GPT1, bit5 GPIO */
-	omap2xxx_prm_clear_mod_irqs(WKUP_MOD, PM_WKST, 0x4 | 0x1);
+	omap_prm_clear_mod_irqs(WKUP_MOD, PM_WKST, 0x4 | 0x1);
 
 	/* MPU domain wake events */
-	omap2xxx_prm_clear_mod_irqs(OCP_MOD, OMAP2_PRCM_IRQSTATUS_MPU_OFFSET,
-				    0x1);
+	omap_prm_clear_mod_irqs(OCP_MOD, OMAP2_PRCM_IRQSTATUS_MPU_OFFSET, 0x1);
 
-	omap2xxx_prm_clear_mod_irqs(OCP_MOD, OMAP2_PRCM_IRQSTATUS_MPU_OFFSET,
-				    0x20);
+	omap_prm_clear_mod_irqs(OCP_MOD, OMAP2_PRCM_IRQSTATUS_MPU_OFFSET, 0x20);
 
 	pwrdm_set_next_pwrst(mpu_pwrdm, PWRDM_POWER_ON);
 	pwrdm_set_next_pwrst(core_pwrdm, PWRDM_POWER_ON);
@@ -143,9 +134,9 @@ static void omap2_enter_mpu_retention(void)
 	 * it is in retention mode. */
 	if (omap2_allow_mpu_retention()) {
 		/* REVISIT: These write to reserved bits? */
-		omap2xxx_prm_clear_mod_irqs(CORE_MOD, PM_WKST1, ~0);
-		omap2xxx_prm_clear_mod_irqs(CORE_MOD, OMAP24XX_PM_WKST2, ~0);
-		omap2xxx_prm_clear_mod_irqs(WKUP_MOD, PM_WKST, ~0);
+		omap_prm_clear_mod_irqs(CORE_MOD, PM_WKST1, ~0);
+		omap_prm_clear_mod_irqs(CORE_MOD, OMAP24XX_PM_WKST2, ~0);
+		omap_prm_clear_mod_irqs(WKUP_MOD, PM_WKST, ~0);
 
 		/* Try to enter MPU retention */
 		pwrdm_set_next_pwrst(mpu_pwrdm, PWRDM_POWER_RET);
@@ -167,25 +158,27 @@ static int omap2_can_sleep(void)
 		return 0;
 	if (__clk_is_enabled(osc_ck))
 		return 0;
-	if (omap_dma_running())
-		return 0;
 
 	return 1;
 }
 
 static void omap2_pm_idle(void)
 {
-	if (!omap2_can_sleep()) {
-		if (omap_irq_pending())
-			return;
-		omap2_enter_mpu_retention();
-		return;
-	}
+	int error;
 
 	if (omap_irq_pending())
 		return;
 
+	error = cpu_cluster_pm_enter();
+	if (error || !omap2_can_sleep()) {
+		omap2_enter_mpu_retention();
+		goto out_cpu_cluster_pm;
+	}
+
 	omap2_enter_full_retention();
+
+out_cpu_cluster_pm:
+	cpu_cluster_pm_exit();
 }
 
 static void __init prcm_setup_regs(void)

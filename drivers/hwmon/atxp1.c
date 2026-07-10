@@ -1,21 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * atxp1.c - kernel module for setting CPU VID and general purpose
  *	     I/Os using the Attansic ATXP1 chip.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- *
+ * The ATXP1 can reside on I2C addresses 0x37 or 0x4e. The chip is
+ * not auto-detected by the driver and must be instantiated explicitly.
+ * See Documentation/i2c/instantiating-devices.rst for more information.
  */
 
 #include <linux/kernel.h>
@@ -42,8 +32,6 @@ MODULE_AUTHOR("Sebastian Witt <se.witt@gmx.net>");
 #define ATXP1_VIDENA	0x20
 #define ATXP1_VIDMASK	0x1f
 #define ATXP1_GPIO1MASK	0x0f
-
-static const unsigned short normal_i2c[] = { 0x37, 0x4e, I2C_CLIENT_END };
 
 struct atxp1_data {
 	struct i2c_client *client;
@@ -84,8 +72,8 @@ static struct atxp1_data *atxp1_update_device(struct device *dev)
 }
 
 /* sys file functions for cpu0_vid */
-static ssize_t atxp1_showvcore(struct device *dev,
-			       struct device_attribute *attr, char *buf)
+static ssize_t cpu0_vid_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
 {
 	int size;
 	struct atxp1_data *data;
@@ -98,9 +86,9 @@ static ssize_t atxp1_showvcore(struct device *dev,
 	return size;
 }
 
-static ssize_t atxp1_storevcore(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf, size_t count)
+static ssize_t cpu0_vid_store(struct device *dev,
+			      struct device_attribute *attr, const char *buf,
+			      size_t count)
 {
 	struct atxp1_data *data = atxp1_update_device(dev);
 	struct i2c_client *client = data->client;
@@ -157,12 +145,11 @@ static ssize_t atxp1_storevcore(struct device *dev,
  * CPU core reference voltage
  * unit: millivolt
  */
-static DEVICE_ATTR(cpu0_vid, S_IRUGO | S_IWUSR, atxp1_showvcore,
-		   atxp1_storevcore);
+static DEVICE_ATTR_RW(cpu0_vid);
 
 /* sys file functions for GPIO1 */
-static ssize_t atxp1_showgpio1(struct device *dev,
-			       struct device_attribute *attr, char *buf)
+static ssize_t gpio1_show(struct device *dev, struct device_attribute *attr,
+			  char *buf)
 {
 	int size;
 	struct atxp1_data *data;
@@ -174,9 +161,8 @@ static ssize_t atxp1_showgpio1(struct device *dev,
 	return size;
 }
 
-static ssize_t atxp1_storegpio1(struct device *dev,
-				struct device_attribute *attr, const char *buf,
-				size_t count)
+static ssize_t gpio1_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
 {
 	struct atxp1_data *data = atxp1_update_device(dev);
 	struct i2c_client *client = data->client;
@@ -204,11 +190,11 @@ static ssize_t atxp1_storegpio1(struct device *dev,
  * GPIO1 data register
  * unit: Four bit as hex (e.g. 0x0f)
  */
-static DEVICE_ATTR(gpio1, S_IRUGO | S_IWUSR, atxp1_showgpio1, atxp1_storegpio1);
+static DEVICE_ATTR_RW(gpio1);
 
 /* sys file functions for GPIO2 */
-static ssize_t atxp1_showgpio2(struct device *dev,
-			       struct device_attribute *attr, char *buf)
+static ssize_t gpio2_show(struct device *dev, struct device_attribute *attr,
+			  char *buf)
 {
 	int size;
 	struct atxp1_data *data;
@@ -220,9 +206,8 @@ static ssize_t atxp1_showgpio2(struct device *dev,
 	return size;
 }
 
-static ssize_t atxp1_storegpio2(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf, size_t count)
+static ssize_t gpio2_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
 {
 	struct atxp1_data *data = atxp1_update_device(dev);
 	struct i2c_client *client = data->client;
@@ -249,7 +234,7 @@ static ssize_t atxp1_storegpio2(struct device *dev,
  * GPIO2 data register
  * unit: Eight bit as hex (e.g. 0xff)
  */
-static DEVICE_ATTR(gpio2, S_IRUGO | S_IWUSR, atxp1_showgpio2, atxp1_storegpio2);
+static DEVICE_ATTR_RW(gpio2);
 
 static struct attribute *atxp1_attrs[] = {
 	&dev_attr_gpio1.attr,
@@ -259,50 +244,7 @@ static struct attribute *atxp1_attrs[] = {
 };
 ATTRIBUTE_GROUPS(atxp1);
 
-/* Return 0 if detection is successful, -ENODEV otherwise */
-static int atxp1_detect(struct i2c_client *new_client,
-			struct i2c_board_info *info)
-{
-	struct i2c_adapter *adapter = new_client->adapter;
-
-	u8 temp;
-
-	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_BYTE_DATA))
-		return -ENODEV;
-
-	/* Detect ATXP1, checking if vendor ID registers are all zero */
-	if (!((i2c_smbus_read_byte_data(new_client, 0x3e) == 0) &&
-	     (i2c_smbus_read_byte_data(new_client, 0x3f) == 0) &&
-	     (i2c_smbus_read_byte_data(new_client, 0xfe) == 0) &&
-	     (i2c_smbus_read_byte_data(new_client, 0xff) == 0)))
-		return -ENODEV;
-
-	/*
-	 * No vendor ID, now checking if registers 0x10,0x11 (non-existent)
-	 * showing the same as register 0x00
-	 */
-	temp = i2c_smbus_read_byte_data(new_client, 0x00);
-
-	if (!((i2c_smbus_read_byte_data(new_client, 0x10) == temp) &&
-	      (i2c_smbus_read_byte_data(new_client, 0x11) == temp)))
-		return -ENODEV;
-
-	/* Get VRM */
-	temp = vid_which_vrm();
-
-	if ((temp != 90) && (temp != 91)) {
-		dev_err(&adapter->dev, "atxp1: Not supporting VRM %d.%d\n",
-				temp / 10, temp % 10);
-		return -ENODEV;
-	}
-
-	strlcpy(info->type, "atxp1", I2C_NAME_SIZE);
-
-	return 0;
-}
-
-static int atxp1_probe(struct i2c_client *client,
-		       const struct i2c_device_id *id)
+static int atxp1_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
 	struct atxp1_data *data;
@@ -314,6 +256,11 @@ static int atxp1_probe(struct i2c_client *client,
 
 	/* Get VRM */
 	data->vrm = vid_which_vrm();
+	if (data->vrm != 90 && data->vrm != 91) {
+		dev_err(dev, "atxp1: Not supporting VRM %d.%d\n",
+			data->vrm / 10, data->vrm % 10);
+		return -ENODEV;
+	}
 
 	data->client = client;
 	mutex_init(&data->update_lock);
@@ -340,10 +287,8 @@ static struct i2c_driver atxp1_driver = {
 	.driver = {
 		.name	= "atxp1",
 	},
-	.probe		= atxp1_probe,
+	.probe_new	= atxp1_probe,
 	.id_table	= atxp1_id,
-	.detect		= atxp1_detect,
-	.address_list	= normal_i2c,
 };
 
 module_i2c_driver(atxp1_driver);

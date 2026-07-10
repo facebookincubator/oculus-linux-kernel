@@ -1,24 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Zynq clock controller
  *
  *  Copyright (C) 2012 - 2013 Xilinx
  *
  *  Sören Brinkmann <soren.brinkmann@xilinx.com>
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License v2 as published by
- * the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/clk/zynq.h>
+#include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
@@ -85,22 +75,29 @@ static DEFINE_SPINLOCK(canmioclk_lock);
 static DEFINE_SPINLOCK(dbgclk_lock);
 static DEFINE_SPINLOCK(aperclk_lock);
 
-static const char *armpll_parents[] __initconst = {"armpll_int", "ps_clk"};
-static const char *ddrpll_parents[] __initconst = {"ddrpll_int", "ps_clk"};
-static const char *iopll_parents[] __initconst = {"iopll_int", "ps_clk"};
-static const char *gem0_mux_parents[] __initconst = {"gem0_div1", "dummy_name"};
-static const char *gem1_mux_parents[] __initconst = {"gem1_div1", "dummy_name"};
-static const char *can0_mio_mux2_parents[] __initconst = {"can0_gate",
+static const char *const armpll_parents[] __initconst = {"armpll_int",
+	"ps_clk"};
+static const char *const ddrpll_parents[] __initconst = {"ddrpll_int",
+	"ps_clk"};
+static const char *const iopll_parents[] __initconst = {"iopll_int",
+	"ps_clk"};
+static const char *gem0_mux_parents[] __initdata = {"gem0_div1", "dummy_name"};
+static const char *gem1_mux_parents[] __initdata = {"gem1_div1", "dummy_name"};
+static const char *const can0_mio_mux2_parents[] __initconst = {"can0_gate",
 	"can0_mio_mux"};
-static const char *can1_mio_mux2_parents[] __initconst = {"can1_gate",
+static const char *const can1_mio_mux2_parents[] __initconst = {"can1_gate",
 	"can1_mio_mux"};
-static const char *dbg_emio_mux_parents[] __initconst = {"dbg_div",
+static const char *dbg_emio_mux_parents[] __initdata = {"dbg_div",
 	"dummy_name"};
 
-static const char *dbgtrc_emio_input_names[] __initconst = {"trace_emio_clk"};
-static const char *gem0_emio_input_names[] __initconst = {"gem0_emio_clk"};
-static const char *gem1_emio_input_names[] __initconst = {"gem1_emio_clk"};
-static const char *swdt_ext_clk_input_names[] __initconst = {"swdt_ext_clk"};
+static const char *const dbgtrc_emio_input_names[] __initconst = {
+	"trace_emio_clk"};
+static const char *const gem0_emio_input_names[] __initconst = {
+	"gem0_emio_clk"};
+static const char *const gem1_emio_input_names[] __initconst = {
+	"gem1_emio_clk"};
+static const char *const swdt_ext_clk_input_names[] __initconst = {
+	"swdt_ext_clk"};
 
 static void __init zynq_clk_register_fclk(enum zynq_clk fclk,
 		const char *clk_name, void __iomem *fclk_ctrl_reg,
@@ -150,7 +147,7 @@ static void __init zynq_clk_register_fclk(enum zynq_clk fclk,
 	clks[fclk] = clk_register_gate(NULL, clk_name,
 			div1_name, CLK_SET_RATE_PARENT, fclk_gate_reg,
 			0, CLK_GATE_SET_TO_DISABLE, fclk_gate_lock);
-	enable_reg = clk_readl(fclk_gate_reg) & 1;
+	enable_reg = readl(fclk_gate_reg) & 1;
 	if (enable && !enable_reg) {
 		if (clk_prepare_enable(clks[fclk]))
 			pr_warn("%s: FCLK%u enable failed\n", __func__,
@@ -257,8 +254,7 @@ static void __init zynq_clk_setup(struct device_node *np)
 		pr_warn("ps_clk frequency not specified, using 33 MHz.\n");
 		tmp = 33333333;
 	}
-	ps_clk = clk_register_fixed_rate(NULL, "ps_clk", NULL, CLK_IS_ROOT,
-			tmp);
+	ps_clk = clk_register_fixed_rate(NULL, "ps_clk", NULL, 0, tmp);
 
 	/* PLLs */
 	clk = clk_register_zynq_pll("armpll_int", "ps_clk", SLCR_ARMPLL_CTRL,
@@ -280,7 +276,7 @@ static void __init zynq_clk_setup(struct device_node *np)
 			SLCR_IOPLL_CTRL, 4, 1, 0, &iopll_lock);
 
 	/* CPU clocks */
-	tmp = clk_readl(SLCR_621_TRUE) & 1;
+	tmp = readl(SLCR_621_TRUE) & 1;
 	clk = clk_register_mux(NULL, "cpu_mux", cpu_parents, 4,
 			CLK_SET_RATE_NO_REPARENT, SLCR_ARM_CLK_CTRL, 4, 2, 0,
 			&armclk_lock);
@@ -503,7 +499,7 @@ static void __init zynq_clk_setup(struct device_node *np)
 			&dbgclk_lock);
 
 	/* leave debug clocks in the state the bootloader set them up to */
-	tmp = clk_readl(SLCR_DBG_CLK_CTRL);
+	tmp = readl(SLCR_DBG_CLK_CTRL);
 	if (tmp & DBG_CLK_CTRL_CLKACT_TRC)
 		if (clk_prepare_enable(clks[dbg_trc]))
 			pr_warn("%s: trace clk enable failed\n", __func__);
@@ -595,7 +591,7 @@ void __init zynq_clock_init(void)
 	}
 
 	if (of_address_to_resource(np, 0, &res)) {
-		pr_err("%s: failed to get resource\n", np->name);
+		pr_err("%pOFn: failed to get resource\n", np);
 		goto np_err;
 	}
 
@@ -604,7 +600,7 @@ void __init zynq_clock_init(void)
 	if (slcr->data) {
 		zynq_clkc_base = (__force void __iomem *)slcr->data + res.start;
 	} else {
-		pr_err("%s: Unable to get I/O memory\n", np->name);
+		pr_err("%pOFn: Unable to get I/O memory\n", np);
 		of_node_put(slcr);
 		goto np_err;
 	}

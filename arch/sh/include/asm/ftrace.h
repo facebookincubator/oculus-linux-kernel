@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_SH_FTRACE_H
 #define __ASM_SH_FTRACE_H
 
@@ -9,7 +10,7 @@
 #ifndef __ASSEMBLY__
 extern void mcount(void);
 
-#define MCOUNT_ADDR		((long)(mcount))
+#define MCOUNT_ADDR		((unsigned long)(mcount))
 
 #ifdef CONFIG_DYNAMIC_FTRACE
 #define CALL_ADDR		((long)(ftrace_call))

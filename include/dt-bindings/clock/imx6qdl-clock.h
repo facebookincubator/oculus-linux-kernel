@@ -1,9 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright 2014 Freescale Semiconductor, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef __DT_BINDINGS_CLOCK_IMX6QDL_H
@@ -248,6 +245,34 @@
 #define IMX6QDL_PLL6_BYPASS			235
 #define IMX6QDL_PLL7_BYPASS			236
 #define IMX6QDL_CLK_GPT_3M			237
-#define IMX6QDL_CLK_END				238
+#define IMX6QDL_CLK_VIDEO_27M			238
+#define IMX6QDL_CLK_MIPI_CORE_CFG		239
+#define IMX6QDL_CLK_MIPI_IPG			240
+#define IMX6QDL_CLK_CAAM_MEM			241
+#define IMX6QDL_CLK_CAAM_ACLK			242
+#define IMX6QDL_CLK_CAAM_IPG			243
+#define IMX6QDL_CLK_SPDIF_GCLK			244
+#define IMX6QDL_CLK_UART_SEL			245
+#define IMX6QDL_CLK_IPG_PER_SEL			246
+#define IMX6QDL_CLK_ECSPI_SEL			247
+#define IMX6QDL_CLK_CAN_SEL			248
+#define IMX6QDL_CLK_MMDC_CH1_AXI_CG		249
+#define IMX6QDL_CLK_PRE0			250
+#define IMX6QDL_CLK_PRE1			251
+#define IMX6QDL_CLK_PRE2			252
+#define IMX6QDL_CLK_PRE3			253
+#define IMX6QDL_CLK_PRG0_AXI			254
+#define IMX6QDL_CLK_PRG1_AXI			255
+#define IMX6QDL_CLK_PRG0_APB			256
+#define IMX6QDL_CLK_PRG1_APB			257
+#define IMX6QDL_CLK_PRE_AXI			258
+#define IMX6QDL_CLK_MLB_SEL			259
+#define IMX6QDL_CLK_MLB_PODF			260
+#define IMX6QDL_CLK_EPIT1			261
+#define IMX6QDL_CLK_EPIT2			262
+#define IMX6QDL_CLK_MMDC_P0_IPG			263
+#define IMX6QDL_CLK_DCIC1			264
+#define IMX6QDL_CLK_DCIC2			265
+#define IMX6QDL_CLK_END				266
 
 #endif /* __DT_BINDINGS_CLOCK_IMX6QDL_H */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __ASM_ARM_DMA_H
 #define __ASM_ARM_DMA_H
 
@@ -9,7 +10,7 @@
 #else
 #define MAX_DMA_ADDRESS	({ \
 	extern phys_addr_t arm_dma_zone_size; \
-	arm_dma_zone_size && arm_dma_zone_size < (0x10000000 - PAGE_OFFSET) ? \
+	arm_dma_zone_size && arm_dma_zone_size < (0x100000000ULL - PAGE_OFFSET) ? \
 		(PAGE_OFFSET + arm_dma_zone_size) : 0xffffffffUL; })
 #endif
 
@@ -19,7 +20,7 @@
  * It should not be re-used except for that purpose.
  */
 #include <linux/spinlock.h>
-#include <asm/scatterlist.h>
+#include <linux/scatterlist.h>
 
 #include <mach/isa-dma.h>
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (c) by Jaroslav Kysela <perex@perex.cz>
  *                   Abramo Bagnara <abramo@alsa-project.org>
@@ -28,21 +29,6 @@
  *           references to be able to implement all fancy feutures
  *           supported by the cs46xx DSP's. 
  *           Benny <benny@hostmobility.com>
- *                
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
- *
  */
 
 #include <linux/delay.h>
@@ -57,6 +43,7 @@
 #include <linux/module.h>
 #include <linux/firmware.h>
 #include <linux/vmalloc.h>
+#include <linux/io.h>
 
 #include <sound/core.h>
 #include <sound/control.h>
@@ -65,26 +52,24 @@
 #include <sound/pcm_params.h>
 #include "cs46xx.h"
 
-#include <asm/io.h>
-
 #include "cs46xx_lib.h"
 #include "dsp_spos.h"
 
 static void amp_voyetra(struct snd_cs46xx *chip, int change);
 
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
-static struct snd_pcm_ops snd_cs46xx_playback_rear_ops;
-static struct snd_pcm_ops snd_cs46xx_playback_indirect_rear_ops;
-static struct snd_pcm_ops snd_cs46xx_playback_clfe_ops;
-static struct snd_pcm_ops snd_cs46xx_playback_indirect_clfe_ops;
-static struct snd_pcm_ops snd_cs46xx_playback_iec958_ops;
-static struct snd_pcm_ops snd_cs46xx_playback_indirect_iec958_ops;
+static const struct snd_pcm_ops snd_cs46xx_playback_rear_ops;
+static const struct snd_pcm_ops snd_cs46xx_playback_indirect_rear_ops;
+static const struct snd_pcm_ops snd_cs46xx_playback_clfe_ops;
+static const struct snd_pcm_ops snd_cs46xx_playback_indirect_clfe_ops;
+static const struct snd_pcm_ops snd_cs46xx_playback_iec958_ops;
+static const struct snd_pcm_ops snd_cs46xx_playback_indirect_iec958_ops;
 #endif
 
-static struct snd_pcm_ops snd_cs46xx_playback_ops;
-static struct snd_pcm_ops snd_cs46xx_playback_indirect_ops;
-static struct snd_pcm_ops snd_cs46xx_capture_ops;
-static struct snd_pcm_ops snd_cs46xx_capture_indirect_ops;
+static const struct snd_pcm_ops snd_cs46xx_playback_ops;
+static const struct snd_pcm_ops snd_cs46xx_playback_indirect_ops;
+static const struct snd_pcm_ops snd_cs46xx_capture_ops;
+static const struct snd_pcm_ops snd_cs46xx_capture_indirect_ops;
 
 static unsigned short snd_cs46xx_codec_read(struct snd_cs46xx *chip,
 					    unsigned short reg,
@@ -461,7 +446,7 @@ static int load_firmware(struct snd_cs46xx *chip,
 		entry->size = le32_to_cpu(fwdat[fwlen++]);
 		if (fwlen + entry->size > fwsize)
 			goto error_inval;
-		entry->data = kmalloc(entry->size * 4, GFP_KERNEL);
+		entry->data = kmalloc_array(entry->size, 4, GFP_KERNEL);
 		if (!entry->data)
 			goto error;
 		memcpy_le32(entry->data, &fwdat[fwlen], entry->size * 4);
@@ -781,7 +766,7 @@ static void snd_cs46xx_set_capture_sample_rate(struct snd_cs46xx *chip, unsigned
 		rate = 48000 / 9;
 
 	/*
-	 *  We can not capture at at rate greater than the Input Rate (48000).
+	 *  We can not capture at a rate greater than the Input Rate (48000).
 	 *  Return an error if an attempt is made to stray outside that limit.
 	 */
 	if (rate > 48000)
@@ -888,8 +873,8 @@ static int snd_cs46xx_playback_transfer(struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct snd_cs46xx_pcm * cpcm = runtime->private_data;
-	snd_pcm_indirect_playback_transfer(substream, &cpcm->pcm_rec, snd_cs46xx_pb_trans_copy);
-	return 0;
+	return snd_pcm_indirect_playback_transfer(substream, &cpcm->pcm_rec,
+						  snd_cs46xx_pb_trans_copy);
 }
 
 static void snd_cs46xx_cp_trans_copy(struct snd_pcm_substream *substream,
@@ -904,8 +889,8 @@ static void snd_cs46xx_cp_trans_copy(struct snd_pcm_substream *substream,
 static int snd_cs46xx_capture_transfer(struct snd_pcm_substream *substream)
 {
 	struct snd_cs46xx *chip = snd_pcm_substream_chip(substream);
-	snd_pcm_indirect_capture_transfer(substream, &chip->capt.pcm_rec, snd_cs46xx_cp_trans_copy);
-	return 0;
+	return snd_pcm_indirect_capture_transfer(substream, &chip->capt.pcm_rec,
+						 snd_cs46xx_cp_trans_copy);
 }
 
 static snd_pcm_uframes_t snd_cs46xx_playback_direct_pointer(struct snd_pcm_substream *substream)
@@ -1439,12 +1424,13 @@ static irqreturn_t snd_cs46xx_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static struct snd_pcm_hardware snd_cs46xx_playback =
+static const struct snd_pcm_hardware snd_cs46xx_playback =
 {
 	.info =			(SNDRV_PCM_INFO_MMAP |
 				 SNDRV_PCM_INFO_INTERLEAVED | 
 				 SNDRV_PCM_INFO_BLOCK_TRANSFER /*|*/
-				 /*SNDRV_PCM_INFO_RESUME*/),
+				 /*SNDRV_PCM_INFO_RESUME*/ |
+				 SNDRV_PCM_INFO_SYNC_APPLPTR),
 	.formats =		(SNDRV_PCM_FMTBIT_S8 | SNDRV_PCM_FMTBIT_U8 |
 				 SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S16_BE |
 				 SNDRV_PCM_FMTBIT_U16_LE | SNDRV_PCM_FMTBIT_U16_BE),
@@ -1461,12 +1447,13 @@ static struct snd_pcm_hardware snd_cs46xx_playback =
 	.fifo_size =		0,
 };
 
-static struct snd_pcm_hardware snd_cs46xx_capture =
+static const struct snd_pcm_hardware snd_cs46xx_capture =
 {
 	.info =			(SNDRV_PCM_INFO_MMAP |
 				 SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_BLOCK_TRANSFER /*|*/
-				 /*SNDRV_PCM_INFO_RESUME*/),
+				 /*SNDRV_PCM_INFO_RESUME*/ |
+				 SNDRV_PCM_INFO_SYNC_APPLPTR),
 	.formats =		SNDRV_PCM_FMTBIT_S16_LE,
 	.rates =		SNDRV_PCM_RATE_CONTINUOUS | SNDRV_PCM_RATE_8000_48000,
 	.rate_min =		5500,
@@ -1483,9 +1470,9 @@ static struct snd_pcm_hardware snd_cs46xx_capture =
 
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
 
-static unsigned int period_sizes[] = { 32, 64, 128, 256, 512, 1024, 2048 };
+static const unsigned int period_sizes[] = { 32, 64, 128, 256, 512, 1024, 2048 };
 
-static struct snd_pcm_hw_constraint_list hw_constraints_period_sizes = {
+static const struct snd_pcm_hw_constraint_list hw_constraints_period_sizes = {
 	.count = ARRAY_SIZE(period_sizes),
 	.list = period_sizes,
 	.mask = 0
@@ -1507,7 +1494,7 @@ static int _cs46xx_playback_open_channel (struct snd_pcm_substream *substream,in
 	cpcm = kzalloc(sizeof(*cpcm), GFP_KERNEL);
 	if (cpcm == NULL)
 		return -ENOMEM;
-	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(chip->pci),
+	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, &chip->pci->dev,
 				PAGE_SIZE, &cpcm->hw_buf) < 0) {
 		kfree(cpcm);
 		return -ENOMEM;
@@ -1595,7 +1582,7 @@ static int snd_cs46xx_capture_open(struct snd_pcm_substream *substream)
 {
 	struct snd_cs46xx *chip = snd_pcm_substream_chip(substream);
 
-	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(chip->pci),
+	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, &chip->pci->dev,
 				PAGE_SIZE, &chip->capt.hw_buf) < 0)
 		return -ENOMEM;
 	chip->capt.substream = substream;
@@ -1655,10 +1642,9 @@ static int snd_cs46xx_capture_close(struct snd_pcm_substream *substream)
 }
 
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
-static struct snd_pcm_ops snd_cs46xx_playback_rear_ops = {
+static const struct snd_pcm_ops snd_cs46xx_playback_rear_ops = {
 	.open =			snd_cs46xx_playback_open_rear,
 	.close =		snd_cs46xx_playback_close,
-	.ioctl =		snd_pcm_lib_ioctl,
 	.hw_params =		snd_cs46xx_playback_hw_params,
 	.hw_free =		snd_cs46xx_playback_hw_free,
 	.prepare =		snd_cs46xx_playback_prepare,
@@ -1666,10 +1652,9 @@ static struct snd_pcm_ops snd_cs46xx_playback_rear_ops = {
 	.pointer =		snd_cs46xx_playback_direct_pointer,
 };
 
-static struct snd_pcm_ops snd_cs46xx_playback_indirect_rear_ops = {
+static const struct snd_pcm_ops snd_cs46xx_playback_indirect_rear_ops = {
 	.open =			snd_cs46xx_playback_open_rear,
 	.close =		snd_cs46xx_playback_close,
-	.ioctl =		snd_pcm_lib_ioctl,
 	.hw_params =		snd_cs46xx_playback_hw_params,
 	.hw_free =		snd_cs46xx_playback_hw_free,
 	.prepare =		snd_cs46xx_playback_prepare,
@@ -1678,10 +1663,9 @@ static struct snd_pcm_ops snd_cs46xx_playback_indirect_rear_ops = {
 	.ack =			snd_cs46xx_playback_transfer,
 };
 
-static struct snd_pcm_ops snd_cs46xx_playback_clfe_ops = {
+static const struct snd_pcm_ops snd_cs46xx_playback_clfe_ops = {
 	.open =			snd_cs46xx_playback_open_clfe,
 	.close =		snd_cs46xx_playback_close,
-	.ioctl =		snd_pcm_lib_ioctl,
 	.hw_params =		snd_cs46xx_playback_hw_params,
 	.hw_free =		snd_cs46xx_playback_hw_free,
 	.prepare =		snd_cs46xx_playback_prepare,
@@ -1689,10 +1673,9 @@ static struct snd_pcm_ops snd_cs46xx_playback_clfe_ops = {
 	.pointer =		snd_cs46xx_playback_direct_pointer,
 };
 
-static struct snd_pcm_ops snd_cs46xx_playback_indirect_clfe_ops = {
+static const struct snd_pcm_ops snd_cs46xx_playback_indirect_clfe_ops = {
 	.open =			snd_cs46xx_playback_open_clfe,
 	.close =		snd_cs46xx_playback_close,
-	.ioctl =		snd_pcm_lib_ioctl,
 	.hw_params =		snd_cs46xx_playback_hw_params,
 	.hw_free =		snd_cs46xx_playback_hw_free,
 	.prepare =		snd_cs46xx_playback_prepare,
@@ -1701,10 +1684,9 @@ static struct snd_pcm_ops snd_cs46xx_playback_indirect_clfe_ops = {
 	.ack =			snd_cs46xx_playback_transfer,
 };
 
-static struct snd_pcm_ops snd_cs46xx_playback_iec958_ops = {
+static const struct snd_pcm_ops snd_cs46xx_playback_iec958_ops = {
 	.open =			snd_cs46xx_playback_open_iec958,
 	.close =		snd_cs46xx_playback_close_iec958,
-	.ioctl =		snd_pcm_lib_ioctl,
 	.hw_params =		snd_cs46xx_playback_hw_params,
 	.hw_free =		snd_cs46xx_playback_hw_free,
 	.prepare =		snd_cs46xx_playback_prepare,
@@ -1712,10 +1694,9 @@ static struct snd_pcm_ops snd_cs46xx_playback_iec958_ops = {
 	.pointer =		snd_cs46xx_playback_direct_pointer,
 };
 
-static struct snd_pcm_ops snd_cs46xx_playback_indirect_iec958_ops = {
+static const struct snd_pcm_ops snd_cs46xx_playback_indirect_iec958_ops = {
 	.open =			snd_cs46xx_playback_open_iec958,
 	.close =		snd_cs46xx_playback_close_iec958,
-	.ioctl =		snd_pcm_lib_ioctl,
 	.hw_params =		snd_cs46xx_playback_hw_params,
 	.hw_free =		snd_cs46xx_playback_hw_free,
 	.prepare =		snd_cs46xx_playback_prepare,
@@ -1726,10 +1707,9 @@ static struct snd_pcm_ops snd_cs46xx_playback_indirect_iec958_ops = {
 
 #endif
 
-static struct snd_pcm_ops snd_cs46xx_playback_ops = {
+static const struct snd_pcm_ops snd_cs46xx_playback_ops = {
 	.open =			snd_cs46xx_playback_open,
 	.close =		snd_cs46xx_playback_close,
-	.ioctl =		snd_pcm_lib_ioctl,
 	.hw_params =		snd_cs46xx_playback_hw_params,
 	.hw_free =		snd_cs46xx_playback_hw_free,
 	.prepare =		snd_cs46xx_playback_prepare,
@@ -1737,10 +1717,9 @@ static struct snd_pcm_ops snd_cs46xx_playback_ops = {
 	.pointer =		snd_cs46xx_playback_direct_pointer,
 };
 
-static struct snd_pcm_ops snd_cs46xx_playback_indirect_ops = {
+static const struct snd_pcm_ops snd_cs46xx_playback_indirect_ops = {
 	.open =			snd_cs46xx_playback_open,
 	.close =		snd_cs46xx_playback_close,
-	.ioctl =		snd_pcm_lib_ioctl,
 	.hw_params =		snd_cs46xx_playback_hw_params,
 	.hw_free =		snd_cs46xx_playback_hw_free,
 	.prepare =		snd_cs46xx_playback_prepare,
@@ -1749,10 +1728,9 @@ static struct snd_pcm_ops snd_cs46xx_playback_indirect_ops = {
 	.ack =			snd_cs46xx_playback_transfer,
 };
 
-static struct snd_pcm_ops snd_cs46xx_capture_ops = {
+static const struct snd_pcm_ops snd_cs46xx_capture_ops = {
 	.open =			snd_cs46xx_capture_open,
 	.close =		snd_cs46xx_capture_close,
-	.ioctl =		snd_pcm_lib_ioctl,
 	.hw_params =		snd_cs46xx_capture_hw_params,
 	.hw_free =		snd_cs46xx_capture_hw_free,
 	.prepare =		snd_cs46xx_capture_prepare,
@@ -1760,10 +1738,9 @@ static struct snd_pcm_ops snd_cs46xx_capture_ops = {
 	.pointer =		snd_cs46xx_capture_direct_pointer,
 };
 
-static struct snd_pcm_ops snd_cs46xx_capture_indirect_ops = {
+static const struct snd_pcm_ops snd_cs46xx_capture_indirect_ops = {
 	.open =			snd_cs46xx_capture_open,
 	.close =		snd_cs46xx_capture_close,
-	.ioctl =		snd_pcm_lib_ioctl,
 	.hw_params =		snd_cs46xx_capture_hw_params,
 	.hw_free =		snd_cs46xx_capture_hw_free,
 	.prepare =		snd_cs46xx_capture_prepare,
@@ -1778,13 +1755,11 @@ static struct snd_pcm_ops snd_cs46xx_capture_indirect_ops = {
 #define MAX_PLAYBACK_CHANNELS	1
 #endif
 
-int snd_cs46xx_pcm(struct snd_cs46xx *chip, int device, struct snd_pcm **rpcm)
+int snd_cs46xx_pcm(struct snd_cs46xx *chip, int device)
 {
 	struct snd_pcm *pcm;
 	int err;
 
-	if (rpcm)
-		*rpcm = NULL;
 	if ((err = snd_pcm_new(chip->card, "CS46xx", device, MAX_PLAYBACK_CHANNELS, 1, &pcm)) < 0)
 		return err;
 
@@ -1799,24 +1774,18 @@ int snd_cs46xx_pcm(struct snd_cs46xx *chip, int device, struct snd_pcm **rpcm)
 	chip->pcm = pcm;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_pci_data(chip->pci), 64*1024, 256*1024);
-
-	if (rpcm)
-		*rpcm = pcm;
+					      &chip->pci->dev,
+					      64*1024, 256*1024);
 
 	return 0;
 }
 
 
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
-int snd_cs46xx_pcm_rear(struct snd_cs46xx *chip, int device,
-			struct snd_pcm **rpcm)
+int snd_cs46xx_pcm_rear(struct snd_cs46xx *chip, int device)
 {
 	struct snd_pcm *pcm;
 	int err;
-
-	if (rpcm)
-		*rpcm = NULL;
 
 	if ((err = snd_pcm_new(chip->card, "CS46xx - Rear", device, MAX_PLAYBACK_CHANNELS, 0, &pcm)) < 0)
 		return err;
@@ -1831,22 +1800,16 @@ int snd_cs46xx_pcm_rear(struct snd_cs46xx *chip, int device,
 	chip->pcm_rear = pcm;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_pci_data(chip->pci), 64*1024, 256*1024);
-
-	if (rpcm)
-		*rpcm = pcm;
+					      &chip->pci->dev,
+					      64*1024, 256*1024);
 
 	return 0;
 }
 
-int snd_cs46xx_pcm_center_lfe(struct snd_cs46xx *chip, int device,
-			      struct snd_pcm **rpcm)
+int snd_cs46xx_pcm_center_lfe(struct snd_cs46xx *chip, int device)
 {
 	struct snd_pcm *pcm;
 	int err;
-
-	if (rpcm)
-		*rpcm = NULL;
 
 	if ((err = snd_pcm_new(chip->card, "CS46xx - Center LFE", device, MAX_PLAYBACK_CHANNELS, 0, &pcm)) < 0)
 		return err;
@@ -1861,22 +1824,16 @@ int snd_cs46xx_pcm_center_lfe(struct snd_cs46xx *chip, int device,
 	chip->pcm_center_lfe = pcm;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_pci_data(chip->pci), 64*1024, 256*1024);
-
-	if (rpcm)
-		*rpcm = pcm;
+					      &chip->pci->dev,
+					      64*1024, 256*1024);
 
 	return 0;
 }
 
-int snd_cs46xx_pcm_iec958(struct snd_cs46xx *chip, int device,
-			  struct snd_pcm **rpcm)
+int snd_cs46xx_pcm_iec958(struct snd_cs46xx *chip, int device)
 {
 	struct snd_pcm *pcm;
 	int err;
-
-	if (rpcm)
-		*rpcm = NULL;
 
 	if ((err = snd_pcm_new(chip->card, "CS46xx - IEC958", device, 1, 0, &pcm)) < 0)
 		return err;
@@ -1888,13 +1845,11 @@ int snd_cs46xx_pcm_iec958(struct snd_cs46xx *chip, int device,
 	/* global setup */
 	pcm->info_flags = 0;
 	strcpy(pcm->name, "CS46xx - IEC958");
-	chip->pcm_rear = pcm;
+	chip->pcm_iec958 = pcm;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_pci_data(chip->pci), 64*1024, 256*1024);
-
-	if (rpcm)
-		*rpcm = pcm;
+					      &chip->pci->dev,
+					      64*1024, 256*1024);
 
 	return 0;
 }
@@ -2283,7 +2238,7 @@ static int snd_cs46xx_spdif_stream_put(struct snd_kcontrol *kcontrol,
 #endif /* CONFIG_SND_CS46XX_NEW_DSP */
 
 
-static struct snd_kcontrol_new snd_cs46xx_controls[] = {
+static const struct snd_kcontrol_new snd_cs46xx_controls[] = {
 {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "DAC Volume",
@@ -2398,7 +2353,7 @@ static int snd_cs46xx_front_dup_put(struct snd_kcontrol *kcontrol,
 				    ucontrol->value.integer.value[0] ? 0 : 0x200);
 }
 
-static struct snd_kcontrol_new snd_cs46xx_front_dup_ctl = {
+static const struct snd_kcontrol_new snd_cs46xx_front_dup_ctl = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "Duplicate Front",
 	.info = snd_mixer_boolean_info,
@@ -2409,7 +2364,7 @@ static struct snd_kcontrol_new snd_cs46xx_front_dup_ctl = {
 
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
 /* Only available on the Hercules Game Theater XP soundcard */
-static struct snd_kcontrol_new snd_hercules_controls[] = {
+static const struct snd_kcontrol_new snd_hercules_controls[] = {
 {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "Optical/Coaxial SPDIF Input Switch",
@@ -2487,7 +2442,7 @@ static int cs46xx_detect_codec(struct snd_cs46xx *chip, int codec)
 		udelay(10);
 		if (snd_cs46xx_codec_read(chip, AC97_RESET, codec) & 0x8000) {
 			dev_dbg(chip->card->dev,
-				"seconadry codec not present\n");
+				"secondary codec not present\n");
 			return -ENXIO;
 		}
 	}
@@ -2510,7 +2465,7 @@ int snd_cs46xx_mixer(struct snd_cs46xx *chip, int spdif_device)
 	struct snd_ctl_elem_id id;
 	int err;
 	unsigned int idx;
-	static struct snd_ac97_bus_ops ops = {
+	static const struct snd_ac97_bus_ops ops = {
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
 		.reset = snd_cs46xx_codec_reset,
 #endif
@@ -2530,7 +2485,7 @@ int snd_cs46xx_mixer(struct snd_cs46xx *chip, int spdif_device)
 	chip->nr_ac97_codecs = 1;
 
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
-	dev_dbg(chip->card->dev, "detecting seconadry codec\n");
+	dev_dbg(chip->card->dev, "detecting secondary codec\n");
 	/* try detect a secondary codec */
 	if (! cs46xx_detect_codec(chip, CS46XX_SECONDARY_CODEC_INDEX))
 		chip->nr_ac97_codecs = 2;
@@ -2555,7 +2510,7 @@ int snd_cs46xx_mixer(struct snd_cs46xx *chip, int spdif_device)
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
 	if (chip->nr_ac97_codecs == 1) {
 		unsigned int id2 = chip->ac97[CS46XX_PRIMARY_CODEC_INDEX]->id & 0xffff;
-		if (id2 == 0x592b || id2 == 0x592d) {
+		if ((id2 & 0xfff0) == 0x5920) {	/* CS4294 and CS4298 */
 			err = snd_ctl_add(card, snd_ctl_new1(&snd_cs46xx_front_dup_ctl, chip));
 			if (err < 0)
 				return err;
@@ -2710,27 +2665,25 @@ static void snd_cs46xx_midi_output_trigger(struct snd_rawmidi_substream *substre
 	spin_unlock_irqrestore(&chip->reg_lock, flags);
 }
 
-static struct snd_rawmidi_ops snd_cs46xx_midi_output =
+static const struct snd_rawmidi_ops snd_cs46xx_midi_output =
 {
 	.open =		snd_cs46xx_midi_output_open,
 	.close =	snd_cs46xx_midi_output_close,
 	.trigger =	snd_cs46xx_midi_output_trigger,
 };
 
-static struct snd_rawmidi_ops snd_cs46xx_midi_input =
+static const struct snd_rawmidi_ops snd_cs46xx_midi_input =
 {
 	.open =		snd_cs46xx_midi_input_open,
 	.close =	snd_cs46xx_midi_input_close,
 	.trigger =	snd_cs46xx_midi_input_trigger,
 };
 
-int snd_cs46xx_midi(struct snd_cs46xx *chip, int device, struct snd_rawmidi **rrawmidi)
+int snd_cs46xx_midi(struct snd_cs46xx *chip, int device)
 {
 	struct snd_rawmidi *rmidi;
 	int err;
 
-	if (rrawmidi)
-		*rrawmidi = NULL;
 	if ((err = snd_rawmidi_new(chip->card, "CS46XX", device, 1, 1, &rmidi)) < 0)
 		return err;
 	strcpy(rmidi->name, "CS46XX");
@@ -2739,8 +2692,6 @@ int snd_cs46xx_midi(struct snd_cs46xx *chip, int device, struct snd_rawmidi **rr
 	rmidi->info_flags |= SNDRV_RAWMIDI_INFO_OUTPUT | SNDRV_RAWMIDI_INFO_INPUT | SNDRV_RAWMIDI_INFO_DUPLEX;
 	rmidi->private_data = chip;
 	chip->rmidi = rmidi;
-	if (rrawmidi)
-		*rrawmidi = NULL;
 	return 0;
 }
 
@@ -2749,7 +2700,7 @@ int snd_cs46xx_midi(struct snd_cs46xx *chip, int device, struct snd_rawmidi **rr
  * gameport interface
  */
 
-#if defined(CONFIG_GAMEPORT) || (defined(MODULE) && defined(CONFIG_GAMEPORT_MODULE))
+#if IS_REACHABLE(CONFIG_GAMEPORT)
 
 static void snd_cs46xx_gameport_trigger(struct gameport *gameport)
 {
@@ -2847,7 +2798,7 @@ int snd_cs46xx_gameport(struct snd_cs46xx *chip) { return -ENOSYS; }
 static inline void snd_cs46xx_remove_gameport(struct snd_cs46xx *chip) { }
 #endif /* CONFIG_GAMEPORT */
 
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_SND_PROC_FS
 /*
  *  proc interface
  */
@@ -2864,7 +2815,7 @@ static ssize_t snd_cs46xx_io_read(struct snd_info_entry *entry,
 	return count;
 }
 
-static struct snd_info_entry_ops snd_cs46xx_proc_io_ops = {
+static const struct snd_info_entry_ops snd_cs46xx_proc_io_ops = {
 	.read = snd_cs46xx_io_read,
 };
 
@@ -2880,7 +2831,7 @@ static int snd_cs46xx_proc_init(struct snd_card *card, struct snd_cs46xx *chip)
 			entry->private_data = chip;
 			entry->c.ops = &snd_cs46xx_proc_io_ops;
 			entry->size = region->size;
-			entry->mode = S_IFREG | S_IRUSR;
+			entry->mode = S_IFREG | 0400;
 		}
 	}
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
@@ -2896,7 +2847,7 @@ static int snd_cs46xx_proc_done(struct snd_cs46xx *chip)
 #endif
 	return 0;
 }
-#else /* !CONFIG_PROC_FS */
+#else /* !CONFIG_SND_PROC_FS */
 #define snd_cs46xx_proc_init(card, chip)
 #define snd_cs46xx_proc_done(chip)
 #endif
@@ -2979,8 +2930,8 @@ static int snd_cs46xx_free(struct snd_cs46xx *chip)
 
 	for (idx = 0; idx < 5; idx++) {
 		struct snd_cs46xx_region *region = &chip->region.idx[idx];
-		if (region->remap_addr)
-			iounmap(region->remap_addr);
+
+		iounmap(region->remap_addr);
 		release_and_free_resource(region->resource);
 	}
 
@@ -3794,7 +3745,7 @@ static struct cs_card_type cards[] = {
  * APM support
  */
 #ifdef CONFIG_PM_SLEEP
-static unsigned int saved_regs[] = {
+static const unsigned int saved_regs[] = {
 	BA0_ACOSV,
 	/*BA0_ASER_FADDR,*/
 	BA0_ASER_MASTER,
@@ -3804,14 +3755,12 @@ static unsigned int saved_regs[] = {
 
 static int snd_cs46xx_suspend(struct device *dev)
 {
-	struct pci_dev *pci = to_pci_dev(dev);
 	struct snd_card *card = dev_get_drvdata(dev);
 	struct snd_cs46xx *chip = card->private_data;
 	int i, amp_saved;
 
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
 	chip->in_suspend = 1;
-	snd_pcm_suspend_all(chip->pcm);
 	// chip->ac97_powerdown = snd_cs46xx_codec_read(chip, AC97_POWER_CONTROL);
 	// chip->ac97_general_purpose = snd_cs46xx_codec_read(chip, BA0_AC97_GENERAL_PURPOSE);
 
@@ -3829,16 +3778,11 @@ static int snd_cs46xx_suspend(struct device *dev)
 	/* disable CLKRUN */
 	chip->active_ctrl(chip, -chip->amplifier);
 	chip->amplifier = amp_saved; /* restore the status */
-
-	pci_disable_device(pci);
-	pci_save_state(pci);
-	pci_set_power_state(pci, PCI_D3hot);
 	return 0;
 }
 
 static int snd_cs46xx_resume(struct device *dev)
 {
-	struct pci_dev *pci = to_pci_dev(dev);
 	struct snd_card *card = dev_get_drvdata(dev);
 	struct snd_cs46xx *chip = card->private_data;
 	int amp_saved;
@@ -3846,15 +3790,6 @@ static int snd_cs46xx_resume(struct device *dev)
 	int i;
 #endif
 	unsigned int tmp;
-
-	pci_set_power_state(pci, PCI_D0);
-	pci_restore_state(pci);
-	if (pci_enable_device(pci) < 0) {
-		dev_err(dev, "pci_enable_device failed, disabling device\n");
-		snd_card_disconnect(card);
-		return -EIO;
-	}
-	pci_set_master(pci);
 
 	amp_saved = chip->amplifier;
 	chip->amplifier = 0;
@@ -3929,7 +3864,7 @@ int snd_cs46xx_create(struct snd_card *card,
 	struct snd_cs46xx_region *region;
 	struct cs_card_type *cp;
 	u16 ss_card, ss_vendor;
-	static struct snd_device_ops ops = {
+	static const struct snd_device_ops ops = {
 		.dev_free =	snd_cs46xx_dev_free,
 	};
 	
@@ -4038,7 +3973,7 @@ int snd_cs46xx_create(struct snd_card *card,
 			snd_cs46xx_free(chip);
 			return -EBUSY;
 		}
-		region->remap_addr = ioremap_nocache(region->base, region->size);
+		region->remap_addr = ioremap(region->base, region->size);
 		if (region->remap_addr == NULL) {
 			dev_err(chip->card->dev,
 				"%s ioremap problem\n", region->name);
@@ -4054,6 +3989,7 @@ int snd_cs46xx_create(struct snd_card *card,
 		return -EBUSY;
 	}
 	chip->irq = pci->irq;
+	card->sync_irq = chip->irq;
 
 #ifdef CONFIG_SND_CS46XX_NEW_DSP
 	chip->dsp_spos_instance = cs46xx_dsp_spos_create(chip);
@@ -4077,8 +4013,9 @@ int snd_cs46xx_create(struct snd_card *card,
 	snd_cs46xx_proc_init(card, chip);
 
 #ifdef CONFIG_PM_SLEEP
-	chip->saved_regs = kmalloc(sizeof(*chip->saved_regs) *
-				   ARRAY_SIZE(saved_regs), GFP_KERNEL);
+	chip->saved_regs = kmalloc_array(ARRAY_SIZE(saved_regs),
+					 sizeof(*chip->saved_regs),
+					 GFP_KERNEL);
 	if (!chip->saved_regs) {
 		snd_cs46xx_free(chip);
 		return -ENOMEM;

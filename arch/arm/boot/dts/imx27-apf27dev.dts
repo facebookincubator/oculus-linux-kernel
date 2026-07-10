@@ -1,12 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2013 Armadeus Systems - <support@armadeus.com>
- *
- * The code contained herein is licensed under the GNU General Public
- * License. You may obtain a copy of the GNU General Public License
- * Version 2 or later at the following locations:
- *
- * http://www.opensource.org/licenses/gpl-license.html
- * http://www.gnu.org/copyleft/gpl.html
  */
 
 /* APF27Dev is a docking board for the APF27 SOM */
@@ -18,10 +12,10 @@
 
 	display: display {
 		model = "Chimei-LW700AT9003";
-		native-mode = <&timing0>;
 		bits-per-pixel = <16>;  /* non-standard but required */
 		fsl,pcr = <0xfae80083>;	/* non-standard but required */
 		display-timings {
+			native-mode = <&timing0>;
 			timing0: 800x480 {
 				clock-frequency = <33000033>;
 				hactive = <800>;
@@ -59,10 +53,24 @@
 			linux,default-trigger = "heartbeat";
 		};
 	};
+
+	regulators {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		reg_max5821: regulator@0 {
+			compatible = "regulator-fixed";
+			reg = <0>;
+			regulator-name = "max5821-reg";
+			regulator-min-microvolt = <2500000>;
+			regulator-max-microvolt = <2500000>;
+			regulator-always-on;
+		};
+	};
 };
 
 &cspi1 {
-	fsl,spi-num-chipselects = <1>;
 	cs-gpios = <&gpio4 28 GPIO_ACTIVE_LOW>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_cspi1 &pinctrl_cspi1_cs>;
@@ -80,7 +88,6 @@
 };
 
 &cspi2 {
-	fsl,spi-num-chipselects = <3>;
 	cs-gpios = <&gpio4 21 GPIO_ACTIVE_LOW>,
 		   <&gpio4 27 GPIO_ACTIVE_LOW>,
 		   <&gpio2 17 GPIO_ACTIVE_LOW>;
@@ -106,6 +113,12 @@
 	rtc@68 {
 		compatible = "dallas,ds1374";
 		reg = <0x68>;
+	};
+
+	max5821@38 {
+		compatible = "maxim,max5821";
+		reg = <0x38>;
+		vref-supply = <&reg_max5821>;
 	};
 };
 

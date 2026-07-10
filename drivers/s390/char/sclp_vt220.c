@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * SCLP VT220 terminal driver.
  *
@@ -12,6 +13,7 @@
 #include <linux/wait.h>
 #include <linux/timer.h>
 #include <linux/kernel.h>
+#include <linux/sysrq.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
 #include <linux/tty_flip.h>
@@ -25,15 +27,16 @@
 #include <linux/reboot.h>
 #include <linux/slab.h>
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include "sclp.h"
+#include "ctrlchar.h"
 
 #define SCLP_VT220_MAJOR		TTY_MAJOR
 #define SCLP_VT220_MINOR		65
 #define SCLP_VT220_DRIVER_NAME		"sclp_vt220"
 #define SCLP_VT220_DEVICE_NAME		"ttysclp"
-#define SCLP_VT220_CONSOLE_NAME		"ttyS"
-#define SCLP_VT220_CONSOLE_INDEX	1	/* console=ttyS1 */
+#define SCLP_VT220_CONSOLE_NAME		"ttysclp"
+#define SCLP_VT220_CONSOLE_INDEX	0	/* console=ttysclp0 */
 
 /* Representation of a single write request */
 struct sclp_vt220_request {
@@ -354,7 +357,7 @@ sclp_vt220_add_msg(struct sclp_vt220_request *request,
  * Emit buffer after having waited long enough for more data to arrive.
  */
 static void
-sclp_vt220_timeout(unsigned long data)
+sclp_vt220_timeout(struct timer_list *unused)
 {
 	sclp_vt220_emit_current();
 }
@@ -451,8 +454,6 @@ __sclp_vt220_write(const unsigned char *buf, int count, int do_schedule,
 	/* Setup timer to output current console buffer after some time */
 	if (sclp_vt220_current_request != NULL &&
 	    !timer_pending(&sclp_vt220_timer) && do_schedule) {
-		sclp_vt220_timer.function = sclp_vt220_timeout;
-		sclp_vt220_timer.data = 0UL;
 		sclp_vt220_timer.expires = jiffies + BUFFER_MAX_DELAY;
 		add_timer(&sclp_vt220_timer);
 	}
@@ -477,6 +478,53 @@ sclp_vt220_write(struct tty_struct *tty, const unsigned char *buf, int count)
 #define	SCLP_VT220_SESSION_STARTED	0x80
 #define SCLP_VT220_SESSION_DATA		0x00
 
+#ifdef CONFIG_MAGIC_SYSRQ
+
+static int sysrq_pressed;
+static struct sysrq_work sysrq;
+
+static void sclp_vt220_reset_session(void)
+{
+	sysrq_pressed = 0;
+}
+
+static void sclp_vt220_handle_input(const char *buffer, unsigned int count)
+{
+	int i;
+
+	for (i = 0; i < count; i++) {
+		/* Handle magic sys request */
+		if (buffer[i] == ('O' ^ 0100)) { /* CTRL-O */
+			/*
+			 * If pressed again, reset sysrq_pressed
+			 * and flip CTRL-O character
+			 */
+			sysrq_pressed = !sysrq_pressed;
+			if (sysrq_pressed)
+				continue;
+		} else if (sysrq_pressed) {
+			sysrq.key = buffer[i];
+			schedule_sysrq_work(&sysrq);
+			sysrq_pressed = 0;
+			continue;
+		}
+		tty_insert_flip_char(&sclp_vt220_port, buffer[i], 0);
+	}
+}
+
+#else
+
+static void sclp_vt220_reset_session(void)
+{
+}
+
+static void sclp_vt220_handle_input(const char *buffer, unsigned int count)
+{
+	tty_insert_flip_string(&sclp_vt220_port, buffer, count);
+}
+
+#endif
+
 /*
  * Called by the SCLP to report incoming event buffers.
  */
@@ -492,12 +540,13 @@ sclp_vt220_receiver_fn(struct evbuf_header *evbuf)
 	switch (*buffer) {
 	case SCLP_VT220_SESSION_ENDED:
 	case SCLP_VT220_SESSION_STARTED:
+		sclp_vt220_reset_session();
 		break;
 	case SCLP_VT220_SESSION_DATA:
 		/* Send input to line discipline */
 		buffer++;
 		count--;
-		tty_insert_flip_string(&sclp_vt220_port, buffer, count);
+		sclp_vt220_handle_input(buffer, count);
 		tty_flip_buffer_push(&sclp_vt220_port);
 		break;
 	}
@@ -648,7 +697,7 @@ static int __init __sclp_vt220_init(int num_pages)
 	spin_lock_init(&sclp_vt220_lock);
 	INIT_LIST_HEAD(&sclp_vt220_empty);
 	INIT_LIST_HEAD(&sclp_vt220_outqueue);
-	init_timer(&sclp_vt220_timer);
+	timer_setup(&sclp_vt220_timer, sclp_vt220_timeout, 0);
 	tty_port_init(&sclp_vt220_port);
 	sclp_vt220_current_request = NULL;
 	sclp_vt220_buffered_chars = 0;

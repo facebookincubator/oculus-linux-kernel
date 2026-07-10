@@ -1,17 +1,14 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  Port on Texas Instruments TMS320C6x architecture
  *
  *  Copyright (C) 2004, 2009, 2010 Texas Instruments Incorporated
  *  Author: Aurelien Jacquiot (aurelien.jacquiot@jaluna.com)
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2 as
- *  published by the Free Software Foundation.
  */
 #ifndef _ASM_C6X_PGTABLE_H
 #define _ASM_C6X_PGTABLE_H
 
-#include <asm-generic/4level-fixup.h>
+#include <asm-generic/pgtable-nopud.h>
 
 #include <asm/setup.h>
 #include <asm/page.h>
@@ -29,7 +26,6 @@
 #define pgd_clear(pgdp)
 #define kern_addr_valid(addr) (1)
 
-#define pmd_offset(a, b)	((void *)0)
 #define pmd_none(x)		(!pmd_val(x))
 #define pmd_present(x)		(pmd_val(x))
 #define pmd_clear(xp)		do { set_pmd(xp, __pmd(0)); } while (0)
@@ -50,11 +46,6 @@ extern void paging_init(void);
 #define __pte_to_swp_entry(pte)	((swp_entry_t) { pte_val(pte) })
 #define __swp_entry_to_pte(x)	((pte_t) { (x).val })
 
-static inline int pte_file(pte_t pte)
-{
-	return 0;
-}
-
 #define set_pte(pteptr, pteval) (*(pteptr) = pteval)
 #define set_pte_at(mm, addr, ptep, pteval) set_pte(ptep, pteval)
 
@@ -68,10 +59,8 @@ extern unsigned long empty_zero_page;
 #define swapper_pg_dir ((pgd_t *) 0)
 
 /*
- * No page table caches to initialise
+ * c6x is !MMU, so define the simpliest implementation
  */
-#define pgtable_cache_init()   do { } while (0)
-
-#include <asm-generic/pgtable.h>
+#define pgprot_writecombine pgprot_noncached
 
 #endif /* _ASM_C6X_PGTABLE_H */

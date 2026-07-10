@@ -1,33 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (c) 2011, NVIDIA Corporation.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/mod_devicetable.h>
 #include <linux/rfkill.h>
 #include <linux/platform_device.h>
 #include <linux/clk.h>
 #include <linux/slab.h>
 #include <linux/acpi.h>
 #include <linux/gpio/consumer.h>
-
-#include <linux/rfkill-gpio.h>
 
 struct rfkill_gpio_data {
 	const char		*name;
@@ -63,6 +48,15 @@ static const struct rfkill_ops rfkill_gpio_ops = {
 	.set_block = rfkill_gpio_set_power,
 };
 
+static const struct acpi_gpio_params reset_gpios = { 0, 0, false };
+static const struct acpi_gpio_params shutdown_gpios = { 1, 0, false };
+
+static const struct acpi_gpio_mapping acpi_rfkill_default_gpios[] = {
+	{ "reset-gpios", &reset_gpios, 1 },
+	{ "shutdown-gpios", &shutdown_gpios, 1 },
+	{ },
+};
+
 static int rfkill_gpio_acpi_probe(struct device *dev,
 				  struct rfkill_gpio_data *rfkill)
 {
@@ -72,56 +66,52 @@ static int rfkill_gpio_acpi_probe(struct device *dev,
 	if (!id)
 		return -ENODEV;
 
-	rfkill->name = dev_name(dev);
 	rfkill->type = (unsigned)id->driver_data;
 
-	return 0;
+	return devm_acpi_dev_add_driver_gpios(dev, acpi_rfkill_default_gpios);
 }
 
 static int rfkill_gpio_probe(struct platform_device *pdev)
 {
-	struct rfkill_gpio_platform_data *pdata = pdev->dev.platform_data;
 	struct rfkill_gpio_data *rfkill;
 	struct gpio_desc *gpio;
+	const char *type_name;
 	int ret;
 
 	rfkill = devm_kzalloc(&pdev->dev, sizeof(*rfkill), GFP_KERNEL);
 	if (!rfkill)
 		return -ENOMEM;
 
+	device_property_read_string(&pdev->dev, "name", &rfkill->name);
+	device_property_read_string(&pdev->dev, "type", &type_name);
+
+	if (!rfkill->name)
+		rfkill->name = dev_name(&pdev->dev);
+
+	rfkill->type = rfkill_find_type(type_name);
+
 	if (ACPI_HANDLE(&pdev->dev)) {
 		ret = rfkill_gpio_acpi_probe(&pdev->dev, rfkill);
 		if (ret)
 			return ret;
-	} else if (pdata) {
-		rfkill->name = pdata->name;
-		rfkill->type = pdata->type;
-	} else {
-		return -ENODEV;
 	}
 
 	rfkill->clk = devm_clk_get(&pdev->dev, NULL);
 
-	gpio = devm_gpiod_get_index(&pdev->dev, "reset", 0);
-	if (!IS_ERR(gpio)) {
-		ret = gpiod_direction_output(gpio, 0);
-		if (ret)
-			return ret;
-		rfkill->reset_gpio = gpio;
-	}
+	gpio = devm_gpiod_get_optional(&pdev->dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(gpio))
+		return PTR_ERR(gpio);
 
-	gpio = devm_gpiod_get_index(&pdev->dev, "shutdown", 1);
-	if (!IS_ERR(gpio)) {
-		ret = gpiod_direction_output(gpio, 0);
-		if (ret)
-			return ret;
-		rfkill->shutdown_gpio = gpio;
-	}
+	rfkill->reset_gpio = gpio;
 
-	/* Make sure at-least one of the GPIO is defined and that
-	 * a name is specified for this instance
-	 */
-	if ((!rfkill->reset_gpio && !rfkill->shutdown_gpio) || !rfkill->name) {
+	gpio = devm_gpiod_get_optional(&pdev->dev, "shutdown", GPIOD_OUT_LOW);
+	if (IS_ERR(gpio))
+		return PTR_ERR(gpio);
+
+	rfkill->shutdown_gpio = gpio;
+
+	/* Make sure at-least one GPIO is defined for this instance */
+	if (!rfkill->reset_gpio && !rfkill->shutdown_gpio) {
 		dev_err(&pdev->dev, "invalid platform data\n");
 		return -EINVAL;
 	}
@@ -134,13 +124,18 @@ static int rfkill_gpio_probe(struct platform_device *pdev)
 
 	ret = rfkill_register(rfkill->rfkill_dev);
 	if (ret < 0)
-		return ret;
+		goto err_destroy;
 
 	platform_set_drvdata(pdev, rfkill);
 
 	dev_info(&pdev->dev, "%s device registered.\n", rfkill->name);
 
 	return 0;
+
+err_destroy:
+	rfkill_destroy(rfkill->rfkill_dev);
+
+	return ret;
 }
 
 static int rfkill_gpio_remove(struct platform_device *pdev)
@@ -155,10 +150,6 @@ static int rfkill_gpio_remove(struct platform_device *pdev)
 
 #ifdef CONFIG_ACPI
 static const struct acpi_device_id rfkill_acpi_match[] = {
-	{ "BCM2E1A", RFKILL_TYPE_BLUETOOTH },
-	{ "BCM2E39", RFKILL_TYPE_BLUETOOTH },
-	{ "BCM2E3D", RFKILL_TYPE_BLUETOOTH },
-	{ "BCM2E64", RFKILL_TYPE_BLUETOOTH },
 	{ "BCM4752", RFKILL_TYPE_GPS },
 	{ "LNV4752", RFKILL_TYPE_GPS },
 	{ },
@@ -171,7 +162,6 @@ static struct platform_driver rfkill_gpio_driver = {
 	.remove = rfkill_gpio_remove,
 	.driver = {
 		.name = "rfkill_gpio",
-		.owner = THIS_MODULE,
 		.acpi_match_table = ACPI_PTR(rfkill_acpi_match),
 	},
 };

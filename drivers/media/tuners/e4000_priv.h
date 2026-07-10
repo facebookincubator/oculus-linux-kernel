@@ -1,38 +1,28 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Elonics E4000 silicon tuner driver
  *
  * Copyright (C) 2012 Antti Palosaari <crope@iki.fi>
- *
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License as published by
- *    the Free Software Foundation; either version 2 of the License, or
- *    (at your option) any later version.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
- *
- *    You should have received a copy of the GNU General Public License along
- *    with this program; if not, write to the Free Software Foundation, Inc.,
- *    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef E4000_PRIV_H
 #define E4000_PRIV_H
 
 #include "e4000.h"
+#include <linux/math64.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-subdev.h>
 #include <linux/regmap.h>
 
-struct e4000 {
+struct e4000_dev {
 	struct i2c_client *client;
 	struct regmap *regmap;
-	u32 clock;
+	u32 clk;
 	struct dvb_frontend *fe;
 	struct v4l2_subdev sd;
 	bool active;
+	unsigned int f_frequency;
+	unsigned int f_bandwidth;
 
 	/* Controls */
 	struct v4l2_ctrl_handler hdl;
@@ -49,8 +39,8 @@ struct e4000 {
 
 struct e4000_pll {
 	u32 freq;
-	u8 div;
-	u8 mul;
+	u8 div_out_reg;
+	u8 div_out;
 };
 
 static const struct e4000_pll e4000_pll_lut[] = {

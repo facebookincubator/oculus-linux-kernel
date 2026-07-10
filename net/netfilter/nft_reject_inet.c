@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014 Patrick McHardy <kaber@trash.net>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -18,45 +15,47 @@
 #include <net/netfilter/ipv6/nf_reject.h>
 
 static void nft_reject_inet_eval(const struct nft_expr *expr,
-				 struct nft_data data[NFT_REG_MAX + 1],
+				 struct nft_regs *regs,
 				 const struct nft_pktinfo *pkt)
 {
 	struct nft_reject *priv = nft_expr_priv(expr);
-	struct net *net = dev_net((pkt->in != NULL) ? pkt->in : pkt->out);
 
-	switch (pkt->ops->pf) {
+	switch (nft_pf(pkt)) {
 	case NFPROTO_IPV4:
 		switch (priv->type) {
 		case NFT_REJECT_ICMP_UNREACH:
-			nf_send_unreach(pkt->skb, priv->icmp_code);
+			nf_send_unreach(pkt->skb, priv->icmp_code,
+					nft_hook(pkt));
 			break;
 		case NFT_REJECT_TCP_RST:
-			nf_send_reset(pkt->skb, pkt->ops->hooknum);
+			nf_send_reset(nft_net(pkt), pkt->skb, nft_hook(pkt));
 			break;
 		case NFT_REJECT_ICMPX_UNREACH:
 			nf_send_unreach(pkt->skb,
-					nft_reject_icmp_code(priv->icmp_code));
+					nft_reject_icmp_code(priv->icmp_code),
+					nft_hook(pkt));
 			break;
 		}
 		break;
 	case NFPROTO_IPV6:
 		switch (priv->type) {
 		case NFT_REJECT_ICMP_UNREACH:
-			nf_send_unreach6(net, pkt->skb, priv->icmp_code,
-					 pkt->ops->hooknum);
+			nf_send_unreach6(nft_net(pkt), pkt->skb,
+					 priv->icmp_code, nft_hook(pkt));
 			break;
 		case NFT_REJECT_TCP_RST:
-			nf_send_reset6(net, pkt->skb, pkt->ops->hooknum);
+			nf_send_reset6(nft_net(pkt), pkt->skb, nft_hook(pkt));
 			break;
 		case NFT_REJECT_ICMPX_UNREACH:
-			nf_send_unreach6(net, pkt->skb,
+			nf_send_unreach6(nft_net(pkt), pkt->skb,
 					 nft_reject_icmpv6_code(priv->icmp_code),
-					 pkt->ops->hooknum);
+					 nft_hook(pkt));
 			break;
 		}
 		break;
 	}
-	data[NFT_REG_VERDICT].verdict = NF_DROP;
+
+	regs->verdict.code = NF_DROP;
 }
 
 static int nft_reject_inet_init(const struct nft_ctx *ctx,
@@ -105,6 +104,8 @@ static int nft_reject_inet_dump(struct sk_buff *skb,
 		if (nla_put_u8(skb, NFTA_REJECT_ICMP_CODE, priv->icmp_code))
 			goto nla_put_failure;
 		break;
+	default:
+		break;
 	}
 
 	return 0;
@@ -120,6 +121,7 @@ static const struct nft_expr_ops nft_reject_inet_ops = {
 	.eval		= nft_reject_inet_eval,
 	.init		= nft_reject_inet_init,
 	.dump		= nft_reject_inet_dump,
+	.validate	= nft_reject_validate,
 };
 
 static struct nft_expr_type nft_reject_inet_type __read_mostly = {
@@ -147,3 +149,4 @@ module_exit(nft_reject_inet_module_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Patrick McHardy <kaber@trash.net>");
 MODULE_ALIAS_NFT_AF_EXPR(1, "reject");
+MODULE_DESCRIPTION("Netfilter nftables reject inet support");

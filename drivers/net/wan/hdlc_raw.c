@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Generic HDLC support routines for Linux
  * HDLC support
  *
  * Copyright (C) 1999 - 2006 Krzysztof Halasa <khc@pm.waw.pl>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License
- * as published by the Free Software Foundation.
  */
 
 #include <linux/errno.h>
@@ -84,6 +81,7 @@ static int raw_ioctl(struct net_device *dev, struct ifreq *ifr)
 			return result;
 		memcpy(hdlc->state, &new_settings, size);
 		dev->type = ARPHRD_RAWHDLC;
+		call_netdevice_notifiers(NETDEV_POST_TYPE_CHANGE, dev);
 		netif_dormant_off(dev);
 		return 0;
 	}

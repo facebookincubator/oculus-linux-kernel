@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /* -*- mode: c; c-basic-offset: 8; -*-
  * vim: noexpandtab sw=8 ts=8 sts=0:
  *
@@ -6,22 +7,6 @@
  * defines domain join / leave apis
  *
  * Copyright (C) 2004 Oracle.  All rights reserved.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public
- * License along with this program; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
- * Boston, MA 021110-1307, USA.
- *
  */
 
 #include <linux/module.h>
@@ -33,10 +18,11 @@
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/debugfs.h>
+#include <linux/sched/signal.h>
 
-#include "cluster/heartbeat.h"
-#include "cluster/nodemanager.h"
-#include "cluster/tcp.h"
+#include "../cluster/heartbeat.h"
+#include "../cluster/nodemanager.h"
+#include "../cluster/tcp.h"
 
 #include "dlmapi.h"
 #include "dlmcommon.h"
@@ -44,7 +30,7 @@
 #include "dlmdebug.h"
 
 #define MLOG_MASK_PREFIX (ML_DLM|ML_DLM_DOMAIN)
-#include "cluster/masklog.h"
+#include "../cluster/masklog.h"
 
 /*
  * ocfs2 node maps are array of long int, which limits to send them freely
@@ -85,7 +71,7 @@ static void dlm_free_pagevec(void **vec, int pages)
 
 static void **dlm_alloc_pagevec(int pages)
 {
-	void **vec = kmalloc(pages * sizeof(void *), GFP_KERNEL);
+	void **vec = kmalloc_array(pages, sizeof(void *), GFP_KERNEL);
 	int i;
 
 	if (!vec)
@@ -132,10 +118,13 @@ static DECLARE_WAIT_QUEUE_HEAD(dlm_domain_events);
  *	- Message DLM_QUERY_NODEINFO added to allow online node removes
  * New in version 1.2:
  * 	- Message DLM_BEGIN_EXIT_DOMAIN_MSG added to mark start of exit domain
+ * New in version 1.3:
+ *	- Message DLM_DEREF_LOCKRES_DONE added to inform non-master that the
+ *	  refmap is cleared
  */
 static const struct dlm_protocol_version dlm_protocol = {
 	.pv_major = 1,
-	.pv_minor = 2,
+	.pv_minor = 3,
 };
 
 #define DLM_DOMAIN_BACKOFF_MS 200
@@ -169,12 +158,10 @@ void __dlm_unhash_lockres(struct dlm_ctxt *dlm, struct dlm_lock_resource *res)
 void __dlm_insert_lockres(struct dlm_ctxt *dlm, struct dlm_lock_resource *res)
 {
 	struct hlist_head *bucket;
-	struct qstr *q;
 
 	assert_spin_locked(&dlm->spinlock);
 
-	q = &res->lockname;
-	bucket = dlm_lockres_hash(dlm, q->hash);
+	bucket = dlm_lockres_hash(dlm, res->lockname.hash);
 
 	/* get a reference for our hashtable */
 	dlm_lockres_get(res);
@@ -392,7 +379,6 @@ int dlm_domain_fully_joined(struct dlm_ctxt *dlm)
 static void dlm_destroy_dlm_worker(struct dlm_ctxt *dlm)
 {
 	if (dlm->dlm_worker) {
-		flush_workqueue(dlm->dlm_worker);
 		destroy_workqueue(dlm->dlm_worker);
 		dlm->dlm_worker = NULL;
 	}
@@ -401,7 +387,6 @@ static void dlm_destroy_dlm_worker(struct dlm_ctxt *dlm)
 static void dlm_complete_dlm_shutdown(struct dlm_ctxt *dlm)
 {
 	dlm_unregister_domain_handlers(dlm);
-	dlm_debug_shutdown(dlm);
 	dlm_complete_thread(dlm);
 	dlm_complete_recovery_thread(dlm);
 	dlm_destroy_dlm_worker(dlm);
@@ -460,6 +445,19 @@ redo_bucket:
 		cond_resched_lock(&dlm->spinlock);
 		num += n;
 	}
+
+	if (!num) {
+		if (dlm->reco.state & DLM_RECO_STATE_ACTIVE) {
+			mlog(0, "%s: perhaps there are more lock resources "
+			     "need to be migrated after dlm recovery\n", dlm->name);
+			ret = -EAGAIN;
+		} else {
+			mlog(0, "%s: we won't do dlm recovery after migrating "
+			     "all lock resources\n", dlm->name);
+			dlm->migrate_done = 1;
+		}
+	}
+
 	spin_unlock(&dlm->spinlock);
 	wake_up(&dlm->dlm_thread_wq);
 
@@ -674,34 +672,6 @@ static void dlm_leave_domain(struct dlm_ctxt *dlm)
 	spin_unlock(&dlm->spinlock);
 }
 
-int dlm_joined(struct dlm_ctxt *dlm)
-{
-	int ret = 0;
-
-	spin_lock(&dlm_domain_lock);
-
-	if (dlm->dlm_state == DLM_CTXT_JOINED)
-		ret = 1;
-
-	spin_unlock(&dlm_domain_lock);
-
-	return ret;
-}
-
-int dlm_shutting_down(struct dlm_ctxt *dlm)
-{
-	int ret = 0;
-
-	spin_lock(&dlm_domain_lock);
-
-	if (dlm->dlm_state == DLM_CTXT_IN_SHUTDOWN)
-		ret = 1;
-
-	spin_unlock(&dlm_domain_lock);
-
-	return ret;
-}
-
 void dlm_unregister_domain(struct dlm_ctxt *dlm)
 {
 	int leave = 0;
@@ -877,7 +847,7 @@ static int dlm_query_join_handler(struct o2net_msg *msg, u32 len, void *data,
 	 * to be put in someone's domain map.
 	 * Also, explicitly disallow joining at certain troublesome
 	 * times (ie. during recovery). */
-	if (dlm && dlm->dlm_state != DLM_CTXT_LEAVING) {
+	if (dlm->dlm_state != DLM_CTXT_LEAVING) {
 		int bit = query->node_idx;
 		spin_lock(&dlm->spinlock);
 
@@ -1410,7 +1380,7 @@ static int dlm_send_join_cancels(struct dlm_ctxt *dlm,
 				 unsigned int map_size)
 {
 	int status, tmpstat;
-	unsigned int node;
+	int node;
 
 	if (map_size != (BITS_TO_LONGS(O2NM_MAX_NODES) *
 			 sizeof(unsigned long))) {
@@ -1479,39 +1449,46 @@ static int dlm_request_join(struct dlm_ctxt *dlm,
 	if (status == -ENOPROTOOPT) {
 		status = 0;
 		*response = JOIN_OK_NO_MAP;
-	} else if (packet.code == JOIN_DISALLOW ||
-		   packet.code == JOIN_OK_NO_MAP) {
-		*response = packet.code;
-	} else if (packet.code == JOIN_PROTOCOL_MISMATCH) {
-		mlog(ML_NOTICE,
-		     "This node requested DLM locking protocol %u.%u and "
-		     "filesystem locking protocol %u.%u.  At least one of "
-		     "the protocol versions on node %d is not compatible, "
-		     "disconnecting\n",
-		     dlm->dlm_locking_proto.pv_major,
-		     dlm->dlm_locking_proto.pv_minor,
-		     dlm->fs_locking_proto.pv_major,
-		     dlm->fs_locking_proto.pv_minor,
-		     node);
-		status = -EPROTO;
-		*response = packet.code;
-	} else if (packet.code == JOIN_OK) {
-		*response = packet.code;
-		/* Use the same locking protocol as the remote node */
-		dlm->dlm_locking_proto.pv_minor = packet.dlm_minor;
-		dlm->fs_locking_proto.pv_minor = packet.fs_minor;
-		mlog(0,
-		     "Node %d responds JOIN_OK with DLM locking protocol "
-		     "%u.%u and fs locking protocol %u.%u\n",
-		     node,
-		     dlm->dlm_locking_proto.pv_major,
-		     dlm->dlm_locking_proto.pv_minor,
-		     dlm->fs_locking_proto.pv_major,
-		     dlm->fs_locking_proto.pv_minor);
 	} else {
-		status = -EINVAL;
-		mlog(ML_ERROR, "invalid response %d from node %u\n",
-		     packet.code, node);
+		*response = packet.code;
+		switch (packet.code) {
+		case JOIN_DISALLOW:
+		case JOIN_OK_NO_MAP:
+			break;
+		case JOIN_PROTOCOL_MISMATCH:
+			mlog(ML_NOTICE,
+			     "This node requested DLM locking protocol %u.%u and "
+			     "filesystem locking protocol %u.%u.  At least one of "
+			     "the protocol versions on node %d is not compatible, "
+			     "disconnecting\n",
+			     dlm->dlm_locking_proto.pv_major,
+			     dlm->dlm_locking_proto.pv_minor,
+			     dlm->fs_locking_proto.pv_major,
+			     dlm->fs_locking_proto.pv_minor,
+			     node);
+			status = -EPROTO;
+			break;
+		case JOIN_OK:
+			/* Use the same locking protocol as the remote node */
+			dlm->dlm_locking_proto.pv_minor = packet.dlm_minor;
+			dlm->fs_locking_proto.pv_minor = packet.fs_minor;
+			mlog(0,
+			     "Node %d responds JOIN_OK with DLM locking protocol "
+			     "%u.%u and fs locking protocol %u.%u\n",
+			     node,
+			     dlm->dlm_locking_proto.pv_major,
+			     dlm->dlm_locking_proto.pv_minor,
+			     dlm->fs_locking_proto.pv_major,
+			     dlm->fs_locking_proto.pv_minor);
+			break;
+		default:
+			status = -EINVAL;
+			mlog(ML_ERROR, "invalid response %d from node %u\n",
+			     packet.code, node);
+			/* Reset response to JOIN_DISALLOW */
+			*response = JOIN_DISALLOW;
+			break;
+		}
 	}
 
 	mlog(0, "status %d, node %d response is %d\n", status, node,
@@ -1739,12 +1716,13 @@ static int dlm_register_domain_handlers(struct dlm_ctxt *dlm)
 
 	o2hb_setup_callback(&dlm->dlm_hb_down, O2HB_NODE_DOWN_CB,
 			    dlm_hb_node_down_cb, dlm, DLM_HB_NODE_DOWN_PRI);
+	o2hb_setup_callback(&dlm->dlm_hb_up, O2HB_NODE_UP_CB,
+			    dlm_hb_node_up_cb, dlm, DLM_HB_NODE_UP_PRI);
+
 	status = o2hb_register_callback(dlm->name, &dlm->dlm_hb_down);
 	if (status)
 		goto bail;
 
-	o2hb_setup_callback(&dlm->dlm_hb_up, O2HB_NODE_UP_CB,
-			    dlm_hb_node_up_cb, dlm, DLM_HB_NODE_UP_PRI);
 	status = o2hb_register_callback(dlm->name, &dlm->dlm_hb_up);
 	if (status)
 		goto bail;
@@ -1862,6 +1840,10 @@ static int dlm_register_domain_handlers(struct dlm_ctxt *dlm)
 	if (status)
 		goto bail;
 
+	status = o2net_register_handler(DLM_DEREF_LOCKRES_DONE, dlm->key,
+					sizeof(struct dlm_deref_lockres_done),
+					dlm_deref_lockres_done_handler,
+					dlm, NULL, &dlm->dlm_domain_handlers);
 bail:
 	if (status)
 		dlm_unregister_domain_handlers(dlm);
@@ -1874,6 +1856,7 @@ static int dlm_join_domain(struct dlm_ctxt *dlm)
 	int status;
 	unsigned int backoff;
 	unsigned int total_backoff = 0;
+	char wq_name[O2NM_MAX_NAME_LEN];
 
 	BUG_ON(!dlm);
 
@@ -1897,13 +1880,10 @@ static int dlm_join_domain(struct dlm_ctxt *dlm)
 		goto bail;
 	}
 
-	status = dlm_debug_init(dlm);
-	if (status < 0) {
-		mlog_errno(status);
-		goto bail;
-	}
+	dlm_debug_init(dlm);
 
-	dlm->dlm_worker = create_singlethread_workqueue("dlm_wq");
+	snprintf(wq_name, O2NM_MAX_NAME_LEN, "dlm_wq-%s", dlm->name);
+	dlm->dlm_worker = alloc_workqueue(wq_name, WQ_MEM_RECLAIM, 0);
 	if (!dlm->dlm_worker) {
 		status = -ENOMEM;
 		mlog_errno(status);
@@ -1957,7 +1937,6 @@ bail:
 
 	if (status) {
 		dlm_unregister_domain_handlers(dlm);
-		dlm_debug_shutdown(dlm);
 		dlm_complete_thread(dlm);
 		dlm_complete_recovery_thread(dlm);
 		dlm_destroy_dlm_worker(dlm);
@@ -2011,9 +1990,7 @@ static struct dlm_ctxt *dlm_alloc_ctxt(const char *domain,
 	dlm->key = key;
 	dlm->node_num = o2nm_this_node();
 
-	ret = dlm_create_debugfs_subroot(dlm);
-	if (ret < 0)
-		goto leave;
+	dlm_create_debugfs_subroot(dlm);
 
 	spin_lock_init(&dlm->spinlock);
 	spin_lock_init(&dlm->master_lock);
@@ -2051,6 +2028,8 @@ static struct dlm_ctxt *dlm_alloc_ctxt(const char *domain,
 	dlm->joining_node = DLM_LOCK_RES_OWNER_UNKNOWN;
 	init_waitqueue_head(&dlm->dlm_join_events);
 
+	dlm->migrate_done = 0;
+
 	dlm->reco.new_master = O2NM_INVALID_NODE_NUM;
 	dlm->reco.dead_node = O2NM_INVALID_NODE_NUM;
 
@@ -2071,8 +2050,9 @@ static struct dlm_ctxt *dlm_alloc_ctxt(const char *domain,
 	INIT_LIST_HEAD(&dlm->dlm_eviction_callbacks);
 
 	mlog(0, "context init: refcount %u\n",
-		  atomic_read(&dlm->dlm_refs.refcount));
+		  kref_read(&dlm->dlm_refs));
 
+	ret = 0;
 leave:
 	if (ret < 0 && dlm) {
 		if (dlm->master_hash)
@@ -2359,9 +2339,7 @@ static int __init dlm_init(void)
 		goto error;
 	}
 
-	status = dlm_create_debugfs_root();
-	if (status)
-		goto error;
+	dlm_create_debugfs_root();
 
 	return 0;
 error:

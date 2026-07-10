@@ -1,14 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * PRCMU clock implementation for ux500 platform.
  *
  * Copyright (C) 2012 ST-Ericsson SA
  * Author: Ulf Hansson <ulf.hansson@linaro.org>
- *
- * License terms: GNU General Public License (GPL) version 2
  */
 
 #include <linux/clk-provider.h>
-#include <linux/clk-private.h>
 #include <linux/mfd/dbx500-prcmu.h>
 #include <linux/slab.h>
 #include <linux/io.h>
@@ -44,7 +42,7 @@ static void clk_prcmu_unprepare(struct clk_hw *hw)
 	struct clk_prcmu *clk = to_clk_prcmu(hw);
 	if (prcmu_request_clock(clk->cg_sel, false))
 		pr_err("clk_prcmu: %s failed to disable %s.\n", __func__,
-			__clk_get_name(hw->clk));
+			clk_hw_get_name(hw));
 	else
 		clk->is_prepared = 0;
 }
@@ -102,11 +100,11 @@ static int clk_prcmu_opp_prepare(struct clk_hw *hw)
 
 	if (!clk->opp_requested) {
 		err = prcmu_qos_add_requirement(PRCMU_QOS_APE_OPP,
-						(char *)__clk_get_name(hw->clk),
+						(char *)clk_hw_get_name(hw),
 						100);
 		if (err) {
 			pr_err("clk_prcmu: %s fail req APE OPP for %s.\n",
-				__func__, __clk_get_name(hw->clk));
+				__func__, clk_hw_get_name(hw));
 			return err;
 		}
 		clk->opp_requested = 1;
@@ -115,7 +113,7 @@ static int clk_prcmu_opp_prepare(struct clk_hw *hw)
 	err = prcmu_request_clock(clk->cg_sel, true);
 	if (err) {
 		prcmu_qos_remove_requirement(PRCMU_QOS_APE_OPP,
-					(char *)__clk_get_name(hw->clk));
+					(char *)clk_hw_get_name(hw));
 		clk->opp_requested = 0;
 		return err;
 	}
@@ -130,13 +128,13 @@ static void clk_prcmu_opp_unprepare(struct clk_hw *hw)
 
 	if (prcmu_request_clock(clk->cg_sel, false)) {
 		pr_err("clk_prcmu: %s failed to disable %s.\n", __func__,
-			__clk_get_name(hw->clk));
+			clk_hw_get_name(hw));
 		return;
 	}
 
 	if (clk->opp_requested) {
 		prcmu_qos_remove_requirement(PRCMU_QOS_APE_OPP,
-					(char *)__clk_get_name(hw->clk));
+					(char *)clk_hw_get_name(hw));
 		clk->opp_requested = 0;
 	}
 
@@ -152,7 +150,7 @@ static int clk_prcmu_opp_volt_prepare(struct clk_hw *hw)
 		err = prcmu_request_ape_opp_100_voltage(true);
 		if (err) {
 			pr_err("clk_prcmu: %s fail req APE OPP VOLT for %s.\n",
-				__func__, __clk_get_name(hw->clk));
+				__func__, clk_hw_get_name(hw));
 			return err;
 		}
 		clk->opp_requested = 1;
@@ -175,7 +173,7 @@ static void clk_prcmu_opp_volt_unprepare(struct clk_hw *hw)
 
 	if (prcmu_request_clock(clk->cg_sel, false)) {
 		pr_err("clk_prcmu: %s failed to disable %s.\n", __func__,
-			__clk_get_name(hw->clk));
+			clk_hw_get_name(hw));
 		return;
 	}
 
@@ -187,7 +185,7 @@ static void clk_prcmu_opp_volt_unprepare(struct clk_hw *hw)
 	clk->is_prepared = 0;
 }
 
-static struct clk_ops clk_prcmu_scalable_ops = {
+static const struct clk_ops clk_prcmu_scalable_ops = {
 	.prepare = clk_prcmu_prepare,
 	.unprepare = clk_prcmu_unprepare,
 	.is_prepared = clk_prcmu_is_prepared,
@@ -199,7 +197,7 @@ static struct clk_ops clk_prcmu_scalable_ops = {
 	.set_rate = clk_prcmu_set_rate,
 };
 
-static struct clk_ops clk_prcmu_gate_ops = {
+static const struct clk_ops clk_prcmu_gate_ops = {
 	.prepare = clk_prcmu_prepare,
 	.unprepare = clk_prcmu_unprepare,
 	.is_prepared = clk_prcmu_is_prepared,
@@ -209,19 +207,19 @@ static struct clk_ops clk_prcmu_gate_ops = {
 	.recalc_rate = clk_prcmu_recalc_rate,
 };
 
-static struct clk_ops clk_prcmu_scalable_rate_ops = {
+static const struct clk_ops clk_prcmu_scalable_rate_ops = {
 	.is_enabled = clk_prcmu_is_enabled,
 	.recalc_rate = clk_prcmu_recalc_rate,
 	.round_rate = clk_prcmu_round_rate,
 	.set_rate = clk_prcmu_set_rate,
 };
 
-static struct clk_ops clk_prcmu_rate_ops = {
+static const struct clk_ops clk_prcmu_rate_ops = {
 	.is_enabled = clk_prcmu_is_enabled,
 	.recalc_rate = clk_prcmu_recalc_rate,
 };
 
-static struct clk_ops clk_prcmu_opp_gate_ops = {
+static const struct clk_ops clk_prcmu_opp_gate_ops = {
 	.prepare = clk_prcmu_opp_prepare,
 	.unprepare = clk_prcmu_opp_unprepare,
 	.is_prepared = clk_prcmu_is_prepared,
@@ -231,7 +229,7 @@ static struct clk_ops clk_prcmu_opp_gate_ops = {
 	.recalc_rate = clk_prcmu_recalc_rate,
 };
 
-static struct clk_ops clk_prcmu_opp_volt_scalable_ops = {
+static const struct clk_ops clk_prcmu_opp_volt_scalable_ops = {
 	.prepare = clk_prcmu_opp_volt_prepare,
 	.unprepare = clk_prcmu_opp_volt_unprepare,
 	.is_prepared = clk_prcmu_is_prepared,
@@ -248,7 +246,7 @@ static struct clk *clk_reg_prcmu(const char *name,
 				 u8 cg_sel,
 				 unsigned long rate,
 				 unsigned long flags,
-				 struct clk_ops *clk_prcmu_ops)
+				 const struct clk_ops *clk_prcmu_ops)
 {
 	struct clk_prcmu *clk;
 	struct clk_init_data clk_prcmu_init;
@@ -259,11 +257,9 @@ static struct clk *clk_reg_prcmu(const char *name,
 		return ERR_PTR(-EINVAL);
 	}
 
-	clk = kzalloc(sizeof(struct clk_prcmu), GFP_KERNEL);
-	if (!clk) {
-		pr_err("clk_prcmu: %s could not allocate clk\n", __func__);
+	clk = kzalloc(sizeof(*clk), GFP_KERNEL);
+	if (!clk)
 		return ERR_PTR(-ENOMEM);
-	}
 
 	clk->cg_sel = cg_sel;
 	clk->is_prepared = 1;

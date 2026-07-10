@@ -1,21 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * arch/arm/include/asm/pgtable-3level-hwdef.h
  *
  * Copyright (C) 2011 ARM Ltd.
  * Author: Catalin Marinas <catalin.marinas@arm.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 #ifndef _ASM_PGTABLE_3LEVEL_HWDEF_H
 #define _ASM_PGTABLE_3LEVEL_HWDEF_H
@@ -62,6 +50,7 @@
 #define PMD_SECT_WT		(_AT(pmdval_t, 2) << 2)	/* normal inner write-through */
 #define PMD_SECT_WB		(_AT(pmdval_t, 3) << 2)	/* normal inner write-back */
 #define PMD_SECT_WBWA		(_AT(pmdval_t, 7) << 2)	/* normal inner write-alloc */
+#define PMD_SECT_CACHE_MASK	(_AT(pmdval_t, 7) << 2)
 
 /*
  * + Level 3 descriptor (PTE)
@@ -76,6 +65,7 @@
 #define PTE_EXT_SHARED		(_AT(pteval_t, 3) << 8)		/* SH[1:0], inner shareable */
 #define PTE_EXT_AF		(_AT(pteval_t, 1) << 10)	/* Access Flag */
 #define PTE_EXT_NG		(_AT(pteval_t, 1) << 11)	/* nG */
+#define PTE_EXT_PXN		(_AT(pteval_t, 1) << 53)	/* PXN */
 #define PTE_EXT_XN		(_AT(pteval_t, 1) << 54)	/* XN */
 
 /*

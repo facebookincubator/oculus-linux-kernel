@@ -1,24 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * file.c - NILFS regular file handling primitives including fsync().
  *
  * Copyright (C) 2005-2008 Nippon Telegraph and Telephone Corporation.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
- *
- * Written by Amagai Yoshiji <amagai@osrg.net>,
- *            Ryusuke Konishi <ryusuke@osrg.net>
+ * Written by Amagai Yoshiji and Ryusuke Konishi.
  */
 
 #include <linux/fs.h>
@@ -39,21 +25,15 @@ int nilfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 	 */
 	struct the_nilfs *nilfs;
 	struct inode *inode = file->f_mapping->host;
-	int err;
-
-	err = filemap_write_and_wait_range(inode->i_mapping, start, end);
-	if (err)
-		return err;
-	mutex_lock(&inode->i_mutex);
+	int err = 0;
 
 	if (nilfs_inode_dirty(inode)) {
 		if (datasync)
 			err = nilfs_construct_dsync_segment(inode->i_sb, inode,
-							    0, LLONG_MAX);
+							    start, end);
 		else
 			err = nilfs_construct_segment(inode->i_sb);
 	}
-	mutex_unlock(&inode->i_mutex);
 
 	nilfs = inode->i_sb->s_fs_info;
 	if (!err)
@@ -62,8 +42,9 @@ int nilfs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 	return err;
 }
 
-static int nilfs_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
+static vm_fault_t nilfs_page_mkwrite(struct vm_fault *vmf)
 {
+	struct vm_area_struct *vma = vmf->vma;
 	struct page *page = vmf->page;
 	struct inode *inode = file_inode(vma->vm_file);
 	struct nilfs_transaction_info ti;
@@ -115,7 +96,7 @@ static int nilfs_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
 		goto out;
 
 	file_update_time(vma->vm_file);
-	ret = __block_page_mkwrite(vma, vmf, nilfs_get_block);
+	ret = block_page_mkwrite(vma, vmf, nilfs_get_block);
 	if (ret) {
 		nilfs_transaction_abort(inode->i_sb);
 		goto out;
@@ -134,7 +115,6 @@ static const struct vm_operations_struct nilfs_file_vm_ops = {
 	.fault		= filemap_fault,
 	.map_pages	= filemap_map_pages,
 	.page_mkwrite	= nilfs_page_mkwrite,
-	.remap_pages	= generic_file_remap_pages,
 };
 
 static int nilfs_file_mmap(struct file *file, struct vm_area_struct *vma)
@@ -150,8 +130,6 @@ static int nilfs_file_mmap(struct file *file, struct vm_area_struct *vma)
  */
 const struct file_operations nilfs_file_operations = {
 	.llseek		= generic_file_llseek,
-	.read		= new_sync_read,
-	.write		= new_sync_write,
 	.read_iter	= generic_file_read_iter,
 	.write_iter	= generic_file_write_iter,
 	.unlocked_ioctl	= nilfs_ioctl,
@@ -163,6 +141,7 @@ const struct file_operations nilfs_file_operations = {
 	/* .release	= nilfs_release_file, */
 	.fsync		= nilfs_sync_file,
 	.splice_read	= generic_file_splice_read,
+	.splice_write   = iter_file_splice_write,
 };
 
 const struct inode_operations nilfs_file_inode_operations = {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
 * OHCI HCD (Host Controller Driver) for USB.
 *
@@ -5,10 +6,6 @@
 * Deepak Sikri<deepak.sikri@st.com>
 *
 * Based on various ohci-*.c drivers
-*
-* This file is licensed under the terms of the GNU General Public
-* License version 2. This program is licensed "as is" without any
-* warranty of any kind, whether express or implied.
 */
 
 #include <linux/clk.h>
@@ -38,7 +35,6 @@ static struct hc_driver __read_mostly ohci_spear_hc_driver;
 static int spear_ohci_hcd_drv_probe(struct platform_device *pdev)
 {
 	const struct hc_driver *driver = &ohci_spear_hc_driver;
-	struct ohci_hcd *ohci;
 	struct usb_hcd *hcd = NULL;
 	struct clk *usbh_clk;
 	struct spear_ohci *sohci_p;
@@ -74,26 +70,19 @@ static int spear_ohci_hcd_drv_probe(struct platform_device *pdev)
 	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		retval = -ENODEV;
-		goto err_put_hcd;
-	}
-
-	hcd->rsrc_start = pdev->resource[0].start;
-	hcd->rsrc_len = resource_size(res);
-
 	hcd->regs = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(hcd->regs)) {
 		retval = PTR_ERR(hcd->regs);
 		goto err_put_hcd;
 	}
 
+	hcd->rsrc_start = pdev->resource[0].start;
+	hcd->rsrc_len = resource_size(res);
+
 	sohci_p = to_spear_ohci(hcd);
 	sohci_p->clk = usbh_clk;
 
 	clk_prepare_enable(sohci_p->clk);
-
-	ohci = hcd_to_ohci(hcd);
 
 	retval = usb_add_hcd(hcd, platform_get_irq(pdev, 0), 0);
 	if (retval == 0) {
@@ -166,6 +155,7 @@ static const struct of_device_id spear_ohci_id_table[] = {
 	{ .compatible = "st,spear600-ohci", },
 	{ },
 };
+MODULE_DEVICE_TABLE(of, spear_ohci_id_table);
 
 /* Driver definition to register with the platform bus */
 static struct platform_driver spear_ohci_hcd_driver = {
@@ -176,7 +166,6 @@ static struct platform_driver spear_ohci_hcd_driver = {
 	.resume =	spear_ohci_hcd_drv_resume,
 #endif
 	.driver = {
-		.owner = THIS_MODULE,
 		.name = "spear-ohci",
 		.of_match_table = spear_ohci_id_table,
 	},

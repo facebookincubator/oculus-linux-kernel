@@ -291,26 +291,15 @@ static ssize_t read_file_slot(struct file *file, char __user *user_buf,
 {
 	struct ath9k_htc_priv *priv = file->private_data;
 	char buf[512];
-	unsigned int len = 0;
+	unsigned int len;
 
 	spin_lock_bh(&priv->tx.tx_lock);
-
-	len += scnprintf(buf + len, sizeof(buf) - len, "TX slot bitmap : ");
-
-	len += bitmap_scnprintf(buf + len, sizeof(buf) - len,
-			       priv->tx.tx_slot, MAX_TX_BUF_NUM);
-
-	len += scnprintf(buf + len, sizeof(buf) - len, "\n");
-
-	len += scnprintf(buf + len, sizeof(buf) - len,
-			 "Used slots     : %d\n",
-			 bitmap_weight(priv->tx.tx_slot, MAX_TX_BUF_NUM));
-
+	len = scnprintf(buf, sizeof(buf),
+			"TX slot bitmap : %*pb\n"
+			"Used slots     : %d\n",
+			MAX_TX_BUF_NUM, priv->tx.tx_slot,
+			bitmap_weight(priv->tx.tx_slot, MAX_TX_BUF_NUM));
 	spin_unlock_bh(&priv->tx.tx_lock);
-
-	if (len > sizeof(buf))
-		len = sizeof(buf);
-
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
@@ -490,6 +479,10 @@ void ath9k_htc_get_et_stats(struct ieee80211_hw *hw,
 	WARN_ON(i != ATH9K_HTC_SSTATS_LEN);
 }
 
+void ath9k_htc_deinit_debug(struct ath9k_htc_priv *priv)
+{
+	ath9k_cmn_spectral_deinit_debug(&priv->spec_priv);
+}
 
 int ath9k_htc_init_debug(struct ath_hw *ah)
 {
@@ -501,25 +494,27 @@ int ath9k_htc_init_debug(struct ath_hw *ah)
 	if (!priv->debug.debugfs_phy)
 		return -ENOMEM;
 
-	debugfs_create_file("tgt_int_stats", S_IRUSR, priv->debug.debugfs_phy,
+	ath9k_cmn_spectral_init_debug(&priv->spec_priv, priv->debug.debugfs_phy);
+
+	debugfs_create_file("tgt_int_stats", 0400, priv->debug.debugfs_phy,
 			    priv, &fops_tgt_int_stats);
-	debugfs_create_file("tgt_tx_stats", S_IRUSR, priv->debug.debugfs_phy,
+	debugfs_create_file("tgt_tx_stats", 0400, priv->debug.debugfs_phy,
 			    priv, &fops_tgt_tx_stats);
-	debugfs_create_file("tgt_rx_stats", S_IRUSR, priv->debug.debugfs_phy,
+	debugfs_create_file("tgt_rx_stats", 0400, priv->debug.debugfs_phy,
 			    priv, &fops_tgt_rx_stats);
-	debugfs_create_file("xmit", S_IRUSR, priv->debug.debugfs_phy,
+	debugfs_create_file("xmit", 0400, priv->debug.debugfs_phy,
 			    priv, &fops_xmit);
-	debugfs_create_file("skb_rx", S_IRUSR, priv->debug.debugfs_phy,
+	debugfs_create_file("skb_rx", 0400, priv->debug.debugfs_phy,
 			    priv, &fops_skb_rx);
 
 	ath9k_cmn_debug_recv(priv->debug.debugfs_phy, &priv->debug.rx_stats);
 	ath9k_cmn_debug_phy_err(priv->debug.debugfs_phy, &priv->debug.rx_stats);
 
-	debugfs_create_file("slot", S_IRUSR, priv->debug.debugfs_phy,
+	debugfs_create_file("slot", 0400, priv->debug.debugfs_phy,
 			    priv, &fops_slot);
-	debugfs_create_file("queue", S_IRUSR, priv->debug.debugfs_phy,
+	debugfs_create_file("queue", 0400, priv->debug.debugfs_phy,
 			    priv, &fops_queue);
-	debugfs_create_file("debug", S_IRUSR | S_IWUSR, priv->debug.debugfs_phy,
+	debugfs_create_file("debug", 0600, priv->debug.debugfs_phy,
 			    priv, &fops_debug);
 
 	ath9k_cmn_debug_base_eeprom(priv->debug.debugfs_phy, priv->ah);

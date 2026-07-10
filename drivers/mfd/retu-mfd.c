@@ -222,7 +222,7 @@ static struct regmap_bus retu_bus = {
 	.val_format_endian_default = REGMAP_ENDIAN_NATIVE,
 };
 
-static struct regmap_config retu_config = {
+static const struct regmap_config retu_config = {
 	.reg_bits = 8,
 	.val_bits = 16,
 };
@@ -302,16 +302,23 @@ static int retu_remove(struct i2c_client *i2c)
 }
 
 static const struct i2c_device_id retu_id[] = {
-	{ "retu-mfd", 0 },
-	{ "tahvo-mfd", 0 },
+	{ "retu", 0 },
+	{ "tahvo", 0 },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, retu_id);
 
+static const struct of_device_id retu_of_match[] = {
+	{ .compatible = "nokia,retu" },
+	{ .compatible = "nokia,tahvo" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, retu_of_match);
+
 static struct i2c_driver retu_driver = {
 	.driver		= {
 		.name = "retu-mfd",
-		.owner = THIS_MODULE,
+		.of_match_table = retu_of_match,
 	},
 	.probe		= retu_probe,
 	.remove		= retu_remove,

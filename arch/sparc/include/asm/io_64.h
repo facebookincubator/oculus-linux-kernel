@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __SPARC64_IO_H
 #define __SPARC64_IO_H
 
@@ -101,6 +102,7 @@ static inline void __raw_writeq(u64 q, const volatile void __iomem *addr)
  * the cache by using ASI_PHYS_BYPASS_EC_E_L
  */
 #define readb readb
+#define readb_relaxed readb
 static inline u8 readb(const volatile void __iomem *addr)
 {	u8 ret;
 
@@ -112,6 +114,7 @@ static inline u8 readb(const volatile void __iomem *addr)
 }
 
 #define readw readw
+#define readw_relaxed readw
 static inline u16 readw(const volatile void __iomem *addr)
 {	u16 ret;
 
@@ -124,6 +127,7 @@ static inline u16 readw(const volatile void __iomem *addr)
 }
 
 #define readl readl
+#define readl_relaxed readl
 static inline u32 readl(const volatile void __iomem *addr)
 {	u32 ret;
 
@@ -136,6 +140,7 @@ static inline u32 readl(const volatile void __iomem *addr)
 }
 
 #define readq readq
+#define readq_relaxed readq
 static inline u64 readq(const volatile void __iomem *addr)
 {	u64 ret;
 
@@ -148,6 +153,7 @@ static inline u64 readq(const volatile void __iomem *addr)
 }
 
 #define writeb writeb
+#define writeb_relaxed writeb
 static inline void writeb(u8 b, volatile void __iomem *addr)
 {
 	__asm__ __volatile__("stba\t%r0, [%1] %2\t/* pci_writeb */"
@@ -157,6 +163,7 @@ static inline void writeb(u8 b, volatile void __iomem *addr)
 }
 
 #define writew writew
+#define writew_relaxed writew
 static inline void writew(u16 w, volatile void __iomem *addr)
 {
 	__asm__ __volatile__("stha\t%r0, [%1] %2\t/* pci_writew */"
@@ -166,6 +173,7 @@ static inline void writew(u16 w, volatile void __iomem *addr)
 }
 
 #define writel writel
+#define writel_relaxed writel
 static inline void writel(u32 l, volatile void __iomem *addr)
 {
 	__asm__ __volatile__("stwa\t%r0, [%1] %2\t/* pci_writel */"
@@ -175,6 +183,7 @@ static inline void writel(u32 l, volatile void __iomem *addr)
 }
 
 #define writeq writeq
+#define writeq_relaxed writeq
 static inline void writeq(u64 q, volatile void __iomem *addr)
 {
 	__asm__ __volatile__("stxa\t%r0, [%1] %2\t/* pci_writeq */"
@@ -182,7 +191,6 @@ static inline void writeq(u64 q, volatile void __iomem *addr)
 			     : "Jr" (q), "r" (addr), "i" (ASI_PHYS_BYPASS_EC_E_L)
 			     : "memory");
 }
-
 
 #define inb inb
 static inline u8 inb(unsigned long addr)
@@ -235,39 +243,41 @@ void insb(unsigned long, void *, unsigned long);
 void insw(unsigned long, void *, unsigned long);
 void insl(unsigned long, void *, unsigned long);
 
-static inline void ioread8_rep(void __iomem *port, void *buf, unsigned long count)
+static inline void readsb(void __iomem *port, void *buf, unsigned long count)
 {
 	insb((unsigned long __force)port, buf, count);
 }
-static inline void ioread16_rep(void __iomem *port, void *buf, unsigned long count)
+static inline void readsw(void __iomem *port, void *buf, unsigned long count)
 {
 	insw((unsigned long __force)port, buf, count);
 }
 
-static inline void ioread32_rep(void __iomem *port, void *buf, unsigned long count)
+static inline void readsl(void __iomem *port, void *buf, unsigned long count)
 {
 	insl((unsigned long __force)port, buf, count);
 }
 
-static inline void iowrite8_rep(void __iomem *port, const void *buf, unsigned long count)
+static inline void writesb(void __iomem *port, const void *buf, unsigned long count)
 {
 	outsb((unsigned long __force)port, buf, count);
 }
 
-static inline void iowrite16_rep(void __iomem *port, const void *buf, unsigned long count)
+static inline void writesw(void __iomem *port, const void *buf, unsigned long count)
 {
 	outsw((unsigned long __force)port, buf, count);
 }
 
-static inline void iowrite32_rep(void __iomem *port, const void *buf, unsigned long count)
+static inline void writesl(void __iomem *port, const void *buf, unsigned long count)
 {
 	outsl((unsigned long __force)port, buf, count);
 }
 
-#define readb_relaxed(__addr)	readb(__addr)
-#define readw_relaxed(__addr)	readw(__addr)
-#define readl_relaxed(__addr)	readl(__addr)
-#define readq_relaxed(__addr)	readq(__addr)
+#define ioread8_rep(p,d,l)	readsb(p,d,l)
+#define ioread16_rep(p,d,l)	readsw(p,d,l)
+#define ioread32_rep(p,d,l)	readsl(p,d,l)
+#define iowrite8_rep(p,d,l)	writesb(p,d,l)
+#define iowrite16_rep(p,d,l)	writesw(p,d,l)
+#define iowrite32_rep(p,d,l)	writesl(p,d,l)
 
 /* Valid I/O Space regions are anywhere, because each PCI bus supported
  * can live in an arbitrary area of the physical address range.
@@ -386,8 +396,6 @@ static inline void memcpy_toio(volatile void __iomem *dst, const void *src,
 	}
 }
 
-#define mmiowb()
-
 #ifdef __KERNEL__
 
 /* On sparc64 we have the whole physical IO address space accessible
@@ -398,23 +406,24 @@ static inline void __iomem *ioremap(unsigned long offset, unsigned long size)
 	return (void __iomem *)offset;
 }
 
-#define ioremap_nocache(X,Y)		ioremap((X),(Y))
+#define ioremap_uc(X,Y)			ioremap((X),(Y))
 #define ioremap_wc(X,Y)			ioremap((X),(Y))
+#define ioremap_wt(X,Y)			ioremap((X),(Y))
 
 static inline void iounmap(volatile void __iomem *addr)
 {
 }
 
-#define ioread8(X)			readb(X)
-#define ioread16(X)			readw(X)
-#define ioread16be(X)			__raw_readw(X)
-#define ioread32(X)			readl(X)
-#define ioread32be(X)			__raw_readl(X)
-#define iowrite8(val,X)			writeb(val,X)
-#define iowrite16(val,X)		writew(val,X)
-#define iowrite16be(val,X)		__raw_writew(val,X)
-#define iowrite32(val,X)		writel(val,X)
-#define iowrite32be(val,X)		__raw_writel(val,X)
+#define ioread8			readb
+#define ioread16		readw
+#define ioread16be		__raw_readw
+#define ioread32		readl
+#define ioread32be		__raw_readl
+#define iowrite8		writeb
+#define iowrite16		writew
+#define iowrite16be		__raw_writew
+#define iowrite32		writel
+#define iowrite32be		__raw_writel
 
 /* Create a virtual mapping cookie for an IO port range */
 void __iomem *ioport_map(unsigned long port, unsigned int nr);

@@ -1,9 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-only
 config SUNRPC
 	tristate
+	depends on MULTIUSER
 
 config SUNRPC_GSS
 	tristate
 	select OID_REGISTRY
+	depends on MULTIUSER
 
 config SUNRPC_BACKCHANNEL
 	bool
@@ -18,7 +21,6 @@ config RPCSEC_GSS_KRB5
 	depends on SUNRPC && CRYPTO
 	depends on CRYPTO_MD5 && CRYPTO_DES && CRYPTO_CBC && CRYPTO_CTS
 	depends on CRYPTO_ECB && CRYPTO_HMAC && CRYPTO_SHA1 && CRYPTO_AES
-	depends on CRYPTO_ARC4
 	default y
 	select SUNRPC_GSS
 	help
@@ -32,9 +34,26 @@ config RPCSEC_GSS_KRB5
 
 	  If unsure, say Y.
 
+config SUNRPC_DISABLE_INSECURE_ENCTYPES
+	bool "Secure RPC: Disable insecure Kerberos encryption types"
+	depends on RPCSEC_GSS_KRB5
+	default n
+	help
+	  Choose Y here to disable the use of deprecated encryption types
+	  with the Kerberos version 5 GSS-API mechanism (RFC 1964). The
+	  deprecated encryption types include DES-CBC-MD5, DES-CBC-CRC,
+	  and DES-CBC-MD4. These types were deprecated by RFC 6649 because
+	  they were found to be insecure.
+
+	  N is the default because many sites have deployed KDCs and
+	  keytabs that contain only these deprecated encryption types.
+	  Choosing Y prevents the use of known-insecure encryption types
+	  but might result in compatibility problems.
+
 config SUNRPC_DEBUG
 	bool "RPC: Enable dprintk debugging"
 	depends on SUNRPC && SYSCTL
+	select DEBUG_FS
 	help
 	  This option enables a sysctl-based debugging interface
 	  that is be used by the 'rpcdebug' utility to turn on or off
@@ -45,28 +64,17 @@ config SUNRPC_DEBUG
 
 	  If unsure, say Y.
 
-config SUNRPC_XPRT_RDMA_CLIENT
-	tristate "RPC over RDMA Client Support"
+config SUNRPC_XPRT_RDMA
+	tristate "RPC-over-RDMA transport"
 	depends on SUNRPC && INFINIBAND && INFINIBAND_ADDR_TRANS
 	default SUNRPC && INFINIBAND
+	select SG_POOL
 	help
-	  This option allows the NFS client to support an RDMA-enabled
-	  transport.
+	  This option allows the NFS client and server to use RDMA
+	  transports (InfiniBand, iWARP, or RoCE).
 
-	  To compile RPC client RDMA transport support as a module,
-	  choose M here: the module will be called xprtrdma.
+	  To compile this support as a module, choose M. The module
+	  will be called rpcrdma.ko.
 
-	  If unsure, say N.
-
-config SUNRPC_XPRT_RDMA_SERVER
-	tristate "RPC over RDMA Server Support"
-	depends on SUNRPC && INFINIBAND && INFINIBAND_ADDR_TRANS
-	default SUNRPC && INFINIBAND
-	help
-	  This option allows the NFS server to support an RDMA-enabled
-	  transport.
-
-	  To compile RPC server RDMA transport support as a module,
-	  choose M here: the module will be called svcrdma.
-
-	  If unsure, say N.
+	  If unsure, or you know there is no RDMA capability on your
+	  hardware platform, say N.

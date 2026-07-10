@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * addi_apci_2200.c
  * Copyright (C) 2004,2005  ADDI-DATA GmbH for the source code of this module.
@@ -10,22 +11,11 @@
  *	Fax: +49(0)7223/9493-92
  *	http://www.addi-data.com
  *	info@addi-data.com
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
  */
 
 #include <linux/module.h>
-#include <linux/pci.h>
 
-#include "../comedidev.h"
+#include "../comedi_pci.h"
 #include "addi_watchdog.h"
 
 /*
@@ -98,7 +88,7 @@ static int apci2200_auto_attach(struct comedi_device *dev,
 	/* Initialize the digital output subdevice */
 	s = &dev->subdevices[1];
 	s->type		= COMEDI_SUBD_DO;
-	s->subdev_flags	= SDF_WRITEABLE;
+	s->subdev_flags	= SDF_WRITABLE;
 	s->n_chan	= 16;
 	s->maxdata	= 1;
 	s->range_table	= &range_digital;
@@ -149,5 +139,5 @@ static struct pci_driver apci2200_pci_driver = {
 module_comedi_pci_driver(apci2200_driver, apci2200_pci_driver);
 
 MODULE_DESCRIPTION("ADDI-DATA APCI-2200 Relay board, optically isolated");
-MODULE_AUTHOR("Comedi http://www.comedi.org");
+MODULE_AUTHOR("Comedi https://www.comedi.org");
 MODULE_LICENSE("GPL");

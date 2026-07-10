@@ -1,11 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  arch/arm/include/asm/assembler.h
  *
  *  Copyright (C) 1996-2000 Russell King
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  *  This file contains arm architecture specific defines
  *  for the different processors.
@@ -21,11 +18,11 @@
 #endif
 
 #include <asm/ptrace.h>
-#include <asm/domain.h>
 #include <asm/opcodes-virt.h>
 #include <asm/asm-offsets.h>
 #include <asm/page.h>
 #include <asm/thread_info.h>
+#include <asm/uaccess-asm.h>
 
 #define IOMEM(x)	(x)
 
@@ -87,6 +84,8 @@
 #define CALGN(code...)
 #endif
 
+#define IMM12_MASK 0xfff
+
 /*
  * Enable and disable interrupts
  */
@@ -108,33 +107,47 @@
 	.endm
 #endif
 
-	.macro asm_trace_hardirqs_off
+#if __LINUX_ARM_ARCH__ < 7
+	.macro	dsb, args
+	mcr	p15, 0, r0, c7, c10, 4
+	.endm
+
+	.macro	isb, args
+	mcr	p15, 0, r0, c7, c5, 4
+	.endm
+#endif
+
+	.macro asm_trace_hardirqs_off, save=1
 #if defined(CONFIG_TRACE_IRQFLAGS)
+	.if \save
 	stmdb   sp!, {r0-r3, ip, lr}
+	.endif
 	bl	trace_hardirqs_off
+	.if \save
 	ldmia	sp!, {r0-r3, ip, lr}
+	.endif
 #endif
 	.endm
 
-	.macro asm_trace_hardirqs_on_cond, cond
+	.macro asm_trace_hardirqs_on, cond=al, save=1
 #if defined(CONFIG_TRACE_IRQFLAGS)
 	/*
 	 * actually the registers should be pushed and pop'd conditionally, but
 	 * after bl the flags are certainly clobbered
 	 */
+	.if \save
 	stmdb   sp!, {r0-r3, ip, lr}
+	.endif
 	bl\cond	trace_hardirqs_on
+	.if \save
 	ldmia	sp!, {r0-r3, ip, lr}
+	.endif
 #endif
 	.endm
 
-	.macro asm_trace_hardirqs_on
-	asm_trace_hardirqs_on_cond al
-	.endm
-
-	.macro disable_irq
+	.macro disable_irq, save=1
 	disable_irq_notrace
-	asm_trace_hardirqs_off
+	asm_trace_hardirqs_off \save
 	.endm
 
 	.macro enable_irq
@@ -155,7 +168,11 @@
 	.endm
 
 	.macro	save_and_disable_irqs_notrace, oldcpsr
+#ifdef CONFIG_CPU_V7M
+	mrs	\oldcpsr, primask
+#else
 	mrs	\oldcpsr, cpsr
+#endif
 	disable_irq_notrace
 	.endm
 
@@ -173,9 +190,24 @@
 
 	.macro restore_irqs, oldcpsr
 	tst	\oldcpsr, #PSR_I_BIT
-	asm_trace_hardirqs_on_cond eq
+	asm_trace_hardirqs_on cond=eq
 	restore_irqs_notrace \oldcpsr
 	.endm
+
+/*
+ * Assembly version of "adr rd, BSYM(sym)".  This should only be used to
+ * reference local symbols in the same assembly file which are to be
+ * resolved by the assembler.  Other usage is undefined.
+ */
+	.irp	c,,eq,ne,cs,cc,mi,pl,vs,vc,hi,ls,ge,lt,gt,le,hs,lo
+	.macro	badr\c, rd, sym
+#ifdef CONFIG_THUMB2_KERNEL
+	adr\c	\rd, \sym + 1
+#else
+	adr\c	\rd, \sym
+#endif
+	.endm
+	.endr
 
 /*
  * Get current thread_info.
@@ -218,12 +250,14 @@
 	.endm
 #endif
 
-#define USER(x...)				\
+#define USERL(l, x...)				\
 9999:	x;					\
 	.pushsection __ex_table,"a";		\
 	.align	3;				\
-	.long	9999b,9001f;			\
+	.long	9999b,l;			\
 	.popsection
+
+#define USER(x...)	USERL(9001f, x)
 
 #ifdef CONFIG_SMP
 #define ALT_SMP(instr...)					\
@@ -237,15 +271,17 @@
 	.pushsection ".alt.smp.init", "a"			;\
 	.long	9998b						;\
 9997:	instr							;\
+	.if . - 9997b == 2					;\
+		nop						;\
+	.endif							;\
 	.if . - 9997b != 4					;\
 		.error "ALT_UP() content must assemble to exactly 4 bytes";\
 	.endif							;\
 	.popsection
 #define ALT_UP_B(label)					\
-	.equ	up_b_offset, label - 9998b			;\
 	.pushsection ".alt.smp.init", "a"			;\
 	.long	9998b						;\
-	W(b)	. + up_b_offset					;\
+	W(b)	. + (label - 9998b)					;\
 	.popsection
 #else
 #define ALT_SMP(instr...)
@@ -323,7 +359,7 @@
 THUMB(	orr	\reg , \reg , #PSR_T_BIT	)
 	bne	1f
 	orr	\reg, \reg, #PSR_A_BIT
-	adr	lr, BSYM(2f)
+	badr	lr, 2f
 	msr	spsr_cxsf, \reg
 	__MSR_ELR_HYP(14)
 	__ERET
@@ -346,9 +382,9 @@ THUMB(	orr	\reg , \reg , #PSR_T_BIT	)
 	.macro	usraccoff, instr, reg, ptr, inc, off, cond, abort, t=TUSER()
 9999:
 	.if	\inc == 1
-	\instr\cond\()b\()\t\().w \reg, [\ptr, #\off]
+	\instr\()b\t\cond\().w \reg, [\ptr, #\off]
 	.elseif	\inc == 4
-	\instr\cond\()\t\().w \reg, [\ptr, #\off]
+	\instr\t\cond\().w \reg, [\ptr, #\off]
 	.else
 	.error	"Unsupported inc macro argument"
 	.endif
@@ -387,9 +423,9 @@ THUMB(	orr	\reg , \reg , #PSR_T_BIT	)
 	.rept	\rept
 9999:
 	.if	\inc == 1
-	\instr\cond\()b\()\t \reg, [\ptr], #\inc
+	\instr\()b\t\cond \reg, [\ptr], #\inc
 	.elseif	\inc == 4
-	\instr\cond\()\t \reg, [\ptr], #\inc
+	\instr\t\cond \reg, [\ptr], #\inc
 	.else
 	.error	"Unsupported inc macro argument"
 	.endif
@@ -419,14 +455,6 @@ THUMB(	orr	\reg , \reg , #PSR_T_BIT	)
 	.size \name , . - \name
 	.endm
 
-	.macro check_uaccess, addr:req, size:req, limit:req, tmp:req, bad:req
-#ifndef CONFIG_CPU_USE_DOMAINS
-	adds	\tmp, \addr, #\size - 1
-	sbcccs	\tmp, \tmp, \limit
-	bcs	\bad
-#endif
-	.endm
-
 	.irp	c,,eq,ne,cs,cc,mi,pl,vs,vc,hi,ls,ge,lt,gt,le,hs,lo
 	.macro	ret\c, reg
 #if __LINUX_ARM_ARCH__ < 6
@@ -446,6 +474,135 @@ THUMB(	orr	\reg , \reg , #PSR_T_BIT	)
 #ifdef CONFIG_THUMB2_KERNEL
 	nop
 #endif
+	.endm
+
+	.macro	bug, msg, line
+#ifdef CONFIG_THUMB2_KERNEL
+1:	.inst	0xde02
+#else
+1:	.inst	0xe7f001f2
+#endif
+#ifdef CONFIG_DEBUG_BUGVERBOSE
+	.pushsection .rodata.str, "aMS", %progbits, 1
+2:	.asciz	"\msg"
+	.popsection
+	.pushsection __bug_table, "aw"
+	.align	2
+	.word	1b, 2b
+	.hword	\line
+	.popsection
+#endif
+	.endm
+
+#ifdef CONFIG_KPROBES
+#define _ASM_NOKPROBE(entry)				\
+	.pushsection "_kprobe_blacklist", "aw" ;	\
+	.balign 4 ;					\
+	.long entry;					\
+	.popsection
+#else
+#define _ASM_NOKPROBE(entry)
+#endif
+
+	.macro		__adldst_l, op, reg, sym, tmp, c
+	.if		__LINUX_ARM_ARCH__ < 7
+	ldr\c		\tmp, .La\@
+	.subsection	1
+	.align		2
+.La\@:	.long		\sym - .Lpc\@
+	.previous
+	.else
+	.ifnb		\c
+ THUMB(	ittt		\c			)
+	.endif
+	movw\c		\tmp, #:lower16:\sym - .Lpc\@
+	movt\c		\tmp, #:upper16:\sym - .Lpc\@
+	.endif
+
+#ifndef CONFIG_THUMB2_KERNEL
+	.set		.Lpc\@, . + 8			// PC bias
+	.ifc		\op, add
+	add\c		\reg, \tmp, pc
+	.else
+	\op\c		\reg, [pc, \tmp]
+	.endif
+#else
+.Lb\@:	add\c		\tmp, \tmp, pc
+	/*
+	 * In Thumb-2 builds, the PC bias depends on whether we are currently
+	 * emitting into a .arm or a .thumb section. The size of the add opcode
+	 * above will be 2 bytes when emitting in Thumb mode and 4 bytes when
+	 * emitting in ARM mode, so let's use this to account for the bias.
+	 */
+	.set		.Lpc\@, . + (. - .Lb\@)
+
+	.ifnc		\op, add
+	\op\c		\reg, [\tmp]
+	.endif
+#endif
+	.endm
+
+	/*
+	 * mov_l - move a constant value or [relocated] address into a register
+	 */
+	.macro		mov_l, dst:req, imm:req
+	.if		__LINUX_ARM_ARCH__ < 7
+	ldr		\dst, =\imm
+	.else
+	movw		\dst, #:lower16:\imm
+	movt		\dst, #:upper16:\imm
+	.endif
+	.endm
+
+	/*
+	 * adr_l - adr pseudo-op with unlimited range
+	 *
+	 * @dst: destination register
+	 * @sym: name of the symbol
+	 * @cond: conditional opcode suffix
+	 */
+	.macro		adr_l, dst:req, sym:req, cond
+	__adldst_l	add, \dst, \sym, \dst, \cond
+	.endm
+
+	/*
+	 * ldr_l - ldr <literal> pseudo-op with unlimited range
+	 *
+	 * @dst: destination register
+	 * @sym: name of the symbol
+	 * @cond: conditional opcode suffix
+	 */
+	.macro		ldr_l, dst:req, sym:req, cond
+	__adldst_l	ldr, \dst, \sym, \dst, \cond
+	.endm
+
+	/*
+	 * str_l - str <literal> pseudo-op with unlimited range
+	 *
+	 * @src: source register
+	 * @sym: name of the symbol
+	 * @tmp: mandatory scratch register
+	 * @cond: conditional opcode suffix
+	 */
+	.macro		str_l, src:req, sym:req, tmp:req, cond
+	__adldst_l	str, \src, \sym, \tmp, \cond
+	.endm
+
+	/*
+	 * rev_l - byte-swap a 32-bit value
+	 *
+	 * @val: source/destination register
+	 * @tmp: scratch register
+	 */
+	.macro		rev_l, val:req, tmp:req
+	.if		__LINUX_ARM_ARCH__ < 6
+	eor		\tmp, \val, \val, ror #16
+	bic		\tmp, \tmp, #0x00ff0000
+	mov		\val, \val, ror #8
+	eor		\val, \val, \tmp, lsr #8
+	.else
+	rev		\val, \val
+	.endif
 	.endm
 
 #endif /* __ASM_ASSEMBLER_H__ */

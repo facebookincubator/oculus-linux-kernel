@@ -1,8 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * QLogic Fibre Channel HBA Driver
  * Copyright (c)  2003-2014 QLogic Corporation
- *
- * See LICENSE.qla2xxx for copyright and licensing details.
  */
 
 #ifndef __QLA_NX2_H
@@ -23,10 +22,6 @@
 #define MD_MIU_TEST_AGT_WRDATA_HI		0x410000A4
 #define MD_MIU_TEST_AGT_WRDATA_ULO		0x410000B0
 #define MD_MIU_TEST_AGT_WRDATA_UHI		0x410000B4
-#define MD_MIU_TEST_AGT_RDDATA_LO		0x410000A8
-#define MD_MIU_TEST_AGT_RDDATA_HI		0x410000AC
-#define MD_MIU_TEST_AGT_RDDATA_ULO		0x410000B8
-#define MD_MIU_TEST_AGT_RDDATA_UHI		0x410000BC
 
 /* MIU_TEST_AGT_CTRL flags. work for SIU as well */
 #define MIU_TA_CTL_WRITE_ENABLE	(MIU_TA_CTL_WRITE | MIU_TA_CTL_ENABLE)
@@ -58,8 +53,10 @@
 #define QLA8044_PCI_QDR_NET_MAX		((unsigned long)0x043fffff)
 
 /*  PCI Windowing for DDR regions.  */
-#define QLA8044_ADDR_IN_RANGE(addr, low, high)		\
-	(((addr) <= (high)) && ((addr) >= (low)))
+static inline bool addr_in_range(u64 addr, u64 low, u64 high)
+{
+	return addr <= high && addr >= low;
+}
 
 /* Indirectly Mapped Registers */
 #define QLA8044_FLASH_SPI_STATUS	0x2808E010
@@ -532,23 +529,6 @@ enum qla_regs {
 #define CRB_REG_INDEX_MAX	14
 #define CRB_CMDPEG_CHECK_RETRY_COUNT    60
 #define CRB_CMDPEG_CHECK_DELAY          500
-
-static const uint32_t qla8044_reg_tbl[] = {
-	QLA8044_PEG_HALT_STATUS1,
-	QLA8044_PEG_HALT_STATUS2,
-	QLA8044_PEG_ALIVE_COUNTER,
-	QLA8044_CRB_DRV_ACTIVE,
-	QLA8044_CRB_DEV_STATE,
-	QLA8044_CRB_DRV_STATE,
-	QLA8044_CRB_DRV_SCRATCH,
-	QLA8044_CRB_DEV_PART_INFO1,
-	QLA8044_CRB_IDC_VER_MAJOR,
-	QLA8044_FW_VER_MAJOR,
-	QLA8044_FW_VER_MINOR,
-	QLA8044_FW_VER_SUB,
-	QLA8044_CMDPEG_STATE,
-	QLA8044_ASIC_TEMP,
-};
 
 /* MiniDump Structures */
 
