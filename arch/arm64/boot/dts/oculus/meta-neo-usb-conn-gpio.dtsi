@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: GPL-2.0
+
+&usb0 {
+	usb-role-switch;
+	qcom,default-bus-vote = <3>; /* use min svs bus voting */
+	qcom,pm-qos-latency = <0>;
+
+	dwc3_0: dwc3@a600000 {
+		qcom,iommu-faults = "non-fatal";
+		usb-role-switch;
+	};
+
+	port {
+		usb_port0: endpoint {
+			remote-endpoint = <&usb_port0_connector>;
+		};
+	};
+};
+
+&soc {
+	usb_conn_gpio: usb_conn_gpio {
+		compatible = "meta-gpio-usb-b-connector";
+		vbus-gpio = <&tlmm 6 GPIO_ACTIVE_LOW>;
+		role-sw-delay-ms = <1500>;
+		usb-controller = <&usb0>;
+
+		port {
+			usb_port0_connector: endpoint {
+				remote-endpoint = <&usb_port0>;
+			};
+		};
+	};
+};

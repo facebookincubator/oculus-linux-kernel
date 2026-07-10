@@ -1,0 +1,12 @@
+/dts-v1/;
+/plugin/;
+
+#include "oatmeal-nff1-common.dtsi"
+#include "granola-oatmeal-nff1-poc-jbd4021-display.dtsi"
+
+/ {
+	model = "Granola Oatmeal NFF1 POC";
+	compatible = "meta,oatmeal", "meta,oatmeal-nff1";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xcb>;
+};

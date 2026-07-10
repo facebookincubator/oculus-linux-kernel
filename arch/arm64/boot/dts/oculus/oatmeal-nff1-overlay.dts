@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "oatmeal-nff1-common.dtsi"
+
+/ {
+	model = "Oatmeal NFF1";
+	compatible = "meta,oatmeal", "meta,oatmeal-nff1";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xc1>;
+};

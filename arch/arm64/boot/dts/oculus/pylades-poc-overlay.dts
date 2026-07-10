@@ -1,0 +1,12 @@
+#include "pylades.dtsi"
+
+/ {
+	model = "Pylades POC";
+	compatible = "meta,hammerhead", "meta,pylades", "meta,pylades-poc";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <34 0x6a>;
+};
+
+&rt600_ctrl {
+	nirq-mcu-map = <0 24>;
+};

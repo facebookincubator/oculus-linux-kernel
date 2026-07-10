@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/clock/qcom,gcc-waipio.h>
+#include <dt-bindings/clock/qcom,camcc-waipio.h>
+#include <dt-bindings/interconnect/qcom,waipio.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
+
+#include "cape-camera-sensor-mtp.dtsi"
+/ {
+	model = "Qualcomm Technologies, Inc. Cape MTP";
+	compatible = "qcom,cape", "qcom,capep";
+	qcom,msm-id = <530 0x10000>;
+	qcom,board-id = <8 0>;
+};

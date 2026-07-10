@@ -1,0 +1,41 @@
+&lcosOP03010 {
+	#thermal-sensor-cells = <1>;
+};
+
+&thermal_zones {
+    display-boardtemp {
+        status = "disabled";
+    };
+
+    display-lcostemp {
+        thermal-sensors = <&lcosOP03010 0>;
+    };
+
+    display-gtemp {
+        thermal-sensors = <&lcosOP03010 1>;
+    };
+
+    display-rbtemp {
+        thermal-sensors = <&lcosOP03010 2>;
+    };
+
+    display-sensor-temp {
+        thermal-sensors = <&lcosOP03010 3>;
+	};
+};
+
+&rbtemp {
+    status = "disabled";
+};
+
+&gtemp {
+    status = "disabled";
+};
+
+&dispboardtemp {
+    status = "disabled";
+};
+
+&display_virtual_sensor {
+    status = "disabled";
+};

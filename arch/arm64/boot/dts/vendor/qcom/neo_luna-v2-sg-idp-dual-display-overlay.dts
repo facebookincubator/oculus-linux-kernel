@@ -1,0 +1,12 @@
+/dts-v1/;
+/plugin/;
+
+#include "neo_luna-v2-sg-idp-dual-display.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO LUNA-V2 DD";
+	compatible = "qcom,neo";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 2>;
+};
+

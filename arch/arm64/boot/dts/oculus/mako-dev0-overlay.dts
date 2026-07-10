@@ -1,0 +1,44 @@
+/dts-v1/;
+/plugin/;
+
+#include "mako.dtsi"
+
+/ {
+	model = "Mako Dev0";
+	compatible = "meta,florian", "meta,mako", "meta,mako-dev0";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <58 0x71>;
+};
+
+&usb_conn_gpio {
+	meta,suspend-disable;
+};
+
+&stp_mcu_request_transaction {
+    mux {
+		pins = "gpio19";
+	};
+
+	config {
+		pins = "gpio19";
+	};
+};
+
+&stp_soc_has_data {
+	mux {
+		pins = "gpio18";
+	};
+
+	config {
+		pins = "gpio18";
+	};
+};
+
+&spi_stp {
+	mcu-request-transaction = <&tlmm 19 0>;
+	soc-has-data = <&tlmm 18 0>;
+};
+
+&usb_conn_gpio {
+	/delete-property/ meta,enable-vchrg-debug-detect;
+};

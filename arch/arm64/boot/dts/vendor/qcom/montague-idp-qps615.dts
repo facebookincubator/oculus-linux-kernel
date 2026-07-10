@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "montague.dtsi"
+#include "montague-idp-qps615.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Montague IDP QPS615";
+	compatible = "qcom,montague-idp", "qcom,montague", "qcom,idp";
+	qcom,board-id = <0x10022 0x9>;
+};

@@ -1,0 +1,19 @@
+/dts-v1/;
+/plugin/;
+
+#include "mako.dtsi"
+
+/ {
+	model = "Mako P0";
+	compatible = "meta,florian", "meta,mako", "meta,mako-p0";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <58 0x72>;
+};
+
+&usb_conn_gpio {
+	meta,suspend-disable;
+};
+
+&usb_conn_gpio {
+	/delete-property/ meta,enable-vchrg-debug-detect;
+};

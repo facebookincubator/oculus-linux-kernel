@@ -1,0 +1,29 @@
+&tlmm {
+	gpio_rt685_detect: gpio_rt685_detect {
+		mux {
+			pins = "gpio79";
+			function = "gpio";
+		};
+
+		 config {
+			pins = "gpio79";
+			drive-strength = <2>;
+			bias-pull-up;
+			input-enable;
+		};
+	};
+};
+
+
+&soc {
+	rt685_detect {
+		compatible = "gpio-keys";
+		label = "rt685_detect";
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_rt685_detect>;
+	};
+	meta,rt600_ctrl {
+		is-rt600-gpio = <&tlmm 79 0>;
+		alt-nirq-mcu-map = <0 22>;
+	};
+};

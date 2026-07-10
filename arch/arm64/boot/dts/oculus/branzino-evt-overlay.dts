@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "branzino.dtsi"
+
+/ {
+	model = "Branzino EVT";
+	compatible = "meta,florian", "meta,branzino", "meta,branzino-evt";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <61 0x20>;
+};

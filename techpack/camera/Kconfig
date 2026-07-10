@@ -1,0 +1,92 @@
+config SPECTRA_ISP
+	bool "enable camera ISP module"
+	help
+	  This is enabling camera ISP module.
+	  IFE camera driver file be included.
+	  This will enable camera ISP driver to handle IFE driver.
+	  Core camera driver to handle VFE HW.
+
+config SPECTRA_ICP
+	bool "enable camera ICP module"
+	help
+	  This is enabling camera ICP module.
+	  Camera ICP driver file be included.
+	  This will enable camera ICP driver to interact with,
+	  ICP FW. Which can control IPE and BPS HW.
+
+config SPECTRA_JPEG
+	bool "enable camera jpeg module"
+	help
+	  This is enabling camera JPEG module.
+	  camera jpeg module will be functional.
+	  This module interact with jpeg HW for
+	  snapshot processing.
+
+config SPECTRA_SENSOR
+	bool "enable camera sensor module"
+	help
+	  This is enabling camera sensor module.
+	  sensor module files will be included to enable the driver.
+	  eeprom, flash, csiphy all other module will be included
+	  to make the sensor functional.
+
+config INTERCONNECT_QCOM
+	bool "enabling icc bus driver"
+	help
+      This is to access icc driver api.
+      To cache AB and IB vote will
+      use ICC kernel driver API.
+      So that ICC driver can consolidate the vote
+
+config SPECTRA_FD
+    bool "enabling camera fd module"
+    help
+      This is enabling camera FD module.
+
+config CAM_PRESIL
+    bool "enabling camera presil module"
+    help
+      This is enabling camera presil module.
+
+config QCOM_CX_IPEAK
+    bool "enabling camera ipeak module"
+    help
+      This is enabling camera ipeak module.
+
+config QCOM_BUS_SCALING
+    bool "enabling camera bus scaling module"
+    help
+      This is enabling camera bus scaling module.
+
+config SPECTRA_LRME
+    bool "enabling camera lrme module"
+    help
+      This is enabling camera lrme module.
+
+config SPECTRA_CUSTOM
+    bool "enabling camera custom module"
+    help
+      This is enabling camera custom module.
+
+config SPECTRA_OPE
+    bool "enabling camera ope module"
+    help
+      This is enabling camera ope module.
+
+config SPECTRA_CRE
+    bool "enabling camera cre module"
+    help
+      This is enabling camera cre module.
+
+config SPECTRA_TFE
+    bool "enabling camera tfe module"
+    help
+      This is enabling camera tfe module.
+
+config MSM_GLOBAL_SYNX
+	bool "enable HW synx"
+	help
+	  This is enabling HW syx feature.
+	  synx hw signaling external to camera,
+	  like EVA and other.
+	  This is to avoid sw signaling latency.

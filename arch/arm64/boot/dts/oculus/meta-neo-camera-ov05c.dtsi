@@ -1,0 +1,81 @@
+#include <dt-bindings/clock/qcom,camcc-neo.h>
+#include <dt-bindings/camera/msm-camera.h>
+
+&soc {
+	qcom,cam-res-mgr {
+		compatible = "qcom,cam-res-mgr";
+		status = "ok";
+	};
+};
+
+&cam_cci0 {
+	eeprom_ov05c: qcom,eeprom0 {
+		cell-index = <0>;
+		compatible = "qcom,eeprom";
+		csiphy-sd-index = <2>;
+		cam_vio-supply  = <&L14A>;
+		cam_clk-supply  = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vio",
+			"cam_clk" ;
+		rgltr-cntrl-support;
+		rgltr-min-voltage  = <1200000 0>;
+		rgltr-max-voltage  = <2800000 0>;
+		rgltr-load-current = <2700  0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk2_active
+			&cam_sensor_active_rst0>;
+		pinctrl-1 = <&cam_sensor_mclk2_suspend
+			&cam_sensor_suspend_rst0>;
+		gpios = <&tlmm 71 0>,
+			<&tlmm 65 0>;
+		gpio-reset = <1>;
+		gpio-req-tbl-num = <0 1>;
+		gpio-req-tbl-flags = <1 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK2",
+					"CAM_RESET0";
+		cci-master = <0>;
+		clocks = <&camcc CAM_CC_MCLK2_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "nominal";
+		clock-rates = <19200000>;
+		status = "ok";
+	};
+
+	qcom,cam-sensor0 {
+		cell-index = <0>;
+		compatible = "qcom,cam-sensor";
+		csiphy-sd-index = <2>;
+		eeprom-src = <&eeprom_ov05c>;
+		sensor-position-roll = <0>;
+		sensor-position-pitch = <0>;
+		sensor-position-yaw = <180>;
+		cam_vio-supply  = <&L14A>;
+		cam_clk-supply  = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vio",
+			"cam_clk" ;
+		rgltr-cntrl-support;
+		rgltr-min-voltage  = <1200000 0>;
+		rgltr-max-voltage  = <2800000 0>;
+		rgltr-load-current = <2700  0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk2_active
+			&cam_sensor_active_rst0>;
+		pinctrl-1 = <&cam_sensor_mclk2_suspend
+			&cam_sensor_suspend_rst0>;
+		gpios = <&tlmm 71 0>,
+			<&tlmm 65 0>;
+		gpio-reset = <1>;
+		gpio-req-tbl-num = <0 1>;
+		gpio-req-tbl-flags = <1 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK2",
+					"CAM_RESET0";
+		cci-master = <0>;
+		clocks = <&camcc CAM_CC_MCLK2_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "nominal";
+		clock-rates = <19200000>;
+		status = "ok";
+	};
+};

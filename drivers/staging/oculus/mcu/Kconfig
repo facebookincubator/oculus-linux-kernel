@@ -1,0 +1,34 @@
+menuconfig OCULUS_MCU
+	bool "Oculus MCU drivers"
+	default y
+	help
+	  Enable support for Oculus MCU drivers and features
+
+if OCULUS_MCU
+
+config OCULUS_SWD
+	bool "Oculus MCU SWD Driver"
+	help
+	  Oculus SWD Driver
+
+config OCULUS_SWD_DEBUG
+	bool "Oculus MCU SWD Debug support"
+	depends on DEBUG_FS && OCULUS_SWD
+	default n
+	help
+	  Oculus SWD Debug support
+
+config OCULUS_SWD_STM32L4
+	bool "STM32L4 SWD Driver"
+	select OCULUS_SWD
+	default n
+	help
+	  Oculus STM32L4 SWD Support
+
+config OCULUS_SWD_USE_FW_FALLBACK
+	bool "Use fw fallback mechanism"
+	default n
+	help
+	  Oculus SWD will use fw fallback mechanism
+
+endif # OCULUS_MCU

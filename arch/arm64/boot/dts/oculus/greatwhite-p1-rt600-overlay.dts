@@ -1,0 +1,33 @@
+/dts-v1/;
+/plugin/;
+
+#include "greatwhite.dtsi"
+/ {
+	model = "Greatwhite P1 (RT600)";
+	compatible = "meta,greatwhite", "meta,greatwhite-p1-rt600";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xb5>;
+};
+
+&max77813 {
+    status="disabled";
+};
+
+/* Display card (Celeste) I2C bus: */
+
+&qupv3_se4_i2c {
+	status = "ok";
+};
+
+
+#include "meta-rt685-rt700.dtsi"
+#include "greatwhite-display-p1.dtsi"
+#include "gw-p1-power-slider.dtsi"
+
+&sdhc_1 {
+        meta,biwin-ffu-enable;
+};
+
+&sg_camera_sensor {
+        /delete-property/ aoclpi-enable;
+};

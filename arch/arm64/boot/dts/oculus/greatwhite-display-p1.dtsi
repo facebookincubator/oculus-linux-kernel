@@ -1,0 +1,50 @@
+&qupv3_se4_i2c {
+    rbtemp_p1:tmp114@4C {
+        compatible = "meta,tmp114-i2c";
+        reg = <0x4C>;
+        status = "ok";
+
+        pmic-supply = "pmicOP03010";
+        #thermal-sensor-cells = <0>;
+    };
+
+    gtemp_p1:tmp114@4D {
+        compatible = "meta,tmp114-i2c";
+        reg = <0x4D>;
+        status = "ok";
+
+        pmic-supply = "pmicOP03010";
+        #thermal-sensor-cells = <0>;
+    };
+};
+
+&thermal_zones {
+    display-boardtemp {
+        status = "disabled";
+    };
+
+    display-gtemp {
+        thermal-sensors = <&gtemp_p1 0>;
+    };
+
+    display-rbtemp {
+        thermal-sensors = <&rbtemp_p1 0>;
+    };
+};
+
+&rbtemp {
+    status = "disabled";
+};
+
+&gtemp {
+    status = "disabled";
+};
+
+&dispboardtemp {
+    status = "disabled";
+};
+
+&leddriver {
+	interpolation-coeffs-high-res = <10000 82>;
+	interpolation-coeffs-low-res = <324010 2238>;
+};

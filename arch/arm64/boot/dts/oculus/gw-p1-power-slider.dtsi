@@ -1,0 +1,24 @@
+&tlmm {
+  p1_power_slider: p1_power_slider {
+    mux {
+      pins = "gpio39";
+      function = "gpio";
+    };
+
+    config {
+      pins = "gpio39";
+      drive-strength = <2>;
+      bias-disable;
+      input-enable;
+    };
+  };
+};
+
+&soc {
+  p1_power_slider {
+    compatible = "gpio-keys";
+    label = "p1_power_slider";
+		pinctrl-names = "default";
+		pinctrl-0 = <&p1_power_slider>;
+	};
+};

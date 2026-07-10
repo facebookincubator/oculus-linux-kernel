@@ -1,0 +1,136 @@
+&tlmm {
+	rt600_boot0_high: rt600_boot0_high {
+		mux {
+			pins = "gpio94";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio94";
+			drive-strength = <2>;
+			output-high;
+		};
+	};
+
+	rt600_boot0_low: rt600_boot0_low {
+		mux {
+			pins = "gpio94";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio94";
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	rt600_boot2_high: rt600_boot2_high {
+		mux {
+			pins = "gpio22";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio22";
+			drive-strength = <8>;
+			output-high;
+		};
+	};
+
+	rt600_boot2_low: rt600_boot2_low {
+		mux {
+			pins = "gpio22";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio22";
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	rt700_bkup_disp_ctrl_high: rt700_bkup_disp_ctrl_high {
+		mux {
+			pins = "gpio22";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio22";
+			drive-strength = <2>;
+			output-high;
+		};
+	};
+
+	rt700_bkup_disp_ctrl_low: rt700_bkup_disp_ctrl_low {
+		mux {
+			pins = "gpio22";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio22";
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	rt600_nirq: rt600_nirq {
+		mux {
+			pins = "gpio58";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio58";
+			drive-strength = <2>;
+			bias-pull-up;
+			input-enabled;
+		};
+	};
+
+	rt600_crash_notify: rt600_crash_notify {
+		mux {
+			pins = "gpio60";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio60";
+			bias-pull-up;
+			input-enabled;
+		};
+	};
+
+	rt600_assert_pin: rt600_assert_pin {
+		mux {
+			pins = "gpio80";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio80";
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+};
+
+&soc {
+	rt600_ctrl: meta,rt600_ctrl {
+		compatible = "meta,rt600_ctrl";
+		pinctrl-names = "default_rt600", "flashing_rt600", "default_rt700", "flashing_rt700";
+		pinctrl-0 = <&rt600_boot0_low &rt600_boot2_low &rt600_nirq &rt600_crash_notify>;
+		pinctrl-1 = <&rt600_boot0_high &rt600_boot2_high &rt600_nirq &rt600_crash_notify>;
+		pinctrl-2 = <&rt600_boot0_low &rt600_nirq &rt600_crash_notify &rt700_bkup_disp_ctrl_high>;
+		pinctrl-3 = <&rt600_boot0_high &rt600_nirq &rt600_crash_notify &rt700_bkup_disp_ctrl_high>;
+		rstn-gpio = <&pm8150_gpios 8 0>;
+		nirq-gpio = <&tlmm 58 0>;
+		nirq-mcu-map = <0 24>;
+		crash-notify-gpio = <&tlmm 60 0>;
+		rt600-spare-gpio2 = <&tlmm 41 0>;
+		status = "ok";
+	};
+};

@@ -1,0 +1,9 @@
+CONFIG_META_GRANOLA=y
+
+# JBD4021 display panel (only used for proof of concept work with NFF1)
+CONFIG_JBD4021_I2C=y
+
+# JBD4021/2520 left/right panels are behind a GPIO controlled (gpio117) I2C mux
+# because they have the same I2C address
+CONFIG_I2C_MUX=y
+CONFIG_I2C_MUX_GPIO=y

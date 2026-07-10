@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include "neo_la.dtsi"
+#include "neo-sg-idp-hmt.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO SG IDP";
+	compatible = "qcom,neo-idp", "qcom,neo", "qcom,idp";
+	qcom,board-id = <34 1>;
+};
+

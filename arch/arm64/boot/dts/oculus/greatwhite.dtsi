@@ -1,0 +1,171 @@
+#include "meta-neo-common.dtsi"
+#include "meta-neo-usb-conn-gpio.dtsi"
+#include "greatwhite-display.dtsi"
+#include "greatwhite-panel.dtsi"
+#include "meta-neo-camera-imx681-ao.dtsi"
+#include "greatwhite-gpios.dtsi"
+
+&qupv3_se8_i2c {
+    aw2026_led: aw2026@64 {
+        compatible = "awinic,aw2026_led";
+        reg = <0x64>;
+        status = "ok";
+
+        aw2026,white {
+            aw2026,name = "white";
+            aw2026,id = <0>;
+            aw2026,imax = <1>;
+            aw2026,led-current = <21>;
+            aw2026,max-brightness = <255>;
+            aw2026,rise-time-ms = <1>;
+            aw2026,hold-time-ms = <2>;
+            aw2026,fall-time-ms = <4>;
+            aw2026,off-time-ms = <1>;
+        };
+
+        aw2026,mcu_sync {
+                aw2026,name = "mcu_sync";
+                aw2026,id = <1>;
+                aw2026,imax = <1>;
+                aw2026,led-current = <21>;
+                aw2026,max-brightness = <255>;
+                aw2026,rise-time-ms = <1>;
+                aw2026,hold-time-ms = <2>;
+                aw2026,fall-time-ms = <4>;
+                aw2026,off-time-ms = <1>;
+        };
+
+        aw2026,user_white {
+                aw2026,name = "user_white";
+                aw2026,id = <2>;
+                aw2026,imax = <1>;
+                aw2026,led-current = <21>;
+                aw2026,max-brightness = <255>;
+                aw2026,rise-time-ms = <1>;
+                aw2026,hold-time-ms = <2>;
+                aw2026,fall-time-ms = <4>;
+                aw2026,off-time-ms = <1>;
+        };
+	};
+};
+
+&qupv3_se5_i2c {
+    ktb8399: ktb8399@60 {
+        compatible = "kinetic,ktb8399";
+        reg = <0x60>;
+        ktb8399,vsel-active-low;
+        regulator-name = "ktb8399-buck";
+        regulator-min-microvolt = <1368750>;
+        regulator-max-microvolt = <1368750>;
+        regulator-always-on;
+        status = "ok";
+    };
+};
+
+/* Reconfigure SE9 as qupv3_se9_4uart (2uart configured by default in neo-qupv3.dtsi) */
+&soc {
+    qupv3_se9_4uart: qcom,qup_uart@a8c000 {
+        compatible = "qcom,msm-geni-serial-hs";
+        reg = <0xa8c000 0x4000>;
+        reg-names = "se_phys";
+        interrupts-extended = <&intc GIC_SPI 356 IRQ_TYPE_LEVEL_HIGH>,
+                <&tlmm 35 IRQ_TYPE_LEVEL_HIGH>;
+        clock-names = "se-clk", "m-ahb", "s-ahb";
+        clocks = <&gcc GCC_QUPV3_WRAP1_S3_CLK>,
+            <&gcc GCC_QUPV3_WRAP_1_M_AHB_CLK>,
+            <&gcc GCC_QUPV3_WRAP_1_S_AHB_CLK>;
+        pinctrl-names = "default", "active", "sleep", "shutdown";
+        pinctrl-0 = <&qupv3_se9_default_cts>,
+            <&qupv3_se9_default_rtsrx>, <&qupv3_se9_default_tx>;
+        pinctrl-1 = <&qupv3_se9_cts>, <&qupv3_se9_rts>,
+            <&qupv3_se9_tx>, <&qupv3_se9_rx_active>;
+        pinctrl-2 = <&qupv3_se9_cts>, <&qupv3_se9_rts>,
+            <&qupv3_se9_tx>, <&qupv3_se9_rx_wake>;
+        pinctrl-3 = <&qupv3_se9_default_cts>,
+            <&qupv3_se9_default_rtsrx>, <&qupv3_se9_default_tx>;
+        qcom,wakeup-byte = <0xFD>;
+        qcom,wrapper-core = <&qupv3_1>;
+        status = "disabled";
+    };
+};
+
+&disp_rdump_memory {
+	status = "disabled";
+};
+
+&bluetooth {
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&bt_en_active>;
+	pinctrl-1 = <&bt_en_sleep>;
+	meta,bt-pwr-state-high-on-boot;
+};
+
+&tlmm {
+	bt_en_active: bt_en_active {
+		mux {
+			pins = "gpio46";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio46";
+			drive-strength = <2>;
+			output-high;
+			bias-pull-up;
+		};
+	};
+};
+
+&pm8150_l16 {
+	/delete-property/ regulator-always-on;
+};
+
+&hw_comparator_sensor {
+	vddref-supply = <&L16A>;
+	hwcomparator,latch;
+};
+
+&fg_mux_defaults {
+	config {
+		/delete-property/ output-high;
+		output-low;
+	};
+};
+
+&soc {
+    stp_interface: stp-interface {
+        status = "ok";
+        compatible = "meta,stp-interface";
+        spi-stp = <&spi_stp>;
+		stp-channel-number = /bits/ 8 <15>;
+    };
+    metabattery: metabattery {
+        compatible = "meta,metabattery";
+        status = "ok";
+        stp-interface = <&stp_interface>;
+        battery-count = <1>;
+        mux-gpio = <&tlmm 30 0>;
+        metabattery-alert-gpios = <&tlmm 7 GPIO_ACTIVE_HIGH>;
+        caching-enabled;
+		caching-refresh-interval-ms = <350>;
+    };
+    mcu_thermistor: mcu_thermistor {
+        compatible = "meta,mcu_thermistor";
+        status = "ok";
+        stp-interface = <&stp_interface>;
+    };
+};
+
+&sg_camera_sensor {
+	ignore-sensor-id-mismatch;
+};
+
+&rt6160 {
+	skip-vendor-id-check;
+};
+
+&sdhc_1 {
+        meta,biwin-ffu-enable;
+};
+
+#include "greatwhite-thermal.dtsi"

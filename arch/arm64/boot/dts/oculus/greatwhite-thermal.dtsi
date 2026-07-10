@@ -1,0 +1,184 @@
+&generic_virtual_sensor {
+        status = "disabled";
+};
+
+&outdoor_virtual_sensor {
+	status = "disabled";
+};
+
+&metabattery {
+	#thermal-sensor-cells = <0>;
+};
+
+&mcu_thermistor {
+	#thermal-sensor-cells = <0>;
+};
+
+&soc {
+	skin_virtual_sensor: skin-virtual-sensor {
+		compatible = "oculus,generic-virtual-sensor";
+		#thermal-sensor-cells = <0>;
+		status = "ok";
+		// 32 bit 2's complement -5970
+		offset = <4294961326>;
+		zones {
+			zone0 {
+				type = "therm-quiet-usr";
+				coefficient = <910>;
+			};
+		};
+	};
+
+  display_virtual_sensor: display-virtual-sensor {
+    compatible = "oculus,generic-virtual-sensor";
+    #thermal-sensor-cells = <0>;
+    status = "ok";
+	// Equation is T = 1.1 + 0.75 * lcos
+    offset = <1100>;
+    zones {
+      zone0 {
+        type = "display-lcostemp";
+        coefficient = <750>;
+      };
+    };
+  };
+};
+
+&thermal_zones {
+	metabattery {
+		thermal-governor = "step_wise";
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&metabattery>;
+		trips {
+			trip0 {
+				temperature = <5000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			trip1 {
+				temperature = <10000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			trip2 {
+				temperature = <15000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			trip3 {
+				temperature = <20000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			trip4 {
+				temperature = <25000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	mcu_thermistor {
+		thermal-governor = "step_wise";
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&mcu_thermistor>;
+		trips {
+			trip0 {
+				temperature = <5000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			trip1 {
+				temperature = <10000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			trip2 {
+				temperature = <15000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			trip3 {
+				temperature = <20000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+			trip4 {
+				temperature = <25000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	skin-sensor-temp {
+		thermal-governor = "step_wise";
+		polling-delay-passive = <0>;
+		polling-delay = <10000>;
+		thermal-sensors = <&skin_virtual_sensor 0>;
+		trips {
+			active-config0 {
+				temperature = <45000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+			active-config1 {
+				temperature = <47000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+			active-config2 {
+				temperature = <50000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+			active-config3 {
+				temperature = <52000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+			active-config4 {
+				temperature = <55000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+		};
+	};
+
+  display-sensor-temp {
+    thermal-governor = "step_wise";
+    polling-delay = <5000>;
+    polling-delay-passive = <0>;
+
+    thermal-sensors = <&display_virtual_sensor 0>;
+    trips {
+      display_temp_cfg0: active-config0 {
+        temperature = <35000>;
+        hysteresis = <2000>;
+        type = "passive";
+      };
+      display_temp_cfg1: active-config1 {
+        temperature = <37000>;
+        hysteresis = <2000>;
+        type = "passive";
+      };
+      display_temp_cfg2: active-config2 {
+        temperature = <40000>;
+        hysteresis = <2000>;
+        type = "passive";
+      };
+      display_temp_cfg3: active-config3 {
+        temperature = <42000>;
+        hysteresis = <2000>;
+        type = "passive";
+      };
+      display_temp_cfg4: active-config4 {
+        temperature = <44000>;
+        hysteresis = <2000>;
+        type = "passive";
+      };
+    };
+  };
+};

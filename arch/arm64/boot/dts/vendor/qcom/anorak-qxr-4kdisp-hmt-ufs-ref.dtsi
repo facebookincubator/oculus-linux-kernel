@@ -1,0 +1,8 @@
+#include "anorak-qxr-hmt-ufs-ref.dtsi"
+
+&k09973 {
+	ipd,SW_event = <0 1 1 0>;
+	ipd,SMR_setting = <0>;
+	ipd,Device_type = <2>;
+};
+

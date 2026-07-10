@@ -1,0 +1,22 @@
+&reserved_memory {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	ranges;
+
+	/delete-node/ helios_ram_dump_region@80c00000;
+};
+
+&video_mem {
+	no-map;
+	reg = <0x0 0x86f00000 0x0 0x500000>;
+};
+
+&adsp_mem {
+	no-map;
+	reg = <0x0 0x87600000 0x0 0x1d00000>;
+};
+
+&cdsp_mem {
+	no-map;
+	reg = <0x0 0x89400000 0x0 0xa00000>;
+};

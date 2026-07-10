@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "meg2.dtsi"
+#include "meg2-coleman.dtsi"
+
+/ {
+	model = "Meg2 Dev0 (HAPS) NFF";
+	compatible = "meta,meg2";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xE4>;
+};
+
+&pcie1 {
+	// Coleman requires 1000ms between PERST deassertion and link training
+	qcom,perst-delay-us-min = <1000000>;
+	qcom,perst-delay-us-max = <1000050>;
+};

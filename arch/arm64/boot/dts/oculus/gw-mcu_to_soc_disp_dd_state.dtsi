@@ -1,0 +1,19 @@
+// T171356793: For the P1 MLB, there is a new signal from MCU to SOC
+// (MCU_TO_SOC_DISP_DD_STATE) for Pin 80. MCU should not drive this pin
+// before SoC boots. To avoid backpower, suggest program SoC to have
+// internal PU and configure MCU to Open drain to drive this signal
+
+&tlmm {
+  mcu_to_soc_disp_dd_state: mcu_to_soc_disp_dd_state {
+		mux {
+			pins = "gpio80";
+			function = "gpio";
+		};
+                
+		config {
+			pins = "gpio80";
+			bias-pull-up;
+			input-enable;
+		};                
+	};
+};

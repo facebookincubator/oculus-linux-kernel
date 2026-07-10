@@ -1,0 +1,257 @@
+menuconfig OCULUS
+	bool "Oculus feature support"
+	default y
+	help
+	  Enable support for Oculus drivers and features
+
+if OCULUS
+
+config CAM_FSYNC
+	bool "Oculus Camera FSYNC Timestamp driver"
+	depends on OCULUS
+	default n
+	help
+	    Enable Camera FSYNC Timestamp driver
+
+config GENERIC_VIRTUAL_SENSOR
+	tristate "Generic Virtual Sensor Driver"
+	default n
+	help
+	  This driver implements a generic virtual sensor driver which
+	  can be configured through userspace.
+
+config GPIO_LOWVOLT_DETECT
+	tristate "Low voltage GPIO interrupt handler driver"
+	default n
+	help
+		This driver handles H/W interrupt that gets triggered when voltage droop
+		which might cause brown-out is detected. S/W can reduce system power
+		to avoid this interrupt. This driver handles this interrupt and will report
+		to user mode to take appropriate action.
+
+config INSTRUCTION_SAMPLER
+	tristate "Periodic instruction sampler"
+	depends on EVENT_TRACING && CONTEXT_SWITCH_TRACER && ARM64
+	help
+	  Provides support for periodic instruction sampling of processes
+	  running on the system.
+
+config LEDS_AW2026
+	tristate "LED Support for AW2026"
+	default n
+	depends on LEDS_CLASS && I2C
+	help
+		This option enables support for the AW2026 LED connected through I2C.
+		This driver enables automatic breathing and also allows flexible patterns to
+		be configured. It allows multiple patterns to be run successively or
+		cyclically.
+
+config MAX17332
+	tristate "Maxim Integrated MAX17332 Fuel Gauge"
+	depends on I2C
+	select REGMAP_IRQ
+	help
+	  Say yes here to add support for Maxim Integrated MAX17332.
+	  MAX17332 is a multifunction device with battery and charger
+	  functionality included. The IC supports Non-Volatile
+	  programming and precision current, voltage and other measurements
+	  without calibration.
+
+config BATTERY_CAPACITY_EMULATION
+	bool "Battery capacity emulation mode support"
+	default n
+	help
+	  Enable this option to make a emul_batt_capacity sysfs node in
+	  max17332-battery/metabattery directory to support battery capacity emulation.
+
+config MAX17332_CURRENT_OVERRIDE
+	bool "MAX17332 current override logic"
+	default n
+	depends on MAX17332
+	help
+	  Say yes here to add support for MAX17332 current override logic.
+	  For Oatmeal, we added charging control logic which is not suitable
+	  for other products. So split them from the main logic and make it
+	  configurable.
+
+config MAX17332_VOLTAGE_ADJUSTMENT
+	bool "MAX17332 voltage adjustment logic"
+	default n
+	depends on MAX17332
+	help
+	  Say yes here to add support for MAX17332 voltage adjustment logic.
+	  For Oatmeal, we added charging voltage adjustment logic which is
+	  not suitable for other products. So split them from the main logic
+	  and make it configurable.
+
+config MAX17332_CDEV
+	bool "MAX17332 thermal cooling device"
+	default n
+	depends on MAX17332 && THERMAL
+	help
+	  Say yes here to register the MAX17332 charger as a thermal cooling
+	  device. This allows the thermal framework to disable charging
+	  when the device temperature exceeds configured thresholds.
+
+config MAX77789
+	tristate "Maxim Integrated MAX77789 Charger IC"
+	default n
+	depends on I2C
+	help
+	  Enable support for Maxim Integrated MAX77789.
+
+config META_HAMMERHEAD
+	bool "Enable support for hammerhead device"
+	default n
+	select ARCH_NEO
+	help
+	  Enable support for hammerhead device
+
+config META_OOM_KILL_STATS
+	bool "Log Kernel OOM Kill events"
+	default n
+	select ARCH_NEO
+	help
+	  Enable this option to log Kernel OOM Kill events
+
+config META_USB_CONN_GPIO
+	tristate "Meta implementation of USB GPIO connection interface"
+	depends on GPIOLIB
+	select USB_ROLE_SWITCH
+	select POWER_SUPPLY
+	help
+	  The driver supports USB role switch between host and device via GPIO
+	  based USB cable detection, used typically if an input GPIO is used
+	  to detect USB ID pin, and another input GPIO may be also used to detect
+	  Vbus pin at the same time, it also can be used to enable/disable
+	  device if an input GPIO is only used to detect Vbus pin.
+
+	  To compile the driver as a module, choose M here: the module will
+	  be called meta-usb-conn-gpio.ko
+
+config MFI_I2C
+	tristate "MFI I2C driver"
+	default n
+	depends on I2C
+	help
+	  Driver to support read from and writing to MFi devices via I2C.
+		This driver is built on top of regmap subsystem and exposes read/write
+		functions from kernel to user mode.
+		Using MFi for authentication should be implemented in user space.
+
+config MPM_SLEEP_CLOCK
+	bool "MPM-based sleep clock for Qualcomm chipsets"
+	default y
+	help
+	    Enable MPM sleep clock driver for Qualcomm chipsets
+
+config POWER_STATE_VIRTUAL_SENSOR
+	tristate "SN Power State Driver"
+	default n
+	help
+	  This driver is built as a virtual sensor and plugged into the
+	  thermal HAL to provide power state that will be used for
+	  hammerhead power management.
+
+config REGULATOR_MAX77813
+	tristate "Maxim MAX77813 High Efficiency Buck-Boost Converter"
+	depends on I2C
+	help
+	  This driver controls Maxim MAX77813 high efficiency buck-boost
+	  converter via I2C bus. The converter VOUT is configurable.
+	  The charger BOB will need to be programmed when charger source
+	  becomes available. Say Y here to enable the regulator driver for
+	  the converter.
+
+config REGULATOR_PM3003A
+	tristate "Qualcomm PM3003A High Efficiency Buck Converter"
+	depends on I2C
+	help
+	  This driver controls Qualcomm pm3003a high efficiency buck
+	  converter via I2C bus. The converter VOUT is configurable.
+
+config REGULATOR_RT6160
+	tristate "Richtek RT6160 High Efficiency Buck-Boost Converter"
+	depends on I2C
+	help
+	  This driver controls Richtek RT6160 high efficiency buck-boost
+	  converter via I2C bus. The converter VOUT is configurable.
+
+config RT600_CTRL
+	tristate "Oculus RT600 control driver"
+	default n
+	help
+	    Enable RT600 control driver. This driver controls RT600 state
+		for flashing and reset. RT600 state needs to be modified via
+		sysfs to enable testing of different state transitions and also
+		to ensure RT600 is in the correct state for flashing.
+
+config SPI_STP
+	tristate "STP SPI driver"
+	depends on SPI && EVENT_TRACING
+	default n
+	help
+	  Enable STP SPI driver for data transfer between SoC (master) and slave.
+	  This driver implements the STP protocol on top of the SPI bus,
+	  to facilitate communication between MCU and SoC. Driver supports up to 32
+	  pre-configured STP channels. Each STP channel is exposed as a dedicated
+	  character device, interfaceable through syscalls
+
+config SPI_STP_INTERFACE
+	tristate "STP communication interface with the kernel"
+	depends on SPI_STP
+	help
+	  Enable communicating with STP in the kernel.
+
+config SPI_STP_I2C
+	tristate "I2C Bus over STP driver"
+	depends on SPI_STP_INTERFACE
+	help
+	  Enable I2C bus driver over STP.
+
+config ST60_CTRL
+	tristate "Meta ST60 control driver"
+	default n
+	help
+	  Enable ST60 control driver.
+
+config METABATTERY
+	tristate "Kernel Battery Driver"
+	depends on SPI_STP_INTERFACE
+	help
+	  Enable battery interface.
+
+config VENDOR_DT_OUTPUT_DISABLE
+	bool "Disable building of device trees for test platforms"
+	default y
+	help
+	  Building Qualcomm kernels with default flags causes serveral unrelated
+	  device-trees to be built by default. Don't build them when
+	  VENDOR_DT_OUTPUT_DISABLE is set since we don't need any of these on Meta
+	  platforms.
+
+config VIRTUAL_SENSOR_UTILS
+	tristate "Virtual Sensor Utilities"
+	default n
+	help
+	  This driver implements virtual thermal sensor helper functionality.
+
+config METASOC
+	tristate "Meta state of charge implementation"
+	default n
+	help
+	  Enable generation of metasoc in max17332 battery driver
+
+config PCI_MSM_GPIO_INIT_LEGACY
+    depends on PCI_MSM
+    bool "Use legacy GPIO initialization"
+
+config MCU_THERMISTOR
+	tristate "Kernel MCU Thermistor Driver"
+	depends on SPI_STP_INTERFACE
+	help
+	  Enable mcu thermistor interface.
+
+source "drivers/staging/oculus/mcu/Kconfig"
+
+endif # OCULUS

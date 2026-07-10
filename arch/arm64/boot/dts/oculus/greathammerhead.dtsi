@@ -1,0 +1,14 @@
+/dts-v1/;
+/plugin/;
+
+#include "hammerhead.dtsi"
+#include "hammerhead-thermal.dtsi"
+#include "meta-neo-camera-imx681-ao.dtsi"
+
+&rt600_ctrl {
+	nirq-mcu-map = <0 22>;
+};
+
+&sdhc_1 {
+        meta,biwin-ffu-enable;
+};

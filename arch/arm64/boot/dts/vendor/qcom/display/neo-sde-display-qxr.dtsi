@@ -1,0 +1,45 @@
+#include "neo-sde-display.dtsi"
+
+&dsi_dual_rdp370f_fsc_vid {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,panel-rgb-left-led = <&isl97900_left>;
+	qcom,panel-rgb-right-led = <&isl97900_right>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_i2c";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <1023>;
+	qcom,mdss-brightness-max-level = <1023>;
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+};
+
+&dsi_dual_rdp370f_rgb_vid {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,panel-rgb-left-led = <&isl97900_left>;
+	qcom,panel-rgb-right-led = <&isl97900_right>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_i2c";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <1023>;
+	qcom,mdss-brightness-max-level = <1023>;
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+};
+
+&sim_dual_fsc_vid {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_external";
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+};
+
+&sde_dsi {
+	qcom,dsi-default-panel = <&dsi_dual_rdp370f_fsc_vid>;
+};
+
+&qupv3_se4_i2c {
+	status = "ok";
+	isl97900_left: isl97900_left@28 {
+		compatible = "qcom,isl97900-led";
+		reg = <0x28>;
+	};
+	isl97900_right: isl97900_right@29 {
+		compatible = "qcom,isl97900-led";
+		reg = <0x29>;
+	};
+};

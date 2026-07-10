@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/dts-v1/;
+/plugin/;
+
+#include "meg2.dtsi"
+#include "meg2-avo.dtsi"
+
+/ {
+	model = "Meg2 Dev0 (Phase1) NFF";
+	compatible = "meta,meg2";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xE1>;
+};

@@ -1,0 +1,37 @@
+/dts-v1/;
+/plugin/;
+
+#include "greatwhite.dtsi"
+#include "greatwhite-evt1-thermal.dtsi"
+/ {
+	model = "Greatwhite EVT1 DOE2 (Onewire)";
+	compatible = "meta,greatwhite", "meta,greatwhite-evt1";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xbc>;
+};
+
+&max77813 {
+    status="disabled";
+};
+
+/* Display card (Celeste) I2C bus: */
+
+&qupv3_se4_i2c {
+	status = "ok";
+};
+
+
+#include "meta-rt685-rt700.dtsi"
+#include "gw-p1-power-slider.dtsi"
+#include "greatwhite-hyperoff-rt700.dtsi"
+
+&rt600_ctrl {
+	meta,rt700-override;
+	assert-gpio = <&tlmm 80 0>;
+};
+
+&usb_conn_gpio{
+	vbus-gpio = <&tlmm 6 GPIO_ACTIVE_LOW>;
+	vchrg-debug-detect-gpio = <&tlmm 11 GPIO_ACTIVE_LOW>;
+	meta,enable-vchrg-debug-detect;
+};

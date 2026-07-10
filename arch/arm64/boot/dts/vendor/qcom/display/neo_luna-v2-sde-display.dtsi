@@ -1,0 +1,87 @@
+#include "neo-sde-display.dtsi"
+
+&tlmm {
+	display_panel_avdd_default: display_panel_avdd_default {
+		mux {
+			pins = "gpio11";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio11";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+
+	display_panel_avee_default: display_panel_avee_default {
+		mux {
+			pins = "gpio109";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio109";
+			drive-strength = <8>;
+			bias-disable = <0>;
+			output-high;
+		};
+	};
+};
+
+&soc {
+	display_panel_avdd: display_gpio_regulator@2 {
+		compatible = "qti-regulator-fixed";
+		regulator-name = "display_panel_avdd";
+		regulator-min-microvolt = <5500000>;
+		regulator-max-microvolt = <5500000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 11 0>;
+		enable-active-high;
+		regulator-boot-on;
+		proxy-supply = <&display_panel_avdd>;
+		qcom,proxy-consumer-enable;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_panel_avdd_default>;
+	};
+
+	display_panel_avee: display_gpio_regulator@3 {
+		compatible = "qti-regulator-fixed";
+		regulator-name = "display_panel_avee";
+		regulator-min-microvolt = <5500000>;
+		regulator-max-microvolt = <5500000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 109 0>;
+		enable-active-high;
+		regulator-boot-on;
+		proxy-supply = <&display_panel_avee>;
+		qcom,proxy-consumer-enable;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_panel_avee_default>;
+	};
+
+	disp_rdump_memory: disp_rdump_region@eca00000 {
+		reg = <0xeca00000 0x00800000>;
+		label = "disp_rdump_region";
+	};
+};
+
+&reserved_memory {
+	splash_memory: splash_region {
+		reg = <0x0 0xeca00000 0x0 0x00190000>;
+		label = "cont_splash_region";
+	};
+};
+
+&sde_dsi {
+	avdd-supply = <&display_panel_avdd>;
+	avee-supply = <&display_panel_avee>;
+};
+
+&mdss_mdp {
+	qcom,sde-dram-efficiency = <64>;
+	qcom,sde-cdp-setting = <1 1>, <1 0>;
+	qcom,sde-enable-hibernation;
+	connectors = <&sde_dsi &sde_dsi1 &smmu_sde_unsec &smmu_sde_sec &sde_rscc &sde_wb>;
+};

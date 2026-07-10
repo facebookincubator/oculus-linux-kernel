@@ -1,0 +1,230 @@
+&qupv3_se4_i2c_active {
+    config {
+        drive-strength = <4>;
+    };
+};
+
+&qupv3_se4_i2c_sleep {
+    config {
+        drive-strength = <4>;
+    };
+};
+
+&qupv3_se4_i2c {
+	qcom,clk-freq-out = <1000000>;
+
+	pmicOP03010: pmicOP03010@40 {
+		compatible = "meta,pmic-i2c-OP03010";
+		regulator-name = "pmicOP03010";
+		reg = <0x40>;
+		status = "ok";
+		continuous-splash;
+		pmic-gpios = <&tlmm 116 GPIO_ACTIVE_HIGH>;
+	};
+
+	lcosOP03010: lcosOP03010@64 {
+		compatible = "meta,lcos-i2c-OP03010";
+		reg = <0x64>;
+		status = "ok";
+		lcos-gpios = <&tlmm 12 GPIO_ACTIVE_HIGH>;
+
+		#thermal-sensor-cells = <0>;
+	};
+
+	pmicOP02220: pmicOP02220@44 {
+		compatible = "meta,pmic-i2c-OP02220";
+		regulator-name = "pmicOP02220";
+		reg = <0x44>;
+		status = "ok";
+	};
+
+
+	lcosOP02220BA: lcosOP02220BA@65 {
+		compatible = "meta,lcos-i2c-OP02220";
+		reg = <0x65>;
+		status = "ok";
+		lcos-gpios = <&tlmm 12 GPIO_ACTIVE_HIGH>,
+			<&tlmm 116 GPIO_ACTIVE_HIGH>,
+			<&tlmm 117 GPIO_ACTIVE_HIGH>;
+	};
+
+	dispboardtemp:max31875@48 {
+		compatible = "meta,max31875-i2c";
+		reg = <0x48>;
+		status = "ok";
+
+		pmic-supply = "pmicOP03010";
+		#thermal-sensor-cells = <0>;
+	};
+
+	rbtemp:max31875@49 {
+		compatible = "meta,max31875-i2c";
+		reg = <0x49>;
+		status = "ok";
+
+		pmic-supply = "pmicOP03010";
+		#thermal-sensor-cells = <0>;
+	};
+
+	gtemp:max31875@4A {
+		compatible = "meta,max31875-i2c";
+		reg = <0x4A>;
+		status = "ok";
+
+		pmic-supply = "pmicOP03010";
+		#thermal-sensor-cells = <0>;
+	};
+
+	leddriver:raa491901@29 {
+		compatible = "meta,raa491901-i2c";
+		reg = <0x29>;
+		status = "ok";
+		ledbitres-gpio = <&tlmm 28 GPIO_ACTIVE_HIGH>;
+		ledenable-gpio = <&tlmm 117 GPIO_ACTIVE_HIGH>;
+
+		interpolation-coeffs-high-res = <28800 288>;
+		interpolation-coeffs-low-res = <324010 2238>;
+	};
+};
+
+&thermal_zones {
+	display-lcostemp {
+		thermal-governor = "user_space";
+		polling-delay = <5000>;
+		polling-delay-passive = <0>;
+
+		thermal-sensors = <&lcosOP03010 0>;
+
+		trips {
+			lcos_temp_alert0: trip-point0 {
+				temperature = <40000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			lcos_temp_alert1: trip-point1 {
+				temperature = <46000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			lcos_temp_alert2: trip-point2 {
+				temperature = <52000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			lcos_temp_alert3: trip-point3 {
+				temperature = <58000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			lcos_temp_alert4: trip-point4 {
+				temperature = <64000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			lcos_temp_alert5: trip-point5 {
+				temperature = <70000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+		};
+	};
+
+	display-boardtemp {
+		thermal-governor = "user_space";
+		polling-delay = <5000>;
+		polling-delay-passive = <0>;
+
+		thermal-sensors = <&dispboardtemp 0>;
+
+		trips {
+			displayboardtemp_alert0: trip-point0 {
+				temperature = <70000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+		};
+	};
+
+	display-gtemp {
+		thermal-governor = "user_space";
+		polling-delay = <5000>;
+		polling-delay-passive = <0>;
+
+		thermal-sensors = <&gtemp 0>;
+
+		trips {
+			gtemp_alert0: trip-point0 {
+				temperature = <40000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			gtemp_alert1: trip-point1 {
+				temperature = <46000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			gtemp_alert2: trip-point2 {
+				temperature = <52000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			gtemp_alert3: trip-point3 {
+				temperature = <58000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			gtemp_alert4: trip-point4 {
+				temperature = <64000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			gtemp_alert5: trip-point5 {
+				temperature = <85000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+		};
+	};
+
+
+	display-rbtemp {
+		thermal-governor = "user_space";
+		polling-delay = <5000>;
+		polling-delay-passive = <0>;
+
+		thermal-sensors = <&rbtemp 0>;
+
+		trips {
+			rbtemp_alert0: trip-point0 {
+				temperature = <40000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			rbtemp_alert1: trip-point1 {
+				temperature = <46000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			rbtemp_alert2: trip-point2 {
+				temperature = <52000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			rbtemp_alert3: trip-point3 {
+				temperature = <58000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			rbtemp_alert4: trip-point4 {
+				temperature = <64000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+			rbtemp_alert5: trip-point5 {
+				temperature = <85000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+		};
+	};
+};

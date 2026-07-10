@@ -1,0 +1,42 @@
+/dts-v1/;
+/plugin/;
+
+#include "greatwhite.dtsi"
+/ {
+	model = "Greatwhite Dev1.0";
+	compatible = "meta,greatwhite", "meta,greatwhite-dev1";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xbb>;
+};
+
+&max77813 {
+    status="disabled";
+};
+
+/* Display card (Celeste) I2C bus: */
+
+&qupv3_se4_i2c {
+	status = "ok";
+};
+
+#include "gw-mipi-mux.dtsi"
+
+#include "meta-rt685-rt700.dtsi"
+#include "greatwhite-display-p1.dtsi"
+#include "gw-p1-power-slider.dtsi"
+#include "greatwhite-hyperoff-rt700.dtsi"
+
+&rt600_ctrl {
+	meta,rt700-override;
+	assert-gpio = <&tlmm 80 0>;
+};
+
+&sdhc_1 {
+        meta,biwin-ffu-enable;
+};
+
+&usb_conn_gpio{
+	vbus-gpio = <&tlmm 6 GPIO_ACTIVE_LOW>;
+	vchrg-debug-detect-gpio = <&tlmm 11 GPIO_ACTIVE_LOW>;
+	meta,enable-vchrg-debug-detect;
+};

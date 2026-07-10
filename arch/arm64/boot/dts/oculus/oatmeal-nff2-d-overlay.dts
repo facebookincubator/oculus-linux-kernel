@@ -1,0 +1,66 @@
+/dts-v1/;
+/plugin/;
+
+#include "oatmeal.dtsi"
+
+/ {
+        model = "Oatmeal NFF2-D";
+        compatible = "meta,oatmeal", "meta,oatmeal-nff2-d";
+        qcom,msm-id = <579 0x10000>;
+        qcom,board-id = <34 0xc8>;
+};
+
+&pcal6408 {
+        status = "ok";
+};
+
+&tps61280 {
+        status = "ok";
+};
+
+&bbc_ctrl {
+        /* vsys calculate:
+         * Radc and R768 are connected parallel,
+         * the paralleled resistor is named Rpara,
+         * then it in series with R767
+         * In DVT:
+         * R767=200Kohm, R768=453Kohm, Radc=10Mohm
+         * Rpara=R768*Radc/(R768+Radc)
+         *      =453K*10M/(453K+10M)
+         *      =433368ohm
+         * vsys = vsys_adc*(R767+Rpara)/Rpara
+         *      = vsys_adc*(200k+433368)/433368
+         *      = vsys_adc*1.461501
+         */
+        vsys-convert-coeff = <1461501>;
+        default-support-bbc-batt-ini = /bits/ 16 <0x35 0x36 0x39>;
+        optional-support-bbc-batt-ini = /bits/ 16 <0x37 0x38>;
+        status = "ok";
+};
+
+&ads1115 {
+        channels = "v_diff0",
+                   "v_diff1",
+                   "v_diff2",
+                   "v_diff3",
+                   "cc1",
+                   "cc2",
+                   "vsys",
+                   "iio_channel_temp";
+
+        iio_channel_temp {
+                reg = <0x7>;
+                ti,gain = <0x0>;
+                ti,datarate = <0x7>;
+                single-mode-only;
+        };
+};
+
+&iio_channel_temp_sensor {
+        io-channel-names = "iio_channel_temp";
+        status = "ok";
+};
+
+&usb_temp_zone {
+        status = "ok";
+};

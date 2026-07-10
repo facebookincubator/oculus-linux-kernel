@@ -1,0 +1,40 @@
+/dts-v1/;
+/plugin/;
+
+#include "greatwhite.dtsi"
+
+/ {
+	model = "Greatwhite ULED";
+	compatible = "meta,greatwhite", "meta,greatwhite-uled";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xb9>;
+};
+
+&max17332 {
+	interrupts = <7 IRQ_TYPE_LEVEL_HIGH>;
+	pinctrl-names = "default";
+	max17332,max-bob-voltage-uv = <4550000>;
+	max17332,min-bob-voltage-uv = <4000000>;
+	max17332,bob-voltage-delta-uv = <150000>;
+	max17332,bob-voltage-round-up = <1>;
+	battery {
+		/* disable FG update */
+		fg-config-version   = /bits/ 8 <0>;
+		cap-low-level		= /bits/ 8 <15>;
+	};
+};
+
+&max77813 {
+    status="disabled";
+};
+
+/* Display card (Celeste) I2C bus: */
+
+&qupv3_se4_i2c {
+	status = "ok";
+};
+
+
+#include "meta-rt685-rt700.dtsi"
+#include "gw-p1-power-slider.dtsi"
+#include "greatwhite-display-jbd4020.dtsi"

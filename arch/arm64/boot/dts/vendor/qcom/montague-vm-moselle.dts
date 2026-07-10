@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "ravelin-vm.dtsi"
+#include "ravelin-vm-qrd.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Montague Moselle QRD";
+	compatible = "qcom,montague-idp", "qcom,montague", "qcom,idp";
+	qcom,board-id = <0x10022 3>;
+};

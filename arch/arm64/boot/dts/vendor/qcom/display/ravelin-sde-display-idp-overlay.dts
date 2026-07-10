@@ -1,0 +1,17 @@
+/dts-v1/;
+/plugin/;
+
+#include "ravelin-sde-display-idp.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ravelin IDP";
+	compatible = "qcom,ravelin-idp", "qcom,ravelin", "qcom,idp";
+	qcom,msm-id = <568 0x10000>, <602 0x10000>,
+			<581 0x10000>, <582 0x10000>,
+			<653 0x10000>, <654 0x10000>,
+			<734 0x10000>;
+	qcom,board-id = <34 0>, <34 1>, <34 0x600>, <34 0x601>,
+			<0x10022 0x4>, <0x10022 3>, <0x10022 0x5>,
+			<0x10022 0x6>, <0x10022 0x7>, <0x10022 0x08>,
+			<0x10022 0x09>, <0x10022 0x0>;
+};

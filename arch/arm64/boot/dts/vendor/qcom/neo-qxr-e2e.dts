@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "neo.dtsi"
+#include "neo-qxr-e2e.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. NEO QXR E2E";
+	compatible = "qcom,neo", "qcom,neo-qxr";
+	qcom,board-id = <0x10026 0x2>;
+};

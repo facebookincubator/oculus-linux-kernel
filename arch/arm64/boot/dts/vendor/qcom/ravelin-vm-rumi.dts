@@ -1,0 +1,10 @@
+/dts-v1/;
+
+#include "ravelin-vm.dtsi"
+#include "ravelin-vm-rumi.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ravelin SVM RUMI";
+	compatible = "qcom,ravelin-rumi", "qcom,ravelin", "qcom,rumi";
+	qcom,board-id = <15 0>;
+};

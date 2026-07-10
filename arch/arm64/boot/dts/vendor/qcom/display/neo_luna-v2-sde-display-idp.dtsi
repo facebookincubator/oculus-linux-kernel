@@ -1,0 +1,122 @@
+#include "neo_luna-v2-sde-display.dtsi"
+
+&dsi_vtdr6130_amoled_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-min-level = <10>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,mdss-brightness-max-level = <8191>;
+	qcom,mdss-dsi-bl-inverted-dbv;
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+};
+
+&dsi_vtdr6130_amoled_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-min-level = <10>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,mdss-brightness-max-level = <8191>;
+	qcom,mdss-dsi-bl-inverted-dbv;
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+};
+
+&dsi_sy103_1280x720_60hz_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_oled>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-ctrl-dcs-subtype = <0xC2>;
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <511>;
+	qcom,mdss-brightness-max-level = <511>;
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+};
+
+&dsi_sy103_1920x1080_60hz_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_oled>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-ctrl-dcs-subtype = <0xC2>;
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <511>;
+	qcom,mdss-brightness-max-level = <511>;
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+};
+
+&dsi_sim_1280x1280_60hz_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,panel-sec-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-sec-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <511>;
+	qcom,mdss-brightness-max-level = <511>;
+};
+
+&dsi_sy103_1280x1280_60hz_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_oled>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <511>;
+	qcom,mdss-brightness-max-level = <511>;
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+};
+
+&dsi_sy103_dual_2560x1280_60hz_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_oled>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-ctrl-dcs-subtype = <0xC2>;
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <511>;
+	qcom,mdss-brightness-max-level = <511>;
+	qcom,platform-reset-gpio = <&tlmm 12 0>;
+	qcom,mdss-dsi-display-timings {
+		timing@0 {
+			qcom,mdss-dsi-on-command = [
+				15 01 00 00 00 00 02 03 80
+				15 01 00 00 00 00 02 53 29
+				39 01 00 00 00 00 03 51 FF 01
+				15 01 00 00 00 00 02 69 01
+				15 01 00 00 00 00 02 6B 00
+				39 01 00 00 00 00 05 80 01 40 40 11
+				39 01 00 00 00 00 08 81 03 64 00 10 00
+				   2C 00
+				39 01 00 00 00 00 08 82 03 64 00 10 00
+				   2C 00
+				15 01 00 00 00 00 02 35 00
+				15 01 00 00 00 00 02 25 01
+				39 01 00 00 00 00 03 F0 AA 11
+				39 01 00 00 00 00 04 C0 00 04 00
+				39 01 00 00 00 00 0A C2 00 40 03 FF 03
+				   FF 00 90 82
+				39 01 00 00 00 00 03 F0 AA 12
+				15 01 00 00 00 00 02 D3 20
+				39 01 00 00 00 00 03 BF 37 BE
+				39 01 00 00 00 00 03 FF 5A 81
+				15 01 00 00 00 00 02 65 0B
+				39 01 00 00 14 00 0E F9 58 5F 66 6D 74
+				   7B 82 89 90 97 9E A5 AC
+				05 01 00 00 64 00 01 11
+
+				/* Screen rotations to fix the invert mounted right-eye panel. */
+				15 00 00 00 00 00 02 36 03
+				15 00 00 80 00 00 02 36 00
+
+				05 01 00 00 14 00 01 29
+				39 01 00 00 00 00 03 F0 AA 11
+				15 01 00 00 00 00 02 C0 FF
+			];
+		};
+	};
+};
+
+&dsi_sim_dsc_375_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&dsi_sim_dsc_10b_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&sde_dsi {
+	qcom,dsi-default-panel = <&dsi_sy103_1280x720_60hz_video>;
+};

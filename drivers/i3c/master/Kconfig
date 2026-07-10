@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config CDNS_I3C_MASTER
+	tristate "Cadence I3C master driver"
+	depends on I3C
+	depends on HAS_IOMEM
+	depends on !(ALPHA || PARISC)
+	help
+	  Enable this driver if you want to support Cadence I3C master block.
+
+config DW_I3C_MASTER
+	tristate "Synospsys DesignWare I3C master driver"
+	depends on I3C
+	depends on HAS_IOMEM
+	depends on !(ALPHA || PARISC)
+	# ALPHA and PARISC needs {read,write}sl()
+	help
+	  Support for Synopsys DesignWare MIPI I3C Controller.
+
+	  For details please see
+	  https://www.synopsys.com/dw/ipdir.php?ds=mipi_i3c
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called dw-i3c-master.
+
+config I3C_MASTER_MSM_GENI
+	tristate "Qualcomm Technologies Inc.'s GENI based I3C controller"
+	depends on ARCH_QCOM
+	depends on I3C
+	depends on MSM_GENI_SE
+	help
+	  If you say yes to this option, support will be included for the
+	  built-in I3C interface on the Qualcomm Technologies Inc SoCs.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called i3c-master-msm-geni.

@@ -1,0 +1,64 @@
+&tlmm {
+	pinctrl-names = "default";
+	pinctrl-0 = <
+	    &soc_slider_defaults
+		&mcu_to_soc_disp_dd_state
+		&action_button
+		&vchrg_gpio_pin_default
+	>;
+
+
+	soc_slider_defaults: soc_slider_defaults {
+		mux {
+			pins = "gpio39";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio39";
+			drive-strength = <2>;
+			bias-pull-up;
+			input-enable;
+			output-high;
+		};
+	};
+
+    mcu_to_soc_disp_dd_state: mcu_to_soc_disp_dd_state {
+		mux {
+			pins = "gpio80";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio80";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	action_button: action_button {
+		mux {
+			pins = "gpio62";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio62";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	vchrg_gpio_pin_default: vchrg_gpio_pin_default {
+		mux {
+			pins ="gpio6", "gpio11";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio6", "gpio11";
+			drive-strength = <2>;
+			bias-disable;
+			input-enable;
+		};
+	};
+};

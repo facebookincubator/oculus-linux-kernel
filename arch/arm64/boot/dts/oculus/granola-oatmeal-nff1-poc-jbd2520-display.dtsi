@@ -1,0 +1,178 @@
+// SPDX-License-Identifier: GPL-2.0
+
+#include "vendor-base/qcom/display/neo-sde.dtsi"
+#include "vendor-base/qcom/display/neo_luna-v2-sde-display.dtsi"
+#include "granola-oatmeal-nff1-poc-display-gpios.dtsi"
+#include "granola-oatmeal-jbd2520-panel-left.dtsi"
+#include "granola-oatmeal-jbd2520-panel-right.dtsi"
+
+&soc {
+	i2c_mux: i2c-mux {
+		compatible = "i2c-mux-gpio";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c-parent = <&qupv3_se4_i2c>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2c_mux_sel>;
+
+		mux-gpios = <&tlmm 117 GPIO_ACTIVE_HIGH>;
+
+		i2c@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			jbd2520_left: jbd2520@52 {
+				compatible = "meta,jbd2520-i2c";
+				reg = <0x52>;
+				#thermal-sensor-cells = <0>;
+
+				vddi-supply = <&disp_avee_neg_2p2>;
+				avdd-supply = <&pmicDA9172>;
+
+				reset-gpios = <&tlmm 53 GPIO_ACTIVE_LOW>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&disp0_reset_n>;
+
+				status = "okay";
+
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					port@0 {
+						reg = <0>;
+						jbd2520_left_dsi_in: endpoint {
+							remote-endpoint = <&ext_dsi0_out>;
+						};
+					};
+				};
+			};
+		};
+
+		i2c@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			jbd2520_right: jbd2520@52 {
+				compatible = "meta,jbd2520-i2c";
+				reg = <0x52>;
+				#thermal-sensor-cells = <0>;
+
+				vddi-supply = <&disp_avee_neg_2p2>;
+				avdd-supply = <&pmicDA9172>;
+
+				status = "okay";
+
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					port@0 {
+						reg = <0>;
+						jbd2520_right_dsi_in: endpoint {
+							remote-endpoint = <&ext_dsi1_out>;
+						};
+					};
+				};
+			};
+		};
+	};
+};
+
+&sde_dsi {
+	qcom,dsi-default-panel = <&dsi_jbd2520_600x800_60hz_left>;
+	qcom,dsi-display-active;
+
+	qcom,mdp = <&mdss_mdp>;
+	qcom,display-type = "primary";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			ext_dsi0_out: endpoint {
+				remote-endpoint = <&jbd2520_left_dsi_in>;
+			};
+		};
+	};
+};
+
+&sde_dsi1 {
+	qcom,dsi-default-panel = <&dsi_jbd2520_600x800_60hz_right>;
+	qcom,dsi-display-active;
+
+	qcom,mdp = <&mdss_mdp>;
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			ext_dsi1_out: endpoint {
+				remote-endpoint = <&jbd2520_right_dsi_in>;
+			};
+		};
+	};
+};
+
+&mdss_mdp {
+	bridges = <&jbd2520_left>, <&jbd2520_right>;
+};
+
+&thermal_zones {
+	jbd2520-left-temp {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&jbd2520_left>;
+	};
+
+	jbd2520-right-temp {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&jbd2520_right>;
+	};
+
+	left-display-temp {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&left_display_temp>;
+	};
+
+	right-display-temp {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&right_display_temp>;
+	};
+
+	da9172-pmic-temp {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&pmicDA9172>;
+	};
+};
+
+/* Chain regulators so they can be enabled/disabled together. */
+&disp_avdd_1p2 {
+	vin-supply = <&disp_vddi_1p8>;
+};
+
+&disp_avee_neg_2p2 {
+	vin-supply = <&disp_avdd_1p2>;
+};
+
+&left_display_temp {
+	status = "okay";
+};
+
+&right_display_temp {
+	status = "okay";
+};

@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/**
+ * Device Tree Overlay does not support removing nodes or properties so we
+ * need this dtsi file to be compiled into dtb to properly remove the
+ * properties or the nodes.
+ */
+
+/delete-node/ &ramoops_mem;
+
+&trusted_apps_mem {
+	reg = <0x0 0xe9300000 0x0 0x700000>;
+	no-map;
+};
+
+&qupv3_se5_i2c {
+	/delete-property/ qcom,shared;
+};

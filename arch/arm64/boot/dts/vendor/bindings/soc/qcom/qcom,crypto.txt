@@ -1,0 +1,17 @@
+QTI Microdump Collector Driver
+
+This driver registers for Hibernate Power Management ops
+and notifys TZ on Hibernate exit.
+
+- compatible:
+	Usage: required
+	Value type: <stringlist>
+	Definition: must be "qcom,crypto"
+
+= EXAMPLE
+
+&soc {
+	crypto_node {
+		compatible = "qcom,crypto";
+	};
+};

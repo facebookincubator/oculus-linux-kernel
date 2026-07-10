@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include "ukee.dtsi"
+#include "ukee-qrd.dtsi"
+#include "waipio-pm8010-spmi.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Ukee QRD with PM8010";
+	compatible = "qcom,ukee-qrd", "qcom,ukee", "qcom,qrd";
+	qcom,board-id = <0x1000B 0>;
+};

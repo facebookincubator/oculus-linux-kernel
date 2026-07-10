@@ -1,0 +1,9 @@
+#include "khaje-vidc.dtsi"
+
+/* Khaje IOT-specific changes */
+&msm_vidc {
+
+	compatible = "qcom,msm-vidc", "qcom,msm-vidc-khaje-iot", "qcom,msm-vidc-ar50lt";
+	vidc,firmware-name = "venus_4mb";
+
+};

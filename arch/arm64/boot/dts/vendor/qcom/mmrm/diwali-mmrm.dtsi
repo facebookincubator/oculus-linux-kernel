@@ -1,0 +1,6 @@
+&soc {
+	msm_mmrm: qcom,mmrm {
+		compatible = "qcom,msm-mmrm", "qcom,waipio-mmrm";
+		status = "okay";
+	};
+};
