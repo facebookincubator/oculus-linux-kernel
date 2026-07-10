@@ -1,0 +1,30 @@
+/* STMicroelectronics lsm303agr eCompass sensor */
+
+Required properties:
+	- compatible : should be:
+		- Accelerometer: "st,lsm303agr-accel"
+		- Magnetometer:  "st,lsm303agr-magn"
+	- reg : the I2C address of the sensor
+
+Optional properties:
+	- interrupt-parent : should be the phandle for the interrupt controller
+	- interrupts : interrupt mapping for GPIO IRQ, it should by configured with
+		flags IRQ_TYPE_EDGE_RISING
+
+Example:
+
+lsm303agr-accel@19 {
+	compatible = "st,lsm303agr_accel";
+	status = "ok";
+	reg = <0x19>;
+	interrupts = <1 IRQ_TYPE_EDGE_RISING>;
+	interrupt-parent = <&gpio>;
+};
+
+lsm303agr-magn@1e {
+	compatible = "st,lsm303agr_magn";
+	status = "ok";
+	reg = <0x1e>;
+	interrupts = <2 IRQ_TYPE_EDGE_RISING>;
+	interrupt-parent = <&gpio>;
+};

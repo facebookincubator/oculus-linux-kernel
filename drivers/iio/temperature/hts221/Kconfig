@@ -1,0 +1,23 @@
+
+config IIO_HTS221
+	tristate "STMicroelectronics HTS221 sensor Driver"
+	depends on (I2C || SPI) && SYSFS
+	select IIO_BUFFER
+	select IIO_TRIGGERED_BUFFER
+	select IIO_HTS221_I2C if (I2C)
+	select IIO_HTS221_SPI if (SPI_MASTER)
+	help
+	  Say yes here to build support for STMicroelectronics HTS221
+	  temperature-humidity sensor
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called hts221.
+
+config IIO_HTS221_I2C
+	tristate
+	depends on IIO_HTS221
+
+config IIO_HTS221_SPI
+	tristate
+	depends on IIO_HTS221
+

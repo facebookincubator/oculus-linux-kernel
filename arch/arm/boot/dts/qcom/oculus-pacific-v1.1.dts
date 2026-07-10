@@ -1,0 +1,179 @@
+/* Copyright (c) 2017, Oculus VR.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+
+/dts-v1/;
+
+#include "apq8096pro-v1.1.dtsi"
+#include "oculus-pacific.dtsi"
+
+/ {
+	model = "Oculus Pacific EVT";
+};
+
+&soc {
+	spi_eth_vreg {
+		/delete-property/ gpio;
+	};
+};
+
+&i2c_12 {
+	lis2mdl@1e {
+		status = "ok";
+		compatible = "oculus,lis2mdl";
+		reg = <0x1e>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&lis2mdl_magn_irq_config>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <80 0x2008>;
+		int1-gpio = <&tlmm 80 0x2008>;
+
+		vdd-supply = <&pm8994_l19>;
+		vdd-voltage-min = <1710000>;
+		vdd-voltage-max = <3600000>;
+
+		vio-supply = <&pm8994_l19>;
+		vio-voltage-min = <1710000>;
+		vio-voltage-max = <3600000>;
+	};
+};
+
+&mdss_dsi0 {
+	qcom,platform-enable-gpio = <&pm8994_mpps 5 0>;
+	qcom,platform-dcdc-gpio = <&pm8994_gpios 11 0>;
+};
+
+&pm8994_gpios {
+	gpio@ca00 {
+		qcom,mode = <1>;
+	};
+};
+
+&pm8994_mpps {
+	mpp@a400 { /* MPP 5 */
+		status = "disabled";
+	};
+};
+
+&qusb_phy0 {
+	qcom,qusb-phy-init-seq = <0xD0 0x80
+				0x63 0x84
+				0x83 0x88
+				0x1F 0x8C
+				0x02 0x90
+				0x30 0x08
+				0x79 0x0C
+				0x21 0x10
+				0x14 0x9C
+				0x9F 0x1C
+				0x00 0x18>;
+};
+
+&tlmm {
+	lis2mdl_magn_irq_config: lis2mdl_magn_irq_config {
+		mux {
+			pins = "gpio80";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio80";
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+	};
+
+	spi_5 {
+		spi_5_irq_active: spi_5_irq_active {
+			mux {
+				pins = "gpio115", "gpio131", "gpio132";
+			};
+			config {
+				pins = "gpio115", "gpio131", "gpio132";
+			};
+		};
+
+		spi_5_irq_sleep: spi_5_irq_sleep {
+			mux {
+				pins = "gpio115", "gpio131", "gpio132";
+			};
+			config {
+				pins = "gpio115", "gpio131", "gpio132";
+			};
+		};
+
+		spi_5_cs_active: spi_5_cs_active {
+			mux {
+				pins = "gpio0", "gpio25", "gpio83";
+			};
+			config {
+				pins = "gpio0", "gpio25", "gpio83";
+			};
+		};
+
+		spi_5_cs_sleep: spi_5_cs_sleep {
+			mux {
+				pins = "gpio0", "gpio25", "gpio83";
+			};
+			config {
+				pins = "gpio0", "gpio25", "gpio83";
+			};
+		};
+	};
+};
+
+&spi_5 {
+	cs-gpios = <&tlmm 83 0>, <&tlmm 0 0>, <&tlmm 25 0>;
+
+	bmi055-accel@1 {
+		compatible = "oculus,minisensor";
+		reg = <1>;
+
+		interrupts-extended = <&tlmm 131 0>;
+		interrupts-flags = <IRQ_TYPE_EDGE_RISING>;
+
+		spi-max-frequency = <10000000>;
+		spi-cpol;
+		spi-cpha;
+
+		vdd-supply = <&pm8994_lvs2>;
+		vdd-voltage-min = <1710000>;
+		vdd-voltage-max = <3600000>;
+
+		reg-wai-addr = <0x00>;
+		reg-wai-value = <0xfa>;
+
+		startup-time-ms = <3>;
+	};
+
+	bmi055-gyro@2 {
+		compatible = "oculus,minisensor";
+		reg = <2>;
+
+		interrupts-extended = <&tlmm 132 0>;
+		interrupts-flags = <IRQ_TYPE_EDGE_RISING>;
+
+		spi-max-frequency = <10000000>;
+		spi-cpol;
+		spi-cpha;
+
+		vdd-supply = <&pm8994_lvs2>;
+		vdd-voltage-min = <1710000>;
+		vdd-voltage-max = <3600000>;
+
+		reg-wai-addr = <0x00>;
+		reg-wai-value = <0x0f>;
+
+		startup-time-ms = <30>;
+	};
+};
