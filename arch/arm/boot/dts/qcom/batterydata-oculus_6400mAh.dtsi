@@ -1,0 +1,51 @@
+
+qcom,batterydata_oculus_6400mah {
+	/* #2551619_Thundercomm_Oculus_6400mAh_averaged_MasterSlave_Aug30th2016*/
+	qcom,max-voltage-uv = <4200000>;
+	qcom,nom-batt-capacity-mah = <6400>;
+	qcom,v-cutoff-uv = <3600000>;/*added by zlk*/
+	qcom,batt-id-kohm = <100>;/*changed by zlk*/
+	qcom,battery-beta = <0>;
+	qcom,battery-type = "battery_oculus_6400mah";
+	qcom,thermal-coefficients = [c5 86 be 50 d1 37];/*added by zlk*/
+	qcom,chg-rslow-comp-c1 = <3229492>;
+	qcom,chg-rslow-comp-c2 = <3716268>;
+	qcom,chg-rs-to-rslow = <567013>;
+	qcom,chg-rslow-comp-thr = <0x99>;
+	qcom,checksum = <0xA7B0>;
+	qcom,gui-version = "PMI8994GUI - 2.1.6.9";
+	qcom,fg-profile-data = [
+		CF 80 81 88
+		30 8D EA 80
+		40 82 B4 80
+		0F 8C 9E 81
+		DE 81 0C 93
+		7D B5 C0 C1
+		77 19 4A 82
+		02 7B AB 7E
+		98 73 54 82
+		6C 81 39 8E
+		D8 89 68 82
+		54 8A 0D AE
+		F6 BB 95 16
+		BF 19 F4 59
+		FB 6A E1 FA
+		29 43 7A 3C
+		FE 22 00 00
+		EC 3E E6 38
+		FE 1A 00 00
+		00 00 00 00
+		00 00 00 00
+		7B 68 76 63
+		C4 76 4D 78
+		4B 77 00 6B
+		53 76 FE 72
+		BC 75 2B 68
+		A7 70 47 C8
+		21 F6 63 60
+		65 A0 71 0C
+		28 00 FF 36
+		F0 11 30 03
+		00 00 00 0C
+	];
+};

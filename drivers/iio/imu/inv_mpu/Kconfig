@@ -1,0 +1,77 @@
+#
+# inv-mpu-iio driver for Invensense MPU devices
+#
+
+config INV_MPU_IIO
+	tristate "Invensense ICM20xxx devices"
+	depends on (I2C || SPI_MASTER) && SYSFS && IIO && !INV_MPU6050_IIO
+	select IIO_BUFFER
+	select IIO_KFIFO_BUF
+	select IIO_TRIGGER
+	select CRC32
+	default n
+	help
+	  This driver supports the Invensense ICM20xxx devices.
+	  This driver can be built as a module. The module will be called
+	  inv-mpu-iio.
+
+choice
+	prompt "Chip name"
+	depends on INV_MPU_IIO
+
+config INV_MPU_IIO_ICM20648
+	bool "ICM20648/ICM20948"
+	help
+	  Select this if you are using a ICM20648/ICM20948 chip.
+
+config INV_MPU_IIO_ICM20608D
+	bool "ICM20608D/ICM20609/ICM20689"
+	help
+	  Select this if you are using a ICM20608D/ICM20609/ICM20689 chip.
+
+config INV_MPU_IIO_ICM20602
+	bool "ICM20602"
+	help
+	  Select this if you are using a ICM20602 chip.
+
+config INV_MPU_IIO_ICM20690
+	bool "ICM20690"
+	help
+	  Select this if you are using a ICM20690 chip.
+
+endchoice
+
+config INV_MPU_IIO_I2C
+	tristate "Invensense devices on I2C bus"
+	depends on INV_MPU_IIO && I2C
+	default n
+	help
+	  This driver supports Invensense devices on I2C bus.
+	  This driver can be built as a module. The module will be called
+	  inv-mpu-iio-i2c.
+
+config INV_MPU_IIO_SPI
+	tristate "Invensense devices on SPI bus"
+	depends on INV_MPU_IIO && SPI_MASTER
+	default n
+	help
+	  This driver supports Invensense devices on SPI bus.
+	  This driver can be built as a module. The module will be called
+	  inv-mpu-iio-spi.
+
+config DTS_INV_MPU_IIO
+	bool "Invensense driver using Device Tree Structure (DTS)"
+	depends on INV_MPU_IIO
+	default n
+	help
+	  This enables Invensense devices to use Device Tree Structure.
+	  DTS must be enabled in the system.
+
+config INV_MPU_DRAGON_IIO
+	bool "Invensense driver for Dragon board"
+	depends on INV_MPU_IIO
+	default n
+	help
+	  This enables Invensense devices for dragon board platform.
+
+source "drivers/iio/imu/inv_mpu/inv_test/Kconfig"
