@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-only
 #
 # Makefile for the Qualcomm Technologies, Inc. EMAC Gigabit Ethernet driver
 #
 
-obj-$(CONFIG_QCOM_EMAC) += qcom_emac.o
+obj-$(CONFIG_QCOM_EMAC) += qcom-emac.o
 
-qcom_emac-objs := emac_main.o emac_hw.o emac_ethtool.o emac_ptp.o
-qcom_emac-objs += emac_phy.o emac_rgmii.o
-qcom_emac-objs += emac_sgmii.o emac_sgmii_v1.o emac_sgmii_v2.o
+qcom-emac-objs := emac.o emac-mac.o emac-phy.o emac-sgmii.o emac-ethtool.o \
+		  emac-sgmii-fsm9900.o emac-sgmii-qdf2432.o \
+		  emac-sgmii-qdf2400.o

@@ -1,15 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2006-2010 Red Hat, Inc.  All rights reserved.
- *
- * This copyrighted material is made available to anyone wishing to use,
- * modify, copy, or redistribute it subject to the terms and conditions
- * of the GNU General Public License v.2.
  */
 
 #include <linux/miscdevice.h>
 #include <linux/init.h>
 #include <linux/wait.h>
-#include <linux/module.h>
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/poll.h>
@@ -18,6 +14,7 @@
 #include <linux/dlm.h>
 #include <linux/dlm_device.h>
 #include <linux/slab.h>
+#include <linux/sched/signal.h>
 
 #include "dlm_internal.h"
 #include "lockspace.h"
@@ -25,6 +22,7 @@
 #include "lvb_table.h"
 #include "user.h"
 #include "ast.h"
+#include "config.h"
 
 static const char name_prefix[] = "dlm";
 static const struct file_operations device_fops;
@@ -48,7 +46,7 @@ struct dlm_lock_params32 {
 	__u32 bastaddr;
 	__u32 lksb;
 	char lvb[DLM_USER_LVB_LEN];
-	char name[0];
+	char name[];
 };
 
 struct dlm_write_request32 {
@@ -123,6 +121,8 @@ static void compat_input(struct dlm_write_request *kb,
 static void compat_output(struct dlm_lock_result *res,
 			  struct dlm_lock_result32 *res32)
 {
+	memset(res32, 0, sizeof(*res32));
+
 	res32->version[0] = res->version[0];
 	res32->version[1] = res->version[1];
 	res32->version[2] = res->version[2];
@@ -238,6 +238,7 @@ static int device_user_lock(struct dlm_user_proc *proc,
 {
 	struct dlm_ls *ls;
 	struct dlm_user_args *ua;
+	uint32_t lkid;
 	int error = -ENOMEM;
 
 	ls = dlm_find_lockspace_local(proc->lockspace);
@@ -260,12 +261,20 @@ static int device_user_lock(struct dlm_user_proc *proc,
 	ua->bastaddr = params->bastaddr;
 	ua->xid = params->xid;
 
-	if (params->flags & DLM_LKF_CONVERT)
+	if (params->flags & DLM_LKF_CONVERT) {
 		error = dlm_user_convert(ls, ua,
 				         params->mode, params->flags,
 				         params->lkid, params->lvb,
 					 (unsigned long) params->timeout);
-	else {
+	} else if (params->flags & DLM_LKF_ORPHAN) {
+		error = dlm_user_adopt_orphan(ls, ua,
+					 params->mode, params->flags,
+					 params->name, params->namelen,
+					 (unsigned long) params->timeout,
+					 &lkid);
+		if (!error)
+			error = lkid;
+	} else {
 		error = dlm_user_request(ls, ua,
 					 params->mode, params->flags,
 					 params->name, params->namelen,
@@ -346,6 +355,10 @@ static int dlm_device_register(struct dlm_ls *ls, char *name)
 	error = misc_register(&ls->ls_device);
 	if (error) {
 		kfree(ls->ls_device.name);
+		/* this has to be set to NULL
+		 * to avoid a double-free in dlm_device_deregister
+		 */
+		ls->ls_device.name = NULL;
 	}
 fail:
 	return error;
@@ -353,18 +366,15 @@ fail:
 
 int dlm_device_deregister(struct dlm_ls *ls)
 {
-	int error;
-
 	/* The device is not registered.  This happens when the lockspace
 	   was never used from userspace, or when device_create_lockspace()
 	   calls dlm_release_lockspace() after the register fails. */
 	if (!ls->ls_device.name)
 		return 0;
 
-	error = misc_deregister(&ls->ls_device);
-	if (!error)
-		kfree(ls->ls_device.name);
-	return error;
+	misc_deregister(&ls->ls_device);
+	kfree(ls->ls_device.name);
+	return 0;
 }
 
 static int device_user_purge(struct dlm_user_proc *proc,
@@ -392,7 +402,7 @@ static int device_create_lockspace(struct dlm_lspace_params *params)
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
-	error = dlm_new_lockspace(params->name, NULL, params->flags,
+	error = dlm_new_lockspace(params->name, dlm_config.ci_cluster_name, params->flags,
 				  DLM_USER_LVB_LEN, NULL, NULL, NULL,
 				  &lockspace);
 	if (error)
@@ -509,14 +519,9 @@ static ssize_t device_write(struct file *file, const char __user *buf,
 	if (count > sizeof(struct dlm_write_request) + DLM_RESNAME_MAXLEN)
 		return -EINVAL;
 
-	kbuf = kzalloc(count + 1, GFP_NOFS);
-	if (!kbuf)
-		return -ENOMEM;
-
-	if (copy_from_user(kbuf, buf, count)) {
-		error = -EFAULT;
-		goto out_free;
-	}
+	kbuf = memdup_user_nul(buf, count);
+	if (IS_ERR(kbuf))
+		return PTR_ERR(kbuf);
 
 	if (check_version(kbuf)) {
 		error = -EBADE;
@@ -695,7 +700,7 @@ static int copy_result_to_user(struct dlm_user_args *ua, int compat,
 	result.version[0] = DLM_DEVICE_VERSION_MAJOR;
 	result.version[1] = DLM_DEVICE_VERSION_MINOR;
 	result.version[2] = DLM_DEVICE_VERSION_PATCH;
-	memcpy(&result.lksb, &ua->lksb, sizeof(struct dlm_lksb));
+	memcpy(&result.lksb, &ua->lksb, offsetof(struct dlm_lksb, sb_lvbptr));
 	result.user_lksb = ua->user_lksb;
 
 	/* FIXME: dlm1 provides for the user's bastparam/addr to not be updated
@@ -776,6 +781,7 @@ static ssize_t device_read(struct file *file, char __user *buf, size_t count,
 	DECLARE_WAITQUEUE(wait, current);
 	struct dlm_callback cb;
 	int rv, resid, copy_lvb = 0;
+	int old_mode, new_mode;
 
 	if (count == sizeof(struct dlm_device_version)) {
 		rv = copy_version_to_user(buf, count);
@@ -832,6 +838,9 @@ static ssize_t device_read(struct file *file, char __user *buf, size_t count,
 
 	lkb = list_entry(proc->asts.next, struct dlm_lkb, lkb_cb_list);
 
+	/* rem_lkb_callback sets a new lkb_last_cast */
+	old_mode = lkb->lkb_last_cast.mode;
+
 	rv = dlm_rem_lkb_callback(lkb->lkb_resource->res_ls, lkb, &cb, &resid);
 	if (rv < 0) {
 		/* this shouldn't happen; lkb should have been removed from
@@ -855,9 +864,6 @@ static ssize_t device_read(struct file *file, char __user *buf, size_t count,
 	}
 
 	if (cb.flags & DLM_CB_CAST) {
-		int old_mode, new_mode;
-
-		old_mode = lkb->lkb_last_cast.mode;
 		new_mode = cb.mode;
 
 		if (!cb.sb_status && lkb->lkb_lksb->sb_lvbptr &&
@@ -879,7 +885,7 @@ static ssize_t device_read(struct file *file, char __user *buf, size_t count,
 	return rv;
 }
 
-static unsigned int device_poll(struct file *file, poll_table *wait)
+static __poll_t device_poll(struct file *file, poll_table *wait)
 {
 	struct dlm_user_proc *proc = file->private_data;
 
@@ -888,7 +894,7 @@ static unsigned int device_poll(struct file *file, poll_table *wait)
 	spin_lock(&proc->asts_spin);
 	if (!list_empty(&proc->asts)) {
 		spin_unlock(&proc->asts_spin);
-		return POLLIN | POLLRDNORM;
+		return EPOLLIN | EPOLLRDNORM;
 	}
 	spin_unlock(&proc->asts_spin);
 	return 0;

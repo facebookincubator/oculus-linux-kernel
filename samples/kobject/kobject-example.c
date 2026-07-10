@@ -1,11 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Sample kobject implementation
  *
  * Copyright (C) 2004-2007 Greg Kroah-Hartman <greg@kroah.com>
  * Copyright (C) 2007 Novell Inc.
- *
- * Released under the GPL version 2 only.
- *
  */
 #include <linux/kobject.h>
 #include <linux/string.h>
@@ -36,7 +34,12 @@ static ssize_t foo_show(struct kobject *kobj, struct kobj_attribute *attr,
 static ssize_t foo_store(struct kobject *kobj, struct kobj_attribute *attr,
 			 const char *buf, size_t count)
 {
-	sscanf(buf, "%du", &foo);
+	int ret;
+
+	ret = kstrtoint(buf, 10, &foo);
+	if (ret < 0)
+		return ret;
+
 	return count;
 }
 
@@ -63,9 +66,12 @@ static ssize_t b_show(struct kobject *kobj, struct kobj_attribute *attr,
 static ssize_t b_store(struct kobject *kobj, struct kobj_attribute *attr,
 		       const char *buf, size_t count)
 {
-	int var;
+	int var, ret;
 
-	sscanf(buf, "%du", &var);
+	ret = kstrtoint(buf, 10, &var);
+	if (ret < 0)
+		return ret;
+
 	if (strcmp(attr->attr.name, "baz") == 0)
 		baz = var;
 	else
@@ -134,5 +140,5 @@ static void __exit example_exit(void)
 
 module_init(example_init);
 module_exit(example_exit);
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Greg Kroah-Hartman <greg@kroah.com>");

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef USB_F_MASS_STORAGE_H
 #define USB_F_MASS_STORAGE_H
 
@@ -60,17 +61,6 @@ struct fsg_module_parameters {
 struct fsg_common;
 
 /* FSF callback functions */
-struct fsg_operations {
-	/*
-	 * Callback function to call when thread exits.  If no
-	 * callback is set or it returns value lower then zero MSF
-	 * will force eject all LUNs it operates on (including those
-	 * marked as non-removable or with prevent_medium_removal flag
-	 * set).
-	 */
-	int (*thread_exits)(struct fsg_common *common);
-};
-
 struct fsg_lun_opts {
 	struct config_group group;
 	struct fsg_lun *lun;
@@ -100,6 +90,7 @@ struct fsg_lun_config {
 	char removable;
 	char cdrom;
 	char nofua;
+	char inquiry_string[INQUIRY_STRING_LEN];
 };
 
 struct fsg_config {
@@ -124,10 +115,6 @@ fsg_opts_from_func_inst(const struct usb_function_instance *fi)
 	return container_of(fi, struct fsg_opts, func_inst);
 }
 
-void fsg_common_get(struct fsg_common *common);
-
-void fsg_common_put(struct fsg_common *common);
-
 void fsg_common_set_sysfs(struct fsg_common *common, bool sysfs);
 
 int fsg_common_set_num_buffers(struct fsg_common *common, unsigned int n);
@@ -137,16 +124,9 @@ void fsg_common_free_buffers(struct fsg_common *common);
 int fsg_common_set_cdev(struct fsg_common *common,
 			struct usb_composite_dev *cdev, bool can_stall);
 
-void fsg_common_remove_lun(struct fsg_lun *lun, bool sysfs);
+void fsg_common_remove_lun(struct fsg_lun *lun);
 
 void fsg_common_remove_luns(struct fsg_common *common);
-
-void fsg_common_free_luns(struct fsg_common *common);
-
-int fsg_common_set_nluns(struct fsg_common *common, int nluns);
-
-void fsg_common_set_ops(struct fsg_common *common,
-			const struct fsg_operations *ops);
 
 int fsg_common_create_lun(struct fsg_common *common, struct fsg_lun_config *cfg,
 			  unsigned int id, const char *name,
@@ -157,11 +137,8 @@ int fsg_common_create_luns(struct fsg_common *common, struct fsg_config *cfg);
 void fsg_common_set_inquiry_string(struct fsg_common *common, const char *vn,
 				   const char *pn);
 
-int fsg_common_run_thread(struct fsg_common *common);
-
 void fsg_config_from_params(struct fsg_config *cfg,
 			    const struct fsg_module_parameters *params,
 			    unsigned int fsg_num_buffers);
-int fsg_sysfs_update(struct fsg_common *common, struct device *dev,
-				bool create);
+
 #endif /* USB_F_MASS_STORAGE_H */

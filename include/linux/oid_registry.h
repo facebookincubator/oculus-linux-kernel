@@ -1,12 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* ASN.1 Object identifier (OID) registry
  *
  * Copyright (C) 2012 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public Licence
- * as published by the Free Software Foundation; either version
- * 2 of the Licence, or (at your option) any later version.
  */
 
 #ifndef _LINUX_OID_REGISTRY_H
@@ -41,7 +37,7 @@ enum OID {
 	OID_signed_data,		/* 1.2.840.113549.1.7.2 */
 	/* PKCS#9 {iso(1) member-body(2) us(840) rsadsi(113549) pkcs(1) pkcs-9(9)} */
 	OID_email_address,		/* 1.2.840.113549.1.9.1 */
-	OID_content_type,		/* 1.2.840.113549.1.9.3 */
+	OID_contentType,		/* 1.2.840.113549.1.9.3 */
 	OID_messageDigest,		/* 1.2.840.113549.1.9.4 */
 	OID_signingTime,		/* 1.2.840.113549.1.9.5 */
 	OID_smimeCapabilites,		/* 1.2.840.113549.1.9.15 */
@@ -54,6 +50,8 @@ enum OID {
 
 	/* Microsoft Authenticode & Software Publishing */
 	OID_msIndirectData,		/* 1.3.6.1.4.1.311.2.1.4 */
+	OID_msStatementType,		/* 1.3.6.1.4.1.311.2.1.11 */
+	OID_msSpOpusInfo,		/* 1.3.6.1.4.1.311.2.1.12 */
 	OID_msPeImageDataObjId,		/* 1.3.6.1.4.1.311.2.1.15 */
 	OID_msIndividualSPKeyPurpose,	/* 1.3.6.1.4.1.311.2.1.21 */
 	OID_msOutlookExpress,		/* 1.3.6.1.4.1.311.16.4 */
@@ -61,6 +59,9 @@ enum OID {
 	OID_certAuthInfoAccess,		/* 1.3.6.1.5.5.7.1.1 */
 	OID_sha1,			/* 1.3.14.3.2.26 */
 	OID_sha256,			/* 2.16.840.1.101.3.4.2.1 */
+	OID_sha384,			/* 2.16.840.1.101.3.4.2.2 */
+	OID_sha512,			/* 2.16.840.1.101.3.4.2.3 */
+	OID_sha224,			/* 2.16.840.1.101.3.4.2.4 */
 
 	/* Distinguished Name attribute IDs [RFC 2256] */
 	OID_commonName,			/* 2.5.4.3 */
@@ -87,6 +88,30 @@ enum OID {
 	OID_certPolicies,		/* 2.5.29.32 */
 	OID_authorityKeyIdentifier,	/* 2.5.29.35 */
 	OID_extKeyUsage,		/* 2.5.29.37 */
+
+	/* EC-RDSA */
+	OID_gostCPSignA,		/* 1.2.643.2.2.35.1 */
+	OID_gostCPSignB,		/* 1.2.643.2.2.35.2 */
+	OID_gostCPSignC,		/* 1.2.643.2.2.35.3 */
+	OID_gost2012PKey256,		/* 1.2.643.7.1.1.1.1 */
+	OID_gost2012PKey512,		/* 1.2.643.7.1.1.1.2 */
+	OID_gost2012Digest256,		/* 1.2.643.7.1.1.2.2 */
+	OID_gost2012Digest512,		/* 1.2.643.7.1.1.2.3 */
+	OID_gost2012Signature256,	/* 1.2.643.7.1.1.3.2 */
+	OID_gost2012Signature512,	/* 1.2.643.7.1.1.3.3 */
+	OID_gostTC26Sign256A,		/* 1.2.643.7.1.2.1.1.1 */
+	OID_gostTC26Sign256B,		/* 1.2.643.7.1.2.1.1.2 */
+	OID_gostTC26Sign256C,		/* 1.2.643.7.1.2.1.1.3 */
+	OID_gostTC26Sign256D,		/* 1.2.643.7.1.2.1.1.4 */
+	OID_gostTC26Sign512A,		/* 1.2.643.7.1.2.1.2.1 */
+	OID_gostTC26Sign512B,		/* 1.2.643.7.1.2.1.2.2 */
+	OID_gostTC26Sign512C,		/* 1.2.643.7.1.2.1.2.3 */
+
+	/* OSCCA */
+	OID_sm2,			/* 1.2.156.10197.1.301 */
+	OID_sm3,			/* 1.2.156.10197.1.401 */
+	OID_SM2_with_SM3,		/* 1.2.156.10197.1.501 */
+	OID_sm3WithRSAEncryption,	/* 1.2.156.10197.1.504 */
 
 	OID__NR
 };

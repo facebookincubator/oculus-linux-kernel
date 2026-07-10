@@ -1,14 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2014, The Linux Foundation. All rights reserved.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #ifndef _DT_BINDINGS_CLK_GCC_IPQ806X_H
@@ -238,7 +230,6 @@
 #define PLL0_VOTE				221
 #define PLL3					222
 #define PLL3_VOTE				223
-#define PLL4					224
 #define PLL4_VOTE				225
 #define PLL8					226
 #define PLL8_VOTE				227
@@ -289,5 +280,8 @@
 #define UBI32_CORE2_CLK_SRC			278
 #define UBI32_CORE1_CLK				279
 #define UBI32_CORE2_CLK				280
+#define EBI2_AON_CLK				281
+#define NSSTCM_CLK_SRC				282
+#define NSSTCM_CLK				283
 
 #endif

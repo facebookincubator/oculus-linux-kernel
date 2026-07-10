@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * addi_apci_1516.c
  * Copyright (C) 2004,2005  ADDI-DATA GmbH for the source code of this module.
@@ -10,24 +11,12 @@
  *	Fax: +49(0)7223/9493-92
  *	http://www.addi-data.com
  *	info@addi-data.com
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
  */
 
 #include <linux/module.h>
-#include <linux/pci.h>
 
-#include "../comedidev.h"
+#include "../comedi_pci.h"
 #include "addi_watchdog.h"
-#include "comedi_fc.h"
 
 /*
  * PCI bar 1 I/O Register map - Digital input/output
@@ -102,10 +91,10 @@ static int apci1516_do_insn_bits(struct comedi_device *dev,
 
 static int apci1516_reset(struct comedi_device *dev)
 {
-	const struct apci1516_boardinfo *this_board = dev->board_ptr;
+	const struct apci1516_boardinfo *board = dev->board_ptr;
 	struct apci1516_private *devpriv = dev->private;
 
-	if (!this_board->has_wdog)
+	if (!board->has_wdog)
 		return 0;
 
 	outw(0x0, dev->iobase + APCI1516_DO_REG);
@@ -119,17 +108,17 @@ static int apci1516_auto_attach(struct comedi_device *dev,
 				unsigned long context)
 {
 	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
-	const struct apci1516_boardinfo *this_board = NULL;
+	const struct apci1516_boardinfo *board = NULL;
 	struct apci1516_private *devpriv;
 	struct comedi_subdevice *s;
 	int ret;
 
 	if (context < ARRAY_SIZE(apci1516_boardtypes))
-		this_board = &apci1516_boardtypes[context];
-	if (!this_board)
+		board = &apci1516_boardtypes[context];
+	if (!board)
 		return -ENODEV;
-	dev->board_ptr = this_board;
-	dev->board_name = this_board->name;
+	dev->board_ptr = board;
+	dev->board_name = board->name;
 
 	devpriv = comedi_alloc_devpriv(dev, sizeof(*devpriv));
 	if (!devpriv)
@@ -148,10 +137,10 @@ static int apci1516_auto_attach(struct comedi_device *dev,
 
 	/* Initialize the digital input subdevice */
 	s = &dev->subdevices[0];
-	if (this_board->di_nchan) {
+	if (board->di_nchan) {
 		s->type		= COMEDI_SUBD_DI;
 		s->subdev_flags	= SDF_READABLE;
-		s->n_chan	= this_board->di_nchan;
+		s->n_chan	= board->di_nchan;
 		s->maxdata	= 1;
 		s->range_table	= &range_digital;
 		s->insn_bits	= apci1516_di_insn_bits;
@@ -161,10 +150,10 @@ static int apci1516_auto_attach(struct comedi_device *dev,
 
 	/* Initialize the digital output subdevice */
 	s = &dev->subdevices[1];
-	if (this_board->do_nchan) {
+	if (board->do_nchan) {
 		s->type		= COMEDI_SUBD_DO;
-		s->subdev_flags	= SDF_WRITEABLE;
-		s->n_chan	= this_board->do_nchan;
+		s->subdev_flags	= SDF_WRITABLE;
+		s->n_chan	= board->do_nchan;
 		s->maxdata	= 1;
 		s->range_table	= &range_digital;
 		s->insn_bits	= apci1516_do_insn_bits;
@@ -174,7 +163,7 @@ static int apci1516_auto_attach(struct comedi_device *dev,
 
 	/* Initialize the watchdog subdevice */
 	s = &dev->subdevices[2];
-	if (this_board->has_wdog) {
+	if (board->has_wdog) {
 		ret = addi_watchdog_init(s, devpriv->wdog_iobase);
 		if (ret)
 			return ret;
@@ -223,5 +212,5 @@ static struct pci_driver apci1516_pci_driver = {
 module_comedi_pci_driver(apci1516_driver, apci1516_pci_driver);
 
 MODULE_DESCRIPTION("ADDI-DATA APCI-1016/1516/2016, 16 channel DIO boards");
-MODULE_AUTHOR("Comedi http://www.comedi.org");
+MODULE_AUTHOR("Comedi https://www.comedi.org");
 MODULE_LICENSE("GPL");

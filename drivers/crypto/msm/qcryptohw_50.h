@@ -1,13 +1,6 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _DRIVERS_CRYPTO_MSM_QCRYPTOHW_50_H_
@@ -33,6 +26,10 @@
 
 #define CRYPTO_STATUS_REG			0x1A100
 #define CRYPTO_STATUS2_REG			0x1A104
+#define CRYPTO_STATUS3_REG			0x1A11C
+#define CRYPTO_STATUS4_REG			0x1A124
+#define CRYPTO_STATUS5_REG			0x1A128
+
 #define CRYPTO_ENGINES_AVAIL			0x1A108
 #define CRYPTO_FIFO_SIZES_REG			0x1A10C
 
@@ -44,6 +41,8 @@
 #define CRYPTO_ENCR_SEG_CFG_REG			0x1A200
 #define CRYPTO_ENCR_SEG_SIZE_REG		0x1A204
 #define CRYPTO_ENCR_SEG_START_REG		0x1A208
+#define CRYPTO_DATA_PATT_PROC_CFG_REG		0x1A500
+#define CRYPTO_DATA_PARTIAL_BLOCK_PROC_CFG_REG	0x1A504
 
 #define CRYPTO_ENCR_KEY0_REG			0x1D000
 #define CRYPTO_ENCR_KEY1_REG			0x1D004
@@ -281,6 +280,7 @@
 #define CRYPTO_AUTH_EXP_MAC7_REG		0x1A3BC
 
 #define CRYPTO_CONFIG_REG			0x1A400
+#define CRYPTO_PWR_CTRL				0x1A408
 #define CRYPTO_DEBUG_ENABLE_REG			0x1AF00
 #define CRYPTO_DEBUG_REG			0x1AF04
 

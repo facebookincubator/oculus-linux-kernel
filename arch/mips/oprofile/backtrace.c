@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/oprofile.h>
 #include <linux/sched.h>
 #include <linux/mm.h>
@@ -18,7 +19,7 @@ struct stackframe {
 static inline int get_mem(unsigned long addr, unsigned long *result)
 {
 	unsigned long *address = (unsigned long *) addr;
-	if (!access_ok(VERIFY_READ, addr, sizeof(unsigned long)))
+	if (!access_ok(address, sizeof(unsigned long)))
 		return -1;
 	if (__copy_from_user_inatomic(result, address, sizeof(unsigned long)))
 		return -3;
@@ -65,7 +66,7 @@ static inline int is_end_of_function_marker(union mips_instruction *ip)
  * - handle cases where the stack is adjusted inside a function
  *     (generally doesn't happen)
  * - find optimal value for max_instr_check
- * - try to find a way to handle leaf functions
+ * - try to find a better way to handle leaf functions
  */
 
 static inline int unwind_user_frame(struct stackframe *old_frame,
@@ -104,7 +105,7 @@ static inline int unwind_user_frame(struct stackframe *old_frame,
 	}
 
 	if (!ra_offset || !stack_size)
-		return -1;
+		goto done;
 
 	if (ra_offset) {
 		new_frame.ra = old_frame->sp + ra_offset;
@@ -121,6 +122,7 @@ static inline int unwind_user_frame(struct stackframe *old_frame,
 	if (new_frame.sp > old_frame->sp)
 		return -2;
 
+done:
 	new_frame.pc = old_frame->ra;
 	*old_frame = new_frame;
 

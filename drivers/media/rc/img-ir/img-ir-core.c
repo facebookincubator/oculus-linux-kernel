@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * ImgTec IR Decoder found in PowerDown Controller.
  *
  * Copyright 2010-2014 Imagination Technologies Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
  *
  * This contains core img-ir code for setting up the driver. The two interfaces
  * (raw and hardware decode) are handled separately.
@@ -85,17 +81,14 @@ static int img_ir_probe(struct platform_device *pdev)
 
 	/* Get resources from platform device */
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0) {
-		dev_err(&pdev->dev, "cannot find IRQ resource\n");
+	if (irq < 0)
 		return irq;
-	}
 
 	/* Private driver data */
 	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
-	if (!priv) {
-		dev_err(&pdev->dev, "cannot allocate device data\n");
+	if (!priv)
 		return -ENOMEM;
-	}
+
 	platform_set_drvdata(pdev, priv);
 	priv->dev = &pdev->dev;
 	spin_lock_init(&priv->lock);
@@ -110,16 +103,32 @@ static int img_ir_probe(struct platform_device *pdev)
 	priv->clk = devm_clk_get(&pdev->dev, "core");
 	if (IS_ERR(priv->clk))
 		dev_warn(&pdev->dev, "cannot get core clock resource\n");
+
+	/* Get sys clock */
+	priv->sys_clk = devm_clk_get(&pdev->dev, "sys");
+	if (IS_ERR(priv->sys_clk))
+		dev_warn(&pdev->dev, "cannot get sys clock resource\n");
 	/*
-	 * The driver doesn't need to know about the system ("sys") or power
-	 * modulation ("mod") clocks yet
+	 * Enabling the system clock before the register interface is
+	 * accessed. ISR shouldn't get called with Sys Clock disabled,
+	 * hence exiting probe with an error.
 	 */
+	if (!IS_ERR(priv->sys_clk)) {
+		error = clk_prepare_enable(priv->sys_clk);
+		if (error) {
+			dev_err(&pdev->dev, "cannot enable sys clock\n");
+			return error;
+		}
+	}
 
 	/* Set up raw & hw decoder */
 	error = img_ir_probe_raw(priv);
 	error2 = img_ir_probe_hw(priv);
-	if (error && error2)
-		return (error == -ENODEV) ? error2 : error;
+	if (error && error2) {
+		if (error == -ENODEV)
+			error = error2;
+		goto err_probe;
+	}
 
 	/* Get the IRQ */
 	priv->irq = irq;
@@ -139,6 +148,9 @@ static int img_ir_probe(struct platform_device *pdev)
 err_irq:
 	img_ir_remove_hw(priv);
 	img_ir_remove_raw(priv);
+err_probe:
+	if (!IS_ERR(priv->sys_clk))
+		clk_disable_unprepare(priv->sys_clk);
 	return error;
 }
 
@@ -152,6 +164,8 @@ static int img_ir_remove(struct platform_device *pdev)
 
 	if (!IS_ERR(priv->clk))
 		clk_disable_unprepare(priv->clk);
+	if (!IS_ERR(priv->sys_clk))
+		clk_disable_unprepare(priv->sys_clk);
 	return 0;
 }
 
@@ -166,7 +180,6 @@ MODULE_DEVICE_TABLE(of, img_ir_match);
 static struct platform_driver img_ir_driver = {
 	.driver = {
 		.name = "img-ir",
-		.owner	= THIS_MODULE,
 		.of_match_table	= img_ir_match,
 		.pm = &img_ir_pmops,
 	},

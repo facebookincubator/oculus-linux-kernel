@@ -1,21 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * FP/SIMD state saving and restoring macros
  *
  * Copyright (C) 2012 ARM Ltd.
  * Author: Catalin Marinas <catalin.marinas@arm.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+#include <asm/assembler.h>
 
 .macro fpsimd_save state, tmpnr
 	stp	q0, q1, [\state, #16 * 0]
@@ -76,37 +67,184 @@
 	fpsimd_restore_fpcr x\tmpnr, \state
 .endm
 
-.altmacro
-.macro fpsimd_save_partial state, numnr, tmpnr1, tmpnr2
-	mrs	x\tmpnr1, fpsr
-	str	w\numnr, [\state, #8]
-	mrs	x\tmpnr2, fpcr
-	stp	w\tmpnr1, w\tmpnr2, [\state]
-	adr	x\tmpnr1, 0f
-	add	\state, \state, x\numnr, lsl #4
-	sub	x\tmpnr1, x\tmpnr1, x\numnr, lsl #1
-	br	x\tmpnr1
-	.irp	qa, 30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8, 6, 4, 2, 0
-	.irp	qb, %(qa + 1)
-	stp	q\qa, q\qb, [\state, # -16 * \qa - 16]
-	.endr
-	.endr
-0:
+/* Sanity-check macros to help avoid encoding garbage instructions */
+
+.macro _check_general_reg nr
+	.if (\nr) < 0 || (\nr) > 30
+		.error "Bad register number \nr."
+	.endif
 .endm
 
-.macro fpsimd_restore_partial state, tmpnr1, tmpnr2
-	ldp	w\tmpnr1, w\tmpnr2, [\state]
-	msr	fpsr, x\tmpnr1
-	fpsimd_restore_fpcr x\tmpnr2, x\tmpnr1
-	adr	x\tmpnr1, 0f
-	ldr	w\tmpnr2, [\state, #8]
-	add	\state, \state, x\tmpnr2, lsl #4
-	sub	x\tmpnr1, x\tmpnr1, x\tmpnr2, lsl #1
-	br	x\tmpnr1
-	.irp	qa, 30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10, 8, 6, 4, 2, 0
-	.irp	qb, %(qa + 1)
-	ldp	q\qa, q\qb, [\state, # -16 * \qa - 16]
-	.endr
-	.endr
-0:
+.macro _sve_check_zreg znr
+	.if (\znr) < 0 || (\znr) > 31
+		.error "Bad Scalable Vector Extension vector register number \znr."
+	.endif
+.endm
+
+.macro _sve_check_preg pnr
+	.if (\pnr) < 0 || (\pnr) > 15
+		.error "Bad Scalable Vector Extension predicate register number \pnr."
+	.endif
+.endm
+
+.macro _check_num n, min, max
+	.if (\n) < (\min) || (\n) > (\max)
+		.error "Number \n out of range [\min,\max]"
+	.endif
+.endm
+
+/* SVE instruction encodings for non-SVE-capable assemblers */
+
+/* STR (vector): STR Z\nz, [X\nxbase, #\offset, MUL VL] */
+.macro _sve_str_v nz, nxbase, offset=0
+	_sve_check_zreg \nz
+	_check_general_reg \nxbase
+	_check_num (\offset), -0x100, 0xff
+	.inst	0xe5804000			\
+		| (\nz)				\
+		| ((\nxbase) << 5)		\
+		| (((\offset) & 7) << 10)	\
+		| (((\offset) & 0x1f8) << 13)
+.endm
+
+/* LDR (vector): LDR Z\nz, [X\nxbase, #\offset, MUL VL] */
+.macro _sve_ldr_v nz, nxbase, offset=0
+	_sve_check_zreg \nz
+	_check_general_reg \nxbase
+	_check_num (\offset), -0x100, 0xff
+	.inst	0x85804000			\
+		| (\nz)				\
+		| ((\nxbase) << 5)		\
+		| (((\offset) & 7) << 10)	\
+		| (((\offset) & 0x1f8) << 13)
+.endm
+
+/* STR (predicate): STR P\np, [X\nxbase, #\offset, MUL VL] */
+.macro _sve_str_p np, nxbase, offset=0
+	_sve_check_preg \np
+	_check_general_reg \nxbase
+	_check_num (\offset), -0x100, 0xff
+	.inst	0xe5800000			\
+		| (\np)				\
+		| ((\nxbase) << 5)		\
+		| (((\offset) & 7) << 10)	\
+		| (((\offset) & 0x1f8) << 13)
+.endm
+
+/* LDR (predicate): LDR P\np, [X\nxbase, #\offset, MUL VL] */
+.macro _sve_ldr_p np, nxbase, offset=0
+	_sve_check_preg \np
+	_check_general_reg \nxbase
+	_check_num (\offset), -0x100, 0xff
+	.inst	0x85800000			\
+		| (\np)				\
+		| ((\nxbase) << 5)		\
+		| (((\offset) & 7) << 10)	\
+		| (((\offset) & 0x1f8) << 13)
+.endm
+
+/* RDVL X\nx, #\imm */
+.macro _sve_rdvl nx, imm
+	_check_general_reg \nx
+	_check_num (\imm), -0x20, 0x1f
+	.inst	0x04bf5000			\
+		| (\nx)				\
+		| (((\imm) & 0x3f) << 5)
+.endm
+
+/* RDFFR (unpredicated): RDFFR P\np.B */
+.macro _sve_rdffr np
+	_sve_check_preg \np
+	.inst	0x2519f000			\
+		| (\np)
+.endm
+
+/* WRFFR P\np.B */
+.macro _sve_wrffr np
+	_sve_check_preg \np
+	.inst	0x25289000			\
+		| ((\np) << 5)
+.endm
+
+/* PFALSE P\np.B */
+.macro _sve_pfalse np
+	_sve_check_preg \np
+	.inst	0x2518e400			\
+		| (\np)
+.endm
+
+.macro __for from:req, to:req
+	.if (\from) == (\to)
+		_for__body %\from
+	.else
+		__for %\from, %((\from) + ((\to) - (\from)) / 2)
+		__for %((\from) + ((\to) - (\from)) / 2 + 1), %\to
+	.endif
+.endm
+
+.macro _for var:req, from:req, to:req, insn:vararg
+	.macro _for__body \var:req
+		.noaltmacro
+		\insn
+		.altmacro
+	.endm
+
+	.altmacro
+	__for \from, \to
+	.noaltmacro
+
+	.purgem _for__body
+.endm
+
+/* Update ZCR_EL1.LEN with the new VQ */
+.macro sve_load_vq xvqminus1, xtmp, xtmp2
+		mrs_s		\xtmp, SYS_ZCR_EL1
+		bic		\xtmp2, \xtmp, ZCR_ELx_LEN_MASK
+		orr		\xtmp2, \xtmp2, \xvqminus1
+		cmp		\xtmp2, \xtmp
+		b.eq		921f
+		msr_s		SYS_ZCR_EL1, \xtmp2	//self-synchronising
+921:
+.endm
+
+/* Preserve the first 128-bits of Znz and zero the rest. */
+.macro _sve_flush_z nz
+	_sve_check_zreg \nz
+	mov	v\nz\().16b, v\nz\().16b
+.endm
+
+.macro sve_flush
+ _for n, 0, 31, _sve_flush_z	\n
+ _for n, 0, 15, _sve_pfalse	\n
+		_sve_wrffr	0
+.endm
+
+.macro sve_save nxbase, xpfpsr, nxtmp
+ _for n, 0, 31,	_sve_str_v	\n, \nxbase, \n - 34
+ _for n, 0, 15,	_sve_str_p	\n, \nxbase, \n - 16
+		_sve_rdffr	0
+		_sve_str_p	0, \nxbase
+		_sve_ldr_p	0, \nxbase, -16
+
+		mrs		x\nxtmp, fpsr
+		str		w\nxtmp, [\xpfpsr]
+		mrs		x\nxtmp, fpcr
+		str		w\nxtmp, [\xpfpsr, #4]
+.endm
+
+.macro __sve_load nxbase, xpfpsr, nxtmp
+ _for n, 0, 31,	_sve_ldr_v	\n, \nxbase, \n - 34
+		_sve_ldr_p	0, \nxbase
+		_sve_wrffr	0
+ _for n, 0, 15,	_sve_ldr_p	\n, \nxbase, \n - 16
+
+		ldr		w\nxtmp, [\xpfpsr]
+		msr		fpsr, x\nxtmp
+		ldr		w\nxtmp, [\xpfpsr, #4]
+		msr		fpcr, x\nxtmp
+.endm
+
+.macro sve_load nxbase, xpfpsr, xvqminus1, nxtmp, xtmp2
+		sve_load_vq	\xvqminus1, x\nxtmp, \xtmp2
+		__sve_load	\nxbase, \xpfpsr, \nxtmp
 .endm

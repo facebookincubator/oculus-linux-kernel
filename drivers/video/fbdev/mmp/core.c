@@ -1,28 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * linux/drivers/video/mmp/common.c
  * This driver is a common framework for Marvell Display Controller
  *
  * Copyright (C) 2012 Marvell Technology Group Ltd.
  * Authors: Zhou Zhu <zzhu3@marvell.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program.  If not, see <http://www.gnu.org/licenses/>.
- *
  */
 
 #include <linux/slab.h>
 #include <linux/dma-mapping.h>
 #include <linux/export.h>
+#include <linux/module.h>
 #include <video/mmp_disp.h>
 
 static struct mmp_overlay *path_get_overlay(struct mmp_path *path,
@@ -165,13 +153,11 @@ EXPORT_SYMBOL_GPL(mmp_get_path);
 struct mmp_path *mmp_register_path(struct mmp_path_info *info)
 {
 	int i;
-	size_t size;
 	struct mmp_path *path = NULL;
 	struct mmp_panel *panel;
 
-	size = sizeof(struct mmp_path)
-		+ sizeof(struct mmp_overlay) * info->overlay_num;
-	path = kzalloc(size, GFP_KERNEL);
+	path = kzalloc(struct_size(path, overlays, info->overlay_num),
+		       GFP_KERNEL);
 	if (!path)
 		return NULL;
 
@@ -223,10 +209,10 @@ struct mmp_path *mmp_register_path(struct mmp_path_info *info)
 EXPORT_SYMBOL_GPL(mmp_register_path);
 
 /*
- * mmp_unregister_path - unregister and destory path
- * @p: path to be destoried.
+ * mmp_unregister_path - unregister and destroy path
+ * @p: path to be destroyed.
  *
- * this function registers path and destorys it.
+ * this function registers path and destroys it.
  */
 void mmp_unregister_path(struct mmp_path *path)
 {
@@ -249,3 +235,7 @@ void mmp_unregister_path(struct mmp_path *path)
 	mutex_unlock(&disp_lock);
 }
 EXPORT_SYMBOL_GPL(mmp_unregister_path);
+
+MODULE_AUTHOR("Zhou Zhu <zzhu3@marvell.com>");
+MODULE_DESCRIPTION("Marvell MMP display framework");
+MODULE_LICENSE("GPL");

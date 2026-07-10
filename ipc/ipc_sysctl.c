@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  Copyright (C) 2007
  *
  *  Author: Eric Biederman <ebiederm@xmision.com>
- *
- *  This program is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU General Public License as
- *  published by the Free Software Foundation, version 2 of the
- *  License.
  */
 
 #include <linux/module.h>
@@ -28,7 +24,7 @@ static void *get_ipc(struct ctl_table *table)
 
 #ifdef CONFIG_PROC_SYSCTL
 static int proc_ipc_dointvec(struct ctl_table *table, int write,
-	void __user *buffer, size_t *lenp, loff_t *ppos)
+		void *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct ctl_table ipc_table;
 
@@ -39,7 +35,7 @@ static int proc_ipc_dointvec(struct ctl_table *table, int write,
 }
 
 static int proc_ipc_dointvec_minmax(struct ctl_table *table, int write,
-	void __user *buffer, size_t *lenp, loff_t *ppos)
+		void *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct ctl_table ipc_table;
 
@@ -50,7 +46,7 @@ static int proc_ipc_dointvec_minmax(struct ctl_table *table, int write,
 }
 
 static int proc_ipc_dointvec_minmax_orphans(struct ctl_table *table, int write,
-	void __user *buffer, size_t *lenp, loff_t *ppos)
+		void *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct ipc_namespace *ns = current->nsproxy->ipc_ns;
 	int err = proc_ipc_dointvec_minmax(table, write, buffer, lenp, ppos);
@@ -62,31 +58,8 @@ static int proc_ipc_dointvec_minmax_orphans(struct ctl_table *table, int write,
 	return err;
 }
 
-static int proc_ipc_callback_dointvec_minmax(struct ctl_table *table, int write,
-	void __user *buffer, size_t *lenp, loff_t *ppos)
-{
-	struct ctl_table ipc_table;
-	size_t lenp_bef = *lenp;
-	int rc;
-
-	memcpy(&ipc_table, table, sizeof(ipc_table));
-	ipc_table.data = get_ipc(table);
-
-	rc = proc_dointvec_minmax(&ipc_table, write, buffer, lenp, ppos);
-
-	if (write && !rc && lenp_bef == *lenp)
-		/*
-		 * Tunable has successfully been changed by hand. Disable its
-		 * automatic adjustment. This simply requires unregistering
-		 * the notifiers that trigger recalculation.
-		 */
-		unregister_ipcns_notifier(current->nsproxy->ipc_ns);
-
-	return rc;
-}
-
 static int proc_ipc_doulongvec_minmax(struct ctl_table *table, int write,
-	void __user *buffer, size_t *lenp, loff_t *ppos)
+		void *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct ctl_table ipc_table;
 	memcpy(&ipc_table, table, sizeof(ipc_table));
@@ -96,54 +69,39 @@ static int proc_ipc_doulongvec_minmax(struct ctl_table *table, int write,
 					lenp, ppos);
 }
 
-/*
- * Routine that is called when the file "auto_msgmni" has successfully been
- * written.
- * Two values are allowed:
- * 0: unregister msgmni's callback routine from the ipc namespace notifier
- *    chain. This means that msgmni won't be recomputed anymore upon memory
- *    add/remove or ipc namespace creation/removal.
- * 1: register back the callback routine.
- */
-static void ipc_auto_callback(int val)
-{
-	if (!val)
-		unregister_ipcns_notifier(current->nsproxy->ipc_ns);
-	else {
-		/*
-		 * Re-enable automatic recomputing only if not already
-		 * enabled.
-		 */
-		recompute_msgmni(current->nsproxy->ipc_ns);
-		cond_register_ipcns_notifier(current->nsproxy->ipc_ns);
-	}
-}
-
-static int proc_ipcauto_dointvec_minmax(struct ctl_table *table, int write,
-	void __user *buffer, size_t *lenp, loff_t *ppos)
+static int proc_ipc_auto_msgmni(struct ctl_table *table, int write,
+		void *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct ctl_table ipc_table;
-	int oldval;
-	int rc;
+	int dummy = 0;
 
 	memcpy(&ipc_table, table, sizeof(ipc_table));
-	ipc_table.data = get_ipc(table);
-	oldval = *((int *)(ipc_table.data));
+	ipc_table.data = &dummy;
 
-	rc = proc_dointvec_minmax(&ipc_table, write, buffer, lenp, ppos);
+	if (write)
+		pr_info_once("writing to auto_msgmni has no effect");
 
-	if (write && !rc) {
-		int newval = *((int *)(ipc_table.data));
-		/*
-		 * The file "auto_msgmni" has correctly been set.
-		 * React by (un)registering the corresponding tunable, if the
-		 * value has changed.
-		 */
-		if (newval != oldval)
-			ipc_auto_callback(newval);
-	}
+	return proc_dointvec_minmax(&ipc_table, write, buffer, lenp, ppos);
+}
 
-	return rc;
+static int proc_ipc_sem_dointvec(struct ctl_table *table, int write,
+	void *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret, semmni;
+	struct ipc_namespace *ns = current->nsproxy->ipc_ns;
+
+	semmni = ns->sem_ctls[3];
+	ret = proc_ipc_dointvec(table, write, buffer, lenp, ppos);
+
+	if (!ret)
+		ret = sem_check_semmni(current->nsproxy->ipc_ns);
+
+	/*
+	 * Reset the semmni value if an error happens.
+	 */
+	if (ret)
+		ns->sem_ctls[3] = semmni;
+	return ret;
 }
 
 #else
@@ -151,13 +109,13 @@ static int proc_ipcauto_dointvec_minmax(struct ctl_table *table, int write,
 #define proc_ipc_dointvec	   NULL
 #define proc_ipc_dointvec_minmax   NULL
 #define proc_ipc_dointvec_minmax_orphans   NULL
-#define proc_ipc_callback_dointvec_minmax  NULL
-#define proc_ipcauto_dointvec_minmax NULL
+#define proc_ipc_auto_msgmni	   NULL
+#define proc_ipc_sem_dointvec	   NULL
 #endif
 
-static int zero;
-static int one = 1;
-static int int_max = INT_MAX;
+int ipc_mni = IPCMNI;
+int ipc_mni_shift = IPCMNI_SHIFT;
+int ipc_min_cycle = RADIX_TREE_MAP_SIZE;
 
 static struct ctl_table ipc_kern_table[] = {
 	{
@@ -179,7 +137,9 @@ static struct ctl_table ipc_kern_table[] = {
 		.data		= &init_ipc_ns.shm_ctlmni,
 		.maxlen		= sizeof(init_ipc_ns.shm_ctlmni),
 		.mode		= 0644,
-		.proc_handler	= proc_ipc_dointvec,
+		.proc_handler	= proc_ipc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &ipc_mni,
 	},
 	{
 		.procname	= "shm_rmid_forced",
@@ -187,8 +147,8 @@ static struct ctl_table ipc_kern_table[] = {
 		.maxlen		= sizeof(init_ipc_ns.shm_rmid_forced),
 		.mode		= 0644,
 		.proc_handler	= proc_ipc_dointvec_minmax_orphans,
-		.extra1		= &zero,
-		.extra2		= &one,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
 	},
 	{
 		.procname	= "msgmax",
@@ -196,17 +156,26 @@ static struct ctl_table ipc_kern_table[] = {
 		.maxlen		= sizeof(init_ipc_ns.msg_ctlmax),
 		.mode		= 0644,
 		.proc_handler	= proc_ipc_dointvec_minmax,
-		.extra1		= &zero,
-		.extra2		= &int_max,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
 	},
 	{
 		.procname	= "msgmni",
 		.data		= &init_ipc_ns.msg_ctlmni,
 		.maxlen		= sizeof(init_ipc_ns.msg_ctlmni),
 		.mode		= 0644,
-		.proc_handler	= proc_ipc_callback_dointvec_minmax,
-		.extra1		= &zero,
-		.extra2		= &int_max,
+		.proc_handler	= proc_ipc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &ipc_mni,
+	},
+	{
+		.procname	= "auto_msgmni",
+		.data		= NULL,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_ipc_auto_msgmni,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
 	},
 	{
 		.procname	=  "msgmnb",
@@ -214,24 +183,15 @@ static struct ctl_table ipc_kern_table[] = {
 		.maxlen		= sizeof(init_ipc_ns.msg_ctlmnb),
 		.mode		= 0644,
 		.proc_handler	= proc_ipc_dointvec_minmax,
-		.extra1		= &zero,
-		.extra2		= &int_max,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
 	},
 	{
 		.procname	= "sem",
 		.data		= &init_ipc_ns.sem_ctls,
 		.maxlen		= 4*sizeof(int),
 		.mode		= 0644,
-		.proc_handler	= proc_ipc_dointvec,
-	},
-	{
-		.procname	= "auto_msgmni",
-		.data		= &init_ipc_ns.auto_msgmni,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_ipcauto_dointvec_minmax,
-		.extra1		= &zero,
-		.extra2		= &one,
+		.proc_handler	= proc_ipc_sem_dointvec,
 	},
 #ifdef CONFIG_CHECKPOINT_RESTORE
 	{
@@ -240,8 +200,8 @@ static struct ctl_table ipc_kern_table[] = {
 		.maxlen		= sizeof(init_ipc_ns.ids[IPC_SEM_IDS].next_id),
 		.mode		= 0644,
 		.proc_handler	= proc_ipc_dointvec_minmax,
-		.extra1		= &zero,
-		.extra2		= &int_max,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
 	},
 	{
 		.procname	= "msg_next_id",
@@ -249,8 +209,8 @@ static struct ctl_table ipc_kern_table[] = {
 		.maxlen		= sizeof(init_ipc_ns.ids[IPC_MSG_IDS].next_id),
 		.mode		= 0644,
 		.proc_handler	= proc_ipc_dointvec_minmax,
-		.extra1		= &zero,
-		.extra2		= &int_max,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
 	},
 	{
 		.procname	= "shm_next_id",
@@ -258,8 +218,8 @@ static struct ctl_table ipc_kern_table[] = {
 		.maxlen		= sizeof(init_ipc_ns.ids[IPC_SHM_IDS].next_id),
 		.mode		= 0644,
 		.proc_handler	= proc_ipc_dointvec_minmax,
-		.extra1		= &zero,
-		.extra2		= &int_max,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
 	},
 #endif
 	{}
@@ -281,3 +241,13 @@ static int __init ipc_sysctl_init(void)
 }
 
 device_initcall(ipc_sysctl_init);
+
+static int __init ipc_mni_extend(char *str)
+{
+	ipc_mni = IPCMNI_EXTEND;
+	ipc_mni_shift = IPCMNI_EXTEND_SHIFT;
+	ipc_min_cycle = IPCMNI_EXTEND_MIN_CYCLE;
+	pr_info("IPCMNI extended to %d.\n", ipc_mni);
+	return 0;
+}
+early_param("ipcmni_extend", ipc_mni_extend);

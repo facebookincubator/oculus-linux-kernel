@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
  */
 
 #include <linux/kernel.h>
@@ -140,8 +132,10 @@ static int tegra_wdt_set_timeout(struct watchdog_device *wdd,
 {
 	wdd->timeout = timeout;
 
-	if (watchdog_active(wdd))
+	if (watchdog_active(wdd)) {
+		tegra_wdt_stop(wdd);
 		return tegra_wdt_start(wdd);
+	}
 
 	return 0;
 }
@@ -176,7 +170,7 @@ static const struct watchdog_info tegra_wdt_info = {
 	.identity	= "Tegra Watchdog",
 };
 
-static struct watchdog_ops tegra_wdt_ops = {
+static const struct watchdog_ops tegra_wdt_ops = {
 	.owner = THIS_MODULE,
 	.start = tegra_wdt_start,
 	.stop = tegra_wdt_stop,
@@ -187,15 +181,14 @@ static struct watchdog_ops tegra_wdt_ops = {
 
 static int tegra_wdt_probe(struct platform_device *pdev)
 {
+	struct device *dev = &pdev->dev;
 	struct watchdog_device *wdd;
 	struct tegra_wdt *wdt;
-	struct resource *res;
 	void __iomem *regs;
 	int ret;
 
 	/* This is the timer base. */
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	regs = devm_ioremap_resource(&pdev->dev, res);
+	regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(regs))
 		return PTR_ERR(regs);
 
@@ -203,7 +196,7 @@ static int tegra_wdt_probe(struct platform_device *pdev)
 	 * Allocate our watchdog driver data, which has the
 	 * struct watchdog_device nested within it.
 	 */
-	wdt = devm_kzalloc(&pdev->dev, sizeof(*wdt), GFP_KERNEL);
+	wdt = devm_kzalloc(dev, sizeof(*wdt), GFP_KERNEL);
 	if (!wdt)
 		return -ENOMEM;
 
@@ -218,36 +211,21 @@ static int tegra_wdt_probe(struct platform_device *pdev)
 	wdd->ops = &tegra_wdt_ops;
 	wdd->min_timeout = MIN_WDT_TIMEOUT;
 	wdd->max_timeout = MAX_WDT_TIMEOUT;
+	wdd->parent = dev;
 
 	watchdog_set_drvdata(wdd, wdt);
 
 	watchdog_set_nowayout(wdd, nowayout);
 
-	ret = watchdog_register_device(wdd);
-	if (ret) {
-		dev_err(&pdev->dev,
-			"failed to register watchdog device\n");
+	watchdog_stop_on_unregister(wdd);
+	ret = devm_watchdog_register_device(dev, wdd);
+	if (ret)
 		return ret;
-	}
 
 	platform_set_drvdata(pdev, wdt);
 
-	dev_info(&pdev->dev,
-		 "initialized (heartbeat = %d sec, nowayout = %d)\n",
+	dev_info(dev, "initialized (heartbeat = %d sec, nowayout = %d)\n",
 		 heartbeat, nowayout);
-
-	return 0;
-}
-
-static int tegra_wdt_remove(struct platform_device *pdev)
-{
-	struct tegra_wdt *wdt = platform_get_drvdata(pdev);
-
-	tegra_wdt_stop(&wdt->wdd);
-
-	watchdog_unregister_device(&wdt->wdd);
-
-	dev_info(&pdev->dev, "removed wdt\n");
 
 	return 0;
 }
@@ -287,9 +265,7 @@ static const struct dev_pm_ops tegra_wdt_pm_ops = {
 
 static struct platform_driver tegra_wdt_driver = {
 	.probe		= tegra_wdt_probe,
-	.remove		= tegra_wdt_remove,
 	.driver		= {
-		.owner	= THIS_MODULE,
 		.name	= "tegra-wdt",
 		.pm	= &tegra_wdt_pm_ops,
 		.of_match_table = tegra_wdt_of_match,

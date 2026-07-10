@@ -1,5 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __LINUX_FOTG210_H
 #define __LINUX_FOTG210_H
+
+#include <linux/usb/ehci-dbgp.h>
 
 /* definitions used for the EHCI driver */
 
@@ -84,7 +87,7 @@ struct fotg210_hcd {			/* one per controller */
 	/* glue to PCI and HCD framework */
 	struct fotg210_caps __iomem *caps;
 	struct fotg210_regs __iomem *regs;
-	struct fotg210_dbg_port __iomem *debug;
+	struct ehci_dbg_port __iomem *debug;
 
 	__u32			hcs_params;	/* cached register copy */
 	spinlock_t		lock;
@@ -135,19 +138,25 @@ struct fotg210_hcd {			/* one per controller */
 	/* per root hub port */
 	unsigned long		reset_done[FOTG210_MAX_ROOT_PORTS];
 
-	/* bit vectors (one bit per port) */
-	unsigned long		bus_suspended;		/* which ports were
-			already suspended at the start of a bus suspend */
-	unsigned long		companion_ports;	/* which ports are
-			dedicated to the companion controller */
-	unsigned long		owned_ports;		/* which ports are
-			owned by the companion during a bus suspend */
-	unsigned long		port_c_suspend;		/* which ports have
-			the change-suspend feature turned on */
-	unsigned long		suspended_ports;	/* which ports are
-			suspended */
-	unsigned long		resuming_ports;		/* which ports have
-			started to resume */
+	/* bit vectors (one bit per port)
+	 * which ports were already suspended at the start of a bus suspend
+	 */
+	unsigned long		bus_suspended;
+
+	/* which ports are edicated to the companion controller */
+	unsigned long		companion_ports;
+
+	/* which ports are owned by the companion during a bus suspend */
+	unsigned long		owned_ports;
+
+	/* which ports have the change-suspend feature turned on */
+	unsigned long		port_c_suspend;
+
+	/* which ports are suspended */
+	unsigned long		suspended_ports;
+
+	/* which ports have started to resume */
+	unsigned long		resuming_ports;
 
 	/* per-HC memory pools (could be per-bus, but ...) */
 	struct dma_pool		*qh_pool;	/* qh per active urb */
@@ -168,10 +177,13 @@ struct fotg210_hcd {			/* one per controller */
 	/* irq statistics */
 #ifdef FOTG210_STATS
 	struct fotg210_stats	stats;
-#	define COUNT(x) ((x)++)
+#	define INCR(x) ((x)++)
 #else
-#	define COUNT(x)
+#	define INCR(x) do {} while (0)
 #endif
+
+	/* silicon clock */
+	struct clk		*pclk;
 
 	/* debug files */
 	struct dentry		*debug_dir;
@@ -292,64 +304,6 @@ struct fotg210_regs {
 #define GMIR_MOTG_INT		(1 << 1)
 #define GMIR_MDEV_INT	(1 << 0)
 };
-
-/* Appendix C, Debug port ... intended for use with special "debug devices"
- * that can help if there's no serial console.  (nonstandard enumeration.)
- */
-struct fotg210_dbg_port {
-	u32	control;
-#define DBGP_OWNER	(1<<30)
-#define DBGP_ENABLED	(1<<28)
-#define DBGP_DONE	(1<<16)
-#define DBGP_INUSE	(1<<10)
-#define DBGP_ERRCODE(x)	(((x)>>7)&0x07)
-#	define DBGP_ERR_BAD	1
-#	define DBGP_ERR_SIGNAL	2
-#define DBGP_ERROR	(1<<6)
-#define DBGP_GO		(1<<5)
-#define DBGP_OUT	(1<<4)
-#define DBGP_LEN(x)	(((x)>>0)&0x0f)
-	u32	pids;
-#define DBGP_PID_GET(x)		(((x)>>16)&0xff)
-#define DBGP_PID_SET(data, tok)	(((data)<<8)|(tok))
-	u32	data03;
-	u32	data47;
-	u32	address;
-#define DBGP_EPADDR(dev, ep)	(((dev)<<8)|(ep))
-};
-
-#ifdef CONFIG_EARLY_PRINTK_DBGP
-#include <linux/init.h>
-extern int __init early_dbgp_init(char *s);
-extern struct console early_dbgp_console;
-#endif /* CONFIG_EARLY_PRINTK_DBGP */
-
-struct usb_hcd;
-
-static inline int xen_dbgp_reset_prep(struct usb_hcd *hcd)
-{
-	return 1; /* Shouldn't this be 0? */
-}
-
-static inline int xen_dbgp_external_startup(struct usb_hcd *hcd)
-{
-	return -1;
-}
-
-#ifdef CONFIG_EARLY_PRINTK_DBGP
-/* Call backs from fotg210 host driver to fotg210 debug driver */
-extern int dbgp_external_startup(struct usb_hcd *);
-extern int dbgp_reset_prep(struct usb_hcd *hcd);
-#else
-static inline int dbgp_reset_prep(struct usb_hcd *hcd)
-{
-	return xen_dbgp_reset_prep(hcd);
-}
-static inline int dbgp_external_startup(struct usb_hcd *hcd)
-{
-	return xen_dbgp_external_startup(hcd);
-}
-#endif
 
 /*-------------------------------------------------------------------------*/
 
@@ -536,7 +490,7 @@ struct fotg210_iso_packet {
 struct fotg210_iso_sched {
 	struct list_head	td_list;
 	unsigned		span;
-	struct fotg210_iso_packet	packet[0];
+	struct fotg210_iso_packet	packet[];
 };
 
 /*
@@ -641,10 +595,10 @@ struct fotg210_fstn {
 /* Prepare the PORTSC wakeup flags during controller suspend/resume */
 
 #define fotg210_prepare_ports_for_controller_suspend(fotg210, do_wakeup) \
-		fotg210_adjust_port_wakeup_flags(fotg210, true, do_wakeup);
+		fotg210_adjust_port_wakeup_flags(fotg210, true, do_wakeup)
 
 #define fotg210_prepare_ports_for_controller_resume(fotg210)		\
-		fotg210_adjust_port_wakeup_flags(fotg210, false, false);
+		fotg210_adjust_port_wakeup_flags(fotg210, false, false)
 
 /*-------------------------------------------------------------------------*/
 
@@ -732,11 +686,6 @@ static inline unsigned fotg210_read_frame_index(struct fotg210_hcd *fotg210)
 	return fotg210_readl(fotg210, &fotg210->regs->frame_index);
 }
 
-#define fotg210_itdlen(urb, desc, t) ({			\
-	usb_pipein((urb)->pipe) ?				\
-	(desc)->length - FOTG210_ITD_LENGTH(t) :			\
-	FOTG210_ITD_LENGTH(t);					\
-})
 /*-------------------------------------------------------------------------*/
 
 #endif /* __LINUX_FOTG210_H */

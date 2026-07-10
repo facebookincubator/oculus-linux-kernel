@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/kernel/dma-isa.c
  *
  *  Copyright (C) 1999-2000 Russell King
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  *  ISA DMA primitives
  *  Taken from various sources, including:
@@ -55,6 +52,12 @@ static int isa_get_dma_residue(unsigned int chan, dma_t *dma)
 	return chan < 4 ? count : (count << 1);
 }
 
+static struct device isa_dma_dev = {
+	.init_name		= "fallback device",
+	.coherent_dma_mask	= ~(dma_addr_t)0,
+	.dma_mask		= &isa_dma_dev.coherent_dma_mask,
+};
+
 static void isa_enable_dma(unsigned int chan, dma_t *dma)
 {
 	if (dma->invalid) {
@@ -89,7 +92,7 @@ static void isa_enable_dma(unsigned int chan, dma_t *dma)
 			dma->sg = &dma->buf;
 			dma->sgcount = 1;
 			dma->buf.length = dma->count;
-			dma->buf.dma_address = dma_map_single(NULL,
+			dma->buf.dma_address = dma_map_single(&isa_dma_dev,
 				dma->addr, dma->count,
 				direction);
 		}
@@ -213,8 +216,8 @@ void __init isa_init_dma(void)
 		for (chan = 0; chan < 8; chan++) {
 			int ret = isa_dma_add(chan, &isa_dma[chan]);
 			if (ret)
-				printk(KERN_ERR "ISADMA%u: unable to register: %d\n",
-					chan, ret);
+				pr_err("ISADMA%u: unable to register: %d\n",
+				       chan, ret);
 		}
 
 		request_dma(DMA_ISA_CASCADE, "cascade");

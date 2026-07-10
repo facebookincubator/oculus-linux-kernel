@@ -23,7 +23,7 @@
  */
 
 #include <linux/firmware.h>
-#include "drmP.h"
+
 #include "radeon.h"
 #include "cikd.h"
 #include "ppsmc.h"
@@ -129,7 +129,7 @@ void ci_reset_smc(struct radeon_device *rdev)
 
 int ci_program_jump_on_start(struct radeon_device *rdev)
 {
-	static u8 data[] = { 0xE0, 0x00, 0x80, 0x40 };
+	static const u8 data[] = { 0xE0, 0x00, 0x80, 0x40 };
 
 	return ci_copy_bytes_to_smc(rdev, 0x0, data, 4, sizeof(data)+1);
 }
@@ -163,27 +163,7 @@ bool ci_is_smc_running(struct radeon_device *rdev)
 	return false;
 }
 
-PPSMC_Result ci_send_msg_to_smc(struct radeon_device *rdev, PPSMC_Msg msg)
-{
-	u32 tmp;
-	int i;
-
-	if (!ci_is_smc_running(rdev))
-		return PPSMC_Result_Failed;
-
-	WREG32(SMC_MESSAGE_0, msg);
-
-	for (i = 0; i < rdev->usec_timeout; i++) {
-		tmp = RREG32(SMC_RESP_0);
-		if (tmp != 0)
-			break;
-		udelay(1);
-	}
-	tmp = RREG32(SMC_RESP_0);
-
-	return (PPSMC_Result)tmp;
-}
-
+#if 0
 PPSMC_Result ci_wait_for_smc_inactive(struct radeon_device *rdev)
 {
 	u32 tmp;
@@ -193,14 +173,15 @@ PPSMC_Result ci_wait_for_smc_inactive(struct radeon_device *rdev)
 		return PPSMC_Result_OK;
 
 	for (i = 0; i < rdev->usec_timeout; i++) {
-                tmp = RREG32_SMC(SMC_SYSCON_CLOCK_CNTL_0);
-                if ((tmp & CKEN) == 0)
+		tmp = RREG32_SMC(SMC_SYSCON_CLOCK_CNTL_0);
+		if ((tmp & CKEN) == 0)
 			break;
-                udelay(1);
-        }
+		udelay(1);
+	}
 
 	return PPSMC_Result_OK;
 }
+#endif
 
 int ci_load_smc_ucode(struct radeon_device *rdev, u32 limit)
 {

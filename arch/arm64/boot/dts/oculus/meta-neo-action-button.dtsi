@@ -1,0 +1,25 @@
+/*
+T141732596: SOC_ACT_BTN_L are now active high starting with HN Dev Config 0.1 layout.
+Note that GPIO on the SoC for the action button is effectively for debugging and testing purposes only.
+The "source of truth" for the button is actually RT600_ACT_BTN_L, handled by the MCU.
+*/
+
+&tlmm {
+	action_button_input: action_button_input {
+		mux {
+			pins = "gpio62";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio62";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+};
+
+&tlmm {
+        pinctrl-names = "default";
+        pinctrl-0 = <&action_button_input>;
+};

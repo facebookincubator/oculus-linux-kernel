@@ -1,0 +1,21 @@
+&tlmm {
+  soc_slider_defaults: soc_slider_defaults {
+    mux {
+      pins = "gpio39";
+      function = "gpio";
+    };
+
+    config {
+      pins = "gpio39";
+      drive-strength = <2>;
+      bias-pull-up;
+      input-enable;
+      output-high;
+    };
+  };
+};
+
+&tlmm {
+  pinctrl-names = "default";
+  pinctrl-0 = <&soc_slider_defaults>;
+};

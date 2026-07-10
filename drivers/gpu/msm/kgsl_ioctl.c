@@ -1,20 +1,9 @@
-/* Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2008-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
-#include <linux/ioctl.h>
-#include <linux/compat.h>
-#include <linux/uaccess.h>
-#include <linux/fs.h>
 #include "kgsl_device.h"
 #include "kgsl_sync.h"
 
@@ -48,10 +37,6 @@ static const struct kgsl_ioctl kgsl_ioctl_funcs[] = {
 			kgsl_ioctl_sharedmem_flush_cache),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_GPUMEM_ALLOC,
 			kgsl_ioctl_gpumem_alloc),
-	KGSL_IOCTL_FUNC(IOCTL_KGSL_CFF_SYNCMEM,
-			kgsl_ioctl_cff_syncmem),
-	KGSL_IOCTL_FUNC(IOCTL_KGSL_CFF_USER_EVENT,
-			kgsl_ioctl_cff_user_event),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_TIMESTAMP_EVENT,
 			kgsl_ioctl_timestamp_event),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_SETPROPERTY,
@@ -74,8 +59,6 @@ static const struct kgsl_ioctl kgsl_ioctl_funcs[] = {
 			kgsl_ioctl_syncsource_create_fence),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_SYNCSOURCE_SIGNAL_FENCE,
 			kgsl_ioctl_syncsource_signal_fence),
-	KGSL_IOCTL_FUNC(IOCTL_KGSL_CFF_SYNC_GPUOBJ,
-			kgsl_ioctl_cff_sync_gpuobj),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_GPUOBJ_ALLOC,
 			kgsl_ioctl_gpuobj_alloc),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_GPUOBJ_FREE,
@@ -90,6 +73,38 @@ static const struct kgsl_ioctl kgsl_ioctl_funcs[] = {
 			kgsl_ioctl_gpu_command),
 	KGSL_IOCTL_FUNC(IOCTL_KGSL_GPUOBJ_SET_INFO,
 			kgsl_ioctl_gpuobj_set_info),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_PHYS_ALLOC,
+			NULL),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_PHYS_FREE,
+			NULL),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_VIRT_ALLOC,
+			NULL),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_VIRT_FREE,
+			NULL),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_SPARSE_BIND,
+			NULL),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_GPU_SPARSE_COMMAND,
+			NULL),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_GPUMEM_BIND_RANGES,
+			kgsl_ioctl_gpumem_bind_ranges),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_GPU_AUX_COMMAND,
+			kgsl_ioctl_gpu_aux_command),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_TIMELINE_CREATE,
+			kgsl_ioctl_timeline_create),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_TIMELINE_WAIT,
+			kgsl_ioctl_timeline_wait),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_TIMELINE_FENCE_GET,
+			kgsl_ioctl_timeline_fence_get),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_TIMELINE_QUERY,
+			kgsl_ioctl_timeline_query),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_TIMELINE_SIGNAL,
+			kgsl_ioctl_timeline_signal),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_TIMELINE_DESTROY,
+			kgsl_ioctl_timeline_destroy),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_GET_FAULT_REPORT,
+			kgsl_ioctl_get_fault_report),
+	KGSL_IOCTL_FUNC(IOCTL_KGSL_RECURRING_COMMAND,
+			kgsl_ioctl_recurring_command),
 };
 
 long kgsl_ioctl_copy_in(unsigned int kernel_cmd, unsigned int user_cmd,
@@ -133,7 +148,12 @@ long kgsl_ioctl_helper(struct file *filep, unsigned int cmd, unsigned long arg,
 	if (nr >= len || cmds[nr].func == NULL)
 		return -ENOIOCTLCMD;
 
-	BUG_ON(_IOC_SIZE(cmds[nr].cmd) > sizeof(data));
+	if (_IOC_SIZE(cmds[nr].cmd) > sizeof(data)) {
+		dev_err_ratelimited(dev_priv->device->dev,
+			"data too big for ioctl 0x%08x: %d/%zu\n",
+			cmd, _IOC_SIZE(cmds[nr].cmd), sizeof(data));
+		return -EINVAL;
+	}
 
 	if (_IOC_SIZE(cmds[nr].cmd)) {
 		ret = kgsl_ioctl_copy_in(cmds[nr].cmd, cmd, arg, data);
@@ -164,12 +184,10 @@ long kgsl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 	 */
 
 	if (ret == -ENOIOCTLCMD) {
-		if (is_compat_task() && device->ftbl->compat_ioctl != NULL)
+		if (is_compat_task())
 			return device->ftbl->compat_ioctl(dev_priv, cmd, arg);
-		else if (device->ftbl->ioctl != NULL)
-			return device->ftbl->ioctl(dev_priv, cmd, arg);
 
-		KGSL_DRV_INFO(device, "invalid ioctl code 0x%08X\n", cmd);
+		return device->ftbl->ioctl(dev_priv, cmd, arg);
 	}
 
 	return ret;

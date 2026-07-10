@@ -19,8 +19,7 @@
 
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/physmap.h>
-#include <linux/mtd/nand.h>
-#include <linux/mtd/partitions.h>
+#include <linux/mtd/platnand.h>
 
 #include <asm/netlogic/haldefs.h>
 #include <asm/netlogic/xlr/iomap.h>
@@ -78,8 +77,6 @@ static struct platform_device xlr_nor_dev = {
 	.resource	= xlr_nor_res,
 };
 
-const char *xlr_part_probes[] = { "cmdlinepart", NULL };
-
 /*
  * Use "gen_nand" driver for NAND flash
  *
@@ -94,8 +91,8 @@ struct xlr_nand_flash_priv {
 
 static struct xlr_nand_flash_priv nand_priv;
 
-static void xlr_nand_ctrl(struct mtd_info *mtd, int cmd,
-		unsigned int ctrl)
+static void xlr_nand_ctrl(struct nand_chip *chip, int cmd,
+			  unsigned int ctrl)
 {
 	if (ctrl & NAND_CLE)
 		nlm_write_reg(nand_priv.flash_mmio,
@@ -111,7 +108,6 @@ struct platform_nand_data xlr_nand_data = {
 		.nr_partitions	= ARRAY_SIZE(xlr_nand_parts),
 		.chip_delay	= 50,
 		.partitions	= xlr_nand_parts,
-		.part_probe_types = xlr_part_probes,
 	},
 	.ctrl = {
 		.cmd_ctrl	= xlr_nand_ctrl,

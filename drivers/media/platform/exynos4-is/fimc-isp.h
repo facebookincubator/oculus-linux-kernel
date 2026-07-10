@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Samsung EXYNOS4x12 FIMC-IS (Imaging Subsystem) driver
  *
@@ -5,10 +6,6 @@
  *
  * Authors: Sylwester Nawrocki <s.nawrocki@samsung.com>
  *          Younghwan Joo <yhwan.joo@samsung.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #ifndef FIMC_ISP_H_
 #define FIMC_ISP_H_
@@ -21,10 +18,10 @@
 #include <linux/videodev2.h>
 
 #include <media/media-entity.h>
-#include <media/videobuf2-core.h>
+#include <media/videobuf2-v4l2.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-mediabus.h>
-#include <media/exynos-fimc.h>
+#include <media/drv-intf/exynos-fimc.h>
 
 extern int fimc_isp_debug;
 
@@ -102,7 +99,7 @@ struct fimc_isp_ctrls {
 };
 
 struct isp_video_buf {
-	struct vb2_buffer vb;
+	struct vb2_v4l2_buffer vb;
 	dma_addr_t dma_addr[FIMC_ISP_MAX_PLANES];
 	unsigned int index;
 };
@@ -148,7 +145,6 @@ struct fimc_is_video {
 /**
  * struct fimc_isp - FIMC-IS ISP data structure
  * @pdev: pointer to FIMC-IS platform device
- * @alloc_ctx: videobuf2 memory allocator context
  * @subdev: ISP v4l2_subdev
  * @subdev_pads: the ISP subdev media pads
  * @test_pattern: test pattern controls
@@ -161,7 +157,6 @@ struct fimc_is_video {
  */
 struct fimc_isp {
 	struct platform_device		*pdev;
-	struct vb2_alloc_ctx		*alloc_ctx;
 	struct v4l2_subdev		subdev;
 	struct media_pad		subdev_pads[FIMC_ISP_SD_PADS_NUM];
 	struct v4l2_mbus_framefmt	src_fmt;

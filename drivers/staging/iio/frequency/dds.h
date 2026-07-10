@@ -1,10 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * dds.h - sysfs attributes associated with DDS devices
  *
  * Copyright (c) 2010 Analog Devices Inc.
- *
- * Licensed under the GPL-2 or later.
  */
+#ifndef IIO_DDS_H_
+#define IIO_DDS_H_
 
 /**
  * /sys/bus/iio/devices/.../out_altvoltageX_frequencyY
@@ -99,7 +100,7 @@
 
 #define IIO_DEV_ATTR_OUT_WAVETYPE(_channel, _output, _store, _addr)	\
 	IIO_DEVICE_ATTR(out_altvoltage##_channel##_out##_output##_wavetype,\
-			S_IWUSR, NULL, _store, _addr)
+			0200, NULL, _store, _addr)
 
 /**
  * /sys/bus/iio/devices/.../out_altvoltageX_outY_wavetype_available
@@ -108,3 +109,5 @@
 #define IIO_CONST_ATTR_OUT_WAVETYPES_AVAILABLE(_channel, _output, _modes)\
 	IIO_CONST_ATTR(							\
 	out_altvoltage##_channel##_out##_output##_wavetype_available, _modes)
+
+#endif /* IIO_DDS_H_ */

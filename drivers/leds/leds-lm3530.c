@@ -1,8 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2011 ST-Ericsson SA.
  * Copyright (C) 2009 Motorola, Inc.
- *
- * License Terms: GNU General Public License v2
  *
  * Simple driver for National Semiconductor LM3530 Backlight driver chip
  *
@@ -492,7 +491,6 @@ static struct i2c_driver lm3530_i2c_driver = {
 	.id_table = lm3530_id,
 	.driver = {
 		.name = LM3530_NAME,
-		.owner = THIS_MODULE,
 	},
 };
 

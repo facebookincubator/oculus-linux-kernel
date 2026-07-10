@@ -1,9 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /**
  * Copyright (C) 2008, Creative Technology Ltd. All Rights Reserved.
- *
- * This source file is released under GPL v2 license (no other versions).
- * See the COPYING file included in the main directory of this source
- * distribution for the license terms and conditions.
  *
  * @File	ctresource.h
  *
@@ -13,7 +10,6 @@
  *
  * @Author	Liu Chun
  * @Date 	May 13 2008
- *
  */
 
 #ifndef CTRESOURCE_H
@@ -39,12 +35,12 @@ struct rsc {
 	u32 msr:4;	/* The Master Sample Rate a resource working on */
 	void *ctrl_blk;	/* Chip specific control info block for a resource */
 	struct hw *hw;	/* Chip specific object for hardware access means */
-	struct rsc_ops *ops;	/* Generic resource operations */
+	const struct rsc_ops *ops;	/* Generic resource operations */
 };
 
 struct rsc_ops {
-	int (*master)(struct rsc *rsc);	/* Move to master resource */
-	int (*next_conj)(struct rsc *rsc); /* Move to next conjugate resource */
+	void (*master)(struct rsc *rsc); /* Move to master resource */
+	void (*next_conj)(struct rsc *rsc); /* Move to next conjugate resource */
 	int (*index)(const struct rsc *rsc); /* Return the index of resource */
 	/* Return the output slot number */
 	int (*output_slot)(const struct rsc *rsc);

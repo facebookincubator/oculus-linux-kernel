@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * SDHCI support for CNS3xxx SoC
  *
@@ -6,10 +7,6 @@
  *
  * Authors: Scott Shu
  *	    Anton Vorontsov <avorontsov@mvista.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/delay.h>
@@ -98,18 +95,14 @@ static int sdhci_cns3xxx_probe(struct platform_device *pdev)
 	return sdhci_pltfm_register(pdev, &sdhci_cns3xxx_pdata, 0);
 }
 
-static int sdhci_cns3xxx_remove(struct platform_device *pdev)
-{
-	return sdhci_pltfm_unregister(pdev);
-}
-
 static struct platform_driver sdhci_cns3xxx_driver = {
 	.driver		= {
 		.name	= "sdhci-cns3xxx",
-		.pm	= SDHCI_PLTFM_PMOPS,
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
+		.pm	= &sdhci_pltfm_pmops,
 	},
 	.probe		= sdhci_cns3xxx_probe,
-	.remove		= sdhci_cns3xxx_remove,
+	.remove		= sdhci_pltfm_unregister,
 };
 
 module_platform_driver(sdhci_cns3xxx_driver);

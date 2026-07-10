@@ -289,63 +289,6 @@ static const struct fb_videomode modedb[] = {
 };
 
 #ifdef CONFIG_FB_MODE_HELPERS
-const struct fb_videomode cea_modes[64] = {
-	/* #1: 640x480p@59.94/60Hz */
-	[1] = {
-		NULL, 60, 640, 480, 39722, 48, 16, 33, 10, 96, 2, 0,
-		FB_VMODE_NONINTERLACED, 0,
-	},
-	/* #3: 720x480p@59.94/60Hz */
-	[3] = {
-		NULL, 60, 720, 480, 37037, 60, 16, 30, 9, 62, 6, 0,
-		FB_VMODE_NONINTERLACED, 0,
-	},
-	/* #5: 1920x1080i@59.94/60Hz */
-	[5] = {
-		NULL, 60, 1920, 1080, 13763, 148, 88, 15, 2, 44, 5,
-		FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
-		FB_VMODE_INTERLACED, 0,
-	},
-	/* #7: 720(1440)x480iH@59.94/60Hz */
-	[7] = {
-		NULL, 60, 1440, 480, 18554/*37108*/, 114, 38, 15, 4, 124, 3, 0,
-		FB_VMODE_INTERLACED, 0,
-	},
-	/* #9: 720(1440)x240pH@59.94/60Hz */
-	[9] = {
-		NULL, 60, 1440, 240, 18554, 114, 38, 16, 4, 124, 3, 0,
-		FB_VMODE_NONINTERLACED, 0,
-	},
-	/* #18: 720x576pH@50Hz */
-	[18] = {
-		NULL, 50, 720, 576, 37037, 68, 12, 39, 5, 64, 5, 0,
-		FB_VMODE_NONINTERLACED, 0,
-	},
-	/* #19: 1280x720p@50Hz */
-	[19] = {
-		NULL, 50, 1280, 720, 13468, 220, 440, 20, 5, 40, 5,
-		FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
-		FB_VMODE_NONINTERLACED, 0,
-	},
-	/* #20: 1920x1080i@50Hz */
-	[20] = {
-		NULL, 50, 1920, 1080, 13480, 148, 528, 15, 5, 528, 5,
-		FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
-		FB_VMODE_INTERLACED, 0,
-	},
-	/* #32: 1920x1080p@23.98/24Hz */
-	[32] = {
-		NULL, 24, 1920, 1080, 13468, 148, 638, 36, 4, 44, 5,
-		FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
-		FB_VMODE_NONINTERLACED, 0,
-	},
-	/* #35: (2880)x480p4x@59.94/60Hz */
-	[35] = {
-		NULL, 60, 2880, 480, 9250, 240, 64, 30, 9, 248, 6, 0,
-		FB_VMODE_NONINTERLACED, 0,
-	},
-};
-
 const struct fb_videomode vesa_modes[] = {
 	/* 0 640x350-85 VESA */
 	{ NULL, 85, 640, 350, 31746,  96, 32, 60, 32, 64, 3,
@@ -468,8 +411,119 @@ const struct fb_videomode vesa_modes[] = {
 	/* 33 1920x1440-75 VESA */
 	{ NULL, 75, 1920, 1440, 3367, 352, 144, 56, 1, 224, 3,
 	  FB_SYNC_VERT_HIGH_ACT, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA },
+	/* 34 1920x1200-60 RB VESA */
+	{ NULL, 60, 1920, 1200, 6493, 80, 48, 26, 3, 32, 6,
+	  FB_SYNC_VERT_HIGH_ACT, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA },
+	/* 35 1920x1200-60 VESA */
+	{ NULL, 60, 1920, 1200, 5174, 336, 136, 36, 3, 200, 6,
+	  FB_SYNC_VERT_HIGH_ACT, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA },
+	/* 36 1920x1200-75 VESA */
+	{ NULL, 75, 1920, 1200, 4077, 344, 136, 46, 3, 208, 6,
+	  FB_SYNC_VERT_HIGH_ACT, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA },
+	/* 37 1920x1200-85 VESA */
+	{ NULL, 85, 1920, 1200, 3555, 352, 144, 53, 3, 208, 6,
+	  FB_SYNC_VERT_HIGH_ACT, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA },
+	/* 38 2560x1600-60 RB VESA */
+	{ NULL, 60, 2560, 1600, 3724, 80, 48, 37, 3, 32, 6,
+	  FB_SYNC_HOR_HIGH_ACT, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA },
+	/* 39 2560x1600-60 VESA */
+	{ NULL, 60, 2560, 1600, 2869, 472, 192, 49, 3, 280, 6,
+	  FB_SYNC_VERT_HIGH_ACT, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA },
+	/* 40 2560x1600-75 VESA */
+	{ NULL, 75, 2560, 1600, 2256, 488, 208, 63, 3, 280, 6,
+	  FB_SYNC_VERT_HIGH_ACT, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA },
+	/* 41 2560x1600-85 VESA */
+	{ NULL, 85, 2560, 1600, 1979, 488, 208, 73, 3, 280, 6,
+	  FB_SYNC_VERT_HIGH_ACT, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA },
+	/* 42 2560x1600-120 RB VESA */
+	{ NULL, 120, 2560, 1600, 1809, 80, 48, 85, 3, 32, 6,
+	  FB_SYNC_HOR_HIGH_ACT, FB_VMODE_NONINTERLACED, FB_MODE_IS_VESA },
 };
 EXPORT_SYMBOL(vesa_modes);
+
+const struct dmt_videomode dmt_modes[DMT_SIZE] = {
+	{ 0x01, 0x0000, 0x000000, &vesa_modes[0] },
+	{ 0x02, 0x3119, 0x000000, &vesa_modes[1] },
+	{ 0x03, 0x0000, 0x000000, &vesa_modes[2] },
+	{ 0x04, 0x3140, 0x000000, &vesa_modes[3] },
+	{ 0x05, 0x314c, 0x000000, &vesa_modes[4] },
+	{ 0x06, 0x314f, 0x000000, &vesa_modes[5] },
+	{ 0x07, 0x3159, 0x000000, &vesa_modes[6] },
+	{ 0x08, 0x0000, 0x000000, &vesa_modes[7] },
+	{ 0x09, 0x4540, 0x000000, &vesa_modes[8] },
+	{ 0x0a, 0x454c, 0x000000, &vesa_modes[9] },
+	{ 0x0b, 0x454f, 0x000000, &vesa_modes[10] },
+	{ 0x0c, 0x4559, 0x000000, &vesa_modes[11] },
+	{ 0x0d, 0x0000, 0x000000, NULL },
+	{ 0x0e, 0x0000, 0x000000, NULL },
+	{ 0x0f, 0x0000, 0x000000, &vesa_modes[12] },
+	{ 0x10, 0x6140, 0x000000, &vesa_modes[13] },
+	{ 0x11, 0x614a, 0x000000, &vesa_modes[14] },
+	{ 0x12, 0x614f, 0x000000, &vesa_modes[15] },
+	{ 0x13, 0x6159, 0x000000, &vesa_modes[16] },
+	{ 0x14, 0x0000, 0x000000, NULL },
+	{ 0x15, 0x714f, 0x000000, &vesa_modes[17] },
+	{ 0x16, 0x0000, 0x7f1c21, NULL },
+	{ 0x17, 0x0000, 0x7f1c28, NULL },
+	{ 0x18, 0x0000, 0x7f1c44, NULL },
+	{ 0x19, 0x0000, 0x7f1c62, NULL },
+	{ 0x1a, 0x0000, 0x000000, NULL },
+	{ 0x1b, 0x0000, 0x8f1821, NULL },
+	{ 0x1c, 0x8100, 0x8f1828, NULL },
+	{ 0x1d, 0x810f, 0x8f1844, NULL },
+	{ 0x1e, 0x8119, 0x8f1862, NULL },
+	{ 0x1f, 0x0000, 0x000000, NULL },
+	{ 0x20, 0x8140, 0x000000, &vesa_modes[18] },
+	{ 0x21, 0x8159, 0x000000, &vesa_modes[19] },
+	{ 0x22, 0x0000, 0x000000, NULL },
+	{ 0x23, 0x8180, 0x000000, &vesa_modes[20] },
+	{ 0x24, 0x818f, 0x000000, &vesa_modes[21] },
+	{ 0x25, 0x8199, 0x000000, &vesa_modes[22] },
+	{ 0x26, 0x0000, 0x000000, NULL },
+	{ 0x27, 0x0000, 0x000000, NULL },
+	{ 0x28, 0x0000, 0x000000, NULL },
+	{ 0x29, 0x0000, 0x0c2021, NULL },
+	{ 0x2a, 0x9040, 0x0c2028, NULL },
+	{ 0x2b, 0x904f, 0x0c2044, NULL },
+	{ 0x2c, 0x9059, 0x0c2062, NULL },
+	{ 0x2d, 0x0000, 0x000000, NULL },
+	{ 0x2e, 0x9500, 0xc11821, NULL },
+	{ 0x2f, 0x9500, 0xc11828, NULL },
+	{ 0x30, 0x950f, 0xc11844, NULL },
+	{ 0x31, 0x9519, 0xc11868, NULL },
+	{ 0x32, 0x0000, 0x000000, NULL },
+	{ 0x33, 0xa940, 0x000000, &vesa_modes[23] },
+	{ 0x34, 0xa945, 0x000000, &vesa_modes[24] },
+	{ 0x35, 0xa94a, 0x000000, &vesa_modes[25] },
+	{ 0x36, 0xa94f, 0x000000, &vesa_modes[26] },
+	{ 0x37, 0xa959, 0x000000, &vesa_modes[27] },
+	{ 0x38, 0x0000, 0x000000, NULL },
+	{ 0x39, 0x0000, 0x0c2821, NULL },
+	{ 0x3a, 0xb300, 0x0c2828, NULL },
+	{ 0x3b, 0xb30f, 0x0c2844, NULL },
+	{ 0x3c, 0xb319, 0x0c2868, NULL },
+	{ 0x3d, 0x0000, 0x000000, NULL },
+	{ 0x3e, 0xc140, 0x000000, &vesa_modes[28] },
+	{ 0x3f, 0xc14f, 0x000000, &vesa_modes[29] },
+	{ 0x40, 0x0000, 0x000000, NULL},
+	{ 0x41, 0xc940, 0x000000, &vesa_modes[30] },
+	{ 0x42, 0xc94f, 0x000000, &vesa_modes[31] },
+	{ 0x43, 0x0000, 0x000000, NULL },
+	{ 0x44, 0x0000, 0x572821, &vesa_modes[34] },
+	{ 0x45, 0xd100, 0x572828, &vesa_modes[35] },
+	{ 0x46, 0xd10f, 0x572844, &vesa_modes[36] },
+	{ 0x47, 0xd119, 0x572862, &vesa_modes[37] },
+	{ 0x48, 0x0000, 0x000000, NULL },
+	{ 0x49, 0xd140, 0x000000, &vesa_modes[32] },
+	{ 0x4a, 0xd14f, 0x000000, &vesa_modes[33] },
+	{ 0x4b, 0x0000, 0x000000, NULL },
+	{ 0x4c, 0x0000, 0x1f3821, &vesa_modes[38] },
+	{ 0x4d, 0x0000, 0x1f3828, &vesa_modes[39] },
+	{ 0x4e, 0x0000, 0x1f3844, &vesa_modes[40] },
+	{ 0x4f, 0x0000, 0x1f3862, &vesa_modes[41] },
+	{ 0x50, 0x0000, 0x000000, &vesa_modes[42] },
+};
+EXPORT_SYMBOL(dmt_modes);
 #endif /* CONFIG_FB_MODE_HELPERS */
 
 /**
@@ -517,45 +571,47 @@ static int fb_try_mode(struct fb_var_screeninfo *var, struct fb_info *info,
 }
 
 /**
- *     fb_find_mode - finds a valid video mode
- *     @var: frame buffer user defined part of display
- *     @info: frame buffer info structure
- *     @mode_option: string video mode to find
- *     @db: video mode database
- *     @dbsize: size of @db
- *     @default_mode: default video mode to fall back to
- *     @default_bpp: default color depth in bits per pixel
+ * fb_find_mode - finds a valid video mode
+ * @var: frame buffer user defined part of display
+ * @info: frame buffer info structure
+ * @mode_option: string video mode to find
+ * @db: video mode database
+ * @dbsize: size of @db
+ * @default_mode: default video mode to fall back to
+ * @default_bpp: default color depth in bits per pixel
  *
- *     Finds a suitable video mode, starting with the specified mode
- *     in @mode_option with fallback to @default_mode.  If
- *     @default_mode fails, all modes in the video mode database will
- *     be tried.
+ * Finds a suitable video mode, starting with the specified mode
+ * in @mode_option with fallback to @default_mode.  If
+ * @default_mode fails, all modes in the video mode database will
+ * be tried.
  *
- *     Valid mode specifiers for @mode_option:
+ * Valid mode specifiers for @mode_option::
  *
- *     <xres>x<yres>[M][R][-<bpp>][@<refresh>][i][m] or
+ *     <xres>x<yres>[M][R][-<bpp>][@<refresh>][i][p][m]
+ *
+ * or ::
+ *
  *     <name>[-<bpp>][@<refresh>]
  *
- *     with <xres>, <yres>, <bpp> and <refresh> decimal numbers and
- *     <name> a string.
+ * with <xres>, <yres>, <bpp> and <refresh> decimal numbers and
+ * <name> a string.
  *
- *      If 'M' is present after yres (and before refresh/bpp if present),
- *      the function will compute the timings using VESA(tm) Coordinated
- *      Video Timings (CVT).  If 'R' is present after 'M', will compute with
- *      reduced blanking (for flatpanels).  If 'i' is present, compute
- *      interlaced mode.  If 'm' is present, add margins equal to 1.8%
- *      of xres rounded down to 8 pixels, and 1.8% of yres. The char
- *      'i' and 'm' must be after 'M' and 'R'. Example:
+ * If 'M' is present after yres (and before refresh/bpp if present),
+ * the function will compute the timings using VESA(tm) Coordinated
+ * Video Timings (CVT).  If 'R' is present after 'M', will compute with
+ * reduced blanking (for flatpanels).  If 'i' or 'p' are present, compute
+ * interlaced or progressive mode.  If 'm' is present, add margins equal
+ * to 1.8% of xres rounded down to 8 pixels, and 1.8% of yres. The char
+ * 'i', 'p' and 'm' must be after 'M' and 'R'. Example::
  *
- *      1024x768MR-8@60m - Reduced blank with margins at 60Hz.
+ *     1024x768MR-8@60m - Reduced blank with margins at 60Hz.
  *
- *     NOTE: The passed struct @var is _not_ cleared!  This allows you
- *     to supply values for e.g. the grayscale and accel_flags fields.
+ * NOTE: The passed struct @var is _not_ cleared!  This allows you
+ * to supply values for e.g. the grayscale and accel_flags fields.
  *
- *     Returns zero for failure, 1 if using specified @mode_option,
- *     2 if using specified @mode_option with an ignored refresh rate,
- *     3 if default mode is used, 4 if fall back to any valid mode.
- *
+ * Returns zero for failure, 1 if using specified @mode_option,
+ * 2 if using specified @mode_option with an ignored refresh rate,
+ * 3 if default mode is used, 4 if fall back to any valid mode.
  */
 
 int fb_find_mode(struct fb_var_screeninfo *var,
@@ -586,7 +642,8 @@ int fb_find_mode(struct fb_var_screeninfo *var,
 		unsigned int namelen = strlen(name);
 		int res_specified = 0, bpp_specified = 0, refresh_specified = 0;
 		unsigned int xres = 0, yres = 0, bpp = default_bpp, refresh = 0;
-		int yres_specified = 0, cvt = 0, rb = 0, interlace = 0;
+		int yres_specified = 0, cvt = 0, rb = 0;
+		int interlace_specified = 0, interlace = 0;
 		int margins = 0;
 		u32 best, diff, tdiff;
 
@@ -637,9 +694,17 @@ int fb_find_mode(struct fb_var_screeninfo *var,
 				if (!cvt)
 					margins = 1;
 				break;
+			case 'p':
+				if (!cvt) {
+					interlace = 0;
+					interlace_specified = 1;
+				}
+				break;
 			case 'i':
-				if (!cvt)
+				if (!cvt) {
 					interlace = 1;
+					interlace_specified = 1;
+				}
 				break;
 			default:
 				goto done;
@@ -708,11 +773,21 @@ done:
 			if ((name_matches(db[i], name, namelen) ||
 			     (res_specified && res_matches(db[i], xres, yres))) &&
 			    !fb_try_mode(var, info, &db[i], bpp)) {
-				if (refresh_specified && db[i].refresh == refresh)
-					return 1;
+				const int db_interlace = (db[i].vmode &
+					FB_VMODE_INTERLACED ? 1 : 0);
+				int score = abs(db[i].refresh - refresh);
 
-				if (abs(db[i].refresh - refresh) < diff) {
-					diff = abs(db[i].refresh - refresh);
+				if (interlace_specified)
+					score += abs(db_interlace - interlace);
+
+				if (!interlace_specified ||
+				    db_interlace == interlace)
+					if (refresh_specified &&
+					    db[i].refresh == refresh)
+						return 1;
+
+				if (score < diff) {
+					diff = score;
 					best = i;
 				}
 			}
@@ -802,6 +877,9 @@ void fb_var_to_videomode(struct fb_videomode *mode,
 		vtotal /= 2;
 	if (var->vmode & FB_VMODE_DOUBLE)
 		vtotal *= 2;
+
+	if (!htotal || !vtotal)
+		return;
 
 	hfreq = pixclock/htotal;
 	mode->refresh = hfreq/vtotal;

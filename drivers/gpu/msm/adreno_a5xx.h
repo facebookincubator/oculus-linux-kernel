@@ -1,14 +1,6 @@
-/* Copyright (c) 2015-2016,2020, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2015-2017,2019-2020 The Linux Foundation. All rights reserved.
  */
 
 #ifndef _ADRENO_A5XX_H_
@@ -16,39 +8,37 @@
 
 #include "a5xx_reg.h"
 
-#define A5XX_IRQ_FLAGS \
-	{ BIT(A5XX_INT_RBBM_GPU_IDLE), "RBBM_GPU_IDLE" }, \
-	{ BIT(A5XX_INT_RBBM_AHB_ERROR), "RBBM_AHB_ERR" }, \
-	{ BIT(A5XX_INT_RBBM_TRANSFER_TIMEOUT), "RBBM_TRANSFER_TIMEOUT" }, \
-	{ BIT(A5XX_INT_RBBM_ME_MS_TIMEOUT), "RBBM_ME_MS_TIMEOUT" }, \
-	{ BIT(A5XX_INT_RBBM_PFP_MS_TIMEOUT), "RBBM_PFP_MS_TIMEOUT" }, \
-	{ BIT(A5XX_INT_RBBM_ETS_MS_TIMEOUT), "RBBM_ETS_MS_TIMEOUT" }, \
-	{ BIT(A5XX_INT_RBBM_ATB_ASYNC_OVERFLOW), "RBBM_ATB_ASYNC_OVERFLOW" }, \
-	{ BIT(A5XX_INT_RBBM_GPC_ERROR), "RBBM_GPC_ERR" }, \
-	{ BIT(A5XX_INT_CP_SW), "CP_SW" }, \
-	{ BIT(A5XX_INT_CP_HW_ERROR), "CP_OPCODE_ERROR" }, \
-	{ BIT(A5XX_INT_CP_CCU_FLUSH_DEPTH_TS), "CP_CCU_FLUSH_DEPTH_TS" }, \
-	{ BIT(A5XX_INT_CP_CCU_FLUSH_COLOR_TS), "CP_CCU_FLUSH_COLOR_TS" }, \
-	{ BIT(A5XX_INT_CP_CCU_RESOLVE_TS), "CP_CCU_RESOLVE_TS" }, \
-	{ BIT(A5XX_INT_CP_IB2), "CP_IB2_INT" }, \
-	{ BIT(A5XX_INT_CP_IB1), "CP_IB1_INT" }, \
-	{ BIT(A5XX_INT_CP_RB), "CP_RB_INT" }, \
-	{ BIT(A5XX_INT_CP_UNUSED_1), "CP_UNUSED_1" }, \
-	{ BIT(A5XX_INT_CP_RB_DONE_TS), "CP_RB_DONE_TS" }, \
-	{ BIT(A5XX_INT_CP_WT_DONE_TS), "CP_WT_DONE_TS" }, \
-	{ BIT(A5XX_INT_UNKNOWN_1), "UNKNOWN_1" }, \
-	{ BIT(A5XX_INT_CP_CACHE_FLUSH_TS), "CP_CACHE_FLUSH_TS" }, \
-	{ BIT(A5XX_INT_UNUSED_2), "UNUSED_2" }, \
-	{ BIT(A5XX_INT_RBBM_ATB_BUS_OVERFLOW), "RBBM_ATB_BUS_OVERFLOW" }, \
-	{ BIT(A5XX_INT_MISC_HANG_DETECT), "MISC_HANG_DETECT" }, \
-	{ BIT(A5XX_INT_UCHE_OOB_ACCESS), "UCHE_OOB_ACCESS" }, \
-	{ BIT(A5XX_INT_UCHE_TRAP_INTR), "UCHE_TRAP_INTR" }, \
-	{ BIT(A5XX_INT_DEBBUS_INTR_0), "DEBBUS_INTR_0" }, \
-	{ BIT(A5XX_INT_DEBBUS_INTR_1), "DEBBUS_INTR_1" }, \
-	{ BIT(A5XX_INT_GPMU_VOLTAGE_DROOP), "GPMU_VOLTAGE_DROOP" }, \
-	{ BIT(A5XX_INT_GPMU_FIRMWARE), "GPMU_FIRMWARE" }, \
-	{ BIT(A5XX_INT_ISDB_CPU_IRQ), "ISDB_CPU_IRQ" }, \
-	{ BIT(A5XX_INT_ISDB_UNDER_DEBUG), "ISDB_UNDER_DEBUG" }
+/**
+ * struct adreno_a5xx_core - a5xx specific GPU core definitions
+ */
+struct adreno_a5xx_core {
+	/** @base: Container for the generic &struct adreno_gpu_core */
+	struct adreno_gpu_core base;
+	/** @gpmu_tsens: ID for the temperature sensor used by the GPMU */
+	unsigned int gpmu_tsens;
+	/** @max_power: Max possible power draw of a core */
+	unsigned int max_power;
+	/** pm4fw_name: Name of the PM4 microcode file */
+	const char *pm4fw_name;
+	/** pfpfw_name: Name of the PFP microcode file */
+	const char *pfpfw_name;
+	/** gpmufw_name: Name of the GPMU microcode file */
+	const char *gpmufw_name;
+	/** @regfw_name: Filename for the LM registers if applicable */
+	const char *regfw_name;
+	/** @zap_name: Name of the CPZ zap file */
+	const char *zap_name;
+	/** @hwcg: List of registers and values to write for HWCG */
+	const struct kgsl_regmap_list *hwcg;
+	/** @hwcg_count: Number of registers in @hwcg */
+	u32 hwcg_count;
+	/** @vbif: List of registers and values to write for VBIF */
+	const struct kgsl_regmap_list *vbif;
+	/** @vbif_count: Number of registers in @vbif */
+	u32 vbif_count;
+	/** @highest_bank_bit: The bit of the highest DDR bank */
+	u32 highest_bank_bit;
+};
 
 #define A5XX_CP_CTXRECORD_MAGIC_REF     0x27C4BAFCUL
 /* Size of each CP preemption record */
@@ -142,29 +132,14 @@ void a5xx_hwcg_set(struct adreno_device *adreno_dev, bool on);
 #define WAKEUP_ACK			BIT(1)
 #define IDLE_FULL_ACK			BIT(0)
 
+/* A5XX_GPMU_GPMU_ISENSE_CTRL */
+#define	ISENSE_CGC_EN_DISABLE		BIT(0)
+
 /* A5XX_GPMU_TEMP_SENSOR_CONFIG */
 #define GPMU_BCL_ENABLED		BIT(4)
 #define GPMU_LLM_ENABLED		BIT(9)
 #define GPMU_ISENSE_STATUS		GENMASK(3, 0)
 #define GPMU_ISENSE_END_POINT_CAL_ERR	BIT(0)
-
-/* A5XX_GPU_CS_AMP_CALIBRATION_CONTROL1 */
-#define AMP_SW_TRIM_START		BIT(0)
-
-/* A5XX_GPU_CS_SENSOR_GENERAL_STATUS */
-#define SS_AMPTRIM_DONE			BIT(11)
-#define CS_PWR_ON_STATUS		BIT(10)
-
-/* A5XX_GPU_CS_AMP_CALIBRATION_STATUS*_* */
-#define AMP_OUT_OF_RANGE_ERR		BIT(4)
-#define AMP_OFFSET_CHECK_MAX_ERR	BIT(2)
-#define AMP_OFFSET_CHECK_MIN_ERR	BIT(1)
-
-/* A5XX_GPU_CS_AMP_CALIBRATION_DONE */
-#define SW_OPAMP_CAL_DONE           BIT(0)
-
-#define AMP_CALIBRATION_ERR (AMP_OFFSET_CHECK_MIN_ERR | \
-		AMP_OFFSET_CHECK_MAX_ERR | AMP_OUT_OF_RANGE_ERR)
 
 #define AMP_CALIBRATION_RETRY_CNT	3
 #define AMP_CALIBRATION_TIMEOUT		6
@@ -174,6 +149,9 @@ void a5xx_hwcg_set(struct adreno_device *adreno_dev, bool on);
 
 /* A5XX_GPMU_GPMU_PWR_THRESHOLD */
 #define PWR_THRESHOLD_VALID		0x80000000
+
+/* A5XX_GPMU_GPMU_SP_CLOCK_CONTROL */
+#define CNTL_IP_CLK_ENABLE		BIT(0)
 /* AGC */
 #define AGC_INIT_BASE			A5XX_GPMU_DATA_RAM_BASE
 #define AGC_INIT_MSG_MAGIC		(AGC_INIT_BASE + 5)
@@ -191,8 +169,11 @@ void a5xx_hwcg_set(struct adreno_device *adreno_dev, bool on);
 #define AGC_LM_CONFIG_ENABLE_GPMU_ADAPTIVE (1)
 
 #define AGC_LM_CONFIG_ENABLE_ERROR	(3 << 4)
+#define AGC_LM_CONFIG_ISENSE_ENABLE     (1 << 4)
 
 #define AGC_THROTTLE_SEL_DCS		(1 << 8)
+#define AGC_THROTTLE_DISABLE            (2 << 8)
+
 
 #define AGC_LLM_ENABLED			(1 << 16)
 #define	AGC_GPU_VERSION_MASK		GENMASK(18, 17)
@@ -202,7 +183,7 @@ void a5xx_hwcg_set(struct adreno_device *adreno_dev, bool on);
 
 #define AGC_LEVEL_CONFIG		(140/4)
 
-#define LM_DCVS_LIMIT			2
+#define LM_DCVS_LIMIT			1
 /* FW file tages */
 #define GPMU_FIRMWARE_ID		2
 #define GPMU_SEQUENCE_ID		3
@@ -219,14 +200,24 @@ void a5xx_hwcg_set(struct adreno_device *adreno_dev, bool on);
 #define LM_SEQUENCE_ID			1
 #define MAX_SEQUENCE_ID			3
 
+#define GPMU_ISENSE_SAVE	(A5XX_GPMU_DATA_RAM_BASE + 200/4)
 /* LM defaults */
 #define LM_DEFAULT_LIMIT		6000
 #define A530_DEFAULT_LEAKAGE		0x004E001A
 
-static inline bool lm_on(struct adreno_device *adreno_dev)
+/**
+ * to_a5xx_core - return the a5xx specific GPU core struct
+ * @adreno_dev: An Adreno GPU device handle
+ *
+ * Returns:
+ * A pointer to the a5xx specific GPU core struct
+ */
+static inline const struct adreno_a5xx_core *
+to_a5xx_core(struct adreno_device *adreno_dev)
 {
-	return ADRENO_FEATURE(adreno_dev, ADRENO_LM) &&
-		test_bit(ADRENO_LM_CTRL, &adreno_dev->pwrctrl_flag);
+	const struct adreno_gpu_core *core = adreno_dev->gpucore;
+
+	return container_of(core, struct adreno_a5xx_core, base);
 }
 
 /* Preemption functions */
@@ -234,16 +225,83 @@ void a5xx_preemption_trigger(struct adreno_device *adreno_dev);
 void a5xx_preemption_schedule(struct adreno_device *adreno_dev);
 void a5xx_preemption_start(struct adreno_device *adreno_dev);
 int a5xx_preemption_init(struct adreno_device *adreno_dev);
-int a5xx_preemption_yield_enable(unsigned int *cmds);
 
-unsigned int a5xx_preemption_post_ibsubmit(struct adreno_device *adreno_dev,
-		unsigned int *cmds);
-unsigned int a5xx_preemption_pre_ibsubmit(
-			struct adreno_device *adreno_dev,
-			struct adreno_ringbuffer *rb,
-			unsigned int *cmds, struct kgsl_context *context);
+/**
+ * a5xx_preemption_post_ibsubmit - Insert commands following a submission
+ * @adreno_dev: Adreno GPU handle
+ * @cmds: Pointer to the ringbuffer to insert opcodes
+ *
+ * Return: The number of opcodes written to @cmds
+ */
+u32 a5xx_preemption_post_ibsubmit(struct adreno_device *adreno_dev, u32 *cmds);
 
+/**
+ * a5xx_preemption_post_ibsubmit - Insert opcodes before a submission
+ * @adreno_dev: Adreno GPU handle
+ * @rb: The ringbuffer being written
+ * @drawctxt: The draw context being written
+ * @cmds: Pointer to the ringbuffer to insert opcodes
+ *
+ * Return: The number of opcodes written to @cmds
+ */
+u32 a5xx_preemption_pre_ibsubmit(struct adreno_device *adreno_dev,
+		struct adreno_ringbuffer *rb, struct adreno_context *drawctxt,
+		u32 *cmds);
 
 void a5xx_preempt_callback(struct adreno_device *adreno_dev, int bit);
+
+u64 a5xx_read_alwayson(struct adreno_device *adreno_dev);
+
+extern const struct adreno_perfcounters adreno_a5xx_perfcounters;
+
+/**
+ * a5xx_ringbuffer_init - Initialize the ringbuffers
+ * @adreno_dev: An Adreno GPU handle
+ *
+ * Initialize the ringbuffer(s) for a5xx.
+ * Return: 0 on success or negative on failure
+ */
+int a5xx_ringbuffer_init(struct adreno_device *adreno_dev);
+
+/**
+* a5xx_ringbuffer_addcmds - Submit a command to the ringbuffer
+* @adreno_dev: An Adreno GPU handle
+* @rb: Pointer to the ringbuffer to submit on
+* @drawctxt: Pointer to the draw context for the submission, or NULL for
+* internal submissions
+* @flags: Flags for the submission
+* @in: Commands to write to the ringbuffer
+* @dwords: Size of @in (in dwords)
+* @timestamp: Timestamp for the submission
+* @time: Optional pointer to a submit time structure
+*
+* Submit a command to the ringbuffer.
+* Return: 0 on success or negative on failure
+*/
+int a5xx_ringbuffer_addcmds(struct adreno_device *adreno_dev,
+		struct adreno_ringbuffer *rb, struct adreno_context *drawctxt,
+		u32 flags, u32 *in, u32 dwords, u32 timestamp,
+		struct adreno_submit_time *time);
+
+/**
+ * a5xx_ringbuffer_submitcmd - Submit a user command to the ringbuffer
+ * @adreno_dev: An Adreno GPU handle
+ * @cmdobj: Pointer to a user command object
+ * @flags: Internal submit flags
+ * @time: Optional pointer to a adreno_submit_time container
+ *
+ * Return: 0 on success or negative on failure
+ */
+int a5xx_ringbuffer_submitcmd(struct adreno_device *adreno_dev,
+		struct kgsl_drawobj_cmd *cmdobj, u32 flags,
+		struct adreno_submit_time *time);
+
+int a5xx_ringbuffer_submit(struct adreno_ringbuffer *rb,
+		struct adreno_submit_time *time, bool sync);
+
+static inline bool a5xx_has_gpmu(struct adreno_device *adreno_dev)
+{
+	return (adreno_is_a530(adreno_dev) || adreno_is_a540(adreno_dev));
+}
 
 #endif

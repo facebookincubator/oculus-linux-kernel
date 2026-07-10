@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Power control for Samsung LTV350QV Quarter VGA LCD Panel
  *
  * Copyright (C) 2006, 2007 Atmel Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #include <linux/delay.h>
 #include <linux/err.h>
@@ -295,7 +292,6 @@ static void ltv350qv_shutdown(struct spi_device *spi)
 static struct spi_driver ltv350qv_driver = {
 	.driver = {
 		.name		= "ltv350qv",
-		.owner		= THIS_MODULE,
 		.pm		= &ltv350qv_pm_ops,
 	},
 

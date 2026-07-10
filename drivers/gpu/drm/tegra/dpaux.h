@@ -1,9 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2013 NVIDIA Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef DRM_TEGRA_DPAUX_H
@@ -57,6 +54,8 @@
 #define DPAUX_DP_AUX_CONFIG 0x45
 
 #define DPAUX_HYBRID_PADCTL 0x49
+#define DPAUX_HYBRID_PADCTL_I2C_SDA_INPUT_RCV (1 << 15)
+#define DPAUX_HYBRID_PADCTL_I2C_SCL_INPUT_RCV (1 << 14)
 #define DPAUX_HYBRID_PADCTL_AUX_CMH(x) (((x) & 0x3) << 12)
 #define DPAUX_HYBRID_PADCTL_AUX_DRVZ(x) (((x) & 0x7) << 8)
 #define DPAUX_HYBRID_PADCTL_AUX_DRVI(x) (((x) & 0x3f) << 2)

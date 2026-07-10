@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * AArch64 KGDB support
  *
@@ -5,32 +6,17 @@
  *
  * Copyright (C) 2013 Cavium Inc.
  * Author: Vijaya Kumar K <vijaya.kumar@caviumnetworks.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/bug.h>
-#include <linux/cpumask.h>
 #include <linux/irq.h>
-#include <linux/irq_work.h>
 #include <linux/kdebug.h>
 #include <linux/kgdb.h>
 #include <linux/kprobes.h>
-#include <linux/percpu.h>
+#include <linux/sched/task_stack.h>
 
 #include <asm/debug-monitors.h>
 #include <asm/insn.h>
-#include <asm/ptrace.h>
 #include <asm/traps.h>
 
 struct dbg_reg_def_t dbg_reg_def[DBG_MAX_REG_NUM] = {
@@ -114,9 +100,6 @@ struct dbg_reg_def_t dbg_reg_def[DBG_MAX_REG_NUM] = {
 	{ "fpcr", 4, -1 },
 };
 
-static DEFINE_PER_CPU(unsigned int, kgdb_pstate);
-static DEFINE_PER_CPU(struct irq_work, kgdb_irq_work);
-
 char *dbg_get_reg(int regno, void *mem, struct pt_regs *regs)
 {
 	if (regno >= DBG_MAX_REG_NUM || regno < 0)
@@ -144,14 +127,25 @@ int dbg_set_reg(int regno, void *mem, struct pt_regs *regs)
 void
 sleeping_thread_to_gdb_regs(unsigned long *gdb_regs, struct task_struct *task)
 {
-	struct pt_regs *thread_regs;
+	struct cpu_context *cpu_context = &task->thread.cpu_context;
 
 	/* Initialize to zero */
 	memset((char *)gdb_regs, 0, NUMREGBYTES);
-	thread_regs = task_pt_regs(task);
-	memcpy((void *)gdb_regs, (void *)thread_regs->regs, GP_REG_BYTES);
-	/* Special case for PSTATE (check comments in asm/kgdb.h for details) */
-	dbg_get_reg(33, gdb_regs + GP_REG_BYTES, thread_regs);
+
+	gdb_regs[19] = cpu_context->x19;
+	gdb_regs[20] = cpu_context->x20;
+	gdb_regs[21] = cpu_context->x21;
+	gdb_regs[22] = cpu_context->x22;
+	gdb_regs[23] = cpu_context->x23;
+	gdb_regs[24] = cpu_context->x24;
+	gdb_regs[25] = cpu_context->x25;
+	gdb_regs[26] = cpu_context->x26;
+	gdb_regs[27] = cpu_context->x27;
+	gdb_regs[28] = cpu_context->x28;
+	gdb_regs[29] = cpu_context->fp;
+
+	gdb_regs[31] = cpu_context->sp;
+	gdb_regs[32] = cpu_context->pc;
 }
 
 void kgdb_arch_set_pc(struct pt_regs *regs, unsigned long pc)
@@ -203,13 +197,15 @@ int kgdb_arch_handle_exception(int exception_vector, int signo,
 		atomic_set(&kgdb_cpu_doing_single_step, -1);
 		kgdb_single_step =  0;
 
+		/*
+		 * Received continue command, disable single step
+		 */
+		if (kernel_active_single_step())
+			kernel_disable_single_step();
+
 		err = 0;
 		break;
 	case 's':
-		/* mask interrupts while single stepping */
-		__this_cpu_write(kgdb_pstate, linux_regs->pstate);
-		linux_regs->pstate |= PSR_I_BIT;
-
 		/*
 		 * Update step address value with address passed
 		 * with step packet.
@@ -221,6 +217,7 @@ int kgdb_arch_handle_exception(int exception_vector, int signo,
 		kgdb_arch_update_addr(linux_regs, remcom_in_buffer);
 		atomic_set(&kgdb_cpu_doing_single_step, raw_smp_processor_id());
 		kgdb_single_step =  1;
+
 		/*
 		 * Enable single step handling
 		 */
@@ -237,7 +234,7 @@ int kgdb_arch_handle_exception(int exception_vector, int signo,
 static int kgdb_brk_fn(struct pt_regs *regs, unsigned int esr)
 {
 	kgdb_handle_exception(1, SIGTRAP, 0, regs);
-	return 0;
+	return DBG_HOOK_HANDLED;
 }
 NOKPROBE_SYMBOL(kgdb_brk_fn)
 
@@ -246,75 +243,33 @@ static int kgdb_compiled_brk_fn(struct pt_regs *regs, unsigned int esr)
 	compiled_break = 1;
 	kgdb_handle_exception(1, SIGTRAP, 0, regs);
 
-	return 0;
+	return DBG_HOOK_HANDLED;
 }
 NOKPROBE_SYMBOL(kgdb_compiled_brk_fn);
 
 static int kgdb_step_brk_fn(struct pt_regs *regs, unsigned int esr)
 {
-	unsigned int pstate;
-
 	if (!kgdb_single_step)
 		return DBG_HOOK_ERROR;
 
-	kernel_disable_single_step();
-
-	/* restore interrupt mask status */
-	pstate = __this_cpu_read(kgdb_pstate);
-	if (pstate & PSR_I_BIT)
-		regs->pstate |= PSR_I_BIT;
-	else
-		regs->pstate &= ~PSR_I_BIT;
-
-	kgdb_handle_exception(1, SIGTRAP, 0, regs);
-	return 0;
+	kgdb_handle_exception(0, SIGTRAP, 0, regs);
+	return DBG_HOOK_HANDLED;
 }
 NOKPROBE_SYMBOL(kgdb_step_brk_fn);
 
 static struct break_hook kgdb_brkpt_hook = {
-	.esr_mask	= 0xffffffff,
-	.esr_val	= (u32)ESR_ELx_VAL_BRK64(KGDB_DYN_DBG_BRK_IMM),
-	.fn		= kgdb_brk_fn
+	.fn		= kgdb_brk_fn,
+	.imm		= KGDB_DYN_DBG_BRK_IMM,
 };
 
 static struct break_hook kgdb_compiled_brkpt_hook = {
-	.esr_mask	= 0xffffffff,
-	.esr_val	= (u32)ESR_ELx_VAL_BRK64(KGDB_COMPILED_DBG_BRK_IMM),
-	.fn		= kgdb_compiled_brk_fn
+	.fn		= kgdb_compiled_brk_fn,
+	.imm		= KGDB_COMPILED_DBG_BRK_IMM,
 };
 
 static struct step_hook kgdb_step_hook = {
 	.fn		= kgdb_step_brk_fn
 };
-
-static void kgdb_roundup_hook(struct irq_work *work)
-{
-	kgdb_nmicallback(raw_smp_processor_id(), get_irq_regs());
-}
-
-void kgdb_roundup_cpus(unsigned long flags)
-{
-	int cpu, this_cpu;
-	struct irq_work *work;
-
-	if (num_online_cpus() == 1)
-		return;
-
-	/*
-	 * We assume that no cpus go up or down here, but we can't guarantee
-	 * this because get_online_cpus() may not be called in an atomic
-	 * context. It is fragile, but kgdb_handle_exception()/
-	 * kgdb_cpu_enter() doesn't deal with this, neither.
-	 */
-	this_cpu = raw_smp_processor_id();
-	for_each_online_cpu(cpu) {
-		if (cpu == this_cpu)
-			continue;
-
-		work = per_cpu_ptr(&kgdb_irq_work, cpu);
-		irq_work_queue_on(work, cpu);
-	}
-}
 
 static int __kgdb_notify(struct die_args *args, unsigned long cmd)
 {
@@ -347,28 +302,20 @@ static struct notifier_block kgdb_notifier = {
 };
 
 /*
- * kgdb_arch_init - Perform any architecture specific initalization.
- * This function will handle the initalization of any architecture
+ * kgdb_arch_init - Perform any architecture specific initialization.
+ * This function will handle the initialization of any architecture
  * specific callbacks.
  */
 int kgdb_arch_init(void)
 {
 	int ret = register_die_notifier(&kgdb_notifier);
-	int cpu;
-	struct irq_work *work;
 
 	if (ret != 0)
 		return ret;
 
-	register_break_hook(&kgdb_brkpt_hook);
-	register_break_hook(&kgdb_compiled_brkpt_hook);
-	register_step_hook(&kgdb_step_hook);
-
-	for_each_possible_cpu(cpu) {
-		work = per_cpu_ptr(&kgdb_irq_work, cpu);
-		init_irq_work(work, kgdb_roundup_hook);
-	}
-
+	register_kernel_break_hook(&kgdb_brkpt_hook);
+	register_kernel_break_hook(&kgdb_compiled_brkpt_hook);
+	register_kernel_step_hook(&kgdb_step_hook);
 	return 0;
 }
 
@@ -379,13 +326,13 @@ int kgdb_arch_init(void)
  */
 void kgdb_arch_exit(void)
 {
-	unregister_break_hook(&kgdb_brkpt_hook);
-	unregister_break_hook(&kgdb_compiled_brkpt_hook);
-	unregister_step_hook(&kgdb_step_hook);
+	unregister_kernel_break_hook(&kgdb_brkpt_hook);
+	unregister_kernel_break_hook(&kgdb_compiled_brkpt_hook);
+	unregister_kernel_step_hook(&kgdb_step_hook);
 	unregister_die_notifier(&kgdb_notifier);
 }
 
-struct kgdb_arch arch_kgdb_ops;
+const struct kgdb_arch arch_kgdb_ops;
 
 int kgdb_arch_set_breakpoint(struct kgdb_bkpt *bpt)
 {

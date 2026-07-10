@@ -1,15 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* ----------------------------------------------------------------------- *
  *
  *   Copyright 2014 Intel Corporation; author: H. Peter Anvin
- *
- *   This program is free software; you can redistribute it and/or modify it
- *   under the terms and conditions of the GNU General Public License,
- *   version 2, as published by the Free Software Foundation.
- *
- *   This program is distributed in the hope it will be useful, but WITHOUT
- *   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- *   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- *   more details.
  *
  * ----------------------------------------------------------------------- */
 
@@ -37,7 +29,7 @@
 #include <linux/percpu.h>
 #include <linux/gfp.h>
 #include <linux/random.h>
-#include <asm/pgtable.h>
+#include <linux/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/setup.h>
 #include <asm/espfix.h>
@@ -50,14 +42,14 @@
 #define ESPFIX_STACKS_PER_PAGE	(PAGE_SIZE/ESPFIX_STACK_SIZE)
 
 /* There is address space for how many espfix pages? */
-#define ESPFIX_PAGE_SPACE	(1UL << (PGDIR_SHIFT-PAGE_SHIFT-16))
+#define ESPFIX_PAGE_SPACE	(1UL << (P4D_SHIFT-PAGE_SHIFT-16))
 
 #define ESPFIX_MAX_CPUS		(ESPFIX_STACKS_PER_PAGE * ESPFIX_PAGE_SPACE)
 #if CONFIG_NR_CPUS > ESPFIX_MAX_CPUS
-# error "Need more than one PGD for the ESPFIX hack"
+# error "Need more virtual address space for the ESPFIX hack"
 #endif
 
-#define PGALLOC_GFP (GFP_KERNEL | __GFP_NOTRACK | __GFP_REPEAT | __GFP_ZERO)
+#define PGALLOC_GFP (GFP_KERNEL | __GFP_ZERO)
 
 /* This contains the *bottom* address of the espfix stack */
 DEFINE_PER_CPU_READ_MOSTLY(unsigned long, espfix_stack);
@@ -110,7 +102,7 @@ static void init_espfix_random(void)
 	 */
 	if (!arch_get_random_long(&rand)) {
 		/* The constant is an arbitrary large prime */
-		rdtscll(rand);
+		rand = rdtsc();
 		rand *= 0xc345c6b72fd16123UL;
 	}
 
@@ -121,59 +113,60 @@ static void init_espfix_random(void)
 
 void __init init_espfix_bsp(void)
 {
-	pgd_t *pgd_p;
-	pteval_t ptemask;
-
-	ptemask = __supported_pte_mask;
+	pgd_t *pgd;
+	p4d_t *p4d;
 
 	/* Install the espfix pud into the kernel page directory */
-	pgd_p = &init_level4_pgt[pgd_index(ESPFIX_BASE_ADDR)];
-	pgd_populate(&init_mm, pgd_p, (pud_t *)espfix_pud_page);
+	pgd = &init_top_pgt[pgd_index(ESPFIX_BASE_ADDR)];
+	p4d = p4d_alloc(&init_mm, pgd, ESPFIX_BASE_ADDR);
+	p4d_populate(&init_mm, p4d, espfix_pud_page);
 
 	/* Randomize the locations */
 	init_espfix_random();
 
 	/* The rest is the same as for any other processor */
-	init_espfix_ap();
+	init_espfix_ap(0);
 }
 
-void init_espfix_ap(void)
+void init_espfix_ap(int cpu)
 {
-	unsigned int cpu, page;
+	unsigned int page;
 	unsigned long addr;
 	pud_t pud, *pud_p;
 	pmd_t pmd, *pmd_p;
 	pte_t pte, *pte_p;
-	int n;
+	int n, node;
 	void *stack_page;
 	pteval_t ptemask;
 
 	/* We only have to do this once... */
-	if (likely(this_cpu_read(espfix_stack)))
+	if (likely(per_cpu(espfix_stack, cpu)))
 		return;		/* Already initialized */
 
-	cpu = smp_processor_id();
 	addr = espfix_base_addr(cpu);
 	page = cpu/ESPFIX_STACKS_PER_PAGE;
 
 	/* Did another CPU already set this up? */
-	stack_page = ACCESS_ONCE(espfix_pages[page]);
+	stack_page = READ_ONCE(espfix_pages[page]);
 	if (likely(stack_page))
 		goto done;
 
 	mutex_lock(&espfix_init_mutex);
 
 	/* Did we race on the lock? */
-	stack_page = ACCESS_ONCE(espfix_pages[page]);
+	stack_page = READ_ONCE(espfix_pages[page]);
 	if (stack_page)
 		goto unlock_done;
 
+	node = cpu_to_node(cpu);
 	ptemask = __supported_pte_mask;
 
 	pud_p = &espfix_pud_page[pud_index(addr)];
 	pud = *pud_p;
 	if (!pud_present(pud)) {
-		pmd_p = (pmd_t *)__get_free_page(PGALLOC_GFP);
+		struct page *page = alloc_pages_node(node, PGALLOC_GFP, 0);
+
+		pmd_p = (pmd_t *)page_address(page);
 		pud = __pud(__pa(pmd_p) | (PGTABLE_PROT & ptemask));
 		paravirt_alloc_pmd(&init_mm, __pa(pmd_p) >> PAGE_SHIFT);
 		for (n = 0; n < ESPFIX_PUD_CLONES; n++)
@@ -183,7 +176,9 @@ void init_espfix_ap(void)
 	pmd_p = pmd_offset(&pud, addr);
 	pmd = *pmd_p;
 	if (!pmd_present(pmd)) {
-		pte_p = (pte_t *)__get_free_page(PGALLOC_GFP);
+		struct page *page = alloc_pages_node(node, PGALLOC_GFP, 0);
+
+		pte_p = (pte_t *)page_address(page);
 		pmd = __pmd(__pa(pte_p) | (PGTABLE_PROT & ptemask));
 		paravirt_alloc_pte(&init_mm, __pa(pte_p) >> PAGE_SHIFT);
 		for (n = 0; n < ESPFIX_PMD_CLONES; n++)
@@ -191,18 +186,22 @@ void init_espfix_ap(void)
 	}
 
 	pte_p = pte_offset_kernel(&pmd, addr);
-	stack_page = (void *)__get_free_page(GFP_KERNEL);
-	pte = __pte(__pa(stack_page) | (__PAGE_KERNEL_RO & ptemask));
+	stack_page = page_address(alloc_pages_node(node, GFP_KERNEL, 0));
+	/*
+	 * __PAGE_KERNEL_* includes _PAGE_GLOBAL, which we want since
+	 * this is mapped to userspace.
+	 */
+	pte = __pte(__pa(stack_page) | ((__PAGE_KERNEL_RO | _PAGE_ENC) & ptemask));
 	for (n = 0; n < ESPFIX_PTE_CLONES; n++)
 		set_pte(&pte_p[n*PTE_STRIDE], pte);
 
 	/* Job is done for this CPU and any CPU which shares this page */
-	ACCESS_ONCE(espfix_pages[page]) = stack_page;
+	WRITE_ONCE(espfix_pages[page], stack_page);
 
 unlock_done:
 	mutex_unlock(&espfix_init_mutex);
 done:
-	this_cpu_write(espfix_stack, addr);
-	this_cpu_write(espfix_waddr, (unsigned long)stack_page
-		       + (addr & ~PAGE_MASK));
+	per_cpu(espfix_stack, cpu) = addr;
+	per_cpu(espfix_waddr, cpu) = (unsigned long)stack_page
+				      + (addr & ~PAGE_MASK);
 }

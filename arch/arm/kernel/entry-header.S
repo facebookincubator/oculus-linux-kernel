@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #include <linux/init.h>
 #include <linux/linkage.h>
 
@@ -5,6 +6,7 @@
 #include <asm/asm-offsets.h>
 #include <asm/errno.h>
 #include <asm/thread_info.h>
+#include <asm/uaccess-asm.h>
 #include <asm/v7m.h>
 
 @ Bad Abort numbers
@@ -90,7 +92,7 @@
 	@ Linux expects to have irqs off. Do it here before taking stack space
 	cpsid	i
 
-	sub	sp, #S_FRAME_SIZE-S_IP
+	sub	sp, #PT_REGS_SIZE-S_IP
 	stmdb	sp!, {r0-r11}
 
 	@ load saved r12, lr, return address and xPSR.
@@ -126,7 +128,8 @@
          */
 	.macro	v7m_exception_slow_exit ret_r0
 	cpsid	i
-	ldr	lr, =EXC_RET_THREADMODE_PROCESSSTACK
+	ldr	lr, =exc_ret
+	ldr	lr, [lr]
 
 	@ read original r12, sp, lr, pc and xPSR
 	add	r12, sp, #S_IP
@@ -160,7 +163,7 @@
 	ldmia	sp!, {r0-r11}
 
 	@ restore main sp
-	add	sp, sp, #S_FRAME_SIZE-S_IP
+	add	sp, sp, #PT_REGS_SIZE-S_IP
 
 	cpsie	i
 	bx	lr
@@ -196,7 +199,7 @@
 	msr	cpsr_c, \rtemp			@ switch back to the SVC mode
 	.endm
 
-#ifndef CONFIG_THUMB2_KERNEL
+
 	.macro	svc_exit, rpsr, irq = 0
 	.if	\irq != 0
 	@ IRQs already off
@@ -215,6 +218,10 @@
 	blne	trace_hardirqs_off
 #endif
 	.endif
+	uaccess_exit tsk, r0, r1
+
+#ifndef CONFIG_THUMB2_KERNEL
+	@ ARM mode SVC restore
 	msr	spsr_cxsf, \rpsr
 #if defined(CONFIG_CPU_V6) || defined(CONFIG_CPU_32v6K)
 	@ We must avoid clrex due to Cortex-A15 erratum #830321
@@ -222,6 +229,20 @@
 	strex	r1, r2, [r0]			@ clear the exclusive monitor
 #endif
 	ldmia	sp, {r0 - pc}^			@ load r0 - pc, cpsr
+#else
+	@ Thumb mode SVC restore
+	ldr	lr, [sp, #S_SP]			@ top of the stack
+	ldrd	r0, r1, [sp, #S_LR]		@ calling lr and pc
+
+	@ We must avoid clrex due to Cortex-A15 erratum #830321
+	strex	r2, r1, [sp, #S_LR]		@ clear the exclusive monitor
+
+	stmdb	lr!, {r0, r1, \rpsr}		@ calling lr and rfe context
+	ldmia	sp, {r0 - r12}
+	mov	sp, lr
+	ldr	lr, [sp], #4
+	rfeia	sp!
+#endif
 	.endm
 
 	@
@@ -241,6 +262,9 @@
 	@ on the stack remains correct).
 	@
 	.macro  svc_exit_via_fiq
+	uaccess_exit tsk, r0, r1
+#ifndef CONFIG_THUMB2_KERNEL
+	@ ARM mode restore
 	mov	r0, sp
 	ldmib	r0, {r1 - r14}	@ abort is deadly from here onward (it will
 				@ clobber state restored below)
@@ -250,65 +274,8 @@
 	msr	spsr_cxsf, r9
 	ldr	r0, [r0, #S_R0]
 	ldmia	r8, {pc}^
-	.endm
-
-	.macro	restore_user_regs, fast = 0, offset = 0
-	ldr	r1, [sp, #\offset + S_PSR]	@ get calling cpsr
-	ldr	lr, [sp, #\offset + S_PC]!	@ get pc
-	msr	spsr_cxsf, r1			@ save in spsr_svc
-#if defined(CONFIG_CPU_V6) || defined(CONFIG_CPU_32v6K)
-	@ We must avoid clrex due to Cortex-A15 erratum #830321
-	strex	r1, r2, [sp]			@ clear the exclusive monitor
-#endif
-	.if	\fast
-	ldmdb	sp, {r1 - lr}^			@ get calling r1 - lr
-	.else
-	ldmdb	sp, {r0 - lr}^			@ get calling r0 - lr
-	.endif
-	mov	r0, r0				@ ARMv5T and earlier require a nop
-						@ after ldm {}^
-	add	sp, sp, #S_FRAME_SIZE - S_PC
-	movs	pc, lr				@ return & move spsr_svc into cpsr
-	.endm
-
-#else	/* CONFIG_THUMB2_KERNEL */
-	.macro	svc_exit, rpsr, irq = 0
-	.if	\irq != 0
-	@ IRQs already off
-#ifdef CONFIG_TRACE_IRQFLAGS
-	@ The parent context IRQs must have been enabled to get here in
-	@ the first place, so there's no point checking the PSR I bit.
-	bl	trace_hardirqs_on
-#endif
-	.else
-	@ IRQs off again before pulling preserved data off the stack
-	disable_irq_notrace
-#ifdef CONFIG_TRACE_IRQFLAGS
-	tst	\rpsr, #PSR_I_BIT
-	bleq	trace_hardirqs_on
-	tst	\rpsr, #PSR_I_BIT
-	blne	trace_hardirqs_off
-#endif
-	.endif
-	ldr	lr, [sp, #S_SP]			@ top of the stack
-	ldrd	r0, r1, [sp, #S_LR]		@ calling lr and pc
-
-	@ We must avoid clrex due to Cortex-A15 erratum #830321
-	strex	r2, r1, [sp, #S_LR]		@ clear the exclusive monitor
-
-	stmdb	lr!, {r0, r1, \rpsr}		@ calling lr and rfe context
-	ldmia	sp, {r0 - r12}
-	mov	sp, lr
-	ldr	lr, [sp], #4
-	rfeia	sp!
-	.endm
-
-	@
-	@ svc_exit_via_fiq - like svc_exit but switches to FIQ mode before exit
-	@
-	@ For full details see non-Thumb implementation above.
-	@
-	.macro  svc_exit_via_fiq
+#else
+	@ Thumb mode restore
 	add	r0, sp, #S_R2
 	ldr	lr, [sp, #S_LR]
 	ldr	sp, [sp, #S_SP] @ abort is deadly from here onward (it will
@@ -320,26 +287,51 @@
 	add	r8, r0, #S_PC
 	ldmia	r0, {r0 - r1}
 	rfeia	r8
+#endif
 	.endm
 
-#ifdef CONFIG_CPU_V7M
-	/*
-	 * Note we don't need to do clrex here as clearing the local monitor is
-	 * part of each exception entry and exit sequence.
-	 */
+
 	.macro	restore_user_regs, fast = 0, offset = 0
+	uaccess_enable r1, isb=0
+#ifndef CONFIG_THUMB2_KERNEL
+	@ ARM mode restore
+	mov	r2, sp
+	ldr	r1, [r2, #\offset + S_PSR]	@ get calling cpsr
+	ldr	lr, [r2, #\offset + S_PC]!	@ get pc
+	tst	r1, #PSR_I_BIT | 0x0f
+	bne	1f
+	msr	spsr_cxsf, r1			@ save in spsr_svc
+#if defined(CONFIG_CPU_V6) || defined(CONFIG_CPU_32v6K)
+	@ We must avoid clrex due to Cortex-A15 erratum #830321
+	strex	r1, r2, [r2]			@ clear the exclusive monitor
+#endif
+	.if	\fast
+	ldmdb	r2, {r1 - lr}^			@ get calling r1 - lr
+	.else
+	ldmdb	r2, {r0 - lr}^			@ get calling r0 - lr
+	.endif
+	mov	r0, r0				@ ARMv5T and earlier require a nop
+						@ after ldm {}^
+	add	sp, sp, #\offset + PT_REGS_SIZE
+	movs	pc, lr				@ return & move spsr_svc into cpsr
+1:	bug	"Returning to usermode but unexpected PSR bits set?", \@
+#elif defined(CONFIG_CPU_V7M)
+	@ V7M restore.
+	@ Note that we don't need to do clrex here as clearing the local
+	@ monitor is part of the exception entry and exit sequence.
 	.if	\offset
 	add	sp, #\offset
 	.endif
 	v7m_exception_slow_exit ret_r0 = \fast
-	.endm
-#else	/* ifdef CONFIG_CPU_V7M */
-	.macro	restore_user_regs, fast = 0, offset = 0
+#else
+	@ Thumb mode restore
 	mov	r2, sp
 	load_user_sp_lr r2, r3, \offset + S_SP	@ calling sp, lr
 	ldr	r1, [sp, #\offset + S_PSR]	@ get calling cpsr
 	ldr	lr, [sp, #\offset + S_PC]	@ get pc
 	add	sp, sp, #\offset + S_SP
+	tst	r1, #PSR_I_BIT | 0x0f
+	bne	1f
 	msr	spsr_cxsf, r1			@ save in spsr_svc
 
 	@ We must avoid clrex due to Cortex-A15 erratum #830321
@@ -350,11 +342,11 @@
 	.else
 	ldmdb	sp, {r0 - r12}			@ get calling r0 - r12
 	.endif
-	add	sp, sp, #S_FRAME_SIZE - S_SP
+	add	sp, sp, #PT_REGS_SIZE - S_SP
 	movs	pc, lr				@ return & move spsr_svc into cpsr
-	.endm
-#endif	/* ifdef CONFIG_CPU_V7M / else */
+1:	bug	"Returning to usermode but unexpected PSR bits set?", \@
 #endif	/* !CONFIG_THUMB2_KERNEL */
+	.endm
 
 /*
  * Context tracking subsystem.  Used to instrument transitions
@@ -381,6 +373,31 @@
 	.else
 	bl	context_tracking_user_enter
 	.endif
+#endif
+	.endm
+
+	.macro	invoke_syscall, table, nr, tmp, ret, reload=0
+#ifdef CONFIG_CPU_SPECTRE
+	mov	\tmp, \nr
+	cmp	\tmp, #NR_syscalls		@ check upper syscall limit
+	movcs	\tmp, #0
+	csdb
+	badr	lr, \ret			@ return address
+	.if	\reload
+	add	r1, sp, #S_R0 + S_OFF		@ pointer to regs
+	ldmiacc	r1, {r0 - r6}			@ reload r0-r6
+	stmiacc	sp, {r4, r5}			@ update stack arguments
+	.endif
+	ldrcc	pc, [\table, \tmp, lsl #2]	@ call sys_* routine
+#else
+	cmp	\nr, #NR_syscalls		@ check upper syscall limit
+	badr	lr, \ret			@ return address
+	.if	\reload
+	add	r1, sp, #S_R0 + S_OFF		@ pointer to regs
+	ldmiacc	r1, {r0 - r6}			@ reload r0-r6
+	stmiacc	sp, {r4, r5}			@ update stack arguments
+	.endif
+	ldrcc	pc, [\table, \nr, lsl #2]	@ call sys_* routine
 #endif
 	.endm
 

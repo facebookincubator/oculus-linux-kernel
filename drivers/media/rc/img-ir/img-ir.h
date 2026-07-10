@@ -1,12 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ImgTec IR Decoder found in PowerDown Controller.
  *
  * Copyright 2010-2014 Imagination Technologies Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
  */
 
 #ifndef _IMG_IR_H_
@@ -138,6 +134,7 @@ struct clk;
  * @dev:		Platform device.
  * @irq:		IRQ number.
  * @clk:		Input clock.
+ * @sys_clk:		System clock.
  * @reg_base:		Iomem base address of IR register block.
  * @lock:		Protects IR registers and variables in this struct.
  * @raw:		Driver data for raw decoder.
@@ -147,6 +144,7 @@ struct img_ir_priv {
 	struct device		*dev;
 	int			irq;
 	struct clk		*clk;
+	struct clk		*sys_clk;
 	void __iomem		*reg_base;
 	spinlock_t		lock;
 

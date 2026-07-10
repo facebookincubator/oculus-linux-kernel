@@ -1,9 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _TRACE_SYSCALL_H
 #define _TRACE_SYSCALL_H
 
 #include <linux/tracepoint.h>
 #include <linux/unistd.h>
-#include <linux/ftrace_event.h>
+#include <linux/trace_events.h>
 #include <linux/thread_info.h>
 
 #include <asm/ptrace.h>
@@ -29,8 +30,8 @@ struct syscall_metadata {
 	const char	**args;
 	struct list_head enter_fields;
 
-	struct ftrace_event_call *enter_event;
-	struct ftrace_event_call *exit_event;
+	struct trace_event_call *enter_event;
+	struct trace_event_call *exit_event;
 };
 
 #if defined(CONFIG_TRACEPOINTS) && defined(CONFIG_HAVE_SYSCALL_TRACEPOINTS)

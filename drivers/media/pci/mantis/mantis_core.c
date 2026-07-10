@@ -1,21 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
 	Mantis PCI bridge driver
 
 	Copyright (C) Manu Abraham (abraham.manu@gmail.com)
 
-	This program is free software; you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation; either version 2 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program; if not, write to the Free Software
-	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
 #include "mantis_common.h"
@@ -49,29 +37,6 @@ static int read_eeprom_byte(struct mantis_pci *mantis, u8 *data, u8 length)
 		dprintk(verbose, MANTIS_ERROR, 1,
 			"ERROR: i2c read: < err=%i d0=0x%02x d1=0x%02x >",
 			err, data[0], data[1]);
-
-		return err;
-	}
-
-	return 0;
-}
-
-static int write_eeprom_byte(struct mantis_pci *mantis, u8 *data, u8 length)
-{
-	int err;
-
-	struct i2c_msg msg = {
-		.addr = 0x50,
-		.flags = 0,
-		.buf = data,
-		.len = length
-	};
-
-	err = i2c_transfer(&mantis->adapter, &msg, 1);
-	if (err < 0) {
-		dprintk(verbose, MANTIS_ERROR, 1,
-			"ERROR: i2c write: < err=%i length=0x%02x d0=0x%02x, d1=0x%02x >",
-			err, length, data[0], data[1]);
 
 		return err;
 	}

@@ -1,14 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _LINUX_REGULATOR_PROXY_CONSUMER_H_
@@ -17,25 +9,30 @@
 #include <linux/device.h>
 #include <linux/of.h>
 
-struct proxy_consumer;
+#if IS_ENABLED(CONFIG_REGULATOR_PROXY_CONSUMER)
 
-#ifdef CONFIG_REGULATOR_PROXY_CONSUMER
-
-struct proxy_consumer *regulator_proxy_consumer_register(struct device *reg_dev,
-			struct device_node *reg_node);
-
-int regulator_proxy_consumer_unregister(struct proxy_consumer *consumer);
+int regulator_proxy_consumer_register(struct device *dev,
+				      struct device_node *node);
+void regulator_proxy_consumer_unregister(struct device *dev);
+int devm_regulator_proxy_consumer_register(struct device *dev,
+				      struct device_node *node);
+void devm_regulator_proxy_consumer_unregister(struct device *dev);
+void regulator_proxy_consumer_sync_state(struct device *dev);
 
 #else
 
-static inline struct proxy_consumer *regulator_proxy_consumer_register(
-			struct device *reg_dev, struct device_node *reg_node)
-{ return NULL; }
-
-static inline int regulator_proxy_consumer_unregister(
-			struct proxy_consumer *consumer)
+static inline int regulator_proxy_consumer_register(struct device *dev,
+						    struct device_node *node)
 { return 0; }
+static inline void regulator_proxy_consumer_unregister(struct device *dev)
+{ }
+static inline int devm_regulator_proxy_consumer_register(struct device *dev,
+						    struct device_node *node)
+{ return 0; }
+static inline void devm_regulator_proxy_consumer_unregister(struct device *dev)
+{ }
+void regulator_proxy_consumer_sync_state(struct device *dev)
+{ }
 
 #endif
-
 #endif

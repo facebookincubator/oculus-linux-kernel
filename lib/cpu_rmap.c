@@ -1,10 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * cpu_rmap.c: CPU affinity reverse-map support
  * Copyright 2011 Solarflare Communications Inc.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation, incorporated herein by reference.
  */
 
 #include <linux/cpu_rmap.h>
@@ -191,7 +188,7 @@ int cpu_rmap_update(struct cpu_rmap *rmap, u16 index,
 	/* Update distances based on topology */
 	for_each_cpu(cpu, update_mask) {
 		if (cpu_rmap_copy_neigh(rmap, cpu,
-					topology_thread_cpumask(cpu), 1))
+					topology_sibling_cpumask(cpu), 1))
 			continue;
 		if (cpu_rmap_copy_neigh(rmap, cpu,
 					topology_core_cpumask(cpu), 2))
@@ -258,7 +255,7 @@ irq_cpu_rmap_notify(struct irq_affinity_notify *notify, const cpumask_t *mask)
 
 	rc = cpu_rmap_update(glue->rmap, glue->index, mask);
 	if (rc)
-		pr_warning("irq_cpu_rmap_notify: update failed: %d\n", rc);
+		pr_warn("irq_cpu_rmap_notify: update failed: %d\n", rc);
 }
 
 /**

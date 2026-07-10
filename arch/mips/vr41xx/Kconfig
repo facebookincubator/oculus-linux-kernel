@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 choice
 	prompt "Machine type"
 	depends on MACH_VR41XX
@@ -8,7 +9,7 @@ config CASIO_E55
 	select CEVT_R4K
 	select CSRC_R4K
 	select DMA_NONCOHERENT
-	select IRQ_CPU
+	select IRQ_MIPS_CPU
 	select ISA
 	select SYS_SUPPORTS_32BIT_KERNEL
 	select SYS_SUPPORTS_LITTLE_ENDIAN
@@ -18,7 +19,7 @@ config IBM_WORKPAD
 	select CEVT_R4K
 	select CSRC_R4K
 	select DMA_NONCOHERENT
-	select IRQ_CPU
+	select IRQ_MIPS_CPU
 	select ISA
 	select SYS_SUPPORTS_32BIT_KERNEL
 	select SYS_SUPPORTS_LITTLE_ENDIAN
@@ -28,8 +29,8 @@ config TANBAC_TB022X
 	select CEVT_R4K
 	select CSRC_R4K
 	select DMA_NONCOHERENT
-	select IRQ_CPU
-	select HW_HAS_PCI
+	select IRQ_MIPS_CPU
+	select HAVE_PCI
 	select SYS_SUPPORTS_32BIT_KERNEL
 	select SYS_SUPPORTS_LITTLE_ENDIAN
 	help
@@ -44,8 +45,8 @@ config VICTOR_MPC30X
 	select CEVT_R4K
 	select CSRC_R4K
 	select DMA_NONCOHERENT
-	select IRQ_CPU
-	select HW_HAS_PCI
+	select IRQ_MIPS_CPU
+	select HAVE_PCI
 	select PCI_VR41XX
 	select SYS_SUPPORTS_32BIT_KERNEL
 	select SYS_SUPPORTS_LITTLE_ENDIAN
@@ -55,8 +56,8 @@ config ZAO_CAPCELLA
 	select CEVT_R4K
 	select CSRC_R4K
 	select DMA_NONCOHERENT
-	select IRQ_CPU
-	select HW_HAS_PCI
+	select IRQ_MIPS_CPU
+	select HAVE_PCI
 	select PCI_VR41XX
 	select SYS_SUPPORTS_32BIT_KERNEL
 	select SYS_SUPPORTS_LITTLE_ENDIAN
@@ -98,6 +99,6 @@ endchoice
 
 config PCI_VR41XX
 	bool "Add PCI control unit support of NEC VR4100 series"
-	depends on MACH_VR41XX && HW_HAS_PCI
+	depends on MACH_VR41XX && HAVE_PCI
 	default y
 	select PCI

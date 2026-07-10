@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  Port on Texas Instruments TMS320C6x architecture
  *
@@ -5,10 +6,6 @@
  *  Author: Aurelien Jacquiot (aurelien.jacquiot@jaluna.com)
  *
  *  Updated for 2.6.34: Mark Salter <msalter@redhat.com>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2 as
- *  published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -16,6 +13,7 @@
 #include <linux/syscalls.h>
 #include <linux/tracehook.h>
 
+#include <asm/asm-offsets.h>
 #include <asm/ucontext.h>
 #include <asm/cacheflush.h>
 
@@ -68,7 +66,7 @@ asmlinkage int do_rt_sigreturn(struct pt_regs *regs)
 	sigset_t set;
 
 	/* Always make any pending restarted system calls return -EINTR */
-	current_thread_info()->restart_block.fn = do_no_restart_syscall;
+	current->restart_block.fn = do_no_restart_syscall;
 
 	/*
 	 * Since we stacked the signal on a dword boundary,
@@ -80,7 +78,7 @@ asmlinkage int do_rt_sigreturn(struct pt_regs *regs)
 
 	frame = (struct rt_sigframe __user *) ((unsigned long) regs->sp + 8);
 
-	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		goto badframe;
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
 		goto badframe;
@@ -93,7 +91,7 @@ asmlinkage int do_rt_sigreturn(struct pt_regs *regs)
 	return regs->a4;
 
 badframe:
-	force_sig(SIGSEGV, current);
+	force_sig(SIGSEGV);
 	return 0;
 }
 
@@ -149,7 +147,7 @@ static int setup_rt_frame(struct ksignal *ksig, sigset_t *set,
 
 	frame = get_sigframe(ksig, regs, sizeof(*frame));
 
-	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		return -EFAULT;
 
 	err |= __put_user(&frame->info, &frame->pinfo);
@@ -223,7 +221,7 @@ handle_restart(struct pt_regs *regs, struct k_sigaction *ka, int has_handler)
 			regs->a4 = -EINTR;
 			break;
 		}
-	/* fallthrough */
+		fallthrough;
 	case -ERESTARTNOINTR:
 do_restart:
 		regs->a4 = regs->orig_a4;
@@ -255,7 +253,7 @@ static void handle_signal(struct ksignal *ksig, struct pt_regs *regs,
 				break;
 			}
 
-			/* fallthrough */
+			fallthrough;
 		case -ERESTARTNOINTR:
 			regs->a4 = regs->orig_a4;
 			regs->pc -= 4;
@@ -316,11 +314,9 @@ asmlinkage void do_notify_resume(struct pt_regs *regs, u32 thread_info_flags,
 				 int syscall)
 {
 	/* deal with pending signal delivery */
-	if (thread_info_flags & (1 << TIF_SIGPENDING))
+	if (thread_info_flags & (_TIF_SIGPENDING | _TIF_NOTIFY_SIGNAL))
 		do_signal(regs, syscall);
 
-	if (thread_info_flags & (1 << TIF_NOTIFY_RESUME)) {
-		clear_thread_flag(TIF_NOTIFY_RESUME);
+	if (thread_info_flags & (1 << TIF_NOTIFY_RESUME))
 		tracehook_notify_resume(regs);
-	}
 }

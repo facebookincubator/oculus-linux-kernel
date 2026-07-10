@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * bebob.c - a part of driver for BeBoB based devices
  *
  * Copyright (c) 2013-2014 Takashi Sakamoto
- *
- * Licensed under the terms of the GNU General Public License, version 2.
  */
 
 /*
@@ -33,6 +32,7 @@ static DEFINE_MUTEX(devices_mutex);
 static DECLARE_BITMAP(devices_used, SNDRV_CARDS);
 
 /* Offsets from information register. */
+#define INFO_OFFSET_BEBOB_VERSION	0x08
 #define INFO_OFFSET_GUID		0x10
 #define INFO_OFFSET_HW_MODEL_ID		0x18
 #define INFO_OFFSET_HW_MODEL_REVISION	0x1c
@@ -40,7 +40,8 @@ static DECLARE_BITMAP(devices_used, SNDRV_CARDS);
 #define VEN_EDIROL	0x000040ab
 #define VEN_PRESONUS	0x00000a92
 #define VEN_BRIDGECO	0x000007f5
-#define VEN_MACKIE	0x0000000f
+#define VEN_MACKIE1	0x0000000f
+#define VEN_MACKIE2	0x00000ff2
 #define VEN_STANTON	0x00001260
 #define VEN_TASCAM	0x0000022e
 #define VEN_BEHRINGER	0x00001564
@@ -57,6 +58,8 @@ static DECLARE_BITMAP(devices_used, SNDRV_CARDS);
 #define VEN_FOCUSRITE	0x0000130e
 #define VEN_MAUDIO1	0x00000d6c
 #define VEN_MAUDIO2	0x000007f5
+#define VEN_DIGIDESIGN	0x00a07e
+#define OUI_SHOUYO	0x002327
 
 #define MODEL_FOCUSRITE_SAFFIRE_BOTH	0x00000000
 #define MODEL_MAUDIO_AUDIOPHILE_BOTH	0x00010060
@@ -64,7 +67,7 @@ static DECLARE_BITMAP(devices_used, SNDRV_CARDS);
 #define MODEL_MAUDIO_PROJECTMIX		0x00010091
 
 static int
-name_device(struct snd_bebob *bebob, unsigned int vendor_id)
+name_device(struct snd_bebob *bebob)
 {
 	struct fw_device *fw_dev = fw_parent_device(bebob->unit);
 	char vendor[24] = {0};
@@ -72,6 +75,7 @@ name_device(struct snd_bebob *bebob, unsigned int vendor_id)
 	u32 hw_id;
 	u32 data[2] = {0};
 	u32 revision;
+	u32 version;
 	int err;
 
 	/* get vendor name from root directory */
@@ -104,6 +108,12 @@ name_device(struct snd_bebob *bebob, unsigned int vendor_id)
 	if (err < 0)
 		goto end;
 
+	err = snd_bebob_read_quad(bebob->unit, INFO_OFFSET_BEBOB_VERSION,
+				  &version);
+	if (err < 0)
+		goto end;
+	bebob->version = version;
+
 	strcpy(bebob->card->driver, "BeBoB");
 	strcpy(bebob->card->shortname, model);
 	strcpy(bebob->card->mixername, model);
@@ -121,13 +131,11 @@ bebob_card_free(struct snd_card *card)
 {
 	struct snd_bebob *bebob = card->private_data;
 
-	if (bebob->card_index >= 0) {
-		mutex_lock(&devices_mutex);
-		clear_bit(bebob->card_index, devices_used);
-		mutex_unlock(&devices_mutex);
-	}
+	mutex_lock(&devices_mutex);
+	clear_bit(bebob->card_index, devices_used);
+	mutex_unlock(&devices_mutex);
 
-	mutex_destroy(&bebob->mutex);
+	snd_bebob_stream_destroy_duplex(bebob);
 }
 
 static const struct snd_bebob_spec *
@@ -147,89 +155,69 @@ get_saffire_spec(struct fw_unit *unit)
 static bool
 check_audiophile_booted(struct fw_unit *unit)
 {
-	char name[24] = {0};
+	char name[28] = {0};
 
 	if (fw_csr_string(unit->directory, CSR_MODEL, name, sizeof(name)) < 0)
 		return false;
 
-	return strncmp(name, "FW Audiophile Bootloader", 15) != 0;
+	return strncmp(name, "FW Audiophile Bootloader", 24) != 0;
 }
 
-static int
-bebob_probe(struct fw_unit *unit,
-	    const struct ieee1394_device_id *entry)
+static void
+do_registration(struct work_struct *work)
 {
-	struct snd_card *card;
-	struct snd_bebob *bebob;
-	const struct snd_bebob_spec *spec;
+	struct snd_bebob *bebob =
+			container_of(work, struct snd_bebob, dwork.work);
 	unsigned int card_index;
 	int err;
 
-	mutex_lock(&devices_mutex);
+	if (bebob->registered)
+		return;
 
+	mutex_lock(&devices_mutex);
 	for (card_index = 0; card_index < SNDRV_CARDS; card_index++) {
 		if (!test_bit(card_index, devices_used) && enable[card_index])
 			break;
 	}
 	if (card_index >= SNDRV_CARDS) {
-		err = -ENOENT;
-		goto end;
+		mutex_unlock(&devices_mutex);
+		return;
 	}
 
-	if ((entry->vendor_id == VEN_FOCUSRITE) &&
-	    (entry->model_id == MODEL_FOCUSRITE_SAFFIRE_BOTH))
-		spec = get_saffire_spec(unit);
-	else if ((entry->vendor_id == VEN_MAUDIO1) &&
-		 (entry->model_id == MODEL_MAUDIO_AUDIOPHILE_BOTH) &&
-		 !check_audiophile_booted(unit))
-		spec = NULL;
-	else
-		spec = (const struct snd_bebob_spec *)entry->driver_data;
-
-	if (spec == NULL) {
-		if ((entry->vendor_id == VEN_MAUDIO1) ||
-		    (entry->vendor_id == VEN_MAUDIO2))
-			err = snd_bebob_maudio_load_firmware(unit);
-		else
-			err = -ENOSYS;
-		goto end;
+	err = snd_card_new(&bebob->unit->device, index[card_index],
+			   id[card_index], THIS_MODULE, 0, &bebob->card);
+	if (err < 0) {
+		mutex_unlock(&devices_mutex);
+		return;
 	}
-
-	err = snd_card_new(&unit->device, index[card_index], id[card_index],
-			   THIS_MODULE, sizeof(struct snd_bebob), &card);
-	if (err < 0)
-		goto end;
-	bebob = card->private_data;
-	bebob->card_index = card_index;
 	set_bit(card_index, devices_used);
-	card->private_free = bebob_card_free;
+	mutex_unlock(&devices_mutex);
 
-	bebob->card = card;
-	bebob->unit = unit;
-	bebob->spec = spec;
-	mutex_init(&bebob->mutex);
-	spin_lock_init(&bebob->lock);
-	init_waitqueue_head(&bebob->hwdep_wait);
+	bebob->card->private_free = bebob_card_free;
+	bebob->card->private_data = bebob;
 
-	err = name_device(bebob, entry->vendor_id);
+	err = name_device(bebob);
 	if (err < 0)
 		goto error;
 
-	if ((entry->vendor_id == VEN_MAUDIO1) &&
-	    (entry->model_id == MODEL_MAUDIO_FW1814))
-		err = snd_bebob_maudio_special_discover(bebob, true);
-	else if ((entry->vendor_id == VEN_MAUDIO1) &&
-		 (entry->model_id == MODEL_MAUDIO_PROJECTMIX))
-		err = snd_bebob_maudio_special_discover(bebob, false);
-	else
+	if (bebob->spec == &maudio_special_spec) {
+		if (bebob->entry->model_id == MODEL_MAUDIO_FW1814)
+			err = snd_bebob_maudio_special_discover(bebob, true);
+		else
+			err = snd_bebob_maudio_special_discover(bebob, false);
+	} else {
 		err = snd_bebob_stream_discover(bebob);
+	}
+	if (err < 0)
+		goto error;
+
+	err = snd_bebob_stream_init_duplex(bebob);
 	if (err < 0)
 		goto error;
 
 	snd_bebob_proc_init(bebob);
 
-	if ((bebob->midi_input_ports > 0) ||
-	    (bebob->midi_output_ports > 0)) {
+	if (bebob->midi_input_ports > 0 || bebob->midi_output_ports > 0) {
 		err = snd_bebob_create_midi_devices(bebob);
 		if (err < 0)
 			goto error;
@@ -243,16 +231,64 @@ bebob_probe(struct fw_unit *unit,
 	if (err < 0)
 		goto error;
 
-	err = snd_bebob_stream_init_duplex(bebob);
+	err = snd_card_register(bebob->card);
 	if (err < 0)
 		goto error;
 
-	if (!bebob->maudio_special_quirk) {
-		err = snd_card_register(card);
-		if (err < 0) {
-			snd_bebob_stream_destroy_duplex(bebob);
-			goto error;
-		}
+	bebob->registered = true;
+
+	return;
+error:
+	snd_card_free(bebob->card);
+	dev_info(&bebob->unit->device,
+		 "Sound card registration failed: %d\n", err);
+}
+
+static int
+bebob_probe(struct fw_unit *unit, const struct ieee1394_device_id *entry)
+{
+	struct snd_bebob *bebob;
+	const struct snd_bebob_spec *spec;
+
+	if (entry->vendor_id == VEN_FOCUSRITE &&
+	    entry->model_id == MODEL_FOCUSRITE_SAFFIRE_BOTH)
+		spec = get_saffire_spec(unit);
+	else if (entry->vendor_id == VEN_MAUDIO1 &&
+		 entry->model_id == MODEL_MAUDIO_AUDIOPHILE_BOTH &&
+		 !check_audiophile_booted(unit))
+		spec = NULL;
+	else
+		spec = (const struct snd_bebob_spec *)entry->driver_data;
+
+	if (spec == NULL) {
+		if (entry->vendor_id == VEN_MAUDIO1 ||
+		    entry->vendor_id == VEN_MAUDIO2)
+			return snd_bebob_maudio_load_firmware(unit);
+		else
+			return -ENODEV;
+	}
+
+	/* Allocate this independent of sound card instance. */
+	bebob = devm_kzalloc(&unit->device, sizeof(struct snd_bebob),
+			     GFP_KERNEL);
+	if (!bebob)
+		return -ENOMEM;
+	bebob->unit = fw_unit_get(unit);
+	dev_set_drvdata(&unit->device, bebob);
+
+	bebob->entry = entry;
+	bebob->spec = spec;
+	mutex_init(&bebob->mutex);
+	spin_lock_init(&bebob->lock);
+	init_waitqueue_head(&bebob->hwdep_wait);
+
+	/* Allocate and register this sound card later. */
+	INIT_DEFERRABLE_WORK(&bebob->dwork, do_registration);
+
+	if (entry->vendor_id != VEN_MAUDIO1 ||
+	    (entry->model_id != MODEL_MAUDIO_FW1814 &&
+	     entry->model_id != MODEL_MAUDIO_PROJECTMIX)) {
+		snd_fw_schedule_registration(unit, &bebob->dwork);
 	} else {
 		/*
 		 * This is a workaround. This bus reset seems to have an effect
@@ -264,21 +300,29 @@ bebob_probe(struct fw_unit *unit,
 		 * signals from dbus and starts I/Os. To avoid I/Os till the
 		 * future bus reset, registration is done in next update().
 		 */
-		bebob->deferred_registration = true;
 		fw_schedule_bus_reset(fw_parent_device(bebob->unit)->card,
 				      false, true);
 	}
 
-	dev_set_drvdata(&unit->device, bebob);
-end:
-	mutex_unlock(&devices_mutex);
-	return err;
-error:
-	mutex_unlock(&devices_mutex);
-	snd_card_free(card);
-	return err;
+	return 0;
 }
 
+/*
+ * This driver doesn't update streams in bus reset handler.
+ *
+ * DM1000/ DM1100/DM1500 chipsets with BeBoB firmware transfer packets with
+ * discontinued counter at bus reset. This discontinuity is immediately
+ * detected in packet streaming layer, then it sets XRUN to PCM substream.
+ *
+ * ALSA PCM applications can know the XRUN by getting -EPIPE from PCM operation.
+ * Then, they can recover the PCM substream by executing ioctl(2) with
+ * SNDRV_PCM_IOCTL_PREPARE. 'struct snd_pcm_ops.prepare' is called and drivers
+ * restart packet streaming.
+ *
+ * The above processing may be executed before this bus-reset handler is
+ * executed. When this handler updates streams with current isochronous
+ * channels, the streams already have the current ones.
+ */
 static void
 bebob_update(struct fw_unit *unit)
 {
@@ -287,16 +331,11 @@ bebob_update(struct fw_unit *unit)
 	if (bebob == NULL)
 		return;
 
-	fcp_bus_reset(bebob->unit);
-	snd_bebob_stream_update_duplex(bebob);
-
-	if (bebob->deferred_registration) {
-		if (snd_card_register(bebob->card) < 0) {
-			snd_bebob_stream_destroy_duplex(bebob);
-			snd_card_free(bebob->card);
-		}
-		bebob->deferred_registration = false;
-	}
+	/* Postpone a workqueue for deferred registration. */
+	if (!bebob->registered)
+		snd_fw_schedule_registration(unit, &bebob->dwork);
+	else
+		fcp_bus_reset(bebob->unit);
 }
 
 static void bebob_remove(struct fw_unit *unit)
@@ -306,14 +345,23 @@ static void bebob_remove(struct fw_unit *unit)
 	if (bebob == NULL)
 		return;
 
-	kfree(bebob->maudio_special_quirk);
+	/*
+	 * Confirm to stop the work for registration before the sound card is
+	 * going to be released. The work is not scheduled again because bus
+	 * reset handler is not called anymore.
+	 */
+	cancel_delayed_work_sync(&bebob->dwork);
 
-	snd_bebob_stream_destroy_duplex(bebob);
-	snd_card_disconnect(bebob->card);
-	snd_card_free_when_closed(bebob->card);
+	if (bebob->registered) {
+		// Block till all of ALSA character devices are released.
+		snd_card_free(bebob->card);
+	}
+
+	mutex_destroy(&bebob->mutex);
+	fw_unit_put(bebob->unit);
 }
 
-static struct snd_bebob_rate_spec normal_rate_spec = {
+static const struct snd_bebob_rate_spec normal_rate_spec = {
 	.get	= &snd_bebob_stream_get_rate,
 	.set	= &snd_bebob_stream_set_rate
 };
@@ -339,9 +387,9 @@ static const struct ieee1394_device_id bebob_id_table[] = {
 	/* BridgeCo, Audio5 */
 	SND_BEBOB_DEV_ENTRY(VEN_BRIDGECO, 0x00010049, &spec_normal),
 	/* Mackie, Onyx 1220/1620/1640 (Firewire I/O Card) */
-	SND_BEBOB_DEV_ENTRY(VEN_MACKIE, 0x00010065, &spec_normal),
-	/* Mackie, d.2 (Firewire Option) */
-	SND_BEBOB_DEV_ENTRY(VEN_MACKIE, 0x00010067, &spec_normal),
+	SND_BEBOB_DEV_ENTRY(VEN_MACKIE2, 0x00010065, &spec_normal),
+	// Mackie, d.2 (optional Firewire card with DM1000).
+	SND_BEBOB_DEV_ENTRY(VEN_MACKIE1, 0x00010067, &spec_normal),
 	/* Stanton, ScratchAmp */
 	SND_BEBOB_DEV_ENTRY(VEN_STANTON, 0x00000001, &spec_normal),
 	/* Tascam, IF-FW DM */
@@ -352,11 +400,15 @@ static const struct ieee1394_device_id bebob_id_table[] = {
 	SND_BEBOB_DEV_ENTRY(VEN_BEHRINGER, 0x00001604, &spec_normal),
 	/* Behringer, Digital Mixer X32 series (X-UF Card) */
 	SND_BEBOB_DEV_ENTRY(VEN_BEHRINGER, 0x00000006, &spec_normal),
+	/*  Behringer, F-Control Audio 1616 */
+	SND_BEBOB_DEV_ENTRY(VEN_BEHRINGER, 0x001616, &spec_normal),
+	/*  Behringer, F-Control Audio 610 */
+	SND_BEBOB_DEV_ENTRY(VEN_BEHRINGER, 0x000610, &spec_normal),
 	/* Apogee Electronics, Rosetta 200/400 (X-FireWire card) */
 	/* Apogee Electronics, DA/AD/DD-16X (X-FireWire card) */
 	SND_BEBOB_DEV_ENTRY(VEN_APOGEE, 0x00010048, &spec_normal),
 	/* Apogee Electronics, Ensemble */
-	SND_BEBOB_DEV_ENTRY(VEN_APOGEE, 0x00001eee, &spec_normal),
+	SND_BEBOB_DEV_ENTRY(VEN_APOGEE, 0x01eeee, &spec_normal),
 	/* ESI, Quatafire610 */
 	SND_BEBOB_DEV_ENTRY(VEN_ESI, 0x00010064, &spec_normal),
 	/* AcousticReality, eARMasterOne */
@@ -382,21 +434,33 @@ static const struct ieee1394_device_id bebob_id_table[] = {
 	/* TerraTec Electronic GmbH, PHASE 88 Rack FW */
 	SND_BEBOB_DEV_ENTRY(VEN_TERRATEC, 0x00000003, &phase88_rack_spec),
 	/* TerraTec Electronic GmbH, PHASE 24 FW */
-	SND_BEBOB_DEV_ENTRY(VEN_TERRATEC, 0x00000004, &phase24_series_spec),
+	SND_BEBOB_DEV_ENTRY(VEN_TERRATEC, 0x00000004, &yamaha_terratec_spec),
 	/* TerraTec Electronic GmbH, Phase X24 FW */
-	SND_BEBOB_DEV_ENTRY(VEN_TERRATEC, 0x00000007, &phase24_series_spec),
+	SND_BEBOB_DEV_ENTRY(VEN_TERRATEC, 0x00000007, &yamaha_terratec_spec),
 	/* TerraTec Electronic GmbH, EWS MIC2/MIC8 */
 	SND_BEBOB_DEV_ENTRY(VEN_TERRATEC, 0x00000005, &spec_normal),
 	/* Terratec Electronic GmbH, Aureon 7.1 Firewire */
 	SND_BEBOB_DEV_ENTRY(VEN_TERRATEC, 0x00000002, &spec_normal),
 	/* Yamaha, GO44 */
-	SND_BEBOB_DEV_ENTRY(VEN_YAMAHA, 0x0010000b, &yamaha_go_spec),
+	SND_BEBOB_DEV_ENTRY(VEN_YAMAHA, 0x0010000b, &yamaha_terratec_spec),
 	/* YAMAHA, GO46 */
-	SND_BEBOB_DEV_ENTRY(VEN_YAMAHA, 0x0010000c, &yamaha_go_spec),
+	SND_BEBOB_DEV_ENTRY(VEN_YAMAHA, 0x0010000c, &yamaha_terratec_spec),
 	/* Focusrite, SaffirePro 26 I/O */
 	SND_BEBOB_DEV_ENTRY(VEN_FOCUSRITE, 0x00000003, &saffirepro_26_spec),
 	/* Focusrite, SaffirePro 10 I/O */
-	SND_BEBOB_DEV_ENTRY(VEN_FOCUSRITE, 0x00000006, &saffirepro_10_spec),
+	{
+		// The combination of vendor_id and model_id is the same as the
+		// same as the one of Liquid Saffire 56.
+		.match_flags	= IEEE1394_MATCH_VENDOR_ID |
+				  IEEE1394_MATCH_MODEL_ID |
+				  IEEE1394_MATCH_SPECIFIER_ID |
+				  IEEE1394_MATCH_VERSION,
+		.vendor_id	= VEN_FOCUSRITE,
+		.model_id	= 0x000006,
+		.specifier_id	= 0x00a02d,
+		.version	= 0x010001,
+		.driver_data	= (kernel_ulong_t)&saffirepro_10_spec,
+	},
 	/* Focusrite, Saffire(no label and LE) */
 	SND_BEBOB_DEV_ENTRY(VEN_FOCUSRITE, MODEL_FOCUSRITE_SAFFIRE_BOTH,
 			    &saffire_spec),
@@ -421,11 +485,13 @@ static const struct ieee1394_device_id bebob_id_table[] = {
 	/* M-Audio ProjectMix */
 	SND_BEBOB_DEV_ENTRY(VEN_MAUDIO1, MODEL_MAUDIO_PROJECTMIX,
 			    &maudio_special_spec),
+	/* Digidesign Mbox 2 Pro */
+	SND_BEBOB_DEV_ENTRY(VEN_DIGIDESIGN, 0x0000a9, &spec_normal),
+	// Toneweal FW66.
+	SND_BEBOB_DEV_ENTRY(OUI_SHOUYO, 0x020002, &spec_normal),
 	/* IDs are unknown but able to be supported */
 	/*  Apogee, Mini-ME Firewire */
 	/*  Apogee, Mini-DAC Firewire */
-	/*  Behringer, F-Control Audio 1616 */
-	/*  Behringer, F-Control Audio 610 */
 	/*  Cakawalk, Sonar Power Studio 66 */
 	/*  CME, UF400e */
 	/*  ESI, Quotafire XL */
@@ -446,7 +512,7 @@ MODULE_DEVICE_TABLE(ieee1394, bebob_id_table);
 static struct fw_driver bebob_driver = {
 	.driver = {
 		.owner	= THIS_MODULE,
-		.name	= "snd-bebob",
+		.name	= KBUILD_MODNAME,
 		.bus	= &fw_bus_type,
 	},
 	.probe    = bebob_probe,

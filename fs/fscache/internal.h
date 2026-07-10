@@ -1,12 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Internal definitions for FS-Cache
  *
  * Copyright (C) 2004-2007 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
  */
 
 /*
@@ -29,7 +25,9 @@
 #define pr_fmt(fmt) "FS-Cache: " fmt
 
 #include <linux/fscache-cache.h>
+#include <trace/events/fscache.h>
 #include <linux/sched.h>
+#include <linux/seq_file.h>
 
 #define FSCACHE_MIN_THREADS	4
 #define FSCACHE_MAX_THREADS	32
@@ -48,8 +46,15 @@ extern struct fscache_cache *fscache_select_cache_for_object(
  */
 extern struct kmem_cache *fscache_cookie_jar;
 
-extern void fscache_cookie_init_once(void *);
-extern void __fscache_cookie_put(struct fscache_cookie *);
+extern void fscache_free_cookie(struct fscache_cookie *);
+extern struct fscache_cookie *fscache_alloc_cookie(struct fscache_cookie *,
+						   const struct fscache_cookie_def *,
+						   const void *, size_t,
+						   const void *, size_t,
+						   void *, loff_t);
+extern struct fscache_cookie *fscache_hash_cookie(struct fscache_cookie *);
+extern void fscache_cookie_put(struct fscache_cookie *,
+			       enum fscache_cookie_trace);
 
 /*
  * fsdef.c
@@ -75,7 +80,7 @@ static inline void fscache_hist(atomic_t histogram[], unsigned long start_jif)
 	atomic_inc(&histogram[jif]);
 }
 
-extern const struct file_operations fscache_histogram_fops;
+extern const struct seq_operations fscache_histogram_ops;
 
 #else
 #define fscache_hist(hist, start_jif) do {} while (0)
@@ -92,12 +97,12 @@ extern struct workqueue_struct *fscache_object_wq;
 extern struct workqueue_struct *fscache_op_wq;
 DECLARE_PER_CPU(wait_queue_head_t, fscache_object_cong_wait);
 
+extern unsigned int fscache_hash(unsigned int salt, unsigned int *data, unsigned int n);
+
 static inline bool fscache_object_congested(void)
 {
 	return workqueue_congested(WORK_CPU_UNBOUND, fscache_object_wq);
 }
-
-extern int fscache_wait_atomic_t(atomic_t *);
 
 /*
  * object.c
@@ -108,7 +113,7 @@ extern void fscache_enqueue_object(struct fscache_object *);
  * object-list.c
  */
 #ifdef CONFIG_FSCACHE_OBJECT_LIST
-extern const struct file_operations fscache_objlist_fops;
+extern const struct proc_ops fscache_objlist_proc_ops;
 
 extern void fscache_objlist_add(struct fscache_object *);
 extern void fscache_objlist_remove(struct fscache_object *);
@@ -124,8 +129,7 @@ extern int fscache_submit_exclusive_op(struct fscache_object *,
 				       struct fscache_operation *);
 extern int fscache_submit_op(struct fscache_object *,
 			     struct fscache_operation *);
-extern int fscache_cancel_op(struct fscache_operation *,
-			     void (*)(struct fscache_operation *));
+extern int fscache_cancel_op(struct fscache_operation *, bool);
 extern void fscache_cancel_all_ops(struct fscache_object *);
 extern void fscache_abort_object(struct fscache_object *);
 extern void fscache_start_operations(struct fscache_object *);
@@ -138,8 +142,7 @@ extern int fscache_wait_for_deferred_lookup(struct fscache_cookie *);
 extern int fscache_wait_for_operation_activation(struct fscache_object *,
 						 struct fscache_operation *,
 						 atomic_t *,
-						 atomic_t *,
-						 void (*)(struct fscache_operation *));
+						 atomic_t *);
 extern void fscache_invalidate_writes(struct fscache_cookie *);
 
 /*
@@ -164,6 +167,7 @@ extern atomic_t fscache_n_op_pend;
 extern atomic_t fscache_n_op_run;
 extern atomic_t fscache_n_op_enqueue;
 extern atomic_t fscache_n_op_deferred_release;
+extern atomic_t fscache_n_op_initialised;
 extern atomic_t fscache_n_op_release;
 extern atomic_t fscache_n_op_gc;
 extern atomic_t fscache_n_op_cancelled;
@@ -271,6 +275,11 @@ extern atomic_t fscache_n_cop_write_page;
 extern atomic_t fscache_n_cop_uncache_page;
 extern atomic_t fscache_n_cop_dissociate_pages;
 
+extern atomic_t fscache_n_cache_no_space_reject;
+extern atomic_t fscache_n_cache_stale_objects;
+extern atomic_t fscache_n_cache_retired_objects;
+extern atomic_t fscache_n_cache_culled_objects;
+
 static inline void fscache_stat(atomic_t *stat)
 {
 	atomic_inc(stat);
@@ -283,7 +292,7 @@ static inline void fscache_stat_d(atomic_t *stat)
 
 #define __fscache_stat(stat) (stat)
 
-extern const struct file_operations fscache_stats_fops;
+int fscache_stats_show(struct seq_file *m, void *v);
 #else
 
 #define __fscache_stat(stat) (NULL)
@@ -309,14 +318,12 @@ static inline void fscache_raise_event(struct fscache_object *object,
 		fscache_enqueue_object(object);
 }
 
-/*
- * drop a reference to a cookie
- */
-static inline void fscache_cookie_put(struct fscache_cookie *cookie)
+static inline void fscache_cookie_get(struct fscache_cookie *cookie,
+				      enum fscache_cookie_trace where)
 {
-	BUG_ON(atomic_read(&cookie->usage) <= 0);
-	if (atomic_dec_and_test(&cookie->usage))
-		__fscache_cookie_put(cookie);
+	int usage = atomic_inc_return(&cookie->usage);
+
+	trace_fscache_cookie(cookie, where, usage);
 }
 
 /*
@@ -338,6 +345,27 @@ void fscache_put_context(struct fscache_cookie *cookie, void *context)
 {
 	if (cookie->def->put_context)
 		cookie->def->put_context(cookie->netfs_data, context);
+}
+
+/*
+ * Update the auxiliary data on a cookie.
+ */
+static inline
+void fscache_update_aux(struct fscache_cookie *cookie, const void *aux_data)
+{
+	void *p;
+
+	if (!aux_data)
+		return;
+	if (cookie->aux_len <= sizeof(cookie->inline_aux))
+		p = cookie->inline_aux;
+	else
+		p = cookie->aux;
+
+	if (memcmp(p, aux_data, cookie->aux_len) != 0) {
+		memcpy(p, aux_data, cookie->aux_len);
+		set_bit(FSCACHE_COOKIE_AUX_UPDATED, &cookie->flags);
+	}
 }
 
 /*****************************************************************************/

@@ -1,26 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0
 /******************************************************************************
-*
-* Copyright(c) 2007 - 2011 Realtek Corporation. All rights reserved.
-*
-* This program is free software; you can redistribute it and/or modify it
-* under the terms of version 2 of the GNU General Public License as
-* published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful, but WITHOUT
-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-* more details.
-*
-* You should have received a copy of the GNU General Public License along with
-* this program; if not, write to the Free Software Foundation, Inc.,
-* 51 Franklin Street, Fifth Floor, Boston, MA 02110, USA
-*
-*
-******************************************************************************/
+ *
+ * Copyright(c) 2007 - 2011 Realtek Corporation. All rights reserved.
+ *
+ ******************************************************************************/
 
 #include "odm_precomp.h"
 #include "phy.h"
-#include <rtw_iol.h>
 
 /* MAC_REG.TXT */
 
@@ -123,11 +109,11 @@ bool rtl88eu_phy_mac_config(struct adapter *adapt)
 	u32 arraylength;
 	u32 *ptrarray;
 
-	arraylength = sizeof(array_MAC_REG_8188E)/sizeof(u32);
+	arraylength = ARRAY_SIZE(array_MAC_REG_8188E);
 	ptrarray = array_MAC_REG_8188E;
 
-	for (i = 0; i < arraylength; i = i + 2)
-		usb_write8(adapt, ptrarray[i], (u8) ptrarray[i + 1]);
+	for (i = 0; i < arraylength; i += 2)
+		usb_write8(adapt, ptrarray[i], (u8)ptrarray[i + 1]);
 
 	usb_write8(adapt, REG_MAX_AGGR_NUM, MAX_AGGR_NUM);
 	return true;

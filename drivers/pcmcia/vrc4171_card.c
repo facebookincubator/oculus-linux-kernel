@@ -1,21 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * vrc4171_card.c, NEC VRC4171 Card Controller driver for Socket Services.
  *
  * Copyright (C) 2003-2005  Yoichi Yuasa <yuasa@linux-mips.org>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include <linux/init.h>
 #include <linux/ioport.h>
@@ -84,32 +71,32 @@ MODULE_LICENSE("GPL");
 #define IO_MAX_MAPS	2
 #define MEM_MAX_MAPS	5
 
-typedef enum {
+enum vrc4171_slot {
 	SLOT_PROBE = 0,
 	SLOT_NOPROBE_IO,
 	SLOT_NOPROBE_MEM,
 	SLOT_NOPROBE_ALL,
 	SLOT_INITIALIZED,
-} vrc4171_slot_t;
+};
 
-typedef enum {
+enum vrc4171_slotb {
 	SLOTB_IS_NONE,
 	SLOTB_IS_PCCARD,
 	SLOTB_IS_CF,
 	SLOTB_IS_FLASHROM,
-} vrc4171_slotb_t;
+};
 
-typedef struct vrc4171_socket {
-	vrc4171_slot_t slot;
+struct vrc4171_socket {
+	enum vrc4171_slot slot;
 	struct pcmcia_socket pcmcia_socket;
 	char name[24];
 	int csc_irq;
 	int io_irq;
 	spinlock_t lock;
-} vrc4171_socket_t;
+};
 
-static vrc4171_socket_t vrc4171_sockets[CARD_MAX_SLOTS];
-static vrc4171_slotb_t vrc4171_slotb = SLOTB_IS_NONE;
+static struct vrc4171_socket vrc4171_sockets[CARD_MAX_SLOTS];
+static enum vrc4171_slotb vrc4171_slotb = SLOTB_IS_NONE;
 static char vrc4171_card_name[] = "NEC VRC4171 Card Controller";
 static unsigned int vrc4171_irq;
 static uint16_t vrc4171_irq_mask = 0xdeb8;
@@ -141,7 +128,7 @@ static inline uint16_t vrc4171_get_irq_status(void)
 	return inw(INTERRUPT_STATUS);
 }
 
-static inline void vrc4171_set_multifunction_pin(vrc4171_slotb_t config)
+static inline void vrc4171_set_multifunction_pin(enum vrc4171_slotb config)
 {
 	uint16_t config1;
 
@@ -234,7 +221,7 @@ static inline int search_nonuse_irq(void)
 
 static int pccard_init(struct pcmcia_socket *sock)
 {
-	vrc4171_socket_t *socket;
+	struct vrc4171_socket *socket;
 	unsigned int slot;
 
 	sock->features |= SS_CAP_PCCARD | SS_CAP_PAGE_REGS;
@@ -317,7 +304,7 @@ static inline uint8_t set_Vcc_value(u_char Vcc)
 
 static int pccard_set_socket(struct pcmcia_socket *sock, socket_state_t *state)
 {
-	vrc4171_socket_t *socket;
+	struct vrc4171_socket *socket;
 	unsigned int slot;
 	uint8_t voltage, power, control, cscint;
 
@@ -517,7 +504,7 @@ static inline unsigned int get_events(int slot)
 
 static irqreturn_t pccard_interrupt(int irq, void *dev_id)
 {
-	vrc4171_socket_t *socket;
+	struct vrc4171_socket *socket;
 	unsigned int events;
 	irqreturn_t retval = IRQ_NONE;
 	uint16_t status;
@@ -567,7 +554,7 @@ static inline void reserve_using_irq(int slot)
 
 static int vrc4171_add_sockets(void)
 {
-	vrc4171_socket_t *socket;
+	struct vrc4171_socket *socket;
 	int slot, retval;
 
 	for (slot = 0; slot < CARD_MAX_SLOTS; slot++) {
@@ -617,7 +604,7 @@ static int vrc4171_add_sockets(void)
 
 static void vrc4171_remove_sockets(void)
 {
-	vrc4171_socket_t *socket;
+	struct vrc4171_socket *socket;
 	int slot;
 
 	for (slot = 0; slot < CARD_MAX_SLOTS; slot++) {
@@ -709,7 +696,6 @@ __setup("vrc4171_card=", vrc4171_card_setup);
 static struct platform_driver vrc4171_card_driver = {
 	.driver = {
 		.name		= vrc4171_card_name,
-		.owner		= THIS_MODULE,
 	},
 };
 

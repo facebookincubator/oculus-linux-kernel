@@ -1,13 +1,6 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2013-2014, 2017, 2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __ADRENO_IB_PARSER__
@@ -137,12 +130,9 @@ static inline int adreno_cp_parser_getreg(struct adreno_device *adreno_dev,
 	if (reg_enum == ADRENO_CP_ADDR_MAX)
 		return -EEXIST;
 
-	if (adreno_is_a3xx(adreno_dev))
-		return a3xx_cp_addr_regs[reg_enum];
-	else if (adreno_is_a4xx(adreno_dev))
-		return a4xx_cp_addr_regs[reg_enum];
-	else
+	if (!adreno_is_a3xx(adreno_dev))
 		return -EEXIST;
+	return a3xx_cp_addr_regs[reg_enum];
 }
 
 /*
@@ -162,12 +152,11 @@ static inline int adreno_cp_parser_regindex(struct adreno_device *adreno_dev,
 {
 	int i;
 	const unsigned int *regs;
-	if (adreno_is_a4xx(adreno_dev))
-		regs = a4xx_cp_addr_regs;
-	else if (adreno_is_a3xx(adreno_dev))
-		regs = a3xx_cp_addr_regs;
-	else
+
+	if (!adreno_is_a3xx(adreno_dev))
 		return -EEXIST;
+
+	regs = a3xx_cp_addr_regs;
 
 	for (i = start; i <= end && i < ADRENO_CP_ADDR_MAX; i++)
 		if (regs[i] == offset)
@@ -178,7 +167,7 @@ static inline int adreno_cp_parser_regindex(struct adreno_device *adreno_dev,
 int adreno_ib_create_object_list(
 		struct kgsl_device *device,
 		struct kgsl_process_private *process,
-		uint64_t gpuaddr, uint64_t dwords,
+		uint64_t gpuaddr, uint64_t dwords, uint64_t ib2base,
 		struct adreno_ib_object_list **out_ib_obj_list);
 
 void adreno_ib_destroy_obj_list(struct adreno_ib_object_list *ib_obj_list);

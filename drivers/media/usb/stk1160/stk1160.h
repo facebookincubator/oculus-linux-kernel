@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * STK1160 driver
  *
@@ -7,23 +8,12 @@
  * Based on Easycap driver by R.M. Thomas
  *	Copyright (C) 2010 R.M. Thomas
  *	<rmthomas--a.t--sciolus.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
  */
 
 #include <linux/i2c.h>
 #include <sound/core.h>
 #include <sound/ac97_codec.h>
-#include <media/videobuf2-core.h>
+#include <media/videobuf2-v4l2.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-ctrls.h>
 
@@ -50,6 +40,8 @@
 #define STK1160_MAX_INPUT 4
 #define STK1160_SVIDEO_INPUT 4
 
+#define STK1160_AC97_TIMEOUT 50
+
 #define STK1160_I2C_TIMEOUT 100
 
 /* TODO: Print helpers
@@ -58,7 +50,6 @@
  * new drivers should use.
  *
  */
-#define DEBUG
 #ifdef DEBUG
 #define stk1160_dbg(fmt, args...) \
 	printk(KERN_DEBUG "stk1160: " fmt,  ## args)
@@ -78,7 +69,7 @@
 /* Buffer for one video frame */
 struct stk1160_buffer {
 	/* common v4l buffer stuff -- must be first */
-	struct vb2_buffer vb;
+	struct vb2_v4l2_buffer vb;
 	struct list_head list;
 
 	void *mem;
@@ -111,7 +102,6 @@ struct stk1160_isoc_ctl {
 };
 
 struct stk1160_fmt {
-	char  *name;
 	u32   fourcc;          /* v4l2 format id */
 	int   depth;
 };
@@ -151,8 +141,7 @@ struct stk1160 {
 	v4l2_std_id norm;	  /* current norm */
 	struct stk1160_fmt *fmt;  /* selected format */
 
-	unsigned int field_count; /* not sure ??? */
-	enum v4l2_field field;    /* also not sure :/ */
+	unsigned int sequence;
 
 	/* i2c i/o */
 	struct i2c_adapter i2c_adap;
@@ -177,7 +166,7 @@ struct regval {
 int stk1160_vb2_setup(struct stk1160 *dev);
 int stk1160_video_register(struct stk1160 *dev);
 void stk1160_video_unregister(struct stk1160 *dev);
-void stk1160_clear_queue(struct stk1160 *dev);
+void stk1160_clear_queue(struct stk1160 *dev, enum vb2_buffer_state vb2_state);
 
 /* Provided by stk1160-video.c */
 int stk1160_alloc_isoc(struct stk1160 *dev);
@@ -199,11 +188,4 @@ int stk1160_read_reg_req_len(struct stk1160 *dev, u8 req, u16 reg,
 void stk1160_select_input(struct stk1160 *dev);
 
 /* Provided by stk1160-ac97.c */
-#ifdef CONFIG_VIDEO_STK1160_AC97
-int stk1160_ac97_register(struct stk1160 *dev);
-int stk1160_ac97_unregister(struct stk1160 *dev);
-#else
-static inline int stk1160_ac97_register(struct stk1160 *dev) { return 0; }
-static inline int stk1160_ac97_unregister(struct stk1160 *dev) { return 0; }
-#endif
-
+void stk1160_ac97_setup(struct stk1160 *dev);

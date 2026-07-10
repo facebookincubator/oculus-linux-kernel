@@ -1,18 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-only
 #
 # Video configuration
 #
 
 menu "Graphics support"
-	depends on HAS_IOMEM
+
+if HAS_IOMEM
 
 config HAVE_FB_ATMEL
-	bool
-
-config SH_MIPI_DSI
-	tristate
-	depends on (SUPERH || ARCH_SHMOBILE) && HAVE_CLK
-
-config SH_LCD_MIPI_DSI
 	bool
 
 source "drivers/char/agp/Kconfig"
@@ -21,18 +16,16 @@ source "drivers/gpu/vga/Kconfig"
 
 source "drivers/gpu/host1x/Kconfig"
 source "drivers/gpu/ipu-v3/Kconfig"
-source "drivers/gpu/msm/Kconfig"
 
-menu "Direct Rendering Manager"
 source "drivers/gpu/drm/Kconfig"
-endmenu
+
+source "drivers/gpu/msm/Kconfig"
 
 menu "Frame buffer Devices"
 source "drivers/video/fbdev/Kconfig"
 endmenu
 
 source "drivers/video/backlight/Kconfig"
-source "drivers/video/adf/Kconfig"
 
 config VGASTATE
        tristate
@@ -43,6 +36,8 @@ config VIDEOMODE_HELPERS
 
 config HDMI
 	bool
+
+endif # HAS_IOMEM
 
 if VT
 	source "drivers/video/console/Kconfig"

@@ -11,6 +11,7 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/device-mapper.h>
+#include <linux/kernel.h>
 
 #define DM_MSG_PREFIX "space map metadata"
 
@@ -111,7 +112,7 @@ static bool brb_empty(struct bop_ring_buffer *brb)
 static unsigned brb_next(struct bop_ring_buffer *brb, unsigned old)
 {
 	unsigned r = old + 1;
-	return (r >= (sizeof(brb->bops) / sizeof(*brb->bops))) ? 0 : r;
+	return r >= ARRAY_SIZE(brb->bops) ? 0 : r;
 }
 
 static int brb_push(struct bop_ring_buffer *brb,
@@ -136,7 +137,7 @@ static int brb_push(struct bop_ring_buffer *brb,
 	return 0;
 }
 
-static int brb_pop(struct bop_ring_buffer *brb, struct block_op *result)
+static int brb_peek(struct bop_ring_buffer *brb, struct block_op *result)
 {
 	struct block_op *bop;
 
@@ -146,6 +147,14 @@ static int brb_pop(struct bop_ring_buffer *brb, struct block_op *result)
 	bop = brb->bops + brb->begin;
 	result->type = bop->type;
 	result->block = bop->block;
+
+	return 0;
+}
+
+static int brb_pop(struct bop_ring_buffer *brb)
+{
+	if (brb_empty(brb))
+		return -ENODATA;
 
 	brb->begin = brb_next(brb, brb->begin);
 
@@ -211,7 +220,7 @@ static int apply_bops(struct sm_metadata *smm)
 	while (!brb_empty(&smm->uncommitted)) {
 		struct block_op bop;
 
-		r = brb_pop(&smm->uncommitted, &bop);
+		r = brb_peek(&smm->uncommitted, &bop);
 		if (r) {
 			DMERR("bug in bop ring buffer");
 			break;
@@ -220,6 +229,8 @@ static int apply_bops(struct sm_metadata *smm)
 		r = commit_bop(smm, &bop);
 		if (r)
 			break;
+
+		brb_pop(&smm->uncommitted);
 	}
 
 	return r;
@@ -238,7 +249,7 @@ static int out(struct sm_metadata *smm)
 	}
 
 	if (smm->recursion_count == 1)
-		apply_bops(smm);
+		r = apply_bops(smm);
 
 	smm->recursion_count--;
 
@@ -437,7 +448,18 @@ static int sm_metadata_new_block_(struct dm_space_map *sm, dm_block_t *b)
 	enum allocation_event ev;
 	struct sm_metadata *smm = container_of(sm, struct sm_metadata, sm);
 
-	r = sm_ll_find_free_block(&smm->old_ll, smm->begin, smm->old_ll.nr_blocks, b);
+	/*
+	 * Any block we allocate has to be free in both the old and current ll.
+	 */
+	r = sm_ll_find_common_free_block(&smm->old_ll, &smm->ll, smm->begin, smm->ll.nr_blocks, b);
+	if (r == -ENOSPC) {
+		/*
+		 * There's no free block between smm->begin and the end of the metadata device.
+		 * We search before smm->begin in case something has been freed.
+		 */
+		r = sm_ll_find_common_free_block(&smm->old_ll, &smm->ll, 0, smm->begin, b);
+	}
+
 	if (r)
 		return r;
 
@@ -489,7 +511,6 @@ static int sm_metadata_commit(struct dm_space_map *sm)
 		return r;
 
 	memcpy(&smm->old_ll, &smm->ll, sizeof(smm->old_ll));
-	smm->begin = 0;
 	smm->allocated_this_transaction = 0;
 
 	return 0;
@@ -534,7 +555,7 @@ static int sm_metadata_copy_root(struct dm_space_map *sm, void *where_le, size_t
 
 static int sm_metadata_extend(struct dm_space_map *sm, dm_block_t extra_blocks);
 
-static struct dm_space_map ops = {
+static const struct dm_space_map ops = {
 	.destroy = sm_metadata_destroy,
 	.extend = sm_metadata_extend,
 	.get_nr_blocks = sm_metadata_get_nr_blocks,
@@ -591,7 +612,9 @@ static int sm_bootstrap_get_count(struct dm_space_map *sm, dm_block_t b,
 {
 	struct sm_metadata *smm = container_of(sm, struct sm_metadata, sm);
 
-	return b < smm->begin ? 1 : 0;
+	*result = (b < smm->begin) ? 1 : 0;
+
+	return 0;
 }
 
 static int sm_bootstrap_count_is_more_than_one(struct dm_space_map *sm,
@@ -659,7 +682,7 @@ static int sm_bootstrap_copy_root(struct dm_space_map *sm, void *where,
 	return -EINVAL;
 }
 
-static struct dm_space_map bootstrap_ops = {
+static const struct dm_space_map bootstrap_ops = {
 	.destroy = sm_bootstrap_destroy,
 	.extend = sm_bootstrap_extend,
 	.get_nr_blocks = sm_bootstrap_get_nr_blocks,
@@ -681,7 +704,6 @@ static struct dm_space_map bootstrap_ops = {
 static int sm_metadata_extend(struct dm_space_map *sm, dm_block_t extra_blocks)
 {
 	int r, i;
-	enum allocation_event ev;
 	struct sm_metadata *smm = container_of(sm, struct sm_metadata, sm);
 	dm_block_t old_len = smm->ll.nr_blocks;
 
@@ -703,11 +725,12 @@ static int sm_metadata_extend(struct dm_space_map *sm, dm_block_t extra_blocks)
 	 * allocate any new blocks.
 	 */
 	do {
-		for (i = old_len; !r && i < smm->begin; i++) {
-			r = sm_ll_inc(&smm->ll, i, &ev);
-			if (r)
-				goto out;
-		}
+		for (i = old_len; !r && i < smm->begin; i++)
+			r = add_bop(smm, BOP_INC, i);
+
+		if (r)
+			goto out;
+
 		old_len = smm->begin;
 
 		r = apply_bops(smm);
@@ -752,7 +775,6 @@ int dm_sm_metadata_create(struct dm_space_map *sm,
 {
 	int r;
 	dm_block_t i;
-	enum allocation_event ev;
 	struct sm_metadata *smm = container_of(sm, struct sm_metadata, sm);
 
 	smm->begin = superblock + 1;
@@ -764,23 +786,21 @@ int dm_sm_metadata_create(struct dm_space_map *sm,
 	memcpy(&smm->sm, &bootstrap_ops, sizeof(smm->sm));
 
 	r = sm_ll_new_metadata(&smm->ll, tm);
-	if (r)
-		return r;
-
-	if (nr_blocks > DM_SM_METADATA_MAX_BLOCKS)
-		nr_blocks = DM_SM_METADATA_MAX_BLOCKS;
-	r = sm_ll_extend(&smm->ll, nr_blocks);
-	if (r)
-		return r;
-
+	if (!r) {
+		if (nr_blocks > DM_SM_METADATA_MAX_BLOCKS)
+			nr_blocks = DM_SM_METADATA_MAX_BLOCKS;
+		r = sm_ll_extend(&smm->ll, nr_blocks);
+	}
 	memcpy(&smm->sm, &ops, sizeof(smm->sm));
+	if (r)
+		return r;
 
 	/*
 	 * Now we need to update the newly created data structures with the
 	 * allocated blocks that they were built from.
 	 */
 	for (i = superblock; !r && i < smm->begin; i++)
-		r = sm_ll_inc(&smm->ll, i, &ev);
+		r = add_bop(smm, BOP_INC, i);
 
 	if (r)
 		return r;

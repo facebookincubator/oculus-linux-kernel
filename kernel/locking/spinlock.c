@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (2004) Linus Torvalds
  *
@@ -21,6 +22,13 @@
 #include <linux/debug_locks.h>
 #include <linux/export.h>
 
+#ifdef CONFIG_MMIOWB
+#ifndef arch_mmiowb_state
+DEFINE_PER_CPU(struct mmiowb_state, __mmiowb_state);
+EXPORT_PER_CPU_SYMBOL(__mmiowb_state);
+#endif
+#endif
+
 /*
  * If lockdep is enabled then we use the non-preemption spin-ops
  * even on CONFIG_PREEMPT, because lockdep assumes that interrupts are
@@ -29,11 +37,10 @@
 #if !defined(CONFIG_GENERIC_LOCKBREAK) || defined(CONFIG_DEBUG_LOCK_ALLOC)
 /*
  * The __lock_function inlines are taken from
- * include/linux/spinlock_api_smp.h
+ * spinlock : include/linux/spinlock_api_smp.h
+ * rwlock   : include/linux/rwlock_api_smp.h
  */
 #else
-#define raw_read_can_lock(l)	read_can_lock(l)
-#define raw_write_can_lock(l)	write_can_lock(l)
 
 /*
  * Some architectures can relax in favour of the CPU owning the lock.
@@ -66,12 +73,8 @@ void __lockfunc __raw_##op##_lock(locktype##_t *lock)			\
 			break;						\
 		preempt_enable();					\
 									\
-		if (!(lock)->break_lock)				\
-			(lock)->break_lock = 1;				\
-		while (!raw_##op##_can_lock(lock) && (lock)->break_lock)\
-			arch_##op##_relax(&lock->raw_lock);		\
+		arch_##op##_relax(&lock->raw_lock);			\
 	}								\
-	(lock)->break_lock = 0;						\
 }									\
 									\
 unsigned long __lockfunc __raw_##op##_lock_irqsave(locktype##_t *lock)	\
@@ -86,12 +89,9 @@ unsigned long __lockfunc __raw_##op##_lock_irqsave(locktype##_t *lock)	\
 		local_irq_restore(flags);				\
 		preempt_enable();					\
 									\
-		if (!(lock)->break_lock)				\
-			(lock)->break_lock = 1;				\
-		while (!raw_##op##_can_lock(lock) && (lock)->break_lock)\
-			arch_##op##_relax(&lock->raw_lock);		\
+		arch_##op##_relax(&lock->raw_lock);			\
 	}								\
-	(lock)->break_lock = 0;						\
+									\
 	return flags;							\
 }									\
 									\

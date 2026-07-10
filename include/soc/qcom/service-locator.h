@@ -1,20 +1,16 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) 2015-2016, 2018-2020, The Linux Foundation. All rights reserved.
+ */
+/*
  * Process Domain Service Locator API header
+ *
  */
 
 #ifndef _SERVICE_LOCATOR_H
 #define _SERVICE_LOCATOR_H
+
+#include <linux/types.h>
 
 #define QMI_SERVREG_LOC_NAME_LENGTH_V01 64
 #define QMI_SERVREG_LOC_LIST_LENGTH_V01 32
@@ -51,16 +47,24 @@ struct pd_qmi_client_data {
 	struct servreg_loc_entry_v01 *domain_list;
 };
 
-#if defined(CONFIG_MSM_SERVICE_LOCATOR)
+enum service_locator_state {
+	LOCATOR_DOWN = 0x0F,
+	LOCATOR_UP = 0x1F,
+};
+
+struct notifier_block;
+
+#if IS_ENABLED(CONFIG_MSM_SERVICE_LOCATOR)
 /*
- * Use this api to request information regarding the process domains on which
- * a particular service runs. The client name and the service name inside the
- * pd_qmi_client_data structure need to be filled in by the client calling the
- * api. The total domains, db revision and the domain list will be filled in
+ * Use this api to request information regarding the process domains on
+ * which a particular service runs. The client name, the service name
+ * and notifier block pointer need to be provided by client calling the api.
+ * The total domains, db revision and the domain list will be filled in
  * by the service locator.
  * Returns 0 on success; otherwise a value < 0 if no valid subsystem is found.
  */
-int get_service_location(struct pd_qmi_client_data *data);
+int get_service_location(const char *client_name, const char *service_name,
+		struct notifier_block *locator_nb);
 
 /*
  * Use this api to request information regarding the subsystem the process
@@ -73,9 +77,10 @@ int find_subsys(const char *pd_path, char *subsys);
 
 #else
 
-static inline int get_service_location(struct pd_qmi_client_data *data)
+static inline int get_service_location(const char *client_name,
+		const char *service_name, struct notifier_block *locator_nb)
 {
-	return 0;
+	return -ENODEV;
 }
 
 static inline int find_subsys(const char *pd_path, const char *subsys)

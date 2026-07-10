@@ -1,24 +1,19 @@
-/*
- * imx25 pinctrl driver.
- *
- * Copyright 2013 Eukréa Electromatique <denis@eukrea.com>
- *
- * This driver was mostly copied from the imx51 pinctrl driver which has:
- *
- * Copyright (C) 2012 Freescale Semiconductor, Inc.
- * Copyright (C) 2012 Linaro, Inc.
- *
- * Author: Denis Carikli <denis@eukrea.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
- */
+// SPDX-License-Identifier: GPL-2.0
+//
+// imx25 pinctrl driver.
+//
+// Copyright 2013 Eukréa Electromatique <denis@eukrea.com>
+//
+// This driver was mostly copied from the imx51 pinctrl driver which has:
+//
+// Copyright (C) 2012 Freescale Semiconductor, Inc.
+// Copyright (C) 2012 Linaro, Inc.
+//
+// Author: Denis Carikli <denis@eukrea.com>
 
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/io.h>
-#include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/pinctrl/pinctrl.h>
@@ -26,7 +21,8 @@
 #include "pinctrl-imx.h"
 
 enum imx25_pads {
-	MX25_PAD_RESERVE0 = 1,
+	MX25_PAD_RESERVE0 = 0,
+	MX25_PAD_RESERVE1 = 1,
 	MX25_PAD_A10 = 2,
 	MX25_PAD_A13 = 3,
 	MX25_PAD_A14 = 4,
@@ -169,6 +165,7 @@ enum imx25_pads {
 /* Pad names for the pinmux subsystem */
 static const struct pinctrl_pin_desc imx25_pinctrl_pads[] = {
 	IMX_PINCTRL_PIN(MX25_PAD_RESERVE0),
+	IMX_PINCTRL_PIN(MX25_PAD_RESERVE1),
 	IMX_PINCTRL_PIN(MX25_PAD_A10),
 	IMX_PINCTRL_PIN(MX25_PAD_A13),
 	IMX_PINCTRL_PIN(MX25_PAD_A14),
@@ -308,7 +305,7 @@ static const struct pinctrl_pin_desc imx25_pinctrl_pads[] = {
 	IMX_PINCTRL_PIN(MX25_PAD_BOOT_MODE1),
 };
 
-static struct imx_pinctrl_soc_info imx25_pinctrl_info = {
+static const struct imx_pinctrl_soc_info imx25_pinctrl_info = {
 	.pins = imx25_pinctrl_pads,
 	.npins = ARRAY_SIZE(imx25_pinctrl_pads),
 };
@@ -326,11 +323,9 @@ static int imx25_pinctrl_probe(struct platform_device *pdev)
 static struct platform_driver imx25_pinctrl_driver = {
 	.driver = {
 		.name = "imx25-pinctrl",
-		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(imx25_pinctrl_of_match),
 	},
 	.probe = imx25_pinctrl_probe,
-	.remove = imx_pinctrl_remove,
 };
 
 static int __init imx25_pinctrl_init(void)
@@ -338,12 +333,3 @@ static int __init imx25_pinctrl_init(void)
 	return platform_driver_register(&imx25_pinctrl_driver);
 }
 arch_initcall(imx25_pinctrl_init);
-
-static void __exit imx25_pinctrl_exit(void)
-{
-	platform_driver_unregister(&imx25_pinctrl_driver);
-}
-module_exit(imx25_pinctrl_exit);
-MODULE_AUTHOR("Denis Carikli <denis@eukrea.com>");
-MODULE_DESCRIPTION("Freescale IMX25 pinctrl driver");
-MODULE_LICENSE("GPL v2");

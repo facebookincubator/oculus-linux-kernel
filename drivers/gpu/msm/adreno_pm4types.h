@@ -1,24 +1,16 @@
-/* Copyright (c) 2002,2007-2016,2020, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2002,2007-2021, The Linux Foundation. All rights reserved.
  */
 #ifndef __ADRENO_PM4TYPES_H
 #define __ADRENO_PM4TYPES_H
 
 #include "adreno.h"
 
-#define CP_TYPE0_PKT	((unsigned int)0 << 30)
-#define CP_TYPE3_PKT	((unsigned int)3 << 30)
-#define CP_TYPE4_PKT    ((unsigned int)4 << 28)
-#define CP_TYPE7_PKT    ((unsigned int)7 << 28)
+#define CP_TYPE0_PKT	(0 << 30)
+#define CP_TYPE3_PKT	(3 << 30)
+#define CP_TYPE4_PKT	(4 << 28)
+#define CP_TYPE7_PKT	(7 << 28)
 
 #define PM4_TYPE4_PKT_SIZE_MAX  128
 
@@ -55,6 +47,15 @@
 /* switches SMMU pagetable, used on a5xx only */
 #define CP_SMMU_TABLE_UPDATE 0x53
 
+/* Designate command streams to be executed before/after CP does state restore during preemption */
+#define CP_SET_AMBLE		0x55
+
+/*  Set internal CP registers, used to indicate context save data addresses */
+#define CP_SET_PSEUDO_REGISTER      0x56
+
+/* Tell CP the current operation mode, indicates save and restore procedure */
+#define CP_SET_MARKER  0x65
+
 /* register read/modify/write */
 #define CP_REG_RMW		0x21
 
@@ -63,6 +64,9 @@
 
 /* reads register in chip and writes to memory */
 #define CP_REG_TO_MEM		0x3e
+
+/* reads memory and writes to register in chip */
+#define CP_MEM_TO_REG		0x42
 
 /* write N 32-bit words to memory */
 #define CP_MEM_WRITE		0x3d
@@ -124,6 +128,9 @@
 /* PFP waits until the FIFO between the PFP and the ME is empty */
 #define CP_WAIT_FOR_ME		0x13
 
+/* Stall the SQE until the CP processing pipeline is empty */
+#define CP_WAIT_FOR_CP_FLUSH 0x13
+
 #define CP_SET_PROTECTED_MODE  0x5f /* sets the register protection mode */
 
 /* Used to switch GPU between secure and non-secure modes */
@@ -155,6 +162,31 @@
 #define CP_LOADSTATE_NUMOFUNITS_SHIFT 0x00000016
 #define CP_LOADSTATE_STATETYPE_SHIFT 0x00000000
 #define CP_LOADSTATE_EXTSRCADDR_SHIFT 0x00000002
+
+/* This is a commonly used CP_EVENT_WRITE */
+#define CACHE_FLUSH_TS 4
+#define CACHE_CLEAN 0x31
+
+/* Controls which threads execute the PM4 commands the follow this packet */
+#define CP_THREAD_CONTROL 0x17
+
+#define CP_WAIT_TIMESTAMP 0x14
+
+#define CP_SET_THREAD_BR FIELD_PREP(GENMASK(1, 0), 1)
+#define CP_SET_THREAD_BV FIELD_PREP(GENMASK(1, 0), 2)
+#define CP_SET_THREAD_BOTH FIELD_PREP(GENMASK(1, 0), 3)
+#define CP_SYNC_THREADS BIT(31)
+#define CP_CONCURRENT_BIN_DISABLE BIT(27)
+
+#define CP_RESET_CONTEXT_STATE 0x1F
+
+#define CP_RESET_GLOBAL_LOCAL_TS BIT(3)
+#define CP_CLEAR_BV_BR_COUNTER BIT(2)
+#define CP_CLEAR_RESOURCE_TABLE BIT(1)
+#define CP_CLEAR_ON_CHIP_TS BIT(0)
+
+/* Used to define amble type in SET_AMBLE packet to execute during preemption */
+#define CP_KMD_AMBLE_TYPE 3
 
 static inline uint pm4_calc_odd_parity_bit(uint val)
 {
@@ -364,28 +396,22 @@ static inline uint cp_wait_for_idle(struct adreno_device *adreno_dev,
 	return cmds - start;
 }
 
-/**
- * cp_invalidate_state - common function for invalidating cp
- * state
- * @adreno_dev: The adreno device
- * @cmds: command pointer to add gpuaddr
- */
-static inline uint cp_invalidate_state(struct adreno_device *adreno_dev,
-				uint *cmds)
+static inline u32 cp_protected_mode(struct adreno_device *adreno_dev,
+		u32 *cmds, int on)
 {
-	uint *start = cmds;
+	cmds[0] = cp_packet(adreno_dev, CP_SET_PROTECTED_MODE, 1);
+	cmds[1] = on;
 
-	if (ADRENO_GPUREV(adreno_dev) < 500) {
-		*cmds++ = cp_type3_packet(CP_INVALIDATE_STATE, 1);
-		*cmds++ = 0x7fff;
-	} else {
-		*cmds++ = cp_type7_packet(CP_SET_DRAW_STATE, 3);
-		*cmds++ = 0x40000;
-		*cmds++ = 0;
-		*cmds++ = 0;
-	}
+	return 2;
+}
 
-	return cmds - start;
+static inline u32 cp_identifier(struct adreno_device *adreno_dev,
+		u32 *cmds, u32 id)
+{
+	cmds[0] = cp_packet(adreno_dev, CP_NOP, 1);
+	cmds[1] = id;
+
+	return 2;
 }
 
 #endif	/* __ADRENO_PM4TYPES_H */

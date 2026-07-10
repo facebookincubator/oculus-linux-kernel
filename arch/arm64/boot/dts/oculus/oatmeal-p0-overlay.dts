@@ -1,0 +1,15 @@
+/dts-v1/;
+/plugin/;
+
+#include "oatmeal.dtsi"
+
+/ {
+	model = "Oatmeal P0";
+	compatible = "meta,oatmeal", "meta,oatmeal-p0";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xc2>;
+};
+
+&wlan_kiwi {
+	qcom,board-id-override = /bits/ 8 <0xc2>;
+};

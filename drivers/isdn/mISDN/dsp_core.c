@@ -4,8 +4,6 @@
  *		Karsten Keil (keil@isdn4linux.de)
  *
  *		This file is (c) under GNU PUBLIC LICENSE
- *		For changes and modifications please read
- *		../../../Documentation/isdn/mISDN.cert
  *
  * Thanks to    Karsten Keil (great drivers)
  *              Cologne Chip (great chips)
@@ -115,7 +113,7 @@
  *
  * The CMX has special functions for conferences with one, two and more
  * members. It will allow different types of data flow. Receive and transmit
- * data to/form upper layer may be swithed on/off individually without losing
+ * data to/form upper layer may be switched on/off individually without losing
  * features of CMX, Tones and DTMF.
  *
  * Echo Cancellation: Sometimes we like to cancel echo from the interface.
@@ -460,7 +458,7 @@ dsp_control_req(struct dsp *dsp, struct mISDNhead *hh, struct sk_buff *skb)
 		}
 		if (dsp_debug & DEBUG_DSP_CORE)
 			printk(KERN_DEBUG "%s: enable mixing of "
-			       "tx-data with conf mebers\n", __func__);
+			       "tx-data with conf members\n", __func__);
 		dsp->tx_mix = 1;
 		dsp_cmx_hardware(dsp->conf, dsp);
 		dsp_rx_off(dsp);
@@ -474,7 +472,7 @@ dsp_control_req(struct dsp *dsp, struct mISDNhead *hh, struct sk_buff *skb)
 		}
 		if (dsp_debug & DEBUG_DSP_CORE)
 			printk(KERN_DEBUG "%s: disable mixing of "
-			       "tx-data with conf mebers\n", __func__);
+			       "tx-data with conf members\n", __func__);
 		dsp->tx_mix = 0;
 		dsp_cmx_hardware(dsp->conf, dsp);
 		dsp_rx_off(dsp);
@@ -1092,9 +1090,7 @@ dspcreate(struct channel_req *crq)
 	ndsp->pcm_bank_tx = -1;
 	ndsp->hfc_conf = -1; /* current conference number */
 	/* set tone timer */
-	ndsp->tone.tl.function = (void *)dsp_tone_timeout;
-	ndsp->tone.tl.data = (long) ndsp;
-	init_timer(&ndsp->tone.tl);
+	timer_setup(&ndsp->tone.tl, dsp_tone_timeout, 0);
 
 	if (dtmfthreshold < 20 || dtmfthreshold > 500)
 		dtmfthreshold = 200;
@@ -1204,9 +1200,7 @@ static int __init dsp_init(void)
 	}
 
 	/* set sample timer */
-	dsp_spl_tl.function = (void *)dsp_cmx_send;
-	dsp_spl_tl.data = 0;
-	init_timer(&dsp_spl_tl);
+	timer_setup(&dsp_spl_tl, (void *)dsp_cmx_send, 0);
 	dsp_spl_tl.expires = jiffies + dsp_tics;
 	dsp_spl_jiffies = dsp_spl_tl.expires;
 	add_timer(&dsp_spl_tl);

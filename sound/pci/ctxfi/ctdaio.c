@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * Copyright (C) 2008, Creative Technology Ltd. All Rights Reserved.
- *
- * This source file is released under GPL v2 license (no other versions).
- * See the COPYING file included in the main directory of this source
- * distribution for the license terms and conditions.
  *
  * @File	ctdaio.c
  *
@@ -13,7 +10,6 @@
  *
  * @Author	Liu Chun
  * @Date 	May 23 2008
- *
  */
 
 #include "ctdaio.h"
@@ -33,7 +29,7 @@ struct daio_rsc_idx {
 	unsigned short right;
 };
 
-static struct daio_rsc_idx idx_20k1[NUM_DAIOTYP] = {
+static const struct daio_rsc_idx idx_20k1[NUM_DAIOTYP] = {
 	[LINEO1] = {.left = 0x00, .right = 0x01},
 	[LINEO2] = {.left = 0x18, .right = 0x19},
 	[LINEO3] = {.left = 0x08, .right = 0x09},
@@ -44,7 +40,7 @@ static struct daio_rsc_idx idx_20k1[NUM_DAIOTYP] = {
 	[SPDIFI1] = {.left = 0x95, .right = 0x9d},
 };
 
-static struct daio_rsc_idx idx_20k2[NUM_DAIOTYP] = {
+static const struct daio_rsc_idx idx_20k2[NUM_DAIOTYP] = {
 	[LINEO1] = {.left = 0x40, .right = 0x41},
 	[LINEO2] = {.left = 0x60, .right = 0x61},
 	[LINEO3] = {.left = 0x50, .right = 0x51},
@@ -55,12 +51,12 @@ static struct daio_rsc_idx idx_20k2[NUM_DAIOTYP] = {
 	[SPDIFIO] = {.left = 0x05, .right = 0x85},
 };
 
-static int daio_master(struct rsc *rsc)
+static void daio_master(struct rsc *rsc)
 {
 	/* Actually, this is not the resource index of DAIO.
 	 * For DAO, it is the input mapper index. And, for DAI,
 	 * it is the output time-slot index. */
-	return rsc->conj = rsc->idx;
+	rsc->conj = rsc->idx;
 }
 
 static int daio_index(const struct rsc *rsc)
@@ -68,36 +64,36 @@ static int daio_index(const struct rsc *rsc)
 	return rsc->conj;
 }
 
-static int daio_out_next_conj(struct rsc *rsc)
+static void daio_out_next_conj(struct rsc *rsc)
 {
-	return rsc->conj += 2;
+	rsc->conj += 2;
 }
 
-static int daio_in_next_conj_20k1(struct rsc *rsc)
+static void daio_in_next_conj_20k1(struct rsc *rsc)
 {
-	return rsc->conj += 0x200;
+	rsc->conj += 0x200;
 }
 
-static int daio_in_next_conj_20k2(struct rsc *rsc)
+static void daio_in_next_conj_20k2(struct rsc *rsc)
 {
-	return rsc->conj += 0x100;
+	rsc->conj += 0x100;
 }
 
-static struct rsc_ops daio_out_rsc_ops = {
+static const struct rsc_ops daio_out_rsc_ops = {
 	.master		= daio_master,
 	.next_conj	= daio_out_next_conj,
 	.index		= daio_index,
 	.output_slot	= NULL,
 };
 
-static struct rsc_ops daio_in_rsc_ops_20k1 = {
+static const struct rsc_ops daio_in_rsc_ops_20k1 = {
 	.master		= daio_master,
 	.next_conj	= daio_in_next_conj_20k1,
 	.index		= NULL,
 	.output_slot	= daio_index,
 };
 
-static struct rsc_ops daio_in_rsc_ops_20k2 = {
+static const struct rsc_ops daio_in_rsc_ops_20k2 = {
 	.master		= daio_master,
 	.next_conj	= daio_in_next_conj_20k2,
 	.index		= NULL,
@@ -263,7 +259,7 @@ static int dao_clear_right_input(struct dao *dao)
 	return 0;
 }
 
-static struct dao_rsc_ops dao_ops = {
+static const struct dao_rsc_ops dao_ops = {
 	.set_spos		= dao_spdif_set_spos,
 	.commit_write		= dao_commit_write,
 	.get_spos		= dao_spdif_get_spos,
@@ -318,7 +314,7 @@ static int dai_commit_write(struct dai *dai)
 	return 0;
 }
 
-static struct dai_rsc_ops dai_ops = {
+static const struct dai_rsc_ops dai_ops = {
 	.set_srt_srcl		= dai_set_srt_srcl,
 	.set_srt_srcr		= dai_set_srt_srcr,
 	.set_srt_msr		= dai_set_srt_msr,
@@ -398,7 +394,8 @@ static int dao_rsc_init(struct dao *dao,
 	if (err)
 		return err;
 
-	dao->imappers = kzalloc(sizeof(void *)*desc->msr*2, GFP_KERNEL);
+	dao->imappers = kzalloc(array3_size(sizeof(void *), desc->msr, 2),
+				GFP_KERNEL);
 	if (!dao->imappers) {
 		err = -ENOMEM;
 		goto error1;
@@ -528,8 +525,6 @@ static int get_daio_rsc(struct daio_mgr *mgr,
 			struct daio **rdaio)
 {
 	int err;
-	struct dai *dai = NULL;
-	struct dao *dao = NULL;
 	unsigned long flags;
 
 	*rdaio = NULL;
@@ -544,27 +539,30 @@ static int get_daio_rsc(struct daio_mgr *mgr,
 		return err;
 	}
 
+	err = -ENOMEM;
 	/* Allocate mem for daio resource */
 	if (desc->type <= DAIO_OUT_MAX) {
-		dao = kzalloc(sizeof(*dao), GFP_KERNEL);
-		if (!dao) {
-			err = -ENOMEM;
+		struct dao *dao = kzalloc(sizeof(*dao), GFP_KERNEL);
+		if (!dao)
+			goto error;
+
+		err = dao_rsc_init(dao, desc, mgr);
+		if (err) {
+			kfree(dao);
 			goto error;
 		}
-		err = dao_rsc_init(dao, desc, mgr);
-		if (err)
-			goto error;
 
 		*rdaio = &dao->daio;
 	} else {
-		dai = kzalloc(sizeof(*dai), GFP_KERNEL);
-		if (!dai) {
-			err = -ENOMEM;
+		struct dai *dai = kzalloc(sizeof(*dai), GFP_KERNEL);
+		if (!dai)
+			goto error;
+
+		err = dai_rsc_init(dai, desc, mgr);
+		if (err) {
+			kfree(dai);
 			goto error;
 		}
-		err = dai_rsc_init(dai, desc, mgr);
-		if (err)
-			goto error;
 
 		*rdaio = &dai->daio;
 	}
@@ -575,11 +573,6 @@ static int get_daio_rsc(struct daio_mgr *mgr,
 	return 0;
 
 error:
-	if (dao)
-		kfree(dao);
-	else if (dai)
-		kfree(dai);
-
 	spin_lock_irqsave(&mgr->mgr_lock, flags);
 	daio_mgr_put_rsc(&mgr->mgr, desc->type);
 	spin_unlock_irqrestore(&mgr->mgr_lock, flags);

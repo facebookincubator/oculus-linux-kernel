@@ -1,7 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0
+
 config USB_DWC3
 	tristate "DesignWare USB3 DRD Core Support"
 	depends on (USB || USB_GADGET) && HAS_DMA
-	select USB_XHCI_PLATFORM if USB_SUPPORT && USB_XHCI_HCD
+	select USB_XHCI_PLATFORM if USB_XHCI_HCD
+	select USB_ROLE_SWITCH if USB_DWC3_DUAL_ROLE
 	help
 	  Say Y or M here if your system has a Dual Role SuperSpeed
 	  USB controller based on the DesignWare USB3 IP Core.
@@ -10,6 +13,13 @@ config USB_DWC3
 	  module, the module will be called dwc3.ko.
 
 if USB_DWC3
+
+config USB_DWC3_ULPI
+	bool "Register ULPI PHY Interface"
+	depends on USB_ULPI_BUS=y || USB_ULPI_BUS=USB_DWC3
+	help
+	  Select this if you have ULPI type PHY attached to your DWC3
+	  controller.
 
 choice
 	bool "DWC3 Mode Selection"
@@ -34,6 +44,7 @@ config USB_DWC3_GADGET
 config USB_DWC3_DUAL_ROLE
 	bool "Dual Role mode"
 	depends on ((USB=y || USB=USB_DWC3) && (USB_GADGET=y || USB_GADGET=USB_DWC3))
+	depends on (EXTCON=y || EXTCON=USB_DWC3)
 	help
 	  This is the default mode of working of DWC3 controller where
 	  both host and gadget features are enabled.
@@ -44,7 +55,8 @@ comment "Platform Glue Driver Support"
 
 config USB_DWC3_OMAP
 	tristate "Texas Instruments OMAP5 and similar Platforms"
-	depends on EXTCON && (ARCH_OMAP2PLUS || COMPILE_TEST)
+	depends on ARCH_OMAP2PLUS || COMPILE_TEST
+	depends on EXTCON || !EXTCON
 	depends on OF
 	default USB_DWC3
 	help
@@ -55,7 +67,7 @@ config USB_DWC3_OMAP
 
 config USB_DWC3_EXYNOS
 	tristate "Samsung Exynos Platform"
-	depends on ARCH_EXYNOS || COMPILE_TEST
+	depends on (ARCH_EXYNOS || COMPILE_TEST) && OF
 	default USB_DWC3
 	help
 	  Recent Exynos5 SoCs ship with one DesignWare Core USB3 IP inside,
@@ -63,26 +75,51 @@ config USB_DWC3_EXYNOS
 
 config USB_DWC3_PCI
 	tristate "PCIe-based Platforms"
-	depends on PCI
+	depends on USB_PCI && ACPI
 	default USB_DWC3
 	help
-	  If you're using the DesignWare Core IP with a PCIe, please say
-	  'Y' or 'M' here.
+	  If you're using the DesignWare Core IP with a PCIe (but not HAPS
+	  platform), please say 'Y' or 'M' here.
 
-	  One such PCIe-based platform is Synopsys' PCIe HAPS model of
-	  this IP.
+config USB_DWC3_HAPS
+	tristate "Synopsys PCIe-based HAPS Platforms"
+	depends on USB_PCI
+	default USB_DWC3
+	help
+	  If you're using the DesignWare Core IP with a Synopsys PCIe HAPS
+	  platform, please say 'Y' or 'M' here.
 
 config USB_DWC3_KEYSTONE
-	tristate "Texas Instruments Keystone2 Platforms"
-	depends on ARCH_KEYSTONE || COMPILE_TEST
+	tristate "Texas Instruments Keystone2/AM654 Platforms"
+	depends on ARCH_KEYSTONE || ARCH_K3 || COMPILE_TEST
 	default USB_DWC3
 	help
-	  Support of USB2/3 functionality in TI Keystone2 platforms.
+	  Support of USB2/3 functionality in TI Keystone2 and AM654 platforms.
 	  Say 'Y' or 'M' here if you have one such device
+
+config USB_DWC3_MESON_G12A
+	tristate "Amlogic Meson G12A Platforms"
+	depends on OF && COMMON_CLK
+	depends on ARCH_MESON || COMPILE_TEST
+	default USB_DWC3
+	select USB_ROLE_SWITCH
+	select REGMAP_MMIO
+	help
+	  Support USB2/3 functionality in Amlogic G12A platforms.
+	  Say 'Y' or 'M' if you have one such device.
+
+config USB_DWC3_OF_SIMPLE
+	tristate "Generic OF Simple Glue Layer"
+	depends on OF && COMMON_CLK
+	default USB_DWC3
+	help
+	  Support USB2/3 functionality in simple SoC integrations.
+	  Currently supports Xilinx and Qualcomm DWC USB3 IP.
+	  Say 'Y' or 'M' if you have one such device.
 
 config USB_DWC3_ST
 	tristate "STMicroelectronics Platforms"
-	depends on ARCH_STI && OF
+	depends on (ARCH_STI || COMPILE_TEST) && OF
 	default USB_DWC3
 	help
 	  STMicroelectronics SoCs with one DesignWare Core USB3 IP
@@ -90,40 +127,35 @@ config USB_DWC3_ST
 	  Say 'Y' or 'M' if you have one such device.
 
 config USB_DWC3_QCOM
-	tristate "Qualcomm Platforms"
+	tristate "Qualcomm Platform"
 	depends on ARCH_QCOM || COMPILE_TEST
+	depends on EXTCON || !EXTCON
+	depends on (OF || ACPI)
 	default USB_DWC3
 	help
-	  Recent Qualcomm SoCs ship with one DesignWare Core USB3 IP inside,
-	  say 'Y' or 'M' if you have one such device.
+	  Some Qualcomm SoCs use DesignWare Core IP for USB2/3
+	  functionality.
+	  This driver also handles Qscratch wrapper which is needed
+	  for peripheral mode support.
+	  Say 'Y' or 'M' if you have one such device.
 
 config USB_DWC3_MSM
-	tristate "DesignWare USB3.0 (DRD) Controller for MSM"
-	depends on ARCH_MSM
+	tristate "QTI MSM Platforms"
+	depends on ARCH_QCOM || COMPILE_TEST
+	help
+	  Applicable to QTI MSM Platforms with DesignWare Core
+	  USB3 IP.
+	  Driver supports host, device and dual-role modes of operation.
+	  Say 'Y' or 'M' if you have one such device.
+
+config USB_DWC3_IMX8MP
+	tristate "NXP iMX8MP Platform"
+	depends on OF && COMMON_CLK
+	depends on (ARCH_MXC && ARM64) || COMPILE_TEST
 	default USB_DWC3
 	help
-	  Support for DWC3 USB IPs found on Qualcomm MSM/APQ chipset series,
-	  including host, device and dual-role modes of operation.
-	  Say 'Y' or 'M' here if you have one such device
-
-comment "Debugging features"
-
-config USB_DWC3_DEBUG
-	bool "Enable Debugging Messages"
-	help
-	  Say Y here to enable debugging messages on DWC3 Driver.
-
-config USB_DWC3_VERBOSE
-	bool "Enable Verbose Debugging Messages"
-	depends on USB_DWC3_DEBUG
-	help
-	  Say Y here to enable verbose debugging messages on DWC3 Driver.
-
-config DWC3_HOST_USB3_LPM_ENABLE
-	bool "Enable USB3 LPM Capability"
-	depends on USB_DWC3_HOST=y || USB_DWC3_DUAL_ROLE=y
-	default n
-	help
-	  Select this when you want to enable USB3 LPM with dwc3 xhci host.
+	  NXP iMX8M Plus SoC use DesignWare Core IP for USB2/3
+	  functionality.
+	  Say 'Y' or 'M' if you have one such device.
 
 endif

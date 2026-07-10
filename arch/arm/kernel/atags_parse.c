@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Tag parsing.
  *
  * Copyright (C) 1995-2001 Russell King
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 /*
@@ -18,11 +15,13 @@
  */
 
 #include <linux/init.h>
+#include <linux/initrd.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/root_dev.h>
 #include <linux/screen_info.h>
 #include <linux/memblock.h>
+#include <uapi/linux/mount.h>
 
 #include <asm/setup.h>
 #include <asm/system_info.h>
@@ -91,11 +90,7 @@ __tagtable(ATAG_VIDEOTEXT, parse_tag_videotext);
 #ifdef CONFIG_BLK_DEV_RAM
 static int __init parse_tag_ramdisk(const struct tag *tag)
 {
-	extern int rd_size, rd_image_start, rd_prompt, rd_doload;
-
 	rd_image_start = tag->u.ramdisk.start;
-	rd_doload = (tag->u.ramdisk.flags & 1) == 0;
-	rd_prompt = (tag->u.ramdisk.flags & 2) == 0;
 
 	if (tag->u.ramdisk.size)
 		rd_size = tag->u.ramdisk.size;
@@ -167,8 +162,7 @@ static void __init parse_tags(const struct tag *t)
 {
 	for (; t->hdr.size; t = tag_next(t))
 		if (!parse_tag(t))
-			printk(KERN_WARNING
-				"Ignoring unrecognised tag 0x%08x\n",
+			pr_warn("Ignoring unrecognised tag 0x%08x\n",
 				t->hdr.tag);
 }
 
@@ -180,7 +174,7 @@ static void __init squash_mem_tags(struct tag *tag)
 }
 
 const struct machine_desc * __init
-setup_machine_tags(phys_addr_t __atags_pointer, unsigned int machine_nr)
+setup_machine_tags(void *atags_vaddr, unsigned int machine_nr)
 {
 	struct tag *tags = (struct tag *)&default_tags;
 	const struct machine_desc *mdesc = NULL, *p;
@@ -193,19 +187,16 @@ setup_machine_tags(phys_addr_t __atags_pointer, unsigned int machine_nr)
 	 */
 	for_each_machine_desc(p)
 		if (machine_nr == p->nr) {
-			printk("Machine: %s\n", p->name);
+			pr_info("Machine: %s\n", p->name);
 			mdesc = p;
 			break;
 		}
 
-	if (!mdesc) {
-		early_print("\nError: unrecognized/unsupported machine ID"
-			    " (r1 = 0x%08x).\n\n", machine_nr);
-		dump_machine_table(); /* does not return */
-	}
+	if (!mdesc)
+		return NULL;
 
-	if (__atags_pointer)
-		tags = phys_to_virt(__atags_pointer);
+	if (atags_vaddr)
+		tags = atags_vaddr;
 	else if (mdesc->atag_offset)
 		tags = (void *)(PAGE_OFFSET + mdesc->atag_offset);
 

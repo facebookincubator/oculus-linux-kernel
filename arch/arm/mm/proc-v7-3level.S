@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * arch/arm/mm/proc-v7-3level.S
  *
@@ -5,19 +6,6 @@
  * Copyright (C) 2011 ARM Ltd.
  * Author: Catalin Marinas <catalin.marinas@arm.com>
  *   based on arch/arm/mm/proc-v7-2level.S
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 #include <asm/assembler.h>
 
@@ -126,12 +114,10 @@ ENDPROC(cpu_v7_set_pte_ext)
 	 * Macro for setting up the TTBRx and TTBCR registers.
 	 * - \ttbr1 updated.
 	 */
-	.macro	v7_ttb_setup, zero, ttbr0, ttbr1, tmp
+	.macro	v7_ttb_setup, zero, ttbr0l, ttbr0h, ttbr1, tmp
 	ldr	\tmp, =swapper_pg_dir		@ swapper_pg_dir virtual address
-	mov	\tmp, \tmp, lsr #ARCH_PGD_SHIFT
-	cmp	\ttbr1, \tmp			@ PHYS_OFFSET > PAGE_OFFSET?
-	mrc	p15, 0, \tmp, c2, c0, 2		@ TTB control register
-	orr	\tmp, \tmp, #TTB_EAE
+	cmp	\ttbr1, \tmp, lsr #12		@ PHYS_OFFSET > PAGE_OFFSET?
+	mov	\tmp, #TTB_EAE			@ for TTB control egister
 	ALT_SMP(orr	\tmp, \tmp, #TTB_FLAGS_SMP)
 	ALT_UP(orr	\tmp, \tmp, #TTB_FLAGS_UP)
 	ALT_SMP(orr	\tmp, \tmp, #TTB_FLAGS_SMP << 16)
@@ -143,13 +129,10 @@ ENDPROC(cpu_v7_set_pte_ext)
 	 */
 	orrls	\tmp, \tmp, #TTBR1_SIZE				@ TTBCR.T1SZ
 	mcr	p15, 0, \tmp, c2, c0, 2				@ TTBCR
-	mov	\tmp, \ttbr1, lsr #(32 - ARCH_PGD_SHIFT)	@ upper bits
-	mov	\ttbr1, \ttbr1, lsl #ARCH_PGD_SHIFT		@ lower bits
+	mov	\tmp, \ttbr1, lsr #20
+	mov	\ttbr1, \ttbr1, lsl #12
 	addls	\ttbr1, \ttbr1, #TTBR1_OFFSET
 	mcrr	p15, 1, \ttbr1, \tmp, c2			@ load TTBR1
-	mov	\tmp, \ttbr0, lsr #(32 - ARCH_PGD_SHIFT)	@ upper bits
-	mov	\ttbr0, \ttbr0, lsl #ARCH_PGD_SHIFT		@ lower bits
-	mcrr	p15, 0, \ttbr0, \tmp, c2			@ load TTBR0
 	.endm
 
 	/*

@@ -1,17 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* Altera TSE SGDMA and MSGDMA Linux driver
  * Copyright (C) 2014 Altera Corporation. All rights reserved
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/list.h>
@@ -70,8 +59,6 @@ int sgdma_initialize(struct altera_tse_private *priv)
 	priv->rxctrlreg = SGDMA_CTRLREG_IDESCRIP |
 		      SGDMA_CTRLREG_INTEN |
 		      SGDMA_CTRLREG_ILASTD;
-
-	priv->sgdmadesclen = sizeof(struct sgdma_descrip);
 
 	INIT_LIST_HEAD(&priv->txlisthd);
 	INIT_LIST_HEAD(&priv->rxlisthd);
@@ -254,7 +241,7 @@ u32 sgdma_rx_status(struct altera_tse_private *priv)
 		unsigned int pktstatus = 0;
 		dma_sync_single_for_cpu(priv->device,
 					priv->rxdescphys,
-					priv->sgdmadesclen,
+					SGDMA_DESC_LEN,
 					DMA_FROM_DEVICE);
 
 		pktlength = csrrd16(desc, sgdma_descroffs(bytes_xferred));
@@ -374,7 +361,7 @@ static int sgdma_async_read(struct altera_tse_private *priv)
 
 		dma_sync_single_for_device(priv->device,
 					   priv->rxdescphys,
-					   priv->sgdmadesclen,
+					   SGDMA_DESC_LEN,
 					   DMA_TO_DEVICE);
 
 		csrwr32(lower_32_bits(sgdma_rxphysaddr(priv, cdesc)),
@@ -402,7 +389,7 @@ static int sgdma_async_write(struct altera_tse_private *priv,
 	csrwr32(0x1f, priv->tx_dma_csr, sgdma_csroffs(status));
 
 	dma_sync_single_for_device(priv->device, priv->txdescphys,
-				   priv->sgdmadesclen, DMA_TO_DEVICE);
+				   SGDMA_DESC_LEN, DMA_TO_DEVICE);
 
 	csrwr32(lower_32_bits(sgdma_txphysaddr(priv, desc)),
 		priv->tx_dma_csr,

@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2014, Michael Ellerman, IBM Corp.
- * Licensed under GPLv2.
  */
 
 #define _GNU_SOURCE	/* For CPU_ZERO etc. */
@@ -15,7 +15,6 @@
 #include <sys/ioctl.h>
 
 #include "trace.h"
-#include "reg.h"
 #include "ebb.h"
 
 
@@ -319,6 +318,16 @@ void ebb_global_disable(void)
 	mb();
 }
 
+bool ebb_is_supported(void)
+{
+#ifdef PPC_FEATURE2_EBB
+	/* EBB requires at least POWER8 */
+	return have_hwcap2(PPC_FEATURE2_EBB);
+#else
+	return false;
+#endif
+}
+
 void event_ebb_init(struct event *e)
 {
 	e->attr.config |= (1ull << 63);
@@ -386,8 +395,6 @@ int ebb_child(union pipe read_pipe, union pipe write_pipe)
 
 	ebb_global_disable();
 	ebb_freeze_pmcs();
-
-	count_pmc(1, sample_period);
 
 	dump_ebb_state();
 

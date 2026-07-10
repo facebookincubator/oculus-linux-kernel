@@ -1,5 +1,10 @@
-#ifndef _UAPI_QSEECOM_H_
-#define _UAPI_QSEECOM_H_
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
+/*
+ * Copyright (c) 2017, 2019, The Linux Foundation. All rights reserved.
+ */
+
+#ifndef _QSEECOM_H_
+#define _QSEECOM_H_
 
 #include <linux/types.h>
 #include <linux/ioctl.h>
@@ -7,6 +12,14 @@
 #define MAX_ION_FD  4
 #define MAX_APP_NAME_SIZE  64
 #define QSEECOM_HASH_SIZE  32
+
+/* qseecom_ta_heap allocation retry delay (ms) and max attemp count */
+#define QSEECOM_TA_ION_ALLOCATE_DELAY           50
+#define QSEECOM_TA_ION_ALLOCATE_MAX_ATTEMP      20
+
+#define ICE_KEY_SIZE 32
+#define ICE_SALT_SIZE 32
+
 /*
  * struct qseecom_register_listener_req -
  *      for register listener ioctl request
@@ -16,10 +29,10 @@
  * @sb_size - shared buffer size
  */
 struct qseecom_register_listener_req {
-	uint32_t listener_id; /* in */
-	int32_t ifd_data_fd; /* in */
+	__u32 listener_id; /* in */
+	__s32 ifd_data_fd; /* in */
 	void *virt_sb_base; /* in */
-	uint32_t sb_size; /* in */
+	__u32 sb_size; /* in */
 };
 
 /*
@@ -42,8 +55,8 @@ struct qseecom_send_cmd_req {
  * @cmd_buf_offset - command buffer offset
  */
 struct qseecom_ion_fd_info {
-	int32_t fd;
-	uint32_t cmd_buf_offset;
+	__s32 fd;
+	__u32 cmd_buf_offset;
 };
 /*
  * struct qseecom_send_modfd_cmd_req - for send command ioctl request
@@ -85,20 +98,20 @@ struct qseecom_send_resp_req {
  * @ion_fd - Ion file descriptor used when allocating memory.
  * @img_name - Name of the image.
  * @app_arch - Architecture of the image, i.e. 32bit or 64bit app
-*/
+ */
 struct qseecom_load_img_req {
-	uint32_t mdt_len; /* in */
-	uint32_t img_len; /* in */
-	int32_t  ifd_data_fd; /* in */
+	__u32 mdt_len; /* in */
+	__u32 img_len; /* in */
+	__s32  ifd_data_fd; /* in */
 	char	 img_name[MAX_APP_NAME_SIZE]; /* in */
-	uint32_t app_arch; /* in */
-	int app_id; /* out*/
+	__u32 app_arch; /* in */
+	__u32 app_id; /* out*/
 };
 
 struct qseecom_set_sb_mem_param_req {
-	int32_t ifd_data_fd; /* in */
+	__s32 ifd_data_fd; /* in */
 	void *virt_sb_base; /* in */
-	uint32_t sb_len; /* in */
+	__u32 sb_len; /* in */
 };
 
 /*
@@ -116,12 +129,12 @@ struct qseecom_qseos_version_req {
  */
 struct qseecom_qseos_app_load_query {
 	char app_name[MAX_APP_NAME_SIZE]; /* in */
-	int app_id; /* out */
-	uint32_t app_arch;
+	__u32 app_id; /* out */
+	__u32 app_arch;
 };
 
 struct qseecom_send_svc_cmd_req {
-	uint32_t cmd_id;
+	__u32 cmd_id;
 	void *cmd_req_buf; /* in */
 	unsigned int cmd_req_len; /* in */
 	void *resp_buf; /* in/out */
@@ -181,11 +194,11 @@ struct qseecom_is_es_activated_req {
  * @direction - 0=encrypt, 1=decrypt
  */
 struct qseecom_mdtp_cipher_dip_req {
-	uint8_t *in_buf;
-	uint32_t in_buf_size;
-	uint8_t *out_buf;
-	uint32_t out_buf_size;
-	uint32_t direction;
+	__u8 *in_buf;
+	__u32 in_buf_size;
+	__u8 *out_buf;
+	__u32 out_buf_size;
+	__u32 direction;
 };
 
 enum qseecom_bandwidth_request_mode {
@@ -210,27 +223,27 @@ struct qseecom_send_modfd_listener_resp {
 
 struct qseecom_qteec_req {
 	void    *req_ptr;
-	uint32_t    req_len;
+	__u32    req_len;
 	void    *resp_ptr;
-	uint32_t    resp_len;
+	__u32    resp_len;
 };
 
 struct qseecom_qteec_modfd_req {
 	void    *req_ptr;
-	uint32_t    req_len;
+	__u32    req_len;
 	void    *resp_ptr;
-	uint32_t    resp_len;
+	__u32    resp_len;
 	struct qseecom_ion_fd_info ifd_data[MAX_ION_FD];
 };
 
 struct qseecom_sg_entry {
-	uint32_t phys_addr;
-	uint32_t len;
+	__u32 phys_addr;
+	__u32 len;
 };
 
 struct qseecom_sg_entry_64bit {
-	uint64_t phys_addr;
-	uint32_t len;
+	__u64 phys_addr;
+	__u32 len;
 } __attribute__ ((packed));
 
 /*
@@ -243,9 +256,9 @@ struct qseecom_sg_entry_64bit {
 
 struct qseecom_sg_list_buf_hdr_64bit {
 	struct qseecom_sg_entry_64bit  blank_entry;	/* must be all 0 */
-	uint32_t version;		/* sg list buf format version */
-	uint64_t new_buf_phys_addr;	/* PA of new buffer */
-	uint32_t nents_total;		/* Total number of SG entries */
+	__u32 version;		/* sg list buf format version */
+	__u64 new_buf_phys_addr;	/* PA of new buffer */
+	__u32 nents_total;		/* Total number of SG entries */
 } __attribute__ ((packed));
 
 #define QSEECOM_SG_LIST_BUF_HDR_SZ_64BIT	\
@@ -263,6 +276,10 @@ struct qseecom_ce_pipe_entry {
 	unsigned int ce_pipe_pair;
 };
 
+struct qseecom_ice_data_t {
+	int flag;
+};
+
 #define MAX_CE_INFO_HANDLE_SIZE 32
 struct qseecom_ce_info_req {
 	unsigned char handle[MAX_CE_INFO_HANDLE_SIZE];
@@ -272,13 +289,18 @@ struct qseecom_ce_info_req {
 	struct qseecom_ce_pipe_entry ce_pipe_entry[MAX_CE_PIPE_PAIR_PER_UNIT];
 };
 
+struct qseecom_ice_key_data_t {
+	__u8 key[ICE_KEY_SIZE];
+	__u32 key_len;
+	__u8 salt[ICE_SALT_SIZE];
+	__u32 salt_len;
+};
+
 #define SG_ENTRY_SZ		sizeof(struct qseecom_sg_entry)
 #define SG_ENTRY_SZ_64BIT	sizeof(struct qseecom_sg_entry_64bit)
 
 struct file;
 
-extern long qseecom_ioctl(struct file *file,
-					unsigned cmd, unsigned long arg);
 
 #define QSEECOM_IOC_MAGIC    0x97
 
@@ -382,5 +404,10 @@ extern long qseecom_ioctl(struct file *file,
 #define QSEECOM_IOCTL_QUERY_CE_PIPE_INFO \
 	_IOWR(QSEECOM_IOC_MAGIC, 42, struct qseecom_ce_info_req)
 
+#define QSEECOM_IOCTL_SET_ICE_INFO \
+	_IOWR(QSEECOM_IOC_MAGIC, 43, struct qseecom_ice_data_t)
 
-#endif /* _UAPI_QSEECOM_H_ */
+#define QSEECOM_IOCTL_FBE_CLEAR_KEY \
+	_IOWR(QSEECOM_IOC_MAGIC, 44, struct qseecom_ice_key_data_t)
+
+#endif /* _QSEECOM_H_ */

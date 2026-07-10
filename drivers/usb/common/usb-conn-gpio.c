@@ -1,0 +1,505 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * USB GPIO Based Connection Detection Driver
+ *
+ * Copyright (C) 2019 MediaTek Inc.
+ *
+ * Author: Chunfeng Yun <chunfeng.yun@mediatek.com>
+ *
+ * Some code borrowed from drivers/extcon/extcon-usb-gpio.c
+ */
+
+#include <linux/delay.h>
+#include <linux/device.h>
+#include <linux/gpio/consumer.h>
+#include <linux/interrupt.h>
+#include <linux/irq.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/of_platform.h>
+#include <linux/pinctrl/consumer.h>
+#include <linux/platform_device.h>
+#include <linux/power_supply.h>
+#include <linux/regulator/consumer.h>
+#include <linux/usb/role.h>
+
+#define USB_GPIO_DEB_MS		20	/* ms */
+#define USB_GPIO_DEB_US		((USB_GPIO_DEB_MS) * 1000)	/* us */
+
+#define USB_CONN_IRQF	\
+	(IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT)
+
+#define USB_CONN_TIMEOUT_SECS 6
+#define ONE_SEC_IN_MS 1000
+
+struct usb_conn_info {
+	struct device *dev;
+	struct usb_role_switch *role_sw;
+	enum usb_role last_role;
+	struct regulator *vbus;
+	struct delayed_work dw_det;
+	unsigned long debounce_jiffies;
+
+	struct gpio_desc *id_gpiod;
+	struct gpio_desc *vbus_gpiod;
+	int id_irq;
+	int vbus_irq;
+	u32 role_sw_delay_ms;
+	u32 init_done_timeout_secs;
+	bool suspend_disable;
+	bool init_done;
+	bool connect_enabled;
+
+	struct power_supply_desc desc;
+	struct power_supply *charger;
+	struct device_node *usb_node;
+	struct platform_device *usb_pdev;
+};
+
+static void usb_conn_set_usb_role(struct usb_conn_info *info,
+				  enum usb_role role)
+{
+	int ret;
+
+	dev_info(info->dev, "role %d/%d, \n", info->last_role, role);
+
+	ret = usb_role_switch_set_role(info->role_sw, role);
+	if (ret) {
+		dev_err(info->dev, "failed to set role: %d\n", ret);
+		return;
+	}
+	info->last_role = role;
+}
+
+static void usb_conn_detect_cable(struct work_struct *work)
+{
+	struct usb_conn_info *info;
+	int id, vbus;
+
+	info = container_of(to_delayed_work(work), struct usb_conn_info,
+			    dw_det);
+
+	/* check ID and VBUS */
+	id = info->id_gpiod ? gpiod_get_value_cansleep(info->id_gpiod) : 1;
+	vbus = info->vbus_gpiod ? gpiod_get_value_cansleep(info->vbus_gpiod) :
+					id;
+
+	dev_info(info->dev, "id = %d, vbus = %d \n", id, vbus);
+
+	if (!info->connect_enabled) {
+		dev_info(info->dev,
+			 "USB connection disabled, ignoring cable detection\n");
+		usb_conn_set_usb_role(info, USB_ROLE_NONE);
+		goto exit;
+	}
+
+	if (vbus) {
+		if (info->suspend_disable) {
+			/* Block suspend during reconfiguration */
+			pm_wakeup_event(info->dev, info->role_sw_delay_ms * 2);
+			usb_conn_set_usb_role(info, USB_ROLE_NONE);
+			msleep(info->role_sw_delay_ms);
+		}
+		usb_conn_set_usb_role(info, USB_ROLE_DEVICE);
+	}
+
+	if (!vbus && !info->suspend_disable) {
+		dev_info(info->dev,
+			 "Vbus is not detected. Switch role to none \n");
+		usb_conn_set_usb_role(info, USB_ROLE_NONE);
+	}
+
+exit:
+	power_supply_changed(info->charger);
+}
+
+static void usb_conn_queue_dwork(struct usb_conn_info *info,
+				 unsigned long delay)
+{
+	queue_delayed_work(system_power_efficient_wq, &info->dw_det, delay);
+}
+
+static irqreturn_t usb_conn_isr(int irq, void *dev_id)
+{
+	struct usb_conn_info *info = dev_id;
+
+	usb_conn_queue_dwork(info, info->debounce_jiffies);
+
+	return IRQ_HANDLED;
+}
+
+static enum power_supply_property usb_charger_properties[] = {
+	POWER_SUPPLY_PROP_ONLINE,
+};
+
+static int usb_charger_get_property(struct power_supply *psy,
+				    enum power_supply_property psp,
+				    union power_supply_propval *val)
+{
+	struct usb_conn_info *info = power_supply_get_drvdata(psy);
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_ONLINE:
+		val->intval =
+			info->vbus_gpiod ?
+				      gpiod_get_value_cansleep(info->vbus_gpiod) :
+				      0;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int usb_conn_psy_register(struct usb_conn_info *info)
+{
+	struct device *dev = info->dev;
+	struct power_supply_desc *desc = &info->desc;
+	struct power_supply_config cfg = {
+		.of_node = dev->of_node,
+	};
+
+	desc->name = "usb-charger";
+	desc->properties = usb_charger_properties;
+	desc->num_properties = ARRAY_SIZE(usb_charger_properties);
+	desc->get_property = usb_charger_get_property;
+	desc->type = POWER_SUPPLY_TYPE_USB;
+	cfg.drv_data = info;
+
+	info->charger = devm_power_supply_register(dev, desc, &cfg);
+	if (IS_ERR(info->charger))
+		dev_err(dev, "Unable to register charger\n");
+
+	return PTR_ERR_OR_ZERO(info->charger);
+}
+
+static ssize_t suspend_disable_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct usb_conn_info *info =
+		(struct usb_conn_info *)dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", info->suspend_disable);
+}
+
+static ssize_t suspend_disable_store(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t count)
+{
+	struct usb_conn_info *info =
+		(struct usb_conn_info *)dev_get_drvdata(dev);
+	int result;
+	bool temp;
+
+	result = kstrtobool(buf, &temp);
+	if (result < 0) {
+		dev_err(dev, "Illegal input for suspend disable: %s", buf);
+		return result;
+	}
+
+	info->suspend_disable = temp;
+
+	if (!info->suspend_disable)
+		/*
+		* Force re-evaluation only when suspend disable is cleared.
+		* Forcing a re-evaluation when suspend disable is set will
+		* cause a UDC role toggle which will cause adb to disconnect
+		* and reconnect.
+		*/
+		usb_conn_queue_dwork(info, 0);
+
+	return count;
+}
+static DEVICE_ATTR_RW(suspend_disable);
+
+static ssize_t connect_enabled_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct usb_conn_info *info =
+		(struct usb_conn_info *)dev_get_drvdata(dev);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", info->connect_enabled);
+}
+
+static ssize_t connect_enabled_store(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t count)
+{
+	struct usb_conn_info *info =
+		(struct usb_conn_info *)dev_get_drvdata(dev);
+	int result;
+	bool temp;
+
+	result = kstrtobool(buf, &temp);
+	if (result < 0) {
+		dev_err(dev, "Illegal input for connect supported: %s", buf);
+		return result;
+	}
+
+	info->connect_enabled = temp;
+
+	/* Force re-evaluation */
+	usb_conn_queue_dwork(info, 0);
+	return count;
+}
+static DEVICE_ATTR_RW(connect_enabled);
+
+static struct attribute *usb_conn_gpio_attrs[] = {
+	&dev_attr_suspend_disable.attr,
+	&dev_attr_connect_enabled.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(usb_conn_gpio);
+
+static void usb_conn_gpio_create_sysfs(struct usb_conn_info *info)
+{
+	int result;
+
+	result = sysfs_create_groups(&info->dev->kobj, usb_conn_gpio_groups);
+	if (result != 0)
+		dev_err(info->dev, "Error creating sysfs entries: %d\n",
+			result);
+}
+
+static int usb_conn_probe(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+	struct usb_conn_info *info;
+	bool need_vbus = true;
+	int ret = 0;
+
+	info = devm_kzalloc(dev, sizeof(*info), GFP_KERNEL);
+	if (!info)
+		return -ENOMEM;
+
+	info->dev = dev;
+
+	info->usb_node =
+		of_parse_phandle(info->dev->of_node, "usb-controller", 0);
+	if (!info->usb_node) {
+		dev_err(info->dev, "unable to get usb node\n");
+		return -EINVAL;
+	}
+
+	info->usb_pdev = of_find_device_by_node(info->usb_node);
+	if (!info->usb_pdev) {
+		of_node_put(info->usb_node);
+		dev_err(info->dev, "unable to get usb pdev\n");
+		return -EINVAL;
+	}
+
+	info->id_gpiod = devm_gpiod_get_optional(dev, "id", GPIOD_IN);
+	if (IS_ERR(info->id_gpiod))
+		return PTR_ERR(info->id_gpiod);
+
+	info->vbus_gpiod = devm_gpiod_get_optional(dev, "vbus", GPIOD_IN);
+	if (IS_ERR(info->vbus_gpiod))
+		return PTR_ERR(info->vbus_gpiod);
+
+	if (!info->id_gpiod && !info->vbus_gpiod) {
+		dev_err(dev, "failed to get gpios\n");
+		return -ENODEV;
+	}
+
+	if (info->id_gpiod)
+		ret = gpiod_set_debounce(info->id_gpiod, USB_GPIO_DEB_US);
+	if (!ret && info->vbus_gpiod)
+		ret = gpiod_set_debounce(info->vbus_gpiod, USB_GPIO_DEB_US);
+	if (ret < 0)
+		info->debounce_jiffies = msecs_to_jiffies(USB_GPIO_DEB_MS);
+
+	info->connect_enabled = 1;
+
+	INIT_DELAYED_WORK(&info->dw_det, usb_conn_detect_cable);
+
+	ret = of_property_read_u32(dev->of_node, "role-sw-delay-ms",
+				   &info->role_sw_delay_ms);
+	if (ret < 0) {
+		dev_err(dev, "failed to read role-sw-delay-ms from DT: %d\n",
+			ret);
+		return -ENODEV;
+	}
+
+	if (of_property_read_bool(dev->of_node, "meta,suspend-disable")) {
+		info->suspend_disable = true;
+		dev_dbg(dev, "%s: Suspend disable property is set \n",
+			__func__);
+	}
+
+	/*
+	 * If the USB connector is a child of a USB port and that port already provides the VBUS
+	 * supply, there's no need for the USB connector to provide it again.
+	 */
+	if (dev->parent && dev->parent->of_node) {
+		if (of_find_property(dev->parent->of_node, "vbus-supply", NULL))
+			need_vbus = false;
+	}
+
+	if (!need_vbus) {
+		info->vbus = devm_regulator_get_optional(dev, "vbus");
+		if (PTR_ERR(info->vbus) == -ENODEV)
+			info->vbus = NULL;
+	} else {
+		info->vbus = devm_regulator_get(dev, "vbus");
+	}
+
+	if (IS_ERR(info->vbus)) {
+		if (PTR_ERR(info->vbus) != -EPROBE_DEFER)
+			dev_err(dev, "failed to get vbus: %ld\n",
+				PTR_ERR(info->vbus));
+		return PTR_ERR(info->vbus);
+	}
+
+	info->role_sw = usb_role_switch_get(dev);
+	if (IS_ERR(info->role_sw)) {
+		if (PTR_ERR(info->role_sw) != -EPROBE_DEFER)
+			dev_err(dev, "failed to get role switch\n");
+
+		return PTR_ERR(info->role_sw);
+	}
+	if (!info->role_sw)
+		dev_err(dev, "obtained role switch is none\n");
+
+	if (info->suspend_disable)
+		usb_conn_set_usb_role(info, USB_ROLE_DEVICE);
+
+	ret = usb_conn_psy_register(info);
+	if (ret)
+		goto put_role_sw;
+
+	if (info->id_gpiod) {
+		info->id_irq = gpiod_to_irq(info->id_gpiod);
+		if (info->id_irq < 0) {
+			dev_err(dev, "failed to get ID IRQ\n");
+			ret = info->id_irq;
+			goto put_role_sw;
+		}
+
+		ret = devm_request_threaded_irq(dev, info->id_irq, NULL,
+						usb_conn_isr, USB_CONN_IRQF,
+						pdev->name, info);
+		if (ret < 0) {
+			dev_err(dev, "failed to request ID IRQ\n");
+			goto put_role_sw;
+		}
+	}
+
+	if (info->vbus_gpiod) {
+		info->vbus_irq = gpiod_to_irq(info->vbus_gpiod);
+		if (info->vbus_irq < 0) {
+			dev_err(dev, "failed to get VBUS IRQ\n");
+			ret = info->vbus_irq;
+			goto put_role_sw;
+		}
+
+		ret = devm_request_threaded_irq(dev, info->vbus_irq, NULL,
+						usb_conn_isr, USB_CONN_IRQF,
+						pdev->name, info);
+		if (ret < 0) {
+			dev_err(dev, "failed to request VBUS IRQ\n");
+			goto put_role_sw;
+		}
+	}
+
+	usb_conn_gpio_create_sysfs(info);
+	platform_set_drvdata(pdev, info);
+	device_set_wakeup_capable(&pdev->dev, true);
+	device_set_wakeup_enable(&pdev->dev, true);
+
+	/* Perform initial detection */
+	usb_conn_queue_dwork(info, 0);
+
+	return 0;
+
+put_role_sw:
+	usb_role_switch_put(info->role_sw);
+	return ret;
+}
+
+static int usb_conn_remove(struct platform_device *pdev)
+{
+	struct usb_conn_info *info = platform_get_drvdata(pdev);
+
+	cancel_delayed_work_sync(&info->dw_det);
+
+	if (info->last_role == USB_ROLE_HOST && info->vbus)
+		regulator_disable(info->vbus);
+
+	usb_role_switch_put(info->role_sw);
+	of_node_put(info->usb_node);
+	platform_device_put(info->usb_pdev);
+
+	return 0;
+}
+
+static int __maybe_unused usb_conn_suspend(struct device *dev)
+{
+	struct usb_conn_info *info = dev_get_drvdata(dev);
+
+	if (device_may_wakeup(dev)) {
+		if (info->id_gpiod)
+			enable_irq_wake(info->id_irq);
+		if (info->vbus_gpiod)
+			enable_irq_wake(info->vbus_irq);
+		return 0;
+	}
+
+	if (info->id_gpiod)
+		disable_irq(info->id_irq);
+	if (info->vbus_gpiod)
+		disable_irq(info->vbus_irq);
+
+	pinctrl_pm_select_sleep_state(dev);
+
+	return 0;
+}
+
+static int __maybe_unused usb_conn_resume(struct device *dev)
+{
+	struct usb_conn_info *info = dev_get_drvdata(dev);
+
+	if (device_may_wakeup(dev)) {
+		if (info->id_gpiod)
+			disable_irq_wake(info->id_irq);
+		if (info->vbus_gpiod)
+			disable_irq_wake(info->vbus_irq);
+		return 0;
+	}
+
+	pinctrl_pm_select_default_state(dev);
+
+	if (info->id_gpiod)
+		enable_irq(info->id_irq);
+	if (info->vbus_gpiod)
+		enable_irq(info->vbus_irq);
+
+	usb_conn_queue_dwork(info, 0);
+
+	return 0;
+}
+
+static SIMPLE_DEV_PM_OPS(usb_conn_pm_ops,
+			 usb_conn_suspend, usb_conn_resume);
+
+static const struct of_device_id usb_conn_dt_match[] = {
+	{ .compatible = "gpio-usb-b-connector", },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, usb_conn_dt_match);
+
+static struct platform_driver usb_conn_driver = {
+	.probe		= usb_conn_probe,
+	.remove		= usb_conn_remove,
+	.driver		= {
+		.name	= "usb-conn-gpio",
+		.pm	= &usb_conn_pm_ops,
+		.of_match_table = usb_conn_dt_match,
+	},
+};
+
+module_platform_driver(usb_conn_driver);
+
+MODULE_AUTHOR("Chunfeng Yun <chunfeng.yun@mediatek.com>");
+MODULE_DESCRIPTION("USB GPIO based connection detection driver");
+MODULE_LICENSE("GPL v2");

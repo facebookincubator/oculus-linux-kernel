@@ -1,6 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * linux/kernel/irq/spurious.c
- *
  * Copyright (C) 1992, 1998-2004 Linus Torvalds, Ingo Molnar
  *
  * This file contains spurious interrupt handling.
@@ -9,7 +8,6 @@
 #include <linux/jiffies.h>
 #include <linux/irq.h>
 #include <linux/module.h>
-#include <linux/kallsyms.h>
 #include <linux/interrupt.h>
 #include <linux/moduleparam.h>
 #include <linux/timer.h>
@@ -19,8 +17,8 @@
 static int irqfixup __read_mostly;
 
 #define POLL_SPURIOUS_IRQ_INTERVAL (HZ/10)
-static void poll_spurious_irqs(unsigned long dummy);
-static DEFINE_TIMER(poll_spurious_irq_timer, poll_spurious_irqs, 0, 0);
+static void poll_spurious_irqs(struct timer_list *unused);
+static DEFINE_TIMER(poll_spurious_irq_timer, poll_spurious_irqs);
 static int irq_poll_cpu;
 static atomic_t irq_poll_active;
 
@@ -36,6 +34,7 @@ static atomic_t irq_poll_active;
  * true and let the handler run.
  */
 bool irq_wait_for_poll(struct irq_desc *desc)
+	__must_hold(&desc->lock)
 {
 	if (WARN_ONCE(irq_poll_cpu == smp_processor_id(),
 		      "irq poll in progress on cpu %d for irq %d\n",
@@ -60,7 +59,7 @@ bool irq_wait_for_poll(struct irq_desc *desc)
 /*
  * Recovery handler for misrouted interrupts.
  */
-static int try_one_irq(int irq, struct irq_desc *desc, bool force)
+static int try_one_irq(struct irq_desc *desc, bool force)
 {
 	irqreturn_t ret = IRQ_NONE;
 	struct irqaction *action;
@@ -68,7 +67,7 @@ static int try_one_irq(int irq, struct irq_desc *desc, bool force)
 	raw_spin_lock(&desc->lock);
 
 	/*
-	 * PER_CPU, nested thread interrupts and interrupts explicitely
+	 * PER_CPU, nested thread interrupts and interrupts explicitly
 	 * marked polled are excluded from polling.
 	 */
 	if (irq_settings_is_per_cpu(desc) ||
@@ -78,7 +77,7 @@ static int try_one_irq(int irq, struct irq_desc *desc, bool force)
 
 	/*
 	 * Do not poll disabled interrupts unless the spurious
-	 * disabled poller asks explicitely.
+	 * disabled poller asks explicitly.
 	 */
 	if (irqd_irq_disabled(&desc->irq_data) && !force)
 		goto out;
@@ -133,7 +132,7 @@ static int misrouted_irq(int irq)
 		if (i == irq)	/* Already tried */
 			continue;
 
-		if (try_one_irq(i, desc, false))
+		if (try_one_irq(desc, false))
 			ok = 1;
 	}
 out:
@@ -142,7 +141,7 @@ out:
 	return ok;
 }
 
-static void poll_spurious_irqs(unsigned long dummy)
+static void poll_spurious_irqs(struct timer_list *unused)
 {
 	struct irq_desc *desc;
 	int i;
@@ -164,7 +163,7 @@ static void poll_spurious_irqs(unsigned long dummy)
 			continue;
 
 		local_irq_disable();
-		try_one_irq(i, desc, true);
+		try_one_irq(desc, true);
 		local_irq_enable();
 	}
 out:
@@ -175,7 +174,9 @@ out:
 
 static inline int bad_action_ret(irqreturn_t action_ret)
 {
-	if (likely(action_ret <= (IRQ_HANDLED | IRQ_WAKE_THREAD)))
+	unsigned int r = action_ret;
+
+	if (likely(r <= (IRQ_HANDLED | IRQ_WAKE_THREAD)))
 		return 0;
 	return 1;
 }
@@ -188,10 +189,9 @@ static inline int bad_action_ret(irqreturn_t action_ret)
  * (The other 100-of-100,000 interrupts may have been a correctly
  *  functioning device sharing an IRQ with the failing one)
  */
-static void
-__report_bad_irq(unsigned int irq, struct irq_desc *desc,
-		 irqreturn_t action_ret)
+static void __report_bad_irq(struct irq_desc *desc, irqreturn_t action_ret)
 {
+	unsigned int irq = irq_desc_get_irq(desc);
 	struct irqaction *action;
 	unsigned long flags;
 
@@ -212,26 +212,23 @@ __report_bad_irq(unsigned int irq, struct irq_desc *desc,
 	 * desc->lock here. See synchronize_irq().
 	 */
 	raw_spin_lock_irqsave(&desc->lock, flags);
-	action = desc->action;
-	while (action) {
-		printk(KERN_ERR "[<%p>] %pf", action->handler, action->handler);
+	for_each_action_of_desc(desc, action) {
+		printk(KERN_ERR "[<%p>] %ps", action->handler, action->handler);
 		if (action->thread_fn)
-			printk(KERN_CONT " threaded [<%p>] %pf",
+			printk(KERN_CONT " threaded [<%p>] %ps",
 					action->thread_fn, action->thread_fn);
 		printk(KERN_CONT "\n");
-		action = action->next;
 	}
 	raw_spin_unlock_irqrestore(&desc->lock, flags);
 }
 
-static void
-report_bad_irq(unsigned int irq, struct irq_desc *desc, irqreturn_t action_ret)
+static void report_bad_irq(struct irq_desc *desc, irqreturn_t action_ret)
 {
 	static int count = 100;
 
 	if (count > 0) {
 		count--;
-		__report_bad_irq(irq, desc, action_ret);
+		__report_bad_irq(desc, action_ret);
 	}
 }
 
@@ -272,15 +269,16 @@ try_misrouted_irq(unsigned int irq, struct irq_desc *desc,
 
 #define SPURIOUS_DEFERRED	0x80000000
 
-void note_interrupt(unsigned int irq, struct irq_desc *desc,
-		    irqreturn_t action_ret)
+void note_interrupt(struct irq_desc *desc, irqreturn_t action_ret)
 {
+	unsigned int irq;
+
 	if (desc->istate & IRQS_POLL_INPROGRESS ||
 	    irq_settings_is_polled(desc))
 		return;
 
 	if (bad_action_ret(action_ret)) {
-		report_bad_irq(irq, desc, action_ret);
+		report_bad_irq(desc, action_ret);
 		return;
 	}
 
@@ -295,7 +293,7 @@ void note_interrupt(unsigned int irq, struct irq_desc *desc,
 	 * So in case a thread is woken, we just note the fact and
 	 * defer the analysis to the next hardware interrupt.
 	 *
-	 * The threaded handlers store whether they sucessfully
+	 * The threaded handlers store whether they successfully
 	 * handled an interrupt and we check whether that number
 	 * changed versus the last invocation.
 	 *
@@ -398,6 +396,7 @@ void note_interrupt(unsigned int irq, struct irq_desc *desc,
 		desc->last_unhandled = jiffies;
 	}
 
+	irq = irq_desc_get_irq(desc);
 	if (unlikely(try_misrouted_irq(irq, desc, action_ret))) {
 		int ok = misrouted_irq(irq);
 		if (action_ret == IRQ_NONE)
@@ -413,7 +412,7 @@ void note_interrupt(unsigned int irq, struct irq_desc *desc,
 		/*
 		 * The interrupt is stuck
 		 */
-		__report_bad_irq(irq, desc, action_ret);
+		__report_bad_irq(desc, action_ret);
 		/*
 		 * Now kill the IRQ
 		 */

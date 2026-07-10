@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-1.0+
 /* r3964 linediscipline for linux
  *
  * -----------------------------------------------------------
@@ -5,9 +6,6 @@
  * Philips Automation Projects
  * Kassel (Germany)
  * -----------------------------------------------------------
- * This software may be used and distributed according to the terms of
- * the GNU General Public License, incorporated herein by reference.
- *
  * Author:
  * L. Haag
  *
@@ -65,7 +63,7 @@
 #include <linux/n_r3964.h>
 #include <linux/poll.h>
 #include <linux/init.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 /*#define DEBUG_QUEUE*/
 
@@ -117,7 +115,7 @@ static void retry_transmit(struct r3964_info *pInfo);
 static void transmit_block(struct r3964_info *pInfo);
 static void receive_char(struct r3964_info *pInfo, const unsigned char c);
 static void receive_error(struct r3964_info *pInfo, const char flag);
-static void on_timeout(unsigned long priv);
+static void on_timeout(struct timer_list *t);
 static int enable_signals(struct r3964_info *pInfo, struct pid *pid, int arg);
 static int read_telegram(struct r3964_info *pInfo, struct pid *pid,
 		unsigned char __user * buf);
@@ -131,13 +129,17 @@ static void remove_client_block(struct r3964_info *pInfo,
 static int r3964_open(struct tty_struct *tty);
 static void r3964_close(struct tty_struct *tty);
 static ssize_t r3964_read(struct tty_struct *tty, struct file *file,
-		unsigned char __user * buf, size_t nr);
+		void *cookie, unsigned char *buf, size_t nr);
 static ssize_t r3964_write(struct tty_struct *tty, struct file *file,
 		const unsigned char *buf, size_t nr);
 static int r3964_ioctl(struct tty_struct *tty, struct file *file,
 		unsigned int cmd, unsigned long arg);
+#ifdef CONFIG_COMPAT
+static int r3964_compat_ioctl(struct tty_struct *tty, struct file *file,
+		unsigned int cmd, unsigned long arg);
+#endif
 static void r3964_set_termios(struct tty_struct *tty, struct ktermios *old);
-static unsigned int r3964_poll(struct tty_struct *tty, struct file *file,
+static __poll_t r3964_poll(struct tty_struct *tty, struct file *file,
 		struct poll_table_struct *wait);
 static void r3964_receive_buf(struct tty_struct *tty, const unsigned char *cp,
 		char *fp, int count);
@@ -151,6 +153,9 @@ static struct tty_ldisc_ops tty_ldisc_N_R3964 = {
 	.read = r3964_read,
 	.write = r3964_write,
 	.ioctl = r3964_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = r3964_compat_ioctl,
+#endif
 	.set_termios = r3964_set_termios,
 	.poll = r3964_poll,
 	.receive_buf = r3964_receive_buf,
@@ -276,7 +281,7 @@ static void remove_from_tx_queue(struct r3964_info *pInfo, int error_code)
 			add_msg(pHeader->owner, R3964_MSG_ACK, pHeader->length,
 				error_code, NULL);
 		}
-		wake_up_interruptible(&pInfo->read_wait);
+		wake_up_interruptible(&pInfo->tty->read_wait);
 	}
 
 	spin_lock_irqsave(&pInfo->lock, flags);
@@ -542,7 +547,7 @@ static void on_receive_block(struct r3964_info *pInfo)
 				pBlock);
 		}
 	}
-	wake_up_interruptible(&pInfo->read_wait);
+	wake_up_interruptible(&pInfo->tty->read_wait);
 
 	pInfo->state = R3964_IDLE;
 
@@ -600,7 +605,6 @@ static void receive_char(struct r3964_info *pInfo, const unsigned char c)
 		}
 		break;
 	case R3964_WAIT_FOR_RX_REPEAT:
-		/* FALLTHROUGH */
 	case R3964_IDLE:
 		if (c == STX) {
 			/* Prevent rx_queue from overflow: */
@@ -690,9 +694,9 @@ static void receive_error(struct r3964_info *pInfo, const char flag)
 	}
 }
 
-static void on_timeout(unsigned long priv)
+static void on_timeout(struct timer_list *t)
 {
-	struct r3964_info *pInfo = (void *)priv;
+	struct r3964_info *pInfo = from_timer(pInfo, t, tmr);
 
 	switch (pInfo->state) {
 	case R3964_TX_REQUEST:
@@ -978,8 +982,8 @@ static int r3964_open(struct tty_struct *tty)
 	}
 
 	spin_lock_init(&pInfo->lock);
+	mutex_init(&pInfo->read_lock);
 	pInfo->tty = tty;
-	init_waitqueue_head(&pInfo->read_wait);
 	pInfo->priority = R3964_MASTER;
 	pInfo->rx_first = pInfo->rx_last = NULL;
 	pInfo->tx_first = pInfo->tx_last = NULL;
@@ -995,7 +999,7 @@ static int r3964_open(struct tty_struct *tty)
 	tty->disc_data = pInfo;
 	tty->receive_room = 65536;
 
-	setup_timer(&pInfo->tmr, on_timeout, (unsigned long)pInfo);
+	timer_setup(&pInfo->tmr, on_timeout, 0);
 
 	return 0;
 }
@@ -1045,7 +1049,6 @@ static void r3964_close(struct tty_struct *tty)
 	}
 
 	/* Free buffers: */
-	wake_up_interruptible(&pInfo->read_wait);
 	kfree(pInfo->rx_buf);
 	TRACE_M("r3964_close - rx_buf kfree %p", pInfo->rx_buf);
 	kfree(pInfo->tx_buf);
@@ -1055,7 +1058,8 @@ static void r3964_close(struct tty_struct *tty)
 }
 
 static ssize_t r3964_read(struct tty_struct *tty, struct file *file,
-			  unsigned char __user * buf, size_t nr)
+			  unsigned char *kbuf, size_t nr,
+			  void **cookie, unsigned long offset)
 {
 	struct r3964_info *pInfo = tty->disc_data;
 	struct r3964_client_info *pClient;
@@ -1065,19 +1069,28 @@ static ssize_t r3964_read(struct tty_struct *tty, struct file *file,
 
 	TRACE_L("read()");
 
-	tty_lock(tty);
+	/*
+	 *	Internal serialization of reads.
+	 */
+	if (file->f_flags & O_NONBLOCK) {
+		if (!mutex_trylock(&pInfo->read_lock))
+			return -EAGAIN;
+	} else {
+		if (mutex_lock_interruptible(&pInfo->read_lock))
+			return -ERESTARTSYS;
+	}
 
 	pClient = findClient(pInfo, task_pid(current));
 	if (pClient) {
 		pMsg = remove_msg(pInfo, pClient);
 		if (pMsg == NULL) {
 			/* no messages available. */
-			if (file->f_flags & O_NONBLOCK) {
+			if (tty_io_nonblock(tty, file)) {
 				ret = -EAGAIN;
 				goto unlock;
 			}
 			/* block until there is a message: */
-			wait_event_interruptible_tty(tty, pInfo->read_wait,
+			wait_event_interruptible(tty->read_wait,
 					(pMsg = remove_msg(pInfo, pClient)));
 		}
 
@@ -1097,17 +1110,14 @@ static ssize_t r3964_read(struct tty_struct *tty, struct file *file,
 		kfree(pMsg);
 		TRACE_M("r3964_read - msg kfree %p", pMsg);
 
-		if (copy_to_user(buf, &theMsg, ret)) {
-			ret = -EFAULT;
-			goto unlock;
-		}
+		memcpy(kbuf, &theMsg, ret);
 
 		TRACE_PS("read - return %d", ret);
 		goto unlock;
 	}
 	ret = -EPERM;
 unlock:
-	tty_unlock(tty);
+	mutex_unlock(&pInfo->read_lock);
 	return ret;
 }
 
@@ -1156,8 +1166,6 @@ static ssize_t r3964_write(struct tty_struct *tty, struct file *file,
 	pHeader->locks = 0;
 	pHeader->owner = NULL;
 
-	tty_lock(tty);
-
 	pClient = findClient(pInfo, task_pid(current));
 	if (pClient) {
 		pHeader->owner = pClient;
@@ -1174,8 +1182,6 @@ static ssize_t r3964_write(struct tty_struct *tty, struct file *file,
  */
 	add_tx_queue(pInfo, pHeader);
 	trigger_transmit(pInfo);
-
-	tty_unlock(tty);
 
 	return 0;
 }
@@ -1208,31 +1214,46 @@ static int r3964_ioctl(struct tty_struct *tty, struct file *file,
 	}
 }
 
+#ifdef CONFIG_COMPAT
+static int r3964_compat_ioctl(struct tty_struct *tty, struct file *file,
+		unsigned int cmd, unsigned long arg)
+{
+	switch (cmd) {
+	case R3964_ENABLE_SIGNALS:
+	case R3964_SETPRIORITY:
+	case R3964_USE_BCC:
+		return r3964_ioctl(tty, file, cmd, arg);
+	default:
+		return -ENOIOCTLCMD;
+	}
+}
+#endif
+
 static void r3964_set_termios(struct tty_struct *tty, struct ktermios *old)
 {
 	TRACE_L("set_termios");
 }
 
 /* Called without the kernel lock held - fine */
-static unsigned int r3964_poll(struct tty_struct *tty, struct file *file,
+static __poll_t r3964_poll(struct tty_struct *tty, struct file *file,
 			struct poll_table_struct *wait)
 {
 	struct r3964_info *pInfo = tty->disc_data;
 	struct r3964_client_info *pClient;
 	struct r3964_message *pMsg = NULL;
 	unsigned long flags;
-	int result = POLLOUT;
+	__poll_t result = EPOLLOUT;
 
 	TRACE_L("POLL");
 
 	pClient = findClient(pInfo, task_pid(current));
 	if (pClient) {
-		poll_wait(file, &pInfo->read_wait, wait);
+		poll_wait(file, &tty->read_wait, wait);
 		spin_lock_irqsave(&pInfo->lock, flags);
 		pMsg = pClient->first_msg;
 		spin_unlock_irqrestore(&pInfo->lock, flags);
 		if (pMsg)
-			result |= POLLIN | POLLRDNORM;
+			result |= EPOLLIN | EPOLLRDNORM;
 	} else {
 		result = -EINVAL;
 	}

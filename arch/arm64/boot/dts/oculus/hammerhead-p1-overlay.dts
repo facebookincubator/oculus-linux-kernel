@@ -1,0 +1,31 @@
+/dts-v1/;
+/plugin/;
+
+#include "hammerhead.dtsi"
+
+/ {
+	model = "Hammerhead P1";
+	compatible = "meta,hammerhead", "meta,hammerhead-p1";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <34 0xa1>;
+};
+
+&max17332 {
+	interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&fg_mux_defaults>;
+};
+
+/delete-node/ &max77813;
+
+&qupv3_se8_i2c {
+	max77813_se8_i2c:max77813_se8_i2c@18 {
+		compatible = "maxim,max77813";
+		reg = <0x18>;
+		status = "ok";
+	};
+};
+
+&power_state_virtual_sensor {
+        meta,pmanagement-disable;
+};

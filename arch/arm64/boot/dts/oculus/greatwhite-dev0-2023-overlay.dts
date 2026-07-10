@@ -1,0 +1,52 @@
+/dts-v1/;
+/plugin/;
+
+#include "greatwhite.dtsi"
+
+/ {
+	model = "Greatwhite Dev0 2023";
+	compatible = "meta,greatwhite", "meta,greatwhite-dev0-2023";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xb3>;
+};
+
+&max17332 {
+	interrupts = <7 IRQ_TYPE_EDGE_FALLING>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&fg_mux_defaults>;
+};
+
+/delete-node/ &max77813;
+
+&qupv3_se8_i2c {
+	max77813_se8_i2c:max77813_se8_i2c@18 {
+		compatible = "maxim,max77813";
+		reg = <0x18>;
+		status = "ok";
+	};
+};
+
+/* Display card (Celeste) I2C bus: */
+
+&qupv3_se4_i2c {
+	status = "ok";
+};
+
+&usb_conn_gpio {
+	meta,suspend-disable;
+};
+
+&tlmm {
+  soc_mipi_mux0_oe: soc_mipi_mux0_oe {
+    gpio-hog;
+    gpios = <68 GPIO_ACTIVE_HIGH>;
+    output-high;
+  };
+  soc_mipi_mux0_sel: soc_mipi_mux0_sel {
+    gpio-hog;
+    gpios = <73 GPIO_ACTIVE_HIGH>;
+    output-low;
+  };
+};
+
+#include "meta-neo-action-button.dtsi"

@@ -1,40 +1,35 @@
-/* QTI crypto Driver
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * QTI crypto Driver
  *
- * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __CRYPTO_MSM_QCEDEVI_H
 #define __CRYPTO_MSM_QCEDEVI_H
 
 #include <linux/interrupt.h>
-#include <linux/miscdevice.h>
+#include <linux/cdev.h>
 #include <crypto/hash.h>
 #include <linux/platform_data/qcom_crypto_device.h>
 #include <linux/fips_status.h>
 #include "qce.h"
+#include "qcedev_smmu.h"
 
-#define CACHE_LINE_SIZE 32
+#define CACHE_LINE_SIZE 64
 #define CE_SHA_BLOCK_SIZE SHA256_BLOCK_SIZE
 
 enum qcedev_crypto_oper_type {
 	QCEDEV_CRYPTO_OPER_CIPHER = 0,
 	QCEDEV_CRYPTO_OPER_SHA = 1,
+	QCEDEV_CRYPTO_OPER_OFFLOAD_CIPHER = 2,
 	QCEDEV_CRYPTO_OPER_LAST
 };
 
 struct qcedev_handle;
 
 struct qcedev_cipher_req {
-	struct ablkcipher_request creq;
+	struct skcipher_request creq;
 	void *cookie;
 };
 
@@ -62,6 +57,7 @@ struct qcedev_async_req {
 	union {
 		struct qcedev_cipher_op_req	cipher_op_req;
 		struct qcedev_sha_op_req	sha_op_req;
+		struct qcedev_offload_cipher_op_req	offload_cipher_op_req;
 	};
 
 	union {
@@ -70,13 +66,17 @@ struct qcedev_async_req {
 	};
 	struct qcedev_handle			*handle;
 	int					err;
+	wait_queue_head_t			wait_q;
+	uint16_t				state;
+	bool					timed_out;
 };
 
 /**********************************************************************
- * Register ourselves as a misc device to be able to access the dev driver
- * from userspace. */
+ * Register ourselves as a char device to be able to access the dev driver
+ * from userspace.
+ */
 
-#define QCEDEV_DEV	"qcedev"
+#define QCEDEV_DEV	"qce"
 
 struct qcedev_control {
 
@@ -89,10 +89,17 @@ struct qcedev_control {
 	/* CE features/algorithms supported by HW engine*/
 	struct ce_hw_support ce_support;
 
-	uint32_t  bus_scale_handle;
+	/* replaced msm_bus with interconnect path */
+	struct icc_path *icc_path;
 
-	/* misc device */
-	struct miscdevice miscdevice;
+	/* average and peak bw values for interconnect */
+	uint32_t icc_avg_bw;
+	uint32_t icc_peak_bw;
+
+	/* char device */
+	struct cdev cdev;
+
+	int minor;
 
 	/* qce handle */
 	void *qce;
@@ -100,12 +107,14 @@ struct qcedev_control {
 	/* platform device */
 	struct platform_device *pdev;
 
-	unsigned magic;
+	unsigned int magic;
 
 	struct list_head ready_commands;
 	struct qcedev_async_req *active_command;
 	spinlock_t lock;
 	struct tasklet_struct done_tasklet;
+	struct list_head context_banks;
+	struct qcedev_mem_client *mem_client;
 };
 
 struct qcedev_handle {
@@ -113,6 +122,8 @@ struct qcedev_handle {
 	struct qcedev_control *cntl;
 	/* qce internal sha context*/
 	struct qcedev_sha_ctxt sha_ctxt;
+	/* qcedev mapped buffer list */
+	struct qcedev_buffer_list registeredbufs;
 };
 
 void qcedev_cipher_req_cb(void *cookie, unsigned char *icv,

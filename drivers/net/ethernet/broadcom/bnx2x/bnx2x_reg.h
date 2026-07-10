@@ -1,6 +1,8 @@
-/* bnx2x_reg.h: Broadcom Everest network driver.
+/* bnx2x_reg.h: Qlogic Everest network driver.
  *
  * Copyright (c) 2007-2013 Broadcom Corporation
+ * Copyright (c) 2014 QLogic Corporation
+ * All rights reserved
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,7 +31,7 @@
 #define ATC_ATC_INT_STS_REG_ATC_TCPL_TO_NOT_PEND		 (0x1<<1)
 /* [RW 1] Initiate the ATC array - reset all the valid bits */
 #define ATC_REG_ATC_INIT_ARRAY					 0x1100b8
-/* [R 1] ATC initalization done */
+/* [R 1] ATC initialization done */
 #define ATC_REG_ATC_INIT_DONE					 0x1100bc
 /* [RC 6] Interrupt register #0 read clear */
 #define ATC_REG_ATC_INT_STS_CLR					 0x1101c0
@@ -282,12 +284,12 @@
 #define CCM_REG_GR_ARB_TYPE					 0xd015c
 /* [RW 2] Load (FIC0) channel group priority. The lowest priority is 0; the
    highest priority is 3. It is supposed; that the Store channel priority is
-   the compliment to 4 of the rest priorities - Aggregation channel; Load
+   the complement to 4 of the rest priorities - Aggregation channel; Load
    (FIC0) channel and Load (FIC1). */
 #define CCM_REG_GR_LD0_PR					 0xd0164
 /* [RW 2] Load (FIC1) channel group priority. The lowest priority is 0; the
    highest priority is 3. It is supposed; that the Store channel priority is
-   the compliment to 4 of the rest priorities - Aggregation channel; Load
+   the complement to 4 of the rest priorities - Aggregation channel; Load
    (FIC0) channel and Load (FIC1). */
 #define CCM_REG_GR_LD1_PR					 0xd0168
 /* [RW 2] General flags index. */
@@ -2137,6 +2139,10 @@
 /* [RW 1] When this bit is set; the LLH will expect all packets to be with
    e1hov */
 #define NIG_REG_LLH_E1HOV_MODE					 0x160d8
+/* [RW 16] Outer VLAN type identifier for multi-function mode. In non
+ * multi-function mode; it will hold the inner VLAN type. Typically 0x8100.
+ */
+#define NIG_REG_LLH_E1HOV_TYPE_1				 0x16028
 /* [RW 1] When this bit is set; the LLH will classify the packet before
    sending it to the BRB or calculating WoL on it. */
 #define NIG_REG_LLH_MF_MODE					 0x16024
@@ -2953,7 +2959,12 @@
 #define PBF_REG_TQ_OCCUPANCY_Q0					 0x1403ac
 /* [R 13] Number of 8 bytes lines occupied in the task queue of queue 1. */
 #define PBF_REG_TQ_OCCUPANCY_Q1					 0x1403b0
-#define PB_REG_CONTROL						 0
+/* [RW 16] One of 8 values that should be compared to type in Ethernet
+ * parsing. If there is a match; the field after Ethernet is the first VLAN.
+ * Reset value is 0x8100 which is the standard VLAN type. Note that when
+ * checking second VLAN; type is compared only to 0x8100.
+ */
+#define PBF_REG_VLAN_TYPE_0					 0x15c06c
 /* [RW 2] Interrupt mask register #0 read/write */
 #define PB_REG_PB_INT_MASK					 0x28
 /* [R 2] Interrupt register #0 read */
@@ -3372,6 +3383,12 @@
 #define PRS_REG_TCM_CURRENT_CREDIT				 0x40160
 /* [R 8] debug only: TSDM current credit. Transaction based. */
 #define PRS_REG_TSDM_CURRENT_CREDIT				 0x4015c
+/* [RW 16] One of 8 values that should be compared to type in Ethernet
+ * parsing. If there is a match; the field after Ethernet is the first VLAN.
+ * Reset value is 0x8100 which is the standard VLAN type. Note that when
+ * checking second VLAN; type is compared only to 0x8100.
+ */
+#define PRS_REG_VLAN_TYPE_0					 0x401a8
 #define PXP2_PXP2_INT_MASK_0_REG_PGL_CPL_AFT			 (0x1<<19)
 #define PXP2_PXP2_INT_MASK_0_REG_PGL_CPL_OF			 (0x1<<20)
 #define PXP2_PXP2_INT_MASK_0_REG_PGL_PCIE_ATTN			 (0x1<<22)
@@ -4472,11 +4489,11 @@
 #define TCM_REG_GR_ARB_TYPE					 0x50114
 /* [RW 2] Load (FIC0) channel group priority. The lowest priority is 0; the
    highest priority is 3. It is supposed that the Store channel is the
-   compliment of the other 3 groups. */
+   complement of the other 3 groups. */
 #define TCM_REG_GR_LD0_PR					 0x5011c
 /* [RW 2] Load (FIC1) channel group priority. The lowest priority is 0; the
    highest priority is 3. It is supposed that the Store channel is the
-   compliment of the other 3 groups. */
+   complement of the other 3 groups. */
 #define TCM_REG_GR_LD1_PR					 0x50120
 /* [RW 4] The number of double REG-pairs; loaded from the STORM context and
    sent to STORM; for a specific connection type. The double REG-pairs are
@@ -5003,11 +5020,11 @@
 #define UCM_REG_GR_ARB_TYPE					 0xe0144
 /* [RW 2] Load (FIC0) channel group priority. The lowest priority is 0; the
    highest priority is 3. It is supposed that the Store channel group is
-   compliment to the others. */
+   complement to the others. */
 #define UCM_REG_GR_LD0_PR					 0xe014c
 /* [RW 2] Load (FIC1) channel group priority. The lowest priority is 0; the
    highest priority is 3. It is supposed that the Store channel group is
-   compliment to the others. */
+   complement to the others. */
 #define UCM_REG_GR_LD1_PR					 0xe0150
 /* [RW 2] The queue index for invalidate counter flag decision. */
 #define UCM_REG_INV_CFLG_Q					 0xe00e4
@@ -5506,11 +5523,11 @@
 #define XCM_REG_GR_ARB_TYPE					 0x2020c
 /* [RW 2] Load (FIC0) channel group priority. The lowest priority is 0; the
    highest priority is 3. It is supposed that the Channel group is the
-   compliment of the other 3 groups. */
+   complement of the other 3 groups. */
 #define XCM_REG_GR_LD0_PR					 0x20214
 /* [RW 2] Load (FIC1) channel group priority. The lowest priority is 0; the
    highest priority is 3. It is supposed that the Channel group is the
-   compliment of the other 3 groups. */
+   complement of the other 3 groups. */
 #define XCM_REG_GR_LD1_PR					 0x20218
 /* [RW 1] Input nig0 Interface enable. If 0 - the valid input is
    disregarded; acknowledge output is deasserted; all other signals are
@@ -7240,6 +7257,9 @@ Theotherbitsarereservedandshouldbezero*/
 #define MDIO_AN_REG_8481_LEGACY_MII_CTRL	0xffe0
 #define MDIO_AN_REG_8481_MII_CTRL_FORCE_1G	0x40
 #define MDIO_AN_REG_8481_LEGACY_MII_STATUS	0xffe1
+#define MDIO_AN_REG_848xx_ID_MSB		0xffe2
+#define BCM84858_PHY_ID					0x600d
+#define MDIO_AN_REG_848xx_ID_LSB		0xffe3
 #define MDIO_AN_REG_8481_LEGACY_AN_ADV		0xffe4
 #define MDIO_AN_REG_8481_LEGACY_AN_EXPANSION	0xffe6
 #define MDIO_AN_REG_8481_1000T_CTRL		0xffe9
@@ -7276,6 +7296,8 @@ Theotherbitsarereservedandshouldbezero*/
 #define MDIO_PMA_REG_84823_CTL_LED_CTL_1			0xa8e3
 #define MDIO_PMA_REG_84833_CTL_LED_CTL_1			0xa8ec
 #define MDIO_PMA_REG_84823_LED3_STRETCH_EN			0x0080
+/* BCM84858 only */
+#define MDIO_PMA_REG_84858_ALLOW_GPHY_ACT			0x8000
 
 /* BCM84833 only */
 #define MDIO_84833_TOP_CFG_FW_REV			0x400f
@@ -7283,31 +7305,31 @@ Theotherbitsarereservedandshouldbezero*/
 #define MDIO_84833_TOP_CFG_FW_NO_EEE		0x1f81
 #define MDIO_84833_TOP_CFG_XGPHY_STRAP1			0x401a
 #define MDIO_84833_SUPER_ISOLATE		0x8000
-/* These are mailbox register set used by 84833. */
-#define MDIO_84833_TOP_CFG_SCRATCH_REG0			0x4005
-#define MDIO_84833_TOP_CFG_SCRATCH_REG1			0x4006
-#define MDIO_84833_TOP_CFG_SCRATCH_REG2			0x4007
-#define MDIO_84833_TOP_CFG_SCRATCH_REG3			0x4008
-#define MDIO_84833_TOP_CFG_SCRATCH_REG4			0x4009
-#define MDIO_84833_TOP_CFG_SCRATCH_REG26		0x4037
-#define MDIO_84833_TOP_CFG_SCRATCH_REG27		0x4038
-#define MDIO_84833_TOP_CFG_SCRATCH_REG28		0x4039
-#define MDIO_84833_TOP_CFG_SCRATCH_REG29		0x403a
-#define MDIO_84833_TOP_CFG_SCRATCH_REG30		0x403b
-#define MDIO_84833_TOP_CFG_SCRATCH_REG31		0x403c
-#define MDIO_84833_CMD_HDLR_COMMAND	MDIO_84833_TOP_CFG_SCRATCH_REG0
-#define MDIO_84833_CMD_HDLR_STATUS	MDIO_84833_TOP_CFG_SCRATCH_REG26
-#define MDIO_84833_CMD_HDLR_DATA1	MDIO_84833_TOP_CFG_SCRATCH_REG27
-#define MDIO_84833_CMD_HDLR_DATA2	MDIO_84833_TOP_CFG_SCRATCH_REG28
-#define MDIO_84833_CMD_HDLR_DATA3	MDIO_84833_TOP_CFG_SCRATCH_REG29
-#define MDIO_84833_CMD_HDLR_DATA4	MDIO_84833_TOP_CFG_SCRATCH_REG30
-#define MDIO_84833_CMD_HDLR_DATA5	MDIO_84833_TOP_CFG_SCRATCH_REG31
+/* These are mailbox register set used by 84833/84858. */
+#define MDIO_848xx_TOP_CFG_SCRATCH_REG0			0x4005
+#define MDIO_848xx_TOP_CFG_SCRATCH_REG1			0x4006
+#define MDIO_848xx_TOP_CFG_SCRATCH_REG2			0x4007
+#define MDIO_848xx_TOP_CFG_SCRATCH_REG3			0x4008
+#define MDIO_848xx_TOP_CFG_SCRATCH_REG4			0x4009
+#define MDIO_848xx_TOP_CFG_SCRATCH_REG26		0x4037
+#define MDIO_848xx_TOP_CFG_SCRATCH_REG27		0x4038
+#define MDIO_848xx_TOP_CFG_SCRATCH_REG28		0x4039
+#define MDIO_848xx_TOP_CFG_SCRATCH_REG29		0x403a
+#define MDIO_848xx_TOP_CFG_SCRATCH_REG30		0x403b
+#define MDIO_848xx_TOP_CFG_SCRATCH_REG31		0x403c
+#define MDIO_848xx_CMD_HDLR_COMMAND	(MDIO_848xx_TOP_CFG_SCRATCH_REG0)
+#define MDIO_848xx_CMD_HDLR_STATUS	(MDIO_848xx_TOP_CFG_SCRATCH_REG26)
+#define MDIO_848xx_CMD_HDLR_DATA1	(MDIO_848xx_TOP_CFG_SCRATCH_REG27)
+#define MDIO_848xx_CMD_HDLR_DATA2	(MDIO_848xx_TOP_CFG_SCRATCH_REG28)
+#define MDIO_848xx_CMD_HDLR_DATA3	(MDIO_848xx_TOP_CFG_SCRATCH_REG29)
+#define MDIO_848xx_CMD_HDLR_DATA4	(MDIO_848xx_TOP_CFG_SCRATCH_REG30)
+#define MDIO_848xx_CMD_HDLR_DATA5	(MDIO_848xx_TOP_CFG_SCRATCH_REG31)
 
-/* Mailbox command set used by 84833. */
-#define PHY84833_CMD_SET_PAIR_SWAP			0x8001
-#define PHY84833_CMD_GET_EEE_MODE			0x8008
-#define PHY84833_CMD_SET_EEE_MODE			0x8009
-/* Mailbox status set used by 84833. */
+/* Mailbox command set used by 84833/84858 */
+#define PHY848xx_CMD_SET_PAIR_SWAP			0x8001
+#define PHY848xx_CMD_GET_EEE_MODE			0x8008
+#define PHY848xx_CMD_SET_EEE_MODE			0x8009
+/* Mailbox status set used by 84833 only */
 #define PHY84833_STATUS_CMD_RECEIVED			0x0001
 #define PHY84833_STATUS_CMD_IN_PROGRESS			0x0002
 #define PHY84833_STATUS_CMD_COMPLETE_PASS		0x0004
@@ -7317,6 +7339,17 @@ Theotherbitsarereservedandshouldbezero*/
 #define PHY84833_STATUS_CMD_NOT_OPEN_FOR_CMDS		0x0040
 #define PHY84833_STATUS_CMD_CLEAR_COMPLETE		0x0080
 #define PHY84833_STATUS_CMD_OPEN_OVERRIDE		0xa5a5
+/* Mailbox Process */
+#define PHY84833_MB_PROCESS1				1
+#define PHY84833_MB_PROCESS2				2
+#define PHY84833_MB_PROCESS3				3
+
+/* Mailbox status set used by 84858 only */
+#define PHY84858_STATUS_CMD_RECEIVED			0x0001
+#define PHY84858_STATUS_CMD_IN_PROGRESS			0x0002
+#define PHY84858_STATUS_CMD_COMPLETE_PASS		0x0004
+#define PHY84858_STATUS_CMD_COMPLETE_ERROR		0x0008
+#define PHY84858_STATUS_CMD_SYSTEM_BUSY			0xbbbb
 
 
 /* Warpcore clause 45 addressing */
@@ -7341,6 +7374,8 @@ Theotherbitsarereservedandshouldbezero*/
 #define MDIO_WC_REG_TX2_ANA_CTRL0			0x8081
 #define MDIO_WC_REG_TX3_ANA_CTRL0			0x8091
 #define MDIO_WC_REG_TX0_TX_DRIVER			0x8067
+#define MDIO_WC_REG_TX0_TX_DRIVER_IFIR_OFFSET			0x01
+#define MDIO_WC_REG_TX0_TX_DRIVER_IFIR_MASK				0x000e
 #define MDIO_WC_REG_TX0_TX_DRIVER_IPRE_DRIVER_OFFSET		0x04
 #define MDIO_WC_REG_TX0_TX_DRIVER_IPRE_DRIVER_MASK			0x00f0
 #define MDIO_WC_REG_TX0_TX_DRIVER_IDRIVER_OFFSET		0x08
@@ -7549,7 +7584,7 @@ Theotherbitsarereservedandshouldbezero*/
 #define IGU_REG_SISR_MDPC_WOMASK_UPPER		0x05a6
 
 #define IGU_REG_RESERVED_UPPER				0x05ff
-/* Fields of IGU PF CONFIGRATION REGISTER */
+/* Fields of IGU PF CONFIGURATION REGISTER */
 #define IGU_PF_CONF_FUNC_EN	  (0x1<<0)  /* function enable	      */
 #define IGU_PF_CONF_MSI_MSIX_EN   (0x1<<1)  /* MSI/MSIX enable	      */
 #define IGU_PF_CONF_INT_LINE_EN   (0x1<<2)  /* INT enable	      */
@@ -7557,7 +7592,7 @@ Theotherbitsarereservedandshouldbezero*/
 #define IGU_PF_CONF_SINGLE_ISR_EN (0x1<<4)  /* single ISR mode enable */
 #define IGU_PF_CONF_SIMD_MODE	  (0x1<<5)  /* simd all ones mode     */
 
-/* Fields of IGU VF CONFIGRATION REGISTER */
+/* Fields of IGU VF CONFIGURATION REGISTER */
 #define IGU_VF_CONF_FUNC_EN	   (0x1<<0)  /* function enable        */
 #define IGU_VF_CONF_MSI_MSIX_EN    (0x1<<1)  /* MSI/MSIX enable        */
 #define IGU_VF_CONF_PARENT_MASK    (0x3<<2)  /* Parent PF	       */
@@ -7603,6 +7638,82 @@ Theotherbitsarereservedandshouldbezero*/
 #define CDU_RSRVD_VALUE_TYPE_B(_crc, _type)\
 	(0x80 | ((_type)&0xf << 3) | ((CDU_CRC8(_cid, _region, _type)) & 0x7))
 #define CDU_RSRVD_INVALIDATE_CONTEXT_VALUE(_val) ((_val) & ~0x80)
+
+/* IdleChk registers */
+#define PXP_REG_HST_VF_DISABLED_ERROR_VALID			 0x1030bc
+#define PXP_REG_HST_VF_DISABLED_ERROR_DATA			 0x1030b8
+#define PXP_REG_HST_PER_VIOLATION_VALID				 0x1030e0
+#define PXP_REG_HST_INCORRECT_ACCESS_VALID			 0x1030cc
+#define PXP2_REG_RD_CPL_ERR_DETAILS				 0x120778
+#define PXP2_REG_RD_CPL_ERR_DETAILS2				 0x12077c
+#define PXP2_REG_RQ_GARB					 0x120748
+#define PBF_REG_DISABLE_NEW_TASK_PROC_Q0			 0x15c1bc
+#define PBF_REG_DISABLE_NEW_TASK_PROC_Q1			 0x15c1c0
+#define PBF_REG_DISABLE_NEW_TASK_PROC_Q2			 0x15c1c4
+#define PBF_REG_DISABLE_NEW_TASK_PROC_Q3			 0x15c1c8
+#define PBF_REG_DISABLE_NEW_TASK_PROC_Q4			 0x15c1cc
+#define PBF_REG_DISABLE_NEW_TASK_PROC_Q5			 0x15c1d0
+#define PBF_REG_CREDIT_Q2					 0x140344
+#define PBF_REG_CREDIT_Q3					 0x140348
+#define PBF_REG_CREDIT_Q4					 0x14034c
+#define PBF_REG_CREDIT_Q5					 0x140350
+#define PBF_REG_INIT_CRD_Q2					 0x15c238
+#define PBF_REG_INIT_CRD_Q3					 0x15c23c
+#define PBF_REG_INIT_CRD_Q4					 0x15c240
+#define PBF_REG_INIT_CRD_Q5					 0x15c244
+#define PBF_REG_TASK_CNT_Q0					 0x140374
+#define PBF_REG_TASK_CNT_Q1					 0x140378
+#define PBF_REG_TASK_CNT_Q2					 0x14037c
+#define PBF_REG_TASK_CNT_Q3					 0x140380
+#define PBF_REG_TASK_CNT_Q4					 0x140384
+#define PBF_REG_TASK_CNT_Q5					 0x140388
+#define PBF_REG_TASK_CNT_LB_Q					 0x140370
+#define QM_REG_BYTECRD0						 0x16e6fc
+#define QM_REG_BYTECRD1						 0x16e700
+#define QM_REG_BYTECRD2						 0x16e704
+#define QM_REG_BYTECRD3						 0x16e7ac
+#define QM_REG_BYTECRD4						 0x16e7b0
+#define QM_REG_BYTECRD5						 0x16e7b4
+#define QM_REG_BYTECRD6						 0x16e7b8
+#define QM_REG_BYTECRDCMDQ_0					 0x16e6e8
+#define QM_REG_BYTECRDERRREG					 0x16e708
+#define MISC_REG_GRC_TIMEOUT_ATTN_FULL_FID			 0xa714
+#define QM_REG_VOQCREDIT_2					 0x1682d8
+#define QM_REG_VOQCREDIT_3					 0x1682dc
+#define QM_REG_VOQCREDIT_5					 0x1682e4
+#define QM_REG_VOQCREDIT_6					 0x1682e8
+#define QM_REG_VOQINITCREDIT_3					 0x16806c
+#define QM_REG_VOQINITCREDIT_6					 0x168078
+#define QM_REG_FWVOQ0TOHWVOQ					 0x16e7bc
+#define QM_REG_FWVOQ1TOHWVOQ					 0x16e7c0
+#define QM_REG_FWVOQ2TOHWVOQ					 0x16e7c4
+#define QM_REG_FWVOQ3TOHWVOQ					 0x16e7c8
+#define QM_REG_FWVOQ4TOHWVOQ					 0x16e7cc
+#define QM_REG_FWVOQ5TOHWVOQ					 0x16e7d0
+#define QM_REG_FWVOQ6TOHWVOQ					 0x16e7d4
+#define QM_REG_FWVOQ7TOHWVOQ					 0x16e7d8
+#define NIG_REG_INGRESS_EOP_PORT0_EMPTY				 0x104ec
+#define NIG_REG_INGRESS_EOP_PORT1_EMPTY				 0x104f8
+#define NIG_REG_INGRESS_RMP0_DSCR_EMPTY				 0x10530
+#define NIG_REG_INGRESS_RMP1_DSCR_EMPTY				 0x10538
+#define NIG_REG_INGRESS_LB_PBF_DELAY_EMPTY			 0x10508
+#define NIG_REG_EGRESS_MNG0_FIFO_EMPTY				 0x10460
+#define NIG_REG_EGRESS_MNG1_FIFO_EMPTY				 0x10474
+#define NIG_REG_EGRESS_DEBUG_FIFO_EMPTY				 0x10418
+#define NIG_REG_EGRESS_DELAY0_EMPTY				 0x10420
+#define NIG_REG_EGRESS_DELAY1_EMPTY				 0x10428
+#define NIG_REG_LLH0_FIFO_EMPTY					 0x10548
+#define NIG_REG_LLH1_FIFO_EMPTY					 0x10558
+#define NIG_REG_P0_TX_MNG_HOST_FIFO_EMPTY			 0x182a8
+#define NIG_REG_P0_TLLH_FIFO_EMPTY				 0x18308
+#define NIG_REG_P0_HBUF_DSCR_EMPTY				 0x18318
+#define NIG_REG_P1_HBUF_DSCR_EMPTY				 0x18348
+#define NIG_REG_P0_RX_MACFIFO_EMPTY				 0x18570
+#define NIG_REG_P0_TX_MACFIFO_EMPTY				 0x18578
+#define NIG_REG_EGRESS_DELAY2_EMPTY				 0x1862c
+#define NIG_REG_EGRESS_DELAY3_EMPTY				 0x18630
+#define NIG_REG_EGRESS_DELAY4_EMPTY				 0x18634
+#define NIG_REG_EGRESS_DELAY5_EMPTY				 0x18638
 
 /******************************************************************************
  * Description:
@@ -7662,6 +7773,4 @@ static inline u8 calc_crc8(u32 data, u8 crc)
 
 	return crc_res;
 }
-
-
 #endif /* BNX2X_REG_H */

@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Samsung s3c24xx/s3c64xx SoC CAMIF driver
  *
  * Copyright (C) 2012 Sylwester Nawrocki <sylvester.nawrocki@gmail.com>
  * Copyright (C) 2012 Tomasz Figa <tomasz.figa@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
 */
 #define pr_fmt(fmt) "%s:%d " fmt, __func__, __LINE__
 
@@ -96,10 +93,10 @@ void camif_hw_set_effect(struct camif_dev *camif, unsigned int effect,
 }
 
 static const u32 src_pixfmt_map[8][2] = {
-	{ V4L2_MBUS_FMT_YUYV8_2X8, CISRCFMT_ORDER422_YCBYCR },
-	{ V4L2_MBUS_FMT_YVYU8_2X8, CISRCFMT_ORDER422_YCRYCB },
-	{ V4L2_MBUS_FMT_UYVY8_2X8, CISRCFMT_ORDER422_CBYCRY },
-	{ V4L2_MBUS_FMT_VYUY8_2X8, CISRCFMT_ORDER422_CRYCBY },
+	{ MEDIA_BUS_FMT_YUYV8_2X8, CISRCFMT_ORDER422_YCBYCR },
+	{ MEDIA_BUS_FMT_YVYU8_2X8, CISRCFMT_ORDER422_YCRYCB },
+	{ MEDIA_BUS_FMT_UYVY8_2X8, CISRCFMT_ORDER422_CBYCRY },
+	{ MEDIA_BUS_FMT_VYUY8_2X8, CISRCFMT_ORDER422_CRYCBY },
 };
 
 /* Set camera input pixel format and resolution */
@@ -556,7 +553,7 @@ void camif_hw_disable_capture(struct camif_vp *vp)
 
 void camif_hw_dump_regs(struct camif_dev *camif, const char *label)
 {
-	struct {
+	static const struct {
 		u32 offset;
 		const char * const name;
 	} registers[] = {

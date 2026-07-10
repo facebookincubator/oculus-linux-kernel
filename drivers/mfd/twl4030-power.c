@@ -1,5 +1,4 @@
 /*
- * linux/drivers/i2c/chips/twl4030-power.c
  *
  * Handle TWL4030 Power initialization
  *
@@ -26,7 +25,7 @@
 
 #include <linux/module.h>
 #include <linux/pm.h>
-#include <linux/i2c/twl.h>
+#include <linux/mfd/twl.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
@@ -264,7 +263,9 @@ out:
 	return err;
 }
 
-static int twl4030_config_wakeup12_sequence(u8 address)
+static int
+twl4030_config_wakeup12_sequence(const struct twl4030_power_data *pdata,
+				 u8 address)
 {
 	int err = 0;
 	u8 data;
@@ -293,13 +294,14 @@ static int twl4030_config_wakeup12_sequence(u8 address)
 	if (err)
 		goto out;
 
-	if (machine_is_omap_3430sdp() || machine_is_omap_ldp()) {
+	if (pdata->ac_charger_quirk || machine_is_omap_3430sdp() ||
+	    machine_is_omap_ldp()) {
 		/* Disabling AC charger effect on sleep-active transitions */
 		err = twl_i2c_read_u8(TWL_MODULE_PM_MASTER, &data,
 				      R_CFG_P1_TRANSITION);
 		if (err)
 			goto out;
-		data &= ~(1<<1);
+		data &= ~STARTON_CHG;
 		err = twl_i2c_write_u8(TWL_MODULE_PM_MASTER, data,
 				       R_CFG_P1_TRANSITION);
 		if (err)
@@ -459,8 +461,9 @@ static int twl4030_configure_resource(struct twl4030_resconfig *rconfig)
 	return 0;
 }
 
-static int load_twl4030_script(struct twl4030_script *tscript,
-	       u8 address)
+static int load_twl4030_script(const struct twl4030_power_data *pdata,
+			       struct twl4030_script *tscript,
+			       u8 address)
 {
 	int err;
 	static int order;
@@ -487,7 +490,7 @@ static int load_twl4030_script(struct twl4030_script *tscript,
 		if (err)
 			goto out;
 
-		err = twl4030_config_wakeup12_sequence(address);
+		err = twl4030_config_wakeup12_sequence(pdata, address);
 		if (err)
 			goto out;
 		order = 1;
@@ -499,9 +502,7 @@ static int load_twl4030_script(struct twl4030_script *tscript,
 	}
 	if (tscript->flags & TWL4030_SLEEP_SCRIPT) {
 		if (!order)
-			pr_warning("TWL4030: Bad order of scripts (sleep "\
-					"script before wakeup) Leads to boot"\
-					"failure on some boards\n");
+			pr_warn("TWL4030: Bad order of scripts (sleep script before wakeup) Leads to boot failure on some boards\n");
 		err = twl4030_config_sleep_sequence(address);
 	}
 out:
@@ -567,7 +568,7 @@ twl4030_power_configure_scripts(const struct twl4030_power_data *pdata)
 	u8 address = twl4030_start_script_address;
 
 	for (i = 0; i < pdata->num; i++) {
-		err = load_twl4030_script(pdata->scripts[i], address);
+		err = load_twl4030_script(pdata, pdata->scripts[i], address);
 		if (err)
 			return err;
 		address += pdata->scripts[i]->size;
@@ -698,6 +699,7 @@ static struct twl4030_ins omap3_wrst_seq[] = {
 	TWL_RESOURCE_RESET(RES_MAIN_REF),
 	TWL_RESOURCE_GROUP_RESET(RES_GRP_ALL, RES_TYPE_R0, RES_TYPE2_R2),
 	TWL_RESOURCE_RESET(RES_VUSB_3V1),
+	TWL_RESOURCE_RESET(RES_VMMC1),
 	TWL_RESOURCE_GROUP_RESET(RES_GRP_ALL, RES_TYPE_R0, RES_TYPE2_R1),
 	TWL_RESOURCE_GROUP_RESET(RES_GRP_RC, RES_TYPE_ALL, RES_TYPE2_R0),
 	TWL_RESOURCE_ON(RES_RESET),
@@ -829,7 +831,22 @@ static struct twl4030_power_data osc_off_idle = {
 	.board_config		= osc_off_rconfig,
 };
 
-static struct of_device_id twl4030_power_of_match[] = {
+static struct twl4030_power_data omap3_idle_ac_quirk = {
+	.scripts		= omap3_idle_scripts,
+	.num			= ARRAY_SIZE(omap3_idle_scripts),
+	.resource_config	= omap3_idle_rconfig,
+	.ac_charger_quirk	= true,
+};
+
+static struct twl4030_power_data omap3_idle_ac_quirk_osc_off = {
+	.scripts		= omap3_idle_scripts,
+	.num			= ARRAY_SIZE(omap3_idle_scripts),
+	.resource_config	= omap3_idle_rconfig,
+	.board_config		= osc_off_rconfig,
+	.ac_charger_quirk	= true,
+};
+
+static const struct of_device_id twl4030_power_of_match[] = {
 	{
 		.compatible = "ti,twl4030-power",
 	},
@@ -844,6 +861,18 @@ static struct of_device_id twl4030_power_of_match[] = {
 	{
 		.compatible = "ti,twl4030-power-idle-osc-off",
 		.data = &osc_off_idle,
+	},
+	{
+		.compatible = "ti,twl4030-power-omap3-sdp",
+		.data = &omap3_idle_ac_quirk,
+	},
+	{
+		.compatible = "ti,twl4030-power-omap3-ldp",
+		.data = &omap3_idle_ac_quirk_osc_off,
+	},
+	{
+		.compatible = "ti,twl4030-power-omap3-evm",
+		.data = &omap3_idle_ac_quirk,
 	},
 	{ },
 };
@@ -899,8 +928,7 @@ static int twl4030_power_probe(struct platform_device *pdev)
 		err = twl_i2c_read_u8(TWL_MODULE_PM_MASTER, &val,
 				      TWL4030_PM_MASTER_CFG_P123_TRANSITION);
 		if (err) {
-			pr_warning("TWL4030 Unable to read registers\n");
-
+			pr_warn("TWL4030 Unable to read registers\n");
 		} else if (!(val & SEQ_OFFSYNC)) {
 			val |= SEQ_OFFSYNC;
 			err = twl_i2c_write_u8(TWL_MODULE_PM_MASTER, val,
@@ -933,7 +961,6 @@ static int twl4030_power_remove(struct platform_device *pdev)
 static struct platform_driver twl4030_power_driver = {
 	.driver = {
 		.name	= "twl4030_power",
-		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(twl4030_power_of_match),
 	},
 	.probe		= twl4030_power_probe,

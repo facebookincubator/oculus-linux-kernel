@@ -1,75 +1,76 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * intel_soc_pmic_core.c - Intel SoC PMIC MFD Driver
+ * Intel SoC PMIC MFD Driver
  *
  * Copyright (C) 2013, 2014 Intel Corporation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version
- * 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  *
  * Author: Yang, Bin <bin.yang@intel.com>
  * Author: Zhu, Lejun <lejun.zhu@linux.intel.com>
  */
 
-#include <linux/module.h>
-#include <linux/mfd/core.h>
+#include <linux/acpi.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
-#include <linux/gpio/consumer.h>
-#include <linux/acpi.h>
-#include <linux/regmap.h>
+#include <linux/module.h>
+#include <linux/mfd/core.h>
 #include <linux/mfd/intel_soc_pmic.h>
+#include <linux/pwm.h>
+#include <linux/regmap.h>
+
 #include "intel_soc_pmic_core.h"
 
-/*
- * On some boards the PMIC interrupt may come from a GPIO line.
- * Try to lookup the ACPI table and see if such connection exists. If not,
- * return -ENOENT and use the IRQ provided by I2C.
- */
-static int intel_soc_pmic_find_gpio_irq(struct device *dev)
-{
-	struct gpio_desc *desc;
-	int irq;
+/* Crystal Cove PMIC shares same ACPI ID between different platforms */
+#define BYT_CRC_HRV		2
+#define CHT_CRC_HRV		3
 
-	desc = devm_gpiod_get_index(dev, "intel_soc_pmic", 0);
-	if (IS_ERR(desc))
-		return -ENOENT;
-
-	irq = gpiod_to_irq(desc);
-	if (irq < 0)
-		dev_warn(dev, "Can't get irq: %d\n", irq);
-
-	return irq;
-}
+/* PWM consumed by the Intel GFX */
+static struct pwm_lookup crc_pwm_lookup[] = {
+	PWM_LOOKUP("crystal_cove_pwm", 0, "0000:00:02.0", "pwm_pmic_backlight", 0, PWM_POLARITY_NORMAL),
+};
 
 static int intel_soc_pmic_i2c_probe(struct i2c_client *i2c,
 				    const struct i2c_device_id *i2c_id)
 {
 	struct device *dev = &i2c->dev;
-	const struct acpi_device_id *id;
 	struct intel_soc_pmic_config *config;
 	struct intel_soc_pmic *pmic;
+	unsigned long long hrv;
+	acpi_status status;
 	int ret;
-	int irq;
 
-	id = acpi_match_device(dev->driver->acpi_match_table, dev);
-	if (!id || !id->driver_data)
+	/*
+	 * There are 2 different Crystal Cove PMICs a Bay Trail and Cherry
+	 * Trail version, use _HRV to differentiate between the 2.
+	 */
+	status = acpi_evaluate_integer(ACPI_HANDLE(dev), "_HRV", NULL, &hrv);
+	if (ACPI_FAILURE(status)) {
+		dev_err(dev, "Failed to get PMIC hardware revision\n");
 		return -ENODEV;
+	}
 
-	config = (struct intel_soc_pmic_config *)id->driver_data;
+	switch (hrv) {
+	case BYT_CRC_HRV:
+		config = &intel_soc_pmic_config_byt_crc;
+		break;
+	case CHT_CRC_HRV:
+		config = &intel_soc_pmic_config_cht_crc;
+		break;
+	default:
+		dev_warn(dev, "Unknown hardware rev %llu, assuming BYT\n", hrv);
+		config = &intel_soc_pmic_config_byt_crc;
+	}
 
 	pmic = devm_kzalloc(dev, sizeof(*pmic), GFP_KERNEL);
+	if (!pmic)
+		return -ENOMEM;
+
 	dev_set_drvdata(dev, pmic);
 
 	pmic->regmap = devm_regmap_init_i2c(i2c, config->regmap_config);
+	if (IS_ERR(pmic->regmap))
+		return PTR_ERR(pmic->regmap);
 
-	irq = intel_soc_pmic_find_gpio_irq(dev);
-	pmic->irq = (irq < 0) ? i2c->irq : irq;
+	pmic->irq = i2c->irq;
 
 	ret = regmap_add_irq_chip(pmic->regmap, pmic->irq,
 				  config->irq_flags | IRQF_ONESHOT,
@@ -82,6 +83,9 @@ static int intel_soc_pmic_i2c_probe(struct i2c_client *i2c,
 	if (ret)
 		dev_warn(dev, "Can't enable IRQ as wake source: %d\n", ret);
 
+	/* Add lookup table for crc-pwm */
+	pwm_add_table(crc_pwm_lookup, ARRAY_SIZE(crc_pwm_lookup));
+
 	ret = mfd_add_devices(dev, -1, config->cell_dev,
 			      config->n_cell_devs, NULL, 0,
 			      regmap_irq_get_domain(pmic->irq_chip_data));
@@ -91,6 +95,7 @@ static int intel_soc_pmic_i2c_probe(struct i2c_client *i2c,
 	return 0;
 
 err_del_irq_chip:
+	pwm_remove_table(crc_pwm_lookup, ARRAY_SIZE(crc_pwm_lookup));
 	regmap_del_irq_chip(pmic->irq, pmic->irq_chip_data);
 	return ret;
 }
@@ -100,6 +105,9 @@ static int intel_soc_pmic_i2c_remove(struct i2c_client *i2c)
 	struct intel_soc_pmic *pmic = dev_get_drvdata(&i2c->dev);
 
 	regmap_del_irq_chip(pmic->irq, pmic->irq_chip_data);
+
+	/* remove crc-pwm lookup table */
+	pwm_remove_table(crc_pwm_lookup, ARRAY_SIZE(crc_pwm_lookup));
 
 	mfd_remove_devices(&i2c->dev);
 
@@ -144,8 +152,8 @@ static const struct i2c_device_id intel_soc_pmic_i2c_id[] = {
 MODULE_DEVICE_TABLE(i2c, intel_soc_pmic_i2c_id);
 
 #if defined(CONFIG_ACPI)
-static struct acpi_device_id intel_soc_pmic_acpi_match[] = {
-	{"INT33FD", (kernel_ulong_t)&intel_soc_pmic_config_crc},
+static const struct acpi_device_id intel_soc_pmic_acpi_match[] = {
+	{ "INT33FD" },
 	{ },
 };
 MODULE_DEVICE_TABLE(acpi, intel_soc_pmic_acpi_match);
@@ -154,7 +162,6 @@ MODULE_DEVICE_TABLE(acpi, intel_soc_pmic_acpi_match);
 static struct i2c_driver intel_soc_pmic_i2c_driver = {
 	.driver = {
 		.name = "intel_soc_pmic_i2c",
-		.owner = THIS_MODULE,
 		.pm = &intel_soc_pmic_pm_ops,
 		.acpi_match_table = ACPI_PTR(intel_soc_pmic_acpi_match),
 	},

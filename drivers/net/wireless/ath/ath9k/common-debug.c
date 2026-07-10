@@ -47,7 +47,7 @@ static const struct file_operations fops_modal_eeprom = {
 void ath9k_cmn_debug_modal_eeprom(struct dentry *debugfs_phy,
 				  struct ath_hw *ah)
 {
-	debugfs_create_file("modal_eeprom", S_IRUSR, debugfs_phy, ah,
+	debugfs_create_file("modal_eeprom", 0400, debugfs_phy, ah,
 			    &fops_modal_eeprom);
 }
 EXPORT_SYMBOL(ath9k_cmn_debug_modal_eeprom);
@@ -82,7 +82,7 @@ static const struct file_operations fops_base_eeprom = {
 void ath9k_cmn_debug_base_eeprom(struct dentry *debugfs_phy,
 				 struct ath_hw *ah)
 {
-	debugfs_create_file("base_eeprom", S_IRUSR, debugfs_phy, ah,
+	debugfs_create_file("base_eeprom", 0400, debugfs_phy, ah,
 			    &fops_base_eeprom);
 }
 EXPORT_SYMBOL(ath9k_cmn_debug_base_eeprom);
@@ -144,6 +144,8 @@ static ssize_t read_file_recv(struct file *file, char __user *user_buf,
 	RXS_ERR("BEACONS", rx_beacons);
 	RXS_ERR("FRAGS", rx_frags);
 	RXS_ERR("SPECTRAL", rx_spectral);
+	RXS_ERR("SPECTRAL SMPL GOOD", rx_spectral_sample_good);
+	RXS_ERR("SPECTRAL SMPL ERR", rx_spectral_sample_err);
 
 	RXS_ERR("CRC ERR", crc_err);
 	RXS_ERR("DECRYPT CRC ERR", decrypt_crc_err);
@@ -178,8 +180,7 @@ static const struct file_operations fops_recv = {
 void ath9k_cmn_debug_recv(struct dentry *debugfs_phy,
 			  struct ath_rx_stats *rxstats)
 {
-	debugfs_create_file("recv", S_IRUSR, debugfs_phy, rxstats,
-			    &fops_recv);
+	debugfs_create_file("recv", 0400, debugfs_phy, rxstats, &fops_recv);
 }
 EXPORT_SYMBOL(ath9k_cmn_debug_recv);
 
@@ -207,6 +208,7 @@ static ssize_t read_file_phy_err(struct file *file, char __user *user_buf,
 	PHY_ERR("RADAR ERR", ATH9K_PHYERR_RADAR);
 	PHY_ERR("SERVICE ERR", ATH9K_PHYERR_SERVICE);
 	PHY_ERR("TOR ERR", ATH9K_PHYERR_TOR);
+
 	PHY_ERR("OFDM-TIMING ERR", ATH9K_PHYERR_OFDM_TIMING);
 	PHY_ERR("OFDM-SIGNAL-PARITY ERR", ATH9K_PHYERR_OFDM_SIGNAL_PARITY);
 	PHY_ERR("OFDM-RATE ERR", ATH9K_PHYERR_OFDM_RATE_ILLEGAL);
@@ -214,17 +216,24 @@ static ssize_t read_file_phy_err(struct file *file, char __user *user_buf,
 	PHY_ERR("OFDM-POWER-DROP ERR", ATH9K_PHYERR_OFDM_POWER_DROP);
 	PHY_ERR("OFDM-SERVICE ERR", ATH9K_PHYERR_OFDM_SERVICE);
 	PHY_ERR("OFDM-RESTART ERR", ATH9K_PHYERR_OFDM_RESTART);
-	PHY_ERR("FALSE-RADAR-EXT ERR", ATH9K_PHYERR_FALSE_RADAR_EXT);
+
+	PHY_ERR("CCK-BLOCKER ERR", ATH9K_PHYERR_CCK_BLOCKER);
 	PHY_ERR("CCK-TIMING ERR", ATH9K_PHYERR_CCK_TIMING);
 	PHY_ERR("CCK-HEADER-CRC ERR", ATH9K_PHYERR_CCK_HEADER_CRC);
 	PHY_ERR("CCK-RATE ERR", ATH9K_PHYERR_CCK_RATE_ILLEGAL);
-	PHY_ERR("CCK-SERVICE ERR", ATH9K_PHYERR_CCK_SERVICE);
-	PHY_ERR("CCK-RESTART ERR", ATH9K_PHYERR_CCK_RESTART);
 	PHY_ERR("CCK-LENGTH ERR", ATH9K_PHYERR_CCK_LENGTH_ILLEGAL);
 	PHY_ERR("CCK-POWER-DROP ERR", ATH9K_PHYERR_CCK_POWER_DROP);
+	PHY_ERR("CCK-SERVICE ERR", ATH9K_PHYERR_CCK_SERVICE);
+	PHY_ERR("CCK-RESTART ERR", ATH9K_PHYERR_CCK_RESTART);
+
 	PHY_ERR("HT-CRC ERR", ATH9K_PHYERR_HT_CRC_ERROR);
 	PHY_ERR("HT-LENGTH ERR", ATH9K_PHYERR_HT_LENGTH_ILLEGAL);
 	PHY_ERR("HT-RATE ERR", ATH9K_PHYERR_HT_RATE_ILLEGAL);
+	PHY_ERR("HT-ZLF ERR", ATH9K_PHYERR_HT_ZLF);
+
+	PHY_ERR("FALSE-RADAR-EXT ERR", ATH9K_PHYERR_FALSE_RADAR_EXT);
+	PHY_ERR("GREEN-FIELD ERR", ATH9K_PHYERR_GREEN_FIELD);
+	PHY_ERR("SPECTRAL ERR", ATH9K_PHYERR_SPECTRAL);
 
 	if (len > size)
 		len = size;
@@ -247,7 +256,7 @@ static const struct file_operations fops_phy_err = {
 void ath9k_cmn_debug_phy_err(struct dentry *debugfs_phy,
 			     struct ath_rx_stats *rxstats)
 {
-	debugfs_create_file("phy_err", S_IRUSR, debugfs_phy, rxstats,
+	debugfs_create_file("phy_err", 0400, debugfs_phy, rxstats,
 			    &fops_phy_err);
 }
 EXPORT_SYMBOL(ath9k_cmn_debug_phy_err);

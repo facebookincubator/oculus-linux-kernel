@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2002 - 2007 Jeff Dike (jdike@{addtoit,linux.intel}.com)
- * Licensed under the GPL
  */
 
 #include <stdlib.h>
@@ -96,7 +96,7 @@ int run_helper(void (*pre_exec)(void *), void *pre_data, char **argv)
 			       "ret = %d\n", -n);
 			ret = n;
 		}
-		CATCH_EINTR(waitpid(pid, NULL, __WCLONE));
+		CATCH_EINTR(waitpid(pid, NULL, __WALL));
 	}
 
 out_free2:
@@ -129,7 +129,7 @@ int run_helper_thread(int (*proc)(void *), void *arg, unsigned int flags,
 		return err;
 	}
 	if (stack_out == NULL) {
-		CATCH_EINTR(pid = waitpid(pid, &status, __WCLONE));
+		CATCH_EINTR(pid = waitpid(pid, &status, __WALL));
 		if (pid < 0) {
 			err = -errno;
 			printk(UM_KERN_ERR "run_helper_thread - wait failed, "
@@ -148,7 +148,7 @@ int run_helper_thread(int (*proc)(void *), void *arg, unsigned int flags,
 int helper_wait(int pid)
 {
 	int ret, status;
-	int wflags = __WCLONE;
+	int wflags = __WALL;
 
 	CATCH_EINTR(ret = waitpid(pid, &status, wflags));
 	if (ret < 0) {

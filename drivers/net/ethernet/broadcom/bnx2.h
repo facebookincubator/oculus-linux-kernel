@@ -1,7 +1,7 @@
-/* bnx2.h: QLogic NX2 network driver.
+/* bnx2.h: QLogic bnx2 network driver.
  *
  * Copyright (c) 2004-2014 Broadcom Corporation
- * Copyright (c) 2014 QLogic Corporation
+ * Copyright (c) 2014-2015 QLogic Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -6530,9 +6530,9 @@ struct l2_fhdr {
 #define MII_BNX2_AER_AER_AN_MMD			   0x3800
 #define MII_BNX2_BLK_ADDR_COMBO_IEEEB0		 0xffe0
 
-#define MIN_ETHERNET_PACKET_SIZE	60
-#define MAX_ETHERNET_PACKET_SIZE	1514
-#define MAX_ETHERNET_JUMBO_PACKET_SIZE	9014
+#define MIN_ETHERNET_PACKET_SIZE	(ETH_ZLEN - ETH_HLEN)
+#define MAX_ETHERNET_PACKET_SIZE	ETH_DATA_LEN
+#define MAX_ETHERNET_JUMBO_PACKET_SIZE	9000
 
 #define BNX2_RX_COPY_THRESH		128
 
@@ -6928,6 +6928,7 @@ struct bnx2 {
 
 	dma_addr_t		status_blk_mapping;
 
+	void *status_blk;
 	struct statistics_block	*stats_blk;
 	struct statistics_block	*temp_stats_blk;
 	dma_addr_t		stats_blk_mapping;

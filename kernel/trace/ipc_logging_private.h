@@ -1,14 +1,6 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  */
 #ifndef _IPC_LOGGING_PRIVATE_H
 #define _IPC_LOGGING_PRIVATE_H
@@ -119,12 +111,14 @@ struct ipc_log_context {
 	struct list_head dfunc_info_list;
 	spinlock_t context_lock_lhb1;
 	struct completion read_avail;
+	struct kref refcount;
+	bool destroyed;
 };
 
 struct dfunc_info {
 	struct list_head list;
 	int type;
-	void (*dfunc) (struct encode_context *, struct decode_context *);
+	void (*dfunc)(struct encode_context *enc, struct decode_context *dec);
 };
 
 enum {
@@ -146,6 +140,13 @@ enum {
 #define IS_MSG_TYPE(x) (((x) > TSV_TYPE_MSG_START) && \
 			((x) < TSV_TYPE_MSG_END))
 #define MAX_MSG_DECODED_SIZE (MAX_MSG_SIZE*4)
+
+void ipc_log_context_free(struct kref *kref);
+
+static inline void ipc_log_context_put(struct ipc_log_context *ilctxt)
+{
+	kref_put(&ilctxt->refcount, ipc_log_context_free);
+}
 
 #if (defined(CONFIG_DEBUG_FS))
 void check_and_create_debugfs(void);

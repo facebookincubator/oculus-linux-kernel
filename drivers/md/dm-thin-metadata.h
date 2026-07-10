@@ -139,12 +139,21 @@ struct dm_thin_lookup_result {
 
 /*
  * Returns:
- *   -EWOULDBLOCK iff @can_block is set and would block.
+ *   -EWOULDBLOCK iff @can_issue_io is set and would issue IO
  *   -ENODATA iff that mapping is not present.
  *   0 success
  */
 int dm_thin_find_block(struct dm_thin_device *td, dm_block_t block,
-		       int can_block, struct dm_thin_lookup_result *result);
+		       int can_issue_io, struct dm_thin_lookup_result *result);
+
+/*
+ * Retrieve the next run of contiguously mapped blocks.  Useful for working
+ * out where to break up IO.  Returns 0 on success, < 0 on error.
+ */
+int dm_thin_find_mapped_range(struct dm_thin_device *td,
+			      dm_block_t begin, dm_block_t end,
+			      dm_block_t *thin_begin, dm_block_t *thin_end,
+			      dm_block_t *pool_begin, bool *maybe_shared);
 
 /*
  * Obtain an unused block.
@@ -158,6 +167,8 @@ int dm_thin_insert_block(struct dm_thin_device *td, dm_block_t block,
 			 dm_block_t data_block);
 
 int dm_thin_remove_block(struct dm_thin_device *td, dm_block_t block);
+int dm_thin_remove_range(struct dm_thin_device *td,
+			 dm_block_t begin, dm_block_t end);
 
 /*
  * Queries.
@@ -182,11 +193,12 @@ int dm_pool_get_free_metadata_block_count(struct dm_pool_metadata *pmd,
 int dm_pool_get_metadata_dev_size(struct dm_pool_metadata *pmd,
 				  dm_block_t *result);
 
-int dm_pool_get_data_block_size(struct dm_pool_metadata *pmd, sector_t *result);
-
 int dm_pool_get_data_dev_size(struct dm_pool_metadata *pmd, dm_block_t *result);
 
-int dm_pool_block_is_used(struct dm_pool_metadata *pmd, dm_block_t b, bool *result);
+int dm_pool_block_is_shared(struct dm_pool_metadata *pmd, dm_block_t b, bool *result);
+
+int dm_pool_inc_data_range(struct dm_pool_metadata *pmd, dm_block_t b, dm_block_t e);
+int dm_pool_dec_data_range(struct dm_pool_metadata *pmd, dm_block_t b, dm_block_t e);
 
 /*
  * Returns -ENOSPC if the new size is too small and already allocated
@@ -212,6 +224,18 @@ int dm_pool_register_metadata_threshold(struct dm_pool_metadata *pmd,
  */
 int dm_pool_metadata_set_needs_check(struct dm_pool_metadata *pmd);
 bool dm_pool_metadata_needs_check(struct dm_pool_metadata *pmd);
+
+/*
+ * Issue any prefetches that may be useful.
+ */
+void dm_pool_issue_prefetches(struct dm_pool_metadata *pmd);
+
+/* Pre-commit callback */
+typedef int (*dm_pool_pre_commit_fn)(void *context);
+
+void dm_pool_register_pre_commit_callback(struct dm_pool_metadata *pmd,
+					  dm_pool_pre_commit_fn fn,
+					  void *context);
 
 /*----------------------------------------------------------------*/
 

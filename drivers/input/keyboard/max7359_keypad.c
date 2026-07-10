@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * max7359_keypad.c - MAX7359 Key Switch Controller Driver
  *
@@ -5,10 +6,6 @@
  * Kim Kyuwon <q1.kim@samsung.com>
  *
  * Based on pxa27x_keypad.c
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * Datasheet: http://www.maxim-ic.com/quick_view2.cfm/qv_pk/5456
  */
@@ -84,26 +81,6 @@ static int max7359_read_reg(struct i2c_client *client, int reg)
 	return ret;
 }
 
-static void max7359_build_keycode(struct max7359_keypad *keypad,
-				const struct matrix_keymap_data *keymap_data)
-{
-	struct input_dev *input_dev = keypad->input_dev;
-	int i;
-
-	for (i = 0; i < keymap_data->keymap_size; i++) {
-		unsigned int key = keymap_data->keymap[i];
-		unsigned int row = KEY_ROW(key);
-		unsigned int col = KEY_COL(key);
-		unsigned int scancode = MATRIX_SCAN_CODE(row, col,
-						MAX7359_ROW_SHIFT);
-		unsigned short keycode = KEY_VAL(key);
-
-		keypad->keycodes[scancode] = keycode;
-		__set_bit(keycode, input_dev->keybit);
-	}
-	__clear_bit(KEY_RESERVED, input_dev->keybit);
-}
-
 /* runs in an IRQ thread -- can (and will!) sleep */
 static irqreturn_t max7359_interrupt(int irq, void *dev_id)
 {
@@ -166,7 +143,6 @@ static void max7359_close(struct input_dev *dev)
 static void max7359_initialize(struct i2c_client *client)
 {
 	max7359_write_reg(client, MAX7359_REG_CONFIG,
-		MAX7359_CFG_INTERRUPT | /* Irq clears after host read */
 		MAX7359_CFG_KEY_RELEASE | /* Key release enable */
 		MAX7359_CFG_WAKEUP); /* Key press wakeup enable */
 
@@ -233,7 +209,15 @@ static int max7359_probe(struct i2c_client *client,
 	input_set_capability(input_dev, EV_MSC, MSC_SCAN);
 	input_set_drvdata(input_dev, keypad);
 
-	max7359_build_keycode(keypad, keymap_data);
+	error = matrix_keypad_build_keymap(keymap_data, NULL,
+					   MAX7359_MAX_KEY_ROWS,
+					   MAX7359_MAX_KEY_COLS,
+					   keypad->keycodes,
+					   input_dev);
+	if (error) {
+		dev_err(&client->dev, "failed to build keymap\n");
+		return error;
+	}
 
 	error = devm_request_threaded_irq(&client->dev, client->irq, NULL,
 					  max7359_interrupt,
@@ -254,7 +238,6 @@ static int max7359_probe(struct i2c_client *client,
 	/* Initialize MAX7359 */
 	max7359_initialize(client);
 
-	i2c_set_clientdata(client, keypad);
 	device_init_wakeup(&client->dev, 1);
 
 	return 0;

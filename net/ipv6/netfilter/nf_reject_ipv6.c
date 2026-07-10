@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* (C) 1999-2001 Paul `Rusty' Russell
  * (C) 2002-2004 Netfilter Core Team <coreteam@netfilter.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -11,8 +8,9 @@
 #include <net/ip6_route.h>
 #include <net/ip6_fib.h>
 #include <net/ip6_checksum.h>
-#include <linux/netfilter_ipv6.h>
 #include <net/netfilter/ipv6/nf_reject.h>
+#include <linux/netfilter_ipv6.h>
+#include <linux/netfilter_bridge.h>
 
 const struct tcphdr *nf_reject_ip6_tcphdr_get(struct sk_buff *oldskb,
 					      struct tcphdr *otcph,
@@ -24,7 +22,7 @@ const struct tcphdr *nf_reject_ip6_tcphdr_get(struct sk_buff *oldskb,
 	int tcphoff;
 
 	proto = oip6h->nexthdr;
-	tcphoff = ipv6_skip_exthdr(oldskb, ((u8*)(oip6h+1) - oldskb->data),
+	tcphoff = ipv6_skip_exthdr(oldskb, ((u8 *)(oip6h + 1) - oldskb->data),
 				   &proto, &frag_off);
 
 	if ((tcphoff < 0) || (tcphoff > oldskb->len)) {
@@ -64,7 +62,7 @@ EXPORT_SYMBOL_GPL(nf_reject_ip6_tcphdr_get);
 
 struct ipv6hdr *nf_reject_ip6hdr_put(struct sk_buff *nskb,
 				     const struct sk_buff *oldskb,
-				     __be16 protocol, int hoplimit)
+				     __u8 protocol, int hoplimit)
 {
 	struct ipv6hdr *ip6h;
 	const struct ipv6hdr *oip6h = ipv6_hdr(oldskb);
@@ -94,7 +92,7 @@ void nf_reject_ip6_tcphdr_put(struct sk_buff *nskb,
 	int needs_ack;
 
 	skb_reset_transport_header(nskb);
-	tcph = (struct tcphdr *)skb_put(nskb, sizeof(struct tcphdr));
+	tcph = skb_put(nskb, sizeof(struct tcphdr));
 	/* Truncate to length (no data) */
 	tcph->doff = sizeof(struct tcphdr)/4;
 	tcph->source = oth->dest;
@@ -128,8 +126,24 @@ void nf_reject_ip6_tcphdr_put(struct sk_buff *nskb,
 }
 EXPORT_SYMBOL_GPL(nf_reject_ip6_tcphdr_put);
 
+static int nf_reject6_fill_skb_dst(struct sk_buff *skb_in)
+{
+	struct dst_entry *dst = NULL;
+	struct flowi fl;
+
+	memset(&fl, 0, sizeof(struct flowi));
+	fl.u.ip6.daddr = ipv6_hdr(skb_in)->saddr;
+	nf_ip6_route(dev_net(skb_in->dev), &dst, &fl, false);
+	if (!dst)
+		return -1;
+
+	skb_dst_set(skb_in, dst);
+	return 0;
+}
+
 void nf_send_reset6(struct net *net, struct sk_buff *oldskb, int hook)
 {
+	struct net_device *br_indev __maybe_unused;
 	struct sk_buff *nskb;
 	struct tcphdr _otcph;
 	const struct tcphdr *otcph;
@@ -155,9 +169,19 @@ void nf_send_reset6(struct net *net, struct sk_buff *oldskb, int hook)
 	fl6.daddr = oip6h->saddr;
 	fl6.fl6_sport = otcph->dest;
 	fl6.fl6_dport = otcph->source;
-	security_skb_classify_flow(oldskb, flowi6_to_flowi(&fl6));
+
+	if (hook == NF_INET_PRE_ROUTING) {
+		nf_ip6_route(net, &dst, flowi6_to_flowi(&fl6), false);
+		if (!dst)
+			return;
+		skb_dst_set(oldskb, dst);
+	}
+
+	fl6.flowi6_oif = l3mdev_master_ifindex(skb_dst(oldskb)->dev);
+	fl6.flowi6_mark = IP6_REPLY_MARK(net, oldskb->mark);
+	security_skb_classify_flow(oldskb, flowi6_to_flowi_common(&fl6));
 	dst = ip6_route_output(net, NULL, &fl6);
-	if (dst == NULL || dst->error) {
+	if (dst->error) {
 		dst_release(dst);
 		return;
 	}
@@ -178,6 +202,8 @@ void nf_send_reset6(struct net *net, struct sk_buff *oldskb, int hook)
 
 	skb_dst_set(nskb, dst);
 
+	nskb->mark = fl6.flowi6_mark;
+
 	skb_reserve(nskb, hh_len + dst->header_len);
 	ip6h = nf_reject_ip6hdr_put(nskb, oldskb, IPPROTO_TCP,
 				    ip6_dst_hoplimit(dst));
@@ -192,19 +218,61 @@ void nf_send_reset6(struct net *net, struct sk_buff *oldskb, int hook)
 	 * build the eth header using the original destination's MAC as the
 	 * source, and send the RST packet directly.
 	 */
-	if (oldskb->nf_bridge) {
+	br_indev = nf_bridge_get_physindev(oldskb);
+	if (br_indev) {
 		struct ethhdr *oeth = eth_hdr(oldskb);
-		nskb->dev = oldskb->nf_bridge->physindev;
+
+		nskb->dev = br_indev;
 		nskb->protocol = htons(ETH_P_IPV6);
 		ip6h->payload_len = htons(sizeof(struct tcphdr));
 		if (dev_hard_header(nskb, nskb->dev, ntohs(nskb->protocol),
-				    oeth->h_source, oeth->h_dest, nskb->len) < 0)
+				    oeth->h_source, oeth->h_dest, nskb->len) < 0) {
+			kfree_skb(nskb);
 			return;
+		}
 		dev_queue_xmit(nskb);
 	} else
 #endif
-		ip6_local_out(nskb);
+		ip6_local_out(net, nskb->sk, nskb);
 }
 EXPORT_SYMBOL_GPL(nf_send_reset6);
+
+static bool reject6_csum_ok(struct sk_buff *skb, int hook)
+{
+	const struct ipv6hdr *ip6h = ipv6_hdr(skb);
+	int thoff;
+	__be16 fo;
+	u8 proto;
+
+	if (skb_csum_unnecessary(skb))
+		return true;
+
+	proto = ip6h->nexthdr;
+	thoff = ipv6_skip_exthdr(skb, ((u8 *)(ip6h + 1) - skb->data), &proto, &fo);
+
+	if (thoff < 0 || thoff >= skb->len || (fo & htons(~0x7)) != 0)
+		return false;
+
+	if (!nf_reject_verify_csum(proto))
+		return true;
+
+	return nf_ip6_checksum(skb, hook, thoff, proto) == 0;
+}
+
+void nf_send_unreach6(struct net *net, struct sk_buff *skb_in,
+		      unsigned char code, unsigned int hooknum)
+{
+	if (!reject6_csum_ok(skb_in, hooknum))
+		return;
+
+	if (hooknum == NF_INET_LOCAL_OUT && skb_in->dev == NULL)
+		skb_in->dev = net->loopback_dev;
+
+	if (hooknum == NF_INET_PRE_ROUTING && nf_reject6_fill_skb_dst(skb_in))
+		return;
+
+	icmpv6_send(skb_in, ICMPV6_DEST_UNREACH, code, 0);
+}
+EXPORT_SYMBOL_GPL(nf_send_unreach6);
 
 MODULE_LICENSE("GPL");

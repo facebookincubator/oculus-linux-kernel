@@ -291,9 +291,10 @@ static void header_from_disk(struct log_header_core *core, struct log_header_dis
 	core->nr_regions = le64_to_cpu(disk->nr_regions);
 }
 
-static int rw_header(struct log_c *lc, int rw)
+static int rw_header(struct log_c *lc, int op)
 {
-	lc->io_req.bi_rw = rw;
+	lc->io_req.bi_op = op;
+	lc->io_req.bi_op_flags = 0;
 
 	return dm_io(&lc->io_req, 1, &lc->header_location, NULL);
 }
@@ -306,7 +307,8 @@ static int flush_header(struct log_c *lc)
 		.count = 0,
 	};
 
-	lc->io_req.bi_rw = WRITE_FLUSH;
+	lc->io_req.bi_op = REQ_OP_WRITE;
+	lc->io_req.bi_op_flags = REQ_PREFLUSH;
 
 	return dm_io(&lc->io_req, 1, &null_location, NULL);
 }
@@ -315,7 +317,7 @@ static int read_header(struct log_c *log)
 {
 	int r;
 
-	r = rw_header(log, READ);
+	r = rw_header(log, REQ_OP_READ);
 	if (r)
 		return r;
 
@@ -413,8 +415,7 @@ static int create_log_context(struct dm_dirty_log *log, struct dm_target *ti,
 	/*
 	 * Work out how many "unsigned long"s we need to hold the bitset.
 	 */
-	bitset_size = dm_round_up(region_count,
-				  sizeof(*lc->clean_bits) << BYTE_SHIFT);
+	bitset_size = dm_round_up(region_count, BITS_PER_LONG);
 	bitset_size >>= BYTE_SHIFT;
 
 	lc->bitset_uint32_count = bitset_size / sizeof(*lc->clean_bits);
@@ -614,7 +615,7 @@ static int disk_resume(struct dm_dirty_log *log)
 			log_clear_bit(lc, lc->clean_bits, i);
 
 	/* clear any old bits -- device has shrunk */
-	for (i = lc->region_count; i % (sizeof(*lc->clean_bits) << BYTE_SHIFT); i++)
+	for (i = lc->region_count; i % BITS_PER_LONG; i++)
 		log_clear_bit(lc, lc->clean_bits, i);
 
 	/* copy clean across to sync */
@@ -629,7 +630,7 @@ static int disk_resume(struct dm_dirty_log *log)
 	header_to_disk(&lc->header, lc->disk_header);
 
 	/* write the new header */
-	r = rw_header(lc, WRITE);
+	r = rw_header(lc, REQ_OP_WRITE);
 	if (!r) {
 		r = flush_header(lc);
 		if (r)
@@ -697,7 +698,7 @@ static int disk_flush(struct dm_dirty_log *log)
 			log_clear_bit(lc, lc->clean_bits, i);
 	}
 
-	r = rw_header(lc, WRITE);
+	r = rw_header(lc, REQ_OP_WRITE);
 	if (r)
 		fail_log_device(lc);
 	else {

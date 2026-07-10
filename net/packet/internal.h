@@ -1,5 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __PACKET_INTERNAL_H__
 #define __PACKET_INTERNAL_H__
+
+#include <linux/refcount.h>
 
 struct packet_mclist {
 	struct packet_mclist	*next;
@@ -36,7 +39,7 @@ struct tpacket_kbdq_core {
 	char		*nxt_offset;
 	struct sk_buff	*skb;
 
-	atomic_t	blk_fill_in_prog;
+	rwlock_t	blk_fill_in_prog_lock;
 
 	/* Default is set to 8ms */
 #define DEFAULT_PRB_RETIRE_TOV	(8)
@@ -67,28 +70,41 @@ struct packet_ring_buffer {
 
 	unsigned int __percpu	*pending_refcnt;
 
-	struct tpacket_kbdq_core	prb_bdqc;
+	union {
+		unsigned long			*rx_owner_map;
+		struct tpacket_kbdq_core	prb_bdqc;
+	};
 };
 
 extern struct mutex fanout_mutex;
-#define PACKET_FANOUT_MAX	256
+#define PACKET_FANOUT_MAX	(1 << 16)
 
 struct packet_fanout {
-#ifdef CONFIG_NET_NS
-	struct net		*net;
-#endif
+	possible_net_t		net;
 	unsigned int		num_members;
+	u32			max_num_members;
 	u16			id;
 	u8			type;
 	u8			flags;
-	atomic_t		rr_cur;
+	union {
+		atomic_t		rr_cur;
+		struct bpf_prog __rcu	*bpf_prog;
+	};
 	struct list_head	list;
-	struct sock		*arr[PACKET_FANOUT_MAX];
-	int			next[PACKET_FANOUT_MAX];
 	spinlock_t		lock;
-	atomic_t		sk_ref;
+	refcount_t		sk_ref;
 	struct packet_type	prot_hook ____cacheline_aligned_in_smp;
+	struct sock	__rcu	*arr[];
 };
+
+struct packet_rollover {
+	int			sock;
+	atomic_long_t		num;
+	atomic_long_t		num_huge;
+	atomic_long_t		num_failed;
+#define ROLLOVER_HLEN	(L1_CACHE_BYTES / sizeof(u32))
+	u32			history[ROLLOVER_HLEN] ____cacheline_aligned;
+} ____cacheline_aligned_in_smp;
 
 struct packet_sock {
 	/* struct sock has to be the first member of packet_sock */
@@ -100,23 +116,27 @@ struct packet_sock {
 	int			copy_thresh;
 	spinlock_t		bind_lock;
 	struct mutex		pg_vec_lock;
-	unsigned int		running:1,	/* prot_hook is attached*/
-				auxdata:1,
+	unsigned int		running;	/* bind_lock must be held */
+	unsigned int		auxdata:1,	/* writer must hold sock lock */
 				origdev:1,
-				has_vnet_hdr:1;
+				has_vnet_hdr:1,
+				tp_loss:1,
+				tp_tx_has_off:1;
+	int			pressure;
 	int			ifindex;	/* bound device		*/
 	__be16			num;
+	struct packet_rollover	*rollover;
 	struct packet_mclist	*mclist;
 	atomic_t		mapped;
 	enum tpacket_versions	tp_version;
 	unsigned int		tp_hdrlen;
 	unsigned int		tp_reserve;
-	unsigned int		tp_loss:1;
-	unsigned int		tp_tx_has_off:1;
 	unsigned int		tp_tstamp;
+	struct completion	skb_completion;
 	struct net_device __rcu	*cached_dev;
 	int			(*xmit)(struct sk_buff *skb);
 	struct packet_type	prot_hook ____cacheline_aligned_in_smp;
+	atomic_t		tp_drops ____cacheline_aligned_in_smp;
 };
 
 static struct packet_sock *pkt_sk(struct sock *sk)

@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "hammerhead.dtsi"
+
+/ {
+	model = "Hammerhead EVT2";
+	compatible = "meta,hammerhead", "meta,hammerhead-evt2";
+	qcom,msm-id = <554 0x10000>;
+	qcom,board-id = <34 0xa6>;
+};

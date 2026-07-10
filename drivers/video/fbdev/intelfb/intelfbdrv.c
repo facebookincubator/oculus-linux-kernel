@@ -124,10 +124,6 @@
 
 #include <asm/io.h>
 
-#ifdef CONFIG_MTRR
-#include <asm/mtrr.h>
-#endif
-
 #include "intelfb.h"
 #include "intelfbhw.h"
 #include "../edid.h"
@@ -177,7 +173,7 @@ static int intelfb_set_fbinfo(struct intelfb_info *dinfo);
 #define INTELFB_CLASS_MASK 0
 #endif
 
-static struct pci_device_id intelfb_pci_table[] = {
+static const struct pci_device_id intelfb_pci_table[] = {
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_830M, PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_DISPLAY_VGA << 8, INTELFB_CLASS_MASK, INTEL_830M },
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_845G, PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_DISPLAY_VGA << 8, INTELFB_CLASS_MASK, INTEL_845G },
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_85XGM, PCI_ANY_ID, PCI_ANY_ID, PCI_CLASS_DISPLAY_VGA << 8, INTELFB_CLASS_MASK, INTEL_85XGM },
@@ -197,7 +193,7 @@ static struct pci_device_id intelfb_pci_table[] = {
 static int num_registered = 0;
 
 /* fb ops */
-static struct fb_ops intel_fb_ops = {
+static const struct fb_ops intel_fb_ops = {
 	.owner =		THIS_MODULE,
 	.fb_open =              intelfb_open,
 	.fb_release =           intelfb_release,
@@ -306,7 +302,7 @@ static __inline__ int get_opt_int(const char *this_opt, const char *name,
 }
 
 static __inline__ int get_opt_bool(const char *this_opt, const char *name,
-				   int *ret)
+				   bool *ret)
 {
 	if (!ret)
 		return 0;
@@ -411,33 +407,6 @@ module_init(intelfb_init);
 module_exit(intelfb_exit);
 
 /***************************************************************
- *                     mtrr support functions                  *
- ***************************************************************/
-
-#ifdef CONFIG_MTRR
-static inline void set_mtrr(struct intelfb_info *dinfo)
-{
-	dinfo->mtrr_reg = mtrr_add(dinfo->aperture.physical,
-				   dinfo->aperture.size, MTRR_TYPE_WRCOMB, 1);
-	if (dinfo->mtrr_reg < 0) {
-		ERR_MSG("unable to set MTRR\n");
-		return;
-	}
-	dinfo->has_mtrr = 1;
-}
-static inline void unset_mtrr(struct intelfb_info *dinfo)
-{
-	if (dinfo->has_mtrr)
-		mtrr_del(dinfo->mtrr_reg, dinfo->aperture.physical,
-			 dinfo->aperture.size);
-}
-#else
-#define set_mtrr(x) WRN_MSG("MTRR is disabled in the kernel\n")
-
-#define unset_mtrr(x) do { } while (0)
-#endif /* CONFIG_MTRR */
-
-/***************************************************************
  *                        driver init / cleanup                *
  ***************************************************************/
 
@@ -456,7 +425,7 @@ static void cleanup(struct intelfb_info *dinfo)
 	if (dinfo->registered)
 		unregister_framebuffer(dinfo->info);
 
-	unset_mtrr(dinfo);
+	arch_phys_wc_del(dinfo->wc_cookie);
 
 	if (dinfo->fbmem_gart && dinfo->gtt_fb_mem) {
 		agp_unbind_memory(dinfo->gtt_fb_mem);
@@ -522,10 +491,9 @@ static int intelfb_pci_register(struct pci_dev *pdev,
 	}
 
 	info = framebuffer_alloc(sizeof(struct intelfb_info), &pdev->dev);
-	if (!info) {
-		ERR_MSG("Could not allocate memory for intelfb_info.\n");
-		return -ENODEV;
-	}
+	if (!info)
+		return -ENOMEM;
+
 	if (fb_alloc_cmap(&info->cmap, 256, 1) < 0) {
 		ERR_MSG("Could not allocate cmap for intelfb_info.\n");
 		goto err_out_cmap;
@@ -675,7 +643,7 @@ static int intelfb_pci_register(struct pci_dev *pdev,
 	/* Allocate memories (which aren't stolen) */
 	/* Map the fb and MMIO regions */
 	/* ioremap only up to the end of used aperture */
-	dinfo->aperture.virtual = (u8 __iomem *)ioremap_nocache
+	dinfo->aperture.virtual = (u8 __iomem *)ioremap_wc
 		(dinfo->aperture.physical, ((offset + dinfo->fb.offset) << 12)
 		 + dinfo->fb.size);
 	if (!dinfo->aperture.virtual) {
@@ -686,7 +654,7 @@ static int intelfb_pci_register(struct pci_dev *pdev,
 	}
 
 	dinfo->mmio_base =
-		(u8 __iomem *)ioremap_nocache(dinfo->mmio_base_phys,
+		(u8 __iomem *)ioremap(dinfo->mmio_base_phys,
 					      INTEL_REG_SIZE);
 	if (!dinfo->mmio_base) {
 		ERR_MSG("Cannot remap MMIO region.\n");
@@ -772,7 +740,8 @@ static int intelfb_pci_register(struct pci_dev *pdev,
 	agp_backend_release(bridge);
 
 	if (mtrr)
-		set_mtrr(dinfo);
+		dinfo->wc_cookie = arch_phys_wc_add(dinfo->aperture.physical,
+						    dinfo->aperture.size);
 
 	DBG_MSG("fb: 0x%x(+ 0x%x)/0x%x (0x%p)\n",
 		dinfo->fb.physical, dinfo->fb.offset, dinfo->fb.size,
@@ -937,7 +906,7 @@ static void intelfb_pci_unregister(struct pci_dev *pdev)
  *                       helper functions                      *
  ***************************************************************/
 
-int __inline__ intelfb_var_to_depth(const struct fb_var_screeninfo *var)
+__inline__ int intelfb_var_to_depth(const struct fb_var_screeninfo *var)
 {
 	DBG_MSG("intelfb_var_to_depth: bpp: %d, green.length is %d\n",
 		var->bits_per_pixel, var->green.length);
@@ -964,7 +933,7 @@ static __inline__ int var_to_refresh(const struct fb_var_screeninfo *var)
 }
 
 /***************************************************************
- *                Various intialisation functions              *
+ *                Various initialisation functions             *
  ***************************************************************/
 
 static void get_initial_mode(struct intelfb_info *dinfo)
@@ -1330,11 +1299,6 @@ static int intelfb_check_var(struct fb_var_screeninfo *var,
 		v.transp.length = 8;
 		break;
 	}
-
-	if (v.xoffset < 0)
-		v.xoffset = 0;
-	if (v.yoffset < 0)
-		v.yoffset = 0;
 
 	if (v.xoffset > v.xres_virtual - v.xres)
 		v.xoffset = v.xres_virtual - v.xres;

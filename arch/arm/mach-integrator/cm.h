@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * access the core module control register.
  */
@@ -11,7 +12,6 @@ void cm_clear_irqs(void);
 #define CM_CTRL_LED			(1 << 0)
 #define CM_CTRL_nMBDET			(1 << 1)
 #define CM_CTRL_REMAP			(1 << 2)
-#define CM_CTRL_RESET			(1 << 3)
 
 /*
  * Integrator/AP,PP2 specific

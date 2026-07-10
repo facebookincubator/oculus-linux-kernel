@@ -1,12 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* PKCS#7 crypto data parser internal definitions
  *
  * Copyright (C) 2012 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public Licence
- * as published by the Free Software Foundation; either version
- * 2 of the Licence, or (at your option) any later version.
  */
 
 #include <linux/oid_registry.h>
@@ -21,9 +17,9 @@
 struct pkcs7_signed_info {
 	struct pkcs7_signed_info *next;
 	struct x509_certificate *signer; /* Signing certificate (in msg->certs) */
-	unsigned index;
-	bool trusted;
-	bool unsupported_crypto;	/* T if not usable due to missing crypto */
+	unsigned	index;
+	bool		unsupported_crypto;	/* T if not usable due to missing crypto */
+	bool		blacklisted;
 
 	/* Message digest - the digest of the Content Data (or NULL) */
 	const void	*msgdigest;
@@ -32,9 +28,14 @@ struct pkcs7_signed_info {
 	/* Authenticated Attribute data (or NULL) */
 	unsigned	authattrs_len;
 	const void	*authattrs;
-
-	/* Issuing cert serial number and issuer's name */
-	struct asymmetric_key_id *signing_cert_id;
+	unsigned long	aa_set;
+#define	sinfo_has_content_type		0
+#define	sinfo_has_signing_time		1
+#define	sinfo_has_message_digest	2
+#define sinfo_has_smime_caps		3
+#define	sinfo_has_ms_opus_info		4
+#define	sinfo_has_ms_statement_type	5
+	time64_t	signing_time;
 
 	/* Message signature.
 	 *
@@ -42,14 +43,19 @@ struct pkcs7_signed_info {
 	 * the Authenticated Attributes [RFC2315 9.3].  If the latter, one of
 	 * the attributes contains the digest of the the Content Data within
 	 * it.
+	 *
+	 * THis also contains the issuing cert serial number and issuer's name
+	 * [PKCS#7 or CMS ver 1] or issuing cert's SKID [CMS ver 3].
 	 */
-	struct public_key_signature sig;
+	struct public_key_signature *sig;
 };
 
 struct pkcs7_message {
 	struct x509_certificate *certs;	/* Certificate list */
 	struct x509_certificate *crl;	/* Revocation list */
 	struct pkcs7_signed_info *signed_infos;
+	u8		version;	/* Version of cert (1 -> PKCS#7 or CMS; 3 -> CMS) */
+	bool		have_authattrs;	/* T if have authattrs */
 
 	/* Content Data (or NULL) */
 	enum OID	data_type;	/* Type of Data */

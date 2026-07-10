@@ -1,29 +1,5 @@
-/*******************************************************************************
-
-  Intel 82599 Virtual Function driver
-  Copyright(c) 1999 - 2012 Intel Corporation.
-
-  This program is free software; you can redistribute it and/or modify it
-  under the terms and conditions of the GNU General Public License,
-  version 2, as published by the Free Software Foundation.
-
-  This program is distributed in the hope it will be useful, but WITHOUT
-  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-  more details.
-
-  You should have received a copy of the GNU General Public License along with
-  this program; if not, write to the Free Software Foundation, Inc.,
-  51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
-
-  The full GNU General Public License is included in this distribution in
-  the file called "COPYING".
-
-  Contact Information:
-  e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
-  Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
-
-*******************************************************************************/
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright(c) 1999 - 2018 Intel Corporation. */
 
 #include "mbx.h"
 #include "ixgbevf.h"
@@ -52,10 +28,10 @@ static s32 ixgbevf_poll_for_msg(struct ixgbe_hw *hw)
 }
 
 /**
- *  ixgbevf_poll_for_ack - Wait for message acknowledgement
+ *  ixgbevf_poll_for_ack - Wait for message acknowledgment
  *  @hw: pointer to the HW structure
  *
- *  returns 0 if it successfully received a message acknowledgement
+ *  returns 0 if it successfully received a message acknowledgment
  **/
 static s32 ixgbevf_poll_for_ack(struct ixgbe_hw *hw)
 {
@@ -86,7 +62,7 @@ static s32 ixgbevf_poll_for_ack(struct ixgbe_hw *hw)
 static s32 ixgbevf_read_posted_mbx(struct ixgbe_hw *hw, u32 *msg, u16 size)
 {
 	struct ixgbe_mbx_info *mbx = &hw->mbx;
-	s32 ret_val = -IXGBE_ERR_MBX;
+	s32 ret_val = IXGBE_ERR_MBX;
 
 	if (!mbx->ops.read)
 		goto out;
@@ -112,7 +88,7 @@ out:
 static s32 ixgbevf_write_posted_mbx(struct ixgbe_hw *hw, u32 *msg, u16 size)
 {
 	struct ixgbe_mbx_info *mbx = &hw->mbx;
-	s32 ret_val = -IXGBE_ERR_MBX;
+	s32 ret_val = IXGBE_ERR_MBX;
 
 	/* exit if either we can't write or there isn't a defined timeout */
 	if (!mbx->ops.write || !mbx->timeout)
@@ -213,7 +189,7 @@ static s32 ixgbevf_check_for_rst_vf(struct ixgbe_hw *hw)
 	s32 ret_val = IXGBE_ERR_MBX;
 
 	if (!ixgbevf_check_for_bit_vf(hw, (IXGBE_VFMAILBOX_RSTD |
-					 IXGBE_VFMAILBOX_RSTI))) {
+					   IXGBE_VFMAILBOX_RSTI))) {
 		ret_val = 0;
 		hw->mbx.stats.rsts++;
 	}
@@ -234,7 +210,7 @@ static s32 ixgbevf_obtain_mbx_lock_vf(struct ixgbe_hw *hw)
 	/* Take ownership of the buffer */
 	IXGBE_WRITE_REG(hw, IXGBE_VFMAILBOX, IXGBE_VFMAILBOX_VFU);
 
-	/* reserve mailbox for vf use */
+	/* reserve mailbox for VF use */
 	if (ixgbevf_read_v2p_mailbox(hw) & IXGBE_VFMAILBOX_VFU)
 		ret_val = 0;
 
@@ -254,8 +230,7 @@ static s32 ixgbevf_write_mbx_vf(struct ixgbe_hw *hw, u32 *msg, u16 size)
 	s32 ret_val;
 	u16 i;
 
-
-	/* lock the mailbox to prevent pf/vf race condition */
+	/* lock the mailbox to prevent PF/VF race condition */
 	ret_val = ixgbevf_obtain_mbx_lock_vf(hw);
 	if (ret_val)
 		goto out_no_write;
@@ -279,7 +254,7 @@ out_no_write:
 }
 
 /**
- *  ixgbevf_read_mbx_vf - Reads a message from the inbox intended for vf
+ *  ixgbevf_read_mbx_vf - Reads a message from the inbox intended for VF
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
@@ -291,7 +266,7 @@ static s32 ixgbevf_read_mbx_vf(struct ixgbe_hw *hw, u32 *msg, u16 size)
 	s32 ret_val = 0;
 	u16 i;
 
-	/* lock the mailbox to prevent pf/vf race condition */
+	/* lock the mailbox to prevent PF/VF race condition */
 	ret_val = ixgbevf_obtain_mbx_lock_vf(hw);
 	if (ret_val)
 		goto out_no_read;
@@ -311,17 +286,18 @@ out_no_read:
 }
 
 /**
- *  ixgbevf_init_mbx_params_vf - set initial values for vf mailbox
+ *  ixgbevf_init_mbx_params_vf - set initial values for VF mailbox
  *  @hw: pointer to the HW structure
  *
- *  Initializes the hw->mbx struct to correct values for vf mailbox
+ *  Initializes the hw->mbx struct to correct values for VF mailbox
  */
 static s32 ixgbevf_init_mbx_params_vf(struct ixgbe_hw *hw)
 {
 	struct ixgbe_mbx_info *mbx = &hw->mbx;
 
 	/* start mailbox as timed out and let the reset_hw call set the timeout
-	 * value to begin communications */
+	 * value to begin communications
+	 */
 	mbx->timeout = 0;
 	mbx->udelay = IXGBE_VF_MBX_INIT_DELAY;
 
@@ -337,13 +313,24 @@ static s32 ixgbevf_init_mbx_params_vf(struct ixgbe_hw *hw)
 }
 
 const struct ixgbe_mbx_operations ixgbevf_mbx_ops = {
-	.init_params   = ixgbevf_init_mbx_params_vf,
-	.read          = ixgbevf_read_mbx_vf,
-	.write         = ixgbevf_write_mbx_vf,
-	.read_posted   = ixgbevf_read_posted_mbx,
-	.write_posted  = ixgbevf_write_posted_mbx,
-	.check_for_msg = ixgbevf_check_for_msg_vf,
-	.check_for_ack = ixgbevf_check_for_ack_vf,
-	.check_for_rst = ixgbevf_check_for_rst_vf,
+	.init_params	= ixgbevf_init_mbx_params_vf,
+	.read		= ixgbevf_read_mbx_vf,
+	.write		= ixgbevf_write_mbx_vf,
+	.read_posted	= ixgbevf_read_posted_mbx,
+	.write_posted	= ixgbevf_write_posted_mbx,
+	.check_for_msg	= ixgbevf_check_for_msg_vf,
+	.check_for_ack	= ixgbevf_check_for_ack_vf,
+	.check_for_rst	= ixgbevf_check_for_rst_vf,
 };
 
+/* Mailbox operations when running on Hyper-V.
+ * On Hyper-V, PF/VF communication is not through the
+ * hardware mailbox; this communication is through
+ * a software mediated path.
+ * Most mail box operations are noop while running on
+ * Hyper-V.
+ */
+const struct ixgbe_mbx_operations ixgbevf_hv_mbx_ops = {
+	.init_params	= ixgbevf_init_mbx_params_vf,
+	.check_for_rst	= ixgbevf_check_for_rst_vf,
+};

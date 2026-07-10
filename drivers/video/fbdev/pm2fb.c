@@ -38,10 +38,6 @@
 #include <linux/fb.h>
 #include <linux/init.h>
 #include <linux/pci.h>
-#ifdef CONFIG_MTRR
-#include <asm/mtrr.h>
-#endif
-
 #include <video/permedia2.h>
 #include <video/cvisionppc.h>
 
@@ -58,7 +54,7 @@
 #define DPRINTK(a, b...)	\
 	printk(KERN_DEBUG "pm2fb: %s: " a, __func__ , ## b)
 #else
-#define DPRINTK(a, b...)
+#define DPRINTK(a, b...)	no_printk(a, ##b)
 #endif
 
 #define PM2_PIXMAP_SIZE	(1600 * 4)
@@ -81,10 +77,7 @@ static char *mode_option;
 static bool lowhsync;
 static bool lowvsync;
 static bool noaccel;
-/* mtrr option */
-#ifdef CONFIG_MTRR
 static bool nomtrr;
-#endif
 
 /*
  * The hardware state of the graphics card that isn't part of the
@@ -100,7 +93,7 @@ struct pm2fb_par
 	u32		mem_control;	/* MemControl reg at probe */
 	u32		boot_address;	/* BootAddress reg at probe */
 	u32		palette[16];
-	int		mtrr_handle;
+	int		wc_cookie;
 };
 
 /*
@@ -120,7 +113,7 @@ static struct fb_fix_screeninfo pm2fb_fix = {
 /*
  * Default video mode. In case the modedb doesn't work.
  */
-static struct fb_var_screeninfo pm2fb_var = {
+static const struct fb_var_screeninfo pm2fb_var = {
 	/* "640x480, 8 bpp @ 60 Hz */
 	.xres =			640,
 	.yres =			480,
@@ -240,8 +233,10 @@ static u32 to3264(u32 timing, int bpp, int is64)
 	switch (bpp) {
 	case 24:
 		timing *= 3;
+		fallthrough;
 	case 8:
 		timing >>= 1;
+		fallthrough;
 	case 16:
 		timing >>= 1;
 	case 32:
@@ -618,6 +613,11 @@ static int pm2fb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 	if (lpitch * var->yres_virtual > info->fix.smem_len) {
 		DPRINTK("no memory for screen (%ux%ux%u)\n",
 			var->xres, var->yres_virtual, var->bits_per_pixel);
+		return -EINVAL;
+	}
+
+	if (!var->pixclock) {
+		DPRINTK("pixclock is zero\n");
 		return -EINVAL;
 	}
 
@@ -1488,7 +1488,7 @@ static int pm2fb_cursor(struct fb_info *info, struct fb_cursor *cursor)
  *  Frame buffer operations
  */
 
-static struct fb_ops pm2fb_ops = {
+static const struct fb_ops pm2fb_ops = {
 	.owner		= THIS_MODULE,
 	.fb_check_var	= pm2fb_check_var,
 	.fb_set_par	= pm2fb_set_par,
@@ -1529,8 +1529,10 @@ static int pm2fb_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	info = framebuffer_alloc(sizeof(struct pm2fb_par), &pdev->dev);
-	if (!info)
-		return -ENOMEM;
+	if (!info) {
+		err = -ENOMEM;
+		goto err_exit_disable;
+	}
 	default_par = info->par;
 
 	switch (pdev->device) {
@@ -1568,7 +1570,7 @@ static int pm2fb_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto err_exit_neither;
 	}
 	default_par->v_regs =
-		ioremap_nocache(pm2fb_fix.mmio_start, pm2fb_fix.mmio_len);
+		ioremap(pm2fb_fix.mmio_start, pm2fb_fix.mmio_len);
 	if (!default_par->v_regs) {
 		printk(KERN_WARNING "pm2fb: Can't remap %s register area.\n",
 		       pm2fb_fix.id);
@@ -1637,21 +1639,16 @@ static int pm2fb_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto err_exit_mmio;
 	}
 	info->screen_base =
-		ioremap_nocache(pm2fb_fix.smem_start, pm2fb_fix.smem_len);
+		ioremap_wc(pm2fb_fix.smem_start, pm2fb_fix.smem_len);
 	if (!info->screen_base) {
 		printk(KERN_WARNING "pm2fb: Can't ioremap smem area.\n");
 		release_mem_region(pm2fb_fix.smem_start, pm2fb_fix.smem_len);
 		goto err_exit_mmio;
 	}
 
-#ifdef CONFIG_MTRR
-	default_par->mtrr_handle = -1;
 	if (!nomtrr)
-		default_par->mtrr_handle =
-			mtrr_add(pm2fb_fix.smem_start,
-				 pm2fb_fix.smem_len,
-				 MTRR_TYPE_WRCOMB, 1);
-#endif
+		default_par->wc_cookie = arch_phys_wc_add(pm2fb_fix.smem_start,
+							  pm2fb_fix.smem_len);
 
 	info->fbops		= &pm2fb_ops;
 	info->fix		= pm2fb_fix;
@@ -1716,6 +1713,8 @@ static int pm2fb_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	release_mem_region(pm2fb_fix.mmio_start, pm2fb_fix.mmio_len);
  err_exit_neither:
 	framebuffer_release(info);
+ err_exit_disable:
+	pci_disable_device(pdev);
 	return retval;
 }
 
@@ -1733,12 +1732,7 @@ static void pm2fb_remove(struct pci_dev *pdev)
 	struct pm2fb_par *par = info->par;
 
 	unregister_framebuffer(info);
-
-#ifdef CONFIG_MTRR
-	if (par->mtrr_handle >= 0)
-		mtrr_del(par->mtrr_handle, info->fix.smem_start,
-			 info->fix.smem_len);
-#endif /* CONFIG_MTRR */
+	arch_phys_wc_del(par->wc_cookie);
 	iounmap(info->screen_base);
 	release_mem_region(fix->smem_start, fix->smem_len);
 	iounmap(par->v_regs);
@@ -1747,9 +1741,10 @@ static void pm2fb_remove(struct pci_dev *pdev)
 	fb_dealloc_cmap(&info->cmap);
 	kfree(info->pixmap.addr);
 	framebuffer_release(info);
+	pci_disable_device(pdev);
 }
 
-static struct pci_device_id pm2fb_id_table[] = {
+static const struct pci_device_id pm2fb_id_table[] = {
 	{ PCI_VENDOR_ID_TI, PCI_DEVICE_ID_TI_TVP4020,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
 	{ PCI_VENDOR_ID_3DLABS, PCI_DEVICE_ID_3DLABS_PERMEDIA2,
@@ -1791,10 +1786,8 @@ static int __init pm2fb_setup(char *options)
 			lowvsync = 1;
 		else if (!strncmp(this_opt, "hwcursor=", 9))
 			hwcursor = simple_strtoul(this_opt + 9, NULL, 0);
-#ifdef CONFIG_MTRR
 		else if (!strncmp(this_opt, "nomtrr", 6))
 			nomtrr = 1;
-#endif
 		else if (!strncmp(this_opt, "noaccel", 7))
 			noaccel = 1;
 		else
@@ -1847,10 +1840,8 @@ MODULE_PARM_DESC(noaccel, "Disable acceleration");
 module_param(hwcursor, int, 0644);
 MODULE_PARM_DESC(hwcursor, "Enable hardware cursor "
 			"(1=enable, 0=disable, default=1)");
-#ifdef CONFIG_MTRR
 module_param(nomtrr, bool, 0);
 MODULE_PARM_DESC(nomtrr, "Disable MTRR support (0 or 1=disabled) (default=0)");
-#endif
 
 MODULE_AUTHOR("Jim Hague <jim.hague@acm.org>");
 MODULE_DESCRIPTION("Permedia2 framebuffer device driver");

@@ -1,11 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * drivers/net/team/team_mode_activebackup.c - Active-backup mode for team
  * Copyright (c) 2011 Jiri Pirko <jpirko@redhat.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -127,6 +123,7 @@ static const struct team_mode ab_mode = {
 	.owner		= THIS_MODULE,
 	.priv_size	= sizeof(struct ab_priv),
 	.ops		= &ab_mode_ops,
+	.lag_tx_type	= NETDEV_LAG_TX_TYPE_ACTIVEBACKUP,
 };
 
 static int __init ab_init_module(void)
@@ -145,4 +142,4 @@ module_exit(ab_cleanup_module);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Jiri Pirko <jpirko@redhat.com>");
 MODULE_DESCRIPTION("Active-backup mode for team");
-MODULE_ALIAS("team-mode-activebackup");
+MODULE_ALIAS_TEAM_MODE("activebackup");

@@ -1,13 +1,10 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
  * Device Tree file for Marvell Armada XP Matrix board
  *
  * Copyright (C) 2013 Marvell
  *
  * Lior Amsalem <alior@marvell.com>
- *
- * This file is licensed under the terms of the GNU General Public
- * License version 2.  This program is licensed "as is" without any
- * warranty of any kind, whether express or implied.
  */
 
 /dts-v1/;
@@ -18,10 +15,10 @@
 	compatible = "marvell,axp-matrix", "marvell,armadaxp-mv78460", "marvell,armadaxp", "marvell,armada-370-xp";
 
 	chosen {
-		bootargs = "console=ttyS0,115200 earlyprintk";
+		stdout-path = "serial0:115200n8";
 	};
 
-	memory {
+	memory@0 {
 		device_type = "memory";
 		/*
 		 * This board has 4 GB of RAM, but the last 256 MB of
@@ -33,7 +30,9 @@
 
 	soc {
 		ranges = <MBUS_ID(0xf0, 0x01) 0 0 0xf1000000 0x100000
-			  MBUS_ID(0x01, 0x1d) 0 0 0xfff00000 0x100000>;
+			  MBUS_ID(0x01, 0x1d) 0 0 0xfff00000 0x100000
+			  MBUS_ID(0x09, 0x09) 0 0 0xf1100000 0x10000
+			  MBUS_ID(0x09, 0x05) 0 0 0xf1110000 0x10000>;
 
 		internal-regs {
 			serial@12000 {
@@ -63,18 +62,18 @@
 				};
 			};
 
-			pcie-controller {
-				status = "okay";
-
-				pcie@1,0 {
-					/* Port 0, Lane 0 */
-					status = "okay";
-				};
-			};
-
 			usb@50000 {
 				status = "okay";
 			};
 		};
+	};
+};
+
+&pciec {
+	status = "okay";
+
+	pcie@1,0 {
+		/* Port 0, Lane 0 */
+		status = "okay";
 	};
 };

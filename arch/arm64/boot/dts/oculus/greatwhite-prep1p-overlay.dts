@@ -1,0 +1,29 @@
+/dts-v1/;
+/plugin/;
+
+#include "greatwhite.dtsi"
+
+/ {
+	model = "Greatwhite PreP1+";
+	compatible = "meta,greatwhite", "meta,greatwhite-prep1p";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xb4>;
+};
+
+&max17332 {
+	interrupts = <7 IRQ_TYPE_EDGE_FALLING>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&fg_mux_defaults>;
+};
+
+/* Display card (Celeste) I2C bus: */
+
+&qupv3_se4_i2c {
+	status = "ok";
+};
+
+&usb_conn_gpio {
+	meta,suspend-disable;
+};
+
+#include "meta-neo-action-button.dtsi"

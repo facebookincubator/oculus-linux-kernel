@@ -1,20 +1,13 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
-
 /* Smart-Peripheral-Switch (SPS) API. */
 
 #ifndef _SPS_H_
 #define _SPS_H_
 
+#include <linux/errno.h>
 #include <linux/types.h>	/* u32 */
 
 #if defined(CONFIG_PHYS_ADDR_T_64BIT) || defined(CONFIG_ARM_LPAE)
@@ -23,11 +16,13 @@
 #define SPS_GET_UPPER_ADDR(addr) ((addr & 0xF00000000ULL) >> 32)
 
 /* Returns 36bits physical address from 32bit address &
- * flags word */
+ * flags word
+ */
 #define DESC_FULL_ADDR(flags, addr) ((((phys_addr_t)flags & 0xF) << 32) | addr)
 
 /* Returns flags word with flags and 4bit upper address
- * from flags and 36bit physical address */
+ * from flags and 36bit physical address
+ */
 #define DESC_FLAG_WORD(flags, addr) (((addr & 0xF00000000ULL) >> 32) | flags)
 
 #else
@@ -39,7 +34,8 @@
 #endif
 
 /* Returns upper 4bits of 36bits physical address from
- * flags word */
+ * flags word
+ */
 #define DESC_UPPER_ADDR(flags) ((flags & 0xF))
 
 /* Returns lower 32bits of 36bits physical address */
@@ -51,16 +47,16 @@
 /* SPS device handle indicating use of BAM-DMA */
 
 /* SPS device handle invalid value */
-#define SPS_DEV_HANDLE_INVALID   ((unsigned long)0)
+#define SPS_DEV_HANDLE_INVALID   0
 
 /* BAM invalid IRQ value */
 #define SPS_IRQ_INVALID          0
 
 /* Invalid address value */
-#define SPS_ADDR_INVALID      ((unsigned long)0xDEADBEEF)
+#define SPS_ADDR_INVALID      (0xDEADBEEF)
 
 /* Invalid peripheral device enumeration class */
-#define SPS_CLASS_INVALID     ((unsigned long)-1)
+#define SPS_CLASS_INVALID     (0xDEADBEEF)
 
 /*
  * This value specifies different configurations for an SPS connection.
@@ -117,10 +113,6 @@
 #define SPS_BAM_HOLD_MEM            (1UL << 8)
 /* Use cached write pointer */
 #define SPS_BAM_CACHED_WP           (1UL << 10)
-/* Reset BAM with pipes connected */
-#define SPS_BAM_FORCE_RESET         (1UL << 11)
-/* BAM IRQ is enabled with IRQF_NO_SUSPEND added*/
-#define SPS_BAM_OPT_IRQ_NO_SUSPEND	(1UL << 12)
 
 /* BAM device management flags */
 
@@ -212,6 +204,8 @@ enum sps_option {
 	SPS_O_NO_EP_SYNC = 0x40000000,
 	/* Allow partial polling duing IRQ mode */
 	SPS_O_HYBRID = 0x80000000,
+	/* Allow dummy BAM connection */
+	SPS_O_DUMMY_PEER = 0x00000400,
 };
 
 /**
@@ -365,7 +359,7 @@ struct sps_command_element {
 };
 
 /*
- * BAM device's security configuation
+ * BAM device's security configuration
  */
 struct sps_bam_pipe_sec_config_props {
 	u32 pipe_mask;
@@ -422,7 +416,7 @@ struct sps_bam_sec_config_props {
  * perform the configuration. The global (top-level) BAM interrupt will be
  * assigned to the EE of the processor that manages the BAM.
  *
- * @p_sec_config_props - BAM device's security configuation
+ * @p_sec_config_props - BAM device's security configuration
  *
  */
 struct sps_bam_props {
@@ -431,7 +425,7 @@ struct sps_bam_props {
 
 	u32 options;
 	phys_addr_t phys_addr;
-	void *virt_addr;
+	void __iomem *virt_addr;
 	u32 virt_size;
 	u32 irq;
 	u32 num_pipes;
@@ -454,7 +448,7 @@ struct sps_bam_props {
 	u32 data_mem_id;
 
 	/* Feedback to BAM user */
-	void (*callback)(enum sps_callback_case, void *);
+	void (*callback)(enum sps_callback_case, void *user);
 	void *user;
 
 	/* Security properties */
@@ -748,10 +742,11 @@ struct sps_timer_result {
 
 /*----------------------------------------------------------------------------
  * Functions specific to sps interface
- * -------------------------------------------------------------------------*/
+ * ---------------------------------------------------------------------------
+ */
 struct sps_pipe;	/* Forward declaration */
 
-#ifdef CONFIG_SPS
+#if IS_ENABLED(CONFIG_SPS)
 /**
  * Register a BAM device
  *
@@ -1413,6 +1408,26 @@ int sps_pipe_pending_desc(unsigned long dev, u32 pipe, bool *pending);
 int sps_bam_process_irq(unsigned long dev);
 
 /*
+ * sps_bam_enable_irqs - enable IRQs of a BAM.
+ * @dev:	BAM device handle
+ *
+ * This function enables all IRQs of a BAM.
+ *
+ * Return: 0 on success, negative value on error
+ */
+int sps_bam_enable_irqs(unsigned long dev);
+
+/*
+ * sps_bam_disable_irqs - disable IRQs of a BAM.
+ * @dev:	BAM device handle
+ *
+ * This function disables all IRQs of a BAM.
+ *
+ * Return: 0 on success, negative value on error
+ */
+int sps_bam_disable_irqs(unsigned long dev);
+
+/*
  * sps_get_bam_addr - get address info of a BAM.
  * @dev:	BAM device handle
  * @base:	beginning address
@@ -1624,8 +1639,18 @@ static inline int sps_bam_process_irq(unsigned long dev)
 	return -EPERM;
 }
 
+static inline int sps_bam_enable_irqs(unsigned long dev)
+{
+	return -EPERM;
+}
+
+static inline int sps_bam_disable_irqs(unsigned long dev)
+{
+	return -EPERM;
+}
+
 static inline int sps_get_bam_addr(unsigned long dev, phys_addr_t *base,
-				u32 *size);
+				u32 *size)
 {
 	return -EPERM;
 }

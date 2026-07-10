@@ -1,0 +1,5 @@
+#include "meta-neo-common.dtsi"
+#include "meta-neo-usb-conn-gpio.dtsi"
+#include "greatwhite-display.dtsi"
+#include "greatwhite-panel.dtsi"
+#include "greatwhite-hyperoff.dtsi"

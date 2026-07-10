@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *
  * sched-messaging.c
@@ -9,10 +10,7 @@
  *
  */
 
-#include "../perf.h"
-#include "../util/util.h"
-#include "../util/parse-options.h"
-#include "../builtin.h"
+#include <subcmd/parse-options.h>
 #include "bench.h"
 
 /* Test groups of 20 processes spraying to 20 receivers */
@@ -29,11 +27,12 @@
 #include <poll.h>
 #include <limits.h>
 #include <err.h>
+#include <linux/time64.h>
 
 #define DATASIZE 100
 
 static bool use_pipes = false;
-static unsigned int loops = 100;
+static unsigned int nr_loops = 100;
 static bool thread_mode = false;
 static unsigned int num_groups = 10;
 
@@ -41,7 +40,7 @@ struct sender_context {
 	unsigned int num_fds;
 	int ready_out;
 	int wakefd;
-	int out_fds[0];
+	int out_fds[];
 };
 
 struct receiver_context {
@@ -67,11 +66,10 @@ static void fdpair(int fds[2])
 /* Block until we're ready to go */
 static void ready(int ready_out, int wakefd)
 {
-	char dummy;
 	struct pollfd pollfd = { .fd = wakefd, .events = POLLIN };
 
 	/* Tell them we're ready. */
-	if (write(ready_out, &dummy, 1) != 1)
+	if (write(ready_out, "R", 1) != 1)
 		err(EXIT_FAILURE, "CLIENT: ready write");
 
 	/* Wait for "GO" signal */
@@ -79,16 +77,17 @@ static void ready(int ready_out, int wakefd)
 		err(EXIT_FAILURE, "poll");
 }
 
-/* Sender sprays loops messages down each file descriptor */
+/* Sender sprays nr_loops messages down each file descriptor */
 static void *sender(struct sender_context *ctx)
 {
 	char data[DATASIZE];
 	unsigned int i, j;
 
 	ready(ctx->ready_out, ctx->wakefd);
+	memset(data, 'S', sizeof(data));
 
 	/* Now pump to every receiver. */
-	for (i = 0; i < loops; i++) {
+	for (i = 0; i < nr_loops; i++) {
 		for (j = 0; j < ctx->num_fds; j++) {
 			int ret, done = 0;
 
@@ -213,7 +212,7 @@ static unsigned int group(pthread_t *pth,
 		/* Create the pipe between client and server */
 		fdpair(fds);
 
-		ctx->num_packets = num_fds * loops;
+		ctx->num_packets = num_fds * nr_loops;
 		ctx->in_fds[0] = fds[0];
 		ctx->in_fds[1] = fds[1];
 		ctx->ready_out = ready_out;
@@ -250,7 +249,7 @@ static const struct option options[] = {
 	OPT_BOOLEAN('t', "thread", &thread_mode,
 		    "Be multi thread instead of multi process"),
 	OPT_UINTEGER('g', "group", &num_groups, "Specify number of groups"),
-	OPT_UINTEGER('l', "loop", &loops, "Specify number of loops"),
+	OPT_UINTEGER('l', "nr_loops", &nr_loops, "Specify the number of loops to run (default: 100)"),
 	OPT_END()
 };
 
@@ -259,8 +258,7 @@ static const char * const bench_sched_message_usage[] = {
 	NULL
 };
 
-int bench_sched_messaging(int argc, const char **argv,
-		    const char *prefix __maybe_unused)
+int bench_sched_messaging(int argc, const char **argv)
 {
 	unsigned int i, total_children;
 	struct timeval start, stop, diff;
@@ -312,11 +310,11 @@ int bench_sched_messaging(int argc, const char **argv,
 		       thread_mode ? "threads" : "processes");
 		printf(" %14s: %lu.%03lu [sec]\n", "Total time",
 		       diff.tv_sec,
-		       (unsigned long) (diff.tv_usec/1000));
+		       (unsigned long) (diff.tv_usec / USEC_PER_MSEC));
 		break;
 	case BENCH_FORMAT_SIMPLE:
 		printf("%lu.%03lu\n", diff.tv_sec,
-		       (unsigned long) (diff.tv_usec/1000));
+		       (unsigned long) (diff.tv_usec / USEC_PER_MSEC));
 		break;
 	default:
 		/* reaching here is something disaster */

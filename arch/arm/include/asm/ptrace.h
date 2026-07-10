@@ -1,11 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  arch/arm/include/asm/ptrace.h
  *
  *  Copyright (C) 1996-2003 Russell King
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #ifndef __ASM_ARM_PTRACE_H
 #define __ASM_ARM_PTRACE_H
@@ -13,9 +10,19 @@
 #include <uapi/asm/ptrace.h>
 
 #ifndef __ASSEMBLY__
+#include <linux/types.h>
+
 struct pt_regs {
 	unsigned long uregs[18];
 };
+
+struct svc_pt_regs {
+	struct pt_regs regs;
+	u32 dacr;
+	u32 addr_limit;
+};
+
+#define to_svc_pt_regs(r) container_of(r, struct svc_pt_regs, regs)
 
 #define user_mode(regs)	\
 	(((regs)->ARM_cpsr & 0xf) == 0)
@@ -116,8 +123,7 @@ extern unsigned long profile_pc(struct pt_regs *regs);
 /*
  * kprobe-based event tracer support
  */
-#include <linux/stddef.h>
-#include <linux/types.h>
+#include <linux/compiler.h>
 #define MAX_REG_OFFSET (offsetof(struct pt_regs, ARM_ORIG_r0))
 
 extern int regs_query_register_offset(const char *name);
@@ -154,10 +160,35 @@ static inline unsigned long user_stack_pointer(struct pt_regs *regs)
 	return regs->ARM_sp;
 }
 
-#define current_pt_regs(void) ({				\
-	register unsigned long sp asm ("sp");			\
-	(struct pt_regs *)((sp | (THREAD_SIZE - 1)) - 7) - 1;	\
+#define current_pt_regs(void) ({ (struct pt_regs *)			\
+		((current_stack_pointer | (THREAD_SIZE - 1)) - 7) - 1;	\
 })
+
+
+/*
+ * Update ITSTATE after normal execution of an IT block instruction.
+ *
+ * The 8 IT state bits are split into two parts in CPSR:
+ *	ITSTATE<1:0> are in CPSR<26:25>
+ *	ITSTATE<7:2> are in CPSR<15:10>
+ */
+static inline unsigned long it_advance(unsigned long cpsr)
+{
+	if ((cpsr & 0x06000400) == 0) {
+		/* ITSTATE<2:0> == 0 means end of IT block, so clear IT state */
+		cpsr &= ~PSR_IT_MASK;
+	} else {
+		/* We need to shift left ITSTATE<4:0> */
+		const unsigned long mask = 0x06001c00;  /* Mask ITSTATE<4:0> */
+		unsigned long it = cpsr & mask;
+		it <<= 1;
+		it |= it >> (27 - 10);  /* Carry ITSTATE<2> to correct place */
+		it &= mask;
+		cpsr &= ~mask;
+		cpsr |= it;
+	}
+	return cpsr;
+}
 
 #endif /* __ASSEMBLY__ */
 #endif

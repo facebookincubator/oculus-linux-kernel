@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/mm/context.c
  *
@@ -5,17 +6,12 @@
  *  Copyright (C) 2012 ARM Limited
  *
  *  Author: Will Deacon <will.deacon@arm.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #include <linux/init.h>
 #include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/smp.h>
 #include <linux/percpu.h>
-#include <linux/msm_rtb.h>
 
 #include <asm/mmu_context.h>
 #include <asm/smp_plat.h>
@@ -121,7 +117,6 @@ static int contextidr_notifier(struct notifier_block *unused, unsigned long cmd,
 	"	mcr	p15, 0, %0, c13, c0, 1\n"
 	: "=r" (contextidr), "+r" (pid)
 	: "I" (~ASID_MASK));
-	uncached_logk(LOGK_CTXID, (void *)contextidr);
 	isb();
 
 	return NOTIFY_OK;

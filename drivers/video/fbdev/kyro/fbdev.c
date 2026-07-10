@@ -22,9 +22,6 @@
 #include <linux/pci.h>
 #include <asm/io.h>
 #include <linux/uaccess.h>
-#ifdef CONFIG_MTRR
-#include <asm/mtrr.h>
-#endif
 
 #include <video/kyro.h>
 
@@ -47,7 +44,7 @@ static struct fb_fix_screeninfo kyro_fix = {
 	.accel		= FB_ACCEL_NONE,
 };
 
-static struct fb_var_screeninfo kyro_var = {
+static const struct fb_var_screeninfo kyro_var = {
 	/* 640x480, 16bpp @ 60 Hz */
 	.xres		= 640,
 	.yres		= 480,
@@ -84,9 +81,7 @@ static device_info_t deviceInfo;
 static char *mode_option = NULL;
 static int nopan = 0;
 static int nowrap = 1;
-#ifdef CONFIG_MTRR
 static int nomtrr = 0;
-#endif
 
 /* PCI driver prototypes */
 static int kyrofb_probe(struct pci_dev *pdev, const struct pci_device_id *ent);
@@ -377,6 +372,11 @@ static int kyro_dev_overlay_viewport_set(u32 x, u32 y, u32 ulWidth, u32 ulHeight
 		/* probably haven't called CreateOverlay yet */
 		return -EINVAL;
 
+	if (ulWidth == 0 || ulWidth == 0xffffffff ||
+	    ulHeight == 0 || ulHeight == 0xffffffff ||
+	    (x < 2 && ulWidth + 2 == 0))
+		return -EINVAL;
+
 	/* Stop Ramdac Output */
 	DisableRamdacOutput(deviceInfo.pSTGReg);
 
@@ -398,6 +398,9 @@ static inline unsigned long get_line_length(int x, int bpp)
 static int kyrofb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 {
 	struct kyrofb_info *par = info->par;
+
+	if (!var->pixclock)
+		return -EINVAL;
 
 	if (var->bits_per_pixel != 16 && var->bits_per_pixel != 32) {
 		printk(KERN_WARNING "kyrofb: depth not supported: %u\n", var->bits_per_pixel);
@@ -570,10 +573,8 @@ static int __init kyrofb_setup(char *options)
 			nopan = 1;
 		} else if (strcmp(this_opt, "nowrap") == 0) {
 			nowrap = 1;
-#ifdef CONFIG_MTRR
 		} else if (strcmp(this_opt, "nomtrr") == 0) {
 			nomtrr = 1;
-#endif
 		} else {
 			mode_option = this_opt;
 		}
@@ -640,7 +641,7 @@ static int kyrofb_ioctl(struct fb_info *info,
 	return 0;
 }
 
-static struct pci_device_id kyrofb_pci_tbl[] = {
+static const struct pci_device_id kyrofb_pci_tbl[] = {
 	{ PCI_VENDOR_ID_ST, PCI_DEVICE_ID_STG4000,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
 	{ 0, }
@@ -655,7 +656,7 @@ static struct pci_driver kyrofb_pci_driver = {
 	.remove		= kyrofb_remove,
 };
 
-static struct fb_ops kyrofb_ops = {
+static const struct fb_ops kyrofb_ops = {
 	.owner		= THIS_MODULE,
 	.fb_check_var	= kyrofb_check_var,
 	.fb_set_par	= kyrofb_set_par,
@@ -690,18 +691,17 @@ static int kyrofb_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	kyro_fix.mmio_len   = pci_resource_len(pdev, 1);
 
 	currentpar->regbase = deviceInfo.pSTGReg =
-		ioremap_nocache(kyro_fix.mmio_start, kyro_fix.mmio_len);
+		ioremap(kyro_fix.mmio_start, kyro_fix.mmio_len);
+	if (!currentpar->regbase)
+		goto out_free_fb;
 
-	info->screen_base = ioremap_nocache(kyro_fix.smem_start,
-					    kyro_fix.smem_len);
+	info->screen_base = pci_ioremap_wc_bar(pdev, 0);
+	if (!info->screen_base)
+		goto out_unmap_regs;
 
-#ifdef CONFIG_MTRR
 	if (!nomtrr)
-		currentpar->mtrr_handle =
-			mtrr_add(kyro_fix.smem_start,
-				 kyro_fix.smem_len,
-				 MTRR_TYPE_WRCOMB, 1);
-#endif
+		currentpar->wc_cookie = arch_phys_wc_add(kyro_fix.smem_start,
+							 kyro_fix.smem_len);
 
 	kyro_fix.ypanstep	= nopan ? 0 : 1;
 	kyro_fix.ywrapstep	= nowrap ? 0 : 1;
@@ -745,8 +745,10 @@ static int kyrofb_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return 0;
 
 out_unmap:
-	iounmap(currentpar->regbase);
 	iounmap(info->screen_base);
+out_unmap_regs:
+	iounmap(currentpar->regbase);
+out_free_fb:
 	framebuffer_release(info);
 
 	return -EINVAL;
@@ -770,12 +772,7 @@ static void kyrofb_remove(struct pci_dev *pdev)
 	iounmap(info->screen_base);
 	iounmap(par->regbase);
 
-#ifdef CONFIG_MTRR
-	if (par->mtrr_handle)
-		mtrr_del(par->mtrr_handle,
-			 info->fix.smem_start,
-			 info->fix.smem_len);
-#endif
+	arch_phys_wc_del(par->wc_cookie);
 
 	unregister_framebuffer(info);
 	framebuffer_release(info);

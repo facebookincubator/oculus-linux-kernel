@@ -1,0 +1,56 @@
+#include "vendor-base/qcom/display/neo-sde.dtsi"
+#include "vendor-base/qcom/display/neo_luna-v2-sde-display.dtsi"
+
+#include "greatwhite-panel-OP02220BA-1080p-60.dtsi"
+#include "greatwhite-panel-OP02220BA-608x608_30.dtsi"
+#include "greatwhite-panel-OP3010-600x600_30.dtsi"
+
+&display_panel_avdd {
+	status = "disabled";    // release gpio11
+};
+
+&display_panel_avee {
+	status = "disabled";    // release gpio109
+};
+
+&display_1p8_1p2_pwr_en {
+	status = "disabled";    // release gpio116
+};
+
+&mdss_mdp {
+	bridges = <&lcosOP03010>;
+};
+
+&sde_dsi {
+	qcom,dsi-default-panel = <&dsi_op3010_lcos_600x600_30>;
+
+	qcom,dsi-display-active;
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			ext_dsi_out: endpoint {
+				remote-endpoint = <&dsi_lcos_bridge>;
+			};
+		};
+	};
+};
+
+&lcosOP03010 {
+	continuous-splash;
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			dsi_lcos_bridge: endpoint {
+				remote-endpoint = <&ext_dsi_out>;
+			};
+		};
+	};
+};

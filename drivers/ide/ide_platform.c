@@ -1,14 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Platform IDE driver
  *
  * Copyright (C) 2007 MontaVista Software
  *
  * Maintainer: Kumar Gala <galak@kernel.crashing.org>
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
  */
 
 #include <linux/types.h>
@@ -125,7 +121,6 @@ static int plat_ide_remove(struct platform_device *pdev)
 static struct platform_driver platform_ide_driver = {
 	.driver = {
 		.name = "pata_platform",
-		.owner = THIS_MODULE,
 	},
 	.probe = plat_ide_probe,
 	.remove = plat_ide_remove,

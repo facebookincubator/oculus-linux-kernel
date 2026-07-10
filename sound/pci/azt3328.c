@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*  azt3328.c - driver for Aztech AZF3328 based soundcards (e.g. PCI168).
  *  Copyright (C) 2002, 2005 - 2011 by Andreas Mohr <andi AT lisas.de>
  *
@@ -15,21 +16,6 @@
  *   just to make sure that the right people hit this and get to know that,
  *   despite the high level of Internet ignorance - as usual :-P -
  *   about very good support for this card - on Linux!)
- *
- * GPL LICENSE
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
-
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  *
  * NOTES
  *  Since Aztech does not provide any chipset documentation,
@@ -179,7 +165,7 @@
  *  - use MMIO (memory-mapped I/O)? Slightly faster access, e.g. for gameport.
  */
 
-#include <asm/io.h>
+#include <linux/io.h>
 #include <linux/init.h>
 #include <linux/bug.h> /* WARN_ONCE */
 #include <linux/pci.h>
@@ -212,7 +198,7 @@ MODULE_DESCRIPTION("Aztech AZF3328 (PCI168)");
 MODULE_LICENSE("GPL");
 MODULE_SUPPORTED_DEVICE("{{Aztech,AZF3328}}");
 
-#if defined(CONFIG_GAMEPORT) || (defined(MODULE) && defined(CONFIG_GAMEPORT_MODULE))
+#if IS_REACHABLE(CONFIG_GAMEPORT)
 #define SUPPORT_GAMEPORT 1
 #endif
 
@@ -771,7 +757,7 @@ snd_azf3328_mixer_new(struct snd_azf3328 *chip)
 {
 	struct snd_ac97_bus *bus;
 	struct snd_ac97_template ac97;
-	static struct snd_ac97_bus_ops ops = {
+	static const struct snd_ac97_bus_ops ops = {
 		.write = snd_azf3328_mixer_ac97_write,
 		.read = snd_azf3328_mixer_ac97_read,
 	};
@@ -1034,11 +1020,6 @@ snd_azf3328_info_mixer_enum(struct snd_kcontrol *kcontrol,
 	const char * const *p = NULL;
 
 	snd_azf3328_mixer_reg_decode(&reg, kcontrol->private_value);
-        uinfo->type = SNDRV_CTL_ELEM_TYPE_ENUMERATED;
-        uinfo->count = (reg.reg == IDX_MIXER_REC_SELECT) ? 2 : 1;
-        uinfo->value.enumerated.items = reg.enum_c;
-        if (uinfo->value.enumerated.item > reg.enum_c - 1U)
-                uinfo->value.enumerated.item = reg.enum_c - 1U;
 	if (reg.reg == IDX_MIXER_ADVCTL2) {
 		switch(reg.lchan_shift) {
 		case 8: /* modem out sel */
@@ -1051,12 +1032,12 @@ snd_azf3328_info_mixer_enum(struct snd_kcontrol *kcontrol,
 			p = texts4;
 			break;
 		}
-	} else
-	if (reg.reg == IDX_MIXER_REC_SELECT)
+	} else if (reg.reg == IDX_MIXER_REC_SELECT)
 		p = texts3;
 
-	strcpy(uinfo->value.enumerated.name, p[uinfo->value.enumerated.item]);
-        return 0;
+	return snd_ctl_enum_info(uinfo,
+				 (reg.reg == IDX_MIXER_REC_SELECT) ? 2 : 1,
+				 reg.enum_c, p);
 }
 
 static int
@@ -1113,7 +1094,7 @@ snd_azf3328_put_mixer_enum(struct snd_kcontrol *kcontrol,
 	return (nreg != oreg);
 }
 
-static struct snd_kcontrol_new snd_azf3328_mixer_controls[] = {
+static const struct snd_kcontrol_new snd_azf3328_mixer_controls[] = {
 	AZF3328_MIXER_SWITCH("Master Playback Switch", IDX_MIXER_PLAY_MASTER, 15, 1),
 	AZF3328_MIXER_VOL_STEREO("Master Playback Volume", IDX_MIXER_PLAY_MASTER, 0x1f, 1),
 	AZF3328_MIXER_SWITCH("PCM Playback Switch", IDX_MIXER_WAVEOUT, 15, 1),
@@ -1171,7 +1152,7 @@ static struct snd_kcontrol_new snd_azf3328_mixer_controls[] = {
 #endif
 };
 
-static u16 snd_azf3328_init_values[][2] = {
+static const u16 snd_azf3328_init_values[][2] = {
         { IDX_MIXER_PLAY_MASTER,	MIXER_MUTE_MASK|0x1f1f },
         { IDX_MIXER_MODEMOUT,		MIXER_MUTE_MASK|0x1f1f },
 	{ IDX_MIXER_BASSTREBLE,		0x0000 },
@@ -1224,20 +1205,6 @@ snd_azf3328_mixer_new(struct snd_azf3328 *chip)
 }
 #endif /* AZF_USE_AC97_LAYER */
 
-static int
-snd_azf3328_hw_params(struct snd_pcm_substream *substream,
-				 struct snd_pcm_hw_params *hw_params)
-{
-	return snd_pcm_lib_malloc_pages(substream, params_buffer_bytes(hw_params));
-}
-
-static int
-snd_azf3328_hw_free(struct snd_pcm_substream *substream)
-{
-	snd_pcm_lib_free_pages(substream);
-	return 0;
-}
-
 static void
 snd_azf3328_codec_setfmt(struct snd_azf3328_codec_data *codec,
 			       enum azf_freq_t bitrate,
@@ -1265,7 +1232,7 @@ snd_azf3328_codec_setfmt(struct snd_azf3328_codec_data *codec,
 	case AZF_FREQ_32000: freq = SOUNDFORMAT_FREQ_32000; break;
 	default:
 		snd_printk(KERN_WARNING "unknown bitrate %d, assuming 44.1kHz!\n", bitrate);
-		/* fall-through */
+		fallthrough;
 	case AZF_FREQ_44100: freq = SOUNDFORMAT_FREQ_44100; break;
 	case AZF_FREQ_48000: freq = SOUNDFORMAT_FREQ_48000; break;
 	case AZF_FREQ_66200: freq = SOUNDFORMAT_FREQ_SUSPECTED_66200; break;
@@ -1390,8 +1357,8 @@ snd_azf3328_ctrl_codec_activity(struct snd_azf3328 *chip,
 					.running)
 			     &&  (!chip->codecs[peer_codecs[codec_type].other2]
 					.running));
-		 }
-		 if (call_function)
+		}
+		if (call_function)
 			snd_azf3328_ctrl_enable_codecs(chip, enable);
 
 		/* ...and adjust clock, too
@@ -2019,7 +1986,7 @@ static const struct snd_pcm_hardware snd_azf3328_hardware =
 };
 
 
-static unsigned int snd_azf3328_fixed_rates[] = {
+static const unsigned int snd_azf3328_fixed_rates[] = {
 	AZF_FREQ_4000,
 	AZF_FREQ_4800,
 	AZF_FREQ_5512,
@@ -2036,7 +2003,7 @@ static unsigned int snd_azf3328_fixed_rates[] = {
 	AZF_FREQ_66200
 };
 
-static struct snd_pcm_hw_constraint_list snd_azf3328_hw_constraints_rates = {
+static const struct snd_pcm_hw_constraint_list snd_azf3328_hw_constraints_rates = {
 	.count = ARRAY_SIZE(snd_azf3328_fixed_rates),
 	.list = snd_azf3328_fixed_rates,
 	.mask = 0,
@@ -2095,34 +2062,25 @@ snd_azf3328_pcm_close(struct snd_pcm_substream *substream
 
 /******************************************************************/
 
-static struct snd_pcm_ops snd_azf3328_playback_ops = {
+static const struct snd_pcm_ops snd_azf3328_playback_ops = {
 	.open =		snd_azf3328_pcm_playback_open,
 	.close =	snd_azf3328_pcm_close,
-	.ioctl =	snd_pcm_lib_ioctl,
-	.hw_params =	snd_azf3328_hw_params,
-	.hw_free =	snd_azf3328_hw_free,
 	.prepare =	snd_azf3328_pcm_prepare,
 	.trigger =	snd_azf3328_pcm_trigger,
 	.pointer =	snd_azf3328_pcm_pointer
 };
 
-static struct snd_pcm_ops snd_azf3328_capture_ops = {
+static const struct snd_pcm_ops snd_azf3328_capture_ops = {
 	.open =		snd_azf3328_pcm_capture_open,
 	.close =	snd_azf3328_pcm_close,
-	.ioctl =	snd_pcm_lib_ioctl,
-	.hw_params =	snd_azf3328_hw_params,
-	.hw_free =	snd_azf3328_hw_free,
 	.prepare =	snd_azf3328_pcm_prepare,
 	.trigger =	snd_azf3328_pcm_trigger,
 	.pointer =	snd_azf3328_pcm_pointer
 };
 
-static struct snd_pcm_ops snd_azf3328_i2s_out_ops = {
+static const struct snd_pcm_ops snd_azf3328_i2s_out_ops = {
 	.open =		snd_azf3328_pcm_i2s_out_open,
 	.close =	snd_azf3328_pcm_close,
-	.ioctl =	snd_pcm_lib_ioctl,
-	.hw_params =	snd_azf3328_hw_params,
-	.hw_free =	snd_azf3328_hw_free,
 	.prepare =	snd_azf3328_pcm_prepare,
 	.trigger =	snd_azf3328_pcm_trigger,
 	.pointer =	snd_azf3328_pcm_pointer
@@ -2131,7 +2089,8 @@ static struct snd_pcm_ops snd_azf3328_i2s_out_ops = {
 static int
 snd_azf3328_pcm(struct snd_azf3328 *chip)
 {
-enum { AZF_PCMDEV_STD, AZF_PCMDEV_I2S_OUT, NUM_AZF_PCMDEVS }; /* pcm devices */
+	/* pcm devices */
+	enum { AZF_PCMDEV_STD, AZF_PCMDEV_I2S_OUT, NUM_AZF_PCMDEVS };
 
 	struct snd_pcm *pcm;
 	int err;
@@ -2152,9 +2111,8 @@ enum { AZF_PCMDEV_STD, AZF_PCMDEV_I2S_OUT, NUM_AZF_PCMDEVS }; /* pcm devices */
 	chip->pcm[AZF_CODEC_PLAYBACK] = pcm;
 	chip->pcm[AZF_CODEC_CAPTURE] = pcm;
 
-	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-						snd_dma_pci_data(chip->pci),
-							64*1024, 64*1024);
+	snd_pcm_set_managed_buffer_all(pcm, SNDRV_DMA_TYPE_DEV, &chip->pci->dev,
+				       64*1024, 64*1024);
 
 	err = snd_pcm_new(chip->card, "AZF3328 I2S OUT", AZF_PCMDEV_I2S_OUT,
 								1, 0, &pcm);
@@ -2168,9 +2126,8 @@ enum { AZF_PCMDEV_STD, AZF_PCMDEV_I2S_OUT, NUM_AZF_PCMDEVS }; /* pcm devices */
 	strcpy(pcm->name, chip->card->shortname);
 	chip->pcm[AZF_CODEC_I2S_OUT] = pcm;
 
-	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-						snd_dma_pci_data(chip->pci),
-							64*1024, 64*1024);
+	snd_pcm_set_managed_buffer_all(pcm, SNDRV_DMA_TYPE_DEV, &chip->pci->dev,
+				       64*1024, 64*1024);
 
 	return 0;
 }
@@ -2298,8 +2255,6 @@ snd_azf3328_free(struct snd_azf3328 *chip)
 	snd_azf3328_timer_stop(chip->timer);
 	snd_azf3328_gameport_free(chip);
 
-	if (chip->irq >= 0)
-		synchronize_irq(chip->irq);
 __end_hw:
 	if (chip->irq >= 0)
 		free_irq(chip->irq, chip);
@@ -2400,7 +2355,7 @@ snd_azf3328_create(struct snd_card *card,
 {
 	struct snd_azf3328 *chip;
 	int err;
-	static struct snd_device_ops ops = {
+	static const struct snd_device_ops ops = {
 		.dev_free =     snd_azf3328_dev_free,
 	};
 	u8 dma_init;
@@ -2424,8 +2379,8 @@ snd_azf3328_create(struct snd_card *card,
 	chip->irq = -1;
 
 	/* check if we can restrict PCI DMA transfers to 24 bits */
-	if (pci_set_dma_mask(pci, DMA_BIT_MASK(24)) < 0 ||
-	    pci_set_consistent_dma_mask(pci, DMA_BIT_MASK(24)) < 0) {
+	if (dma_set_mask(&pci->dev, DMA_BIT_MASK(24)) < 0 ||
+	    dma_set_coherent_mask(&pci->dev, DMA_BIT_MASK(24)) < 0) {
 		dev_err(card->dev,
 			"architecture does not support 24bit PCI busmaster DMA\n"
 		);
@@ -2468,8 +2423,8 @@ snd_azf3328_create(struct snd_card *card,
 		goto out_err;
 	}
 	chip->irq = pci->irq;
+	card->sync_irq = chip->irq;
 	pci_set_master(pci);
-	synchronize_irq(chip->irq);
 
 	snd_azf3328_debug_show_ports(chip);
 
@@ -2699,16 +2654,11 @@ snd_azf3328_resume_ac97(const struct snd_azf3328 *chip)
 static int
 snd_azf3328_suspend(struct device *dev)
 {
-	struct pci_dev *pci = to_pci_dev(dev);
 	struct snd_card *card = dev_get_drvdata(dev);
 	struct snd_azf3328 *chip = card->private_data;
 	u16 *saved_regs_ctrl_u16;
 
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
-
-	/* same pcm object for playback/capture */
-	snd_pcm_suspend_all(chip->pcm[AZF_CODEC_PLAYBACK]);
-	snd_pcm_suspend_all(chip->pcm[AZF_CODEC_I2S_OUT]);
 
 	snd_azf3328_suspend_ac97(chip);
 
@@ -2725,28 +2675,14 @@ snd_azf3328_suspend(struct device *dev)
 		ARRAY_SIZE(chip->saved_regs_mpu), chip->saved_regs_mpu);
 	snd_azf3328_suspend_regs(chip, chip->opl3_io,
 		ARRAY_SIZE(chip->saved_regs_opl3), chip->saved_regs_opl3);
-
-	pci_disable_device(pci);
-	pci_save_state(pci);
-	pci_set_power_state(pci, PCI_D3hot);
 	return 0;
 }
 
 static int
 snd_azf3328_resume(struct device *dev)
 {
-	struct pci_dev *pci = to_pci_dev(dev);
 	struct snd_card *card = dev_get_drvdata(dev);
 	const struct snd_azf3328 *chip = card->private_data;
-
-	pci_set_power_state(pci, PCI_D0);
-	pci_restore_state(pci);
-	if (pci_enable_device(pci) < 0) {
-		dev_err(dev, "pci_enable_device failed, disabling device\n");
-		snd_card_disconnect(card);
-		return -EIO;
-	}
-	pci_set_master(pci);
 
 	snd_azf3328_resume_regs(chip, chip->saved_regs_game, chip->game_io,
 					ARRAY_SIZE(chip->saved_regs_game));

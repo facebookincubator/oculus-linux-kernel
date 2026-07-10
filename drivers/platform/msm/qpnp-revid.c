@@ -1,20 +1,16 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/spmi.h>
+#include <linux/platform_device.h>
+#include <linux/regmap.h>
 #include <linux/err.h>
 #include <linux/qpnp/qpnp-revid.h>
+#include <linux/of.h>
 
 #define REVID_REVISION1	0x0
 #define REVID_REVISION2	0x1
@@ -24,6 +20,8 @@
 #define REVID_SUBTYPE	0x5
 #define REVID_STATUS1	0x8
 #define REVID_SPARE_0	0x60
+#define REVID_TP_REV	0xf1
+#define REVID_FAB_ID	0xf2
 
 #define QPNP_REVID_DEV_NAME "qcom,qpnp-revid"
 
@@ -48,12 +46,23 @@ static const char *const pmic_names[] = {
 	[PMI8950_SUBTYPE] = "PMI8950",
 	[PMK8001_SUBTYPE] = "PMK8001",
 	[PMI8996_SUBTYPE] = "PMI8996",
-	[PMCOBALT_SUBTYPE] = "PMCOBALT",
-	[PMICOBALT_SUBTYPE] = "PMICOBALT",
+	[PM8998_SUBTYPE] = "PM8998",
+	[PMI8998_SUBTYPE] = "PMI8998",
 	[PM8005_SUBTYPE] = "PM8005",
 	[PM8937_SUBTYPE] = "PM8937",
+	[PM660L_SUBTYPE] = "PM660L",
+	[PM660_SUBTYPE] = "PM660",
+	[PMI632_SUBTYPE] = "PMI632",
 	[PMI8937_SUBTYPE] = "PMI8937",
-	[PMI8940_SUBTYPE] = "PMI8940",
+	[PM8150_SUBTYPE] = "PM8150",
+	[PM8150B_SUBTYPE] = "PM8150B",
+	[PM8150L_SUBTYPE] = "PM8150L",
+	[PM6150_SUBTYPE] = "PM6150",
+	[PM7250B_SUBTYPE] = "PM7250B",
+	[PM6125_SUBTYPE] = "PM6125",
+	[PM8008_SUBTYPE] = "PM8008",
+	[SMB1355_SUBTYPE] = "SMB1355",
+	[SMB1390_SUBTYPE] = "SMB1390",
 };
 
 struct revid_chip {
@@ -65,22 +74,22 @@ struct revid_chip {
 static LIST_HEAD(revid_chips);
 static DEFINE_MUTEX(revid_chips_lock);
 
-static struct of_device_id qpnp_revid_match_table[] = {
+static const struct of_device_id qpnp_revid_match_table[] = {
 	{ .compatible = QPNP_REVID_DEV_NAME },
 	{}
 };
 
-static u8 qpnp_read_byte(struct spmi_device *spmi, u16 addr)
+static u8 qpnp_read_byte(struct regmap *regmap, u16 addr)
 {
 	int rc;
-	u8 val;
+	int val;
 
-	rc = spmi_ext_register_readl(spmi->ctrl, spmi->sid, addr, &val, 1);
+	rc = regmap_read(regmap, addr, &val);
 	if (rc) {
-		pr_err("SPMI read failed rc=%d\n", rc);
+		pr_err("read failed rc=%d\n", rc);
 		return 0;
 	}
-	return val;
+	return (u8)val;
 }
 
 /**
@@ -117,7 +126,6 @@ EXPORT_SYMBOL(get_revid_data);
 #define PMD9655_PERIPHERAL_SUBTYPE	0x0F
 #define PMI8950_PERIPHERAL_SUBTYPE	0x11
 #define PMI8937_PERIPHERAL_SUBTYPE	0x37
-#define PMI8940_PERIPHERAL_SUBTYPE	0x40
 static size_t build_pmic_string(char *buf, size_t n, int sid,
 		u8 subtype, u8 rev1, u8 rev2, u8 rev3, u8 rev4)
 {
@@ -133,85 +141,95 @@ static size_t build_pmic_string(char *buf, size_t n, int sid,
 			&& rev4 < 0x02)
 		rev4++;
 
-	pos += snprintf(buf + pos, n - pos, "PMIC@SID%d", sid);
+	pos += scnprintf(buf + pos, n - pos, "PMIC@SID%d", sid);
 	if (subtype >= ARRAY_SIZE(pmic_names) || subtype == 0)
-		pos += snprintf(buf + pos, n - pos, ": %s (subtype: 0x%02X)",
+		pos += scnprintf(buf + pos, n - pos, ": %s (subtype: 0x%02X)",
 				pmic_names[0], subtype);
 	else
-		pos += snprintf(buf + pos, n - pos, ": %s",
+		pos += scnprintf(buf + pos, n - pos, ": %s",
 				pmic_names[subtype]);
-	pos += snprintf(buf + pos, n - pos, " v%d.%d", rev4, rev3);
+	pos += scnprintf(buf + pos, n - pos, " v%d.%d", rev4, rev3);
 	if (rev2 || rev1)
-		pos += snprintf(buf + pos, n - pos, ".%d", rev2);
+		pos += scnprintf(buf + pos, n - pos, ".%d", rev2);
 	if (rev1)
-		pos += snprintf(buf + pos, n - pos, ".%d", rev1);
+		pos += scnprintf(buf + pos, n - pos, ".%d", rev1);
 	return pos;
 }
 
 #define PMIC_PERIPHERAL_TYPE		0x51
 #define PMIC_STRING_MAXLENGTH		80
-static int qpnp_revid_probe(struct spmi_device *spmi)
+static int qpnp_revid_probe(struct platform_device *pdev)
 {
 	u8 rev1, rev2, rev3, rev4, pmic_type, pmic_subtype, pmic_status;
 	u8 option1, option2, option3, option4, spare0;
-	struct resource *resource;
+	unsigned int base;
+	int rc, fab_id, tp_rev;
 	char pmic_string[PMIC_STRING_MAXLENGTH] = {'\0'};
 	struct revid_chip *revid_chip;
+	struct regmap *regmap;
 
-	resource = spmi_get_resource(spmi, NULL, IORESOURCE_MEM, 0);
-	if (!resource) {
-		pr_err("Unable to get spmi resource for REVID\n");
+	regmap = dev_get_regmap(pdev->dev.parent, NULL);
+	if (!regmap) {
+		dev_err(&pdev->dev, "Couldn't get parent's regmap\n");
 		return -EINVAL;
 	}
-	pmic_type = qpnp_read_byte(spmi, resource->start + REVID_TYPE);
+
+	rc = of_property_read_u32(pdev->dev.of_node, "reg", &base);
+	if (rc < 0) {
+		dev_err(&pdev->dev,
+			"Couldn't find reg in node = %s rc = %d\n",
+			pdev->dev.of_node->full_name, rc);
+		return rc;
+	}
+	pmic_type = qpnp_read_byte(regmap, base + REVID_TYPE);
 	if (pmic_type != PMIC_PERIPHERAL_TYPE) {
 		pr_err("Invalid REVID peripheral type: %02X\n", pmic_type);
 		return -EINVAL;
 	}
 
-	rev1 = qpnp_read_byte(spmi, resource->start + REVID_REVISION1);
-	rev2 = qpnp_read_byte(spmi, resource->start + REVID_REVISION2);
-	rev3 = qpnp_read_byte(spmi, resource->start + REVID_REVISION3);
-	rev4 = qpnp_read_byte(spmi, resource->start + REVID_REVISION4);
+	rev1 = qpnp_read_byte(regmap, base + REVID_REVISION1);
+	rev2 = qpnp_read_byte(regmap, base + REVID_REVISION2);
+	rev3 = qpnp_read_byte(regmap, base + REVID_REVISION3);
+	rev4 = qpnp_read_byte(regmap, base + REVID_REVISION4);
 
-	pmic_subtype = qpnp_read_byte(spmi, resource->start + REVID_SUBTYPE);
+	pmic_subtype = qpnp_read_byte(regmap, base + REVID_SUBTYPE);
 	if (pmic_subtype != PMD9655_PERIPHERAL_SUBTYPE)
-		pmic_status = qpnp_read_byte(spmi,
-					     resource->start + REVID_STATUS1);
+		pmic_status = qpnp_read_byte(regmap, base + REVID_STATUS1);
 	else
 		pmic_status = 0;
 
-	/* special case for PMI8937/PMI8940 */
+	/* special case for PMI8937 */
 	if (pmic_subtype == PMI8950_PERIPHERAL_SUBTYPE) {
 		/* read spare register */
-		spare0 = qpnp_read_byte(spmi, resource->start + REVID_SPARE_0);
-		switch (spare0) {
-		case 0:
-			pmic_subtype = PMI8950_PERIPHERAL_SUBTYPE;
-			break;
-		case PMI8937_PERIPHERAL_SUBTYPE:
+		spare0 = qpnp_read_byte(regmap, base + REVID_SPARE_0);
+		if (spare0)
 			pmic_subtype = PMI8937_PERIPHERAL_SUBTYPE;
-			break;
-		case PMI8940_PERIPHERAL_SUBTYPE:
-			pmic_subtype = PMI8940_PERIPHERAL_SUBTYPE;
-			break;
-		default:
-			pr_warn("Invalid spare0 value=%x\n", spare0);
-		}
 	}
 
-	revid_chip = devm_kzalloc(&spmi->dev, sizeof(struct revid_chip),
+	if (of_property_read_bool(pdev->dev.of_node, "qcom,fab-id-valid"))
+		fab_id = qpnp_read_byte(regmap, base + REVID_FAB_ID);
+	else
+		fab_id = -EINVAL;
+
+	if (of_property_read_bool(pdev->dev.of_node, "qcom,tp-rev-valid"))
+		tp_rev = qpnp_read_byte(regmap, base + REVID_TP_REV);
+	else
+		tp_rev = -EINVAL;
+
+	revid_chip = devm_kzalloc(&pdev->dev, sizeof(struct revid_chip),
 						GFP_KERNEL);
 	if (!revid_chip)
 		return -ENOMEM;
 
-	revid_chip->dev_node = spmi->dev.of_node;
+	revid_chip->dev_node = pdev->dev.of_node;
 	revid_chip->data.rev1 = rev1;
 	revid_chip->data.rev2 = rev2;
 	revid_chip->data.rev3 = rev3;
 	revid_chip->data.rev4 = rev4;
 	revid_chip->data.pmic_subtype = pmic_subtype;
 	revid_chip->data.pmic_type = pmic_type;
+	revid_chip->data.fab_id = fab_id;
+	revid_chip->data.tp_rev = tp_rev;
 
 	if (pmic_subtype < ARRAY_SIZE(pmic_names))
 		revid_chip->data.pmic_name = pmic_names[pmic_subtype];
@@ -227,30 +245,30 @@ static int qpnp_revid_probe(struct spmi_device *spmi)
 	option3 = (pmic_status >> 4) & 0x3;
 	option4 = (pmic_status >> 6) & 0x3;
 
-	build_pmic_string(pmic_string, PMIC_STRING_MAXLENGTH, spmi->sid,
+	build_pmic_string(pmic_string, PMIC_STRING_MAXLENGTH,
+			  to_spmi_device(pdev->dev.parent)->usid,
 			pmic_subtype, rev1, rev2, rev3, rev4);
 	pr_info("%s options: %d, %d, %d, %d\n",
 			pmic_string, option1, option2, option3, option4);
 	return 0;
 }
 
-static struct spmi_driver qpnp_revid_driver = {
+static struct platform_driver qpnp_revid_driver = {
 	.probe	= qpnp_revid_probe,
 	.driver	= {
 		.name		= QPNP_REVID_DEV_NAME,
-		.owner		= THIS_MODULE,
 		.of_match_table	= qpnp_revid_match_table,
 	},
 };
 
 static int __init qpnp_revid_init(void)
 {
-	return spmi_driver_register(&qpnp_revid_driver);
+	return platform_driver_register(&qpnp_revid_driver);
 }
 
 static void __exit qpnp_revid_exit(void)
 {
-	return spmi_driver_unregister(&qpnp_revid_driver);
+	return platform_driver_unregister(&qpnp_revid_driver);
 }
 
 subsys_initcall(qpnp_revid_init);

@@ -64,9 +64,10 @@
 #include <linux/fb.h>
 #include <linux/init.h>
 #include <linux/ioport.h>
+#include <linux/io.h>
 
 #include <asm/grfioctl.h>	/* for HP-UX compatibility */
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include "sticore.h"
 
@@ -121,6 +122,7 @@ static int __initdata stifb_bpp_pref[MAX_STI_ROMS];
 #define REG_3		0x0004a0
 #define REG_4		0x000600
 #define REG_6		0x000800
+#define REG_7		0x000804
 #define REG_8		0x000820
 #define REG_9		0x000a04
 #define REG_10		0x018000
@@ -135,6 +137,8 @@ static int __initdata stifb_bpp_pref[MAX_STI_ROMS];
 #define REG_21		0x200218
 #define REG_22		0x0005a0
 #define REG_23		0x0005c0
+#define REG_24		0x000808
+#define REG_25		0x000b00
 #define REG_26		0x200118
 #define REG_27		0x200308
 #define REG_32		0x21003c
@@ -429,6 +433,9 @@ ARTIST_ENABLE_DISABLE_DISPLAY(struct stifb_info *fb, int enable)
 #define SET_LENXY_START_RECFILL(fb, lenxy) \
 	WRITE_WORD(lenxy, fb, REG_9)
 
+#define SETUP_COPYAREA(fb) \
+	WRITE_BYTE(0, fb, REG_16b1)
+
 static void
 HYPER_ENABLE_DISABLE_DISPLAY(struct stifb_info *fb, int enable)
 {
@@ -520,7 +527,7 @@ rattlerSetupPlanes(struct stifb_info *fb)
 	fb->id = saved_id;
 
 	for (y = 0; y < fb->info.var.yres; ++y)
-		memset(fb->info.screen_base + y * fb->info.fix.line_length,
+		fb_memset(fb->info.screen_base + y * fb->info.fix.line_length,
 			0xff, fb->info.var.xres * fb->info.var.bits_per_pixel/8);
 
 	CRX24_SET_OVLY_MASK(fb);
@@ -992,7 +999,7 @@ stifb_blank(int blank_mode, struct fb_info *info)
 	case S9000_ID_HCRX:
 		HYPER_ENABLE_DISABLE_DISPLAY(fb, enable);
 		break;
-	case S9000_ID_A1659A:	/* fall through */
+	case S9000_ID_A1659A:
 	case S9000_ID_TIMBER:
 	case CRX24_OVERLAY_PLANES:
 	default:
@@ -1002,6 +1009,78 @@ stifb_blank(int blank_mode, struct fb_info *info)
 	
 	SETUP_FB(fb);
 	return 0;
+}
+
+static void
+stifb_copyarea(struct fb_info *info, const struct fb_copyarea *area)
+{
+	struct stifb_info *fb = container_of(info, struct stifb_info, info);
+
+	SETUP_COPYAREA(fb);
+
+	SETUP_HW(fb);
+	if (fb->info.var.bits_per_pixel == 32) {
+		WRITE_WORD(0xBBA0A000, fb, REG_10);
+
+		NGLE_REALLY_SET_IMAGE_PLANEMASK(fb, 0xffffffff);
+	} else {
+		WRITE_WORD(fb->id == S9000_ID_HCRX ? 0x13a02000 : 0x13a01000, fb, REG_10);
+
+		NGLE_REALLY_SET_IMAGE_PLANEMASK(fb, 0xff);
+	}
+
+	NGLE_QUICK_SET_IMAGE_BITMAP_OP(fb,
+		IBOvals(RopSrc, MaskAddrOffset(0),
+		BitmapExtent08, StaticReg(1),
+		DataDynamic, MaskOtc, BGx(0), FGx(0)));
+
+	WRITE_WORD(((area->sx << 16) | area->sy), fb, REG_24);
+	WRITE_WORD(((area->width << 16) | area->height), fb, REG_7);
+	WRITE_WORD(((area->dx << 16) | area->dy), fb, REG_25);
+
+	SETUP_FB(fb);
+}
+
+#define ARTIST_VRAM_SIZE			0x000804
+#define ARTIST_VRAM_SRC				0x000808
+#define ARTIST_VRAM_SIZE_TRIGGER_WINFILL	0x000a04
+#define ARTIST_VRAM_DEST_TRIGGER_BLOCKMOVE	0x000b00
+#define ARTIST_SRC_BM_ACCESS			0x018008
+#define ARTIST_FGCOLOR				0x018010
+#define ARTIST_BGCOLOR				0x018014
+#define ARTIST_BITMAP_OP			0x01801c
+
+static void
+stifb_fillrect(struct fb_info *info, const struct fb_fillrect *rect)
+{
+	struct stifb_info *fb = container_of(info, struct stifb_info, info);
+
+	if (rect->rop != ROP_COPY ||
+	    (fb->id == S9000_ID_HCRX && fb->info.var.bits_per_pixel == 32))
+		return cfb_fillrect(info, rect);
+
+	SETUP_HW(fb);
+
+	if (fb->info.var.bits_per_pixel == 32) {
+		WRITE_WORD(0xBBA0A000, fb, REG_10);
+
+		NGLE_REALLY_SET_IMAGE_PLANEMASK(fb, 0xffffffff);
+	} else {
+		WRITE_WORD(fb->id == S9000_ID_HCRX ? 0x13a02000 : 0x13a01000, fb, REG_10);
+
+		NGLE_REALLY_SET_IMAGE_PLANEMASK(fb, 0xff);
+	}
+
+	WRITE_WORD(0x03000300, fb, ARTIST_BITMAP_OP);
+	WRITE_WORD(0x2ea01000, fb, ARTIST_SRC_BM_ACCESS);
+	NGLE_QUICK_SET_DST_BM_ACCESS(fb, 0x2ea01000);
+	NGLE_REALLY_SET_IMAGE_FG_COLOR(fb, rect->color);
+	WRITE_WORD(0, fb, ARTIST_BGCOLOR);
+
+	NGLE_SET_DSTXY(fb, (rect->dx << 16) | (rect->dy));
+	SET_LENXY_START_RECFILL(fb, (rect->width << 16) | (rect->height));
+
+	SETUP_FB(fb);
 }
 
 static void __init
@@ -1064,12 +1143,12 @@ stifb_init_display(struct stifb_info *fb)
 
 /* ------------ Interfaces to hardware functions ------------ */
 
-static struct fb_ops stifb_ops = {
+static const struct fb_ops stifb_ops = {
 	.owner		= THIS_MODULE,
 	.fb_setcolreg	= stifb_setcolreg,
 	.fb_blank	= stifb_blank,
-	.fb_fillrect	= cfb_fillrect,
-	.fb_copyarea	= cfb_copyarea,
+	.fb_fillrect	= stifb_fillrect,
+	.fb_copyarea	= stifb_copyarea,
 	.fb_imageblit	= cfb_imageblit,
 };
 
@@ -1089,10 +1168,8 @@ static int __init stifb_init_fb(struct sti_struct *sti, int bpp_pref)
 	int bpp, xres, yres;
 
 	fb = kzalloc(sizeof(*fb), GFP_ATOMIC);
-	if (!fb) {
-		printk(KERN_ERR "stifb: Could not allocate stifb structure\n");
-		return -ENODEV;
-	}
+	if (!fb)
+		return -ENOMEM;
 	
 	info = &fb->info;
 
@@ -1122,7 +1199,7 @@ static int __init stifb_init_fb(struct sti_struct *sti, int bpp_pref)
 			dev_name);
 		   goto out_err0;
 		}
-		/* fall though */
+		fallthrough;
 	case S9000_ID_ARTIST:
 	case S9000_ID_HCRX:
 	case S9000_ID_TIMBER:
@@ -1163,7 +1240,7 @@ static int __init stifb_init_fb(struct sti_struct *sti, int bpp_pref)
 	case S9000_ID_TOMCAT:	/* Dual CRX, behaves else like a CRX */
 		/* FIXME: TomCat supports two heads:
 		 * fb.iobase = REGION_BASE(fb_info,3);
-		 * fb.screen_base = ioremap_nocache(REGION_BASE(fb_info,2),xxx);
+		 * fb.screen_base = ioremap(REGION_BASE(fb_info,2),xxx);
 		 * for now we only support the left one ! */
 		xres = fb->ngle_rom.x_size_visible;
 		yres = fb->ngle_rom.y_size_visible;
@@ -1222,7 +1299,7 @@ static int __init stifb_init_fb(struct sti_struct *sti, int bpp_pref)
 	
 	/* limit fbsize to max visible screen size */
 	if (fix->smem_len > yres*fix->line_length)
-		fix->smem_len = yres*fix->line_length;
+		fix->smem_len = ALIGN(yres*fix->line_length, 4*1024*1024);
 	
 	fix->accel = FB_ACCEL_NONE;
 
@@ -1256,9 +1333,13 @@ static int __init stifb_init_fb(struct sti_struct *sti, int bpp_pref)
 
 	strcpy(fix->id, "stifb");
 	info->fbops = &stifb_ops;
-	info->screen_base = ioremap_nocache(REGION_BASE(fb,1), fix->smem_len);
+	info->screen_base = ioremap(REGION_BASE(fb,1), fix->smem_len);
+	if (!info->screen_base) {
+		printk(KERN_ERR "stifb: failed to map memory\n");
+		goto out_err0;
+	}
 	info->screen_size = fix->smem_len;
-	info->flags = FBINFO_DEFAULT;
+	info->flags = FBINFO_HWACCEL_COPYAREA | FBINFO_HWACCEL_FILLRECT;
 	info->pseudo_palette = &fb->pseudo_palette;
 
 	/* This has to be done !!! */
@@ -1278,10 +1359,10 @@ static int __init stifb_init_fb(struct sti_struct *sti, int bpp_pref)
 		goto out_err3;
 	}
 
+	/* save for primary gfx device detection & unregister_framebuffer() */
+	sti->info = info;
 	if (register_framebuffer(&fb->info) < 0)
 		goto out_err4;
-
-	sti->info = info; /* save for unregister_framebuffer() */
 
 	fb_info(&fb->info, "%s %dx%d-%d frame buffer device, %s, id: %04x, mmio: 0x%04lx\n",
 		fix->id,

@@ -1,20 +1,19 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* SPDX-License-Identifier: GPL-2.0 OR Apache-2.0 */
+/*
+ * include/linux/ashmem.h
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * Copyright 2008 Google Inc.
+ * Author: Robert Love
  */
 
-#ifndef _ANDROID_ASHMEM_H
-#define _ANDROID_ASHMEM_H
+#ifndef _LINUX_ASHMEM_H
+#define _LINUX_ASHMEM_H
 
+#include <linux/limits.h>
+#include <linux/ioctl.h>
 #include <linux/compat.h>
+
+#include "uapi/ashmem.h"
 
 /* support of 32bit userspace on 64bit platforms */
 #ifdef CONFIG_COMPAT
@@ -22,4 +21,6 @@
 #define COMPAT_ASHMEM_SET_PROT_MASK	_IOW(__ASHMEMIOC, 5, unsigned int)
 #endif
 
-#endif
+int is_ashmem_file(struct file *file);
+
+#endif	/* _LINUX_ASHMEM_H */

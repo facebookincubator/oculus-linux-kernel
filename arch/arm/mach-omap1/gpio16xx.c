@@ -1,7 +1,7 @@
 /*
  * OMAP16xx specific gpio init
  *
- * Copyright (C) 2010 Texas Instruments Incorporated - http://www.ti.com/
+ * Copyright (C) 2010 Texas Instruments Incorporated - https://www.ti.com/
  *
  * Author:
  *	Charulatha V <charu@ti.com>
@@ -20,6 +20,8 @@
 #include <linux/platform_data/gpio-omap.h>
 
 #include <mach/irqs.h>
+
+#include "soc.h"
 
 #define OMAP1610_GPIO1_BASE		0xfffbe400
 #define OMAP1610_GPIO2_BASE		0xfffbec00

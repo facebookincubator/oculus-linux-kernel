@@ -20,10 +20,12 @@
 
 #include <linux/firmware.h>
 #include <linux/slab.h>
+#include <linux/suspend.h>
 
 #include <linux/mmc/sdio_ids.h>
 #include <linux/mmc/sdio_func.h>
 #include <linux/module.h>
+#include <linux/devcoredump.h>
 
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
@@ -32,6 +34,92 @@
 #include "btmrvl_sdio.h"
 
 #define VERSION "1.0"
+
+static struct memory_type_mapping mem_type_mapping_tbl[] = {
+	{"ITCM", NULL, 0, 0xF0},
+	{"DTCM", NULL, 0, 0xF1},
+	{"SQRAM", NULL, 0, 0xF2},
+	{"APU", NULL, 0, 0xF3},
+	{"CIU", NULL, 0, 0xF4},
+	{"ICU", NULL, 0, 0xF5},
+	{"MAC", NULL, 0, 0xF6},
+	{"EXT7", NULL, 0, 0xF7},
+	{"EXT8", NULL, 0, 0xF8},
+	{"EXT9", NULL, 0, 0xF9},
+	{"EXT10", NULL, 0, 0xFA},
+	{"EXT11", NULL, 0, 0xFB},
+	{"EXT12", NULL, 0, 0xFC},
+	{"EXT13", NULL, 0, 0xFD},
+	{"EXTLAST", NULL, 0, 0xFE},
+};
+
+static const struct of_device_id btmrvl_sdio_of_match_table[] = {
+	{ .compatible = "marvell,sd8897-bt" },
+	{ .compatible = "marvell,sd8997-bt" },
+	{ }
+};
+
+static irqreturn_t btmrvl_wake_irq_bt(int irq, void *priv)
+{
+	struct btmrvl_sdio_card *card = priv;
+	struct device *dev = &card->func->dev;
+	struct btmrvl_plt_wake_cfg *cfg = card->plt_wake_cfg;
+
+	dev_info(dev, "wake by bt\n");
+	cfg->wake_by_bt = true;
+	disable_irq_nosync(irq);
+
+	pm_wakeup_event(dev, 0);
+	pm_system_wakeup();
+
+	return IRQ_HANDLED;
+}
+
+/* This function parses device tree node using mmc subnode devicetree API.
+ * The device node is saved in card->plt_of_node.
+ * If the device tree node exists and includes interrupts attributes, this
+ * function will request platform specific wakeup interrupt.
+ */
+static int btmrvl_sdio_probe_of(struct device *dev,
+				struct btmrvl_sdio_card *card)
+{
+	struct btmrvl_plt_wake_cfg *cfg;
+	int ret;
+
+	if (!dev->of_node ||
+	    !of_match_node(btmrvl_sdio_of_match_table, dev->of_node)) {
+		dev_info(dev, "sdio device tree data not available\n");
+		return -1;
+	}
+
+	card->plt_of_node = dev->of_node;
+
+	card->plt_wake_cfg = devm_kzalloc(dev, sizeof(*card->plt_wake_cfg),
+					  GFP_KERNEL);
+	cfg = card->plt_wake_cfg;
+	if (cfg && card->plt_of_node) {
+		cfg->irq_bt = irq_of_parse_and_map(card->plt_of_node, 0);
+		if (!cfg->irq_bt) {
+			dev_err(dev, "fail to parse irq_bt from device tree\n");
+			cfg->irq_bt = -1;
+		} else {
+			ret = devm_request_irq(dev, cfg->irq_bt,
+					       btmrvl_wake_irq_bt,
+					       0, "bt_wake", card);
+			if (ret) {
+				dev_err(dev,
+					"Failed to request irq_bt %d (%d)\n",
+					cfg->irq_bt, ret);
+			}
+
+			/* Configure wakeup (enabled by default) */
+			device_init_wakeup(dev, true);
+			disable_irq(cfg->irq_bt);
+		}
+	}
+
+	return 0;
+}
 
 /* The btmrvl_sdio_remove() callback function is called
  * when user removes this module from kernel space or ejects
@@ -122,6 +210,32 @@ static const struct btmrvl_sdio_card_reg btmrvl_reg_8897 = {
 	.int_read_to_clear = true,
 	.host_int_rsr = 0x01,
 	.card_misc_cfg = 0xcc,
+	.fw_dump_ctrl = 0xe2,
+	.fw_dump_start = 0xe3,
+	.fw_dump_end = 0xea,
+};
+
+static const struct btmrvl_sdio_card_reg btmrvl_reg_89xx = {
+	.cfg = 0x00,
+	.host_int_mask = 0x08,
+	.host_intstatus = 0x0c,
+	.card_status = 0x5c,
+	.sq_read_base_addr_a0 = 0xf8,
+	.sq_read_base_addr_a1 = 0xf9,
+	.card_revision = 0xc8,
+	.card_fw_status0 = 0xe8,
+	.card_fw_status1 = 0xe9,
+	.card_rx_len = 0xea,
+	.card_rx_unit = 0xeb,
+	.io_port_0 = 0xe4,
+	.io_port_1 = 0xe5,
+	.io_port_2 = 0xe6,
+	.int_read_to_clear = true,
+	.host_int_rsr = 0x04,
+	.card_misc_cfg = 0xd8,
+	.fw_dump_ctrl = 0xf0,
+	.fw_dump_start = 0xf1,
+	.fw_dump_end = 0xf8,
 };
 
 static const struct btmrvl_sdio_device btmrvl_sdio_sd8688 = {
@@ -130,6 +244,7 @@ static const struct btmrvl_sdio_device btmrvl_sdio_sd8688 = {
 	.reg		= &btmrvl_reg_8688,
 	.support_pscan_win_report = false,
 	.sd_blksz_fw_dl	= 64,
+	.supports_fw_dump = false,
 };
 
 static const struct btmrvl_sdio_device btmrvl_sdio_sd8787 = {
@@ -138,6 +253,7 @@ static const struct btmrvl_sdio_device btmrvl_sdio_sd8787 = {
 	.reg		= &btmrvl_reg_87xx,
 	.support_pscan_win_report = false,
 	.sd_blksz_fw_dl	= 256,
+	.supports_fw_dump = false,
 };
 
 static const struct btmrvl_sdio_device btmrvl_sdio_sd8797 = {
@@ -146,6 +262,7 @@ static const struct btmrvl_sdio_device btmrvl_sdio_sd8797 = {
 	.reg		= &btmrvl_reg_87xx,
 	.support_pscan_win_report = false,
 	.sd_blksz_fw_dl	= 256,
+	.supports_fw_dump = false,
 };
 
 static const struct btmrvl_sdio_device btmrvl_sdio_sd8887 = {
@@ -154,6 +271,7 @@ static const struct btmrvl_sdio_device btmrvl_sdio_sd8887 = {
 	.reg		= &btmrvl_reg_8887,
 	.support_pscan_win_report = true,
 	.sd_blksz_fw_dl	= 256,
+	.supports_fw_dump = false,
 };
 
 static const struct btmrvl_sdio_device btmrvl_sdio_sd8897 = {
@@ -162,27 +280,64 @@ static const struct btmrvl_sdio_device btmrvl_sdio_sd8897 = {
 	.reg		= &btmrvl_reg_8897,
 	.support_pscan_win_report = true,
 	.sd_blksz_fw_dl	= 256,
+	.supports_fw_dump = true,
+};
+
+static const struct btmrvl_sdio_device btmrvl_sdio_sd8977 = {
+	.helper         = NULL,
+	.firmware       = "mrvl/sdsd8977_combo_v2.bin",
+	.reg            = &btmrvl_reg_89xx,
+	.support_pscan_win_report = true,
+	.sd_blksz_fw_dl = 256,
+	.supports_fw_dump = true,
+};
+
+static const struct btmrvl_sdio_device btmrvl_sdio_sd8987 = {
+	.helper		= NULL,
+	.firmware	= "mrvl/sd8987_uapsta.bin",
+	.reg		= &btmrvl_reg_89xx,
+	.support_pscan_win_report = true,
+	.sd_blksz_fw_dl	= 256,
+	.supports_fw_dump = true,
+};
+
+static const struct btmrvl_sdio_device btmrvl_sdio_sd8997 = {
+	.helper         = NULL,
+	.firmware       = "mrvl/sdsd8997_combo_v4.bin",
+	.reg            = &btmrvl_reg_89xx,
+	.support_pscan_win_report = true,
+	.sd_blksz_fw_dl = 256,
+	.supports_fw_dump = true,
 };
 
 static const struct sdio_device_id btmrvl_sdio_ids[] = {
 	/* Marvell SD8688 Bluetooth device */
-	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, 0x9105),
-			.driver_data = (unsigned long) &btmrvl_sdio_sd8688 },
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8688_BT),
+			.driver_data = (unsigned long)&btmrvl_sdio_sd8688 },
 	/* Marvell SD8787 Bluetooth device */
-	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, 0x911A),
-			.driver_data = (unsigned long) &btmrvl_sdio_sd8787 },
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8787_BT),
+			.driver_data = (unsigned long)&btmrvl_sdio_sd8787 },
 	/* Marvell SD8787 Bluetooth AMP device */
-	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, 0x911B),
-			.driver_data = (unsigned long) &btmrvl_sdio_sd8787 },
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8787_BT_AMP),
+			.driver_data = (unsigned long)&btmrvl_sdio_sd8787 },
 	/* Marvell SD8797 Bluetooth device */
-	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, 0x912A),
-			.driver_data = (unsigned long) &btmrvl_sdio_sd8797 },
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8797_BT),
+			.driver_data = (unsigned long)&btmrvl_sdio_sd8797 },
 	/* Marvell SD8887 Bluetooth device */
-	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, 0x9136),
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8887_BT),
 			.driver_data = (unsigned long)&btmrvl_sdio_sd8887 },
 	/* Marvell SD8897 Bluetooth device */
-	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, 0x912E),
-			.driver_data = (unsigned long) &btmrvl_sdio_sd8897 },
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8897_BT),
+			.driver_data = (unsigned long)&btmrvl_sdio_sd8897 },
+	/* Marvell SD8977 Bluetooth device */
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8977_BT),
+			.driver_data = (unsigned long)&btmrvl_sdio_sd8977 },
+	/* Marvell SD8987 Bluetooth device */
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8987_BT),
+			.driver_data = (unsigned long)&btmrvl_sdio_sd8987 },
+	/* Marvell SD8997 Bluetooth device */
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8997_BT),
+			.driver_data = (unsigned long)&btmrvl_sdio_sd8997 },
 
 	{ }	/* Terminating entry */
 };
@@ -309,7 +464,7 @@ static int btmrvl_sdio_verify_fw_download(struct btmrvl_sdio_card *card,
 		if (firmwarestat == FIRMWARE_READY)
 			return 0;
 
-		msleep(10);
+		msleep(100);
 	}
 
 	return -ETIMEDOUT;
@@ -546,7 +701,7 @@ static int btmrvl_sdio_download_fw_w_helper(struct btmrvl_sdio_card *card)
 		offset += txlen;
 	} while (true);
 
-	BT_DBG("FW download over, size %d bytes", offset);
+	BT_INFO("FW download over, size %d bytes", offset);
 
 	ret = 0;
 
@@ -562,7 +717,7 @@ static int btmrvl_sdio_card_to_host(struct btmrvl_private *priv)
 	int ret, num_blocks, blksz;
 	struct sk_buff *skb = NULL;
 	u32 type;
-	u8 *payload = NULL;
+	u8 *payload;
 	struct hci_dev *hdev = priv->btmrvl_dev.hcidev;
 	struct btmrvl_sdio_card *card = priv->btmrvl_dev.card;
 
@@ -591,8 +746,8 @@ static int btmrvl_sdio_card_to_host(struct btmrvl_private *priv)
 	}
 
 	/* Allocate buffer */
-	skb = bt_skb_alloc(num_blocks * blksz + BTSDIO_DMA_ALIGN, GFP_ATOMIC);
-	if (skb == NULL) {
+	skb = bt_skb_alloc(num_blocks * blksz + BTSDIO_DMA_ALIGN, GFP_KERNEL);
+	if (!skb) {
 		BT_ERR("No free skb");
 		ret = -ENOMEM;
 		goto exit;
@@ -636,7 +791,7 @@ static int btmrvl_sdio_card_to_host(struct btmrvl_private *priv)
 	case HCI_ACLDATA_PKT:
 	case HCI_SCODATA_PKT:
 	case HCI_EVENT_PKT:
-		bt_cb(skb)->pkt_type = type;
+		hci_skb_pkt_type(skb) = type;
 		skb_put(skb, buf_len);
 		skb_pull(skb, SDIO_HEADER_LEN);
 
@@ -651,7 +806,7 @@ static int btmrvl_sdio_card_to_host(struct btmrvl_private *priv)
 		break;
 
 	case MRVL_VENDOR_PKT:
-		bt_cb(skb)->pkt_type = HCI_VENDOR_PKT;
+		hci_skb_pkt_type(skb) = HCI_VENDOR_PKT;
 		skb_put(skb, buf_len);
 		skb_pull(skb, SDIO_HEADER_LEN);
 
@@ -764,12 +919,15 @@ static void btmrvl_sdio_interrupt(struct sdio_func *func)
 
 	card = sdio_get_drvdata(func);
 	if (!card || !card->priv) {
-		BT_ERR("sbi_interrupt(%p) card or priv is "
-				"NULL, card=%p\n", func, card);
+		BT_ERR("sbi_interrupt(%p) card or priv is NULL, card=%p",
+		       func, card);
 		return;
 	}
 
 	priv = card->priv;
+
+	if (priv->surprise_removed)
+		return;
 
 	if (card->reg->int_read_to_clear)
 		ret = btmrvl_sdio_read_to_clear(card, &ireg);
@@ -790,7 +948,7 @@ static int btmrvl_sdio_register_dev(struct btmrvl_sdio_card *card)
 {
 	struct sdio_func *func;
 	u8 reg;
-	int ret = 0;
+	int ret;
 
 	if (!card || !card->func) {
 		BT_ERR("Error: card or function is NULL!");
@@ -944,7 +1102,6 @@ static int btmrvl_sdio_host_to_card(struct btmrvl_private *priv,
 {
 	struct btmrvl_sdio_card *card = priv->btmrvl_dev.card;
 	int ret = 0;
-	int buf_block_len;
 	int blksz;
 	int i = 0;
 	u8 *buf = NULL;
@@ -956,9 +1113,13 @@ static int btmrvl_sdio_host_to_card(struct btmrvl_private *priv,
 		return -EINVAL;
 	}
 
+	blksz = DIV_ROUND_UP(nb, SDIO_BLOCK_SIZE) * SDIO_BLOCK_SIZE;
+
 	buf = payload;
-	if ((unsigned long) payload & (BTSDIO_DMA_ALIGN - 1)) {
-		tmpbufsz = ALIGN_SZ(nb, BTSDIO_DMA_ALIGN);
+	if ((unsigned long) payload & (BTSDIO_DMA_ALIGN - 1) ||
+	    nb < blksz) {
+		tmpbufsz = ALIGN_SZ(blksz, BTSDIO_DMA_ALIGN) +
+			   BTSDIO_DMA_ALIGN;
 		tmpbuf = kzalloc(tmpbufsz, GFP_KERNEL);
 		if (!tmpbuf)
 			return -ENOMEM;
@@ -966,15 +1127,12 @@ static int btmrvl_sdio_host_to_card(struct btmrvl_private *priv,
 		memcpy(buf, payload, nb);
 	}
 
-	blksz = SDIO_BLOCK_SIZE;
-	buf_block_len = DIV_ROUND_UP(nb, blksz);
-
 	sdio_claim_host(card->func);
 
 	do {
 		/* Transfer data to card */
 		ret = sdio_writesb(card->func, card->ioport, buf,
-				   buf_block_len * blksz);
+				   blksz);
 		if (ret < 0) {
 			i++;
 			BT_ERR("i=%d writesb failed: %d", i, ret);
@@ -1041,16 +1199,17 @@ static int btmrvl_sdio_download_fw(struct btmrvl_sdio_card *card)
 		}
 	}
 
-	sdio_release_host(card->func);
-
 	/*
 	 * winner or not, with this test the FW synchronizes when the
 	 * module can continue its initialization
 	 */
 	if (btmrvl_sdio_verify_fw_download(card, pollnum)) {
 		BT_ERR("FW failed to be active in time!");
-		return -ETIMEDOUT;
+		ret = -ETIMEDOUT;
+		goto done;
 	}
+
+	sdio_release_host(card->func);
 
 	return 0;
 
@@ -1080,6 +1239,289 @@ static int btmrvl_sdio_wakeup_fw(struct btmrvl_private *priv)
 	return ret;
 }
 
+static void btmrvl_sdio_dump_regs(struct btmrvl_private *priv)
+{
+	struct btmrvl_sdio_card *card = priv->btmrvl_dev.card;
+	int ret = 0;
+	unsigned int reg, reg_start, reg_end;
+	char buf[256], *ptr;
+	u8 loop, func, data;
+	int MAX_LOOP = 2;
+
+	btmrvl_sdio_wakeup_fw(priv);
+	sdio_claim_host(card->func);
+
+	for (loop = 0; loop < MAX_LOOP; loop++) {
+		memset(buf, 0, sizeof(buf));
+		ptr = buf;
+
+		if (loop == 0) {
+			/* Read the registers of SDIO function0 */
+			func = loop;
+			reg_start = 0;
+			reg_end = 9;
+		} else {
+			func = 2;
+			reg_start = 0;
+			reg_end = 0x09;
+		}
+
+		ptr += sprintf(ptr, "SDIO Func%d (%#x-%#x): ",
+			       func, reg_start, reg_end);
+		for (reg = reg_start; reg <= reg_end; reg++) {
+			if (func == 0)
+				data = sdio_f0_readb(card->func, reg, &ret);
+			else
+				data = sdio_readb(card->func, reg, &ret);
+
+			if (!ret) {
+				ptr += sprintf(ptr, "%02x ", data);
+			} else {
+				ptr += sprintf(ptr, "ERR");
+				break;
+			}
+		}
+
+		BT_INFO("%s", buf);
+	}
+
+	sdio_release_host(card->func);
+}
+
+/* This function read/write firmware */
+static enum
+rdwr_status btmrvl_sdio_rdwr_firmware(struct btmrvl_private *priv,
+				      u8 doneflag)
+{
+	struct btmrvl_sdio_card *card = priv->btmrvl_dev.card;
+	int ret, tries;
+	u8 ctrl_data = 0;
+
+	sdio_writeb(card->func, FW_DUMP_HOST_READY, card->reg->fw_dump_ctrl,
+		    &ret);
+
+	if (ret) {
+		BT_ERR("SDIO write err");
+		return RDWR_STATUS_FAILURE;
+	}
+
+	for (tries = 0; tries < MAX_POLL_TRIES; tries++) {
+		ctrl_data = sdio_readb(card->func, card->reg->fw_dump_ctrl,
+				       &ret);
+
+		if (ret) {
+			BT_ERR("SDIO read err");
+			return RDWR_STATUS_FAILURE;
+		}
+
+		if (ctrl_data == FW_DUMP_DONE)
+			break;
+		if (doneflag && ctrl_data == doneflag)
+			return RDWR_STATUS_DONE;
+		if (ctrl_data != FW_DUMP_HOST_READY) {
+			BT_INFO("The ctrl reg was changed, re-try again!");
+			sdio_writeb(card->func, FW_DUMP_HOST_READY,
+				    card->reg->fw_dump_ctrl, &ret);
+			if (ret) {
+				BT_ERR("SDIO write err");
+				return RDWR_STATUS_FAILURE;
+			}
+		}
+		usleep_range(100, 200);
+	}
+
+	if (ctrl_data == FW_DUMP_HOST_READY) {
+		BT_ERR("Fail to pull ctrl_data");
+		return RDWR_STATUS_FAILURE;
+	}
+
+	return RDWR_STATUS_SUCCESS;
+}
+
+/* This function dump sdio register and memory data */
+static void btmrvl_sdio_coredump(struct device *dev)
+{
+	struct sdio_func *func = dev_to_sdio_func(dev);
+	struct btmrvl_sdio_card *card;
+	struct btmrvl_private *priv;
+	int ret = 0;
+	unsigned int reg, reg_start, reg_end;
+	enum rdwr_status stat;
+	u8 *dbg_ptr, *end_ptr, *fw_dump_data, *fw_dump_ptr;
+	u8 dump_num = 0, idx, i, read_reg, doneflag = 0;
+	u32 memory_size, fw_dump_len = 0;
+
+	card = sdio_get_drvdata(func);
+	priv = card->priv;
+
+	/* dump sdio register first */
+	btmrvl_sdio_dump_regs(priv);
+
+	if (!card->supports_fw_dump) {
+		BT_ERR("Firmware dump not supported for this card!");
+		return;
+	}
+
+	for (idx = 0; idx < ARRAY_SIZE(mem_type_mapping_tbl); idx++) {
+		struct memory_type_mapping *entry = &mem_type_mapping_tbl[idx];
+
+		if (entry->mem_ptr) {
+			vfree(entry->mem_ptr);
+			entry->mem_ptr = NULL;
+		}
+		entry->mem_size = 0;
+	}
+
+	btmrvl_sdio_wakeup_fw(priv);
+	sdio_claim_host(card->func);
+
+	BT_INFO("== btmrvl firmware dump start ==");
+
+	stat = btmrvl_sdio_rdwr_firmware(priv, doneflag);
+	if (stat == RDWR_STATUS_FAILURE)
+		goto done;
+
+	reg = card->reg->fw_dump_start;
+	/* Read the number of the memories which will dump */
+	dump_num = sdio_readb(card->func, reg, &ret);
+
+	if (ret) {
+		BT_ERR("SDIO read memory length err");
+		goto done;
+	}
+
+	/* Read the length of every memory which will dump */
+	for (idx = 0; idx < dump_num; idx++) {
+		struct memory_type_mapping *entry = &mem_type_mapping_tbl[idx];
+
+		stat = btmrvl_sdio_rdwr_firmware(priv, doneflag);
+		if (stat == RDWR_STATUS_FAILURE)
+			goto done;
+
+		memory_size = 0;
+		reg = card->reg->fw_dump_start;
+		for (i = 0; i < 4; i++) {
+			read_reg = sdio_readb(card->func, reg, &ret);
+			if (ret) {
+				BT_ERR("SDIO read err");
+				goto done;
+			}
+			memory_size |= (read_reg << i*8);
+			reg++;
+		}
+
+		if (memory_size == 0) {
+			BT_INFO("Firmware dump finished!");
+			sdio_writeb(card->func, FW_DUMP_READ_DONE,
+				    card->reg->fw_dump_ctrl, &ret);
+			if (ret) {
+				BT_ERR("SDIO Write MEMDUMP_FINISH ERR");
+				goto done;
+			}
+			break;
+		}
+
+		BT_INFO("%s_SIZE=0x%x", entry->mem_name, memory_size);
+		entry->mem_ptr = vzalloc(memory_size + 1);
+		entry->mem_size = memory_size;
+		if (!entry->mem_ptr) {
+			BT_ERR("Vzalloc %s failed", entry->mem_name);
+			goto done;
+		}
+
+		fw_dump_len += (strlen("========Start dump ") +
+				strlen(entry->mem_name) +
+				strlen("========\n") +
+				(memory_size + 1) +
+				strlen("\n========End dump========\n"));
+
+		dbg_ptr = entry->mem_ptr;
+		end_ptr = dbg_ptr + memory_size;
+
+		doneflag = entry->done_flag;
+		BT_INFO("Start %s output, please wait...",
+			entry->mem_name);
+
+		do {
+			stat = btmrvl_sdio_rdwr_firmware(priv, doneflag);
+			if (stat == RDWR_STATUS_FAILURE)
+				goto done;
+
+			reg_start = card->reg->fw_dump_start;
+			reg_end = card->reg->fw_dump_end;
+			for (reg = reg_start; reg <= reg_end; reg++) {
+				*dbg_ptr = sdio_readb(card->func, reg, &ret);
+				if (ret) {
+					BT_ERR("SDIO read err");
+					goto done;
+				}
+				if (dbg_ptr < end_ptr)
+					dbg_ptr++;
+				else
+					BT_ERR("Allocated buffer not enough");
+			}
+
+			if (stat != RDWR_STATUS_DONE) {
+				continue;
+			} else {
+				BT_INFO("%s done: size=0x%tx",
+					entry->mem_name,
+					dbg_ptr - entry->mem_ptr);
+				break;
+			}
+		} while (1);
+	}
+
+	BT_INFO("== btmrvl firmware dump end ==");
+
+done:
+	sdio_release_host(card->func);
+
+	if (fw_dump_len == 0)
+		return;
+
+	fw_dump_data = vzalloc(fw_dump_len+1);
+	if (!fw_dump_data) {
+		BT_ERR("Vzalloc fw_dump_data fail!");
+		return;
+	}
+	fw_dump_ptr = fw_dump_data;
+
+	/* Dump all the memory data into single file, a userspace script will
+	 * be used to split all the memory data to multiple files
+	 */
+	BT_INFO("== btmrvl firmware dump to /sys/class/devcoredump start");
+	for (idx = 0; idx < dump_num; idx++) {
+		struct memory_type_mapping *entry = &mem_type_mapping_tbl[idx];
+
+		if (entry->mem_ptr) {
+			strcpy(fw_dump_ptr, "========Start dump ");
+			fw_dump_ptr += strlen("========Start dump ");
+
+			strcpy(fw_dump_ptr, entry->mem_name);
+			fw_dump_ptr += strlen(entry->mem_name);
+
+			strcpy(fw_dump_ptr, "========\n");
+			fw_dump_ptr += strlen("========\n");
+
+			memcpy(fw_dump_ptr, entry->mem_ptr, entry->mem_size);
+			fw_dump_ptr += entry->mem_size;
+
+			strcpy(fw_dump_ptr, "\n========End dump========\n");
+			fw_dump_ptr += strlen("\n========End dump========\n");
+
+			vfree(mem_type_mapping_tbl[idx].mem_ptr);
+			mem_type_mapping_tbl[idx].mem_ptr = NULL;
+		}
+	}
+
+	/* fw_dump_data will be free in device coredump release function
+	 * after 5 min
+	 */
+	dev_coredumpv(&card->func->dev, fw_dump_data, fw_dump_len, GFP_KERNEL);
+	BT_INFO("== btmrvl firmware dump to /sys/class/devcoredump end");
+}
+
 static int btmrvl_sdio_probe(struct sdio_func *func,
 					const struct sdio_device_id *id)
 {
@@ -1103,6 +1545,7 @@ static int btmrvl_sdio_probe(struct sdio_func *func,
 		card->reg = data->reg;
 		card->sd_blksz_fw_dl = data->sd_blksz_fw_dl;
 		card->support_pscan_win_report = data->support_pscan_win_report;
+		card->supports_fw_dump = data->supports_fw_dump;
 	}
 
 	if (btmrvl_sdio_register_dev(card) < 0) {
@@ -1120,6 +1563,9 @@ static int btmrvl_sdio_probe(struct sdio_func *func,
 	}
 
 	btmrvl_sdio_enable_host_int(card);
+
+	/* Device tree node parsing and platform specific configuration*/
+	btmrvl_sdio_probe_of(&func->dev, card);
 
 	priv = btmrvl_add_card(card);
 	if (!priv) {
@@ -1165,7 +1611,9 @@ static void btmrvl_sdio_remove(struct sdio_func *func)
 							MODULE_SHUTDOWN_REQ);
 				btmrvl_sdio_disable_host_int(card);
 			}
-			BT_DBG("unregester dev");
+
+			BT_DBG("unregister dev");
+			card->priv->surprise_removed = true;
 			btmrvl_sdio_unregister_dev(card);
 			btmrvl_remove_card(card->priv);
 		}
@@ -1199,29 +1647,47 @@ static int btmrvl_sdio_suspend(struct device *dev)
 		return 0;
 	}
 
+	/* Enable platform specific wakeup interrupt */
+	if (card->plt_wake_cfg && card->plt_wake_cfg->irq_bt >= 0 &&
+	    device_may_wakeup(dev)) {
+		card->plt_wake_cfg->wake_by_bt = false;
+		enable_irq(card->plt_wake_cfg->irq_bt);
+		enable_irq_wake(card->plt_wake_cfg->irq_bt);
+	}
+
 	priv = card->priv;
+	priv->adapter->is_suspending = true;
 	hcidev = priv->btmrvl_dev.hcidev;
 	BT_DBG("%s: SDIO suspend", hcidev->name);
 	hci_suspend_dev(hcidev);
-	skb_queue_purge(&priv->adapter->tx_queue);
 
 	if (priv->adapter->hs_state != HS_ACTIVATED) {
 		if (btmrvl_enable_hs(priv)) {
-			BT_ERR("HS not actived, suspend failed!");
+			BT_ERR("HS not activated, suspend failed!");
+			/* Disable platform specific wakeup interrupt */
+			if (card->plt_wake_cfg &&
+			    card->plt_wake_cfg->irq_bt >= 0 &&
+			    device_may_wakeup(dev)) {
+				disable_irq_wake(card->plt_wake_cfg->irq_bt);
+				disable_irq(card->plt_wake_cfg->irq_bt);
+			}
+
+			priv->adapter->is_suspending = false;
 			return -EBUSY;
 		}
 	}
 
+	priv->adapter->is_suspending = false;
 	priv->adapter->is_suspended = true;
 
 	/* We will keep the power when hs enabled successfully */
 	if (priv->adapter->hs_state == HS_ACTIVATED) {
 		BT_DBG("suspend with MMC_PM_KEEP_POWER");
 		return sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
-	} else {
-		BT_DBG("suspend without MMC_PM_KEEP_POWER");
-		return 0;
 	}
+
+	BT_DBG("suspend without MMC_PM_KEEP_POWER");
+	return 0;
 }
 
 static int btmrvl_sdio_resume(struct device *dev)
@@ -1260,6 +1726,18 @@ static int btmrvl_sdio_resume(struct device *dev)
 	BT_DBG("%s: SDIO resume", hcidev->name);
 	hci_resume_dev(hcidev);
 
+	/* Disable platform specific wakeup interrupt */
+	if (card->plt_wake_cfg && card->plt_wake_cfg->irq_bt >= 0 &&
+	    device_may_wakeup(dev)) {
+		disable_irq_wake(card->plt_wake_cfg->irq_bt);
+		disable_irq(card->plt_wake_cfg->irq_bt);
+		if (card->plt_wake_cfg->wake_by_bt)
+			/* Undo our disable, since interrupt handler already
+			 * did this.
+			 */
+			enable_irq(card->plt_wake_cfg->irq_bt);
+	}
+
 	return 0;
 }
 
@@ -1275,6 +1753,7 @@ static struct sdio_driver bt_mrvl_sdio = {
 	.remove		= btmrvl_sdio_remove,
 	.drv = {
 		.owner = THIS_MODULE,
+		.coredump = btmrvl_sdio_coredump,
 		.pm = &btmrvl_sdio_pm_ops,
 	}
 };
@@ -1313,3 +1792,6 @@ MODULE_FIRMWARE("mrvl/sd8787_uapsta.bin");
 MODULE_FIRMWARE("mrvl/sd8797_uapsta.bin");
 MODULE_FIRMWARE("mrvl/sd8887_uapsta.bin");
 MODULE_FIRMWARE("mrvl/sd8897_uapsta.bin");
+MODULE_FIRMWARE("mrvl/sdsd8977_combo_v2.bin");
+MODULE_FIRMWARE("mrvl/sd8987_uapsta.bin");
+MODULE_FIRMWARE("mrvl/sdsd8997_combo_v4.bin");

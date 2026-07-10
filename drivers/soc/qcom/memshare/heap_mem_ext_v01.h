@@ -1,23 +1,15 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/* Copyright (c) 2013-2015, 2017-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef HEAP_MEM_EXT_SERVICE_01_H
 #define HEAP_MEM_EXT_SERVICE_01_H
 
-#include <soc/qcom/msm_qmi_interface.h>
+#include <linux/soc/qcom/qmi.h>
 
 #define MEM_ALLOC_REQ_MAX_MSG_LEN_V01 255
 #define MEM_FREE_REQ_MAX_MSG_LEN_V01 255
+#define MEM_QUERY_MAX_MSG_LEN_V01 255
 #define MAX_ARR_CNT_V01 64
 
 struct dhms_mem_alloc_addr_info_type_v01 {
@@ -51,7 +43,7 @@ enum dhms_mem_client_id_v01 {
 
 enum dhms_mem_block_align_enum_v01 {
 	/* To force a 32 bit signed enum.  Do not change or use
-	*/
+	 */
 	DHMS_MEM_BLOCK_ALIGN_ENUM_MIN_ENUM_VAL_V01 = -2147483647,
 	/* Align allocated memory by 2 bytes  */
 	DHMS_MEM_BLOCK_ALIGN_2_V01 = 0,
@@ -79,85 +71,8 @@ enum dhms_mem_block_align_enum_v01 {
 	DHMS_MEM_BLOCK_ALIGN_4K_V01 = 11,
 	DHMS_MEM_BLOCK_ALIGN_ENUM_MAX_ENUM_VAL_V01 = 2147483647
 	/* To force a 32 bit signed enum.  Do not change or use
-	*/
+	 */
 };
-
-/* Request Message; This command is used for getting
- * the multiple physically contiguous
- * memory blocks from the server memory subsystem
- */
-struct mem_alloc_req_msg_v01 {
-
-	/* Mandatory */
-	/*requested size*/
-	uint32_t num_bytes;
-
-	/* Optional */
-	/* Must be set to true if block_alignment
-	 * is being passed
-	 */
-	uint8_t block_alignment_valid;
-	/* The block alignment for the memory block to be allocated
-	*/
-	enum dhms_mem_block_align_enum_v01 block_alignment;
-};  /* Message */
-
-/* Response Message; This command is used for getting
- * the multiple physically contiguous memory blocks
- * from the server memory subsystem
- */
-struct mem_alloc_resp_msg_v01 {
-
-	/* Mandatory */
-	/*  Result Code */
-	/* The result of the requested memory operation
-	*/
-	enum qmi_result_type_v01 resp;
-	/* Optional */
-	/*  Memory Block Handle
-	*/
-	/* Must be set to true if handle is being passed
-	*/
-	uint8_t handle_valid;
-	/* The physical address of the memory allocated on the HLOS
-	*/
-	uint64_t handle;
-	/* Optional */
-	/* Memory block size */
-	/* Must be set to true if num_bytes is being passed
-	*/
-	uint8_t num_bytes_valid;
-	/* The number of bytes actually allocated for the request.
-	 * This value can be smaller than the size requested in
-	 * QMI_DHMS_MEM_ALLOC_REQ_MSG.
-	*/
-	uint32_t num_bytes;
-};  /* Message */
-
-/* Request Message; This command is used for releasing
- * the multiple physically contiguous
- * memory blocks to the server memory subsystem
- */
-struct mem_free_req_msg_v01 {
-
-	/* Mandatory */
-	/* Physical address of memory to be freed
-	*/
-	uint32_t handle;
-};  /* Message */
-
-/* Response Message; This command is used for releasing
- * the multiple physically contiguous
- * memory blocks to the server memory subsystem
- */
-struct mem_free_resp_msg_v01 {
-
-	/* Mandatory */
-	/* Result of the requested memory operation, todo,
-	 * need to check the async operation for free
-	 */
-	enum qmi_result_type_v01 resp;
-};  /* Message */
 
 /* Request Message; This command is used for getting
  * the multiple physically contiguous
@@ -188,7 +103,7 @@ struct mem_alloc_generic_req_msg_v01 {
 
 	/* Alloc_contiguous is used to identify that clients are requesting
 	 * for contiguous or non contiguous memory, default is contiguous
-	* 0 = non contiguous else contiguous
+	 * 0 = non contiguous else contiguous
 	 */
 	uint8_t alloc_contiguous;
 
@@ -199,7 +114,7 @@ struct mem_alloc_generic_req_msg_v01 {
 	uint8_t block_alignment_valid;
 
 	/* The block alignment for the memory block to be allocated
-	*/
+	 */
 	enum dhms_mem_block_align_enum_v01 block_alignment;
 
 };  /* Message */
@@ -213,7 +128,7 @@ struct mem_alloc_generic_resp_msg_v01 {
 	/* Mandatory */
 	/*  Result Code */
 	/* The result of the requested memory operation
-	*/
+	 */
 	struct qmi_response_type_v01 resp;
 
 	/* Optional */
@@ -228,9 +143,9 @@ struct mem_alloc_generic_resp_msg_v01 {
 
 	/* Optional */
 	/*  Memory Block Handle
-	*/
+	 */
 	/* Must be set to true if handle is being passed
-	*/
+	 */
 	uint8_t dhms_mem_alloc_addr_info_valid;
 
 	/* Optional */
@@ -239,7 +154,7 @@ struct mem_alloc_generic_resp_msg_v01 {
 
 	/* Optional */
 	/* The physical address of the memory allocated on the HLOS
-	*/
+	 */
 	struct dhms_mem_alloc_addr_info_type_v01
 		dhms_mem_alloc_addr_info[MAX_ARR_CNT_V01];
 
@@ -330,22 +245,14 @@ struct mem_query_size_rsp_msg_v01 {
 };  /* Message */
 
 
-extern struct elem_info mem_alloc_req_msg_data_v01_ei[];
-extern struct elem_info mem_alloc_resp_msg_data_v01_ei[];
-extern struct elem_info mem_free_req_msg_data_v01_ei[];
-extern struct elem_info mem_free_resp_msg_data_v01_ei[];
-extern struct elem_info mem_alloc_generic_req_msg_data_v01_ei[];
-extern struct elem_info mem_alloc_generic_resp_msg_data_v01_ei[];
-extern struct elem_info mem_free_generic_req_msg_data_v01_ei[];
-extern struct elem_info mem_free_generic_resp_msg_data_v01_ei[];
-extern struct elem_info mem_query_size_req_msg_data_v01_ei[];
-extern struct elem_info mem_query_size_resp_msg_data_v01_ei[];
+extern struct qmi_elem_info mem_alloc_generic_req_msg_data_v01_ei[];
+extern struct qmi_elem_info mem_alloc_generic_resp_msg_data_v01_ei[];
+extern struct qmi_elem_info mem_free_generic_req_msg_data_v01_ei[];
+extern struct qmi_elem_info mem_free_generic_resp_msg_data_v01_ei[];
+extern struct qmi_elem_info mem_query_size_req_msg_data_v01_ei[];
+extern struct qmi_elem_info mem_query_size_resp_msg_data_v01_ei[];
 
 /*Service Message Definition*/
-#define MEM_ALLOC_REQ_MSG_V01 0x0020
-#define MEM_ALLOC_RESP_MSG_V01 0x0020
-#define MEM_FREE_REQ_MSG_V01 0x0021
-#define MEM_FREE_RESP_MSG_V01 0x0021
 #define MEM_ALLOC_GENERIC_REQ_MSG_V01 0x0022
 #define MEM_ALLOC_GENERIC_RESP_MSG_V01 0x0022
 #define MEM_FREE_GENERIC_REQ_MSG_V01 0x0023

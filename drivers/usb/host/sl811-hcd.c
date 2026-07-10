@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * SL811HS HCD (Host Controller Driver) for USB.
  *
@@ -22,7 +23,7 @@
  * and usb-storage.
  *
  * TODO:
- * - usb suspend/resume triggered by sl811 (with PM_RUNTIME)
+ * - usb suspend/resume triggered by sl811
  * - various issues noted in the code
  * - performance work; use both register banks; ...
  * - use urb->iso_frame_desc[] with ISO transfers
@@ -1091,7 +1092,7 @@ sl811h_hub_descriptor (
 ) {
 	u16		temp = 0;
 
-	desc->bDescriptorType = 0x29;
+	desc->bDescriptorType = USB_DT_HUB;
 	desc->bHubContrCurrent = 0;
 
 	desc->bNbrPorts = 1;
@@ -1103,12 +1104,12 @@ sl811h_hub_descriptor (
 		desc->bPwrOn2PwrGood = sl811->board->potpg;
 		if (!desc->bPwrOn2PwrGood)
 			desc->bPwrOn2PwrGood = 10;
-		temp = 0x0001;
+		temp = HUB_CHAR_INDV_PORT_LPSM;
 	} else
-		temp = 0x0002;
+		temp = HUB_CHAR_NO_LPSM;
 
 	/* no overcurrent errors detection/handling */
-	temp |= 0x0010;
+	temp |= HUB_CHAR_NO_OCPM;
 
 	desc->wHubCharacteristics = cpu_to_le16(temp);
 
@@ -1118,9 +1119,9 @@ sl811h_hub_descriptor (
 }
 
 static void
-sl811h_timer(unsigned long _sl811)
+sl811h_timer(struct timer_list *t)
 {
-	struct sl811 	*sl811 = (void *) _sl811;
+	struct sl811 	*sl811 = from_timer(sl811, t, timer);
 	unsigned long	flags;
 	u8		irqstat;
 	u8		signaling = sl811->ctrl1 & SL11H_CTL1MASK_FORCE;
@@ -1286,11 +1287,10 @@ sl811h_hub_control(
 			goto error;
 		put_unaligned_le32(sl811->port1, buf);
 
-#ifndef	VERBOSE
-	if (*(u16*)(buf+2))	/* only if wPortChange is interesting */
-#endif
-		dev_dbg(hcd->self.controller, "GetPortStatus %08x\n",
-			sl811->port1);
+		if (__is_defined(VERBOSE) ||
+		    *(u16*)(buf+2)) /* only if wPortChange is interesting */
+			dev_dbg(hcd->self.controller, "GetPortStatus %08x\n",
+				sl811->port1);
 		break;
 	case SetPortFeature:
 		if (wIndex != 1 || wLength != 0)
@@ -1380,7 +1380,7 @@ static void dump_irq(struct seq_file *s, char *label, u8 mask)
 		(mask & SL11H_INTMASK_DP) ? " dp" : "");
 }
 
-static int sl811h_show(struct seq_file *s, void *unused)
+static int sl811h_debug_show(struct seq_file *s, void *unused)
 {
 	struct sl811		*sl811 = s->private;
 	struct sl811h_ep	*ep;
@@ -1490,25 +1490,14 @@ static int sl811h_show(struct seq_file *s, void *unused)
 
 	return 0;
 }
-
-static int sl811h_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, sl811h_show, inode->i_private);
-}
-
-static const struct file_operations debug_ops = {
-	.open		= sl811h_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
+DEFINE_SHOW_ATTRIBUTE(sl811h_debug);
 
 /* expect just one sl811 per system */
 static void create_debug_file(struct sl811 *sl811)
 {
 	sl811->debug_file = debugfs_create_file("sl811h", S_IRUGO,
 						usb_debug_root, sl811,
-						&debug_ops);
+						&sl811h_debug_fops);
 }
 
 static void remove_debug_file(struct sl811 *sl811)
@@ -1554,7 +1543,7 @@ sl811h_start(struct usb_hcd *hcd)
 
 /*-------------------------------------------------------------------------*/
 
-static struct hc_driver sl811h_hc_driver = {
+static const struct hc_driver sl811h_hc_driver = {
 	.description =		hcd_name,
 	.hcd_priv_size =	sizeof(struct sl811),
 
@@ -1642,12 +1631,6 @@ sl811h_probe(struct platform_device *dev)
 	irq = ires->start;
 	irqflags = ires->flags & IRQF_TRIGGER_MASK;
 
-	/* refuse to confuse usbcore */
-	if (dev->dev.dma_mask) {
-		dev_dbg(&dev->dev, "no we won't dma\n");
-		return -EINVAL;
-	}
-
 	/* the chip may be wired for either kind of addressing */
 	addr = platform_get_resource(dev, IORESOURCE_MEM, 0);
 	data = platform_get_resource(dev, IORESOURCE_MEM, 1);
@@ -1691,9 +1674,7 @@ sl811h_probe(struct platform_device *dev)
 	spin_lock_init(&sl811->lock);
 	INIT_LIST_HEAD(&sl811->async);
 	sl811->board = dev_get_platdata(&dev->dev);
-	init_timer(&sl811->timer);
-	sl811->timer.function = sl811h_timer;
-	sl811->timer.data = (unsigned long) sl811;
+	timer_setup(&sl811->timer, sl811h_timer, 0);
 	sl811->addr_reg = addr_reg;
 	sl811->data_reg = data_reg;
 
@@ -1752,8 +1733,7 @@ sl811h_probe(struct platform_device *dev)
 #ifdef	CONFIG_PM
 
 /* for this device there's no useful distinction between the controller
- * and its root hub, except that the root hub only gets direct PM calls
- * when CONFIG_PM_RUNTIME is enabled.
+ * and its root hub.
  */
 
 static int
@@ -1811,8 +1791,7 @@ struct platform_driver sl811h_driver = {
 	.suspend =	sl811h_suspend,
 	.resume =	sl811h_resume,
 	.driver = {
-		.name =	(char *) hcd_name,
-		.owner = THIS_MODULE,
+		.name =	hcd_name,
 	},
 };
 EXPORT_SYMBOL(sl811h_driver);

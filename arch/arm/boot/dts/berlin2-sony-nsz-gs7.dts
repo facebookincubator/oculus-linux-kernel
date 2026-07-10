@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 /*
  * Device Tree file for Sony NSZ-GS7
  *
  * Sebastian Hesselbarth <sebastian.hesselbarth@gmail.com>
- *
- * This file is licensed under the terms of the GNU General Public
- * License version 2.  This program is licensed "as is" without any
- * warranty of any kind, whether express or implied.
  */
 
 /dts-v1/;
@@ -17,13 +14,30 @@
 	compatible = "sony,nsz-gs7", "marvell,berlin2", "marvell,berlin";
 
 	chosen {
-		bootargs = "console=ttyS0,115200 earlyprintk";
+		bootargs = "earlyprintk";
+		stdout-path = "serial0:115200n8";
 	};
 
-	memory {
+	memory@0 {
 		device_type = "memory";
 		reg = <0x00000000 0x40000000>; /* 1 GB */
 	};
+};
+
+&ahci { status = "okay"; };
+
+&eth1 { status = "okay"; };
+
+/* Unpopulated SATA plug on solder side */
+&sata0 { status = "okay"; };
+
+&sata_phy { status = "okay"; };
+
+/* Samsung M8G2FA 8GB eMMC */
+&sdhci2 {
+	non-removable;
+	bus-width = <8>;
+	status = "okay";
 };
 
 &uart0 { status = "okay"; };

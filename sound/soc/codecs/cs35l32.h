@@ -1,14 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * cs35l32.h -- CS35L32 ALSA SoC audio driver
  *
  * Copyright 2014 CirrusLogic, Inc.
  *
  * Author: Brian Austin <brian.austin@cirrus.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 
 #ifndef __CS35L32_H__
@@ -80,7 +76,7 @@ struct cs35l32_platform_data {
 #define CS35L32_GAIN_MGR_MASK		0x08
 #define CS35L32_ADSP_SHARE_MASK		0x08
 #define CS35L32_ADSP_DATACFG_MASK	0x30
-#define CS35L32_SDOUT_3ST		0x80
+#define CS35L32_SDOUT_3ST		0x08
 #define CS35L32_BATT_REC_MASK		0x0E
 #define CS35L32_BATT_THRESH_MASK	0x30
 

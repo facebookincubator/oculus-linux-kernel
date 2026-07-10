@@ -1,31 +1,19 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Low-level user helpers placed in the vectors page for AArch32.
+ * AArch32 user helpers.
  * Based on the kuser helpers in arch/arm/kernel/entry-armv.S.
  *
  * Copyright (C) 2005-2011 Nicolas Pitre <nico@fluxnic.net>
- * Copyright (C) 2012 ARM Ltd.
+ * Copyright (C) 2012-2018 ARM Ltd.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * The kuser helpers below are mapped at a fixed address by
+ * aarch32_setup_additional_pages() and are provided for compatibility
+ * reasons with 32 bit (aarch32) applications that need them.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
- *
- * AArch32 user helpers.
- *
- * These helpers are provided for compatibility with AArch32 binaries that
- * still need them. They are installed at a fixed address by
- * aarch32_setup_additional_pages().
- *
- * See Documentation/arm/kernel_user_helpers.txt for formal definitions.
+ * See Documentation/arm/kernel_user_helpers.rst for formal definitions.
  */
+
+#include <asm/unistd.h>
 
 	.align	5
 	.globl	__kuser_helper_start

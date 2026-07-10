@@ -46,7 +46,7 @@
 
 /* PowerSurge are the first generation of PCI Pmacs. This include
  * all of the Grand-Central based machines. We currently don't
- * differenciate most of them.
+ * differentiate most of them.
  */
 #define PMAC_TYPE_PSURGE		0x10	/* PowerSurge */
 #define PMAC_TYPE_ANS			0x11	/* Apple Network Server */
@@ -91,10 +91,10 @@
 #define PMAC_TYPE_CUBE			0x44	/* Cube PowerMac */
 #define PMAC_TYPE_QUICKSILVER		0x45	/* QuickSilver G4s */
 #define PMAC_TYPE_PISMO			0x46	/* Pismo PowerBook */
-#define PMAC_TYPE_8953		0x47	/* 8953 PowerBook */
-#define PMAC_TYPE_89532		0x48	/* 8953 II PowerBook (no L3, M6) */
-#define PMAC_TYPE_89533		0x49	/* 8953 III PowerBook (with L3 & M7) */
-#define PMAC_TYPE_89534		0x50	/* 8953 IV PowerBook (with L3 & M9) */
+#define PMAC_TYPE_TITANIUM		0x47	/* Titanium PowerBook */
+#define PMAC_TYPE_TITANIUM2		0x48	/* Titanium II PowerBook (no L3, M6) */
+#define PMAC_TYPE_TITANIUM3		0x49	/* Titanium III PowerBook (with L3 & M7) */
+#define PMAC_TYPE_TITANIUM4		0x50	/* Titanium IV PowerBook (with L3 & M9) */
 #define PMAC_TYPE_EMAC			0x50	/* eMac */
 #define PMAC_TYPE_UNKNOWN_CORE99	0x5f
 
@@ -210,7 +210,7 @@ static inline long pmac_call_feature(int selector, struct device_node* node,
 
 /* PMAC_FTR_SOUND_CHIP_ENABLE	(struct device_node* node, 0, int value)
  * enable/disable the sound chip, whatever it is and provided it can
- * acually be controlled
+ * actually be controlled
  */
 #define PMAC_FTR_SOUND_CHIP_ENABLE	PMAC_FTR_DEF(9)
 

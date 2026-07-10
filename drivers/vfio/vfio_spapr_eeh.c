@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * EEH functionality support for VFIO devices. The feature is only
  * available on sPAPR compatible platforms.
  *
  * Copyright Gavin Shan, IBM Corporation 2014.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -74,16 +71,26 @@ long vfio_spapr_iommu_eeh_ioctl(struct iommu_group *group,
 			ret = eeh_pe_get_state(pe);
 			break;
 		case VFIO_EEH_PE_RESET_DEACTIVATE:
-			ret = eeh_pe_reset(pe, EEH_RESET_DEACTIVATE);
+			ret = eeh_pe_reset(pe, EEH_RESET_DEACTIVATE, true);
 			break;
 		case VFIO_EEH_PE_RESET_HOT:
-			ret = eeh_pe_reset(pe, EEH_RESET_HOT);
+			ret = eeh_pe_reset(pe, EEH_RESET_HOT, true);
 			break;
 		case VFIO_EEH_PE_RESET_FUNDAMENTAL:
-			ret = eeh_pe_reset(pe, EEH_RESET_FUNDAMENTAL);
+			ret = eeh_pe_reset(pe, EEH_RESET_FUNDAMENTAL, true);
 			break;
 		case VFIO_EEH_PE_CONFIGURE:
 			ret = eeh_pe_configure(pe);
+			break;
+		case VFIO_EEH_PE_INJECT_ERR:
+			minsz = offsetofend(struct vfio_eeh_pe_op, err.mask);
+			if (op.argsz < minsz)
+				return -EINVAL;
+			if (copy_from_user(&op, (void __user *)arg, minsz))
+				return -EFAULT;
+
+			ret = eeh_pe_inject_err(pe, op.err.type, op.err.func,
+						op.err.addr, op.err.mask);
 			break;
 		default:
 			ret = -EINVAL;

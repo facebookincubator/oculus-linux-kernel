@@ -27,6 +27,7 @@
 
 #include <linux/init.h>
 #include <linux/ioport.h>
+#include <linux/mm.h>
 
 #include <asm/dma-coherence.h>
 #include <asm/mipsregs.h>
@@ -34,10 +35,12 @@
 #include <au1000.h>
 
 extern void __init board_setup(void);
-extern void set_cpuspec(void);
+extern void __init alchemy_set_lpj(void);
 
 void __init plat_mem_setup(void)
 {
+	alchemy_set_lpj();
+
 	if (au1xxx_cpu_needs_config_od())
 		/* Various early Au1xx0 errata corrected by this */
 		set_c0_config(1 << 19); /* Set Config[OD] */
@@ -46,17 +49,17 @@ void __init plat_mem_setup(void)
 		clear_c0_config(1 << 19); /* Clear Config[OD] */
 
 	hw_coherentio = 0;
-	coherentio = 1;
+	coherentio = IO_COHERENCE_ENABLED;
 	switch (alchemy_get_cputype()) {
 	case ALCHEMY_CPU_AU1000:
 	case ALCHEMY_CPU_AU1500:
 	case ALCHEMY_CPU_AU1100:
-		coherentio = 0;
+		coherentio = IO_COHERENCE_DISABLED;
 		break;
 	case ALCHEMY_CPU_AU1200:
 		/* Au1200 AB USB does not support coherent memory */
 		if (0 == (read_c0_prid() & PRID_REV_MASK))
-			coherentio = 0;
+			coherentio = IO_COHERENCE_DISABLED;
 		break;
 	}
 
@@ -70,9 +73,9 @@ void __init plat_mem_setup(void)
 	iomem_resource.end = IOMEM_RESOURCE_END;
 }
 
-#if defined(CONFIG_64BIT_PHYS_ADDR) && defined(CONFIG_PCI)
+#ifdef CONFIG_MIPS_FIXUP_BIGPHYS_ADDR
 /* This routine should be valid for all Au1x based boards */
-phys_t __fixup_bigphys_addr(phys_t phys_addr, phys_t size)
+phys_addr_t fixup_bigphys_addr(phys_addr_t phys_addr, phys_addr_t size)
 {
 	unsigned long start = ALCHEMY_PCI_MEMWIN_START;
 	unsigned long end = ALCHEMY_PCI_MEMWIN_END;
@@ -83,10 +86,18 @@ phys_t __fixup_bigphys_addr(phys_t phys_addr, phys_t size)
 
 	/* Check for PCI memory window */
 	if (phys_addr >= start && (phys_addr + size - 1) <= end)
-		return (phys_t)(AU1500_PCI_MEM_PHYS_ADDR + phys_addr);
+		return (phys_addr_t)(AU1500_PCI_MEM_PHYS_ADDR + phys_addr);
 
 	/* default nop */
 	return phys_addr;
 }
-EXPORT_SYMBOL(__fixup_bigphys_addr);
-#endif
+
+int io_remap_pfn_range(struct vm_area_struct *vma, unsigned long vaddr,
+		unsigned long pfn, unsigned long size, pgprot_t prot)
+{
+	phys_addr_t phys_addr = fixup_bigphys_addr(pfn << PAGE_SHIFT, size);
+
+	return remap_pfn_range(vma, vaddr, phys_addr >> PAGE_SHIFT, size, prot);
+}
+EXPORT_SYMBOL(io_remap_pfn_range);
+#endif /* CONFIG_MIPS_FIXUP_BIGPHYS_ADDR */

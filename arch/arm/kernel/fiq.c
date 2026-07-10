@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  *  linux/arch/arm/kernel/fiq.c
  *
@@ -97,8 +98,8 @@ void set_fiq_handler(void *start, unsigned int length)
 
 	memcpy(base + offset, start, length);
 	if (!cache_is_vipt_nonaliasing())
-		flush_icache_range((unsigned long)base + offset, offset +
-				   length);
+		flush_icache_range((unsigned long)base + offset,
+				   (unsigned long)base + offset + length);
 	flush_icache_range(0xffff0000 + offset, 0xffff0000 + offset + length);
 }
 
@@ -124,7 +125,7 @@ int claim_fiq(struct fiq_handler *f)
 void release_fiq(struct fiq_handler *f)
 {
 	if (current_fiq != f) {
-		printk(KERN_ERR "%s FIQ trying to release %s FIQ\n",
+		pr_err("%s FIQ trying to release %s FIQ\n",
 		       f->name, current_fiq->name);
 		dump_stack();
 		return;

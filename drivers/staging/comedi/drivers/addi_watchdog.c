@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * COMEDI driver for the watchdog subdevice found on some addi-data boards
  * Copyright (c) 2013 H Hartley Sweeten <hsweeten@visionengravers.com>
@@ -6,34 +7,12 @@
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 1998 David A. Schleef <ds@schleef.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
 #include "../comedidev.h"
+#include "addi_tcw.h"
 #include "addi_watchdog.h"
-
-/*
- * Register offsets/defines for the addi-data watchdog
- */
-#define ADDI_WDOG_REG			0x00
-#define ADDI_WDOG_RELOAD_REG		0x04
-#define ADDI_WDOG_TIMEBASE		0x08
-#define ADDI_WDOG_CTRL_REG		0x0c
-#define ADDI_WDOG_CTRL_ENABLE		(1 << 0)
-#define ADDI_WDOG_CTRL_SW_TRIG		(1 << 9)
-#define ADDI_WDOG_STATUS_REG		0x10
-#define ADDI_WDOG_STATUS_ENABLED	(1 << 0)
-#define ADDI_WDOG_STATUS_SW_TRIG	(1 << 1)
 
 struct addi_watchdog_private {
 	unsigned long iobase;
@@ -60,13 +39,13 @@ static int addi_watchdog_insn_config(struct comedi_device *dev,
 
 	switch (data[0]) {
 	case INSN_CONFIG_ARM:
-		spriv->wdog_ctrl = ADDI_WDOG_CTRL_ENABLE;
+		spriv->wdog_ctrl = ADDI_TCW_CTRL_ENA;
 		reload = data[1] & s->maxdata;
-		outl(reload, spriv->iobase + ADDI_WDOG_RELOAD_REG);
+		outl(reload, spriv->iobase + ADDI_TCW_RELOAD_REG);
 
 		/* Time base is 20ms, let the user know the timeout */
 		dev_info(dev->class_dev, "watchdog enabled, timeout:%dms\n",
-			20 * reload + 20);
+			 20 * reload + 20);
 		break;
 	case INSN_CONFIG_DISARM:
 		spriv->wdog_ctrl = 0;
@@ -75,7 +54,7 @@ static int addi_watchdog_insn_config(struct comedi_device *dev,
 		return -EINVAL;
 	}
 
-	outl(spriv->wdog_ctrl, spriv->iobase + ADDI_WDOG_CTRL_REG);
+	outl(spriv->wdog_ctrl, spriv->iobase + ADDI_TCW_CTRL_REG);
 
 	return insn->n;
 }
@@ -89,7 +68,7 @@ static int addi_watchdog_insn_read(struct comedi_device *dev,
 	int i;
 
 	for (i = 0; i < insn->n; i++)
-		data[i] = inl(spriv->iobase + ADDI_WDOG_STATUS_REG);
+		data[i] = inl(spriv->iobase + ADDI_TCW_STATUS_REG);
 
 	return insn->n;
 }
@@ -109,8 +88,8 @@ static int addi_watchdog_insn_write(struct comedi_device *dev,
 
 	/* "ping" the watchdog */
 	for (i = 0; i < insn->n; i++) {
-		outl(spriv->wdog_ctrl | ADDI_WDOG_CTRL_SW_TRIG,
-		     spriv->iobase + ADDI_WDOG_CTRL_REG);
+		outl(spriv->wdog_ctrl | ADDI_TCW_CTRL_TRIG,
+		     spriv->iobase + ADDI_TCW_CTRL_REG);
 	}
 
 	return insn->n;
@@ -118,8 +97,8 @@ static int addi_watchdog_insn_write(struct comedi_device *dev,
 
 void addi_watchdog_reset(unsigned long iobase)
 {
-	outl(0x0, iobase + ADDI_WDOG_CTRL_REG);
-	outl(0x0, iobase + ADDI_WDOG_RELOAD_REG);
+	outl(0x0, iobase + ADDI_TCW_CTRL_REG);
+	outl(0x0, iobase + ADDI_TCW_RELOAD_REG);
 }
 EXPORT_SYMBOL_GPL(addi_watchdog_reset);
 
@@ -134,7 +113,7 @@ int addi_watchdog_init(struct comedi_subdevice *s, unsigned long iobase)
 	spriv->iobase = iobase;
 
 	s->type		= COMEDI_SUBD_TIMER;
-	s->subdev_flags	= SDF_WRITEABLE;
+	s->subdev_flags	= SDF_WRITABLE;
 	s->n_chan	= 1;
 	s->maxdata	= 0xff;
 	s->insn_config	= addi_watchdog_insn_config;

@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -16,8 +8,9 @@
 #include <linux/debugfs.h>
 #include <linux/fs.h>
 #include <linux/init.h>
+#include <linux/show_mem_notifier.h>
 
-ATOMIC_NOTIFIER_HEAD(show_mem_notifier);
+static ATOMIC_NOTIFIER_HEAD(show_mem_notifier);
 
 int show_mem_notifier_register(struct notifier_block *nb)
 {
@@ -41,10 +34,10 @@ static int show_mem_notifier_get(void *dat, u64 *val)
 	return 0;
 }
 
-DEFINE_SIMPLE_ATTRIBUTE(show_mem_notifier_debug_ops, show_mem_notifier_get,
+DEFINE_DEBUGFS_ATTRIBUTE(show_mem_notifier_debug_ops, show_mem_notifier_get,
 				NULL, "%llu\n");
 
-int show_mem_notifier_debugfs_register(void)
+static int show_mem_notifier_debugfs_register(void)
 {
 	debugfs_create_file("show_mem_notifier", 0664, NULL, NULL,
 				&show_mem_notifier_debug_ops);

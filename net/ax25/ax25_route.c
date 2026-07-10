@@ -1,8 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  *
  * Copyright (C) Alan Cox GW4PTS (alan@lxorguk.ukuu.org.uk)
  * Copyright (C) Jonathan Naylor G4KLX (g4klx@g4klx.demon.co.uk)
@@ -31,7 +28,7 @@
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
 #include <net/sock.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/fcntl.h>
 #include <linux/mm.h>
 #include <linux/interrupt.h>
@@ -40,7 +37,7 @@
 #include <linux/export.h>
 
 static ax25_route *ax25_route_list;
-static DEFINE_RWLOCK(ax25_route_lock);
+DEFINE_RWLOCK(ax25_route_lock);
 
 void ax25_rt_device_down(struct net_device *dev)
 {
@@ -78,9 +75,11 @@ static int __must_check ax25_rt_add(struct ax25_routes_struct *route)
 	ax25_dev *ax25_dev;
 	int i;
 
-	if ((ax25_dev = ax25_addr_ax25dev(&route->port_addr)) == NULL)
-		return -EINVAL;
 	if (route->digi_count > AX25_MAX_DIGIS)
+		return -EINVAL;
+
+	ax25_dev = ax25_addr_ax25dev(&route->port_addr);
+	if (!ax25_dev)
 		return -EINVAL;
 
 	write_lock_bh(&ax25_route_lock);
@@ -94,6 +93,7 @@ static int __must_check ax25_rt_add(struct ax25_routes_struct *route)
 			if (route->digi_count != 0) {
 				if ((ax25_rt->digipeat = kmalloc(sizeof(ax25_digi), GFP_ATOMIC)) == NULL) {
 					write_unlock_bh(&ax25_route_lock);
+					ax25_dev_put(ax25_dev);
 					return -ENOMEM;
 				}
 				ax25_rt->digipeat->lastrepeat = -1;
@@ -104,6 +104,7 @@ static int __must_check ax25_rt_add(struct ax25_routes_struct *route)
 				}
 			}
 			write_unlock_bh(&ax25_route_lock);
+			ax25_dev_put(ax25_dev);
 			return 0;
 		}
 		ax25_rt = ax25_rt->next;
@@ -111,10 +112,11 @@ static int __must_check ax25_rt_add(struct ax25_routes_struct *route)
 
 	if ((ax25_rt = kmalloc(sizeof(ax25_route), GFP_ATOMIC)) == NULL) {
 		write_unlock_bh(&ax25_route_lock);
+		ax25_dev_put(ax25_dev);
 		return -ENOMEM;
 	}
 
-	atomic_set(&ax25_rt->refcount, 1);
+	refcount_set(&ax25_rt->refcount, 1);
 	ax25_rt->callsign     = route->dest_addr;
 	ax25_rt->dev          = ax25_dev->dev;
 	ax25_rt->digipeat     = NULL;
@@ -123,6 +125,7 @@ static int __must_check ax25_rt_add(struct ax25_routes_struct *route)
 		if ((ax25_rt->digipeat = kmalloc(sizeof(ax25_digi), GFP_ATOMIC)) == NULL) {
 			write_unlock_bh(&ax25_route_lock);
 			kfree(ax25_rt);
+			ax25_dev_put(ax25_dev);
 			return -ENOMEM;
 		}
 		ax25_rt->digipeat->lastrepeat = -1;
@@ -135,6 +138,7 @@ static int __must_check ax25_rt_add(struct ax25_routes_struct *route)
 	ax25_rt->next   = ax25_route_list;
 	ax25_route_list = ax25_rt;
 	write_unlock_bh(&ax25_route_lock);
+	ax25_dev_put(ax25_dev);
 
 	return 0;
 }
@@ -176,6 +180,7 @@ static int ax25_rt_del(struct ax25_routes_struct *route)
 		}
 	}
 	write_unlock_bh(&ax25_route_lock);
+	ax25_dev_put(ax25_dev);
 
 	return 0;
 }
@@ -218,6 +223,7 @@ static int ax25_rt_opt(struct ax25_route_opt_struct *rt_option)
 
 out:
 	write_unlock_bh(&ax25_route_lock);
+	ax25_dev_put(ax25_dev);
 	return err;
 }
 
@@ -323,32 +329,19 @@ static int ax25_rt_seq_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static const struct seq_operations ax25_rt_seqops = {
+const struct seq_operations ax25_rt_seqops = {
 	.start = ax25_rt_seq_start,
 	.next = ax25_rt_seq_next,
 	.stop = ax25_rt_seq_stop,
 	.show = ax25_rt_seq_show,
 };
-
-static int ax25_rt_info_open(struct inode *inode, struct file *file)
-{
-	return seq_open(file, &ax25_rt_seqops);
-}
-
-const struct file_operations ax25_route_fops = {
-	.owner = THIS_MODULE,
-	.open = ax25_rt_info_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = seq_release,
-};
-
 #endif
 
 /*
  *	Find AX.25 route
  *
  *	Only routes with a reference count of zero can be destroyed.
+ *	Must be called with ax25_route_lock read locked.
  */
 ax25_route *ax25_get_route(ax25_address *addr, struct net_device *dev)
 {
@@ -356,7 +349,6 @@ ax25_route *ax25_get_route(ax25_address *addr, struct net_device *dev)
 	ax25_route *ax25_def_rt = NULL;
 	ax25_route *ax25_rt;
 
-	read_lock(&ax25_route_lock);
 	/*
 	 *	Bind to the physical interface we heard them on, or the default
 	 *	route if none is found;
@@ -378,11 +370,6 @@ ax25_route *ax25_get_route(ax25_address *addr, struct net_device *dev)
 	ax25_rt = ax25_def_rt;
 	if (ax25_spe_rt != NULL)
 		ax25_rt = ax25_spe_rt;
-
-	if (ax25_rt != NULL)
-		ax25_hold_route(ax25_rt);
-
-	read_unlock(&ax25_route_lock);
 
 	return ax25_rt;
 }
@@ -414,9 +401,12 @@ int ax25_rt_autobind(ax25_cb *ax25, ax25_address *addr)
 	ax25_route *ax25_rt;
 	int err = 0;
 
-	if ((ax25_rt = ax25_get_route(addr, NULL)) == NULL)
+	ax25_route_lock_use();
+	ax25_rt = ax25_get_route(addr, NULL);
+	if (!ax25_rt) {
+		ax25_route_lock_unuse();
 		return -EHOSTUNREACH;
-
+	}
 	if ((ax25->ax25_dev = ax25_dev_ax25dev(ax25_rt->dev)) == NULL) {
 		err = -EHOSTUNREACH;
 		goto put;
@@ -445,14 +435,15 @@ int ax25_rt_autobind(ax25_cb *ax25, ax25_address *addr)
 	}
 
 	if (ax25->sk != NULL) {
+		local_bh_disable();
 		bh_lock_sock(ax25->sk);
 		sock_reset_flag(ax25->sk, SOCK_ZAPPED);
 		bh_unlock_sock(ax25->sk);
+		local_bh_enable();
 	}
 
 put:
-	ax25_put_route(ax25_rt);
-
+	ax25_route_lock_unuse();
 	return err;
 }
 

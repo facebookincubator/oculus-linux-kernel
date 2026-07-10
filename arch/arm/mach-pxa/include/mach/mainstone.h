@@ -1,13 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  arch/arm/mach-pxa/include/mach/mainstone.h
  *
  *  Author:	Nicolas Pitre
  *  Created:	Nov 14, 2002
  *  Copyright:	MontaVista Software Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef ASM_ARCH_MAINSTONE_H
@@ -119,8 +116,14 @@
 #define MST_PCMCIA_PWR_VCC_33   0x8	   /* voltage VCC = 3.3V */
 #define MST_PCMCIA_PWR_VCC_50   0x4	   /* voltage VCC = 5.0V */
 
+#define MST_PCMCIA_INPUTS \
+	(MST_PCMCIA_nIRQ | MST_PCMCIA_nSPKR_BVD2 | MST_PCMCIA_nSTSCHG_BVD1 | \
+	 MST_PCMCIA_nVS2 | MST_PCMCIA_nVS1 | MST_PCMCIA_nCD)
+
 /* board specific IRQs */
-#define MAINSTONE_IRQ(x)	(IRQ_BOARD_START + (x))
+#define MAINSTONE_NR_IRQS	IRQ_BOARD_START
+
+#define MAINSTONE_IRQ(x)	(MAINSTONE_NR_IRQS + (x))
 #define MAINSTONE_MMC_IRQ	MAINSTONE_IRQ(0)
 #define MAINSTONE_USIM_IRQ	MAINSTONE_IRQ(1)
 #define MAINSTONE_USBC_IRQ	MAINSTONE_IRQ(2)
@@ -135,7 +138,5 @@
 #define MAINSTONE_S1_CD_IRQ	MAINSTONE_IRQ(13)
 #define MAINSTONE_S1_STSCHG_IRQ	MAINSTONE_IRQ(14)
 #define MAINSTONE_S1_IRQ	MAINSTONE_IRQ(15)
-
-#define MAINSTONE_NR_IRQS	(IRQ_BOARD_START + 16)
 
 #endif

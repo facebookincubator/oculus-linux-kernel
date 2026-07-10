@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2004 Texas Instruments, Inc.
  *
@@ -15,20 +16,6 @@
  * Added support for controlling VCORE and regulator sleep states,
  * Amit Kucheria <amit.kucheria@nokia.com>
  * Copyright (C) 2005, 2006 Nokia Corporation
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
 #include <linux/module.h>
@@ -42,10 +29,10 @@
 #include <linux/bcd.h>
 #include <linux/slab.h>
 #include <linux/mfd/menelaus.h>
+#include <linux/gpio.h>
 
 #include <asm/mach/irq.h>
 
-#include <asm/gpio.h>
 
 #define DRIVER_NAME			"menelaus"
 
@@ -531,29 +518,6 @@ static const struct menelaus_vtg_value vcore_values[] = {
 	{ 1425, 17 },
 	{ 1450, 18 },
 };
-
-int menelaus_set_vcore_sw(unsigned int mV)
-{
-	int val, ret;
-	struct i2c_client *c = the_menelaus->client;
-
-	val = menelaus_get_vtg_value(mV, vcore_values,
-				     ARRAY_SIZE(vcore_values));
-	if (val < 0)
-		return -EINVAL;
-
-	dev_dbg(&c->dev, "Setting VCORE to %d mV (val 0x%02x)\n", mV, val);
-
-	/* Set SW mode and the voltage in one go. */
-	mutex_lock(&the_menelaus->lock);
-	ret = menelaus_write_reg(MENELAUS_VCORE_CTRL1, val);
-	if (ret == 0)
-		the_menelaus->vcore_hw_mode = 0;
-	mutex_unlock(&the_menelaus->lock);
-	msleep(1);
-
-	return ret;
-}
 
 int menelaus_set_vcore_hw(unsigned int roof_mV, unsigned int floor_mV)
 {
@@ -1045,9 +1009,7 @@ static int menelaus_set_alarm(struct device *dev, struct rtc_wkalrm *w)
 static void menelaus_rtc_update_work(struct menelaus_chip *m)
 {
 	/* report 1/sec update */
-	local_irq_disable();
 	rtc_update_irq(m->rtc, 1, RTC_IRQF | RTC_UF);
-	local_irq_enable();
 }
 
 static int menelaus_ioctl(struct device *dev, unsigned cmd, unsigned long arg)
@@ -1109,9 +1071,7 @@ static const struct rtc_class_ops menelaus_rtc_ops = {
 static void menelaus_rtc_alarm_work(struct menelaus_chip *m)
 {
 	/* report alarm */
-	local_irq_disable();
 	rtc_update_irq(m->rtc, 1, RTC_IRQF | RTC_AF);
-	local_irq_enable();
 
 	/* then disable it; alarms are oneshot */
 	the_menelaus->rtc_control &= ~RTC_CTRL_AL_EN;
@@ -1121,12 +1081,19 @@ static void menelaus_rtc_alarm_work(struct menelaus_chip *m)
 static inline void menelaus_rtc_init(struct menelaus_chip *m)
 {
 	int	alarm = (m->client->irq > 0);
+	int	err;
 
 	/* assume 32KDETEN pin is pulled high */
 	if (!(menelaus_read_reg(MENELAUS_OSC_CTRL) & 0x80)) {
 		dev_dbg(&m->client->dev, "no 32k oscillator\n");
 		return;
 	}
+
+	m->rtc = devm_rtc_allocate_device(&m->client->dev);
+	if (IS_ERR(m->rtc))
+		return;
+
+	m->rtc->ops = &menelaus_rtc_ops;
 
 	/* support RTC alarm; it can issue wakeups */
 	if (alarm) {
@@ -1152,16 +1119,12 @@ static inline void menelaus_rtc_init(struct menelaus_chip *m)
 		menelaus_write_reg(MENELAUS_RTC_CTRL, m->rtc_control);
 	}
 
-	m->rtc = rtc_device_register(DRIVER_NAME,
-			&m->client->dev,
-			&menelaus_rtc_ops, THIS_MODULE);
-	if (IS_ERR(m->rtc)) {
+	err = rtc_register_device(m->rtc);
+	if (err) {
 		if (alarm) {
 			menelaus_remove_irq_work(MENELAUS_RTCALM_IRQ);
 			device_init_wakeup(&m->client->dev, 0);
 		}
-		dev_err(&m->client->dev, "can't register RTC: %d\n",
-				(int) PTR_ERR(m->rtc));
 		the_menelaus->rtc = NULL;
 	}
 }
@@ -1239,7 +1202,7 @@ static int menelaus_probe(struct i2c_client *client,
 	err = menelaus_read_reg(MENELAUS_VCORE_CTRL1);
 	if (err < 0)
 		goto fail;
-	if (err & BIT(7))
+	if (err & VCORE_CTRL1_HW_NSW)
 		menelaus->vcore_hw_mode = 1;
 	else
 		menelaus->vcore_hw_mode = 0;
@@ -1259,7 +1222,7 @@ fail:
 	return err;
 }
 
-static int __exit menelaus_remove(struct i2c_client *client)
+static int menelaus_remove(struct i2c_client *client)
 {
 	struct menelaus_chip	*menelaus = i2c_get_clientdata(client);
 
@@ -1280,7 +1243,7 @@ static struct i2c_driver menelaus_i2c_driver = {
 		.name		= DRIVER_NAME,
 	},
 	.probe		= menelaus_probe,
-	.remove		= __exit_p(menelaus_remove),
+	.remove		= menelaus_remove,
 	.id_table	= menelaus_id,
 };
 

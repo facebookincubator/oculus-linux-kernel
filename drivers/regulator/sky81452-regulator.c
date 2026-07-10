@@ -1,22 +1,9 @@
-/*
- * sky81452-regulator.c	SKY81452 regulator driver
- *
- * Copyright 2014 Skyworks Solutions Inc.
- * Author : Gyungoh Yoo <jack.yoo@skyworksinc.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2, or (at your option) any
- * later version.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, see <http://www.gnu.org/licenses/>.
- */
+// SPDX-License-Identifier: GPL-2.0
+//
+// sky81452-regulator.c	SKY81452 regulator driver
+//
+// Copyright 2014 Skyworks Solutions Inc.
+// Author : Gyungoh Yoo <jack.yoo@skyworksinc.com>
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -35,7 +22,7 @@
 #define SKY81452_LEN	0x40
 #define SKY81452_LOUT	0x1F
 
-static struct regulator_ops sky81452_reg_ops = {
+static const struct regulator_ops sky81452_reg_ops = {
 	.list_voltage = regulator_list_voltage_linear_range,
 	.map_voltage = regulator_map_voltage_linear_range,
 	.get_voltage_sel = regulator_get_voltage_sel_regmap,
@@ -45,13 +32,15 @@ static struct regulator_ops sky81452_reg_ops = {
 	.is_enabled = regulator_is_enabled_regmap,
 };
 
-static const struct regulator_linear_range sky81452_reg_ranges[] = {
+static const struct linear_range sky81452_reg_ranges[] = {
 	REGULATOR_LINEAR_RANGE(4500000, 0, 14, 250000),
 	REGULATOR_LINEAR_RANGE(9000000, 15, 31, 1000000),
 };
 
 static const struct regulator_desc sky81452_reg = {
 	.name = "LOUT",
+	.of_match = of_match_ptr("lout"),
+	.regulators_node = of_match_ptr("regulator"),
 	.ops = &sky81452_reg_ops,
 	.type = REGULATOR_VOLTAGE,
 	.owner = THIS_MODULE,
@@ -64,30 +53,6 @@ static const struct regulator_desc sky81452_reg = {
 	.enable_mask = SKY81452_LEN,
 };
 
-#ifdef CONFIG_OF
-static struct regulator_init_data *sky81452_reg_parse_dt(struct device *dev)
-{
-	struct regulator_init_data *init_data;
-	struct device_node *np;
-
-	np = of_get_child_by_name(dev->parent->of_node, "regulator");
-	if (unlikely(!np)) {
-		dev_err(dev, "regulator node not found");
-		return NULL;
-	}
-
-	init_data = of_get_regulator_init_data(dev, np);
-
-	of_node_put(np);
-	return init_data;
-}
-#else
-static struct regulator_init_data *sky81452_reg_parse_dt(struct device *dev)
-{
-	return ERR_PTR(-EINVAL);
-}
-#endif
-
 static int sky81452_reg_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -95,20 +60,16 @@ static int sky81452_reg_probe(struct platform_device *pdev)
 	struct regulator_config config = { };
 	struct regulator_dev *rdev;
 
-	if (!init_data) {
-		init_data = sky81452_reg_parse_dt(dev);
-		if (IS_ERR(init_data))
-			return PTR_ERR(init_data);
-	}
-
-	config.dev = dev;
+	config.dev = dev->parent;
 	config.init_data = init_data;
 	config.of_node = dev->of_node;
 	config.regmap = dev_get_drvdata(dev->parent);
 
 	rdev = devm_regulator_register(dev, &sky81452_reg, &config);
-	if (IS_ERR(rdev))
+	if (IS_ERR(rdev)) {
+		dev_err(dev, "failed to register. err=%ld\n", PTR_ERR(rdev));
 		return PTR_ERR(rdev);
+	}
 
 	platform_set_drvdata(pdev, rdev);
 
@@ -126,5 +87,4 @@ module_platform_driver(sky81452_reg_driver);
 
 MODULE_DESCRIPTION("Skyworks SKY81452 Regulator driver");
 MODULE_AUTHOR("Gyungoh Yoo <jack.yoo@skyworksinc.com>");
-MODULE_LICENSE("GPL");
-MODULE_VERSION("1.0");
+MODULE_LICENSE("GPL v2");

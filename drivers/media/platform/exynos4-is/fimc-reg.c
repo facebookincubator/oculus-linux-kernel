@@ -1,19 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Register interface file for Samsung Camera Interface (FIMC) driver
  *
  * Copyright (C) 2010 - 2013 Samsung Electronics Co., Ltd.
  * Sylwester Nawrocki <s.nawrocki@samsung.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
 */
 
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/regmap.h>
 
-#include <media/exynos-fimc.h>
+#include <media/drv-intf/exynos-fimc.h>
 #include "media-dev.h"
 
 #include "fimc-reg.h"
@@ -592,10 +589,10 @@ struct mbus_pixfmt_desc {
 };
 
 static const struct mbus_pixfmt_desc pix_desc[] = {
-	{ V4L2_MBUS_FMT_YUYV8_2X8, FIMC_REG_CISRCFMT_ORDER422_YCBYCR, 8 },
-	{ V4L2_MBUS_FMT_YVYU8_2X8, FIMC_REG_CISRCFMT_ORDER422_YCRYCB, 8 },
-	{ V4L2_MBUS_FMT_VYUY8_2X8, FIMC_REG_CISRCFMT_ORDER422_CRYCBY, 8 },
-	{ V4L2_MBUS_FMT_UYVY8_2X8, FIMC_REG_CISRCFMT_ORDER422_CBYCRY, 8 },
+	{ MEDIA_BUS_FMT_YUYV8_2X8, FIMC_REG_CISRCFMT_ORDER422_YCBYCR, 8 },
+	{ MEDIA_BUS_FMT_YVYU8_2X8, FIMC_REG_CISRCFMT_ORDER422_YCRYCB, 8 },
+	{ MEDIA_BUS_FMT_VYUY8_2X8, FIMC_REG_CISRCFMT_ORDER422_CRYCBY, 8 },
+	{ MEDIA_BUS_FMT_UYVY8_2X8, FIMC_REG_CISRCFMT_ORDER422_CBYCRY, 8 },
 };
 
 int fimc_hw_set_camera_source(struct fimc_dev *fimc,
@@ -609,6 +606,11 @@ int fimc_hw_set_camera_source(struct fimc_dev *fimc,
 	switch (source->fimc_bus_type) {
 	case FIMC_BUS_TYPE_ITU_601:
 	case FIMC_BUS_TYPE_ITU_656:
+		if (fimc_fmt_is_user_defined(f->fmt->color)) {
+			cfg |= FIMC_REG_CISRCFMT_ITU601_8BIT;
+			break;
+		}
+
 		for (i = 0; i < ARRAY_SIZE(pix_desc); i++) {
 			if (vc->ci_fmt.code == pix_desc[i].pixelcode) {
 				cfg = pix_desc[i].cisrcfmt;
@@ -689,11 +691,11 @@ int fimc_hw_set_camera_type(struct fimc_dev *fimc,
 
 		/* TODO: add remaining supported formats. */
 		switch (vid_cap->ci_fmt.code) {
-		case V4L2_MBUS_FMT_VYUY8_2X8:
+		case MEDIA_BUS_FMT_VYUY8_2X8:
 			tmp = FIMC_REG_CSIIMGFMT_YCBCR422_8BIT;
 			break;
-		case V4L2_MBUS_FMT_JPEG_1X8:
-		case V4L2_MBUS_FMT_S5C_UYVY_JPEG_1X8:
+		case MEDIA_BUS_FMT_JPEG_1X8:
+		case MEDIA_BUS_FMT_S5C_UYVY_JPEG_1X8:
 			tmp = FIMC_REG_CSIIMGFMT_USER(1);
 			cfg |= FIMC_REG_CIGCTRL_CAM_JPEG;
 			break;
@@ -710,10 +712,12 @@ int fimc_hw_set_camera_type(struct fimc_dev *fimc,
 	case FIMC_BUS_TYPE_ITU_601...FIMC_BUS_TYPE_ITU_656:
 		if (source->mux_id == 0) /* ITU-A, ITU-B: 0, 1 */
 			cfg |= FIMC_REG_CIGCTRL_SELCAM_ITU_A;
+		if (vid_cap->ci_fmt.code == MEDIA_BUS_FMT_JPEG_1X8)
+			cfg |= FIMC_REG_CIGCTRL_CAM_JPEG;
 		break;
 	case FIMC_BUS_TYPE_LCD_WRITEBACK_A:
 		cfg |= FIMC_REG_CIGCTRL_CAMIF_SELWB;
-		/* fall through */
+		fallthrough;
 	case FIMC_BUS_TYPE_ISP_WRITEBACK:
 		if (fimc->variant->has_isp_wb)
 			cfg |= FIMC_REG_CIGCTRL_CAMIF_SELWB;

@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * ST Thermal Sensor Driver for syscfg based sensors.
  * Author: Ajit Pal Singh <ajitpal.singh@st.com>
  *
  * Copyright (C) 2003-2014 STMicroelectronics (R&D) Limited
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/of.h>
@@ -104,7 +100,7 @@ static const struct st_thermal_sensor_ops st_syscfg_sensor_ops = {
 };
 
 /* Compatible device data for stih415 sas thermal sensor */
-const struct st_thermal_compat_data st_415sas_cdata = {
+static const struct st_thermal_compat_data st_415sas_cdata = {
 	.sys_compat		= "st,stih415-front-syscfg",
 	.reg_fields		= st_415sas_regfields,
 	.ops			= &st_syscfg_sensor_ops,
@@ -114,7 +110,7 @@ const struct st_thermal_compat_data st_415sas_cdata = {
 };
 
 /* Compatible device data for stih415 mpe thermal sensor */
-const struct st_thermal_compat_data st_415mpe_cdata = {
+static const struct st_thermal_compat_data st_415mpe_cdata = {
 	.sys_compat		= "st,stih415-system-syscfg",
 	.reg_fields		= st_415mpe_regfields,
 	.ops			= &st_syscfg_sensor_ops,
@@ -124,7 +120,7 @@ const struct st_thermal_compat_data st_415mpe_cdata = {
 };
 
 /* Compatible device data for stih416 sas thermal sensor */
-const struct st_thermal_compat_data st_416sas_cdata = {
+static const struct st_thermal_compat_data st_416sas_cdata = {
 	.sys_compat		= "st,stih416-front-syscfg",
 	.reg_fields		= st_416sas_regfields,
 	.ops			= &st_syscfg_sensor_ops,
@@ -134,7 +130,7 @@ const struct st_thermal_compat_data st_416sas_cdata = {
 };
 
 /* Compatible device data for stid127 thermal sensor */
-const struct st_thermal_compat_data st_127_cdata = {
+static const struct st_thermal_compat_data st_127_cdata = {
 	.sys_compat		= "st,stid127-cpu-syscfg",
 	.reg_fields		= st_127_regfields,
 	.ops			= &st_syscfg_sensor_ops,
@@ -143,7 +139,7 @@ const struct st_thermal_compat_data st_127_cdata = {
 	.crit_temp		= 120,
 };
 
-static struct of_device_id st_syscfg_thermal_of_match[] = {
+static const struct of_device_id st_syscfg_thermal_of_match[] = {
 	{ .compatible = "st,stih415-sas-thermal", .data = &st_415sas_cdata },
 	{ .compatible = "st,stih415-mpe-thermal", .data = &st_415mpe_cdata },
 	{ .compatible = "st,stih416-sas-thermal", .data = &st_416sas_cdata },
@@ -152,12 +148,12 @@ static struct of_device_id st_syscfg_thermal_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, st_syscfg_thermal_of_match);
 
-int st_syscfg_probe(struct platform_device *pdev)
+static int st_syscfg_probe(struct platform_device *pdev)
 {
 	return st_thermal_register(pdev, st_syscfg_thermal_of_match);
 }
 
-int st_syscfg_remove(struct platform_device *pdev)
+static int st_syscfg_remove(struct platform_device *pdev)
 {
 	return st_thermal_unregister(pdev);
 }
@@ -165,7 +161,6 @@ int st_syscfg_remove(struct platform_device *pdev)
 static struct platform_driver st_syscfg_thermal_driver = {
 	.driver = {
 		.name	= "st_syscfg_thermal",
-		.owner  = THIS_MODULE,
 		.pm     = &st_thermal_pm_ops,
 		.of_match_table =  st_syscfg_thermal_of_match,
 	},

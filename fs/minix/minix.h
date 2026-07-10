@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef FS_MINIX_H
 #define FS_MINIX_H
 
@@ -31,7 +32,6 @@ struct minix_sb_info {
 	unsigned long s_zmap_blocks;
 	unsigned long s_firstdatazone;
 	unsigned long s_log_zone_size;
-	unsigned long s_max_size;
 	int s_dirsize;
 	int s_namelen;
 	struct buffer_head ** s_imap;
@@ -51,7 +51,7 @@ extern unsigned long minix_count_free_inodes(struct super_block *sb);
 extern int minix_new_block(struct inode * inode);
 extern void minix_free_block(struct inode *inode, unsigned long block);
 extern unsigned long minix_count_free_blocks(struct super_block *sb);
-extern int minix_getattr(struct vfsmount *, struct dentry *, struct kstat *);
+extern int minix_getattr(const struct path *, struct kstat *, u32, unsigned int);
 extern int minix_prepare_chunk(struct page *page, loff_t pos, unsigned len);
 
 extern void V1_minix_truncate(struct inode *);
@@ -84,7 +84,7 @@ static inline struct minix_sb_info *minix_sb(struct super_block *sb)
 
 static inline struct minix_inode_info *minix_i(struct inode *inode)
 {
-	return list_entry(inode, struct minix_inode_info, vfs_inode);
+	return container_of(inode, struct minix_inode_info, vfs_inode);
 }
 
 static inline unsigned minix_blocks_needed(unsigned bits, unsigned blocksize)

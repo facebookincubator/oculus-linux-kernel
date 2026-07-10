@@ -1,15 +1,15 @@
+/* SPDX-License-Identifier: MIT */
 #if !defined(_RADEON_TRACE_H) || defined(TRACE_HEADER_MULTI_READ)
 #define _RADEON_TRACE_H_
 
 #include <linux/stringify.h>
-#include <linux/types.h>
 #include <linux/tracepoint.h>
+#include <linux/types.h>
 
-#include <drm/drmP.h>
+#include <drm/drm_file.h>
 
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM radeon
-#define TRACE_SYSTEM_STRING __stringify(TRACE_SYSTEM)
 #define TRACE_INCLUDE_FILE radeon_trace
 
 TRACE_EVENT(radeon_bo_create,
@@ -38,7 +38,7 @@ TRACE_EVENT(radeon_cs,
 
 	    TP_fast_assign(
 			   __entry->ring = p->ring;
-			   __entry->dw = p->chunks[p->chunk_ib_idx].length_dw;
+			   __entry->dw = p->chunk_ib->length_dw;
 			   __entry->fences = radeon_fence_count_emitted(
 				p->rdev, p->ring);
 			   ),
@@ -205,5 +205,5 @@ DEFINE_EVENT(radeon_semaphore_request, radeon_semaphore_wait,
 
 /* This part must be outside protection */
 #undef TRACE_INCLUDE_PATH
-#define TRACE_INCLUDE_PATH .
+#define TRACE_INCLUDE_PATH ../../drivers/gpu/drm/radeon
 #include <trace/define_trace.h>

@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2012 STMicroelectronics Limited
  *
  * Authors: Francesco Virlinzi <francesco.virlinzi@st.com>
  *	    Alexandre Torgue <alexandre.torgue@st.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/init.h>
@@ -23,6 +20,8 @@
 
 #include "ahci.h"
 
+#define DRV_NAME  "st_ahci"
+
 #define ST_AHCI_OOBR			0xbc
 #define ST_AHCI_OOBR_WE			BIT(31)
 #define ST_AHCI_OOBR_CWMIN_SHIFT	24
@@ -35,7 +34,6 @@ struct st_ahci_drv_data {
 	struct reset_control *pwr;
 	struct reset_control *sw_rst;
 	struct reset_control *pwr_rst;
-	struct ahci_host_priv *hpriv;
 };
 
 static void st_ahci_configure_oob(void __iomem *mmio)
@@ -53,9 +51,10 @@ static void st_ahci_configure_oob(void __iomem *mmio)
 	writel(new_val, mmio + ST_AHCI_OOBR);
 }
 
-static int st_ahci_deassert_resets(struct device *dev)
+static int st_ahci_deassert_resets(struct ahci_host_priv *hpriv,
+				struct device *dev)
 {
-	struct st_ahci_drv_data *drv_data = dev_get_drvdata(dev);
+	struct st_ahci_drv_data *drv_data = hpriv->plat_data;
 	int err;
 
 	if (drv_data->pwr) {
@@ -65,8 +64,6 @@ static int st_ahci_deassert_resets(struct device *dev)
 			return err;
 		}
 	}
-
-	st_ahci_configure_oob(drv_data->hpriv->mmio);
 
 	if (drv_data->sw_rst) {
 		err = reset_control_deassert(drv_data->sw_rst);
@@ -90,8 +87,8 @@ static int st_ahci_deassert_resets(struct device *dev)
 static void st_ahci_host_stop(struct ata_host *host)
 {
 	struct ahci_host_priv *hpriv = host->private_data;
+	struct st_ahci_drv_data *drv_data = hpriv->plat_data;
 	struct device *dev = host->dev;
-	struct st_ahci_drv_data *drv_data = dev_get_drvdata(dev);
 	int err;
 
 	if (drv_data->pwr) {
@@ -103,29 +100,30 @@ static void st_ahci_host_stop(struct ata_host *host)
 	ahci_platform_disable_resources(hpriv);
 }
 
-static int st_ahci_probe_resets(struct platform_device *pdev)
+static int st_ahci_probe_resets(struct ahci_host_priv *hpriv,
+				struct device *dev)
 {
-	struct st_ahci_drv_data *drv_data = platform_get_drvdata(pdev);
+	struct st_ahci_drv_data *drv_data = hpriv->plat_data;
 
-	drv_data->pwr = devm_reset_control_get(&pdev->dev, "pwr-dwn");
+	drv_data->pwr = devm_reset_control_get(dev, "pwr-dwn");
 	if (IS_ERR(drv_data->pwr)) {
-		dev_info(&pdev->dev, "power reset control not defined\n");
+		dev_info(dev, "power reset control not defined\n");
 		drv_data->pwr = NULL;
 	}
 
-	drv_data->sw_rst = devm_reset_control_get(&pdev->dev, "sw-rst");
+	drv_data->sw_rst = devm_reset_control_get(dev, "sw-rst");
 	if (IS_ERR(drv_data->sw_rst)) {
-		dev_info(&pdev->dev, "soft reset control not defined\n");
+		dev_info(dev, "soft reset control not defined\n");
 		drv_data->sw_rst = NULL;
 	}
 
-	drv_data->pwr_rst = devm_reset_control_get(&pdev->dev, "pwr-rst");
+	drv_data->pwr_rst = devm_reset_control_get(dev, "pwr-rst");
 	if (IS_ERR(drv_data->pwr_rst)) {
-		dev_dbg(&pdev->dev, "power soft reset control not defined\n");
+		dev_dbg(dev, "power soft reset control not defined\n");
 		drv_data->pwr_rst = NULL;
 	}
 
-	return st_ahci_deassert_resets(&pdev->dev);
+	return st_ahci_deassert_resets(hpriv, dev);
 }
 
 static struct ata_port_operations st_ahci_port_ops = {
@@ -140,8 +138,13 @@ static const struct ata_port_info st_ahci_port_info = {
 	.port_ops       = &st_ahci_port_ops,
 };
 
+static struct scsi_host_template ahci_platform_sht = {
+	AHCI_SHT(DRV_NAME),
+};
+
 static int st_ahci_probe(struct platform_device *pdev)
 {
+	struct device *dev = &pdev->dev;
 	struct st_ahci_drv_data *drv_data;
 	struct ahci_host_priv *hpriv;
 	int err;
@@ -150,15 +153,12 @@ static int st_ahci_probe(struct platform_device *pdev)
 	if (!drv_data)
 		return -ENOMEM;
 
-	platform_set_drvdata(pdev, drv_data);
-
-	hpriv = ahci_platform_get_resources(pdev);
+	hpriv = ahci_platform_get_resources(pdev, 0);
 	if (IS_ERR(hpriv))
 		return PTR_ERR(hpriv);
+	hpriv->plat_data = drv_data;
 
-	drv_data->hpriv = hpriv;
-
-	err = st_ahci_probe_resets(pdev);
+	err = st_ahci_probe_resets(hpriv, &pdev->dev);
 	if (err)
 		return err;
 
@@ -166,7 +166,13 @@ static int st_ahci_probe(struct platform_device *pdev)
 	if (err)
 		return err;
 
-	err = ahci_platform_init_host(pdev, hpriv, &st_ahci_port_info);
+	st_ahci_configure_oob(hpriv->mmio);
+
+	of_property_read_u32(dev->of_node,
+			     "ports-implemented", &hpriv->force_port_map);
+
+	err = ahci_platform_init_host(pdev, hpriv, &st_ahci_port_info,
+				      &ahci_platform_sht);
 	if (err) {
 		ahci_platform_disable_resources(hpriv);
 		return err;
@@ -178,8 +184,9 @@ static int st_ahci_probe(struct platform_device *pdev)
 #ifdef CONFIG_PM_SLEEP
 static int st_ahci_suspend(struct device *dev)
 {
-	struct st_ahci_drv_data *drv_data = dev_get_drvdata(dev);
-	struct ahci_host_priv *hpriv = drv_data->hpriv;
+	struct ata_host *host = dev_get_drvdata(dev);
+	struct ahci_host_priv *hpriv = host->private_data;
+	struct st_ahci_drv_data *drv_data = hpriv->plat_data;
 	int err;
 
 	err = ahci_platform_suspend_host(dev);
@@ -201,19 +208,21 @@ static int st_ahci_suspend(struct device *dev)
 
 static int st_ahci_resume(struct device *dev)
 {
-	struct st_ahci_drv_data *drv_data = dev_get_drvdata(dev);
-	struct ahci_host_priv *hpriv = drv_data->hpriv;
+	struct ata_host *host = dev_get_drvdata(dev);
+	struct ahci_host_priv *hpriv = host->private_data;
 	int err;
 
 	err = ahci_platform_enable_resources(hpriv);
 	if (err)
 		return err;
 
-	err = st_ahci_deassert_resets(dev);
+	err = st_ahci_deassert_resets(hpriv, dev);
 	if (err) {
 		ahci_platform_disable_resources(hpriv);
 		return err;
 	}
+
+	st_ahci_configure_oob(hpriv->mmio);
 
 	return ahci_platform_resume_host(dev);
 }
@@ -229,8 +238,7 @@ MODULE_DEVICE_TABLE(of, st_ahci_match);
 
 static struct platform_driver st_ahci_driver = {
 	.driver = {
-		.name = "st_ahci",
-		.owner = THIS_MODULE,
+		.name = DRV_NAME,
 		.pm = &st_ahci_pm_ops,
 		.of_match_table = of_match_ptr(st_ahci_match),
 	},

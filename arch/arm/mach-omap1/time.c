@@ -124,29 +124,26 @@ static int omap_mpu_set_next_event(unsigned long cycles,
 	return 0;
 }
 
-static void omap_mpu_set_mode(enum clock_event_mode mode,
-			      struct clock_event_device *evt)
+static int omap_mpu_set_oneshot(struct clock_event_device *evt)
 {
-	switch (mode) {
-	case CLOCK_EVT_MODE_PERIODIC:
-		omap_mpu_set_autoreset(0);
-		break;
-	case CLOCK_EVT_MODE_ONESHOT:
-		omap_mpu_timer_stop(0);
-		omap_mpu_remove_autoreset(0);
-		break;
-	case CLOCK_EVT_MODE_UNUSED:
-	case CLOCK_EVT_MODE_SHUTDOWN:
-	case CLOCK_EVT_MODE_RESUME:
-		break;
-	}
+	omap_mpu_timer_stop(0);
+	omap_mpu_remove_autoreset(0);
+	return 0;
+}
+
+static int omap_mpu_set_periodic(struct clock_event_device *evt)
+{
+	omap_mpu_set_autoreset(0);
+	return 0;
 }
 
 static struct clock_event_device clockevent_mpu_timer1 = {
-	.name		= "mpu_timer1",
-	.features       = CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT,
-	.set_next_event	= omap_mpu_set_next_event,
-	.set_mode	= omap_mpu_set_mode,
+	.name			= "mpu_timer1",
+	.features		= CLOCK_EVT_FEAT_PERIODIC |
+				  CLOCK_EVT_FEAT_ONESHOT,
+	.set_next_event		= omap_mpu_set_next_event,
+	.set_state_periodic	= omap_mpu_set_periodic,
+	.set_state_oneshot	= omap_mpu_set_oneshot,
 };
 
 static irqreturn_t omap_mpu_timer1_interrupt(int irq, void *dev_id)
@@ -158,15 +155,11 @@ static irqreturn_t omap_mpu_timer1_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static struct irqaction omap_mpu_timer1_irq = {
-	.name		= "mpu_timer1",
-	.flags		= IRQF_TIMER | IRQF_IRQPOLL,
-	.handler	= omap_mpu_timer1_interrupt,
-};
-
 static __init void omap_init_mpu_timer(unsigned long rate)
 {
-	setup_irq(INT_TIMER1, &omap_mpu_timer1_irq);
+	if (request_irq(INT_TIMER1, omap_mpu_timer1_interrupt,
+			IRQF_TIMER | IRQF_IRQPOLL, "mpu_timer1", NULL))
+		pr_err("Failed to request irq %d (mpu_timer1)\n", INT_TIMER1);
 	omap_mpu_timer_start(0, (rate / HZ) - 1, 1);
 
 	clockevent_mpu_timer1.cpumask = cpumask_of(0);

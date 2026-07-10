@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * STK1160 driver
  *
@@ -7,17 +8,6 @@
  * Based on Easycap driver by R.M. Thomas
  *	Copyright (C) 2010 R.M. Thomas
  *	<rmthomas--a.t--sciolus.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
  */
 
 #include <linux/module.h>
@@ -38,10 +28,10 @@ static inline void print_err_status(struct stk1160 *dev,
 
 	switch (status) {
 	case -ENOENT:
-		errmsg = "unlinked synchronuously";
+		errmsg = "unlinked synchronously";
 		break;
 	case -ECONNRESET:
-		errmsg = "unlinked asynchronuously";
+		errmsg = "unlinked asynchronously";
 		break;
 	case -ENOSR:
 		errmsg = "Buffer error (overrun)";
@@ -96,15 +86,12 @@ void stk1160_buffer_done(struct stk1160 *dev)
 {
 	struct stk1160_buffer *buf = dev->isoc_ctl.buf;
 
-	dev->field_count++;
+	buf->vb.sequence = dev->sequence++;
+	buf->vb.field = V4L2_FIELD_INTERLACED;
+	buf->vb.vb2_buf.timestamp = ktime_get_ns();
 
-	buf->vb.v4l2_buf.sequence = dev->field_count >> 1;
-	buf->vb.v4l2_buf.field = V4L2_FIELD_INTERLACED;
-	buf->vb.v4l2_buf.bytesused = buf->bytesused;
-	v4l2_get_timestamp(&buf->vb.v4l2_buf.timestamp);
-
-	vb2_set_plane_payload(&buf->vb, 0, buf->bytesused);
-	vb2_buffer_done(&buf->vb, VB2_BUF_STATE_DONE);
+	vb2_set_plane_payload(&buf->vb.vb2_buf, 0, buf->bytesused);
+	vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_DONE);
 
 	dev->isoc_ctl.buf = NULL;
 }
@@ -442,14 +429,14 @@ int stk1160_alloc_isoc(struct stk1160 *dev)
 
 	dev->isoc_ctl.buf = NULL;
 	dev->isoc_ctl.max_pkt_size = dev->max_pkt_size;
-	dev->isoc_ctl.urb = kzalloc(sizeof(void *)*num_bufs, GFP_KERNEL);
+	dev->isoc_ctl.urb = kcalloc(num_bufs, sizeof(void *), GFP_KERNEL);
 	if (!dev->isoc_ctl.urb) {
 		stk1160_err("out of memory for urb array\n");
 		return -ENOMEM;
 	}
 
-	dev->isoc_ctl.transfer_buffer = kzalloc(sizeof(void *)*num_bufs,
-					      GFP_KERNEL);
+	dev->isoc_ctl.transfer_buffer = kcalloc(num_bufs, sizeof(void *),
+						GFP_KERNEL);
 	if (!dev->isoc_ctl.transfer_buffer) {
 		stk1160_err("out of memory for usb transfers\n");
 		kfree(dev->isoc_ctl.urb);
@@ -460,10 +447,8 @@ int stk1160_alloc_isoc(struct stk1160 *dev)
 	for (i = 0; i < num_bufs; i++) {
 
 		urb = usb_alloc_urb(max_packets, GFP_KERNEL);
-		if (!urb) {
-			stk1160_err("cannot alloc urb[%d]\n", i);
+		if (!urb)
 			goto free_i_bufs;
-		}
 		dev->isoc_ctl.urb[i] = urb;
 
 #ifndef CONFIG_DMA_NONCOHERENT

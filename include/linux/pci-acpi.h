@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * File		pci-acpi.h
  *
@@ -23,6 +24,10 @@ static inline acpi_status pci_acpi_remove_pm_notifier(struct acpi_device *dev)
 	return acpi_remove_pm_notifier(dev);
 }
 extern phys_addr_t acpi_pci_root_get_mcfg_addr(acpi_handle handle);
+
+struct pci_ecam_ops;
+extern int pci_mcfg_lookup(struct acpi_pci_root *root, struct resource *cfgres,
+			   const struct pci_ecam_ops **ecam_ops);
 
 static inline acpi_handle acpi_find_root_bridge_handle(struct pci_dev *pdev)
 {
@@ -52,6 +57,30 @@ static inline acpi_handle acpi_pci_get_bridge_handle(struct pci_bus *pbus)
 	return ACPI_HANDLE(dev);
 }
 
+struct acpi_pci_root;
+struct acpi_pci_root_ops;
+
+struct acpi_pci_root_info {
+	struct acpi_pci_root		*root;
+	struct acpi_device		*bridge;
+	struct acpi_pci_root_ops	*ops;
+	struct list_head		resources;
+	char				name[16];
+};
+
+struct acpi_pci_root_ops {
+	struct pci_ops *pci_ops;
+	int (*init_info)(struct acpi_pci_root_info *info);
+	void (*release_info)(struct acpi_pci_root_info *info);
+	int (*prepare_resources)(struct acpi_pci_root_info *info);
+};
+
+extern int acpi_pci_probe_root_resources(struct acpi_pci_root_info *info);
+extern struct pci_bus *acpi_pci_root_create(struct acpi_pci_root *root,
+					    struct acpi_pci_root_ops *ops,
+					    struct acpi_pci_root_info *info,
+					    void *sd);
+
 void acpi_pci_add_bus(struct pci_bus *bus);
 void acpi_pci_remove_bus(struct pci_bus *bus);
 
@@ -77,15 +106,25 @@ static inline void acpiphp_remove_slots(struct pci_bus *bus) { }
 static inline void acpiphp_check_host_bridge(struct acpi_device *adev) { }
 #endif
 
+extern const guid_t pci_acpi_dsm_guid;
+
+/* _DSM Definitions for PCI */
+#define DSM_PCI_PRESERVE_BOOT_CONFIG		0x05
+#define DSM_PCI_DEVICE_NAME			0x07
+#define DSM_PCI_POWER_ON_RESET_DELAY		0x08
+#define DSM_PCI_DEVICE_READINESS_DURATIONS	0x09
+
+#ifdef CONFIG_PCIE_EDR
+void pci_acpi_add_edr_notifier(struct pci_dev *pdev);
+void pci_acpi_remove_edr_notifier(struct pci_dev *pdev);
+#else
+static inline void pci_acpi_add_edr_notifier(struct pci_dev *pdev) { }
+static inline void pci_acpi_remove_edr_notifier(struct pci_dev *pdev) { }
+#endif /* CONFIG_PCIE_EDR */
+
 #else	/* CONFIG_ACPI */
 static inline void acpi_pci_add_bus(struct pci_bus *bus) { }
 static inline void acpi_pci_remove_bus(struct pci_bus *bus) { }
 #endif	/* CONFIG_ACPI */
-
-#ifdef CONFIG_ACPI_APEI
-extern bool aer_acpi_firmware_first(void);
-#else
-static inline bool aer_acpi_firmware_first(void) { return false; }
-#endif
 
 #endif	/* _PCI_ACPI_H_ */

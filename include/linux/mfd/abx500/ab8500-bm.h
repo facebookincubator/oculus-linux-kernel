@@ -1,8 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright ST-Ericsson 2012.
  *
  * Author: Arun Murthy <arun.murthy@stericsson.com>
- * Licensed under GPLv2.
  */
 
 #ifndef _AB8500_BM_H
@@ -248,8 +248,6 @@ enum bup_vch_sel {
 #define BAT_CTRL_20U_ENA		0x02
 #define BAT_CTRL_18U_ENA		0x01
 #define BAT_CTRL_16U_ENA		0x02
-#define BAT_CTRL_60U_ENA		0x01
-#define BAT_CTRL_120U_ENA		0x02
 #define BAT_CTRL_CMP_ENA		0x04
 #define FORCE_BAT_CTRL_CMP_HIGH		0x08
 #define BAT_CTRL_PULL_UP_ENA		0x10
@@ -279,7 +277,7 @@ enum bup_vch_sel {
  * struct res_to_temp - defines one point in a temp to res curve. To
  * be used in battery packs that combines the identification resistor with a
  * NTC resistor.
- * @temp:			battery pack temperature in Celcius
+ * @temp:			battery pack temperature in Celsius
  * @resist:			NTC resistor net total resistance
  */
 struct res_to_temp {
@@ -290,7 +288,7 @@ struct res_to_temp {
 /**
  * struct batres_vs_temp - defines one point in a temp vs battery internal
  * resistance curve.
- * @temp:			battery pack temperature in Celcius
+ * @temp:			battery pack temperature in Celsius
  * @resist:			battery internal reistance in mOhm
  */
 struct batres_vs_temp {
@@ -461,7 +459,6 @@ struct ab8500_fg;
 #ifdef CONFIG_AB8500_BM
 extern struct abx500_bm_data ab8500_bm_data;
 
-void ab8500_fg_reinit(void);
 void ab8500_charger_usb_state_changed(u8 bm_usb_state, u16 mA);
 struct ab8500_btemp *ab8500_btemp_get(void);
 int ab8500_btemp_get_batctrl_temp(struct ab8500_btemp *btemp);

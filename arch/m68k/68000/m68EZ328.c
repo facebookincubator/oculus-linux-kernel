@@ -17,7 +17,7 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/rtc.h>
-#include <asm/pgtable.h>
+#include <linux/pgtable.h>
 #include <asm/machdep.h>
 #include <asm/MC68EZ328.h>
 #ifdef CONFIG_UCSIMM
@@ -57,13 +57,12 @@ void __init config_BSP(char *command, int len)
 {
   unsigned char *p;
 
-  printk(KERN_INFO "\n68EZ328 DragonBallEZ support (C) 1999 Rt-Control, Inc\n");
+  pr_info("68EZ328 DragonBallEZ support (C) 1999 Rt-Control, Inc\n");
 
 #ifdef CONFIG_UCSIMM
-  printk(KERN_INFO "uCsimm serial string [%s]\n",getserialnum());
+  pr_info("uCsimm serial string [%s]\n", getserialnum());
   p = cs8900a_hwaddr = gethwaddr(0);
-  printk(KERN_INFO "uCsimm hwaddr %.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n",
-         p[0], p[1], p[2], p[3], p[4], p[5]);
+  pr_info("uCsimm hwaddr %pM\n", p);
 
   p = getbenv("APPEND");
   if (p) strcpy(p,command);
