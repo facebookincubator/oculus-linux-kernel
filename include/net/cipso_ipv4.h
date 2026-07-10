@@ -297,6 +297,7 @@ static inline int cipso_v4_validate(const struct sk_buff *skb,
 	u8 opt_len = opt[1];
 	u8 opt_iter;
 	u8 tag_len;
+	u8 tag_len;
 
 	if (opt_len < 8) {
 		err_offset = 1;
