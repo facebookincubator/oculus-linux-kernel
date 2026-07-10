@@ -2079,13 +2079,22 @@ static int size_entry_mwt(struct ebt_entry *entry, const unsigned char *base,
 	 * offsets are relative to beginning of struct ebt_entry (i.e., 0).
 	 */
 	for (i = 0; i < 4 ; ++i) {
+	for (i = 0; i < 4 ; ++i) {
+		if (offsets[i] >= *total)
 		if (offsets[i] >= *total)
 			return -EINVAL;
+			return -EINVAL;
+		if (i == 0)
 		if (i == 0)
 			continue;
+			continue;
+		if (offsets[i-1] > offsets[i])
 		if (offsets[i-1] > offsets[i])
 			return -EINVAL;
+			return -EINVAL;
 	}
+	}
+
 
 	for (i = 0, j = 1 ; j < 4 ; j++, i++) {
 		struct compat_ebt_entry_mwt *match32;
