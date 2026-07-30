@@ -180,6 +180,36 @@ static int aw37504_is_enabled(struct regulator_dev *rdev)
 	return aw_dev->is_enabled;
 }
 
+static int aw37504_set_voltage(struct regulator_dev *rdev,
+		int min_uV, int max_uV, unsigned int *selector)
+{
+	int rc = 0;
+	struct aw_device *aw_dev = rdev_get_drvdata(rdev);
+
+	u8 p_val = get_voltage_reg_val(max_uV);
+	u8 n_val = get_voltage_reg_val(min_uV);
+
+	/* write positive voltage to VOUTP */
+	rc = write_reg(aw_dev, VOUTP_REG, p_val);
+	if (rc < 0) {
+		dev_err(&aw_dev->i2c->dev,
+				"%s: Failed to set the voltage to %d, ret=%d\n",
+				__func__, max_uV, rc);
+		return rc;
+	}
+
+	/* write negative voltage to VOUTN */
+	rc = write_reg(aw_dev, VOUTN_REG, n_val);
+	if (rc < 0) {
+		dev_err(&aw_dev->i2c->dev,
+				"%s: Failed to set the voltage to -%d, ret=%d\n",
+				__func__, min_uV, rc);
+		return rc;
+	}
+
+	return 0;
+}
+
 static int aw37504_get_voltage(struct regulator_dev *rdev)
 {
 	int rc = 0;
@@ -233,6 +263,13 @@ static int aw37504_set_load(struct regulator_dev *rdev,
 			__func__, rc);
 		return rc;
 	}
+	rc = write_reg(aw_dev, CTRL_REG, 0x09);
+	if (rc < 0) {
+		dev_err(&aw_dev->i2c->dev,
+			"%s: Failed to set the current load, ret=%d",
+			__func__, rc);
+		return rc;
+	}
 
 	return 0;
 }
@@ -258,6 +295,7 @@ static struct regulator_ops aw37504_reg_ops = {
 	.enable = aw37504_enable,
 	.disable = aw37504_disable,
 	.is_enabled = aw37504_is_enabled,
+	.set_voltage = aw37504_set_voltage,
 	.get_voltage = aw37504_get_voltage,
 	.set_load = aw37504_set_load,
 	.get_optimum_mode = aw37504_get_optimm_mode,

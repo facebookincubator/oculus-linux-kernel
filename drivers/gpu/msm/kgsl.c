@@ -4186,6 +4186,14 @@ kgsl_memstore_vm_fault(struct vm_fault *vmf)
 {
 	struct kgsl_memdesc *memdesc = vmf->vma->vm_private_data;
 
+	/*
+	 * Speculative faults run without mmap_lock, which breaks the
+	 * synchronization the entry/memdesc teardown paths rely on. Force the
+	 * core to retry the fault under the regular locked path.
+	 */
+	if (vmf->flags & FAULT_FLAG_SPECULATIVE)
+		return VM_FAULT_RETRY;
+
 	return memdesc->ops->vmfault(memdesc, vmf->vma, vmf);
 }
 
@@ -4240,6 +4248,14 @@ static vm_fault_t
 kgsl_gpumem_vm_fault(struct vm_fault *vmf)
 {
 	struct kgsl_mem_entry *entry = vmf->vma->vm_private_data;
+
+	/*
+	 * Speculative faults run without mmap_lock, which breaks the
+	 * synchronization the entry/memdesc teardown paths rely on. Force the
+	 * core to retry the fault under the regular locked path.
+	 */
+	if (vmf->flags & FAULT_FLAG_SPECULATIVE)
+		return VM_FAULT_RETRY;
 
 	if (!entry)
 		return VM_FAULT_SIGBUS;

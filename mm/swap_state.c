@@ -314,7 +314,6 @@ void free_pages_and_swap_cache(struct page **pages, int nr)
 	struct page **pagep = pages;
 	int i;
 
-	lru_add_drain();
 	for (i = 0; i < nr; i++)
 		free_swap_cache(pagep[i]);
 	release_pages(pagep, nr);
@@ -432,7 +431,7 @@ struct page *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 			 * across a SWAP_HAS_CACHE swap_map entry whose page
 			 * has not been brought into the swapcache yet.
 			 */
-			cond_resched();
+			schedule_timeout_uninterruptible(1);
 			continue;
 		}
 		if (err) {		/* swp entry is obsolete ? */

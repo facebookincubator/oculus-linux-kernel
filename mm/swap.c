@@ -678,6 +678,8 @@ void lru_add_drain_all(void)
 	if (WARN_ON(!mm_percpu_wq))
 		return;
 
+	lru_add_drain();
+
 	mutex_lock(&lock);
 	cpumask_clear(&has_work);
 

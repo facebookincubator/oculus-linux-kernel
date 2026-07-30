@@ -98,6 +98,8 @@ struct scan_control {
 	unsigned int memcg_low_reclaim:1;
 	unsigned int memcg_low_skipped:1;
 
+	unsigned int memcg_full_walk:1;
+
 	unsigned int hibernation_mode:1;
 
 	/* One of the zones is ready for compaction */
@@ -1072,6 +1074,10 @@ static enum page_references page_check_references(struct page *page,
 	if (vm_flags & VM_LOCKED)
 		return PAGEREF_RECLAIM;
 
+	/* rmap lock contention: rotate */
+	if (referenced_ptes == -1)
+		return PAGEREF_KEEP;
+
 	if (referenced_ptes) {
 		if (PageSwapBacked(page))
 			return PAGEREF_ACTIVATE;
@@ -1754,6 +1760,7 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 	unsigned long nr_skipped[MAX_NR_ZONES] = { 0, };
 	unsigned long skipped = 0;
 	unsigned long scan, total_scan, nr_pages;
+	unsigned long max_nr_skipped = 0;
 	LIST_HEAD(pages_skipped);
 
 	scan = 0;
@@ -1767,9 +1774,11 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 
 		VM_BUG_ON_PAGE(!PageLRU(page), page);
 
-		if (page_zonenum(page) > sc->reclaim_idx) {
+		if (max_nr_skipped < (SWAP_CLUSTER_MAX << 5) &&
+				page_zonenum(page) > sc->reclaim_idx) {
 			list_move(&page->lru, &pages_skipped);
 			nr_skipped[page_zonenum(page)]++;
+			max_nr_skipped++;
 			continue;
 		}
 
@@ -2217,8 +2226,9 @@ static void shrink_active_list(unsigned long nr_to_scan,
 			}
 		}
 
+		/* Referenced or rmap lock contention: rotate */
 		if (page_referenced(page, 0, sc->target_mem_cgroup,
-				    &vm_flags)) {
+				    &vm_flags) != 0) {
 			nr_rotated += hpage_nr_pages(page);
 			/*
 			 * Identify referenced, file-backed active pages and
@@ -2590,7 +2600,7 @@ static void shrink_node_memcg(struct pglist_data *pgdat, struct mem_cgroup *memc
 	unsigned long nr_reclaimed = 0;
 	unsigned long nr_to_reclaim = sc->nr_to_reclaim;
 	struct blk_plug plug;
-	bool scan_adjusted;
+	bool proportional_reclaim;
 
 	get_scan_count(lruvec, memcg, sc, nr, lru_pages);
 
@@ -2608,8 +2618,8 @@ static void shrink_node_memcg(struct pglist_data *pgdat, struct mem_cgroup *memc
 	 * abort proportional reclaim if either the file or anon lru has already
 	 * dropped to zero at the first pass.
 	 */
-	scan_adjusted = (global_reclaim(sc) && !current_is_kswapd() &&
-			 sc->priority == DEF_PRIORITY);
+	proportional_reclaim = (global_reclaim(sc) && !current_is_kswapd() &&
+				sc->priority == DEF_PRIORITY);
 
 	blk_start_plug(&plug);
 	while (nr[LRU_INACTIVE_ANON] || nr[LRU_ACTIVE_FILE] ||
@@ -2629,7 +2639,7 @@ static void shrink_node_memcg(struct pglist_data *pgdat, struct mem_cgroup *memc
 
 		cond_resched();
 
-		if (nr_reclaimed < nr_to_reclaim || scan_adjusted)
+		if (nr_reclaimed < nr_to_reclaim || proportional_reclaim)
 			continue;
 
 		/*
@@ -2680,8 +2690,6 @@ static void shrink_node_memcg(struct pglist_data *pgdat, struct mem_cgroup *memc
 		nr_scanned = targets[lru] - nr[lru];
 		nr[lru] = targets[lru] * (100 - percentage) / 100;
 		nr[lru] -= min(nr[lru], nr_scanned);
-
-		scan_adjusted = true;
 	}
 	blk_finish_plug(&plug);
 	sc->nr_reclaimed += nr_reclaimed;
@@ -2799,13 +2807,24 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 		};
 		unsigned long node_lru_pages = 0;
 		struct mem_cgroup *memcg;
+		bool partial;
 
 		memset(&sc->nr, 0, sizeof(sc->nr));
 
 		nr_reclaimed = sc->nr_reclaimed;
 		nr_scanned = sc->nr_scanned;
 
-		memcg = mem_cgroup_iter(root, NULL, &reclaim);
+		/*
+		 * Direct reclaimers can do partial walks through the
+		 * cgroup tree using the shared cookie to reduce latency
+		 * in trees with many idle cgroups, while maintaining
+		 * fairness across invocations.  kswapd always does a
+		 * full walk for reliable forward progress.
+		 */
+		partial = global_reclaim(sc) && !current_is_kswapd()
+			  && !sc->memcg_full_walk;
+		memcg = mem_cgroup_iter(root, NULL,
+					partial ? &reclaim : NULL);
 		do {
 			unsigned long lru_pages;
 			unsigned long reclaimed;
@@ -2857,21 +2876,16 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 				   sc->nr_reclaimed - reclaimed);
 
 			/*
-			 * Direct reclaim and kswapd have to scan all memory
-			 * cgroups to fulfill the overall scan target for the
-			 * node.
-			 *
-			 * Limit reclaim, on the other hand, only cares about
-			 * nr_to_reclaim pages to be reclaimed and it will
-			 * retry with decreasing priority if one round over the
-			 * whole hierarchy is not sufficient.
+			 * Limit reclaim and partial global walks can bail
+			 * once the reclaim goal is met.
 			 */
-			if (!global_reclaim(sc) &&
+			if ((!global_reclaim(sc) || partial) &&
 					sc->nr_reclaimed >= sc->nr_to_reclaim) {
 				mem_cgroup_iter_break(root, memcg);
 				break;
 			}
-		} while ((memcg = mem_cgroup_iter(root, memcg, &reclaim)));
+		} while ((memcg = mem_cgroup_iter(root, memcg,
+					partial ? &reclaim : NULL)));
 
 		/*
 		 * Record the subtree's reclaim efficiency. The reclaimed
@@ -2935,6 +2949,15 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 			if (sc->nr.immediate)
 				congestion_wait(BLK_RW_ASYNC, HZ/10);
 		}
+
+		/*
+		 * If too many dirty pages can't be evicted because they
+		 * are not queued for IO, wake up the flusher threads so
+		 * they get written back. This avoids cgroup OOM when
+		 * dirty pages dominate but writeback isn't happening.
+		 */
+		if (sc->nr.unqueued_dirty && sc->nr.unqueued_dirty == sc->nr.file_taken)
+			wakeup_flusher_threads(WB_REASON_VMSCAN);
 
 		/*
 		 * Legacy memcg will stall in page writeback so avoid forcibly
@@ -3179,6 +3202,17 @@ retry:
 	/* Aborted reclaim to try compaction? don't OOM, then */
 	if (sc->compaction_ready)
 		return 1;
+
+	/*
+	 * Partial cgroup tree walks can miss reclaimable memory
+	 * under high concurrency.  Retry with a full walk before
+	 * declaring OOM.
+	 */
+	if (!sc->memcg_full_walk) {
+		sc->memcg_full_walk = 1;
+		sc->priority = initial_priority;
+		goto retry;
+	}
 
 	/* Untapped cgroup reserves?  Don't OOM, retry. */
 	if (sc->memcg_low_skipped) {
@@ -3808,7 +3842,7 @@ restart:
 			sc.priority--;
 	} while (sc.priority >= 1);
 
-	if (!sc.nr_reclaimed)
+	if (!sc.nr_reclaimed && !boosted)
 		pgdat->kswapd_failures++;
 
 out:
