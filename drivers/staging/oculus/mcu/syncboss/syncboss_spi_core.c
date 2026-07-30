@@ -14,6 +14,7 @@
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 #include <linux/slab.h>
+#include <linux/suspend.h>
 #include <linux/time64.h>
 #include <linux/version.h>
 #include <linux/wait.h>
@@ -75,6 +76,15 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata);
 static inline s64 ktime_get_ms(void)
 {
 	return ktime_to_ms(ktime_get());
+}
+
+/*
+ * Checks if worker thread is present to determine streaming status.
+ * Requires state_mutex to be held
+ */
+static bool is_streaming_locked(struct syncboss_dev_data *devdata)
+{
+	return devdata->worker != NULL;
 }
 
 /* Increment refcount used to keep the MCU awake. */
@@ -1034,7 +1044,7 @@ static int syncboss_spi_transfer_thread(void *ptr)
 		 * go to sleep until something is queued, this thread is woken
 		 * by a data_ready IRQ, or it is woken to be stopped.
 		 */
-		if (!devdata->is_streaming && !devdata->data_ready_fired && !ctx.msg_to_send) {
+		if (devdata->stop_stream_in_progress && !devdata->data_ready_fired && !ctx.msg_to_send) {
 			status = sleep_if_msg_queue_empty(devdata, &ctx);
 			if (status == -EINTR) {
 				dev_err(&spi->dev, "SPI thread received signal while waiting for message to send. Stopping.");
@@ -1489,6 +1499,11 @@ static void shutdown_syncboss_mcu_locked(struct syncboss_dev_data *devdata)
 			SYNCBOSS_SLEEP_WAKE_TIMEOUT_WITH_GRACE_MS);
 			devdata->force_reset_on_open = true;
 	}
+
+	/*
+	 * Arm the MCU wakeup flag in case MCU wakes AP
+	 */
+	devdata->mcu_wake_handled = false;
 }
 
 /* Start the main SPI / message thread processing loop */
@@ -1497,7 +1512,7 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 	int status = 0;
 	struct task_struct *worker;
 
-	if (devdata->is_streaming) {
+	if (is_streaming_locked(devdata)) {
 		dev_warn(&devdata->spi->dev, "streaming already started");
 		return 0;
 	}
@@ -1566,8 +1581,6 @@ static int start_streaming_locked(struct syncboss_dev_data *devdata)
 		cpumask_pr_args(&devdata->cpu_affinity));
 	kthread_bind_mask(worker, &devdata->cpu_affinity);
 
-	devdata->is_streaming = true;
-
 	/*
 	 * Hint that the syncboss worker thread should attempt to wake
 	 * up on the same core as its wakee the irq handler.
@@ -1599,13 +1612,13 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 {
 	struct syncboss_msg *smsg, *temp_smsg;
 
-	if (!devdata->is_streaming) {
+	if (!is_streaming_locked(devdata)) {
 		dev_warn(&devdata->spi->dev, "streaming already stopped");
 		return;
 	}
 
 	dev_info(&devdata->spi->dev, "stopping stream");
-	devdata->is_streaming = false;
+	devdata->stop_stream_in_progress = true;
 
 	/* Tell syncboss to go to sleep */
 	shutdown_syncboss_mcu_locked(devdata);
@@ -1614,6 +1627,8 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	hrtimer_cancel(&devdata->wake_timer);
 	hrtimer_cancel(&devdata->send_timer);
 	devdata->worker = NULL;
+
+	devdata->stop_stream_in_progress = false;
 
 	raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_MCU_DOWN, NULL);
 
@@ -1640,6 +1655,13 @@ static void stop_streaming_locked(struct syncboss_dev_data *devdata)
 	restore_spi_prepare_ops(devdata);
 }
 
+static void mcu_wake_notify_work(struct work_struct *work)
+{
+	struct syncboss_dev_data *devdata = container_of(work, struct syncboss_dev_data, mcu_wake_work);
+
+	raw_notifier_call_chain(&devdata->state_event_chain, SYNCBOSS_EVENT_MCU_WAKE, NULL);
+}
+
 /* Handle a 'data ready to be read' IRQ from the MCU */
 static irqreturn_t isr_data_ready(int irq, void *p)
 {
@@ -1661,6 +1683,15 @@ static irqreturn_t isr_data_ready(int irq, void *p)
 	if (devdata->worker) {
 		hrtimer_try_to_cancel(&devdata->wake_timer);
 		wake_up_process(devdata->worker);
+	} else {
+		/*
+		 * We are not streaming but the MCU sent data, this is usually some type
+		 * of wake interrupt. Signal userspace to deal with it.
+		 */
+		if (!devdata->mcu_wake_handled) {
+			devdata->mcu_wake_handled = true;
+			queue_work(devdata->syncboss_pm_workqueue, &devdata->mcu_wake_work);
+		}
 	}
 
 	return IRQ_HANDLED;
@@ -1683,12 +1714,12 @@ static void consumer_syncboss_state_unlock(struct device *child)
 	mutex_unlock(&devdata->state_mutex);
 }
 
-/* Consumer API: Get stream status */
+/* Consumer API: Get stream status. Caller acquires state_mutex. */
 static bool consumer_get_is_streaming(struct device *child)
 {
 	struct syncboss_dev_data *devdata = dev_get_drvdata(child->parent);
 
-	return devdata->is_streaming;
+	return is_streaming_locked(devdata);
 }
 
 /* Consumer API: Register for state change events */
@@ -1698,7 +1729,7 @@ static int consumer_state_event_notifier_register(struct device *child, struct n
 	int ret;
 
 	mutex_lock(&devdata->state_mutex);
-	if (devdata->is_streaming) {
+	if (is_streaming_locked(devdata)) {
 		dev_err(&devdata->spi->dev, "notifiers can't be registered while streaming");
 		ret = -EBUSY;
 		goto out;
@@ -1716,7 +1747,7 @@ static int consumer_state_event_notifier_unregister(struct device *child, struct
 	int ret;
 
 	mutex_lock(&devdata->state_mutex);
-	if (devdata->is_streaming) {
+	if (is_streaming_locked(devdata)) {
 		dev_err(&devdata->spi->dev, "notifiers can't be unregistered while streaming");
 		ret = -EBUSY;
 		goto out;
@@ -1734,7 +1765,7 @@ static int consumer_rx_packet_notifier_register(struct device *child, struct not
 	int ret;
 
 	mutex_lock(&devdata->state_mutex);
-	if (devdata->is_streaming) {
+	if (is_streaming_locked(devdata)) {
 		dev_err(&devdata->spi->dev, "rx packet notifiers can't be registered while streaming");
 		ret = -EBUSY;
 		goto out;
@@ -1753,7 +1784,7 @@ static int consumer_rx_packet_notifier_unregister(struct device *child, struct n
 	int ret;
 
 	mutex_lock(&devdata->state_mutex);
-	if (devdata->is_streaming) {
+	if (is_streaming_locked(devdata)) {
 		dev_err(&devdata->spi->dev, "rx packet notifiers can't be unregistered while streaming");
 		ret = -EBUSY;
 		goto out;
@@ -1867,6 +1898,8 @@ static int init_syncboss_dev_data(struct syncboss_dev_data *devdata,
 	complete_all(&devdata->pm_resume_completion);
 
 	devdata->syncboss_pm_workqueue = alloc_ordered_workqueue("%s", WQ_MEM_RECLAIM, "syncboss_pm_workqueue");
+
+	INIT_WORK(&devdata->mcu_wake_work, mcu_wake_notify_work);
 
 	hrtimer_init(&devdata->wake_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	devdata->wake_timer.function = wake_timer_callback;
@@ -2013,6 +2046,7 @@ error_after_misc_reg:
 error_after_regulator_get:
 	regulator_bulk_free(devdata->reg_count, devdata->reg_consumers);
 error_after_devdata_init:
+	cancel_work_sync(&devdata->mcu_wake_work);
 	destroy_workqueue(devdata->syncboss_pm_workqueue);
 error:
 	return status;
@@ -2025,6 +2059,7 @@ static void _syncboss_remove(struct spi_device *spi)
 
 	devdata = (struct syncboss_dev_data *)dev_get_drvdata(&spi->dev);
 
+	cancel_work_sync(&devdata->mcu_wake_work);
 	flush_workqueue(devdata->syncboss_pm_workqueue);
 	destroy_workqueue(devdata->syncboss_pm_workqueue);
 

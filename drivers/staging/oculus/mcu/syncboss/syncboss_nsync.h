@@ -115,14 +115,6 @@ struct nsync_dev_data {
 	enum syncboss_time_offset_status remote_offset_status;
 #endif
 
-	/*
-	 * Set when the MCU announces it expects timesync instead of nsync.
-	 * When true, the nsync driver stops processing display events and
-	 * stops stamping nsync offsets into packet headers.
-	 * TODO: remove once Hollywood timesync migration is complete.
-	 */
-	bool timesync_enabled;
-
 	/* Spinlock used to protect access to the nsync timestamp and count */
 	spinlock_t nsync_lock;
 

@@ -69,11 +69,11 @@ static void set_usb_charging_state(struct ext_batt_pd *pd,
 static void convert_battery_status(struct ext_batt_pd *pd, u16 status)
 {
 	if (!(status & STATUS_FULLY_DISCHARGED) && (status & STATUS_DISCHARGING))
-		strncpy(pd->params.battery_status, battery_status_text[NOT_CHARGING], sizeof(pd->params.battery_status));
+		strscpy(pd->params.battery_status, battery_status_text[NOT_CHARGING], sizeof(pd->params.battery_status));
 	else if ((status & STATUS_FULLY_CHARGED) || !(status & STATUS_DISCHARGING))
-		strncpy(pd->params.battery_status, battery_status_text[CHARGING], sizeof(pd->params.battery_status));
+		strscpy(pd->params.battery_status, battery_status_text[CHARGING], sizeof(pd->params.battery_status));
 	else
-		strncpy(pd->params.battery_status, battery_status_text[UNKNOWN], sizeof(pd->params.battery_status));
+		strscpy(pd->params.battery_status, battery_status_text[UNKNOWN], sizeof(pd->params.battery_status));
 }
 
 static void ext_batt_reset(struct ext_batt_pd *pd)
@@ -486,8 +486,6 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 			dev_dbg(pd->dev,
 				"Received mount status ack response code 0x%x",
 				vdos[0]);
-
-			complete(&pd->request_ack);
 		} else if (parameter_type == EXT_BATT_FW_HMD_DOCKED) {
 			struct ext_batt_pr_swap_work *prs_work;
 
@@ -497,33 +495,31 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 			prs_work = kzalloc(sizeof(*prs_work), GFP_KERNEL);
 			if (!prs_work) {
 				dev_err(pd->dev, "unable to allow prs_work");
-				return;
-			}
-			prs_work->vdo = vdos[0];
-			prs_work->pd = pd;
+			} else {
+				prs_work->vdo = vdos[0];
+				prs_work->pd = pd;
 
-			INIT_WORK(&prs_work->work, ext_batt_pr_swap);
-			queue_work(pd->wq, &prs_work->work);
+				INIT_WORK(&prs_work->work, ext_batt_pr_swap);
+				queue_work(pd->wq, &prs_work->work);
+			}
 		} else if (parameter_type == EXT_BATT_FW_BOOTLOADER_VERSION) {
 			if (num_vdos < 2) {
 				dev_err(pd->dev, "Too few VDOs for bootloader_version vdm");
-				return;
+			} else {
+				pd->params.bootloader_version =
+					(((u64)vdos[0] << 16) | (vdos[1] & 0xffff));
 			}
-			/* Bootloader version is 6 bytes */
-			pd->params.bootloader_version =
-				(((u64)vdos[0] << 16) | (vdos[1] & 0xffff));
-			complete(&pd->request_ack);
 		} else if (parameter_type == EXT_BATT_FW_VERSION_NUMBER) {
 			if (num_vdos < 2) {
 				dev_err(pd->dev, "Too few VDOs for fw_version vdm");
-				return;
+			} else {
+				pd->params.fw_version = ((u64)vdos[0] << 32) | vdos[1];
 			}
-			pd->params.fw_version = ((u64)vdos[0] << 32) | vdos[1];
-			complete(&pd->request_ack);
 		} else {
 			dev_warn(pd->dev, "Unsupported response parameter 0x%x",
 					parameter_type);
 		}
+		complete(&pd->request_ack);
 		return;
 	} else if (protocol_type == VDM_REQUEST &&
 				parameter_type >= EXT_BATT_FW_ERROR_UFP_LPD &&

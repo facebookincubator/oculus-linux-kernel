@@ -322,6 +322,8 @@ static inline void *phys_to_virt(phys_addr_t x)
 	    : "=r" (addr));						\
 	addr;								\
 })
+#else
+#define function_nocfi(x)	(x)
 #endif
 
 /*

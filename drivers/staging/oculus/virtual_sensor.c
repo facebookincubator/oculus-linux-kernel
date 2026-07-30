@@ -60,6 +60,15 @@ struct virtual_sensor_common_data {
 
 	struct thermal_zone_info tzs[THERMAL_MAX_VIRT_SENSORS];
 
+	/*
+	 * Thermal zone names from DT. When hotpluggable, these are resolved on
+	 * every get_temp() call instead of cached at probe — the underlying
+	 * thermal_zone_device may come and go (e.g. tether/HMD pluggable
+	 * sensors) and a cached pointer would dangle after unregister.
+	 */
+	const char *tz_names[THERMAL_MAX_VIRT_SENSORS];
+	bool hotpluggable;
+
 	/* Accumulate temperature samples as part of the formula */
 	s64 tz_samples;
 	s64 tz_accum_temperatures[THERMAL_MAX_VIRT_SENSORS];
@@ -192,6 +201,11 @@ static int virtual_sensor_estimate_faulty_tz(
  *   + sensorN_coefficient*(t) +
  *   sensor1_slopeCoefficient*( sensor1(t) - sensor1(t-1) ) + ...
  *   + sensorN_slopeCoefficient*( sensorN(t) - sensorN(t-1) )
+ *
+ * For hotpluggable sensors, the zone pointer is resolved freshly on each
+ * call. Returns -ENODATA if any zone cannot be read (unresolved or
+ * thermal_zone_get_temp failure) — every zone must contribute for the
+ * linear combination to be meaningful.
  */
 static int virtual_sensor_calculate_tz_temp(struct device *dev,
 		struct virtual_sensor_common_data *data, s64 *temperature)
@@ -215,18 +229,40 @@ static int virtual_sensor_calculate_tz_temp(struct device *dev,
 
 	data->tz_samples++;
 	for (i = 0; i < data->tz_count; i++) {
-		ret = virtual_sensor_thermal_zone_get_temp_scaled(data->tzs[i].tz,
+		struct thermal_zone_device *tz;
+
+		/*
+		 * Resolve zone pointer freshly each call for hotpluggable
+		 * sensors so an unregister doesn't leave a dangling pointer.
+		 */
+		if (data->hotpluggable) {
+			tz = thermal_zone_get_zone_by_name(data->tz_names[i]);
+			if (IS_ERR(tz))
+				tz = NULL;
+		} else {
+			tz = data->tzs[i].tz;
+		}
+
+		if (!tz) {
+			dev_dbg_ratelimited(dev,
+				"%s: zone %s unavailable",
+				__func__,
+				data->tz_names[i] ? data->tz_names[i] : "?");
+			return -ENODATA;
+		}
+
+		ret = virtual_sensor_thermal_zone_get_temp_scaled(tz,
 				data->tz_scaling_factors[i], &temp);
 		if (ret)
 			dev_err_ratelimited(dev, "%s: error getting temp: %d",
-					data->tzs[i].tz->type, ret);
+					tz->type, ret);
 
 		if (data->tzs[i].fault_handling &&
 				(ret < 0 || tz_is_faulty(&data->tzs[i], temp))) {
 			ret = virtual_sensor_estimate_faulty_tz(&data->tzs[i], &temp);
 			if (ret)
 				dev_err(dev, "%s: couldn't estimate faulty tz %s: %d",
-						__func__, data->tzs[i].tz->type, ret);
+						__func__, tz->type, ret);
 		}
 
 		if (ret)
@@ -313,8 +349,16 @@ static int virtual_sensor_calculate_temp_for_coeffs(
 		return -EINVAL;
 
 	ret = virtual_sensor_calculate_tz_temp(vs->dev, coeff_data, tz_temp);
-	if (ret)
+	if (ret) {
+		if (coeff_data->hotpluggable) {
+			dev_dbg_ratelimited(vs->dev,
+				"%s: hotpluggable zone unavailable, reporting 0",
+				__func__);
+			*tz_temp = 0;
+			return 0;
+		}
 		return ret;
+	}
 
 	*tz_temp = div64_s64(*tz_temp, COEFFICIENT_SCALAR);
 	*tz_temp += coeff_data->intercept;
@@ -429,6 +473,20 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 	calc_ret = virtual_sensor_calculate_temp_for_coeffs(vs, &vs->data_charging, &temp_charging);
 	calc_ret |= virtual_sensor_calculate_temp_for_coeffs(vs, &vs->data_discharging, &temp_discharging);
 	if (calc_ret) {
+		/*
+		 * Hotpluggable sensors are expected to disappear (e.g. HMD
+		 * unplugged). Surface the error to the thermal framework rather
+		 * than reporting a stale "last temp" that would mask the loss
+		 * of the underlying zones.
+		 */
+		if (vs->data_charging.hotpluggable) {
+			dev_dbg_ratelimited(vs->dev,
+				"%s: hotpluggable TZ unavailable: %d\n",
+				__func__, calc_ret);
+			mutex_unlock(&vs->lock);
+			return -ENODATA;
+		}
+
 		/*
 		 * Unable to calculate new temp, use the last one so the function doesn't
 		 * cause the thermal subsystem to error out.
@@ -917,7 +975,15 @@ static int virtual_sensor_parse_thermal_zones_dt(struct device *dev,
 		return -ENODATA;
 	}
 
+	if (count > THERMAL_MAX_VIRT_SENSORS) {
+		dev_err(dev, "thermal-zones count %d exceeds max %d",
+			count, THERMAL_MAX_VIRT_SENSORS);
+		return -EINVAL;
+	}
+
 	data->tz_count = count;
+	data->hotpluggable = of_property_read_bool(dev->of_node,
+			"meta,hotpluggable");
 
 	temp_string = kcalloc(count, sizeof(char *),  GFP_KERNEL);
 	if (!temp_string)
@@ -931,13 +997,37 @@ static int virtual_sensor_parse_thermal_zones_dt(struct device *dev,
 	}
 
 	for (i = 0; i < data->tz_count; i++) {
+		/*
+		 * Persist the zone name. For hotpluggable sensors we re-lookup
+		 * by name on every get_temp() call; for non-hotpluggable ones
+		 * the name is just kept for diagnostics.
+		 */
+		data->tz_names[i] = devm_kstrdup(dev, temp_string[i],
+				GFP_KERNEL);
+		if (!data->tz_names[i]) {
+			ret = -ENOMEM;
+			goto out;
+		}
+
 		data->tzs[i].tz = thermal_zone_get_zone_by_name(temp_string[i]);
 		if (IS_ERR(data->tzs[i].tz)) {
-			ret = -EPROBE_DEFER;
-			dev_dbg(dev, "sensor %s get_zone error: %ld",
-				temp_string[i],
-				PTR_ERR(data->tzs[i].tz));
-			goto out;
+			if (data->hotpluggable) {
+				/*
+				 * Zone may not be registered yet — that's fine
+				 * for hotpluggable sensors; we'll resolve at
+				 * read time.
+				 */
+				dev_dbg(dev,
+					"hotpluggable zone %s not present at probe",
+					temp_string[i]);
+				data->tzs[i].tz = NULL;
+			} else {
+				ret = -EPROBE_DEFER;
+				dev_dbg(dev, "sensor %s get_zone error: %ld",
+					temp_string[i],
+					PTR_ERR(data->tzs[i].tz));
+				goto out;
+			}
 		}
 	}
 

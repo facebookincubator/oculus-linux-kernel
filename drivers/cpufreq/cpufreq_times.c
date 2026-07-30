@@ -101,7 +101,7 @@ static struct uid_entry *find_or_register_uid_locked(uid_t uid)
 
 	uid_entry = find_uid_entry_locked(uid);
 	if (uid_entry) {
-		if (uid_entry->max_state == max_state)
+		if (uid_entry->max_state >= max_state)
 			return uid_entry;
 		/* uid_entry->time_in_state is too small to track all freqs, so
 		 * expand it.
@@ -110,7 +110,9 @@ static struct uid_entry *find_or_register_uid_locked(uid_t uid)
 		temp = kmalloc(alloc_size, GFP_ATOMIC);
 		if (!temp)
 			return uid_entry;
-		memcpy(temp, uid_entry, alloc_size);
+		memcpy(temp, uid_entry, sizeof(*uid_entry) +
+		       uid_entry->max_state *
+		       sizeof(uid_entry->time_in_state[0]));
 		temp->max_state = max_state;
 		memset(temp->time_in_state + uid_entry->max_state, 0,
 		       (max_state - uid_entry->max_state) *
