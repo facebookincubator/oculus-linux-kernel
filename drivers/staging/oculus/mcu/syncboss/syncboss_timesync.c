@@ -52,14 +52,21 @@ static void reset_timesync_values(struct timesync_dev_data *devdata)
 static void trigger_timesync_event(struct timesync_dev_data *devdata)
 {
 	unsigned long flags;
+	bool was_waiting;
 
 	/*
 	 * Disabling interrupts and preemption is important here for recording
 	 * the timestamp as close to the GPIO toggle as possible.
+	 *
+	 * Note: dev_warn_ratelimited() calls printk(), which can be slow under
+	 * load (slow console, ring-buffer contention). Holding spin_lock_irqsave
+	 * across printk keeps IRQs disabled for the duration of the printk and
+	 * has been linked to multi-millisecond IRQ-off windows on this CPU.
+	 * Capture the "was waiting" state inside the lock; emit the warn after
+	 * the unlock.
 	 */
 	spin_lock_irqsave(&devdata->lock, flags);
-	if (unlikely(devdata->waiting_for_msg))
-		dev_warn_ratelimited(devdata->dev, "triggering new irq before MCU acknowledged last\n");
+	was_waiting = devdata->waiting_for_msg;
 	devdata->waiting_for_msg = true;
 
 	devdata->stats.prev_ap_ts_us = devdata->ap_ts_us;
@@ -68,6 +75,10 @@ static void trigger_timesync_event(struct timesync_dev_data *devdata)
 	gpiod_set_value(devdata->gpio, 1);
 	devdata->ap_ts_us = ktime_to_us(ktime_get());
 	spin_unlock_irqrestore(&devdata->lock, flags);
+
+	if (unlikely(was_waiting))
+		dev_warn_ratelimited(devdata->dev,
+			"triggering new irq before MCU acknowledged last\n");
 
 	udelay(1);
 	gpiod_set_value(devdata->gpio, 0);
@@ -165,10 +176,11 @@ static void handle_display_event(struct timesync_dev_data *devdata, const struct
 	int64_t mcu_ts_us = dfevent->timestamp;
 	int64_t ap_ts_us;
 	unsigned long flags;
+	bool was_idle = false;
 
 	spin_lock_irqsave(&devdata->lock, flags);
 	if (unlikely(!devdata->waiting_for_msg)) {
-		dev_warn_ratelimited(devdata->dev, "ignoring mcu timestamp without corresponding IRQ\n");
+		was_idle = true;
 		goto out;
 	}
 	devdata->waiting_for_msg = false;
@@ -183,6 +195,13 @@ static void handle_display_event(struct timesync_dev_data *devdata, const struct
 	devdata->stats.prev_mcu_ts_us = mcu_ts_us;
 out:
 	spin_unlock_irqrestore(&devdata->lock, flags);
+
+	/* Same reasoning as in trigger_timesync_event(): keep printk out of
+	 * the spin_lock_irqsave critical section.
+	 */
+	if (unlikely(was_idle))
+		dev_warn_ratelimited(devdata->dev,
+			"ignoring mcu timestamp without corresponding IRQ\n");
 }
 
 #ifdef CONFIG_SYNCBOSS_PERIPHERAL

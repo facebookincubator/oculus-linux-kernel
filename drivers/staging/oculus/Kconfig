@@ -73,6 +73,17 @@ config CHARGING_THERMAL_CONTROLLER
 	  0 normal, 1 reduce charging, and 2 suspend charging. The votes cast at
 	  these levels are also device tree defined.
 
+config DMABUF_REORDER
+	tristate "DMA-buf scatterlist region reorder"
+	depends on QCOM_MEM_BUF
+	default n
+	help
+	  Loadable module that creates a new dma-buf from an existing one
+	  with reordered scatterlist page mappings. Exposes /dev/dmabuf_reorder
+	  with a single ioctl. Designed for UBWC buffers where Vulkan produces
+	  pixels-first layout but Venus codec expects metadata-first.
+	  Zero-copy — same physical pages, different sg_table ordering.
+
 config CYPD_POLICY_ENGINE
 	tristate "Cypress Power Delivery Policy Engine"
 	depends on CHARGER_CYPD3177

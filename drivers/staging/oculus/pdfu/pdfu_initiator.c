@@ -671,7 +671,7 @@ static ssize_t fw_path_store(struct device *dev, struct device_attribute *attr,
 	pdfu->fw_manual_override = true;
 
 	memset(pdfu->fw_path, 0, sizeof(pdfu->fw_path));
-	strncpy(pdfu->fw_path, buf, count);
+	strscpy(pdfu->fw_path, buf, sizeof(pdfu->fw_path));
 
 	dev_info(pdfu->dev, "Updated fw_path to '%s'", pdfu->fw_path);
 

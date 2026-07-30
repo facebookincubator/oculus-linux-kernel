@@ -1957,8 +1957,11 @@ static void __cam_isp_ctx_handle_req_reset_util(
 	struct cam_isp_ctx_req *req_isp = (struct cam_isp_ctx_req *) req->req_priv;
 	struct cam_context *ctx = ctx_isp->base;
 
+	/* Detach first so the request is not visible to other iterators
+	 * while we reset its state. Move to free_req_list only at the end.
+	 */
 	list_del_init(&req->list);
-	list_add_tail(&req->list, &ctx->free_req_list);
+
 	req_isp->reapply_type = CAM_CONFIG_REAPPLY_NONE;
 	req_isp->cdm_reset_before_apply = false;
 	req_isp->num_acked = 0;
@@ -1987,6 +1990,8 @@ static void __cam_isp_ctx_handle_req_reset_util(
 	ctx_isp->req_info.last_bufdone_req_id = req->request_id;
 	ctx_isp->last_bufdone_err_apply_req_id = 0;
 	req_isp->sensor_req_id = 0;
+
+	list_add_tail(&req->list, &ctx->free_req_list);
 }
 
 static int __cam_isp_ctx_handle_buf_done_for_req_list(

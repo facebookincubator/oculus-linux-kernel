@@ -27,6 +27,7 @@ enum syncboss_state_event_types {
 	SYNCBOSS_EVENT_STREAMING_RESUMING,
 	SYNCBOSS_EVENT_STREAMING_RESUMED,
 	SYNCBOSS_EVENT_WAKE_READERS,
+	SYNCBOSS_EVENT_MCU_WAKE,
 };
 
 struct syncboss_consumer_ops {

@@ -204,6 +204,9 @@ int get_kernel_page(unsigned long start, int write, struct page **pages)
 }
 EXPORT_SYMBOL_GPL(get_kernel_page);
 
+static void __pagevec_lru_add_fn(struct page *page, struct lruvec *lruvec,
+				 void *arg);
+
 static void pagevec_lru_move_fn(struct pagevec *pvec,
 	void (*move_fn)(struct page *page, struct lruvec *lruvec, void *arg),
 	void *arg)
@@ -212,10 +215,26 @@ static void pagevec_lru_move_fn(struct pagevec *pvec,
 	struct pglist_data *pgdat = NULL;
 	struct lruvec *lruvec;
 	unsigned long flags = 0;
+	LIST_HEAD(pages_to_free);
+	bool is_lru_add = (move_fn == __pagevec_lru_add_fn);
 
 	for (i = 0; i < pagevec_count(pvec); i++) {
 		struct page *page = pvec->pages[i];
 		struct pglist_data *pagepgdat = page_pgdat(page);
+
+		/*
+		 * Filter dead pages before they enter the LRU. A page whose
+		 * only remaining reference is the batch ref is about to be
+		 * freed anyway; adding it to the LRU just to immediately
+		 * remove it wastes two lock acquisitions.
+		 */
+		if (is_lru_add && page_ref_freeze(page, 1)) {
+			__ClearPageActive(page);
+			__ClearPageUnevictable(page);
+			pvec->pages[i] = NULL;
+			list_add(&page->lru, &pages_to_free);
+			continue;
+		}
 
 		if (pagepgdat != pgdat) {
 			if (pgdat)
@@ -229,6 +248,12 @@ static void pagevec_lru_move_fn(struct pagevec *pvec,
 	}
 	if (pgdat)
 		spin_unlock_irqrestore(&pgdat->lru_lock, flags);
+
+	if (is_lru_add) {
+		mem_cgroup_uncharge_list(&pages_to_free);
+		free_unref_page_list(&pages_to_free);
+	}
+
 	release_pages(pvec->pages, pvec->nr);
 	pagevec_reinit(pvec);
 }
@@ -1043,6 +1068,9 @@ void release_pages(struct page **pages, int nr)
 
 	for (i = 0; i < nr; i++) {
 		struct page *page = pages[i];
+
+		if (!page)
+			continue;
 
 		/*
 		 * Make sure the IRQ-safe lock-holding time does not get
