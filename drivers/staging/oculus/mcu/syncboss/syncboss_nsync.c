@@ -36,8 +36,6 @@ static void reset_nsync_values_locked(struct nsync_dev_data *devdata)
 {
 	int i;
 
-	devdata->timesync_enabled = false;
-
 	devdata->errors = 0;
 	devdata->index = 0;
 	for (i = 0; i < SYNC_HIST_LEN; ++i) {
@@ -268,7 +266,12 @@ static int handle_display_event(struct nsync_dev_data *devdata, const struct syn
 			 * status.
 			 */
 			if (devdata->errors == devdata->max_consecutive_errors) {
-				dev_err(devdata->dev, "nsync did not sync in time or lost sync");
+				/*
+				 * Defer dev_err() and dump_debug_state() until after the
+				 * spinlock is released. printk() under spin_lock_irqsave
+				 * extends the IRQ-off window and has been linked to
+				 * multi-millisecond CPU lockups under stress (T271341447).
+				 */
 				do_debug_dump = true;
 			}
 			devdata->nsync_offset_status = SYNCBOSS_TIME_OFFSET_ERROR;
@@ -282,8 +285,10 @@ static int handle_display_event(struct nsync_dev_data *devdata, const struct syn
 
 	spin_unlock_irqrestore(&devdata->nsync_lock, flags);
 
-	if (do_debug_dump)
+	if (do_debug_dump) {
+		dev_err(devdata->dev, "nsync did not sync in time or lost sync");
 		dump_debug_state(devdata);
+	}
 
 	return ret;
 }
@@ -315,9 +320,6 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 	const struct syncboss_data *packet = packet_info->data;
 	int ret;
 
-	if (devdata->timesync_enabled && type != SYNCBOSS_ENABLE_TIMESYNC_MESSAGE_TYPE)
-		return NOTIFY_OK;
-
 	/*
 	 * SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE: used for HMDs.
 	 * SYNCBOSS_NSYNC_FRAME_MSG_TYPE: used for starlet only.
@@ -340,21 +342,12 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 		handle_display_event(devdata, packet);
 		ret = NOTIFY_OK;
 		break;
-	case SYNCBOSS_ENABLE_TIMESYNC_MESSAGE_TYPE:
-		if (packet->data_len != sizeof(struct enable_timesync_data)) {
-			dev_err_ratelimited(devdata->dev, "ignoring enable_timesync message with unexpected length\n");
-			ret = NOTIFY_OK;
-			break;
-		}
-		devdata->timesync_enabled = ((struct enable_timesync_data *)packet->data)->enable;
-		ret = NOTIFY_OK;
-		break;
 	default:
 		ret = NOTIFY_OK;
 		break;
 	}
 
-	if (ret == NOTIFY_OK && !devdata->timesync_enabled) {
+	if (ret == NOTIFY_OK) {
 		header->nsync_offset_us = devdata->nsync_offset_us;
 		header->nsync_offset_status = devdata->nsync_offset_status;
 #ifdef CONFIG_SYNCBOSS_PERIPHERAL

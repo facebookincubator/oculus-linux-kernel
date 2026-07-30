@@ -490,6 +490,16 @@ static void free_pte_range(struct mmu_gather *tlb, pmd_t *pmd,
 			   unsigned long addr)
 {
 	pgtable_t token = pmd_pgtable(*pmd);
+#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
+	/*
+	 * Ensure page table destruction is blocked if __pte_map_lock managed
+	 * to take this lock. Without this barrier tlb_remove_table_rcu can
+	 * destroy ptl after __pte_map_lock locked it and during unlock would
+	 * cause a use-after-free.
+	 */
+	spinlock_t *ptl = pmd_lock(tlb->mm, pmd);
+	spin_unlock(ptl);
+#endif
 	pmd_clear(pmd);
 	pte_free_tlb(tlb, token, addr);
 	mm_dec_nr_ptes(tlb->mm);
@@ -1718,7 +1728,6 @@ static void zap_page_range_single(struct vm_area_struct *vma, unsigned long addr
 	struct mmu_gather tlb;
 	unsigned long end = address + size;
 
-	lru_add_drain();
 	tlb_gather_mmu(&tlb, mm, address, end);
 	update_hiwater_rss(mm);
 	mmu_notifier_invalidate_range_start(mm, address, end);
@@ -2405,9 +2414,7 @@ EXPORT_SYMBOL_GPL(apply_to_page_range);
 static bool pte_spinlock(struct vm_fault *vmf)
 {
 	bool ret = false;
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	pmd_t pmdval;
-#endif
 
 	/* Check if vma is still valid */
 	if (!(vmf->flags & FAULT_FLAG_SPECULATIVE)) {
@@ -2422,24 +2429,28 @@ static bool pte_spinlock(struct vm_fault *vmf)
 		goto out;
 	}
 
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	/*
 	 * We check if the pmd value is still the same to ensure that there
 	 * is not a huge collapse operation in progress in our back.
+	 * It also ensures that pmd was not cleared by pmd_clear in
+	 * free_pte_range and ptl is still valid.
 	 */
 	pmdval = READ_ONCE(*vmf->pmd);
-	if (!pmd_same(pmdval, vmf->orig_pmd)) {
+	if (pmd_val(pmdval) != pmd_val(vmf->orig_pmd)) {
 		trace_spf_pmd_changed(_RET_IP_, vmf->vma, vmf->address);
 		goto out;
 	}
-#endif
 
-	vmf->ptl = pte_lockptr(vmf->vma->vm_mm, vmf->pmd);
+	vmf->ptl = pte_lockptr(vmf->vma->vm_mm, &pmdval);
 	if (unlikely(!spin_trylock(vmf->ptl))) {
 		trace_spf_pte_lock(_RET_IP_, vmf->vma, vmf->address);
 		goto out;
 	}
 
+	/*
+	 * The check below will fail if pte_spinlock passed its ptl barrier
+	 * before we took the ptl lock.
+	 */
 	if (vma_has_changed(vmf)) {
 		spin_unlock(vmf->ptl);
 		trace_spf_vma_changed(_RET_IP_, vmf->vma, vmf->address);
@@ -2457,9 +2468,7 @@ static bool pte_map_lock(struct vm_fault *vmf)
 	bool ret = false;
 	pte_t *pte;
 	spinlock_t *ptl;
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	pmd_t pmdval;
-#endif
 
 	if (!(vmf->flags & FAULT_FLAG_SPECULATIVE)) {
 		vmf->pte = pte_offset_map_lock(vmf->vma->vm_mm, vmf->pmd,
@@ -2480,17 +2489,15 @@ static bool pte_map_lock(struct vm_fault *vmf)
 		goto out;
 	}
 
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	/*
 	 * We check if the pmd value is still the same to ensure that there
 	 * is not a huge collapse operation in progress in our back.
 	 */
 	pmdval = READ_ONCE(*vmf->pmd);
-	if (!pmd_same(pmdval, vmf->orig_pmd)) {
+	if (pmd_val(pmdval) != pmd_val(vmf->orig_pmd)) {
 		trace_spf_pmd_changed(_RET_IP_, vmf->vma, vmf->address);
 		goto out;
 	}
-#endif
 
 	/*
 	 * Same as pte_offset_map_lock() except that we call
@@ -2499,14 +2506,18 @@ static bool pte_map_lock(struct vm_fault *vmf)
 	 * to invalidate TLB but this CPU has irq disabled.
 	 * Since we are in a speculative patch, accept it could fail
 	 */
-	ptl = pte_lockptr(vmf->vma->vm_mm, vmf->pmd);
-	pte = pte_offset_map(vmf->pmd, vmf->address);
+	ptl = pte_lockptr(vmf->vma->vm_mm, &pmdval);
+	pte = pte_offset_map(&pmdval, vmf->address);
 	if (unlikely(!spin_trylock(ptl))) {
 		pte_unmap(pte);
 		trace_spf_pte_lock(_RET_IP_, vmf->vma, vmf->address);
 		goto out;
 	}
 
+	/*
+	 * The check below will fail if __pte_map_lock_speculative passed its ptl
+	 * barrier before we took the ptl lock.
+	 */
 	if (vma_has_changed(vmf)) {
 		pte_unmap_unlock(pte, ptl);
 		trace_spf_vma_changed(_RET_IP_, vmf->vma, vmf->address);

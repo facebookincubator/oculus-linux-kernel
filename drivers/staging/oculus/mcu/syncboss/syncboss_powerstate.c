@@ -431,6 +431,9 @@ static int syncboss_state_handler(struct notifier_block *nb, unsigned long event
 	case SYNCBOSS_EVENT_STREAMING_STARTED:
 		push_prox_cal_and_enable_wake(devdata, devdata->powerstate_events_enabled);
 		return NOTIFY_OK;
+	case SYNCBOSS_EVENT_MCU_WAKE:
+		signal_powerstate_event(devdata, SYNCBOSS_PROX_EVENT_MCU_WAKE);
+		return NOTIFY_OK;
 	case SYNCBOSS_EVENT_STREAMING_STOPPING:
 	default:
 		return NOTIFY_DONE;

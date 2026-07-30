@@ -1,4 +1,5 @@
 header-y += amem_kmd.h
 header-y += babel.h
+header-y += dmabuf_reorder.h
 header-y += seacliff_blu_spi.h
 header-y += syncboss.h

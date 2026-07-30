@@ -197,6 +197,14 @@ struct syncboss_dev_data {
 	/* Used to wait for events on resume to complete before allowing suspend */
 	struct completion pm_resume_completion;
 
+	/* Deferred MCU_WAKE notifier dispatch from isr_data_ready (process context) */
+	struct work_struct mcu_wake_work;
+
+	/*
+	 * If pending MCU wakeup was handled
+	 */
+	bool mcu_wake_handled;
+
 	/*
 	 * Handle to the task that is performing the SPI
 	 * transactions
@@ -264,8 +272,8 @@ struct syncboss_dev_data {
 	/* True if the MCU can be woken from shutdown via a SPI transaction (CS toggle) */
 	bool has_wake_on_spi;
 
-	/* True if streaming is running */
-	bool is_streaming;
+	/* True if the stream is being stopped */
+	bool stop_stream_in_progress;
 
 	/* True if a MCU wake-up has been handled since previous shutdown */
 	bool wakeup_handled;
