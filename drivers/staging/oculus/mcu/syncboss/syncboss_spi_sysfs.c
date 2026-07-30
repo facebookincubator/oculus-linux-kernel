@@ -3,6 +3,15 @@
 
 #define CONTROL_GROUP_NAME "control"
 
+/*
+ * Checks if worker thread is present to determine streaming status.
+ * Requires state_mutex to be held
+ */
+static bool is_streaming_locked(struct syncboss_dev_data *devdata)
+{
+	return devdata->worker != NULL;
+}
+
 static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
@@ -77,7 +86,7 @@ static ssize_t transaction_length_store(struct device *dev,
 
 	devdata->next_stream_settings.transaction_length = (u16)temp_transaction_length;
 
-	if (devdata->is_streaming) {
+	if (is_streaming_locked(devdata)) {
 		dev_info(dev,
 			"transaction length changed while streaming.\n"
 			"this change will not take effect until the stream is stopped and restarted");
@@ -131,7 +140,7 @@ static ssize_t cpu_affinity_store(struct device *dev,
 
 	devdata->cpu_affinity = temp_cpu_affinity;
 
-	if (devdata->is_streaming) {
+	if (is_streaming_locked(devdata)) {
 		dev_info(dev,
 			"CPU affinity changed while streaming.\n"
 			"this change will not take effect until the stream is stopped and restarted");
@@ -189,7 +198,7 @@ static ssize_t minimum_time_between_transactions_us_store(struct device *dev,
 	    temp_minimum_time_between_trans_us * NSEC_PER_USEC;
 	status = count;
 
-	if (devdata->is_streaming) {
+	if (is_streaming_locked(devdata)) {
 		dev_info(dev,
 			 "minimum time between transactions changed while streaming.\n"
 			 "This change will not take effect until the stream is stopped and restarted");
@@ -250,7 +259,7 @@ static ssize_t maximum_send_delay_us_store(struct device *dev,
 	devdata->next_stream_settings.max_msg_send_delay_ns = max_msg_send_delay_ns;
 	status = count;
 
-	if (devdata->is_streaming) {
+	if (is_streaming_locked(devdata)) {
 		dev_info(dev,
 			 "maximum send delay changed while streaming.\n"
 			 "this change will not take effect until the stream is stopped and restarted");
@@ -381,7 +390,7 @@ static ssize_t spi_max_clk_rate_store(struct device *dev,
 
 	status = count;
 
-	if (devdata->is_streaming) {
+	if (is_streaming_locked(devdata)) {
 		dev_info(dev,
 			 "SPI max clock rate changed while streaming.\n"
 			 "this change will not take effect until the stream is stopped and restarted");
@@ -438,7 +447,7 @@ static ssize_t poll_prio_store(struct device *dev,
 
 	devdata->thread_prio = temp_priority;
 
-	if (devdata->is_streaming) {
+	if (is_streaming_locked(devdata)) {
 		dev_info(dev,
 			 "poll thread priority changed while streaming.\n"
 			 "this change will not take effect until the stream is stopped and restarted");
@@ -512,7 +521,7 @@ static ssize_t streaming_show(
 		return status;
 	}
 
-	retval = scnprintf(buf, PAGE_SIZE, "%d\n", !!devdata->is_streaming);
+	retval = scnprintf(buf, PAGE_SIZE, "%d\n", is_streaming_locked(devdata));
 
 	mutex_unlock(&devdata->state_mutex);
 	return retval;

@@ -38,6 +38,17 @@
 #define STOP_WATCHDOG_IOCTL _IO(MISC_MAJOR, 0)
 #define START_WATCHDOG_IOCTL _IO(MISC_MAJOR, 1)
 
+/*
+ * Mirrors SENSORLOCK_ERROR_STATE_DEBOUNCE from
+ * vendor/meta/trustzone/sensorlock/libsensorlock/include/sensorlock_interface.h
+ * Returned in rsp.status when the trustlet's debounce filter suppresses an
+ * engage attempt (rapid power-button toggles or cold-start camera init
+ * window). The SMC itself succeeds (rc == SMCI_OBJECT_OK) and the trustlet's
+ * state remains DISENGAGED.
+ */
+#define SENSORLOCK_ERROR_STATE_DEBOUNCE (-30)
+#define SENSORLOCK_DEBOUNCE_RETRY_MS 1000
+
 enum sensorlock_state {
 	STATE_DISABLED = 1,
 	STATE_DISENGAGED = 2,
@@ -121,6 +132,7 @@ struct sensorlock_work {
 
 static int sensorlock_watchdog_pet(void *data);
 static void sensorlock_work_handler(struct kthread_work *work);
+static int sensorlock_get_current_state(struct device *dev, enum sensorlock_state *state);
 
 static void sensorlock_set_event(struct sensorlock_dev_data *dev_data, enum sensorlock_state state)
 {
@@ -434,6 +446,30 @@ static void sensorlock_check_signals(struct device *dev)
 	prev = atomic_read(&dev_data->state);
 	rc = sensorlock_send_cmd(dev, &cmd, sizeof(cmd), &rsp, sizeof(rsp));
 	if (IS_SMCI_ERROR(rc, rsp)) {
+		if (rc == SMCI_OBJECT_OK &&
+		    rsp.status == SENSORLOCK_ERROR_STATE_DEBOUNCE) {
+			enum sensorlock_state actual;
+
+			dev_warn(dev, "%s state debounced; resyncing cache and deferring retry %dms\n",
+				__func__, SENSORLOCK_DEBOUNCE_RETRY_MS);
+
+			/*
+			 * The trustlet rejected an engage attempt but its own
+			 * state is unchanged (still DISENGAGED). Re-read it so
+			 * the kernel cache matches reality, then let the
+			 * trustlet drive the eventual engage by re-issuing
+			 * CHECK_SIGNAL once the debounce window has plausibly
+			 * elapsed.
+			 */
+			if (sensorlock_get_current_state(dev, &actual) == 0) {
+				sensorlock_set_event(dev_data, actual);
+				if (prev != actual && actual == STATE_DISENGAGED)
+					wake_up_all(&dev_data->watchdog_queue);
+			}
+			queue_sensorlock_delayed_work(dev, WORK_ACT_CHECK_SIGNALS,
+				msecs_to_jiffies(SENSORLOCK_DEBOUNCE_RETRY_MS));
+			return;
+		}
 		dev_err(dev, "%s failed. rc: %d status: %d\n", __func__, rc, rsp.status);
 		return;
 	}
@@ -519,7 +555,9 @@ static int sensorlock_watchdog_pet(void *data)
 
 	while (!kthread_should_stop()) {
 		do {
-			rc = wait_event_interruptible(dev_data->watchdog_queue, atomic_read(&dev_data->state) == STATE_DISENGAGED);
+			rc = wait_event_interruptible(dev_data->watchdog_queue,
+				atomic_read(&dev_data->state) == STATE_DISENGAGED ||
+				kthread_should_stop());
 		} while (rc != 0 && !kthread_should_stop());
 
 		do {
