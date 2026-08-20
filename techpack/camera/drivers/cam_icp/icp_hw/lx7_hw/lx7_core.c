@@ -534,6 +534,8 @@ static int __load_firmware(struct platform_device *pdev)
 	const char *fw_name;
 	const struct firmware *firmware = NULL;
 	char firmware_name[ICP_FW_NAME_MAX_SIZE] = {0};
+	const char *ext = NULL;
+	size_t fw_name_len;
 	void *vaddr = NULL;
 	struct device_node *node;
 	struct resource res;
@@ -554,14 +556,26 @@ static int __load_firmware(struct platform_device *pdev)
 		return rc;
 	}
 
-	/* Account for ".mdt" size [4 characters] */
-	if (strlen(fw_name) >= (ICP_FW_NAME_MAX_SIZE - 4)) {
-		CAM_ERR(CAM_ICP, "Invalid fw name %s", fw_name);
-		return -EINVAL;
-	}
+	fw_name_len = strlen(fw_name);
 
-	scnprintf(firmware_name, ARRAY_SIZE(firmware_name),
-		"%s.mdt", fw_name);
+	if (fw_name_len >= 4)
+		ext = fw_name + fw_name_len - 4;
+
+	if (ext && (!strcmp(ext, ".mdt") || !strcmp(ext, ".mbn"))) {
+		if (fw_name_len >= ICP_FW_NAME_MAX_SIZE) {
+			CAM_ERR(CAM_ICP, "Invalid fw name %s", fw_name);
+			return -EINVAL;
+		}
+		scnprintf(firmware_name, ARRAY_SIZE(firmware_name),
+			"%s", fw_name);
+	} else {
+		if (fw_name_len >= (ICP_FW_NAME_MAX_SIZE - 4)) {
+			CAM_ERR(CAM_ICP, "Invalid fw name %s", fw_name);
+			return -EINVAL;
+		}
+		scnprintf(firmware_name, ARRAY_SIZE(firmware_name),
+			"%s.mdt", fw_name);
+	}
 
 	node = of_parse_phandle(pdev->dev.of_node, "memory-region", 0);
 	if (!node) {

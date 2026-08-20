@@ -1957,12 +1957,35 @@ static int tz_log_freeze(struct device *dev)
 	 * log pointer to zero during restoration from hibernation
 	 */
 	restore_from_hibernation = true;
-	if (g_qsee_log)
-		dma_free_coherent(dev, QSEE_LOG_BUF_SIZE, (void *)g_qsee_log,
-					coh_pmem);
+	if (g_qsee_log) {
+		/*
+		 * * Explicitly deregister the QSEE log buffer from TZ before
+		 * * freeing the DMA memory . This prevents TZ from
+		 * * writing to freed/recycled physical memory between freeze and
+		 * * restore. TZ undergoes a coldboot on hibernation resume, so
+		 * * tz_log_restore() will re-register a fresh buffer after resume.
+		 * */
+		int ret = qcom_scm_deregister_qsee_log_buf();
+		if (ret)
+			pr_warn("Failed to deregister qsee log buf from TZ: %d\n",
+		ret);
+		/*
+		 * * Deregister shmbridge before freeing the DMA buffer (correct
+		 * * ordering). Use qseelog_buf_size (the actual allocation size)
+		 * * instead of the hardcoded QSEE_LOG_BUF_SIZE to correctly
+		 * * handle the enlarged buffer case (QSEE_LOG_BUF_SIZE_V2 = 128K).
+		 * */
+		if (!tzdbg.is_encrypted_log_enabled)
+			qtee_shmbridge_deregister(qseelog_shmbridge_handle);
 
-	if (!tzdbg.is_encrypted_log_enabled)
-		qtee_shmbridge_deregister(qseelog_shmbridge_handle);
+		memset(g_qsee_log, 0, qseelog_buf_size);
+		dma_free_coherent(dev, qseelog_buf_size, (void *)g_qsee_log,
+		coh_pmem);
+
+		/* Prevent dangling pointer access between freeze and restore */
+		g_qsee_log = NULL;
+		g_qsee_log_v2 = NULL;
+	}
 
 	return 0;
 }

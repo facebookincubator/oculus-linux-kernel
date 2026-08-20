@@ -1,0 +1,1 @@
+obj-$(CONFIG_ST60_CTRL) += st60-ctrl.o

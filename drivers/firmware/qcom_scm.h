@@ -214,6 +214,7 @@ int qcom_scm_handle_wait(struct device *dev, int scm_ret,
 #define QCOM_SCM_QSEELOG_REGISTER		0x06
 #define QCOM_SCM_QUERY_ENCR_LOG_FEAT_ID		0x0b
 #define QCOM_SCM_REQUEST_ENCR_LOG_ID		0x0c
+#define QCOM_SCM_QSEELOG_BUF_DEREGISTER		0x0e
 
 #define QCOM_SCM_SVC_KEYSTORE			0x05
 #define QCOM_SCM_ICE_RESTORE_KEY_ID		0x06

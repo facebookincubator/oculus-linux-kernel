@@ -114,6 +114,21 @@ config META_OOM_KILL_STATS
 	help
 	  Enable this option to log Kernel OOM Kill events
 
+
+config DSP_PD_KILL
+	tristate "Meta DSP per-user-PD kill/restart debugfs hooks"
+	depends on DEBUG_FS
+	help
+	  Expose write-only debugfs files under
+	  /sys/kernel/debug/dsp_pd_kill/ that trigger a SERVREG-based
+	  restart of a single DSP user PD via pdr_restart_pd(), leaving
+	  the root PD and the other user PDs running. Used for
+	  development and stress-testing of the per-PD recovery path on
+	  userdebug/eng builds.
+
+	  To compile the driver as a module, choose M here: the module
+	  will be called dsp_pd_kill.ko
+
 config META_USB_CONN_GPIO
 	tristate "Meta implementation of USB GPIO connection interface"
 	depends on GPIOLIB

@@ -351,7 +351,10 @@ static ssize_t hibernation_stats_get(struct device *dev, struct device_attribute
 		       "userspace_systemui_ready %u\n"
 		       "userspace_powerup_earcon %u\n"
 		       "userspace_assistant_ready %u\n"
-		       "userspace_btc_ready %u\n",
+		       "userspace_btc_ready %u\n"
+		       "userspace_trustzone_ready %u\n"
+		       "kernel2_adsp_ready %u\n"
+		       "kernel2_cdsp_ready %u\n",
 		       mpm2ms(saved_boot_stats->bootloader_start),
 		       mpm2ms(saved_boot_stats->bootloader_end),
 		       mpm2ms(saved_boot_stats->kernel1[HIBEVENT_KERN1_LOAD_MEM_FROM_DISK_STARTED]),
@@ -368,7 +371,10 @@ static ssize_t hibernation_stats_get(struct device *dev, struct device_attribute
 		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_SYSTEMUI_READY]),
 		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_POWERUP_EARCON]),
 		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_ASSISTANT_READY]),
-		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_BTC_READY]));
+		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_BTC_READY]),
+		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_USER_TRUSTZONE_READY]),
+		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_ADSP_READY]),
+		       mpm2ms(saved_kernel2[HIBEVENT_KERN2_CDSP_READY]));
 
 	return ret;
 }
@@ -388,6 +394,8 @@ static ssize_t hibernation_stats_set(struct device *dev, struct device_attribute
 		bootstat_record_kernel2_event(HIBEVENT_KERN2_USER_ASSISTANT_READY);
 	} else if (!strncmp(buf, "led_ready", 9)) {
 		bootstat_record_kernel2_event(HIBEVENT_KERN2_USER_LED_READY);
+	} else if (!strncmp(buf, "trustzone_ready", 15)) {
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_USER_TRUSTZONE_READY);
 	} else if (*buf) {
 		/* Invalidate the hibernation stats. */
 		dev_dbg(dev, "resetting hibernation stats");

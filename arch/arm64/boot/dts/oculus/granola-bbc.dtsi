@@ -1,0 +1,34 @@
+&pcal6408 {
+	status = "disabled";
+};
+
+&tps61280 {
+	status = "disabled";
+};
+
+&bbc_ctrl {
+	status = "disabled";
+};
+
+&qupv3_se10_i2c {
+	tca9536: tca9536@43 {
+		compatible = "ti,tca9536";
+		reg = <0x43>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		gpio-line-names = "fem_fpwm_sel", "power_switch_en", "bat_boost_en", "reserve";
+		/* Configure SEL_FEM_FPWM-Pin0 and POWER_SWITCH_EN-Pin1 as as output */
+		enable-output = <0x03>;
+		/* Initialize SEL_FEM_FPWM to low state, POWER_SWITCH_EN to high state */
+		initial-state = <0x02>;
+		status = "ok";
+	};
+
+	tlv61290: tlv61290@75 {
+		compatible = "ti, tlv61290";
+		reg = <0x75>;
+		boost-en-gpios = <&tca9536 2 GPIO_ACTIVE_HIGH>;
+		regulator-always-on;
+		status = "ok";
+	};
+};

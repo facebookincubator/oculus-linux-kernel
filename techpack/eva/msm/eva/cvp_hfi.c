@@ -1864,7 +1864,6 @@ static int iris_hfi_core_init(void *device)
 
 	dev->bus_vote.data_count = 1;
 	dev->bus_vote.data->power_mode = CVP_POWER_TURBO;
-	dev->notifier_registered = false;
 
 	rc = __load_fw(dev);
 	if (rc) {
@@ -4348,7 +4347,9 @@ static int __register_for_MMCX(struct iris_hfi_device *device)
 {
 	int rc = 1;
 
-	if (regulator_is_enabled(device->rpmh_mmcx_reg) && !device->notifier_registered) {
+	if (regulator_is_enabled(device->rpmh_mmcx_reg)) {
+		if (device->notifier_registered)
+			return 0;
 		device->mmcx_PC_nb.notifier_call = eva_mmcx_cb;
 		rc = regulator_register_notifier(device->rpmh_mmcx_reg,
 				&device->mmcx_PC_nb);
@@ -4358,7 +4359,7 @@ static int __register_for_MMCX(struct iris_hfi_device *device)
 			device->notifier_registered = true;
 		}
 	} else {
-		dprintk(CVP_ERR, "%s: RPMH reg is not enabled or cb already registered\n",
+		dprintk(CVP_ERR, "%s: RPMH reg is not enabled\n",
 				__FUNCTION__);
 	}
 
@@ -4760,7 +4761,6 @@ static void __unload_fw(struct iris_hfi_device *device)
 	unload_cvp_fw_impl(device);
 	__interface_queues_release(device);
 	call_iris_op(device, power_off, device);
-	__unregister_for_MMCX(device);
 	__deinit_resources(device);
 
 	dprintk(CVP_WARN, "Firmware unloaded\n");
@@ -5129,6 +5129,7 @@ void cvp_iris_hfi_delete_device(void *device)
 	if (!dev)
 		return;
 
+	__unregister_for_MMCX(dev);
 	mutex_destroy(&dev->lock);
 	mutex_destroy(&dev->mmcx_lock);
 	destroy_workqueue(dev->cvp_workq);

@@ -71,6 +71,15 @@ enum hibernation_kernel2_event {
 	/* Userspace has declared we've booted to green led. */
 	HIBEVENT_KERN2_USER_LED_READY,
 
+	/* qseecomd has restarted and trustzone interfaces are available */
+	HIBEVENT_KERN2_USER_TRUSTZONE_READY,
+
+	/* ADSP remoteproc is booted and in RPROC_RUNNING state */
+	HIBEVENT_KERN2_ADSP_READY,
+
+	/* CDSP remoteproc is booted and in RPROC_RUNNING state */
+	HIBEVENT_KERN2_CDSP_READY,
+
 	/* Number of valid hibernation events. */
 	HIBEVENT_KERN2_MAX
 };

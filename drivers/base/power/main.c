@@ -1782,8 +1782,10 @@ int dpm_suspend(pm_message_t state)
 
 		if (error) {
 			pm_dev_err(dev, state, "", error);
-			dpm_save_failed_dev(dev_name(dev));
-			hib_save_failed_dev(dev_name(dev));
+			if (!hibernate_ongoing())
+				dpm_save_failed_dev(dev_name(dev));
+			else
+				hib_save_failed_dev(dev_name(dev));
 		} else if (!list_empty(&dev->power.entry)) {
 			list_move(&dev->power.entry, &dpm_suspended_list);
 		}
@@ -1802,10 +1804,13 @@ int dpm_suspend(pm_message_t state)
 	if (!error)
 		error = async_error;
 	if (error) {
-		suspend_stats.failed_suspend++;
-		dpm_save_failed_step(SUSPEND_SUSPEND);
-		hibernate_stats.failed_suspend++;
-		hib_save_failed_step(HIBERNATE_SUSPEND);
+		if (!hibernate_ongoing()) {
+			suspend_stats.failed_suspend++;
+			dpm_save_failed_step(SUSPEND_SUSPEND);
+		} else {
+			hibernate_stats.failed_suspend++;
+			hib_save_failed_step(HIBERNATE_SUSPEND);
+		}
 	}
 	dpm_show_time(starttime, state, error, NULL);
 	trace_suspend_resume(TPS("dpm_suspend"), state.event, false);
@@ -1933,8 +1938,10 @@ int dpm_prepare(pm_message_t state)
 				 error);
 			log_suspend_abort_reason("Device %s not prepared for power transition: code %d",
 						 dev_name(dev), error);
-			dpm_save_failed_dev(dev_name(dev));
-			hib_save_failed_dev(dev_name(dev));
+			if (!hibernate_ongoing())
+				dpm_save_failed_dev(dev_name(dev));
+			else
+				hib_save_failed_dev(dev_name(dev));
 		}
 
 		mutex_unlock(&dpm_list_mtx);
@@ -1945,10 +1952,6 @@ int dpm_prepare(pm_message_t state)
 	}
 	mutex_unlock(&dpm_list_mtx);
 	trace_suspend_resume(TPS("dpm_prepare"), state.event, false);
-	if (error) {
-		hibernate_stats.failed_prepare++;
-		hib_save_failed_step(HIBERNATE_PREPARE);
-	}
 	return error;
 }
 
@@ -1966,8 +1969,13 @@ int dpm_suspend_start(pm_message_t state)
 
 	error = dpm_prepare(state);
 	if (error) {
-		suspend_stats.failed_prepare++;
-		dpm_save_failed_step(SUSPEND_PREPARE);
+		if (hibernate_ongoing()) {
+			hibernate_stats.failed_prepare++;
+			hib_save_failed_step(HIBERNATE_PREPARE);
+		} else {
+			suspend_stats.failed_prepare++;
+			dpm_save_failed_step(SUSPEND_PREPARE);
+		}
 	} else
 		error = dpm_suspend(state);
 	dpm_show_time(starttime, state, error, "start");

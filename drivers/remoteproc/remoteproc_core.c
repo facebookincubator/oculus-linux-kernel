@@ -39,11 +39,21 @@
 #include <linux/virtio_ring.h>
 #include <asm/byteorder.h>
 #include <linux/platform_device.h>
+#include <linux/suspend.h>
+#include <linux/boot_stats.h>
 #include <trace/hooks/remoteproc.h>
 
 #include "remoteproc_internal.h"
 
 #define HIGH_BITS_MASK 0xFFFFFFFF00000000ULL
+
+static void rproc_record_boot_event(const struct rproc *rproc)
+{
+	if (strstr(rproc->name, "adsp"))
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_ADSP_READY);
+	else if (strstr(rproc->name, "cdsp"))
+		bootstat_record_kernel2_event(HIBEVENT_KERN2_CDSP_READY);
+}
 
 static DEFINE_MUTEX(rproc_list_mutex);
 static LIST_HEAD(rproc_list);
@@ -1412,6 +1422,7 @@ static int rproc_start(struct rproc *rproc, const struct firmware *fw)
 	}
 
 	rproc->state = RPROC_RUNNING;
+	rproc_record_boot_event(rproc);
 
 	dev_info(dev, "remote processor %s is now up\n", rproc->name);
 
@@ -1456,6 +1467,7 @@ static int rproc_attach(struct rproc *rproc)
 	}
 
 	rproc->state = RPROC_RUNNING;
+	rproc_record_boot_event(rproc);
 
 	dev_info(dev, "remote processor %s is now attached\n", rproc->name);
 
@@ -2178,6 +2190,58 @@ static void rproc_type_release(struct device *dev)
 	kfree(rproc);
 }
 
+static void rproc_restore_work(struct work_struct *work)
+{
+	struct rproc *rproc = container_of(work, struct rproc, restore_handler);
+	int ret;
+
+	ret = rproc_boot(rproc);
+	if (ret)
+		dev_err(&rproc->dev, "restore after hibernate failed: %d\n", ret);
+}
+
+static int rproc_pm_notify(struct notifier_block *nb, unsigned long event,
+			   void *ptr)
+{
+	struct rproc *rproc;
+
+	switch (event) {
+	case PM_HIBERNATION_PREPARE:
+		mutex_lock(&rproc_list_mutex);
+		list_for_each_entry(rproc, &rproc_list, node) {
+			mutex_lock(&rproc->lock);
+			if (atomic_read(&rproc->power) == 0) {
+				rproc->needs_restore = false;
+				mutex_unlock(&rproc->lock);
+				continue;
+			}
+			rproc->needs_restore = true;
+			atomic_set(&rproc->power, 1);
+			mutex_unlock(&rproc->lock);
+			rproc_shutdown(rproc);
+		}
+		mutex_unlock(&rproc_list_mutex);
+		break;
+
+	case PM_POST_HIBERNATION:
+		mutex_lock(&rproc_list_mutex);
+		list_for_each_entry(rproc, &rproc_list, node) {
+			if (!rproc->needs_restore)
+				continue;
+			rproc->needs_restore = false;
+			schedule_work(&rproc->restore_handler);
+		}
+		mutex_unlock(&rproc_list_mutex);
+		break;
+	}
+
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block rproc_pm_nb = {
+	.notifier_call = rproc_pm_notify,
+};
+
 static const struct device_type rproc_type = {
 	.name		= "remoteproc",
 	.release	= rproc_type_release,
@@ -2307,6 +2371,7 @@ struct rproc *rproc_alloc(struct device *dev, const char *name,
 	INIT_LIST_HEAD(&rproc->dump_segments);
 
 	INIT_WORK(&rproc->crash_handler, rproc_crash_handler_work);
+	INIT_WORK(&rproc->restore_handler, rproc_restore_work);
 
 	rproc->state = RPROC_OFFLINE;
 
@@ -2558,6 +2623,7 @@ static int __init remoteproc_init(void)
 	rproc_init_debugfs();
 	rproc_init_cdev();
 	rproc_init_panic();
+	register_pm_notifier(&rproc_pm_nb);
 
 	return 0;
 }
@@ -2567,6 +2633,7 @@ static void __exit remoteproc_exit(void)
 {
 	ida_destroy(&rproc_dev_index);
 
+	unregister_pm_notifier(&rproc_pm_nb);
 	rproc_exit_panic();
 	rproc_exit_debugfs();
 	rproc_exit_sysfs();

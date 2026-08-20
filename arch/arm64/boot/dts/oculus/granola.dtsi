@@ -1,0 +1,45 @@
+#include "oatmeal-dvt-common.dtsi"
+#include "granola-thermal.dtsi"
+#include "granola-bbc.dtsi"
+
+/* Granola has no volume keys and slide switch*/
+&soc {
+	gpio_keys {
+		pinctrl-0 = <&gpio_power_btn
+				&gpio_action_btn>;
+
+		vol_up {
+			status = "disabled";
+		};
+
+		vol_down {
+			status = "disabled";
+		};
+
+		privacy_switch {
+			status = "disabled";
+		};
+	};
+};
+
+&wlan_kiwi {
+        qcom,board-name = "granola";
+};
+
+/* WCN Buck_en GPIO move from GPIO_13 to GPIO_72 on Granola */
+&wcn_ext_buck {
+	gpio = <&tlmm 72 GPIO_ACTIVE_HIGH>;
+};
+
+/* Enable QUPV3_SE2 as hsuart4 for UART1_ACRO_SOC_ */
+&qupv3_se2_2uart {
+	status = "ok";
+};
+
+&qupv3_se2_2uart_sleep {
+	config {
+		/delete-property/ bias-pull-down;
+		bias-disable;
+		input-enable;
+	};
+};

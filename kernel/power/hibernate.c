@@ -93,6 +93,11 @@ void hibernate_release(void)
 	atomic_inc(&hibernate_atomic);
 }
 
+bool hibernate_ongoing(void)
+{
+	return (atomic_read(&hibernate_atomic) == 0);
+}
+
 bool hibernation_available(void)
 {
 	return nohibernate == 0 && !security_locked_down(LOCKDOWN_HIBERNATION);

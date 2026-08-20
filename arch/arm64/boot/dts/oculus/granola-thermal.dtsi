@@ -1,0 +1,177 @@
+&thermal_zones {
+	hw-vchg-comparator {
+		thermal-governor = "user_space";
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&hw_vchg_comparator_sensor 0>;
+		trips {
+			hw_vchg_comparator_trip0: hw-vchg-comparator-trip0 {
+				temperature = <1>;
+				hysteresis = <0>;
+				type = "passive";
+                        };
+			hw_vchg_comparator_trip1: hw-vchg-comparator-trip1 {
+				temperature = <2>;
+				hysteresis = <0>;
+				type = "passive";
+			};
+		};
+	};
+
+	wcn-temp {
+		status = "disabled";
+	};
+
+	acro-temp {
+		status = "disabled";
+	};
+
+	soc-temp-5 {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&temp_sensor_5>;
+	};
+
+	soc-temp-6 {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&temp_sensor_6>;
+	};
+
+	soc-temp-9 {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&temp_sensor_9>;
+	};
+
+	soc-temp-10 {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&temp_sensor_10>;
+	};
+
+	soc-temp-13 {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&temp_sensor_13>;
+	};
+
+	soc-temp-14 {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&temp_sensor_14>;
+	};
+
+	soc-temp-15 {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-sensors = <&temp_sensor_15>;
+	};
+};
+
+&tlmm {
+   hw_vchg_throttle_init: hw_vchg_throttle_init {
+      mux {
+          pins = "gpio85";
+          function = "gpio";
+      };
+
+      config {
+          pins = "gpio85";
+          drive-strength = <8>;
+          bias-disable;
+          output-low;
+      };
+   };
+
+   hw_vchg_throttle_defaults: hw_vchg_throttle_defaults {
+      mux {
+          pins = "gpio85";
+          function = "gpio";
+      };
+
+      config {
+          pins = "gpio85";
+          drive-strength = <8>;
+          bias-disable;
+          output-high;
+      };
+   };
+};
+
+&soc {
+	hw_vchg_comparator_sensor: hw-vchg-comparator-sensor {
+		compatible = "gpio,low-volt-detect";
+		#thermal-sensor-cells = <0>;
+		low-volt-int-gpios = <&tlmm 83 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "init", "default";
+		pinctrl-0 = <&hw_vchg_throttle_init>;
+		pinctrl-1 = <&hw_vchg_throttle_defaults>;
+	};
+};
+
+/* The mapping of Granola temp sensor except Display temp sensor
+ * Temp_num        MPN                        I2c_controler        I2c_address        Vdd
+ * Temp5           MAX31875R5TZS+T-WLP        qupv3_se10_i2c       0x4D               L15A
+ * Temp6           MAX31875R0TZS+T-WLP        qupv3_se10_i2c       0x48               L15A
+ * Temp9           MAX31875R7TZS+T-WLP        qupv3_se10_i2c       0x4F               L15A
+ * Temp10          MAX31875R2TZS+T-WLP        qupv3_se10_i2c       0x4A               L15A
+ * Temp13          MAX31875R6TZS+T-WLP        qupv3_se10_i2c       0x4E               L15A
+ * Temp14          MAX31875R4TZS+T-WLP        qupv3_se8_i2c        0x4C               L15A
+ * Temp15          MAX31875R5TZS+T-WLP        qupv3_se8_i2c        0x4D               L15A
+ */
+&qupv3_se10_i2c {
+	/delete-node/ max31875@4d;
+	/delete-node/ max31875@48;
+
+	temp_sensor_5: max31875@4d {
+		compatible = "meta,max31875-i2c";
+		reg = <0x4d>;
+		#thermal-sensor-cells = <0>;
+		vdd-supply = <&L15A>;
+	};
+
+	temp_sensor_6: max31875@48 {
+		compatible = "meta,max31875-i2c";
+		reg = <0x48>;
+		#thermal-sensor-cells = <0>;
+		vdd-supply = <&L15A>;
+	};
+
+	temp_sensor_9: max31875@4f {
+		compatible = "meta,max31875-i2c";
+		reg = <0x4f>;
+		#thermal-sensor-cells = <0>;
+		vdd-supply = <&L15A>;
+	};
+
+	temp_sensor_10: max31875@4a {
+		compatible = "meta,max31875-i2c";
+		reg = <0x4a>;
+		#thermal-sensor-cells = <0>;
+		vdd-supply = <&L15A>;
+	};
+
+	temp_sensor_13: max31875@4e {
+		compatible = "meta,max31875-i2c";
+		reg = <0x4e>;
+		#thermal-sensor-cells = <0>;
+		vdd-supply = <&L15A>;
+	};
+};
+
+&qupv3_se8_i2c {
+	temp_sensor_14: max31875@4c {
+		compatible = "meta,max31875-i2c";
+		reg = <0x4c>;
+		#thermal-sensor-cells = <0>;
+		vdd-supply = <&L15A>;
+	};
+
+	temp_sensor_15: max31875@4d {
+		compatible = "meta,max31875-i2c";
+		reg = <0x4d>;
+		#thermal-sensor-cells = <0>;
+		vdd-supply = <&L15A>;
+	};
+};

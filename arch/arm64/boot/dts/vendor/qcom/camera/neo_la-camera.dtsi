@@ -2734,7 +2734,7 @@
 		nrt-device;
 		src-clock-name = "icp_clk_src";
 		clock-control-debugfs = "true";
-		fw_name = "CAMERA_ICP";
+		fw_name = "CAMERA_ICP.mbn";
 		ubwc-ipe-fetch-cfg = <0x706b 0x706b>;
 		ubwc-ipe-write-cfg = <0x161af 0x161af>;
 		ubwc-bps-fetch-cfg = <0x706b 0x706b>;

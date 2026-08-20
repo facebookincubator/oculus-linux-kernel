@@ -57,8 +57,16 @@ static bool cvp_msg_pending(struct cvp_session_queue *sq,
 
 	mptr = NULL;
 	spin_lock(&sq->lock);
-	if (sq->state == QUEUE_INIT || sq->state == QUEUE_INVALID) {
-		/* The session is being deleted */
+	if (sq->state == QUEUE_INIT || sq->state == QUEUE_INVALID ||
+			sq->state == QUEUE_STOP) {
+		/*
+		 * The session is being deleted or stopped (e.g. after FW
+		 * SYS_ERROR teardown via cvp_fence_thread_stop, or a
+		 * user-initiated session_stop). Unblock parked waiters so
+		 * they exit cleanly via the msg==NULL / -ECONNRESET path
+		 * instead of timing out and tripping BUG_ON(1) in
+		 * cvp_wait_process_message().
+		 */
 		spin_unlock(&sq->lock);
 		*msg = NULL;
 		return true;

@@ -1337,6 +1337,26 @@ void mipi_dsi_driver_unregister(struct mipi_dsi_driver *drv)
 }
 EXPORT_SYMBOL(mipi_dsi_driver_unregister);
 
+#if IS_ENABLED(CONFIG_DRM_MIPI_DSI_PRE_VIDEO_START_CB)
+/**
+ * mipi_dsi_host_set_pre_video_start_cb - register a pre-video-start callback
+ * @host: DSI host
+ * @cb: callback function, called after panel enable and before video engine
+ * @data: opaque data passed to the callback
+ *
+ * Returns 0 on success, -ENOSYS if the host doesn't support it.
+ */
+int mipi_dsi_host_set_pre_video_start_cb(struct mipi_dsi_host *host,
+					 void (*cb)(void *), void *data)
+{
+	if (!host || !host->ops || !host->ops->set_pre_video_start_cb)
+		return -ENOSYS;
+
+	return host->ops->set_pre_video_start_cb(host, cb, data);
+}
+EXPORT_SYMBOL(mipi_dsi_host_set_pre_video_start_cb);
+#endif /* CONFIG_DRM_MIPI_DSI_PRE_VIDEO_START_CB */
+
 static int __init mipi_dsi_bus_init(void)
 {
 	return bus_register(&mipi_dsi_bus_type);

@@ -77,6 +77,21 @@ config DRM_MSM_DSI
 	  Choose this option if you have a need for MIPI DSI connector
 	  support.
 
+config DRM_MSM_PRE_VIDEO_START_CB
+	bool "Enable pre_video_start host op in the MSM DSI driver"
+	depends on DRM_MSM_DSI && DRM_MIPI_DSI_PRE_VIDEO_START_CB
+	default n
+	help
+	  Implements the .pre_video_start / .set_pre_video_start_cb host ops
+	  in the MSM DSI display driver, invoking the registered callback from
+	  inside dsi_display_enable() after dsi_panel_enable() and before the
+	  video engine starts.
+
+	  Used by some panel drivers that need to load calibration data
+	  (demura, gamma) at the pre-video-start window.
+
+	  If unsure, say N.
+
 config DRM_MSM_DSI_PLL
 	bool "Enable DSI PLL driver in MSM DRM"
 	depends on DRM_MSM_DSI && COMMON_CLK

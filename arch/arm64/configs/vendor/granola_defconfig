@@ -1,9 +1,26 @@
 CONFIG_META_GRANOLA=y
 
-# JBD4021 display panel (only used for proof of concept work with NFF1)
-CONFIG_JBD4021_I2C=y
+CONFIG_JBD2520_I2C=y
 
-# JBD4021/2520 left/right panels are behind a GPIO controlled (gpio117) I2C mux
+# Required for JBD2520 demura/gamma load
+CONFIG_DRM_MIPI_DSI_PRE_VIDEO_START_CB=y
+CONFIG_DRM_MSM_PRE_VIDEO_START_CB=y
+
+CONFIG_REGULATOR_DA9172=y
+CONFIG_GPIO_PCA9570=y
+CONFIG_DA9172_PWRSEQ_DEBUG=y
+CONFIG_DA9172_VNEG_VOUT_DT_OVERRIDE=y
+
+# JBD2520 left/right panels are behind a GPIO controlled (gpio116) I2C mux
 # because they have the same I2C address
 CONFIG_I2C_MUX=y
 CONFIG_I2C_MUX_GPIO=y
+
+# Wi-Fi bdata file override
+CONFIG_CNSS_META_BOARD_ID_OVERRIDE=y
+
+# Enable TCA9536 IO EXPANDER
+CONFIG_GPIO_TCA9536=y
+
+# Enable TLV61290 BOOST
+CONFIG_REGULATOR_TLV61290=y

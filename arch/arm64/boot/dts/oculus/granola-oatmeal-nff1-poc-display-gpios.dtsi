@@ -105,47 +105,10 @@
 	};
 };
 
-/* Display I2C on gpio20/21 - enable the controller */
-&qupv3_se4_i2c {
-	/* JBD2520 panels never ACK data bytes, need to ignore NACKs */
-	/* TODO(T255394617): Remove for next hardware iteration */
-	qcom,ignore-nack;
-	status = "ok";
-};
+#include "granola-display-common.dtsi"
 
-&qupv3_se10_i2c {
-	status = "okay";
-	pmicDA9172: pmicDA9172@6A {
-		compatible = "pmic-i2c-da9172";
-		regulator-name = "pmicDA9172";
-		reg = <0x6A>;
-		#thermal-sensor-cells = <0>;
-		status = "okay";
-	};
-
-	left_display_temp: max31875@4b {
-		compatible = "meta,max31875-i2c";
-		reg = <0x4b>;
-		#thermal-sensor-cells = <0>;
-		status = "disabled";
-	};
-
-	right_display_temp: max31875@4c {
-		compatible = "meta,max31875-i2c";
-		reg = <0x4c>;
-		#thermal-sensor-cells = <0>;
-		status = "disabled";
-	};
-};
-
-&display_panel_avdd {
-	status = "disabled";    // release gpio11
-};
-
-&display_panel_avee {
-	status = "disabled";    // release gpio109
-};
-
-&display_1p8_1p2_pwr_en {
-	status = "disabled";    // release gpio116
+&pmicDA9172 {
+	/* PMICs used for NFF1 build have VNEG1 VOUT programmed to -2V in OTP. */
+	/* Override to -2.2V because that's what JBD2520 panels need. */
+	meta,vneg1-vout-microvolt = <(-2200000)>;
 };

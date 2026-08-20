@@ -86,7 +86,7 @@ int pm_notifier_call_chain_robust(unsigned long val_up, unsigned long val_down)
 	int ret;
 
 	ret = blocking_notifier_call_chain_robust(&pm_chain_head, val_up, val_down, &addr);
-	if (ret && addr)
+	if (ret && addr && hibernate_ongoing())
 		kallsyms_lookup((unsigned long)addr, NULL, NULL, NULL,
 			hibernate_stats.failed_notifier_func);
 

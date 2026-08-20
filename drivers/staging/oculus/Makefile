@@ -8,6 +8,7 @@ LINUXINCLUDE	+= \
 	-I$(srctree)/drivers/staging/oculus/include/uapi \
 	-I$(srctree)/drivers/staging/oculus/include
 
+obj-$(CONFIG_DSP_PD_KILL)			+= dsp_pd_kill/
 obj-$(CONFIG_CAM_FSYNC)				+= cam-fsync/
 obj-$(CONFIG_GENERIC_VIRTUAL_SENSOR)		+= generic_virtual_sensor/
 obj-$(CONFIG_GPIO_LOWVOLT_DETECT)		+= gpio_low_volt/

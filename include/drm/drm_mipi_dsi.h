@@ -76,6 +76,14 @@ int mipi_dsi_create_packet(struct mipi_dsi_packet *packet,
  * @attach: attach DSI device to DSI host
  * @detach: detach DSI device from DSI host
  * @transfer: transmit a DSI packet
+ * @pre_video_start: (CONFIG_DRM_MIPI_DSI_PRE_VIDEO_START_CB) invoked by the
+ *	host after panel enable and before the video engine starts.
+ *	Implementations typically call the callback registered via
+ *	@set_pre_video_start_cb.
+ * @set_pre_video_start_cb: (CONFIG_DRM_MIPI_DSI_PRE_VIDEO_START_CB) register
+ *	a callback to be fired from @pre_video_start. Returns 0 on success or
+ *	-ENOSYS if the host does not implement it. The callback receives the
+ *	opaque @data pointer passed at registration.
  *
  * DSI packets transmitted by .transfer() are passed in as mipi_dsi_msg
  * structures. This structure contains information about the type of packet
@@ -96,6 +104,11 @@ struct mipi_dsi_host_ops {
 		      struct mipi_dsi_device *dsi);
 	ssize_t (*transfer)(struct mipi_dsi_host *host,
 			    const struct mipi_dsi_msg *msg);
+#if IS_ENABLED(CONFIG_DRM_MIPI_DSI_PRE_VIDEO_START_CB)
+	void (*pre_video_start)(struct mipi_dsi_host *host);
+	int (*set_pre_video_start_cb)(struct mipi_dsi_host *host,
+				      void (*cb)(void *), void *data);
+#endif
 };
 
 /**
@@ -113,6 +126,10 @@ struct mipi_dsi_host {
 int mipi_dsi_host_register(struct mipi_dsi_host *host);
 void mipi_dsi_host_unregister(struct mipi_dsi_host *host);
 struct mipi_dsi_host *of_find_mipi_dsi_host_by_node(struct device_node *node);
+#if IS_ENABLED(CONFIG_DRM_MIPI_DSI_PRE_VIDEO_START_CB)
+int mipi_dsi_host_set_pre_video_start_cb(struct mipi_dsi_host *host,
+					 void (*cb)(void *), void *data);
+#endif
 
 /* DSI mode flags */
 

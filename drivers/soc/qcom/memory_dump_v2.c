@@ -79,6 +79,9 @@ struct msm_dump_table {
 struct msm_memory_dump {
 	uint64_t table_phys;
 	struct msm_dump_table *table;
+	size_t total_size;
+	u64 shm_bridge_handle;
+	bool use_imem;
 };
 
 static struct msm_memory_dump memdump;
@@ -816,6 +819,9 @@ static int mem_dump_alloc(struct platform_device *pdev)
 		return ret;
 	}
 
+	memdump.total_size = total_size;
+	memdump.shm_bridge_handle = shm_bridge_handle;
+
 	ret = init_memory_dump(dump_vaddr, phys_addr);
 	if (ret) {
 		dev_err(&pdev->dev, "Memory Dump table set up is failed\n");
@@ -825,6 +831,7 @@ static int mem_dump_alloc(struct platform_device *pdev)
 
 	ret = qcom_scm_assign_dump_table_region(1, phys_addr, total_size);
 	if (ret) {
+		memdump.use_imem = true;
 		ret = init_memdump_imem_area(total_size);
 		if (ret) {
 			qtee_shmbridge_deregister(shm_bridge_handle);
@@ -891,6 +898,61 @@ static int mem_dump_probe(struct platform_device *pdev)
 	return ret;
 }
 
+#ifdef CONFIG_HIBERNATION
+static int mem_dump_freeze(struct device *dev)
+{
+	if (memdump.shm_bridge_handle)
+		qtee_shmbridge_deregister(memdump.shm_bridge_handle);
+
+	if (!memdump.use_imem)
+		qcom_scm_assign_dump_table_region(0, memdump.table_phys,
+						  memdump.total_size);
+
+	return 0;
+}
+
+static int mem_dump_restore(struct device *dev)
+{
+	int ret;
+	uint32_t ns_vmids[] = {VMID_HLOS};
+	uint32_t ns_vm_perms[] = {PERM_READ | PERM_WRITE};
+
+	ret = qtee_shmbridge_register(memdump.table_phys, memdump.total_size,
+				      ns_vmids, ns_vm_perms, 1,
+				      PERM_READ | PERM_WRITE,
+				      &memdump.shm_bridge_handle);
+	if (ret) {
+		dev_err(dev, "Failed to re-register shm bridge, ret=%d\n", ret);
+		return ret;
+	}
+
+	ret = qcom_scm_assign_dump_table_region(1, memdump.table_phys,
+						memdump.total_size);
+	if (ret) {
+		memdump.use_imem = true;
+		ret = init_memdump_imem_area(memdump.total_size);
+		if (ret) {
+			dev_err(dev, "Failed to re-register dump table, ret=%d\n", ret);
+			return ret;
+		}
+	} else {
+		memdump.use_imem = false;
+	}
+
+	return 0;
+}
+
+static const struct dev_pm_ops mem_dump_pm_ops = {
+	.freeze = mem_dump_freeze,
+	.restore = mem_dump_restore,
+	.thaw = mem_dump_restore,
+};
+
+#define MEM_DUMP_PMOPS (&mem_dump_pm_ops)
+#else
+#define MEM_DUMP_PMOPS NULL
+#endif
+
 static const struct of_device_id mem_dump_match_table[] = {
 	{.compatible = "qcom,mem-dump",},
 	{}
@@ -901,6 +963,7 @@ static struct platform_driver mem_dump_driver = {
 	.driver = {
 		.name = "msm_mem_dump",
 		.of_match_table = mem_dump_match_table,
+		.pm = MEM_DUMP_PMOPS,
 	},
 };
 

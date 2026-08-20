@@ -1,0 +1,1 @@
+obj-$(CONFIG_REGULATOR_RT6160) += rt6160.o

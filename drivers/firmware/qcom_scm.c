@@ -2456,6 +2456,34 @@ int qcom_scm_register_qsee_log_buf(phys_addr_t buf, size_t len)
 	return ret ? : res.result[0];
 }
 EXPORT_SYMBOL(qcom_scm_register_qsee_log_buf);
+/**
+ ** qcom_scm_deregister_qsee_log_buf() - Deregister the QSEE log buffer from TZ.
+ **
+ ** Notifies TZ to stop using the previously registered QSEE log buffer by
+ ** re-invoking the register SCM call with a NULL physical address and zero
+ ** length. This must be called before freeing the DMA buffer to prevent TZ
+ ** from writing to freed/recycled physical memory.
+ **
+ ** Return: 0 on success; negative errno on failure.
+ **/
+int qcom_scm_deregister_qsee_log_buf(void)
+{
+	int ret;
+	struct qcom_scm_desc desc = {
+	.svc = QCOM_SCM_SVC_QSEELOG,
+	.cmd = QCOM_SCM_QSEELOG_BUF_DEREGISTER,
+	.owner = ARM_SMCCC_OWNER_TRUSTED_OS,
+	.args[0] = 0,
+	.args[1] = 0,
+	.arginfo = QCOM_SCM_ARGS(2, QCOM_SCM_RW),
+};
+	struct qcom_scm_res res;
+
+	ret = qcom_scm_call(__scm->dev, &desc, &res);
+
+	return ret ? : res.result[0];
+}
+EXPORT_SYMBOL(qcom_scm_deregister_qsee_log_buf);
 
 int qcom_scm_query_encrypted_log_feature(u64 *enabled)
 {

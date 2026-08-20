@@ -1135,6 +1135,7 @@
 
 		clocks = <&rpmhcc RPMH_CXO_CLK>;
 		clock-names = "xo";
+		firmware-name = "adsp.mbn";
 
 		qcom,qmp = <&aoss_qmp>;
 
@@ -1204,6 +1205,7 @@
 		reg-names = "cx","mx","nsp";
 		clocks = <&rpmhcc RPMH_CXO_CLK>;
 		clock-names = "xo";
+		firmware-name = "cdsp.mbn";
 
 		qcom,qmp = <&aoss_qmp>;
 		interconnects = <&nsp_noc MASTER_CDSP_PROC &mc_virt SLAVE_EBI1>,

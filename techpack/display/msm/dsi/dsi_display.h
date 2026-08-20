@@ -304,6 +304,11 @@ struct dsi_display {
 	struct dsi_panel_cmd_set cmd_set;
 
 	bool enabled;
+
+#if IS_ENABLED(CONFIG_DRM_MSM_PRE_VIDEO_START_CB)
+	void (*pre_video_start_cb)(void *data);
+	void *pre_video_start_data;
+#endif
 };
 
 int dsi_display_dev_probe(struct platform_device *pdev);

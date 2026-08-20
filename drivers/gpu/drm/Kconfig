@@ -36,6 +36,22 @@ config DRM_MIPI_DSI
 	bool
 	depends on DRM
 
+config DRM_MIPI_DSI_PRE_VIDEO_START_CB
+	bool "Enable mipi_dsi_host_ops pre_video_start callback extension"
+	depends on DRM_MIPI_DSI
+	default n
+	help
+	  Adds the .pre_video_start and .set_pre_video_start_cb callbacks to
+	  struct mipi_dsi_host_ops, plus the
+	  mipi_dsi_host_set_pre_video_start_cb() helper.
+
+	  Enables panel/bridge drivers to register a callback that fires after
+	  panel enable but before the DSI video engine starts streaming. Used
+	  by some Meta vendor panels (e.g. JBD2520) to load calibration data
+	  at the correct point in the DSI enable sequence.
+
+	  If unsure, say N.
+
 config DRM_DP_AUX_CHARDEV
 	bool "DRM DP AUX Interface"
 	depends on DRM

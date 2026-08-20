@@ -40,13 +40,16 @@ int android_rvh_probe_register(struct tracepoint *tp, void *probe, void *data);
 		struct tracepoint_func *it_func_ptr;			\
 		void *it_func;						\
 									\
-		it_func_ptr = (&__tracepoint_##_name)->funcs;		\
-		it_func = (it_func_ptr)->func;				\
-		do {							\
-			__data = (it_func_ptr)->data;			\
-			((void(*)(void *, proto))(it_func))(__data, args); \
-			it_func = READ_ONCE((++it_func_ptr)->func);	\
-		} while (it_func);					\
+		it_func_ptr =						\
+			rcu_dereference_raw((&__tracepoint_##_name)->funcs); \
+		if (it_func_ptr) {					\
+			it_func = (it_func_ptr)->func;			\
+			do {						\
+				__data = (it_func_ptr)->data;		\
+				((void(*)(void *, proto))(it_func))(__data, args); \
+				it_func = READ_ONCE((++it_func_ptr)->func); \
+			} while (it_func);				\
+		}							\
 		return 0;						\
 	}								\
 	DEFINE_STATIC_CALL(tp_func_##_name, __traceiter_##_name);

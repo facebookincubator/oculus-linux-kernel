@@ -122,7 +122,7 @@ static int try_to_freeze_tasks(bool user_only)
 		pr_cont("(elapsed %d.%03d seconds) ", elapsed_msecs / 1000,
 			elapsed_msecs % 1000);
 	}
-	if (todo) {
+	if (todo && hibernate_ongoing()) {
 		strncpy(hibernate_stats.failed_freeze_task, task_name,
 				sizeof(hibernate_stats.failed_freeze_task));
 	}
@@ -171,9 +171,11 @@ int freeze_processes(void)
 		error = -EBUSY;
 
 	if (error) {
-		hibernate_stats.fail++;
-		hibernate_stats.failed_freeze++;
-		hib_save_failed_step(HIBERNATE_FREEZE);
+		if (hibernate_ongoing()) {
+			hibernate_stats.fail++;
+			hibernate_stats.failed_freeze++;
+			hib_save_failed_step(HIBERNATE_FREEZE);
+		}
 		thaw_processes();
 	}
 	return error;
@@ -202,9 +204,11 @@ int freeze_kernel_threads(void)
 	BUG_ON(in_atomic());
 
 	if (error) {
-		hibernate_stats.fail++;
-		hibernate_stats.failed_freeze_kernel++;
-		hib_save_failed_step(HIBERNATE_FREEZE_KERNEL);
+		if (hibernate_ongoing()) {
+			hibernate_stats.fail++;
+			hibernate_stats.failed_freeze_kernel++;
+			hib_save_failed_step(HIBERNATE_FREEZE_KERNEL);
+		}
 		thaw_kernel_threads();
 	}
 	return error;

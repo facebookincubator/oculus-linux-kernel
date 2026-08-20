@@ -1640,8 +1640,7 @@ static bool mmc_is_ffu_needed(struct mmc_host *host, struct mmc_card *card,
 
 	ret = (card->cid.manfid == 0xf4) &&
 	      (of_property_read_bool (mmc_dev(host)->of_node, "meta,biwin-ffu-enable")) &&
-	      (!strncmp(card->cid.prod_name, "AMP11X", sizeof(card->cid.prod_name)) ||
-	       (!strncmp(card->cid.prod_name, "Biwin", sizeof(card->cid.prod_name))));
+	      (strstr(card->cid.prod_name, "AMP11X") || strstr(card->cid.prod_name, "Biwin"));
 
 	if (ret)
 		*ffu_version = mmc_ffu_check_firmware(card);

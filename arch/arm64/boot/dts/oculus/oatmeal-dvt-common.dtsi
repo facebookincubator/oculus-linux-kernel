@@ -2,6 +2,15 @@
 
 #include "oatmeal.dtsi"
 
+&pm8150_l16 {
+	/delete-property/ regulator-always-on;
+};
+
+&hw_comparator_sensor {
+	vddref-supply = <&L16A>;
+	hwcomparator,latch;
+};
+
 &pcal6408 {
 	status = "ok";
 };

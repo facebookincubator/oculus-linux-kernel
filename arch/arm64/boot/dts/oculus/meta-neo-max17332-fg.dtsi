@@ -19,6 +19,7 @@ max17332: max17332@36 {
     interrupts = <7 IRQ_TYPE_LEVEL_HIGH>;
     interrupt-cells = <1>;
     interrupt-controller;
+    #cooling-cells = <2>;
     reg = <0x36>;
     status= "ok";
     nvm-address = /bits/ 8 <0x0b>;

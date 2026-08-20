@@ -2141,7 +2141,7 @@ static int dsi_display_debugfs_deinit(struct dsi_display *display)
 #endif /* CONFIG_DEBUG_FS */
 
 static void adjust_timing_by_ctrl_count(const struct dsi_display *display,
-					struct dsi_display_mode *mode)
+					struct dsi_display_mode *mode, bool mode_set)
 {
 	struct dsi_host_common_cfg *host = &display->panel->host_config;
 	bool is_split_link = host->split_link.enabled;
@@ -2155,7 +2155,7 @@ static void adjust_timing_by_ctrl_count(const struct dsi_display *display,
 		mode->timing.h_skew /= sublinks_count;
 		mode->pixel_clk_khz /= sublinks_count;
 	} else {
-		if (mode->priv_info->dsc_enabled)
+		if (mode->priv_info->dsc_enabled && mode_set)
 			mode->priv_info->dsc.config.pic_width =
 				mode->timing.h_active / mode->priv_info->dsc.dsc_pic_width_slice;
 		mode->timing.h_active /= display->ctrl_count;
@@ -3506,11 +3506,34 @@ static ssize_t dsi_host_transfer(struct mipi_dsi_host *host, const struct mipi_d
 	return rc;
 }
 
+#if IS_ENABLED(CONFIG_DRM_MSM_PRE_VIDEO_START_CB)
+static void dsi_host_pre_video_start(struct mipi_dsi_host *host)
+{
+	struct dsi_display *display = to_dsi_display(host);
+
+	if (display->pre_video_start_cb)
+		display->pre_video_start_cb(display->pre_video_start_data);
+}
+
+static int dsi_host_set_pre_video_start_cb(struct mipi_dsi_host *host,
+					   void (*cb)(void *), void *data)
+{
+	struct dsi_display *display = to_dsi_display(host);
+
+	display->pre_video_start_cb = cb;
+	display->pre_video_start_data = data;
+	return 0;
+}
+#endif /* CONFIG_DRM_MSM_PRE_VIDEO_START_CB */
 
 static struct mipi_dsi_host_ops dsi_host_ops = {
 	.attach = dsi_host_attach,
 	.detach = dsi_host_detach,
 	.transfer = dsi_host_transfer,
+#if IS_ENABLED(CONFIG_DRM_MSM_PRE_VIDEO_START_CB)
+	.pre_video_start = dsi_host_pre_video_start,
+	.set_pre_video_start_cb = dsi_host_set_pre_video_start_cb,
+#endif
 };
 
 static int dsi_display_mipi_host_init(struct dsi_display *display)
@@ -5029,7 +5052,7 @@ static int dsi_display_get_dfps_timing(struct dsi_display *display,
 	}
 
 	per_ctrl_mode = *adj_mode;
-	adjust_timing_by_ctrl_count(display, &per_ctrl_mode);
+	adjust_timing_by_ctrl_count(display, &per_ctrl_mode, false);
 
 	if (!curr_refresh_rate) {
 		if (!dsi_display_is_seamless_dfps_possible(display,
@@ -6590,6 +6613,10 @@ static struct mipi_dsi_host_ops dsi_host_ext_ops = {
 	.attach = dsi_host_ext_attach,
 	.detach = dsi_host_detach,
 	.transfer = dsi_host_transfer,
+#if IS_ENABLED(CONFIG_DRM_MSM_PRE_VIDEO_START_CB)
+	.pre_video_start = dsi_host_pre_video_start,
+	.set_pre_video_start_cb = dsi_host_set_pre_video_start_cb,
+#endif
 };
 
 struct drm_panel *dsi_display_get_drm_panel(struct dsi_display *display)
@@ -7307,8 +7334,10 @@ exit:
 	rc = 0;
 
 error:
-	if (rc)
+	if (rc) {
 		kfree(display->modes);
+		display->modes = NULL;
+	}
 
 	mutex_unlock(&display->display_lock);
 	return rc;
@@ -7702,7 +7731,7 @@ int dsi_display_validate_mode(struct dsi_display *display,
 	mutex_lock(&display->display_lock);
 
 	adj_mode = *mode;
-	adjust_timing_by_ctrl_count(display, &adj_mode);
+	adjust_timing_by_ctrl_count(display, &adj_mode, false);
 
 	rc = dsi_panel_validate_mode(display->panel, &adj_mode);
 	if (rc) {
@@ -7760,7 +7789,8 @@ int dsi_display_set_mode(struct dsi_display *display,
 
 	adj_mode = *mode;
 	timing = adj_mode.timing;
-	adjust_timing_by_ctrl_count(display, &adj_mode);
+
+	adjust_timing_by_ctrl_count(display, &adj_mode, true);
 
 	if (!display->panel->cur_mode) {
 		display->panel->cur_mode =
@@ -8646,6 +8676,12 @@ int dsi_display_enable(struct dsi_display *display)
 		}
 	}
 	dsi_display_panel_id_notification(display);
+
+#if IS_ENABLED(CONFIG_DRM_MSM_PRE_VIDEO_START_CB)
+	if (display->host.ops->pre_video_start)
+		display->host.ops->pre_video_start(&display->host);
+#endif
+
 	/* Block sending pps command if modeset is due to fps difference */
 	if ((mode->priv_info->dsc_enabled ||
 			mode->priv_info->vdc_enabled) &&

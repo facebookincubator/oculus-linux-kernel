@@ -293,7 +293,6 @@ static long ps_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case POWER_STATE_ENTER_HIBERNATE:
 		pr_err("Enter Hibernate\n");
 		// Retrive SSG key
-		ret = subsystem_suspend(drv, SUBSYS_HIBERNATE);
 		drv->current_state = HIBERNATE;
 		break;
 
@@ -306,7 +305,6 @@ static long ps_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case EXIT_HIBERNATE_STATE:
 	case POWER_STATE_EXIT_HIBERNATE_STATE:
 		pr_debug("Exit Hibernate\n");
-		ret = subsystem_resume(drv, SUBSYS_HIBERNATE);
 		break;
 
 	case MODEM_SUSPEND:

@@ -1,0 +1,45 @@
+&tlmm {
+	i2c_mux_sel: i2c_mux_sel {
+		mux {
+			pins = "gpio116";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio116";
+			drive-strength = <2>;
+			bias-disable;
+			output-low;
+		};
+	};
+};
+
+#include "granola-display-common.dtsi"
+
+&qupv3_se10_i2c {
+	display_gpio_expander: gpio@24 {
+		compatible = "nxp,pca9570";
+		reg = <0x24>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		status = "okay";
+	};
+};
+
+&soc {
+	vsys_disp_pmic_ls: vsys_disp_pmic_ls {
+		compatible = "regulator-fixed";
+		regulator-name = "vsys_disp_pmic_ls";
+		gpio = <&display_gpio_expander 3 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		startup-delay-us = <50000>;
+		status = "okay";
+	};
+};
+
+&pmicDA9172 {
+	vin-supply = <&vsys_disp_pmic_ls>;
+	/* PMICs used for NFF1 build have VNEG1 VOUT programmed to -2V in OTP. */
+	/* Override to -2.2V because that's what JBD2520 panels need. */
+	meta,vneg1-vout-microvolt = <(-2200000)>;
+};
