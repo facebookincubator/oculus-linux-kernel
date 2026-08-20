@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
- * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef _CAM_LRME_HW_MGR_H_
@@ -74,8 +74,8 @@ struct cam_lrme_debugfs_entry {
  * @work_data                 : HW device's work data
  * @frame_pending_list_high   : High priority request queue
  * @frame_pending_list_normal : Normal priority request queue
- * @high_req_lock             : Spinlock of high priority queue
- * @normal_req_lock           : Spinlock of normal priority queue
+ * @high_req_lock             : mutex of high priority queue
+ * @normal_req_lock           : mutex of normal priority queue
  */
 struct cam_lrme_device {
 	struct cam_lrme_dev_cap        hw_caps;
@@ -86,8 +86,8 @@ struct cam_lrme_device {
 	struct cam_lrme_mgr_work_data  work_data[CAM_LRME_WORKQ_NUM_TASK];
 	struct list_head               frame_pending_list_high;
 	struct list_head               frame_pending_list_normal;
-	spinlock_t                     high_req_lock;
-	spinlock_t                     normal_req_lock;
+	struct mutex                   high_req_lock;
+	struct mutex                   normal_req_lock;
 };
 
 /**
@@ -96,7 +96,7 @@ struct cam_lrme_device {
  * @device_count    : Number of HW devices
  * @frame_free_list : List of free frame request
  * @hw_mgr_mutex    : Mutex to protect HW manager data
- * @free_req_lock   :Spinlock to protect frame_free_list
+ * @free_req_lock   : Mutex to protect frame_free_list
  * @hw_device       : List of HW devices
  * @device_iommu    : Device iommu
  * @cdm_iommu       : cdm iommu
@@ -109,7 +109,7 @@ struct cam_lrme_hw_mgr {
 	uint32_t                      device_count;
 	struct list_head              frame_free_list;
 	struct mutex                  hw_mgr_mutex;
-	spinlock_t                    free_req_lock;
+	struct mutex                  free_req_lock;
 	struct cam_lrme_device        hw_device[CAM_LRME_HW_MAX];
 	struct cam_iommu_handle       device_iommu;
 	struct cam_iommu_handle       cdm_iommu;

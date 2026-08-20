@@ -76,7 +76,9 @@
 #define MAX_BCL_LVL_COUNT     3
 #define IPC_LOGPAGES          10
 
+#ifndef MAX
 #define MAX(X, Y) ((X) > (Y) ? (X) : (Y))
+#endif
 #define BCL_IPC(dev, msg, args...)      do { \
 			if ((dev) && (dev)->ipc_log) { \
 				ipc_log_string((dev)->ipc_log, \

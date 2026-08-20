@@ -234,25 +234,30 @@ static int get_cmdline_nofault(struct task_struct *task, char *buffer, int bufle
  * Top-N RT contributors per period (per-CPU root rt_rq).
  *
  * Tracks the tgids that consumed the most CPU time on this rt_rq during the
- * current bandwidth period. Updated from update_curr_rt() under
- * rt_runtime_lock; reset at period boundary in do_sched_rt_period_timer().
+ * current bandwidth period. Updated from put_prev_task_rt() once per
+ * contiguous scheduling slice (i.e., from set_next_task_rt to the matching
+ * put_prev_task_rt), NOT per tick. This gives meaningful semantics to
+ * max_slice_ns (true longest uninterrupted run) and slice_count (true number
+ * of times the task was scheduled). Reset at period boundary in
+ * do_sched_rt_period_timer().
  *
  * Eviction policy: when the table is full and a new tgid arrives, always
  * evict the entry with the smallest runtime_ns (oldest last_seen_ns as
- * tiebreaker). Crucially we do NOT compare the newcomer's single-tick
- * delta_exec against the victim's accumulated runtime — that would let
- * the table lock in whichever 10 tgids appeared first in the period and
+ * tiebreaker). Crucially we do NOT compare the newcomer's single-slice
+ * runtime against the victim's accumulated runtime — that would let the
+ * table lock in whichever 10 tgids appeared first in the period and
  * permanently exclude any later-arriving hog. With unconditional insertion,
- * dominant contributors win because their runtime_ns grows on every tick
- * they are scheduled, raising them above transient newcomers within a few
- * ticks; transient bursts churn each other rather than displacing the
- * stable contributors.
+ * dominant contributors win because their runtime_ns grows on every slice
+ * they run, raising them above transient newcomers within a few slices;
+ * transient bursts churn each other rather than displacing the stable
+ * contributors.
  *
- * Cost on the hot path: <=N comparisons + a few stores. N is small (10) so
- * a flat array beats any pointer-chasing structure.
+ * Cost on the hot path: <=N comparisons + a few stores per slice end. N is
+ * small (10) so a flat array beats any pointer-chasing structure. Slice
+ * boundary is one timestamp read + 2 stores in set_next_task_rt; no scan.
  */
 static void rt_top_account(struct rt_rq *rt_rq, struct task_struct *curr,
-			   u64 delta_exec, u64 now)
+			   u64 slice_ns, u64 now)
 {
 	struct rt_top_contrib *e, *victim;
 	pid_t tgid = curr->tgid;
@@ -261,11 +266,11 @@ static void rt_top_account(struct rt_rq *rt_rq, struct task_struct *curr,
 	for (i = 0; i < rt_rq->rt_top_count; i++) {
 		e = &rt_rq->rt_top[i];
 		if (e->tgid == tgid) {
-			e->runtime_ns += delta_exec;
+			e->runtime_ns += slice_ns;
 			e->last_seen_ns = now;
-			e->hit_count++;
-			if (delta_exec > e->max_delta_ns)
-				e->max_delta_ns = delta_exec;
+			e->slice_count++;
+			if (slice_ns > e->max_slice_ns)
+				e->max_slice_ns = slice_ns;
 			return;
 		}
 	}
@@ -286,22 +291,69 @@ static void rt_top_account(struct rt_rq *rt_rq, struct task_struct *curr,
 	}
 
 	e->tgid = tgid;
-	e->runtime_ns = delta_exec;
+	e->runtime_ns = slice_ns;
 	e->last_seen_ns = now;
-	e->hit_count = 1;
-	e->max_delta_ns = delta_exec;
-	/*
-	 * Snapshot group_leader->comm without locking. Lifetime: curr is
-	 * scheduled on this CPU under us, and group_leader is reference-
-	 * counted via signal_struct, so the deref is safe. The 16-byte
-	 * comm read may tear vs a concurrent prctl(PR_SET_NAME) on the
-	 * leader — worst case is a garbled name in the dump, no memory
-	 * safety issue. Avoiding this would require task_lock() on the
-	 * leader, which is too heavy for the scheduler hot path.
-	 */
+	e->slice_count = 1;
+	e->max_slice_ns = slice_ns;
 	strscpy(e->comm, curr->group_leader ? curr->group_leader->comm
 					    : curr->comm,
 		sizeof(e->comm));
+}
+
+/*
+ * Slice-start hook: record when an RT task begins running on this CPU.
+ * Called from set_next_task_rt() for the incoming RT task. Uses
+ * rq_clock_task() -- already updated on this path, monotonic, and the same
+ * clock update_curr_rt() accounts rt_time against. Cost: one clock read +
+ * two stores. No scan, no allocation.
+ */
+static __always_inline void rt_top_slice_start(struct rq *rq,
+					       struct task_struct *p)
+{
+	struct rt_rq *rt_rq = &rq->rt;
+
+	rt_rq->rt_top_slice_start_ns = rq_clock_task(rq);
+	rt_rq->rt_top_slice_tgid = p->tgid;
+}
+
+/*
+ * Slice-end hook: account a finished contiguous slice. Called from
+ * put_prev_task_rt() with the outgoing RT task. The slice is skipped if:
+ *   - no matching slice_start was recorded (slice_start_ns == 0, e.g. across
+ *     a config-toggle boundary);
+ *   - the outgoing task is not the one slice_start began timing (tgid
+ *     mismatch); set_next/put_prev should pair 1:1, but never attribute a
+ *     stale start to the wrong task;
+ *   - the elapsed time is non-positive, mirroring the (s64)delta_exec <= 0
+ *     guard in update_curr_rt().
+ */
+static __always_inline void rt_top_slice_end(struct rq *rq,
+					     struct task_struct *p)
+{
+	struct rt_rq *rt_rq = &rq->rt;
+	u64 start = rt_rq->rt_top_slice_start_ns;
+	u64 now, slice_ns;
+
+	if (!start)
+		return;
+
+	if (p->tgid != rt_rq->rt_top_slice_tgid) {
+		rt_rq->rt_top_slice_start_ns = 0;
+		rt_rq->rt_top_slice_tgid = 0;
+		return;
+	}
+
+	now = rq_clock_task(rq);
+	slice_ns = now - start;
+	rt_rq->rt_top_slice_start_ns = 0;
+	rt_rq->rt_top_slice_tgid = 0;
+
+	if (unlikely((s64)slice_ns <= 0))
+		return;
+
+	raw_spin_lock(&rt_rq->rt_runtime_lock);
+	rt_top_account(rt_rq, p, slice_ns, now);
+	raw_spin_unlock(&rt_rq->rt_runtime_lock);
 }
 
 static void rt_top_reset(struct rt_rq *rt_rq)
@@ -398,20 +450,21 @@ static int rt_top_format(char *buf, int len,
 						       cmdline_scratch,
 						       snap[i].comm);
 		u64 runtime_ms = snap[i].runtime_ns / NSEC_PER_MSEC;
-		u64 max_ms = snap[i].max_delta_ns / NSEC_PER_MSEC;
+		u64 max_ms = snap[i].max_slice_ns / NSEC_PER_MSEC;
 
 		written += scnprintf(buf + written, len - written, fmt,
 				     name, snap[i].tgid,
-				     runtime_ms, snap[i].hit_count, max_ms);
+				     runtime_ms, snap[i].slice_count, max_ms);
 	}
 	return written;
 }
 
 #else  /* !CONFIG_RT_TOP_CONTRIBUTORS */
 
-static inline void rt_top_account(struct rt_rq *rt_rq,
-				  struct task_struct *curr,
-				  u64 delta_exec, u64 now) { }
+static inline void rt_top_slice_start(struct rq *rq,
+				      struct task_struct *p) { }
+static inline void rt_top_slice_end(struct rq *rq,
+				    struct task_struct *p) { }
 static inline void rt_top_reset(struct rt_rq *rt_rq) { }
 
 #endif /* CONFIG_RT_TOP_CONTRIBUTORS */
@@ -1524,7 +1577,7 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	/* Append the top contributors block to the printk buf. */
 	if (top_n && pos < end) {
 		pos += snprintf(pos, end - pos,
-				"top RT contributors this period (runtime_ms hits max_ms):\n");
+				"top RT contributors this period (runtime_ms slices max_slice_ms):\n");
 		pos += rt_top_format(pos, end - pos, snap, top_n,
 				     "\t%s (tgid %d) %llu %u %llu\n",
 				     cmdline_scratch);
@@ -1632,12 +1685,6 @@ static void update_curr_rt(struct rq *rq)
 		if (sched_rt_runtime(rt_rq) != RUNTIME_INF) {
 			raw_spin_lock(&rt_rq->rt_runtime_lock);
 			rt_rq->rt_time += delta_exec;
-#ifdef CONFIG_RT_GROUP_SCHED
-			if (!rt_se->parent)
-				rt_top_account(rt_rq, curr, delta_exec, now);
-#else
-			rt_top_account(rt_rq, curr, delta_exec, now);
-#endif
 			exceeded = sched_rt_runtime_exceeded(rt_rq);
 			if (exceeded)
 				resched_curr(rq);
@@ -2272,6 +2319,8 @@ static inline void set_next_task_rt(struct rq *rq, struct task_struct *p, bool f
 {
 	p->se.exec_start = rq_clock_task(rq);
 
+	rt_top_slice_start(rq, p);
+
 	/* The running task is never eligible for pushing */
 	dequeue_pushable_task(rq, p);
 
@@ -2337,6 +2386,8 @@ static struct task_struct *pick_next_task_rt(struct rq *rq)
 static void put_prev_task_rt(struct rq *rq, struct task_struct *p)
 {
 	update_curr_rt(rq);
+
+	rt_top_slice_end(rq, p);
 
 	update_rt_rq_load_avg(rq_clock_pelt(rq), rq, 1);
 

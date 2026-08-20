@@ -299,11 +299,11 @@
 	meta,settling-time-target-us = <3600>;
 	meta,temperature-dependent-backlight;
 	meta,response-time-curve =
-		<25000 6330>,
-		<30000 6050>,
-		<35000 5380>,
-		<45000 4140>,
-		<55000 3220>;
+		<25000 6110>,
+		<30000 5240>,
+		<35000 4530>,
+		<45000 3600>,
+		<55000 2990>;
 	meta,thermal-zone = "disp-virt";
 	meta,ddic-family = "ddic_family_nvt";
 	meta,max-blu-pulse-overlap-us = <00>;

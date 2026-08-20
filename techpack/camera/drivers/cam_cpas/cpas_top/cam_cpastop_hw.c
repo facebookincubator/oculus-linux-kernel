@@ -945,8 +945,6 @@ static int cam_cpastop_qchannel_handshake(struct cam_hw_info *cpas_hw,
 			power_on ? "START" : "STOP",
 			cam_io_r(soc_info->reg_map[reg_indx].mem_base +
 			qchannel_info->qchannel_status));
-		/* Do not return error, passthrough */
-		rc = 0;
 	}
 
 	/* check if deny bit is set */

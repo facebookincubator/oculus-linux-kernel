@@ -142,13 +142,11 @@ static const uint8_t opcls_136_cfis_arr[] = {
 };
 
 /* CFIs for global opclass 137: (start Freq=5950 BW=320MHz) */
-#ifdef WLAN_FEATURE_11BE
 static const uint8_t opcls_137_cfis_arr[] = {
 #ifdef CONFIG_AFC_SUPPORT
 	31, 63, 95, 127, 159, 191,
 #endif
 };
-#endif
 
 /* Create the CFIS static constant lists */
 CREATE_CFIS_LST(131);
@@ -157,9 +155,7 @@ CREATE_CFIS_LST(133);
 CREATE_CFIS_LST(134);
 CREATE_CFIS_LST(135);
 CREATE_CFIS_LST(136);
-#ifdef WLAN_FEATURE_11BE
 CREATE_CFIS_LST(137);
-#endif
 
 static const struct reg_dmn_op_class_map_t global_op_class[] = {
 	{81, 25, BW20, BIT(BEHAV_NONE), 2407,
@@ -280,7 +276,6 @@ static const struct reg_dmn_op_class_map_t global_op_class[] = {
 	{136, 20, BW20, BIT(BEHAV_NONE), 5925,
 	 {2},
 	&CFISLST(136)},
-#ifdef WLAN_FEATURE_11BE
 	{137, 320, BW20, BIT(BEHAV_NONE), 5950,
 	 {1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41,
 	  45, 49, 53, 57, 61, 65, 69, 73, 77, 81,
@@ -290,7 +285,6 @@ static const struct reg_dmn_op_class_map_t global_op_class[] = {
 	  185, 189, 193, 197, 201, 205, 209, 213,
 	  217, 221, 225, 229, 233},
 	&CFISLST(137)},
-#endif
 #endif
 	{0, 0, 0, 0, 0, {0},
 	NULL_CFIS_LST },

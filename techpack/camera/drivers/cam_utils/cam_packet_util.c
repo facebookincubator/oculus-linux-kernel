@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/types.h>
@@ -169,6 +169,7 @@ int cam_packet_util_get_kmd_buffer(struct cam_packet *packet,
 	kmd_buf->offset     = cmd_desc->offset + packet->kmd_cmd_buf_offset;
 	kmd_buf->size       = cmd_desc->size - cmd_desc->length;
 	kmd_buf->used_bytes = 0;
+	return rc;
 
 rel_kmd_buf:
 	cam_packet_util_put_cmd_mem_addr(cmd_desc->mem_handle);

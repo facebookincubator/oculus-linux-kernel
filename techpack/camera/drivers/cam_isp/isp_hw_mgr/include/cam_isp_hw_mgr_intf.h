@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef _CAM_ISP_HW_MGR_INTF_H_
@@ -329,6 +329,7 @@ struct cam_isp_prepare_hw_update_data {
 						CAM_REG_DUMP_MAX_BUF_ENTRIES];
 	uint32_t                              num_reg_dump_buf;
 	struct cam_packet                    *packet;
+	struct cam_kmd_buf_info               kmd_cmd_buff_info;
 	uint32_t                              mup_val;
 	uint32_t                              num_exp;
 	uint32_t                              primary_port_entry_index;

@@ -351,8 +351,8 @@ static int reorder_attach_cb(struct dma_buf *dmabuf,
 }
 
 /*
- * .uncached was removed from struct mem_buf_dma_buf_ops on niobe.
- * MEM_BUF_WRAPPER_FLAG_ZOMBIE is defined only in the niobe header.
+ * .uncached was removed from struct mem_buf_dma_buf_ops in newer mem_buf
+ * headers, which is also where MEM_BUF_WRAPPER_FLAG_ZOMBIE is defined.
  */
 #ifndef MEM_BUF_WRAPPER_FLAG_ZOMBIE
 static bool reorder_uncached(struct dma_buf *dmabuf)

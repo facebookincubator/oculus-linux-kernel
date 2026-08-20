@@ -703,10 +703,10 @@ static inline int rt_bandwidth_enabled(void)
 #define RT_TOP_NAME_MAX 64
 struct rt_top_contrib {
 	pid_t	tgid;
-	u64	runtime_ns;
-	u64	last_seen_ns;
-	u64	max_delta_ns;	/* largest single delta_exec contribution */
-	u32	hit_count;	/* number of update_curr_rt accountings */
+	u64	runtime_ns;	/* sum of all contiguous-slice durations this period */
+	u64	last_seen_ns;	/* tiebreaker for LFU eviction */
+	u64	max_slice_ns;	/* longest single contiguous slice (no preemption) */
+	u32	slice_count;	/* number of times scheduled in this period */
 	char	comm[TASK_COMM_LEN];
 };
 #endif
@@ -747,6 +747,8 @@ struct rt_rq {
 #ifdef CONFIG_RT_TOP_CONTRIBUTORS
 	struct rt_top_contrib	rt_top[RT_TOP_CONTRIB_N];
 	u8			rt_top_count;
+	u64			rt_top_slice_start_ns;
+	pid_t			rt_top_slice_tgid;
 #endif
 };
 

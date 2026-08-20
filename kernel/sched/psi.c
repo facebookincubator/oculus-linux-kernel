@@ -127,6 +127,10 @@
  * sampling of the aggregate task states would be.
  */
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/psi.h>
+#undef CREATE_TRACE_POINTS
+
 static int psi_bug __read_mostly;
 
 DEFINE_STATIC_KEY_FALSE(psi_disabled);
@@ -923,6 +927,9 @@ void psi_memstall_enter(unsigned long *flags)
 	*flags = current->in_memstall;
 	if (*flags)
 		return;
+
+	trace_psi_memstall_enter(current);
+
 	/*
 	 * in_memstall setting & accounting needs to be atomic wrt
 	 * changes to the task's scheduling state, otherwise we can
@@ -952,6 +959,9 @@ void psi_memstall_leave(unsigned long *flags)
 
 	if (*flags)
 		return;
+
+	trace_psi_memstall_leave(current);
+
 	/*
 	 * in_memstall clearing & accounting needs to be atomic wrt
 	 * changes to the task's scheduling state, otherwise we could

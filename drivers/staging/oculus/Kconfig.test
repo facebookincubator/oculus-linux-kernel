@@ -1,11 +1,18 @@
 config KUNIT_STAGING_OCULUS
 	tristate "Enable all KUnit tests for Oculus staging drivers"
 	depends on KUNIT
+	select DMABUF_REORDER_KUNIT_TEST if DMABUF_REORDER
 	select MISCFIFO_KUNIT_TEST if MISCFIFO
 	select META_SWD_FWUPDATE_KUNIT_TEST if META_SWD
-	select DMABUF_REORDER_KUNIT_TEST if DMABUF_REORDER
 	help
 	  Master switch to enable all KUnit tests under drivers/staging/oculus/.
+
+config DMABUF_REORDER_KUNIT_TEST
+	tristate "KUnit tests for dmabuf_reorder helpers" if !KUNIT_ALL_TESTS
+	depends on KUNIT && !QCOM_MEM_BUF
+	default KUNIT_STAGING_OCULUS
+	help
+	  Unit tests for the dmabuf_reorder scatterlist helper functions.
 
 config MISCFIFO_KUNIT_TEST
 	tristate "KUnit tests for miscfifo" if !KUNIT_ALL_TESTS
@@ -20,10 +27,3 @@ config META_SWD_FWUPDATE_KUNIT_TEST
 	default KUNIT_STAGING_OCULUS
 	help
 	  Unit tests for the SWD firmware update manager APIs.
-
-config DMABUF_REORDER_KUNIT_TEST
-	tristate "KUnit tests for dmabuf_reorder helpers" if !KUNIT_ALL_TESTS
-	depends on KUNIT && !QCOM_MEM_BUF
-	default KUNIT_STAGING_OCULUS
-	help
-	  Unit tests for the dmabuf_reorder scatterlist helper functions.
