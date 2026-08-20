@@ -1,0 +1,114 @@
+=================================
+Oculus CEM43 Pseudo-Sensor Driver
+=================================
+
+This driver computes the cumulative CEM43 (Cumulative Equivalent Minutes at
+43°C) thermal dose of a single input thermal zone and reports the accumulated
+dose in 1/1000s of a minute, as a pseudo-temperature through the thermal
+framework.
+
+The driver supports projection into the future to allow sufficient time for
+a shutdown before exceeding the limit.
+
+Even though the CEM43 standard specifies accumulation with temperatures
+averaged over a minute, it has been developed in the setup where temperatures
+are changing slowly, with little variation within the minute. In the world of
+electronics the temperatures can change fairly quickly within a minute, so the
+accumulation is done in the driver over seconds, which are then converted into
+CEM minutes.  The input temperatures are averaged by default over a second, but
+optionally a longer rolling average can be specified, averaging over 60 seconds
+would emulate the classic CEM43 but have slower reactions to overheating.
+
+CEM43 Pseudo-Sensor Node
+-------------------------
+
+Required properties:
+- compatible: Should be "oculus,cem43-pseudo-sensor".
+- #thermal-sensor-cells: Required by thermal framework, should be 0.
+- input-thermal-zone: String name of the input thermal zone to monitor.
+  The driver will read temperature from this zone to compute the CEM43 dose.
+
+Optional properties:
+- input-scaling-factor: Integer value to multiply the input thermal zone
+	reading by, to convert to millidegrees Celsius. Default is 1 if not
+	specified.
+
+- cem-horizon-minutes: Integer value specifying the CEM43 horizon in minutes.
+  The driver computes the cumulative thermal dose over this time horizon.
+  Default is 180 minutes if not specified. Must be positive (> 0).
+
+- cem-target-mdeg: Integer value specifying the CEM target temperature in
+	millidegrees Celsius. The default is 43000 for CEM43 calculations (43°C =
+	43000 millidegrees).
+
+- averaging-count: Integer value specifying the number of samples over
+  which to average the output temperature. Uses a circular buffer to
+  smooth noisy readings. Default is 10 if not specified. If set to 0 or 1,
+  averaging is disabled.
+
+- averaging-delay: Integer value specifying the delay between averaged
+  samples, in milliseconds. Must be specified together with
+  `averaging-count`. The associated thermal zone's polling-delay should be
+  a multiple of this value. Default is 100 ms if not specified.
+
+- projection-seconds: Integer value specifying how many seconds to project
+  the current temperature forward. Since the shutdown is not immediate,
+	to complete the shutdown before exceeding the CEM43 limit, the logic
+	that triggers the shutdown must allow for the additional accumulation
+	during the shutdown. The speed this additional accumulation depends on
+	the current temperature in a major way, due to the exponential character
+	of accumulation. For example, at 48°C the accumulation is accelerated
+	32-fold. The CEM driver already includes the exponential computation,
+	and so is the natural place to embed this logic, letting the shutdown
+	trigger to work in the same simple-minded way as when based on the
+	temperature. Note that the projection does not allow to take the slope into
+	account, and so if the temperature continues to grow, the projection is
+	optimistic. To compensate for this, leave a safety margin in the projection
+	time over the expected shutdown time.  Default is 0 (no projection) if not
+	specified. Must be non-negative (>= 0) if specified.
+
+- thermal-zone-fault-estimator-bounds: Array of 2 integers representing the
+  lower and upper bounds (in millidegrees Celsius) in which the input
+  thermal zone is considered functional. If the input zone returns a
+  reading outside this range, it is considered faulty, and the previous value
+	(or 0 if no previous value was ever read) is used. This allows to
+	filter out the erroneous short-term spikes in the sensors, and to ignore
+	the faulty sensors.
+
+- meta,hotpluggable: Boolean property. If present, the input thermal zone
+  is considered hotpluggable and will be re-resolved by name on every
+  temperature reading. This is useful for zones that may come and go
+  (e.g., pluggable sensors). If not present, the zone is resolved once at
+  probe time.
+
+Example:
+--------
+
+&thermal_zones {
+	cem43_sensor: cem43-sensor {
+		polling-delay = <1000>;
+		polling-delay-passive = <0>;
+		thermal-sensors = <&cem43_pseudo_sensor>;
+	};
+};
+
+cem43_pseudo_sensor: cem43-pseudo-sensor {
+	compatible = "oculus,cem43-pseudo-sensor";
+	#thermal-sensor-cells = <0>;
+
+	/* Input thermal zone to monitor */
+	input-thermal-zone = "skin-usr";
+	input-scaling-factor = <1>;
+
+	/* CEM43 configuration */
+	cem-horizon-minutes = <180>;
+	cem-target-mdeg = <43000>;
+	projection-seconds = <300>;
+
+	/* Averaging configuration */
+	averaging-delay = <100>;
+	averaging-count = <10>;
+
+	/* Fault detection - mark as faulty if outside 0-127°C range */
+	thermal-zone-fault-estimator-bounds = <0 127000>;
+};

@@ -298,6 +298,13 @@ static uint32_t *cam_ope_bus_rd_update(struct ope_hw *ope_hw_info,
 			header_size = cdm_ops->cdm_get_cmd_header_size(
 				CAM_CDM_CMD_REG_RANDOM);
 			idx = io_port_cdm->num_s_cmd_bufs[l];
+			if (idx >= MAX_RD_CLIENTS) {
+				CAM_ERR(CAM_OPE,
+					"OOB: num_s_cmd_bufs[%d]=%d >= MAX_RD_CLIENTS=%d, "
+					"batch:%d io_idx:%d plane:%d",
+					l, idx, MAX_RD_CLIENTS, batch_idx, io_idx, k);
+				return NULL;
+			}
 			io_port_cdm->s_cdm_info[l][idx].len = sizeof(temp) *
 				(count + header_size);
 			io_port_cdm->s_cdm_info[l][idx].offset =
