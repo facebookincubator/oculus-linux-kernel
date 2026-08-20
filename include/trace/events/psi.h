@@ -4,6 +4,7 @@
  */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM psi
+#undef TRACE_INCLUDE_PATH
 
 #if !defined(_TRACE_PSI_H) || defined(TRACE_HEADER_MULTI_READ)
 #define _TRACE_PSI_H
@@ -64,6 +65,44 @@ TRACE_EVENT(psi_event,
 	TP_printk("State: %d Threshold: %#llu ns",
 		__entry->state, __entry->threshold
 	)
+);
+
+TRACE_EVENT(psi_memstall_enter,
+
+	TP_PROTO(struct task_struct *task),
+
+	TP_ARGS(task),
+
+	TP_STRUCT__entry(
+		__field(pid_t, pid)
+		__field(pid_t, tgid)
+	),
+
+	TP_fast_assign(
+		__entry->pid = task->pid;
+		__entry->tgid = task->tgid;
+	),
+
+	TP_printk("pid=%d tgid=%d", __entry->pid, __entry->tgid)
+);
+
+TRACE_EVENT(psi_memstall_leave,
+
+	TP_PROTO(struct task_struct *task),
+
+	TP_ARGS(task),
+
+	TP_STRUCT__entry(
+		__field(pid_t, pid)
+		__field(pid_t, tgid)
+	),
+
+	TP_fast_assign(
+		__entry->pid = task->pid;
+		__entry->tgid = task->tgid;
+	),
+
+	TP_printk("pid=%d tgid=%d", __entry->pid, __entry->tgid)
 );
 
 #endif

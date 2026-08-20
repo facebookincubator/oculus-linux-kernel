@@ -405,7 +405,7 @@ static void parse_connected_devices(struct charging_dock_device_t *ddev, const u
 		return;
 	}
 	port_num = (vdos[0] >> 24) & 0xFF;
-	if (port_num < 0 || port_num > 4) {
+	if (port_num < 0 || port_num >= NUM_CHARGING_DOCK_PORTS) {
 		dev_err(ddev->dev, "Error parsing connected devices message: invalid port_num: %d", port_num);
 		return;
 	}
@@ -1371,8 +1371,18 @@ static ssize_t switch_data_lanes_store(struct device *dev,
 		return -EINVAL;
 	}
 
-	charging_dock_queue_vdm_request(ddev, PARAMETER_TYPE_SWITCH_DATA_LANES, val, 1);
-	return count;
+	mutex_lock(&ddev->lock);
+	if (!ddev->docked) {
+		mutex_unlock(&ddev->lock);
+		return -ENODEV;
+	}
+
+	if (ddev->current_pid == VDM_PID_NIKU)
+		rc = charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_SWITCH_DATA_LANES, val, 1);
+
+	mutex_unlock(&ddev->lock);
+
+	return rc ? rc : count;
 }
 static DEVICE_ATTR_WO(switch_data_lanes);
 

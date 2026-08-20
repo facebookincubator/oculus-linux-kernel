@@ -7,6 +7,15 @@ static int fastpath_transfer_one_message(struct spi_master *master,
 	struct spi_transfer *xfer;
 	int ret = 0;
 
+	if (!master->transfer_one && !master->transfer_one_message) {
+		dev_err(&msg->spi->dev,
+			"SPI fastpath: controller has no transfer_one or transfer_one_message\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (!master->transfer_one)
+		return master->transfer_one_message(master, msg);
+
 	list_for_each_entry(xfer, &msg->transfers, transfer_list) {
 		ret = master->transfer_one(master, msg->spi, xfer);
 		if (ret < 0) {

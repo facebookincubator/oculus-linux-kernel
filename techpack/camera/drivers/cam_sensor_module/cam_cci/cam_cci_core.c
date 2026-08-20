@@ -7,6 +7,7 @@
 #include <linux/module.h>
 #include "cam_cci_core.h"
 #include "cam_cci_dev.h"
+#include "cam_cci_api.h"
 #include "cam_req_mgr_worker_wrapper.h"
 #include "cam_common_util.h"
 
@@ -645,9 +646,15 @@ static int32_t cam_cci_set_clk_param(struct cci_device *cci_dev,
 	enum cci_i2c_master_t master = c_ctrl->cci_info->cci_i2c_master;
 	enum i2c_freq_mode i2c_freq_mode = c_ctrl->cci_info->i2c_freq_mode;
 	void __iomem *base = cci_dev->soc_info.reg_map[0].mem_base;
-	struct cam_cci_master_info *cci_master =
-		&cci_dev->cci_master_info[master];
+	struct cam_cci_master_info *cci_master = NULL;
 
+	if (master >= MASTER_MAX) {
+		CAM_ERR(CAM_CCI, "CCI%d Invalid I2C master: %d",
+			cci_dev->soc_info.index, master);
+		return -EINVAL;
+	}
+
+	cci_master = &cci_dev->cci_master_info[master];
 	if ((i2c_freq_mode >= I2C_MAX_MODES) || (i2c_freq_mode < 0)) {
 		CAM_ERR(CAM_CCI, "CCI%d_I2C_M%d invalid i2c_freq_mode = %d",
 			cci_dev->soc_info.index, master, i2c_freq_mode);
@@ -1181,7 +1188,7 @@ read_again:
 				} else {
 					read_cfg->data[index] =
 						(val  >> (i * 8)) & 0xFF;
-					CAM_DBG(CAM_CCI, "CCI%d_I2C_M%d_Q%d data[%d] 0x%x", 
+					CAM_DBG(CAM_CCI, "CCI%d_I2C_M%d_Q%d data[%d] 0x%x",
 						cci_dev->soc_info.index, master, queue, index, read_cfg->data[index]);
 					index++;
 				}
@@ -1973,6 +1980,33 @@ int32_t cam_cci_core_cfg(struct v4l2_subdev *sd,
 	}
 
 	cci_ctrl->status = rc;
+
+	return rc;
+}
+
+int32_t cam_cci_client_ops(struct v4l2_subdev *sd, unsigned int cmd,
+	struct cam_cci_ctrl *cci_ctrl)
+{
+	int32_t rc = 0;
+
+	if (!sd) {
+		CAM_ERR(CAM_CCI, "Invalid subdev pointer");
+		return -EINVAL;
+	}
+
+	if (!cci_ctrl) {
+		CAM_ERR(CAM_CCI, "Invalid cci_ctrl pointer");
+		return -EINVAL;
+	}
+
+	switch (cmd) {
+	case VIDIOC_MSM_CCI_CFG:
+		rc = cam_cci_core_cfg(sd, cci_ctrl);
+		break;
+	default:
+		CAM_ERR(CAM_CCI, "Invalid cmd: %u", cmd);
+		rc = -EINVAL;
+	}
 
 	return rc;
 }

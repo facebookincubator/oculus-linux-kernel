@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/module.h>
@@ -154,7 +154,7 @@ static int cam_fd_mgr_util_get_ctx(
 
 static int cam_fd_mgr_util_put_frame_req(
 	struct list_head *src_list,
-	struct cam_fd_mgr_frame_request **frame_req)
+	struct cam_fd_mgr_frame_request **frame_req, bool free_buffer)
 {
 	int rc = 0;
 	struct cam_fd_mgr_frame_request *req_ptr = NULL;
@@ -162,6 +162,9 @@ static int cam_fd_mgr_util_put_frame_req(
 	mutex_lock(&g_fd_hw_mgr.frame_req_mutex);
 	req_ptr = *frame_req;
 	if (req_ptr) {
+		if (free_buffer)
+			cam_mem_put_cpu_buf(req_ptr->hw_update_entries[0].handle);
+
 		list_del_init(&req_ptr->list);
 		list_add_tail(&req_ptr->list, src_list);
 	}
@@ -913,7 +916,7 @@ static int cam_fd_mgr_util_submit_frame(void *priv, void *data)
 
 	list_del_init(&frame_req->list);
 	hw_mgr->num_pending_frames--;
-	list_add_tail(&frame_req->list, &hw_mgr->frame_processing_list);
+	cam_fd_mgr_util_put_frame_req(&hw_mgr->frame_processing_list, &frame_req, true);
 
 	if (hw_device->hw_intf->hw_ops.start) {
 		start_args.hw_ctx = hw_ctx;
@@ -950,7 +953,7 @@ static int cam_fd_mgr_util_submit_frame(void *priv, void *data)
 
 	return rc;
 put_req_into_free_list:
-	cam_fd_mgr_util_put_frame_req(&hw_mgr->frame_free_list, &frame_req);
+	cam_fd_mgr_util_put_frame_req(&hw_mgr->frame_free_list, &frame_req, true);
 
 	return rc;
 }
@@ -1095,7 +1098,7 @@ notify_context:
 
 put_req_in_free_list:
 	rc = cam_fd_mgr_util_put_frame_req(&hw_mgr->frame_free_list,
-		&frame_req);
+		&frame_req, true);
 	if (rc) {
 		CAM_ERR(CAM_FD, "Failed in putting frame req in free list");
 		/* continue */
@@ -1444,7 +1447,7 @@ unlock_dev_flush_req:
 		flush_req = (struct cam_fd_mgr_frame_request *)
 			flush_args->flush_req_pending[i];
 		cam_fd_mgr_util_put_frame_req(&hw_mgr->frame_free_list,
-			&flush_req);
+			&flush_req, true);
 	}
 
 	return rc;
@@ -1529,7 +1532,7 @@ unlock_dev_flush_ctx:
 		CAM_DBG(CAM_FD, "flush pending req %llu",
 			flush_req->request_id);
 		cam_fd_mgr_util_put_frame_req(&hw_mgr->frame_free_list,
-			&flush_req);
+			&flush_req, true);
 	}
 
 	for (i = 0; i < flush_args->num_req_active; i++) {
@@ -1537,7 +1540,7 @@ unlock_dev_flush_ctx:
 			flush_args->flush_req_active[i];
 		CAM_DBG(CAM_FD, "flush active req %llu", flush_req->request_id);
 		cam_fd_mgr_util_put_frame_req(&hw_mgr->frame_free_list,
-			&flush_req);
+			&flush_req, true);
 	}
 
 	return rc;
@@ -1920,11 +1923,11 @@ static int cam_fd_mgr_hw_config(void *hw_mgr_priv, void *hw_config_args)
 	if (hw_ctx->priority == CAM_FD_PRIORITY_HIGH) {
 		CAM_DBG(CAM_FD, "Insert frame into prio0 queue");
 		rc = cam_fd_mgr_util_put_frame_req(
-			&hw_mgr->frame_pending_list_high, &frame_req);
+			&hw_mgr->frame_pending_list_high, &frame_req, false);
 	} else {
 		CAM_DBG(CAM_FD, "Insert frame into prio1 queue");
 		rc = cam_fd_mgr_util_put_frame_req(
-			&hw_mgr->frame_pending_list_normal, &frame_req);
+			&hw_mgr->frame_pending_list_normal, &frame_req, false);
 	}
 	if (rc) {
 		CAM_ERR(CAM_FD, "Failed in queuing frame req, rc=%d", rc);
@@ -1963,7 +1966,7 @@ remove_and_put_free_list:
 	mutex_unlock(&g_fd_hw_mgr.frame_req_mutex);
 put_free_list:
 	cam_fd_mgr_util_put_frame_req(&hw_mgr->frame_free_list,
-		&frame_req);
+		&frame_req, true);
 
 	return rc;
 }
