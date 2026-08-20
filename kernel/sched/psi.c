@@ -939,6 +939,9 @@ void psi_memstall_enter(unsigned long *flags)
 	*flags = current->flags & PF_MEMSTALL;
 	if (*flags)
 		return;
+
+	trace_psi_memstall_enter(current);
+
 	/*
 	 * PF_MEMSTALL setting & accounting needs to be atomic wrt
 	 * changes to the task's scheduling state, otherwise we can
@@ -968,6 +971,9 @@ void psi_memstall_leave(unsigned long *flags)
 
 	if (*flags)
 		return;
+
+	trace_psi_memstall_leave(current);
+
 	/*
 	 * PF_MEMSTALL clearing & accounting needs to be atomic wrt
 	 * changes to the task's scheduling state, otherwise we could

@@ -150,6 +150,29 @@ static bool is_charging(struct power_supply *batt_psy)
 			batt_val.intval > 0;
 }
 
+static struct vs_charge_cache {
+	atomic64_t sampled; /* boottime of last sample; 0 = never sampled */
+	atomic_t charging;
+} vs_charge = {
+	.sampled = ATOMIC64_INIT(0),
+	.charging = ATOMIC_INIT(0),
+};
+
+static bool vs_get_charging(struct power_supply *batt_psy)
+{
+	ktime_t now = ktime_get_boottime();
+	ktime_t last = atomic64_read(&vs_charge.sampled);
+
+	/* Only the CPU that wins the gate does the GLINK read; concurrent stale
+	 * callers fall through to the cached value, so the charger sees ~1 read/sec.
+	 */
+	if ((!last || ktime_ms_delta(now, last) >= MSEC_PER_SEC) &&
+	    atomic64_cmpxchg(&vs_charge.sampled, last, now) == last)
+		atomic_set(&vs_charge.charging, is_charging(batt_psy));
+
+	return atomic_read(&vs_charge.charging);
+}
+
 static int virtual_sensor_thermal_zone_get_temp_scaled(
 		struct thermal_zone_device *tzd, int scaling_factor, int *temp)
 {
@@ -442,7 +465,7 @@ static int virtual_sensor_get_temp(void *data, int *temperature)
 	if (!vs->batt_psy)
 		vs->batt_psy = power_supply_get_by_name("battery");
 
-	charging = is_charging(vs->batt_psy);
+	charging = vs_get_charging(vs->batt_psy);
 
 	if (!temperature)
 		return -EINVAL;
