@@ -391,9 +391,11 @@ void _cleanup_srcu_struct(struct srcu_struct *sp, bool quiesced)
 			flush_delayed_work(&per_cpu_ptr(sp->sda, cpu)->work);
 		}
 	if (WARN_ON(rcu_seq_state(READ_ONCE(sp->srcu_gp_seq)) != SRCU_STATE_IDLE) ||
+	    WARN_ON(rcu_seq_current(&sp->srcu_gp_seq) != sp->srcu_gp_seq_needed) ||
 	    WARN_ON(srcu_readers_active(sp))) {
-		pr_info("%s: Active srcu_struct %p state: %d\n",
-			__func__, sp, rcu_seq_state(READ_ONCE(sp->srcu_gp_seq)));
+		pr_info("%s: Active srcu_struct %p read state: %d gp state: %lu/%lu\n",
+			__func__, sp, rcu_seq_state(READ_ONCE(sp->srcu_gp_seq)),
+			rcu_seq_current(&sp->srcu_gp_seq), sp->srcu_gp_seq_needed);
 		return; /* Caller forgot to stop doing call_srcu()? */
 	}
 	free_percpu(sp->sda);

@@ -42,6 +42,16 @@ config CAM_FSYNC
 	help
 	  Enable Camera FSYNC Timestamp driver
 
+config CEM43_PSEUDO_SENSOR
+	tristate "CEM43 Pseudo-Sensor Driver"
+	default n
+	depends on THERMAL
+	help
+	  This driver computes the cumulative CEM43 (Cumulative Equivalent
+	  Minutes at 43 C) thermal dose of a single input thermal zone and
+	  reports the accumulated dose over the rolling horizon, in 1/1000s of a
+	  minute, as a pseudo-temperature through the thermal framework.
+
 config CHARGER_CYPD3177
 	tristate "CONFIG_CYPD3177 support"
 	default n
@@ -53,16 +63,6 @@ config CHARGER_CYPD3177
 	  care of PD contract negotiation and advertises state changes via GPIO
 	  interrupts.
 
-config CHARGER_TPS25751
-	tristate "TI TPS25751 USB Power Delivery controller driver"
-	default n
-	depends on I2C
-	help
-	  Say Y or M here if your system has TI TPS25751 USB Power
-	  Delivery controller.
-	  If you choose to build this driver as a dynamically linked module, the
-	  module will be called tps25751.ko.
-
 config CHARGING_THERMAL_CONTROLLER
 	tristate "Charging Thermal Controller Driver"
 	default n
@@ -72,17 +72,6 @@ config CHARGING_THERMAL_CONTROLLER
 	  associated with a cooling device are passed. There are three states:
 	  0 normal, 1 reduce charging, and 2 suspend charging. The votes cast at
 	  these levels are also device tree defined.
-
-config DMABUF_REORDER
-	tristate "DMA-buf scatterlist region reorder"
-	depends on QCOM_MEM_BUF
-	default n
-	help
-	  Loadable module that creates a new dma-buf from an existing one
-	  with reordered scatterlist page mappings. Exposes /dev/dmabuf_reorder
-	  with a single ioctl. Designed for UBWC buffers where Vulkan produces
-	  pixels-first layout but Venus codec expects metadata-first.
-	  Zero-copy — same physical pages, different sg_table ordering.
 
 config CYPD_POLICY_ENGINE
 	tristate "Cypress Power Delivery Policy Engine"
@@ -95,6 +84,17 @@ config CYPD_POLICY_ENGINE
 	  defaulting to sink only mode. This driver depends on a CYPD 3177
 	  controller device driver in order to transmit and receive PD messages
 	  on its behalf.
+
+config DMABUF_REORDER
+	tristate "DMA-buf scatterlist region reorder"
+	depends on QCOM_MEM_BUF
+	default n
+	help
+	  Loadable module that creates a new dma-buf from an existing one
+	  with reordered scatterlist page mappings. Exposes /dev/dmabuf_reorder
+	  with a single ioctl. Designed for UBWC buffers where Vulkan produces
+	  pixels-first layout but Venus codec expects metadata-first.
+	  Zero-copy — same physical pages, different sg_table ordering.
 
 config FAULT_INJECTOR
 	tristate "Fault injector test driver"

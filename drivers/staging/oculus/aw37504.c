@@ -366,15 +366,6 @@ static int aw37504_probe(struct i2c_client *i2c,
 	voltage_uV = init_data->constraints.min_uV;
 	voltage_val = get_voltage_reg_val(voltage_uV);
 
-	/* Open write protection */
-	rc = write_reg(aw_dev, WPRTEN_REG, WPRTEN_OPEN_VAL);
-	if (rc < 0) {
-		dev_err(&i2c->dev,
-			"%s: Failed to open write protection\n",
-			__func__);
-		return rc;
-	}
-
 	/* Set positive voltage (VOUTP) */
 	rc = write_reg(aw_dev, VOUTP_REG, voltage_val);
 	if (rc < 0) {
@@ -397,6 +388,20 @@ static int aw37504_probe(struct i2c_client *i2c,
 			"Fixed voltage set to +/-%duV (reg=0x%02x)\n",
 			voltage_uV, voltage_val);
 
+	rc = write_reg(aw_dev, APPS_REG, APPS_VAL);
+	if (rc < 0) {
+		dev_err(&aw_dev->i2c->dev,
+			"%s: Failed to set the current load, ret=%d",
+			__func__, rc);
+		return rc;
+	}
+	rc = write_reg(aw_dev, CTRL_REG, 0x09);
+	if (rc < 0) {
+		dev_err(&aw_dev->i2c->dev,
+			"%s: Failed to set the current load, ret=%d",
+			__func__, rc);
+		return rc;
+	}
 
 	return 0;
 }

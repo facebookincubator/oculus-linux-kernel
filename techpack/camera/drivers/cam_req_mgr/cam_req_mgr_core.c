@@ -2053,8 +2053,16 @@ error:
 static void __cam_req_mgr_free_link(struct cam_req_mgr_core_link *link)
 {
 	ptrdiff_t i;
+
+	/*
+	 * Acquire link->lock to synchronize with cam_req_mgr_cb_add_req()
+	 * and prevent TOCTOU race when freeing in_q
+	 */
+	mutex_lock(&link->lock);
 	kfree(link->req.in_q);
 	link->req.in_q = NULL;
+	mutex_unlock(&link->lock);
+
 	i = link - g_links;
 	CAM_DBG(CAM_CRM, "free link index %d", i);
 	cam_req_mgr_core_link_reset(link);
@@ -2734,6 +2742,15 @@ static int cam_req_mgr_cb_add_req(struct cam_req_mgr_add_request *add_req)
 		goto end;
 	}
 	spin_unlock_bh(&link->link_state_spin_lock);
+
+	/*
+	 * UAF mitigation: Check if in_q was freed
+	 */
+	if (!link->req.in_q) {
+		CAM_ERR(CAM_CRM, "in_q freed for link %x", add_req->link_hdl);
+		mutex_unlock(&link->lock);
+		return -EINVAL;
+	}
 
 	/* Validate if req id is present in input queue */
 	idx = __cam_req_mgr_find_slot_for_req(link->req.in_q, add_req->req_id);

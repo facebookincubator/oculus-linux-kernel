@@ -59,6 +59,7 @@ int dyn_event_release(int argc, char **argv, struct dyn_event_operations *type)
 			break;
 		}
 	}
+	tracing_reset_all_online_cpus();
 	mutex_unlock(&event_mutex);
 
 	return ret;
@@ -154,6 +155,7 @@ int dyn_events_release_all(struct dyn_event_operations *type)
 			break;
 	}
 out:
+	tracing_reset_all_online_cpus();
 	mutex_unlock(&event_mutex);
 
 	return ret;
