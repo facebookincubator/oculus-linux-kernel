@@ -272,6 +272,8 @@ static void charging_dock_usbvdm_disconnect(struct usbvdm_subscription *sub)
 	ddev->docked = false;
 	ddev->current_svid = 0;
 	ddev->current_pid = 0;
+	ddev->gathering_log = false;
+	ddev->log_chunk_num = 0;
 	memset(&ddev->params, 0, sizeof(ddev->params));
 	mutex_unlock(&ddev->lock);
 
@@ -450,8 +452,8 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 	u32 attn_param, attn_param_data;
 	bool acked;
 	int log_chunk_size;
-	int log_chunk_offset;
-	int new_log_size;
+	size_t log_chunk_offset;
+	u32 new_log_size;
 
 	dev_dbg(ddev->dev,
 		"enter: vdm_hdr=0x%x, vdos?=%d, num_vdos=%d\n",
@@ -572,7 +574,7 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 		new_log_size = vdos[0];
 		if (new_log_size > MAX_LOG_SIZE) {
 			dev_err(ddev->dev,
-					"Error: log size is greater than 4KB: %d\n",
+					"Error: log size is greater than 4KB: %u\n",
 					new_log_size);
 			break;
 		}
@@ -584,6 +586,10 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 			break;
 
 		/* Reset to start receiving new log */
+		ddev->gathering_log = false;
+		ddev->log_chunk_num = 0;
+		ddev->params.log_size = 0;
+
 		if (ddev->log)
 			devm_kfree(ddev->dev, ddev->log);
 		ddev->log = NULL;
@@ -594,15 +600,20 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 
 		ddev->params.log_size = new_log_size;
 		ddev->gathering_log = true;
-		ddev->log_chunk_num = 0;
 		break;
 	case PARAMETER_TYPE_LOG_CHUNK:
-		if (!ddev->gathering_log) {
+		if (!ddev->gathering_log || !ddev->log) {
 			dev_err(ddev->dev,
 					"Error: log chunk received, but gathering_log is false\n");
 			break;
 		}
-		log_chunk_offset = ddev->log_chunk_num * MAX_VDO_SIZE;
+		log_chunk_offset = (size_t)ddev->log_chunk_num * MAX_VDO_SIZE;
+		if (log_chunk_offset >= ddev->params.log_size) {
+			ddev->gathering_log = false;
+			dev_err(ddev->dev, "Error: invalid log chunk offset %zu for log size %zu\n",
+				log_chunk_offset, ddev->params.log_size);
+			break;
+		}
 		if (ddev->params.log_size - log_chunk_offset <= MAX_VDO_SIZE) {
 			/* last log chunk */
 			log_chunk_size = ddev->params.log_size - log_chunk_offset;
