@@ -2376,7 +2376,7 @@ msm_camera_get_power_settings(struct cam_sensor_power_ctrl_t *ctrl,
 int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 		struct cam_hw_soc_info *soc_info)
 {
-	int index = 0, ret = 0, num_vreg = 0, i;
+	int index = 0, ret = 0, rc = 0, num_vreg = 0, i;
 	struct cam_sensor_power_setting *pd = NULL;
 	struct cam_sensor_power_setting *ps = NULL;
 	struct msm_camera_gpio_num_info *gpio_num_info = NULL;
@@ -2392,13 +2392,15 @@ int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 
 	if ((num_vreg <= 0) || (num_vreg > CAM_SOC_MAX_REGULATOR)) {
 		CAM_ERR(CAM_SENSOR, "failed: num_vreg %d", num_vreg);
-		return -EINVAL;
+		rc = -EINVAL;
+		goto free_gpio_table;
 	}
 
 	if (ctrl->power_down_setting_size > MAX_POWER_CONFIG) {
 		CAM_ERR(CAM_SENSOR, "Invalid: power setting size %d",
 			ctrl->power_setting_size);
-		return -EINVAL;
+		rc = -EINVAL;
+		goto free_gpio_table;
 	}
 
 	for (index = 0; index < ctrl->power_down_setting_size; index++) {
@@ -2408,7 +2410,8 @@ int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 			CAM_ERR(CAM_SENSOR,
 				"Invalid power down settings for index %d",
 				index);
-			return -EINVAL;
+			rc = -EINVAL;
+			goto free_gpio_table;
 		}
 
 		ps = NULL;
@@ -2431,7 +2434,8 @@ int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 		case SENSOR_CUSTOM_GPIO1:
 		case SENSOR_CUSTOM_GPIO2:
 
-			if (!gpio_num_info->valid[pd->seq_type])
+			if (!gpio_num_info ||
+				!gpio_num_info->valid[pd->seq_type])
 				continue;
 
 			if (ctrl->always_on &&
@@ -2537,8 +2541,16 @@ int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 		devm_pinctrl_put(ctrl->pinctrl_info.pinctrl);
 	}
 
+free_gpio_table:
+	/*
+	 * Always release the GPIO table, including on the error paths above.
+	 * Otherwise the camera GPIOs (e.g. CAM_RESET0 / CAMIF_MCLK1) stay
+	 * FLAG_REQUESTED and the next session's gpio_request_one() fails with
+	 * -EBUSY, which leaves the sensor unreset/unclocked and makes the
+	 * subsequent CCI read NACK. rc is 0 on the happy fall-through path.
+	 */
 	cam_sensor_util_request_gpio_table(soc_info, 0);
 	ctrl->cam_pinctrl_status = 0;
 
-	return 0;
+	return rc;
 }

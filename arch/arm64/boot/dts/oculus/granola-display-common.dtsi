@@ -14,6 +14,7 @@
 		regulator-name = "pmicDA9172";
 		reg = <0x6A>;
 		#thermal-sensor-cells = <0>;
+		meta,pwr-state-timeout-us = <400000>;
 		status = "okay";
 	};
 

@@ -17,18 +17,28 @@
 		gpio-controller;
 		#gpio-cells = <2>;
 		gpio-line-names = "fem_fpwm_sel", "power_switch_en", "bat_boost_en", "reserve";
-		/* Configure SEL_FEM_FPWM-Pin0 and POWER_SWITCH_EN-Pin1 as as output */
-		enable-output = <0x03>;
-		/* Initialize SEL_FEM_FPWM to low state, POWER_SWITCH_EN to high state */
-		initial-state = <0x02>;
+		/* Configure SEL_FEM_FPWM-Pin0 as output */
+		enable-output = <0x01>;
+		/* Initialize SEL_FEM_FPWM to low state for TPS62802 work as FPWM */
+		initial-state = <0x00>;
 		status = "ok";
 	};
 
 	tlv61290: tlv61290@75 {
 		compatible = "ti, tlv61290";
 		reg = <0x75>;
+		regulator-name = "tlv61290-boost";
 		boost-en-gpios = <&tca9536 2 GPIO_ACTIVE_HIGH>;
-		regulator-always-on;
 		status = "ok";
+	};
+};
+
+&soc {
+	bbc_ctrl_granola: bbc_ctrl_granola {
+		compatible = "meta,bbc-ctrl-granola";
+		boost-supply = <&tlv61290>;
+		boost-voutroof-th-uv = <3500000>;
+		extcon = <&max77789>;
+		status = "okay";
 	};
 };

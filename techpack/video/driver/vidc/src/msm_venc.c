@@ -837,12 +837,37 @@ void msm_vidc_allocation_handler(struct work_struct *work)
 		goto error;
 	}
 
+	if (!inst->once_per_session_set) {
+		inst->once_per_session_set = true;
+		rc = msm_vidc_session_set_codec(inst);
+		if (rc)
+			goto error;
+
+		rc = msm_vidc_session_set_secure_mode(inst);
+		if (rc)
+			goto error;
+		rc = msm_vidc_alloc_and_queue_session_internal_buffers(inst,
+			MSM_VIDC_BUF_ARP);
+		if (rc)
+			goto error;
+	}
+
+	rc = msm_venc_get_input_internal_buffers(inst);
+	if (rc)
+		goto error;
+
+	rc = msm_venc_create_input_internal_buffers(inst);
+	if (rc)
+		goto error;
+
 	rc = msm_vidc_adjust_v4l2_properties(inst);
 	if (rc)
 		goto error;
+
 	rc = msm_venc_get_output_internal_buffers(inst);
 	if (rc)
 		goto error;
+
 	rc = msm_venc_create_output_internal_buffers(inst);
 	if (rc)
 		goto error;
@@ -882,6 +907,7 @@ int msm_venc_process_allocation_job(struct msm_vidc_inst *inst)
 int msm_venc_streamon_input(struct msm_vidc_inst *inst)
 {
 	int rc = 0;
+	bool alloc_mode = false;
 
 	if (!inst || !inst->core || !inst->capabilities) {
 		d_vpr_e("%s: invalid params\n", __func__);
@@ -911,13 +937,25 @@ int msm_venc_streamon_input(struct msm_vidc_inst *inst)
 	/* Decide bse vpp delay after work mode */
 	//msm_vidc_set_bse_vpp_delay(inst);
 
-	rc = msm_venc_get_input_internal_buffers(inst);
-	if (rc)
-		goto error;
+	alloc_mode = is_internal_alloc_enabled(inst);
+	if (alloc_mode) {
+		if (!inst->alloc_status) {
+			i_vpr_e(inst,
+				"%s: internal buffer allocation incomplete\n", __func__);
+			rc = -EINVAL;
+			goto error;
+		}
+		i_vpr_h(inst,
+			"%s: internal buffer allocation successful\n", __func__);
+	} else {
+		rc = msm_venc_get_input_internal_buffers(inst);
+		if (rc)
+			goto error;
 
-	rc = msm_venc_create_input_internal_buffers(inst);
-	if (rc)
-		goto error;
+		rc = msm_venc_create_input_internal_buffers(inst);
+		if (rc)
+			goto error;
+	}
 
 	rc = msm_venc_queue_input_internal_buffers(inst);
 	if (rc)

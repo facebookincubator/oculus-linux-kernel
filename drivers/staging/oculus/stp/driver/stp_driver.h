@@ -10,4 +10,7 @@
 int register_spi_stp_notifier(struct notifier_block *nb);
 void unregister_spi_stp_notifier(struct notifier_block *nb);
 
+/* Log the SPI STP driver doorbell/handshake state for debugging. */
+void stp_dump_driver_state(const char *reason);
+
 #endif

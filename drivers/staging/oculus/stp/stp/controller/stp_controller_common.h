@@ -46,6 +46,17 @@ struct stp_type {
 	// current state of STP
 	_Atomic uint32_t state;
 
+	/* The last INIT<->DATA flip and the one before it. A dump showing INIT
+	 * is only actionable with the time the link left DATA, and the gap
+	 * between the two stamps is how long the previous state lasted.
+	 * Unlocked and best effort: the STP thread and the driver thread (via
+	 * stp_controller_request_protocol_resync) can both reach it.
+	 */
+	uint32_t sync_current_state;
+	uint64_t sync_current_ns;
+	uint32_t sync_previous_state;
+	uint64_t sync_previous_ns;
+
 	void (*callback_client)(int event);
 
 	STP_LOCK_TYPE lock_notification;
@@ -68,6 +79,12 @@ struct stp_type {
 	_Atomic uint32_t prev_channels_status;
 
 	uint32_t last_tx_notification;
+
+	// Debug bookkeeping for sync diagnosis (T278968653): monotonic count of
+	// SPI transactions issued, and the opcode/CRC of the last packet received.
+	uint32_t transaction_count;
+	uint8_t last_rx_opcode;
+	bool last_rx_crc_ok;
 
 	/** Channel used to carry timstamping info. */
 	uint8_t time_channel;
@@ -127,8 +144,6 @@ void stp_controller_invalidate_channel(uint8_t channel);
 void stp_controller_invalidate_session(void);
 
 bool stp_controller_has_data_to_send(void);
-
-extern uint32_t stp_mcu_ready_timer_expired_irq_missed_counter;
 
 bool stp_controller_is_channel_valid(uint8_t channel);
 

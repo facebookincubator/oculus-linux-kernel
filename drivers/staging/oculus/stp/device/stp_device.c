@@ -301,12 +301,19 @@ static void stp_wait_and_set_channel_inuse(struct stp_device_channel *const chan
 	trace_stp_channel_set_inuse(channel->channel, count);
 }
 
-void stp_dump_channel_state(void)
+void stp_dump_channel_state(const char *reason)
 {
-	uint32_t synced = 0;
+	uint32_t synced = 0, channels_status = 0, service_interruption = 0;
 
 	stp_controller_get_attribute(STP_ATTRIB_SYNCED, &synced);
-	pr_err("[STPDump] STP channel dump before SPI owner switch (synced=%u):\n", synced);
+	stp_controller_get_attribute(STP_ATTRIB_CHANNELS_STATUS,
+				     &channels_status);
+	stp_controller_get_attribute(STP_ATTRIB_SERVICE_INTERRUPTION,
+				     &service_interruption);
+
+	pr_err("[STPDump] STP channel dump (%s) synced=%u channels_status=0x%x service_interruption=%u:\n",
+	       reason ? reason : "", synced, channels_status,
+	       service_interruption);
 
 	for (uint8_t i = 0; i < STP_DEV_CHANNEL_COUNT; i++) {
 		struct stp_device_channel *dc = _stp_device ?
@@ -347,6 +354,7 @@ void stp_dump_channel_state(void)
 		       mutex_is_locked(&dc->rx_lock));
 	}
 }
+EXPORT_SYMBOL(stp_dump_channel_state);
 
 static ssize_t stp_stats_show(struct device *dev, struct device_attribute *attr,
 			      char *buf)

@@ -265,6 +265,12 @@ int msm_vidc_start_streaming(struct vb2_queue *q, unsigned int count)
 		rc = msm_vidc_get_properties(inst);
 		if (rc)
 			goto error;
+
+		if (is_encode_session(inst) && is_internal_alloc_enabled(inst) &&
+			inst->alloc_status) {
+			msm_vidc_update_cap_value(inst, ALLOC_INTERNAL, 0, __func__);
+			inst->alloc_status = false;
+		}
 	}
 
 	i_vpr_h(inst, "Streamon: %s successful\n", v4l2_type_name(q->type));

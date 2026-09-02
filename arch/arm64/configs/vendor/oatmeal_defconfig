@@ -1,1 +1,17 @@
 CONFIG_META_OATMEAL=y
+
+# BoB regulator
+CONFIG_REGULATOR_MP28167=y
+
+# USB PD and CC detection (NFF0)
+CONFIG_STUSB4500_USB=y
+
+# USB PD and CC detection (P0)
+CONFIG_EXTCON_PTN5150=y
+
+# GPIO expander for boost circuit
+CONFIG_GPIO_PCA953X=y
+
+# Boost driver for boost circuit
+CONFIG_BBC_CTRL=y
+CONFIG_TPS61280=y

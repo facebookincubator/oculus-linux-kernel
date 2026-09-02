@@ -43,3 +43,13 @@
 		input-enable;
 	};
 };
+
+&thermal_zones {
+	hw-vchg-comparator {
+		status = "disabled";
+	};
+};
+
+&hw_vchg_comparator_sensor {
+	status = "disabled";
+};

@@ -354,6 +354,61 @@ int32_t stp_controller_get_attribute(uint32_t attribute, void *param)
 	return ret;
 }
 
+static const char *stp_state_name(uint32_t state)
+{
+	return state == STP_STATE_INIT ? "INIT" :
+	       (state == STP_STATE_DATA ? "DATA" : "UNKNOWN");
+}
+
+void stp_dump_controller_state(const char *reason)
+{
+	struct stp_type *c = _stp_controller_data;
+	uint32_t state;
+
+	if (!c) {
+		STP_LOG_ERROR("[STPDump] controller (%s): not initialized",
+			      reason ? reason : "");
+		return;
+	}
+
+	state = c->state;
+	STP_LOG_ERROR(
+		"[STPDump] controller (%s): state=0x%x(%s) start_txn=%d stop_thread=%d suspend=%d svc_intr=%d pending_dev_ready=%d",
+		reason ? reason : "", state,
+		state == STP_STATE_INIT ? "INIT" :
+			(state == STP_STATE_DATA ? "DATA" : "UNKNOWN"),
+		c->start_transaction, c->stop_thread, c->suspend,
+		c->service_interruption, c->pending_device_ready_signal);
+
+	STP_LOG_ERROR(
+		"[STPDump] controller (%s): dev_ch_status=0x%x prev_dev_ch_status=0x%x prev_ch_status=0x%x last_tx_noti=0x%x pending{tx.sent=%d tx.ch=%u tx_noti=0x%x} bad_crcs=%zu",
+		reason ? reason : "",
+		(uint32_t)c->device_channels_status,
+		(uint32_t)c->prev_device_channels_status,
+		(uint32_t)c->prev_channels_status, c->last_tx_notification,
+		c->pending.tx.sent, c->pending.tx.channel,
+		c->pending.tx_notification, c->bad_crcs_in_a_row);
+
+	STP_LOG_ERROR(
+		"[STPDump] controller (%s): txn_count=%u last_rx_opcode=%u last_rx_crc_ok=%d",
+		reason ? reason : "", c->transaction_count, c->last_rx_opcode,
+		c->last_rx_crc_ok);
+
+	/* at_ns is when the link flipped into that state, so current tells you
+	 * how long it has been stuck and previous what it flipped out of.
+	 */
+	STP_LOG_ERROR(
+		"[STPDump] controller (%s): sync{current=%s at_ns=%llu previous=%s at_ns=%llu}",
+		reason ? reason : "",
+		c->sync_current_state ?
+			stp_state_name(c->sync_current_state) : "NONE",
+		(unsigned long long)c->sync_current_ns,
+		c->sync_previous_state ?
+			stp_state_name(c->sync_previous_state) : "NONE",
+		(unsigned long long)c->sync_previous_ns);
+}
+EXPORT_SYMBOL(stp_dump_controller_state);
+
 /* Get channel attributes */
 int32_t stp_controller_get_channel_attribute(uint8_t channel,
 					     uint32_t attribute, void *param)

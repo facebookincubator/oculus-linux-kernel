@@ -14,6 +14,7 @@
 #include "msm_cooling_device.h"
 #include <linux/backlight.h>
 #include <linux/string.h>
+#include <linux/of.h>
 #include "dsi_drm.h"
 #include "dsi_display.h"
 #include "sde_crtc.h"
@@ -249,6 +250,10 @@ static int sde_backlight_setup(struct sde_connector *c_conn,
 
 	display = (struct dsi_display *) c_conn->display;
 	bl_config = &display->panel->bl_config;
+
+	if (of_property_read_bool(display->panel->panel_of_node,
+			"qcom,mdss-dsi-bl-skip-register"))
+		return 0;
 
 	if (bl_config->type != DSI_BACKLIGHT_DCS &&
 		sde_in_trusted_vm(sde_kms))

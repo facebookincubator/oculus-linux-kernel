@@ -3489,6 +3489,9 @@ error:
 static ssize_t dsi_host_transfer(struct mipi_dsi_host *host, const struct mipi_dsi_msg *msg)
 {
 	int rc = 0;
+#if IS_ENABLED(CONFIG_DRM_MSM_DSI_ENABLE_MIPI_DCS_READS)
+	struct dsi_display *display;
+#endif
 	struct dsi_cmd_desc cmd;
 
 	if (!msg) {
@@ -3496,12 +3499,21 @@ static ssize_t dsi_host_transfer(struct mipi_dsi_host *host, const struct mipi_d
 		return 0;
 	}
 
+#if IS_ENABLED(CONFIG_DRM_MSM_DSI_ENABLE_MIPI_DCS_READS)
+	display = to_dsi_display(host);
+#endif
+
 	memcpy(&cmd.msg, msg, sizeof(*msg));
 	cmd.ctrl = 0;
 	cmd.post_wait_ms = 0;
 	cmd.ctrl_flags = 0;
 
-	rc = dsi_host_transfer_sub(host, &cmd);
+#if IS_ENABLED(CONFIG_DRM_MSM_DSI_ENABLE_MIPI_DCS_READS)
+	if (msg->rx_buf && msg->rx_len)
+		rc = dsi_display_cmd_rx(display, &cmd);
+	else
+#endif
+		rc = dsi_host_transfer_sub(host, &cmd);
 
 	return rc;
 }

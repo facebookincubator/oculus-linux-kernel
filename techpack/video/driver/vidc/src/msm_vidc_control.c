@@ -1866,6 +1866,40 @@ int msm_vidc_adjust_peak_bitrate(void *instance, struct v4l2_ctrl *ctrl)
 	return 0;
 }
 
+int msm_vidc_adjust_avc_min_qp(void *instance, struct v4l2_ctrl *ctrl)
+{
+	int rc = 0;
+	struct msm_vidc_inst *inst = (struct msm_vidc_inst *) instance;
+
+	if (!inst || !inst->capabilities) {
+		d_vpr_e("%s: invalid params\n", __func__);
+		return -EINVAL;
+	}
+
+	if (ctrl)
+		msm_vidc_update_cap_value(inst, MIN_FRAME_QP,
+			ctrl->val, __func__);
+
+	return rc;
+}
+
+int msm_vidc_adjust_avc_max_qp(void *instance, struct v4l2_ctrl *ctrl)
+{
+	int rc = 0;
+	struct msm_vidc_inst *inst = (struct msm_vidc_inst *) instance;
+
+	if (!inst || !inst->capabilities) {
+		d_vpr_e("%s: invalid params\n", __func__);
+		return -EINVAL;
+	}
+
+	if (ctrl)
+		msm_vidc_update_cap_value(inst, MAX_FRAME_QP,
+			ctrl->val, __func__);
+
+	return rc;
+}
+
 int msm_vidc_adjust_hevc_min_qp(void *instance, struct v4l2_ctrl *ctrl)
 {
 	int rc = 0;

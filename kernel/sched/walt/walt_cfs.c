@@ -1381,6 +1381,45 @@ static void walt_cfs_replace_next_task_fair(void *unused, struct rq *rq, struct 
 	trace_walt_cfs_mvp_pick_next(mvp, wts, walt_cfs_mvp_task_limit(mvp));
 }
 
+/*
+ * Cap group entity vruntime to prevent stale penalties from starving the
+ * cgroup on re-enqueue. A group entity whose vruntime was inflated by a
+ * low-weight task (e.g., nice 19 at MIN_SHARES=2 giving 512x vruntime rate)
+ * carries a penalty that can starve the cgroup for 60-160ms.
+ *
+ * Only applied to group entities. Task vruntime reflects actual CPU
+ * consumption and should be preserved for intra-cgroup fairness.
+ *
+ * Scale the cap by cpu.shares: high-shares groups (>= 1024) get one
+ * sched_latency period of forgiveness; low-shares groups keep proportionally
+ * more of their accumulated penalty so they are not unfairly promoted.
+ */
+static void walt_place_entity(void *unused, struct cfs_rq *cfs_rq,
+			      struct sched_entity *se, int initial,
+			      u64 vruntime)
+{
+	unsigned long shares;
+	u64 ceiling_delta;
+	s64 delta;
+
+	if (initial || entity_is_task(se))
+		return;
+
+	delta = (s64)(se->vruntime - cfs_rq->min_vruntime);
+	if (delta <= 0)
+		return;
+
+	shares = READ_ONCE(se->my_q->tg->shares);
+
+	if (shares >= NICE_0_LOAD)
+		ceiling_delta = sysctl_sched_latency;
+	else
+		ceiling_delta = sysctl_sched_latency * NICE_0_LOAD / shares;
+
+	if ((u64)delta > ceiling_delta)
+		se->vruntime = cfs_rq->min_vruntime + ceiling_delta;
+}
+
 void walt_cfs_init(void)
 {
 	register_trace_android_rvh_select_task_rq_fair(walt_select_task_rq_fair, NULL);
@@ -1395,4 +1434,6 @@ void walt_cfs_init(void)
 	register_trace_android_rvh_replace_next_task_fair(walt_cfs_replace_next_task_fair, NULL);
 
 	register_trace_android_rvh_do_sched_yield(walt_cfs_mvp_do_sched_yield, NULL);
+
+	register_trace_android_rvh_place_entity(walt_place_entity, NULL);
 }

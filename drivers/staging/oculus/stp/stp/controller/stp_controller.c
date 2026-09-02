@@ -28,8 +28,6 @@
 /** If it's been more than this long since the controller_has_data was active, pulse it. */
 #define STP_CLOCK_PULSE_GPIO_THRESHOLD_NS 10000000ULL
 
-uint32_t stp_mcu_ready_timer_expired_irq_missed_counter;
-
 // singleton object containing all information
 static struct stp_type _stp_data_object;
 // pointer to singleton object
@@ -144,8 +142,6 @@ int32_t stp_controller_init(struct stp_controller_init_t *init)
 	_stp_controller_data->tx_buffer = init->tx_buffer;
 	_stp_controller_data->handshake = init->handshake;
 	_stp_controller_data->wait_signal = init->wait_signal;
-
-	stp_mcu_ready_timer_expired_irq_missed_counter = 0;
 
 	_stp_controller_data->last_tx_notification = STP_IN_NONE;
 
@@ -283,6 +279,7 @@ static bool stp_controller_data_transaction(void)
 			_stp_controller_data->tx_buffer,
 			_stp_controller_data->rx_buffer, STP_TOTAL_DATA_SIZE);
 		STP_ASSERT(!ret, "STP - Transport error");
+		_stp_controller_data->transaction_count++;
 
 		stp_controller_process_data_transaction(&tx);
 
@@ -314,6 +311,40 @@ uint64_t stp_controller_get_controller_last_has_data_ns(void)
 uint64_t stp_controller_get_ns(void)
 {
 	return _stp_controller_data->handshake->stp_controller_get_ns();
+}
+
+/*
+ * Records an INIT<->DATA flip. The caller owns the state write, so this also
+ * serves the packet_error() path, which performs the transition itself. The
+ * data path drives DATA on every round that carries a packet, so the early
+ * return is what keeps the clock read off the hot path.
+ */
+static void stp_controller_note_state_flip(uint32_t old_state,
+					   uint32_t new_state)
+{
+	if (old_state == new_state)
+		return;
+
+	_stp_controller_data->sync_previous_state = old_state;
+	_stp_controller_data->sync_previous_ns =
+		_stp_controller_data->sync_current_ns;
+	_stp_controller_data->sync_current_state = new_state;
+	_stp_controller_data->sync_current_ns = stp_controller_get_ns();
+}
+
+static void stp_controller_set_state(uint32_t new_state)
+{
+	stp_controller_note_state_flip(_stp_controller_data->state, new_state);
+	_stp_controller_data->state = new_state;
+}
+
+static void stp_controller_packet_error(const char *ctx_str,
+					enum packet_error_t error)
+{
+	uint32_t old_state = _stp_controller_data->state;
+
+	packet_error(ctx_str, error, &_stp_controller_data->state);
+	stp_controller_note_state_flip(old_state, STP_STATE_INIT);
 }
 
 void stp_controller_signal_start_transaction(void)
@@ -539,6 +570,13 @@ static void stp_controller_timestamp_tx_transaction()
 		return;
 	}
 
+	// Serialize the has-data read/compare/pulse under lock_set_has_data, the
+	// same lock every other stp_controller_set_controller_has_data() caller
+	// holds. Without it this timestamp path can toggle the SoC "has data" GPIO
+	// concurrently with a locked has_data update, double-arming the driver WDT.
+	// See T244827821.
+	STP_LOCK(_stp_controller_data->lock_set_has_data);
+
 	uint64_t last_set_ns = stp_controller_get_controller_last_has_data_ns();
 	const uint64_t delta_ns = stp_controller_get_ns() - last_set_ns;
 	if (delta_ns > STP_CLOCK_PULSE_GPIO_THRESHOLD_NS) {
@@ -554,6 +592,8 @@ static void stp_controller_timestamp_tx_transaction()
 		stp_controller_set_controller_has_data(true);
 		last_set_ns = stp_controller_get_controller_last_has_data_ns();
 	}
+
+	STP_UNLOCK(_stp_controller_data->lock_set_has_data);
 
 	// The target is expected to know the local endianness.
 	memcpy(&clock_buffer->sender_signal_ns, &last_set_ns,
@@ -639,13 +679,30 @@ void stp_controller_init_transaction(void)
 	_stp_controller_data->transport->send_receive_data(
 		_stp_controller_data->tx_buffer,
 		_stp_controller_data->rx_buffer, STP_TOTAL_DATA_SIZE);
+	_stp_controller_data->transaction_count++;
 
 	uint8_t opcode = stp_get_opcode_value(ack_rec->channel_opcode);
+	bool crc_ok = stp_check_crc(_stp_controller_data->rx_buffer);
+
+	_stp_controller_data->last_rx_opcode = opcode;
+	_stp_controller_data->last_rx_crc_ok = crc_ok;
 
 	if (opcode == STP_OPCODE_INIT) {
 		stp_controller_invalidate_session();
-		_stp_controller_data->state = STP_STATE_DATA;
+		stp_controller_set_state(STP_STATE_DATA);
 		STP_LOG_INFO_RATE_LIMIT("STP Controller: init: init done!");
+	} else {
+		/*
+		 * MCU did not echo INIT this round. A single occurrence is a
+		 * normal part of STP operation; a persistent one means the SoC
+		 * stays in INIT while the MCU may consider the link synced, so
+		 * log the echo to keep that disagreement diagnosable (T278968653).
+		 */
+		STP_LOG_INFO_RATE_LIMIT(
+			"STP Controller: sent INIT, got rx_opcode=%u crc_ok=%d rx_ch_status=0x%x doorbell=%d",
+			opcode, crc_ok, ack_rec->channels_status,
+			_stp_controller_data->handshake
+				->device_request_transaction());
 	}
 }
 
@@ -659,9 +716,13 @@ void stp_controller_process_data_transaction(struct stp_pending_tx *tx)
 
 	bool check_crc = stp_check_crc(_stp_controller_data->rx_buffer);
 
+	_stp_controller_data->last_rx_crc_ok = check_crc;
+	_stp_controller_data->last_rx_opcode =
+		stp_get_opcode_value(header->channel_opcode);
+
 	if (!check_crc) {
-		packet_error("Controller", STP_PACKET_ERROR_BAD_CRC,
-			     &_stp_controller_data->state);
+		stp_controller_packet_error("Controller",
+					    STP_PACKET_ERROR_BAD_CRC);
 
 		if (++_stp_controller_data->bad_crcs_in_a_row >
 		    STP_MAX_BAD_CRCS_IN_A_ROW_BEFORE_BACKOFF) {
@@ -685,9 +746,9 @@ void stp_controller_process_data_transaction(struct stp_pending_tx *tx)
 		uint8_t channel = stp_get_channel_value(header->channel_opcode);
 
 		if (channel >= STP_TOTAL_NUM_CHANNELS) {
-			packet_error("Controller",
-				     STP_PACKET_ERROR_INVALID_CHANNEL,
-				     &_stp_controller_data->state);
+			stp_controller_packet_error(
+				"Controller",
+				STP_PACKET_ERROR_INVALID_CHANNEL);
 			return;
 		} else if (!_stp_controller_data->channels[channel]
 				    .controller_connected) {
@@ -702,30 +763,30 @@ void stp_controller_process_data_transaction(struct stp_pending_tx *tx)
 			    _stp_controller_data->rx_buffer,
 			    _stp_controller_data->channels[channel]
 				    .log_rx_data)) {
-			packet_error("Controller",
-				     STP_PACKET_ERROR_PROCESS_RX_DATA,
-				     &_stp_controller_data->state);
+			stp_controller_packet_error(
+				"Controller",
+				STP_PACKET_ERROR_PROCESS_RX_DATA);
 			return;
 		}
 
 		_stp_controller_data->wait_signal->signal_read(channel);
-		_stp_controller_data->state = STP_STATE_DATA;
+		stp_controller_set_state(STP_STATE_DATA);
 	} else if (opcode == STP_OPCODE_NOTIFICATION) {
 		uint32_t notification;
 		uint8_t channel;
 
 		if (!stp_process_rx_notification(_stp_controller_data->rx_buffer,
 						 &channel, &notification)) {
-			packet_error("Controller",
-				     STP_PACKET_ERROR_PROCESS_RX_NOTIFICATION,
-				     &_stp_controller_data->state);
+			stp_controller_packet_error(
+				"Controller",
+				STP_PACKET_ERROR_PROCESS_RX_NOTIFICATION);
 			return;
 		}
 
 		stp_controller_rx_notification(channel, notification);
 	} else {
-		packet_error("Controller", STP_PACKET_ERROR_UNKNOWN_OPCODE,
-			     &_stp_controller_data->state);
+		stp_controller_packet_error("Controller",
+					    STP_PACKET_ERROR_UNKNOWN_OPCODE);
 	}
 
 	_stp_controller_data->pending.tx = *tx;
@@ -763,7 +824,7 @@ void stp_controller_reset_all_channel_buffer(void)
 
 void stp_controller_request_protocol_resync(void)
 {
-	_stp_controller_data->state = STP_STATE_INIT;
+	stp_controller_set_state(STP_STATE_INIT);
 }
 
 uint8_t stp_controller_get_packet_channel(uint8_t *buffer, unsigned int len)

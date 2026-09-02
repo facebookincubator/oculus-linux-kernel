@@ -4,7 +4,6 @@
  */
 
 #include "hfi_property.h"
-#include "hfi_buffer_ar50lt.h"
 #include "msm_vidc_buffer_ar50lt.h"
 #include "msm_vidc_buffer.h"
 #include "msm_vidc_inst.h"
@@ -14,6 +13,7 @@
 #include "msm_vidc_debug.h"
 #include "msm_media_info.h"
 #include "msm_vidc_control.h"
+#include "hfi_buffer_ar50lt.h"
 
 static u32 msm_vidc_decoder_bin_size_ar50lt(struct msm_vidc_inst *inst)
 {

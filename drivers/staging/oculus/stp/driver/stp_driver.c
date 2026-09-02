@@ -44,6 +44,10 @@ static DEFINE_MUTEX(wdt_mutex);
 static struct spi_stp_driver_data *_stp_driver_data;
 static void stp_set_soc_has_data(bool value);
 static bool stp_mcu_request_transaction(void);
+static uint64_t stp_get_ns(void);
+static uint64_t stp_get_last_has_data_ns(void);
+static uint64_t stp_get_tick(void);
+static uint64_t stp_tick_to_ns(uint64_t tick);
 
 static BLOCKING_NOTIFIER_HEAD(stp_device_state_nb);
 // TODO: The time channel should be driver configuration not a constant.
@@ -59,6 +63,9 @@ static int stp_thread(void *data)
 	if (sched_setscheduler(current, SCHED_FIFO, &param) == -1)
 		STP_DRV_LOG_ERR("error setting priority");
 
+	WRITE_ONCE(_stp_driver_data->last_thread_alive_tick, stp_get_tick());
+	WRITE_ONCE(_stp_driver_data->thread_alive, true);
+
 	while (!stp_controller_get_stop_thread()) {
 		rval = STP_ERR_VAL(stp_controller_transaction_thread());
 		if (STP_ERR_VAL(rval) && STP_ERR_VAL(rval) != -ERESTARTSYS) {
@@ -67,6 +74,9 @@ static int stp_thread(void *data)
 			break;
 		}
 	}
+
+	WRITE_ONCE(_stp_driver_data->last_thread_exit_tick, stp_get_tick());
+	WRITE_ONCE(_stp_driver_data->thread_alive, false);
 
 	complete_and_exit(&_stp_driver_data->stp_thread_complete, 0);
 
@@ -144,6 +154,90 @@ static ssize_t T193790187_dump_show(struct device *dev,
 	return rval;
 }
 static DEVICE_ATTR_RO(T193790187_dump);
+
+void stp_dump_driver_state(const char *reason)
+{
+	if (!_stp_driver_data) {
+		pr_err("[STPDump] driver (%s): not initialized\n",
+		       reason ? reason : "");
+		return;
+	}
+
+	pr_err("[STPDump] driver (%s): gpio soc_has_data=%d mcu_req_transaction=%d soc_has_data_cache=%d device_ready=%d spi_busy=%d\n",
+	       reason ? reason : "",
+	       gpio_get_value(_stp_driver_data->gpio_data.controller_has_data),
+	       gpio_get_value(_stp_driver_data->gpio_data.device_request_transaction),
+	       _stp_driver_data->device_request_transaction_cache,
+	       stp_get_device_ready(), stp_get_spi_busy());
+
+	pr_err("[STPDump] driver (%s): irq{device_ready=%d data=%d} wdt_bark=%d txdata_stuck=%d first_txn_after_resume=%d force_suspend=%d\n",
+	       reason ? reason : "",
+	       atomic_read(&_stp_driver_data->stats.device_ready_irq_count),
+	       atomic_read(&_stp_driver_data->stats.data_irq_count),
+	       atomic_read(&_stp_driver_data->wdt_bark_counter),
+	       atomic_read(&_stp_driver_data->txdata_stuck_counter),
+	       atomic_read(&_stp_driver_data->first_transact_after_resume),
+	       _stp_driver_data->enable_force_suspend);
+
+	/* Pairs with the MCU dump's soc_req/mcu_set: separates a doorbell the SoC
+	 * never saw from one it saw but never serviced.
+	 */
+	pr_err("[STPDump] driver (%s): now_ns=%llu soc_has_data{set_ns=%llu clr_ns=%llu} mcu_req{irq_ns=%llu} suspend_ns=%llu resume_ns=%llu\n",
+	       reason ? reason : "",
+	       (unsigned long long)stp_get_ns(),
+	       (unsigned long long)stp_get_last_has_data_ns(),
+	       (unsigned long long)stp_tick_to_ns(
+		       READ_ONCE(_stp_driver_data->last_soc_has_data_clear_tick)),
+	       (unsigned long long)stp_tick_to_ns(
+		       READ_ONCE(_stp_driver_data->last_mcu_req_irq_tick)),
+	       (unsigned long long)stp_tick_to_ns(
+		       READ_ONCE(_stp_driver_data->last_suspend_tick)),
+	       (unsigned long long)stp_tick_to_ns(
+		       READ_ONCE(_stp_driver_data->last_resume_tick)));
+
+	pr_err("[STPDump] driver (%s): thread{alive=%d alive_ns=%llu exit_ns=%llu parked=%d park_ns=%llu unpark_ns=%llu}\n",
+	       reason ? reason : "",
+	       READ_ONCE(_stp_driver_data->thread_alive),
+	       (unsigned long long)stp_tick_to_ns(
+		       READ_ONCE(_stp_driver_data->last_thread_alive_tick)),
+	       (unsigned long long)stp_tick_to_ns(
+		       READ_ONCE(_stp_driver_data->last_thread_exit_tick)),
+	       READ_ONCE(_stp_driver_data->thread_parked),
+	       (unsigned long long)stp_tick_to_ns(
+		       READ_ONCE(_stp_driver_data->last_thread_park_tick)),
+	       (unsigned long long)stp_tick_to_ns(
+		       READ_ONCE(_stp_driver_data->last_thread_unpark_tick)));
+}
+EXPORT_SYMBOL(stp_dump_driver_state);
+
+static void stp_dump_all_state(const char *reason)
+{
+	stp_dump_driver_state(reason);
+	stp_dump_controller_state(reason);
+	stp_dump_channel_state(reason);
+}
+
+/* Writable so the stp_need_recovery init action can trigger the dump before the
+ * MCU is asserted; readable for interactive use.
+ */
+static ssize_t stp_state_dump_show(struct device *dev,
+				   struct device_attribute *attr, char *buf)
+{
+	stp_dump_all_state("state_dump");
+
+	return scnprintf(buf, PAGE_SIZE,
+			 "STP state dumped to kernel log (dmesg | grep STPDump)\n");
+}
+
+static ssize_t stp_state_dump_store(struct device *dev,
+				    struct device_attribute *attr,
+				    const char *buf, size_t len)
+{
+	stp_dump_all_state("state_dump");
+
+	return len;
+}
+static DEVICE_ATTR_RW(stp_state_dump);
 
 static ssize_t stp_connection_state_show(struct device *dev,
 					struct device_attribute *attr, char *buf)
@@ -327,7 +421,7 @@ static ssize_t stp_spi_owner_switch_store(
 			return len;
 		}
 
-		stp_dump_channel_state();
+		stp_dump_channel_state("spi_owner_switch");
 
 		trace_stp_switch_to_stpraw(0);
 
@@ -511,6 +605,10 @@ static void stp_set_soc_has_data(bool value)
 			(t0 + t1) / 2;
 	}
 
+	if (!value)
+		WRITE_ONCE(_stp_driver_data->last_soc_has_data_clear_tick,
+			   stp_get_tick());
+
 	_stp_driver_data->device_request_transaction_cache = value;
 	mutex_unlock(&wdt_mutex);
 }
@@ -546,6 +644,17 @@ static uint64_t stp_get_ns(void)
 {
 	return arch_timer_to_ns(arch_timer_read_counter());
 }
+
+/* No division, so it is cheap on the transfer path and hard-IRQ safe. */
+static uint64_t stp_get_tick(void)
+{
+	return arch_timer_read_counter();
+}
+
+static uint64_t stp_tick_to_ns(uint64_t tick)
+{
+	return tick ? arch_timer_to_ns(tick) : 0;
+}
 #else /* x86_64 and other architectures */
 /** Returns the last time the stp_set_soc_has_data was called to set the GPIO. */
 static uint64_t stp_get_last_has_data_ns(void) {
@@ -554,6 +663,14 @@ static uint64_t stp_get_last_has_data_ns(void) {
 
 static uint64_t stp_get_ns(void) {
   return ktime_get_ns();
+}
+
+static uint64_t stp_get_tick(void) {
+  return ktime_get_ns();
+}
+
+static uint64_t stp_tick_to_ns(uint64_t tick) {
+  return tick;
 }
 #endif
 
@@ -600,6 +717,8 @@ static irqreturn_t stp_irq_mcu_request_transaction(int irq, void *dev_id)
 	stp_controller_signal_start_transaction();
 
 	atomic_inc(&_stp_driver_data->stats.data_irq_count);
+
+	WRITE_ONCE(_stp_driver_data->last_mcu_req_irq_tick, stp_get_tick());
 
 	return IRQ_HANDLED;
 }
@@ -664,7 +783,13 @@ static int32_t stp_pause_thread(void)
 {
 	while (1) {
 		if (kthread_should_park()) {
+			WRITE_ONCE(_stp_driver_data->last_thread_park_tick,
+				   stp_get_tick());
+			WRITE_ONCE(_stp_driver_data->thread_parked, true);
 			kthread_parkme();
+			WRITE_ONCE(_stp_driver_data->last_thread_unpark_tick,
+				   stp_get_tick());
+			WRITE_ONCE(_stp_driver_data->thread_parked, false);
 			break;
 		}
 		STP_DRV_LOG_ERR_RATE_LIMIT("Spining and waiting for kthread_should_park");
@@ -894,6 +1019,8 @@ static int spi_stp_probe(struct spi_device *spi)
 	atomic_set(&_stp_driver_data->stats.data_irq_count, 0);
 	atomic_set(&_stp_driver_data->stats.device_ready_irq_count, 0);
 	atomic_set(&_stp_driver_data->first_transact_after_resume, 0);
+	_stp_driver_data->thread_alive = false;
+	_stp_driver_data->thread_parked = false;
 
 	rval = create_stp_channels(spi);
 	if (rval != 0) {
@@ -919,6 +1046,7 @@ static int spi_stp_probe(struct spi_device *spi)
 	device_create_file(&spi->dev, &dev_attr_stp_driver_timestamp_ns);
 	device_create_file(&spi->dev, &dev_attr_stp_force_suspend);
 	device_create_file(&spi->dev, &dev_attr_stp_channel_wakeups);
+	device_create_file(&spi->dev, &dev_attr_stp_state_dump);
 
 	_stp_driver_data->txdata_stuck_counter_attr_node = sysfs_get_dirent(spi->dev.kobj.sd, "txdata_stuck_counter");
 	if (!_stp_driver_data->txdata_stuck_counter_attr_node) {
@@ -1072,6 +1200,7 @@ static int spi_stp_remove(struct spi_device *spi)
 	device_remove_file(&spi->dev, &dev_attr_stp_driver_timestamp_ns);
 	device_remove_file(&spi->dev, &dev_attr_stp_force_suspend);
 	device_remove_file(&spi->dev, &dev_attr_stp_channel_wakeups);
+	device_remove_file(&spi->dev, &dev_attr_stp_state_dump);
 
 	devm_kfree(&spi->dev, _stp_driver_data);
 	_stp_driver_data = NULL;
@@ -1110,6 +1239,8 @@ static int spi_stp_suspend(struct device *dev)
 		goto exit_error;
 	}
 
+	WRITE_ONCE(_stp_driver_data->last_suspend_tick, stp_get_tick());
+
 	return 0;
 
 exit_error:
@@ -1123,6 +1254,8 @@ static int spi_stp_resume(struct device *dev)
 	kthread_unpark(_stp_driver_data->stp_thread);
 
 	atomic_set(&_stp_driver_data->txdata_stuck_counter, 0);
+
+	WRITE_ONCE(_stp_driver_data->last_resume_tick, stp_get_tick());
 
 	return 0;
 }

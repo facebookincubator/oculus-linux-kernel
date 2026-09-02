@@ -28,11 +28,9 @@
 		qcom,mdss-dsi-wr-mem-start = <0x2c>;
 		qcom,mdss-dsi-wr-mem-continue = <0x3c>;
 
-		qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
-		qcom,mdss-dsi-bl-min-level = <0>;
-		qcom,mdss-dsi-bl-max-level = <15>;
-		qcom,mdss-dsi-bl-ctrl-dcs-subtype = <0xBA>;
 		qcom,mdss-dsi-ext-bridge-mode;
+		/* jbd2520 bridge driver owns backlight; no SDE stub needed */
+		qcom,mdss-dsi-bl-skip-register;
 
 		qcom,mdss-dsi-display-timings {
 			timing@0 {
@@ -89,8 +87,8 @@
 				qcom,mdss-dsi-off-command-state = "dsi_hs_mode";
 				qcom,mdss-dsi-h-sync-pulse = <0>;
 				qcom,mdss-dsi-panel-phy-timings = [
-					00 16 06 05 14 1F 06
-					06 06 02 04 00 14 0B];
+					00 1D 08 07 17 22 07
+					07 08 02 04 00 19 0C];
 				qcom,display-topology = <1 0 1>;
 				qcom,default-topology-index = <0>;
 			};

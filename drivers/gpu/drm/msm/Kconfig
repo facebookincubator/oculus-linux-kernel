@@ -92,6 +92,18 @@ config DRM_MSM_PRE_VIDEO_START_CB
 
 	  If unsure, say N.
 
+config DRM_MSM_DSI_ENABLE_MIPI_DCS_READS
+	bool "Enable MIPI DCS read transactions in MSM DSI host driver"
+	depends on DRM_MSM_DSI
+	default n
+	help
+	  Route MIPI DSI read transactions through dsi_display_cmd_rx()
+	  instead of dsi_host_transfer_sub() in the MSM DSI host driver.
+	  Required for panel drivers that need to read panel ID, temperature,
+	  or other DCS registers over MIPI DSI (e.g. JBD2520).
+
+	  If unsure, say N.
+
 config DRM_MSM_DSI_PLL
 	bool "Enable DSI PLL driver in MSM DRM"
 	depends on DRM_MSM_DSI && COMMON_CLK

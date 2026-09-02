@@ -1827,23 +1827,24 @@ int cam_sensor_power_down(struct cam_sensor_ctrl_t *s_ctrl)
 		(s_ctrl->ao_sensor_state == CAM_AO_SENSOR_ENABLED);
 
 	rc = cam_sensor_util_power_down(power_info, soc_info);
-	if (rc < 0) {
+	if (rc < 0)
 		CAM_ERR(CAM_SENSOR, "%s core power down failed:%d",
 			s_ctrl->sensor_name, rc);
-		return rc;
-	}
 
 	if (s_ctrl->bob_pwm_switch) {
-		rc = cam_sensor_bob_pwm_mode_switch(soc_info,
+		int bob_rc = cam_sensor_bob_pwm_mode_switch(soc_info,
 			s_ctrl->bob_reg_index, false);
-		if (rc) {
+		if (bob_rc)
 			CAM_WARN(CAM_SENSOR,
 				"%s BoB PWM setup failed rc: %d",
-				s_ctrl->sensor_name, rc);
-			rc = 0;
-		}
+				s_ctrl->sensor_name, bob_rc);
 	}
 
+	/*
+	 * Release the CCI/clock master even when power-down reported an error,
+	 * so a partially-failed teardown does not leak the bus alongside the
+	 * GPIOs. Preserve and return the original power-down rc.
+	 */
 	camera_io_release(&(s_ctrl->io_master_info));
 
 	return rc;

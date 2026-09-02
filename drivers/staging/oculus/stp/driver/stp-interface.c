@@ -7,8 +7,10 @@
 #include <linux/mutex.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <linux/ratelimit.h>
 #include <linux/workqueue.h>
 #include <device/stp_device.h>
+#include <stp/controller/stp_controller.h>
 #include "stp-interface.h"
 #include "stp_driver.h"
 
@@ -54,6 +56,23 @@ static void stp_interface_dummy_register(struct work_struct *dummy);
 static DECLARE_DELAYED_WORK(stp_interface_dummy_register_work,
 			    stp_interface_dummy_register);
 
+/*
+ * Dump SoC-side STP state (controller state machine, per-channel connection,
+ * doorbell GPIOs) when the interface cannot reach the MCU, so the log explains
+ * SoC/MCU sync disagreements. Rate limited since the failing paths retry often.
+ */
+static void stp_dump_interface_soc_state(const char *reason)
+{
+	static DEFINE_RATELIMIT_STATE(dump_rs, 5 * HZ, 1);
+
+	if (!__ratelimit(&dump_rs))
+		return;
+
+	stp_dump_driver_state(reason);
+	stp_dump_controller_state(reason);
+	stp_dump_channel_state(reason);
+}
+
 static int stp_interface_wait_for_data(struct stp_interface *stpi,
 				       uint32_t needs)
 {
@@ -81,6 +100,8 @@ static int stp_interface_wait_for_data(struct stp_interface *stpi,
 		if (waited) {
 			if (time_after(jiffies, timeout)) {
 				dev_warn(stpi->dev, "%s: timedout\n", __func__);
+				stp_dump_interface_soc_state(
+					"wait_for_data timeout");
 				ret = -ETIMEDOUT;
 				break;
 			}
@@ -386,17 +407,10 @@ int stp_interface_xfer(struct device_node *stp_interface_node, uint8_t *buf,
 
 	stpi = platform_get_drvdata(stp_interface_pdev);
 	if (!stpi) {
-		uint32_t synced = 0;
-		int sync_ret;
-		bool device_ready, spi_busy;
-
-		device_ready = stp_get_device_ready();
-		sync_ret = stp_protocol_synced(&synced);
-		spi_busy = stp_get_spi_busy();
-		pr_err_ratelimited(
-			"%s: unable to get stpi struct (device_ready=%d synced=%u sync_ret=%d spi_busy=%d probe_fails=%d)\n",
-			__func__, device_ready, synced, sync_ret, spi_busy,
-			stp_probe_fails);
+		/* Details (synced/device_ready/spi_busy) follow in the SoC dump. */
+		pr_err_ratelimited("%s: unable to get stpi struct (probe_fails=%d)\n",
+				   __func__, stp_probe_fails);
+		stp_dump_interface_soc_state("xfer: no stpi struct");
 		ret = -EINVAL;
 		goto err_exit_no_mutex;
 	}
@@ -489,7 +503,7 @@ static void stp_channel_open_work(struct work_struct *work)
 
 	mutex_lock(&stpi->channel_mtx);
 	while (--retries_left >= 0 && !stpi->stp_channel_open_work_stop) {
-		dev_info(stpi->dev, "%s: spi_stp reinit\n", __func__);
+		dev_info_ratelimited(stpi->dev, "%s: spi_stp reinit\n", __func__);
 		if (stpi->channel) {
 			dev_warn(stpi->dev, "%s: channel was not closed\n",
 				 __func__);
@@ -502,7 +516,7 @@ static void stp_channel_open_work(struct work_struct *work)
 			break;
 		}
 
-		dev_err(stpi->dev,
+		dev_err_ratelimited(stpi->dev,
 			"%s: stp_channel_open failed, ret=%ld, retries_left=%d\n",
 			__func__, PTR_ERR(stpi->channel), retries_left);
 		stpi->channel = NULL;
@@ -664,6 +678,7 @@ err_exit_nomem:
 	stp_probe_fails++;
 	dev_err(&pdev->dev, "%s: stp_interface_probe exit with error ret=%d probe_fails=%d\n",
 		__func__, ret, stp_probe_fails);
+	stp_dump_interface_soc_state("probe deferred/failed");
 
 	return ret;
 }
@@ -756,7 +771,7 @@ static int spi_stp_notifier(struct notifier_block *nb, unsigned long action,
 			break;
 
 		case SPI_STP_CTRL_INIT:
-			dev_info(stpi->dev, "%s: spi_stp reinit\n", __func__);
+			dev_info_ratelimited(stpi->dev, "%s: spi_stp reinit\n", __func__);
 			if (stpi->channel) {
 				stp_channel_close(stpi->channel);
 				stpi->channel = NULL;

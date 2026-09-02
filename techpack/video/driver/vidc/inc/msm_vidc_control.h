@@ -35,6 +35,8 @@ int msm_vidc_adjust_b_frame(void *instance, struct v4l2_ctrl *ctrl);
 int msm_vidc_adjust_peak_bitrate(void *instance, struct v4l2_ctrl *ctrl);
 int msm_vidc_adjust_hevc_min_qp(void *instance, struct v4l2_ctrl *ctrl);
 int msm_vidc_adjust_hevc_max_qp(void *instance, struct v4l2_ctrl *ctrl);
+int msm_vidc_adjust_avc_min_qp(void *instance, struct v4l2_ctrl *ctrl);
+int msm_vidc_adjust_avc_max_qp(void *instance, struct v4l2_ctrl *ctrl);
 int msm_vidc_adjust_hevc_i_frame_qp(void *instance, struct v4l2_ctrl *ctrl);
 int msm_vidc_adjust_hevc_p_frame_qp(void *instance, struct v4l2_ctrl *ctrl);
 int msm_vidc_adjust_hevc_b_frame_qp(void *instance, struct v4l2_ctrl *ctrl);

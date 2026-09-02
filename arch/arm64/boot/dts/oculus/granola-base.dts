@@ -3,3 +3,7 @@
 /dts-v1/;
 
 #include "oatmeal-base-common.dtsi"
+
+&aliases {
+	hsuart4 = &qupv3_se2_2uart;
+};

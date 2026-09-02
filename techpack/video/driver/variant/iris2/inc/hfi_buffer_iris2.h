@@ -19,11 +19,11 @@ typedef u64 HFI_U64;
 typedef HFI_U32 HFI_BOOL;
 
 #ifndef MIN
-#define  MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
 #endif
 
 #ifndef MAX
-#define  MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MAX(x, y) ((x) > (y) ? (x) : (y))
 #endif
 
 #define HFI_ALIGNMENT_4096 (4096)

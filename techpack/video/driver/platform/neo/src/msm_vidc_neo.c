@@ -651,7 +651,7 @@ static struct msm_platform_inst_capability instance_data_neo[] = {
 		CAP_FLAG_ROOT | CAP_FLAG_OUTPUT_PORT |
 		CAP_FLAG_INPUT_PORT | CAP_FLAG_DYNAMIC_ALLOWED,
 		{0}, {0},
-		NULL, msm_vidc_set_min_qp},
+		msm_vidc_adjust_avc_min_qp, msm_vidc_set_min_qp},
 
 	{MIN_FRAME_QP, ENC, HEVC | HEIC,
 		MIN_QP_10BIT, MAX_QP, 1, MIN_QP_10BIT,
@@ -717,7 +717,7 @@ static struct msm_platform_inst_capability instance_data_neo[] = {
 		CAP_FLAG_ROOT | CAP_FLAG_OUTPUT_PORT |
 		CAP_FLAG_INPUT_PORT | CAP_FLAG_DYNAMIC_ALLOWED,
 		{0}, {0},
-		NULL, msm_vidc_set_max_qp},
+		msm_vidc_adjust_avc_max_qp, msm_vidc_set_max_qp},
 
 	{MAX_FRAME_QP, ENC, HEVC | HEIC,
 		MIN_QP_10BIT, MAX_QP, 1, MAX_QP,

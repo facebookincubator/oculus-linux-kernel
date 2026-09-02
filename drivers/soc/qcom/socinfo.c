@@ -63,6 +63,7 @@ enum {
 	HW_PLATFORM_MAKO = 58,
 	HW_PLATFORM_ZEBRA = 59,
 	HW_PLATFORM_LAGER = 60,
+	HW_PLATFORM_BRANZINO = 61,
 	HW_PLATFORM_INVALID
 };
 
@@ -90,6 +91,7 @@ static const char * const hw_platform[] = {
 	[HW_PLATFORM_MAKO] = "Mako",
 	[HW_PLATFORM_ZEBRA] = "Zebra",
 	[HW_PLATFORM_LAGER] = "Lager",
+	[HW_PLATFORM_BRANZINO] = "Branzino",
 };
 
 enum {

@@ -162,6 +162,9 @@ void stp_controller_reset_all_channel_buffer(void);
 
 void stp_controller_request_protocol_resync(void);
 
+/* Log the controller state machine and handshake bookkeeping for debugging. */
+void stp_dump_controller_state(const char *reason);
+
 #ifdef __cplusplus
 }
 #endif

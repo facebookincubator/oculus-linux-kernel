@@ -45,7 +45,7 @@ int stp_channel_read(struct stp_device_channel *channel, char *buf,
 		      size_t count, bool to_user);
 bool stp_check_stale_channel(struct stp_device_channel *channel);
 bool stp_get_device_ready(void);
-void stp_dump_channel_state(void);
+void stp_dump_channel_state(const char *reason);
 int stp_channel_connected(uint32_t channel, uint32_t *connected);
 int stp_channel_rx_filled(uint32_t channel, uint32_t *rx_data_avail);
 int stp_protocol_synced(uint32_t *synced);
