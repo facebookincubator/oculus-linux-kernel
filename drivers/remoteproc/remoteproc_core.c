@@ -2197,7 +2197,7 @@ static void rproc_restore_work(struct work_struct *work)
 
 	ret = rproc_boot(rproc);
 	if (ret)
-		dev_err(&rproc->dev, "restore after hibernate failed: %d\n", ret);
+		panic("Rproc %s failed to bootup on restore: %d\n", rproc->name, ret);
 }
 
 static int rproc_pm_notify(struct notifier_block *nb, unsigned long event,

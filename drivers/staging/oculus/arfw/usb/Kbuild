@@ -1,0 +1,9 @@
+obj-$(CONFIG_ARFIRMWARE_JAZZ_USB_HOST) += arfw_jazz_usb_host.o
+arfw_jazz_usb_host-y := \
+	arfw_jazz_usb_host_main.o \
+	arfw_usb_int.o \
+	arfw_usb_ops.o \
+	arfw_usb_queue.o \
+	arfw_usb_ctrl.o \
+
+ccflags-y += -DDEBUG

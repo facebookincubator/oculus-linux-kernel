@@ -22,6 +22,9 @@
 		compatible = "meta,max31875-i2c";
 		reg = <0x4b>;
 		#thermal-sensor-cells = <0>;
+		conver-rate-select = <3>;
+		vdd-supply = <&vsys_disp_pmic_ls>;
+		no-always-power-on;
 		status = "disabled";
 	};
 
@@ -29,6 +32,9 @@
 		compatible = "meta,max31875-i2c";
 		reg = <0x4c>;
 		#thermal-sensor-cells = <0>;
+		conver-rate-select = <3>;
+		vdd-supply = <&vsys_disp_pmic_ls>;
+		no-always-power-on;
 		status = "disabled";
 	};
 };

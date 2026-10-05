@@ -83,6 +83,20 @@ static int stp_thread(void *data)
 	return rval;
 }
 
+/*
+ * Flag the thread to stop, unblock it and join. stp_thread() dereferences
+ * _stp_driver_data unconditionally, so this has to complete before the caller
+ * releases it.
+ */
+static void stp_stop_thread(void)
+{
+	stp_controller_signal_stop_thread();
+	stp_controller_unset_suspend();
+	kthread_unpark(_stp_driver_data->stp_thread);
+
+	wait_for_completion(&_stp_driver_data->stp_thread_complete);
+}
+
 static ssize_t stp_driver_stats_show(struct device *dev,
 				     struct device_attribute *attr, char *buf)
 {
@@ -147,8 +161,8 @@ static ssize_t T193790187_dump_show(struct device *dev,
 		buf, PAGE_SIZE,
 		"gpio: soc_has_data:%d, mcu_req_transaction:%d\n"
 		"ch%d: rx_filled=%u, tx_queued=%u\n",
-		gpio_get_value(_stp_driver_data->gpio_data.controller_has_data),
-		gpio_get_value(_stp_driver_data->gpio_data.device_request_transaction),
+		gpio_get_value_cansleep(_stp_driver_data->gpio_data.controller_has_data),
+		gpio_get_value_cansleep(_stp_driver_data->gpio_data.device_request_transaction),
 		diag_ch_n, rx_data, tx_data
 		);
 	return rval;
@@ -484,7 +498,7 @@ static ssize_t stp_spi_owner_switch_store(
 		// Set flag to enable calling stp fops
 		stp_set_spi_busy(false);
 
-		// If the mcu request transaction signal is high, we have missed the first gpio interrupt
+		// If the mcu request transaction signal is asserted, we have missed the first gpio interrupt
 		if (stp_mcu_request_transaction())
 			stp_controller_signal_start_transaction();
 
@@ -543,7 +557,7 @@ static bool stp_mcu_request_transaction(void)
 	if (!_stp_driver_data)
 		return false;
 
-	value = gpio_get_value(_stp_driver_data->gpio_data.device_request_transaction);
+	value = gpio_get_value_cansleep(_stp_driver_data->gpio_data.device_request_transaction);
 	trace_stp_mcu_request_transaction(value == 0);
 
 	return value == 0;
@@ -565,7 +579,7 @@ static void stp_set_soc_has_data(bool value)
 
 	// The following is either the expected operation or a no-op which will warm the cache.
 	trace_stp_set_soc_has_data(value);
-	gpio_set_value(_stp_driver_data->gpio_data.controller_has_data, true);
+	gpio_set_value_cansleep(_stp_driver_data->gpio_data.controller_has_data, true);
 	if (value) {
 		/* Arm the WDT before toggling the SoC request. Do not leave
 		 * a race window in which the MCU could trigger
@@ -593,7 +607,7 @@ static void stp_set_soc_has_data(bool value)
 		// Actually perform the transition and get the time stamp.
 		const uint64_t t0 = ktime_get_ns();
 #endif
-		gpio_set_value(_stp_driver_data->gpio_data.controller_has_data,
+		gpio_set_value_cansleep(_stp_driver_data->gpio_data.controller_has_data,
 			       false);
 #if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
 		const uint64_t t1 = arch_timer_read_counter();
@@ -1011,7 +1025,7 @@ static int spi_stp_probe(struct spi_device *spi)
 	if (device_init_wakeup(&spi->dev, true) != 0) {
 		STP_DRV_LOG_ERR("Failed to init wakesource\n");
 		rval = -ENODEV;
-		goto exit_device_error;
+		goto exit_channel_error;
 	}
 
 	init_completion(&_stp_driver_data->stp_thread_complete);
@@ -1022,18 +1036,86 @@ static int spi_stp_probe(struct spi_device *spi)
 	_stp_driver_data->thread_alive = false;
 	_stp_driver_data->thread_parked = false;
 
-	rval = create_stp_channels(spi);
-	if (rval != 0) {
-		goto exit_channel_error;
-	}
-
 	stp_set_spi_busy(false);
 	stp_raw_set_spi_busy(true);
+
+	_stp_driver_data->spi = spi;
+
+	_stp_driver_data->controller_rx_buffer = devm_kzalloc(&spi->dev, STP_TOTAL_DATA_SIZE, GFP_KERNEL | GFP_DMA);
+	if (IS_ERR(_stp_driver_data->controller_rx_buffer)) {
+		STP_DRV_LOG_ERR("Failed to allocate controller rx buffer");
+		rval = -ENOMEM;
+		goto exit_wakeup_error;
+	}
+
+	_stp_driver_data->controller_tx_buffer = devm_kzalloc(&spi->dev, STP_TOTAL_DATA_SIZE, GFP_KERNEL | GFP_DMA);
+	if (IS_ERR(_stp_driver_data->controller_tx_buffer)) {
+		STP_DRV_LOG_ERR("Failed to allocate controller tx buffer");
+		rval = -ENOMEM;
+		goto exit_wakeup_error;
+	}
+
+	struct stp_controller_init_t controller_init = {
+		.transport = &stp_transport_table,
+		.handshake = &stp_handshake_table,
+		.wait_signal = &stp_wait_signal_table,
+		.rx_buffer = _stp_driver_data->controller_rx_buffer,
+		.tx_buffer = _stp_driver_data->controller_tx_buffer,
+		.time_channel = TIME_CHANNEL,
+	};
+
+	rval = STP_ERR_VAL(stp_controller_init(&controller_init));
+	if (STP_IS_ERR(rval)) {
+		STP_DRV_LOG_ERR("error initializing controller");
+		goto exit_wakeup_error;
+	}
+
+	rval = stp_controller_set_callback(stp_controller_callback);
+	if (STP_IS_ERR(rval)) {
+		STP_DRV_LOG_ERR("error setting controller callback");
+		goto exit_controller_error;
+	}
+
+	if (devm_gpio_request(&spi->dev, _stp_driver_data->gpio_data.controller_has_data, "SOC_has_data")) {
+		rval = -ENODEV;
+		STP_DRV_LOG_ERR("gpio request failure for controller_has_data");
+		goto exit_controller_error;
+	}
+
+	if (devm_gpio_request(&spi->dev, _stp_driver_data->gpio_data.device_request_transaction, "MCU_request_transaction")) {
+		rval = -ENODEV;
+		STP_DRV_LOG_ERR("gpio request failure for device_request_transaction");
+		goto exit_controller_error;
+	}
+
+	init_waitqueue_head (&_stp_driver_data->thread_event_queue);
+
+	/* Created but deliberately not woken: kthread() parks in
+	 * TASK_UNINTERRUPTIBLE and does not enter stp_thread() until
+	 * wake_up_process() below, once the channels, device files and IRQ are
+	 * all in place. Until then the thread provably cannot touch
+	 * _stp_driver_data, run a transaction or emit CTRL_INIT.
+	 */
+	_stp_driver_data->stp_thread =
+		kthread_create(stp_thread, NULL, "STP thread");
+
+	if (IS_ERR(_stp_driver_data->stp_thread)) {
+		STP_DRV_LOG_ERR("thread can't start");
+		rval = -ENOENT;
+		goto exit_controller_error;
+	}
+
+	/* Driver is ready for calls from userspace.
+	 * Start exposing device files. */
+	rval = create_stp_channels(spi);
+	if (rval != 0) {
+		goto exit_thread_error;
+	}
 
 	rval = stp_raw_dev_init(spi);
 	if (rval != 0) {
 		STP_DRV_LOG_ERR("failed to init stp raw device %d", rval);
-		goto exit_error;
+		goto exit_thread_error;
 	}
 
 	device_create_file(&spi->dev, &dev_attr_stp_driver_stats);
@@ -1058,76 +1140,34 @@ static int spi_stp_probe(struct spi_device *spi)
 		dev_info(&spi->dev, "failed to get wdt_bark_counter kernel fs node");
 	}
 
-	_stp_driver_data->spi = spi;
-
-	_stp_driver_data->controller_rx_buffer = devm_kzalloc(&spi->dev, STP_TOTAL_DATA_SIZE, GFP_KERNEL | GFP_DMA);
-	if (IS_ERR(_stp_driver_data->controller_rx_buffer)) {
-		STP_DRV_LOG_ERR("Failed to allocate controller rx buffer");
-		rval = -ENOMEM;
-		goto exit_error;
-	}
-
-	_stp_driver_data->controller_tx_buffer = devm_kzalloc(&spi->dev, STP_TOTAL_DATA_SIZE, GFP_KERNEL | GFP_DMA);
-	if (IS_ERR(_stp_driver_data->controller_tx_buffer)) {
-		STP_DRV_LOG_ERR("Failed to allocate controller tx buffer");
-		rval = -ENOMEM;
-		goto exit_error;
-	}
-
-	struct stp_controller_init_t controller_init = {
-		.transport = &stp_transport_table,
-		.handshake = &stp_handshake_table,
-		.wait_signal = &stp_wait_signal_table,
-		.rx_buffer = _stp_driver_data->controller_rx_buffer,
-		.tx_buffer = _stp_driver_data->controller_tx_buffer,
-		.time_channel = TIME_CHANNEL,
-	};
-
-	rval = STP_ERR_VAL(stp_controller_init(&controller_init));
-	if (STP_IS_ERR(rval)) {
-		STP_DRV_LOG_ERR("error initializing controller");
-		goto exit_error;
-	}
-
-	rval = stp_controller_set_callback(stp_controller_callback);
-	if (STP_IS_ERR(rval)) {
-		STP_DRV_LOG_ERR("error setting controller callback");
-		goto exit_error;
-	}
-
-	init_waitqueue_head (&_stp_driver_data->thread_event_queue);
-
-	_stp_driver_data->stp_thread =
-		kthread_run(stp_thread, NULL, "STP thread");
-
-	if (IS_ERR(_stp_driver_data->stp_thread)) {
-		STP_DRV_LOG_ERR("thread can't start");
-		rval = -ENOENT;
-		goto exit_error;
-	}
-
-	if(devm_gpio_request(&spi->dev, _stp_driver_data->gpio_data.controller_has_data, "SOC_has_data")) {
-		rval = -ENODEV;
-		STP_DRV_LOG_ERR("gpio request failure for controller_has_data");
-		goto exit_error;
-	}
-
-	if(devm_gpio_request(&spi->dev, _stp_driver_data->gpio_data.device_request_transaction, "MCU_request_transaction")) {
-		rval = -ENODEV;
-		STP_DRV_LOG_ERR("gpio request failure for device_request_transaction");
-		goto exit_error;
-	}
-
 	// After everything is set up, enable the IRQs. If we do this early,
 	// we may start trying to execute transactions before we are initialized.
 	if (stp_config_gpio_irq(&spi->dev, &_stp_driver_data->gpio_data,
 				&stp_irq_mcu_request_transaction) != 0) {
 		rval = -ENODEV;
 		STP_DRV_LOG_ERR("gpio irq config failure");
-		goto exit_error;
+		goto exit_sysfs_error;
 	}
 
-	// If the mcu request transaction signal is high, we have missed the first gpio interrupt so
+	/* Release the thread created above. Nothing past this point can fail,
+	 * so no unwind path ever sees a running thread.
+	 */
+	wake_up_process(_stp_driver_data->stp_thread);
+
+	/* Place a pending request for an INIT transaction: the controller is in
+	 * INIT state and needs to exchange INIT packets with the MCU, but in
+	 * INIT it only transacts when the MCU asks first, so without this both
+	 * sides idle waiting for the other (T272204085).
+	 *
+	 * This must come after stp_config_gpio_irq(). The assert arms the WDT,
+	 * and the MCU's reply is a falling edge that only the registered
+	 * handler can consume. It also must not poke stp_set_soc_has_data()
+	 * directly: the kthread is live by now, so the update has to be
+	 * serialized under lock_set_has_data.
+	 */
+	stp_controller_request_protocol_resync();
+
+	// If the mcu request transaction signal is asserted, we have missed the first gpio interrupt so
 	// manually signal
 	if (stp_mcu_request_transaction())
 		stp_controller_signal_start_transaction();
@@ -1136,8 +1176,36 @@ static int spi_stp_probe(struct spi_device *spi)
 
 	return 0;
 
-exit_error:
+	/* Unwind in reverse acquisition order. Each label undoes exactly one
+	 * step, so a failure site jumps to the label for the step below it.
+	 */
+exit_sysfs_error:
+	sysfs_put(_stp_driver_data->wdt_bark_counter_attr_node);
+	_stp_driver_data->wdt_bark_counter_attr_node = NULL;
+	sysfs_put(_stp_driver_data->txdata_stuck_counter_attr_node);
+	_stp_driver_data->txdata_stuck_counter_attr_node = NULL;
+
 	stp_raw_dev_remove();
+
+// fallthrough
+exit_thread_error:
+	/* The thread was created but never woken, so stp_thread() has not run:
+	 * kthread() tests KTHREAD_SHOULD_STOP before calling it and exits with
+	 * -EINTR instead. It must be kthread_stop() rather than
+	 * stp_stop_thread(), whose wait_for_completion() would block forever on
+	 * a completion only the thread tail signals.
+	 */
+	kthread_stop(_stp_driver_data->stp_thread);
+
+// fallthrough
+exit_controller_error:
+	if (STP_IS_ERR(stp_controller_deinit()))
+		STP_DRV_LOG_ERR("failed controller deinit, continuing");
+
+// fallthrough
+exit_wakeup_error:
+	if (device_init_wakeup(&spi->dev, false) != 0)
+		STP_DRV_LOG_ERR("Failed to deinit wakesource\n");
 
 // fallthrough
 exit_channel_error:
@@ -1164,13 +1232,7 @@ static int spi_stp_remove(struct spi_device *spi)
 	// teardown
 	stp_disable_gpio_irq(&spi->dev, &_stp_driver_data->gpio_data);
 
-	// Flag the thread stop and unblock the thread
-	// to exit the transaction thread
-	stp_controller_signal_stop_thread();
-	stp_controller_unset_suspend();
-	kthread_unpark(_stp_driver_data->stp_thread);
-
-	wait_for_completion(&_stp_driver_data->stp_thread_complete);
+	stp_stop_thread();
 
 	if (STP_IS_ERR(stp_controller_deinit()))
 		STP_DRV_LOG_ERR("failed controller deinit, continuing");
@@ -1268,8 +1330,8 @@ static void wdt_work_func(struct work_struct *unused)
 {
 	int ret;
 	STP_DRV_LOG_ERR("SPI WDT bark (gpio: soc_has_data:%d, mcu_req_transaction:%d)",
-		gpio_get_value(_stp_driver_data->gpio_data.controller_has_data),
-		gpio_get_value(_stp_driver_data->gpio_data.device_request_transaction));
+		gpio_get_value_cansleep(_stp_driver_data->gpio_data.controller_has_data),
+		gpio_get_value_cansleep(_stp_driver_data->gpio_data.device_request_transaction));
 
 
 	if (!_stp_driver_data)

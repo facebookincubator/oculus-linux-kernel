@@ -1,0 +1,92 @@
+cc_library {
+    name: "libarfw_ar_fw_queue",
+    defaults: [
+        "libarfw_defaults",
+    ],
+    export_include_dirs: ["include"],
+    srcs: ["src/*.c"],
+    static_libs: ["libarfw_ar_queue"],
+    vendor_available: true,
+    host_supported: true,
+}
+
+cc_test {
+    name: "libarfw_ar_fw_queue_tests",
+    native_coverage: true,
+    defaults: [
+        "libarfw_defaults",
+        "oculus_gtest_defaults",
+    ],
+    srcs: [
+        "src/*.c",
+        "test/ar_fw_queue_test.cpp",
+    ],
+    local_include_dirs: ["include"],
+    static_libs: [
+        "libarfw_ar_queue",
+        "libarfw_ar_queue_mock",
+        "libgmock",
+        "libgtest",
+    ],
+    host_supported: true,
+}
+
+cc_binary {
+    name: "janus_ar_fw_queue_tests",
+    defaults: [
+        "libarfw_defaults",
+        "oculus_gtest_defaults",
+    ],
+    srcs: [
+        "src/*.c",
+        "test/ar_fw_queue_test.cpp",
+    ],
+    local_include_dirs: ["include"],
+    static_libs: [
+        "libarfw_ar_queue",
+        "libarfw_ar_queue_mock",
+        "libgmock",
+        "libgtest",
+        "libgtest_main",
+    ],
+    vendor: true,
+}
+
+cc_test {
+    name: "libarfw_ar_fw_queue_integration_tests",
+    defaults: [
+        "libarfw_defaults",
+        "oculus_gtest_defaults",
+    ],
+    srcs: [
+        "src/*.c",
+        "test/ar_fw_queue_integration_test.cpp",
+    ],
+    local_include_dirs: ["include"],
+    static_libs: [
+        "libarfw_ar_queue",
+        "libgmock",
+        "libgtest",
+    ],
+    host_supported: true,
+}
+
+cc_binary {
+    name: "janus_ar_fw_queue_integration_tests",
+    defaults: [
+        "libarfw_defaults",
+        "oculus_gtest_defaults",
+    ],
+    srcs: [
+        "src/*.c",
+        "test/ar_fw_queue_integration_test.cpp",
+    ],
+    local_include_dirs: ["include"],
+    static_libs: [
+        "libarfw_ar_queue",
+        "libgmock",
+        "libgtest",
+        "libgtest_main",
+    ],
+    vendor: true,
+}

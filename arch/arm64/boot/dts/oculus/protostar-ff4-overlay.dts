@@ -1,0 +1,174 @@
+/dts-v1/;
+/plugin/;
+
+#include "greatwhite.dtsi"
+/ {
+	model = "Protostar FF4 (RT700)";
+	compatible = "meta,greatwhite", "meta,protostar-ff4";
+	qcom,msm-id = <579 0x10000>;
+	qcom,board-id = <34 0xd2>;
+};
+
+&max77813 {
+    status="disabled";
+};
+
+/* Display card (Celeste) I2C bus: */
+
+&qupv3_se4_i2c {
+	status = "ok";
+};
+
+#include "gw-mipi-mux.dtsi"
+
+#include "meta-rt685-rt700.dtsi"
+#include "greatwhite-display-p1.dtsi"
+#include "gw-p1-power-slider.dtsi"
+#include "greatwhite-hyperoff-rt700.dtsi"
+
+&rt600_ctrl {
+	meta,rt700-override;
+};
+
+&sdhc_1 {
+        meta,biwin-ffu-enable;
+};
+
+&usb_conn_gpio{
+	vbus-gpio = <&tlmm 6 GPIO_ACTIVE_LOW>;
+	vchrg-debug-detect-gpio = <&tlmm 11 GPIO_ACTIVE_LOW>;
+	meta,enable-vchrg-debug-detect;
+};
+
+&tlmm {
+        pinctrl-names = "default";
+        pinctrl-0 = <
+            &soc_slider_defaults
+                &mcu_to_soc_disp_dd_state
+                &action_button
+                &vchrg_gpio_pin_default
+                &board_gpio_pin_default
+        >;
+
+
+	 		board_gpio_pin_default: board_gpio_pin_default {
+                  mux {
+                          pins = "gpio103", "gpio105", "gpio106";
+                  };
+                  config {
+                          pins = "gpio103", "gpio105", "gpio106";
+                          drive-strength = <2>;
+                          bias-disable;
+                          input-enable;
+                  };
+          };
+};
+
+&usb_conn_gpio {
+	meta,suspend-disable;
+};
+
+/*
+ * Everett SPI (qupv3_se6) — FF4-only. Moved here from the shared
+ * meta-neo-common.dtsi so ONLY protostar_ff4 enables this SPI + the
+ * gpio91/92/64/63 pinmux; other neo/greatwhite products are unaffected.
+ * Enables /dev/spidev10.0 for flashing Everett, logs, and tests.
+ * NOTE (Everett/camera owners): if you'd prefer this live elsewhere or use a
+ * different pin/CS or non-spidev (spi-geni) config, happy to re-scope — this
+ * placement is just to avoid regressing shared neo config. See T281191700.
+ */
+&aliases {
+	spi10 = "/soc/spi@a80000";	/* Display offload / Everett */
+};
+
+&qupv3_se6_spi_active {
+	mux {
+		pins = "gpio91", "gpio92", "gpio64";
+		function = "qup1_se0";
+	};
+
+	config {
+		pins = "gpio91", "gpio92", "gpio64";
+		drive-strength = <4>;
+		bias-disable;
+	};
+};
+
+&qupv3_se6_spi_sleep {
+	mux {
+		pins = "gpio91", "gpio92";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio91", "gpio92";
+		drive-strength = <4>;
+		bias-pull-down;
+	};
+};
+
+&qupv3_se6_spi_pins {
+	qupv3_se6_spi_clk_sleep: qupv3_se6_spi_clk_sleep {
+		mux {
+			pins = "gpio64";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio64";
+			drive-strength = <4>;
+			bias-disable;
+		};
+	};
+
+	qupv3_se6_spi_cs_active: qupv3_se6_spi_cs_active {
+		mux {
+			pins = "gpio63";
+			function = "qup1_se0";
+		};
+
+		config {
+			pins = "gpio63";
+			drive-strength = <2>;
+			bias-pull-up;
+			output-low;
+		};
+	};
+
+	qupv3_se6_spi_cs_sleep: qupv3_se6_spi_cs_sleep {
+		mux {
+			pins = "gpio63";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio63";
+			drive-strength = <2>;
+			bias-pull-up;
+			output-high;
+		};
+	};
+};
+
+&qupv3_se6_spi {
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&qupv3_se6_spi_active &qupv3_se6_spi_cs_active>;
+	pinctrl-1 = <&qupv3_se6_spi_sleep &qupv3_se6_spi_clk_sleep &qupv3_se6_spi_cs_sleep>;
+	status = "ok";
+	/* Bump up priority to get better latency */
+	qcom,rt;
+	/* this is 3 cycles at 17MHz which is ~180ns */
+	qcom,set-inter-words-delay = <3>;
+	/* Set transfer timeout offset to 500ms */
+	qcom,xfer-timeout-offset = <500>;
+	spidev@1 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		/* NOTE: spidev is set for debugging. This should be spi-geni */
+		compatible = "linux,spidev";
+		spi-max-frequency = <20000000>;
+		reg = <0>;
+		spi-cpha;
+	};
+};
+

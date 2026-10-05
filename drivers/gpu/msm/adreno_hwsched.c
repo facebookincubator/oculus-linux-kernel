@@ -1589,7 +1589,7 @@ static struct cmd_list_obj *get_active_cmdobj_lpac(
 	list_for_each_entry_safe(obj, tmp, &hwsched->cmd_list, node) {
 		drawobj = obj->drawobj;
 
-		if (!(kgsl_context_is_lpac(drawobj->context)))
+		if (!is_cmdobj(drawobj) || !kgsl_context_is_lpac(drawobj->context))
 			continue;
 
 		kgsl_readtimestamp(device, drawobj->context,

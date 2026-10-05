@@ -1150,17 +1150,6 @@ int stp_create_channel(struct stp_channel_data *const data)
 		return -ENOMEM;
 	}
 
-	working_channel->devt = MKDEV(_stp_device->major, data->channel);
-	working_channel->dev =
-		device_create(_stp_device->device_class,
-			      _stp_device->parent_dev, working_channel->devt,
-			      NULL, "stp%d", data->channel);
-
-	if (IS_ERR(working_channel->dev)) {
-		STP_DRV_LOG_ERR("c%d class create error", data->channel);
-		return PTR_ERR(working_channel->dev);
-	}
-
 	init_completion(&working_channel->write_done);
 	init_completion(&working_channel->read_done);
 	init_completion(&working_channel->fsync_done);
@@ -1173,7 +1162,9 @@ int stp_create_channel(struct stp_channel_data *const data)
 	working_channel->tx_buffer_len = data->tx_len_bytes;
 	working_channel->priority = data->priority;
 	working_channel->channel = data->channel;
-  working_channel->closing = false;
+	working_channel->closing = false;
+	working_channel->inuse = false;
+	working_channel->devt = MKDEV(_stp_device->major, data->channel);
 
 	mutex_init(&working_channel->inuse_lock);
 	mutex_init(&working_channel->rx_lock);
@@ -1187,7 +1178,20 @@ int stp_create_channel(struct stp_channel_data *const data)
 	barrier();
 	_stp_device->channels[data->channel] = working_channel;
 
-	working_channel->inuse = false;
+	/*
+	 * Publish the node last: device_create() emits the uevent that makes
+	 * /dev/stpN openable, and an opener must not race the setup above.
+	 */
+	working_channel->dev =
+		device_create(_stp_device->device_class,
+			      _stp_device->parent_dev, working_channel->devt,
+			      NULL, "stp%d", data->channel);
+
+	if (IS_ERR(working_channel->dev)) {
+		STP_DRV_LOG_ERR("c%d class create error", data->channel);
+		WRITE_ONCE(_stp_device->channels[data->channel], NULL);
+		return PTR_ERR(working_channel->dev);
+	}
 
 	device_create_file(working_channel->dev, &dev_attr_stp_stats);
 

@@ -145,7 +145,7 @@
 					"CAM_RESET0",
 					"CAM_CCI_PUR",
 					"CAM_CCI_SISEL";
-	aoclpi-enable;
+	dunelpi-enable;
 };
 
 &cam_cci0 {

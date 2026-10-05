@@ -107,6 +107,27 @@ config META_HAMMERHEAD
 	help
 	  Enable support for hammerhead device
 
+config META_FLORIAN
+	bool "Enable support for florian device"
+	default n
+	select ARCH_NEO
+	help
+	  Enable support for florian device
+
+config META_GREATWHITE
+	bool "Enable support for greatwhite device"
+	default n
+	select ARCH_NEO
+	help
+	  Enable support for greatwhite device
+
+config META_OATMEAL
+	bool "Enable support for oatmeal device"
+	default n
+	select ARCH_NEO
+	help
+	  Enable support for oatmeal device
+
 config META_OOM_KILL_STATS
 	bool "Log Kernel OOM Kill events"
 	default n
@@ -201,6 +222,19 @@ config RT600_CTRL
 		sysfs to enable testing of different state transitions and also
 		to ensure RT600 is in the correct state for flashing.
 
+config RT600_CTRL_BOARD_ID
+	bool "Expose the CDT board-id as a sysfs attribute"
+	depends on RT600_CTRL
+	default n
+	help
+	    Publish qcom,board-id from this device's firmware node as a
+		read-only board_id sysfs attribute.
+
+		Only needed where the platform describes the board in ACPI _DSD:
+		ACPI properties are never published to userspace, whereas on
+		devicetree the OF core already exposes the root property under
+		/sys/firmware/devicetree. Leave disabled on devicetree platforms.
+
 config SPI_STP
 	tristate "STP SPI driver"
 	depends on SPI && EVENT_TRACING
@@ -267,6 +301,161 @@ config MCU_THERMISTOR
 	help
 	  Enable mcu thermistor interface.
 
+config ACROPOLIS_CTRL
+	tristate "Acropolis control driver"
+	default n
+	help
+	  Say yes here to add support for starting up Acropolis and setting up its
+	  control signals on the Oatmeal platform.
+
+config AMEM_KMD
+	tristate "Enable support for Adaptive Memory Driver"
+	imply QCOM_LLCC
+	default n
+	help
+	  Enable Adaptive Memory Driver. This feature is the kernel
+	  component that implements the Adaptive Memory allocator feature.
+
+config BBC_CTRL
+	tristate "BBC Control Driver"
+	default n
+	help
+	  Say yes here to add support for setting the BBC control signals on
+	  the Oatmeal platform.
+
+config DAM_CTRL
+	tristate "DAM control driver"
+	default n
+	help
+	  Say yes here to add support for setting the DAM control signals on
+	  the Oatmeal platform.
+
+config HYPEROFF
+  tristate "Hyperoff driver"
+	depends on SPI
+	default n
+	help
+		Enable Hyperoff driver for communication with SoC and Hyperoff.
+
+config IIO_CHANNEL_TEMP_SENSOR
+	tristate "IIO Channel Temp Sensor Driver"
+	default n
+	help
+	  Say yes here to add support for reading adc voltage and calculating
+	  usb temperature.
+
+config JBD4020_I2C
+        tristate "JBD4020 I2C driver"
+        default n
+        depends on OF
+        select DRM_PANEL_BRIDGE
+        select DRM_KMS_HELPER
+        select DRM_MIPI_DSI
+        select REGMAP_I2C
+        help
+          Driver to support read from and writing to JBD4020 device via I2C.
+          Exposes functions to initialize JBD4020 and read/write to device in user space.
+
+config MAX31875_I2C
+	tristate "Maxim Integrated MAX31875 Temperature Sensor"
+	default n
+	depends on I2C
+	help
+	  Enable support for Maxim Integrated MAX31875.
+
+config METABATTERY
+	tristate "MetaBattery driver"
+	default n
+	help
+		Provides an interface to interact with the battery IC on another device.
+
+config NETINFO
+        tristate "Netinfo Driver"
+        default n
+        help
+          Enable netinfo driver
+
+config PM8150_XO
+	tristate "PM8150 XO Clock Driver"
+	default n
+	depends on SPMI
+	help
+	  Say Y here to enable the PM8150 XO Clock Driver driver. This driver is
+	  responsible for PM8150 XO Clock, it adjusts cap between XTAL1_IN_PAD
+	  and XTAL1_OUT_PAD.
+
+config RAA491901_I2C
+	tristate "RGB Buck-Boost Four-Channel LED Driver"
+	default n
+	depends on I2C
+	help
+	  Enable support for Renesas RAA491901.
+
+config REGULATOR_HL7594
+	tristate "HL7594 Buck Converter Driver"
+	default n
+	depends on I2C
+	select REGMAP_I2C
+	help
+	  This driver controls HL7594 Buck converter via I2C bus and
+	  configures the PWM mode through I2C. Say Y here to enable
+	  the HL7594 Buck Converter Driver.
+
+config REGULATOR_KTB8399
+	tristate "Kinetic KTB8399 External Buck-Boost Converter"
+	default n
+	depends on I2C
+	help
+	  This driver controls Kinetic KTB8399 external buck via I2C bus.
+	  The converter VOUT is configurable. Its input voltage range is
+	  2.5 V to 5.5 V. Its output voltage range is 0.6 V to 1.394 V in
+	  6.25 mV steps, programmed through an I2C interface. Say Y here
+	  to enable the regulator driver for the converter.
+
+config REGULATOR_MAX77655
+	tristate "MAX77655 PMIC for LCOS display"
+	default n
+	depends on I2C
+	help
+	  Regulator driver to support MAX77655 PMIC enable and disable via I2C and GPIO.
+
+config REGULATOR_MP28167
+	tristate "MPS MP28167 High Efficiency Buck-Boost Converter"
+	depends on I2C
+	help
+	  This driver controls MP28167 high efficiency buck-boost.
+
+config REGULATOR_DA9172
+  tristate "DA9172 PMIC Driver"
+  default n
+  depends on I2C
+  help
+    Regulator driver to support DA9172 PMIC enable and disable via I2C and GPIO.
+
+config STUSB4500_USB
+	tristate "STUSB4500 USB Controller Driver"
+	default n
+	depends on I2C
+	help
+	  Say Y here to enable the STUSB4500 USB controller driver. This driver is
+	  responsible for USB PD negotiation and CC detection. It also supports the
+	  STUSB4500L chip variant that only does CC detection.
+
+config TMP114_I2C
+	tristate "Texas Instruments TMP114 Temperature Sensor"
+	default n
+	depends on I2C
+	help
+	  Enable support for Texas Instruments TMP114.
+
+config TPS61280
+	tristate "TPS61280 boost driver"
+	default n
+	help
+	  Enable support for TI TPS61280
+
+source "drivers/staging/oculus/arfw/Kconfig"
+source "drivers/staging/oculus/da9172/Kconfig"
 source "drivers/staging/oculus/mcu/Kconfig"
 
 endif # OCULUS

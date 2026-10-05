@@ -64,6 +64,11 @@
 
 #define I2C_JITTER_DELAY_MS (850)
 
+static unsigned int capacity_cache_ttl_ms = 200;
+module_param(capacity_cache_ttl_ms, uint, 0644);
+MODULE_PARM_DESC(capacity_cache_ttl_ms,
+	"Battery capacity cache time to live (ms); 0 : disable");
+
 /* set vreg_out to default while usb disconnect */
 #define BOB_INIT_VOLTAGE_CHG_DELTA_DEFAULT	250000
 
@@ -92,24 +97,14 @@ const u32 qscale_capacity_step_size_uah[] = {
 	50000  // 50.0 mAh in uAh
 };
 
-static u8 sip_serial_num_regs[] = {
-	0xBA,
-	0xE0,
-	0xE1,
-	0xE6,
-	0xE7,
-};
+/* Limit the bulk read size to 32 to use FIFO xfter for Qualcomm targets.  */
+#define REGMAP_BULK_MAX_BYTES 32
 
-static u8 pack_serial_num_regs[] = {
-	0xE9,
-	0xEA,
-	0xEB,
-	0xEC,
-	0xED,
-	0xEE,
-	0xEF,
-};
 
+static_assert(SIP_SN_RUN_LEN * sizeof(u16) <= REGMAP_BULK_MAX_BYTES,
+	      "exceed the bulk limit");
+static_assert(PACK_SN_LEN * sizeof(u16) <= REGMAP_BULK_MAX_BYTES,
+	      "exceed the bulk limit");
 static char *batt_supplied_to[] = {
 	"max17332-battery",
 };
@@ -132,6 +127,7 @@ static int update_voltage_thresholds(struct max17332_fg_chip *chip, int voltage)
 static int max17332_get_mix_soc(struct max17332_fg_chip *chip, u16 *mix_soc);
 static int max17332_get_voltage_ocv(struct max17332_fg_chip *chip, int* voltage_ocv);
 static int max17332_configure_manual_charging(struct max17332_fg_chip *chip, int manual_charging);
+static void max17332_batt_cap_cache_invalidate(struct max17332_fg_chip *chip);
 static int max17332_set_voltage_lower_limit(struct max17332_fg_chip *chip,
 						int voltage);
 static int max17332_set_voltage_upper_limit(struct max17332_fg_chip *chip,
@@ -490,6 +486,9 @@ nvm_block_copy:
 	// Wait 500 ms for POR_CMD to clear;
 	mdelay(500);
 
+	/* The gauge has been reprogrammed and reset. */
+	max17332_batt_cap_cache_invalidate(chip);
+
 	ret = max17332_lock_write_protection(chip->max17332, true);
 	if (ret < 0) {
 		pr_err("%s: fail to lock protection on max17332: %d\n",
@@ -525,42 +524,67 @@ static int read_reg_raw_value(int reg, struct max17332_fg_chip *chip,
 	return snprintf(buf, REG_RAW_VAL_SIZE, "%04x\n", reg_val);
 }
 
-static int read_mult_reg_char_values(u8 *regs, size_t num_regs,
-		struct regmap *chip_regmap, char *chip_buffer, size_t buffer_size)
+static char *pack_reg_chars(char *dst, u16 reg_val)
 {
-	u16 reg_val;
+	/* each register holds two chars, upper byte first. */
+	*dst++ = (char)(reg_val >> 8);
+	*dst++ = (char)(reg_val & 0xFF);
+	return dst;
+}
+
+/* 2 bytes per register, \n and NULL */
+static_assert(SIP_SN_REGS * sizeof(u16) + 2 <= SIP_SERIAL_NUMBER_SIZE,
+	      "sip_serial_number too small");
+
+static int read_sip_serial_number(struct max17332_fg_chip *chip)
+{
+	char *p = chip->sip_serial_number;
+	u16 misc, run[SIP_SN_RUN_LEN];
 	int ret;
-	u8 reg;
-	char upper_byte, lower_byte;
-	int reg_ind = 0, buff_ind = 0;
 
-	size_t buffer_str_size = buffer_size - 2; /* last two elements are used for newline and null termination */
+	ret = max17332_read(chip->regmap_nvm, REG_SIP_SN_MISC, &misc);
+	if (ret < 0)
+		return ret;
 
-	/* Each register value is 16 bits -> 2 chars. Store 1 or 2 chars into buffer limited by buffer size */
-	for (; reg_ind < num_regs && buff_ind < buffer_str_size ; reg_ind++) {
-		reg = regs[reg_ind];
+	ret = regmap_bulk_read(chip->regmap_nvm, REG_SIP_SN_RUN, run,
+			       SIP_SN_RUN_LEN);
+	if (ret < 0)
+		return ret;
 
-		ret = max17332_read(chip_regmap, reg, &reg_val);
-		if (ret < 0)
-			return ret;
+	/*
+	 * bulk_read did read 0xE0, 0xE1, ... 0xE7 into run[], pack only
+	 * what we need.
+	 */
+	p = pack_reg_chars(p, misc);
+	p = pack_reg_chars(p, run[0]);		/* 0xE0 */
+	p = pack_reg_chars(p, run[1]);		/* 0xE1 */
+	p = pack_reg_chars(p, run[6]);		/* 0xE6 */
+	p = pack_reg_chars(p, run[7]);		/* 0xE7 */
+	*p++ = '\n';
+	*p = '\0';
 
-		upper_byte = (char) (reg_val >> 8);
-		lower_byte = (char) (reg_val & 0xFF);
+	return 0;
+}
 
-		chip_buffer[buff_ind] = upper_byte;
-		buff_ind++;
+static_assert(PACK_SN_LEN * sizeof(u16) + 2 <= PACK_SERIAL_NUMBER_SIZE,
+	      "pack_serial_number too small");
 
-		/* Check if buffer can fit the lower byte before storing */
-		if (buff_ind < buffer_str_size) {
-			chip_buffer[buff_ind] = lower_byte;
-			buff_ind++;
-		}
-	}
+static int read_pack_serial_number(struct max17332_fg_chip *chip)
+{
+	char *p = chip->pack_serial_number;
+	u16 sn[PACK_SN_LEN];
+	int ret, i;
 
-	chip_buffer[buff_ind] = '\n';
-	buff_ind++;
+	ret = regmap_bulk_read(chip->regmap_nvm, REG_PACK_SN, sn, PACK_SN_LEN);
+	if (ret < 0)
+		return ret;
 
-	return buff_ind;
+	for (i = 0; i < PACK_SN_LEN; i++)
+		p = pack_reg_chars(p, sn[i]);
+	*p++ = '\n';
+	*p = '\0';
+
+	return 0;
 }
 
 static int64_t getTimerTotalMs(struct max17332_fg_chip *chip) {
@@ -909,8 +933,7 @@ ssize_t max17332_fg_show_attrs(struct device* dev, struct device_attribute* attr
 		break;
 	case MAX17332_FG_SIP_SN:
 		if (chip->sip_serial_number[0] == '\0') {
-			ret = read_mult_reg_char_values(sip_serial_num_regs, ARRAY_SIZE(sip_serial_num_regs), chip->regmap_nvm,
-					chip->sip_serial_number, SIP_SERIAL_NUMBER_SIZE);
+			ret = read_sip_serial_number(chip);
 			if (ret < 0)
 				return ret;
 		}
@@ -918,8 +941,7 @@ ssize_t max17332_fg_show_attrs(struct device* dev, struct device_attribute* attr
 		break;
 	case MAX17332_FG_PACK_SN:
 		if (chip->pack_serial_number[0] == '\0') {
-			ret = read_mult_reg_char_values(pack_serial_num_regs, ARRAY_SIZE(pack_serial_num_regs), chip->regmap_nvm,
-					chip->pack_serial_number, PACK_SERIAL_NUMBER_SIZE);
+			ret = read_pack_serial_number(chip);
 			if (ret < 0)
 				return ret;
 		}
@@ -1296,7 +1318,7 @@ ssize_t max17332_fg_show_attrs(struct device* dev, struct device_attribute* attr
 		ret = snprintf(buf, MAX_INT_DIGITS, "%d\n", reg);
 		break;
 	case MAX17332_FG_CONFIG_UNMAPPED_CAPACITY:
-		max17332_get_batt_capacity(chip, &intval, NULL);
+		max17332_get_batt_capacity_cached(chip, &intval, NULL);
 		ret = snprintf(buf, MAX_INT_DIGITS, "%d\n", intval);
 		break;
 	case MAX17332_FG_BATTERY_NAME:
@@ -1754,17 +1776,40 @@ static int max17332_get_nfullcaprep(struct max17332_fg_chip *chip)
 	return RAW_CAP_TO_UAMPH(sign_extend32(reg, 15), chip->rsense);
 }
 
+static int max17332_temp_from_raw(u16 val)
+{
+	/*
+	 * The value is converted into centigrade scale
+	 * Units of LSB = 1 / 256 degree Celsius
+	 */
+	return (sign_extend32(val, 15) * 10) >> 8;
+}
+
+#ifdef CONFIG_BATTERY_CAPACITY_EMULATION
+static int max17332_emul_batt_temperature(struct max17332_fg_chip *chip)
+{
+	if (chip->emul_batt_temperature > INVALID_EMUL_BATT_TEMPERATURE)
+		return chip->emul_batt_temperature;
+
+	return INVALID_EMUL_BATT_TEMPERATURE;
+}
+#else
+static int max17332_emul_batt_temperature(struct max17332_fg_chip *chip)
+{
+	return INVALID_EMUL_BATT_TEMPERATURE;
+}
+#endif
+
 static int max17332_get_temperature(struct max17332_fg_chip *chip, int *temp)
 {
-	int ret;
+	int ret, emul;
 	u16 val;
 
-#if (IS_ENABLED(CONFIG_BATTERY_CAPACITY_EMULATION))
-	if (chip->emul_batt_temperature > INVALID_EMUL_BATT_TEMPERATURE) {
-		*temp = chip->emul_batt_temperature;
+	emul = max17332_emul_batt_temperature(chip);
+	if (emul > INVALID_EMUL_BATT_TEMPERATURE) {
+		*temp = emul;
 		return 0;
 	}
-#endif
 
 	ret = max17332_read(chip->regmap, REG_TEMP, &val);
 	if (ret < 0) {
@@ -1772,10 +1817,7 @@ static int max17332_get_temperature(struct max17332_fg_chip *chip, int *temp)
 		return ret;
 	}
 
-	*temp = sign_extend32(val, 15);
-	/* The value is converted into centigrade scale */
-	/* Units of LSB = 1 / 256 degree Celsius */
-	*temp = (*temp * 10) >> 8;
+	*temp = max17332_temp_from_raw(val);
 	return 0;
 }
 
@@ -2098,6 +2140,14 @@ static uint32_t get_time_in_sec(void *pdata)
 	return (uint32_t) (time & 0xFFFFFFFF);
 }
 
+#define _BD_OFFSET(reg)		((reg) - REG_Q_RESIDUAL)
+#define BULK_WIN_A_LEN		(REG_MIX_SOC - REG_Q_RESIDUAL + 1)
+#define BULK_WIN_B_LEN		(REG_AV_CAP - REG_RCELL + 1)
+static_assert(BULK_WIN_A_LEN * sizeof(u16) <= REGMAP_BULK_MAX_BYTES,
+	      "exceed the bulk limit");
+static_assert(BULK_WIN_B_LEN * sizeof(u16) <= REGMAP_BULK_MAX_BYTES,
+	      "exceed the bulk limit");
+
 static int get_metasoc_params(struct max17332_fg_chip *chip, uint8_t repsoc, bool is_full, metasoc_param *params)
 {
 	u16 val = 0;
@@ -2105,61 +2155,64 @@ static int get_metasoc_params(struct max17332_fg_chip *chip, uint8_t repsoc, boo
 		capacity = 0, ocv = 0, qres = 0;
 	bool is_charging = false;
 	union power_supply_propval psu;
+	enum { bulk_size = REG_AV_CAP - REG_Q_RESIDUAL + 1 };
+	u16 bd[bulk_size] = {0};
+	int ret;
 
-	int ret = max17332_read(chip->regmap, REG_AVGVCELL, &val);
+	/*
+	 * Bulk read to read the following registers :
+	 *
+	 * - WIN_A:
+	 * REG_Q_RESIDUAL(0x0C)
+	 * REG_MIX_SOC   (0x0D)
+	 * --- 0x0E..0x13 gap, not fetched ---
+	 * - WIN_B:
+	 * REG_RCELL     (0x14)
+	 * REG_AVGVCELL  (0x19)
+	 * REG_VCELL     (0x1A)
+	 * REG_TEMP      (0x1B)
+	 * REG_CURRENT   (0x1C)
+	 * REG_AV_CAP    (0x1F)
+	 *
+	 */
+	ret = regmap_bulk_read(chip->regmap, REG_Q_RESIDUAL,
+			       &bd[_BD_OFFSET(REG_Q_RESIDUAL)], BULK_WIN_A_LEN);
 	if (ret < 0) {
-		pr_err("%s: fail to read REG_AVGVCELL\n", __func__);
+		pr_err("%s: bulk read 0x%02x..0x%02x failed: %d\n", __func__,
+		       REG_Q_RESIDUAL, REG_MIX_SOC, ret);
 		return ret;
 	}
-	vavg = (max17332_raw_voltage_to_uvolts(val) / 1000);
 
-	ret = max17332_read(chip->regmap, REG_VCELL, &val);
+	ret = regmap_bulk_read(chip->regmap, REG_RCELL,
+			       &bd[_BD_OFFSET(REG_RCELL)], BULK_WIN_B_LEN);
 	if (ret < 0) {
-		pr_err("%s: fail to read REG_VCELL\n", __func__);
+		pr_err("%s: bulk read 0x%02x..0x%02x failed: %d\n", __func__,
+		       REG_RCELL, REG_AV_CAP, ret);
 		return ret;
 	}
-	vnow = (max17332_raw_voltage_to_uvolts(val) / 1000);
 
-	ret = max17332_read(chip->regmap, REG_CURRENT, &val);
-	if (ret < 0) {
-		pr_err("%s: fail to read REG_CURRENT\n", __func__);
-		return ret;
-	}
-	curr = max17332_raw_current_to_uamps(chip, sign_extend32(val, 15)) / 1000;
+	vavg = max17332_raw_voltage_to_uvolts(
+			bd[_BD_OFFSET(REG_AVGVCELL)]) / 1000;
+	vnow = max17332_raw_voltage_to_uvolts(
+			bd[_BD_OFFSET(REG_VCELL)]) / 1000;
+	curr = max17332_raw_current_to_uamps(chip,
+			sign_extend32(bd[_BD_OFFSET(REG_CURRENT)], 15)) / 1000;
 
-	ret = max17332_get_temperature(chip, &temp);
-	if (ret < 0)
-		return ret;
+	temp = max17332_emul_batt_temperature(chip);
+	if (temp == INVALID_EMUL_BATT_TEMPERATURE)
+		temp = max17332_temp_from_raw(bd[_BD_OFFSET(REG_TEMP)]);
 
-	ret = max17332_read(chip->regmap, REG_MIX_SOC, &val);
-	if (ret < 0) {
-		pr_err("%s: fail to read REG_MIX_SOC\n", __func__);
-		return ret;
-	}
 	/* convert to soc with 2 digits of resolution past dec point*/
-	val = (SOC_TO_USOC(val)) / 10000 ;
-	level = val;
+	level = (SOC_TO_USOC(bd[_BD_OFFSET(REG_MIX_SOC)])) / 10000;
 
-	ret = max17332_read(chip->regmap, REG_RCELL, &val);
-	if (ret < 0) {
-		pr_err("%s: fail to read REG_RCELL\n", __func__);
-		return ret;
-	}
-	rbatt = (int) (val * 1000) / 4096; /* lsb is 1/4096 Ohms*/
+	/* lsb is 1/4096 Ohms*/
+	rbatt = (int) (bd[_BD_OFFSET(REG_RCELL)] * 1000) / 4096;
 
-	ret = max17332_read(chip->regmap, REG_AV_CAP, &val);
-	if (ret < 0) {
-		pr_err("%s: fail to read REG_AV_CAP\n", __func__);
-		return ret;
-	}
-	capacity = RAW_CAP_TO_UAMPH(sign_extend32(val, 15), chip->rsense) / 1000;
+	capacity = RAW_CAP_TO_UAMPH(sign_extend32(bd[_BD_OFFSET(REG_AV_CAP)], 15),
+				    chip->rsense) / 1000;
 
-	ret = max17332_read(chip->regmap, REG_Q_RESIDUAL, &val);
-	if (ret < 0) {
-		pr_err("%s: fail to read REG_Q_RESIDUAL\n", __func__);
-		return ret;
-	}
-	qres = RAW_CAP_TO_UAMPH(sign_extend32(val, 15), chip->rsense);
+	qres = RAW_CAP_TO_UAMPH(sign_extend32(bd[_BD_OFFSET(REG_Q_RESIDUAL)], 15),
+				chip->rsense);
 
 	ret = max17332_read(chip->regmap, REG_VFOCV, &val);
 	if (ret < 0) {
@@ -2195,6 +2248,8 @@ static int get_metasoc_params(struct max17332_fg_chip *chip, uint8_t repsoc, boo
 
 	return ret;
 }
+
+#undef _BD_OFFSET
 
 static int get_metasoc(struct max17332_fg_chip *chip, uint8_t repsoc, bool is_full, uint8_t *metasoc)
 {
@@ -2286,6 +2341,18 @@ static int get_metasoc(struct max17332_fg_chip *chip, uint8_t repsoc, bool is_fu
 }
 #endif
 
+#ifdef CONFIG_BATTERY_CAPACITY_EMULATION
+static int max17332_emul_batt_capacity(struct max17332_fg_chip *chip)
+{
+	return chip->emul_batt_capacity;
+}
+#else
+static int max17332_emul_batt_capacity(struct max17332_fg_chip *chip)
+{
+	return INVALID_EMUL_BATT_CAPACITY;
+}
+#endif
+
 int max17332_get_batt_capacity(struct max17332_fg_chip *chip,
 									int *capacity, bool *is_full)
 {
@@ -2295,6 +2362,7 @@ int max17332_get_batt_capacity(struct max17332_fg_chip *chip,
 	int local_capacity = 0;
 	static bool last_full_state = false;
 	bool is_batt_full = false;
+	int emul_cap;
 
 #if (IS_ENABLED(CONFIG_METASOC))
 	uint8_t metasoc = 0;
@@ -2302,12 +2370,11 @@ int max17332_get_batt_capacity(struct max17332_fg_chip *chip,
 	metasoc_config_data *config_data;
 #endif
 
-#if (IS_ENABLED(CONFIG_BATTERY_CAPACITY_EMULATION))
-	if (chip->emul_batt_capacity >= 0) {
-		*capacity = chip->emul_batt_capacity;
+	emul_cap = max17332_emul_batt_capacity(chip);
+	if (emul_cap >= 0) {
+		*capacity = emul_cap;
 		return 0;
 	}
-#endif
 
 	max17332_read(chip->regmap, REG_PROTSTATUS, &protstat);
 	is_batt_full = protstat & BIT_PROTSTATUS_FULL;
@@ -2382,6 +2449,67 @@ int max17332_get_batt_capacity(struct max17332_fg_chip *chip,
 
 	// Caching battery capacity to use in suspend telemetry
 	chip->cached_battery_pct = *capacity;
+
+	return 0;
+}
+
+static void max17332_batt_cap_cache_invalidate(struct max17332_fg_chip *chip)
+{
+	unsigned long tmp;
+
+	if (!capacity_cache_ttl_ms)
+		return;
+
+	tmp = smp_load_acquire(&chip->batt_cap_cache.last_update) -
+			       msecs_to_jiffies(capacity_cache_ttl_ms);
+	smp_store_release(&chip->batt_cap_cache.last_update, tmp);
+}
+
+#define BATT_CAP_CACHE_FULL		BIT(16)
+#define BATT_CAP_CACHE_PACK(cap, full)	(((u32)(cap) & 0xffff) | \
+					 (full ? BATT_CAP_CACHE_FULL : 0))
+#define BATT_CAP_CACHE_CAP(v)		((int)((v) & 0xffff))
+#define BATT_CAP_CACHE_IS_FULL(v)	(!!((v) & BATT_CAP_CACHE_FULL))
+
+int max17332_get_batt_capacity_cached(struct max17332_fg_chip *chip,
+				      int *capacity, bool *is_full)
+{
+	unsigned long ttl = msecs_to_jiffies(capacity_cache_ttl_ms);
+	unsigned long last_update, start;
+	int local_capacity;
+	bool local_full = false;
+	int ret;
+
+	if (max17332_emul_batt_capacity(chip) >= 0 || !capacity_cache_ttl_ms)
+		return max17332_get_batt_capacity(chip, capacity, is_full);
+
+	last_update = smp_load_acquire(&chip->batt_cap_cache.last_update);
+	if (time_before(jiffies, last_update + ttl)) {
+		u32 value = smp_load_acquire(&chip->batt_cap_cache.value);
+
+		*capacity = BATT_CAP_CACHE_CAP(value);
+		if (is_full)
+			*is_full = BATT_CAP_CACHE_IS_FULL(value);
+		return 0;
+	}
+
+	start = jiffies;
+
+	ret = max17332_get_batt_capacity(chip, &local_capacity, &local_full);
+	if (ret < 0)
+		return ret;
+
+	/*
+	 * store with compiler and hw barriers so that a reading cpu, which
+	 * reads last_update is guaranteed to see the value stored before it.
+	 */
+	smp_store_release(&chip->batt_cap_cache.value,
+			  BATT_CAP_CACHE_PACK(local_capacity, local_full));
+	smp_store_release(&chip->batt_cap_cache.last_update, start);
+
+	*capacity = local_capacity;
+	if (is_full)
+		*is_full = local_full;
 
 	return 0;
 }
@@ -2477,7 +2605,7 @@ static int max17332_update_fg_status(struct max17332_fg_chip *chip)
 		return ret;
 	}
 
-	max17332_get_batt_capacity(chip, &capacity, &is_full);
+	max17332_get_batt_capacity_cached(chip, &capacity, &is_full);
 
 	mutex_lock(&chip->lock);
 
@@ -2542,6 +2670,9 @@ static void notify_work(struct work_struct *work)
 	union power_supply_propval prop;
 	struct max17332_fg_chip *chip =
 		container_of(work, struct max17332_fg_chip, notify_work.work);
+
+	/* charger state might have changed */
+	max17332_batt_cap_cache_invalidate(chip);
 
 	mutex_lock(&chip->lock);
 	chip->i2c_jitter = false;
@@ -2892,6 +3023,11 @@ err1:
 	atomic_set(&chip->fg_update_in_progress, 0);
 	enable_irq(chip->max17332->irq);
 	chip->fg_config_update_work_params.fg_config_update_counter++;
+
+	/*
+	 * config has changed, drop cache after the 1sec of sleep after POR_CMD
+	 */
+	max17332_batt_cap_cache_invalidate(chip);
 	power_supply_changed(chip->battery);
 	pr_info("%s: leaving fg_update framework\n", __func__);
 	return;
@@ -3011,7 +3147,7 @@ static int max17332_fg_get_property(struct power_supply *psy,
       break;
     }
     case POWER_SUPPLY_PROP_CAPACITY:
-      max17332_get_batt_capacity(chip, &val->intval, NULL);
+      max17332_get_batt_capacity_cached(chip, &val->intval, NULL);
 #if (IS_ENABLED(CONFIG_METASOC))
       if (!chip->metasoc_enabled)
         max17332_remap_capacity(&val->intval);
@@ -3109,18 +3245,14 @@ static int max17332_fg_get_property(struct power_supply *psy,
 		int cap;
 		bool is_full = false;
 
-		ret =  max17332_get_batt_capacity(chip, &cap, &is_full);
+		ret =  max17332_get_batt_capacity_cached(chip, &cap, &is_full);
 		if (ret < 0)
 			return ret;
 
-#if (IS_ENABLED(CONFIG_BATTERY_CAPACITY_EMULATION))
 		// To make sure we don't break any tests, force the capacity level to
 		// full only when emulated battery capacity level has NOT been set
 		if (overcharge_detected(chip) &&
-			chip->emul_batt_capacity == INVALID_EMUL_BATT_CAPACITY) {
-#else
-		if (overcharge_detected(chip)) {
-#endif
+			max17332_emul_batt_capacity(chip) == INVALID_EMUL_BATT_CAPACITY) {
 			pr_info("%s: battery in overcharge protection, setting level to FULL\n", __func__);
 			val->intval = POWER_SUPPLY_CAPACITY_LEVEL_FULL;
 		} else {
@@ -3825,6 +3957,9 @@ static void alert_work(struct work_struct *work)
 	union power_supply_propval prop;
 	bool usb_is_online = false;
 
+	/* charger or protection state might have changed */
+	max17332_batt_cap_cache_invalidate(chip);
+
 	ret = power_supply_get_property(chip->usb_charger, POWER_SUPPLY_PROP_ONLINE, &prop);
 	if (!ret && prop.intval)
 		usb_is_online = true;
@@ -3961,7 +4096,7 @@ emul_batt_capacity_store(struct device *dev, struct device_attribute *attr,
 {
 	struct max17332_fg_chip *chip;
 	int ret;
-	int emul_batt_capacity = -1;
+	int emul_batt_capacity = INVALID_EMUL_BATT_CAPACITY;
 	char *env[2];
 
 	chip = dev_get_drvdata(dev);
@@ -4387,6 +4522,8 @@ static int max17332_fg_probe(struct platform_device *pdev)
 		ret = -EPROBE_DEFER;
 		goto error;
 	}
+
+	max17332_batt_cap_cache_invalidate(chip);
 
 	mutex_init(&chip->lock);
 

@@ -1,0 +1,1 @@
+obj-$(CONFIG_REGULATOR_MAX77655)		+= max77655.o

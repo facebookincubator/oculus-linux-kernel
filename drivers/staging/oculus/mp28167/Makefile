@@ -1,0 +1,1 @@
+obj-$(CONFIG_REGULATOR_MP28167)		+= mp28167.o

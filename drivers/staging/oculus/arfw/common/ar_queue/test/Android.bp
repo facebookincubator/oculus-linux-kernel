@@ -1,0 +1,36 @@
+cc_test {
+    name: "libarfw_ar_queue_test",
+    native_coverage: true,
+    defaults: [
+        "libarfw_internal_common_defaults",
+        "oculus_gtest_defaults",
+    ],
+    srcs: [
+        "ArQueueTest.cpp",
+    ],
+    static_libs: [
+        "libarfw_ar_queue",
+        "libgtest",
+        "libgtest_main",
+    ],
+    vendor_available: false,
+    vendor: true,
+}
+
+cc_binary {
+    name: "janus_ar_queue_tests",
+    defaults: [
+        "libarfw_internal_common_defaults",
+        "oculus_gtest_defaults",
+    ],
+    srcs: [
+        "ArQueueTest.cpp",
+    ],
+    static_libs: [
+        "libarfw_ar_queue",
+        "libgtest",
+        "libgtest_main",
+    ],
+    vendor_available: false,
+    vendor: true,
+}

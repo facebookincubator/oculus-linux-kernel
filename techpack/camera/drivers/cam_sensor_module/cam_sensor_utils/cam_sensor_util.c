@@ -17,6 +17,33 @@
 #define VALIDATE_VOLTAGE(min, max, config_val) ((config_val) && \
 	(config_val >= min) && (config_val <= max))
 
+#include <linux/fs.h>
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+
+static bool s_everett_present;
+
+/*
+ * Read /data/everett.txt once (at camera power-up) and cache it, so the hot CCI
+ * path checks a bool instead of doing a filp_open() on every transaction. The
+ * toggle is picked up on the next camera open.
+ */
+void everett_refresh_cache(void) {
+	const char *file_path = "/data/everett.txt";
+	struct file *filp;
+	filp = filp_open(file_path, O_RDONLY, 0);
+	if (IS_ERR(filp)) {
+		s_everett_present = false;
+		return;
+	}
+	filp_close(filp, NULL);
+	s_everett_present = true;
+	printk(KERN_INFO "Everett is present. Truncating CCI protocol. Location checked: %s \n", file_path);
+}
+
+bool everett_exists(void) {
+	return s_everett_present;
+}
+
 static struct i2c_settings_list*
 	cam_sensor_get_i2c_ptr(struct i2c_settings_array *i2c_reg_settings,
 		uint32_t size)
@@ -2187,7 +2214,7 @@ int cam_sensor_core_power_up(struct cam_sensor_power_ctrl_t *ctrl,
 
 			if (ctrl->always_on) {
 				CAM_DBG(CAM_SENSOR,
-				"Skip Power for Always On Sensor");
+				"Skip Power for Dune Sensor");
 				break;
 			}
 
@@ -2441,7 +2468,7 @@ int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 			if (ctrl->always_on &&
 				gpio_num_info->always_on[pd->seq_type]) {
 				CAM_DBG(CAM_SENSOR,
-				"Skip type %d for Always On Sensor", pd->seq_type);
+				"Skip type %d for Dune Sensor", pd->seq_type);
 				break;
 			}
 
@@ -2464,7 +2491,7 @@ int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 
 			if (ctrl->always_on) {
 				CAM_DBG(CAM_SENSOR,
-					"Skip Power for Always On Sensor");
+					"Skip Power for Dune Sensor");
 				break;
 			}
 

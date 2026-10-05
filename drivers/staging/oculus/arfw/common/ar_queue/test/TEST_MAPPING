@@ -1,0 +1,12 @@
+{
+    "diamond_emu_x86_64": [
+        {
+            "name": "libarfw_ar_queue_test"
+        }
+    ],
+    "oatmeal": [
+        {
+            "name": "libarfw_ar_queue_test"
+        }
+    ]
+}

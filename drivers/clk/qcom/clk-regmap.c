@@ -14,6 +14,7 @@
 #include "clk-debug.h"
 
 static LIST_HEAD(clk_regmap_list);
+static LIST_HEAD(clk_regmap_critical_list);
 static DEFINE_SPINLOCK(clk_regmap_lock);
 
 /**
@@ -293,8 +294,12 @@ int devm_clk_register_regmap(struct device *dev, struct clk_regmap *rclk)
 		if (ops && ops->enable)
 			ops->enable(&rclk->hw);
 
-		if (rclk->flags & QCOM_CLK_IS_CRITICAL)
+		if (rclk->flags & QCOM_CLK_IS_CRITICAL) {
+			spin_lock(&clk_regmap_lock);
+			list_add(&rclk->list_node, &clk_regmap_critical_list);
+			spin_unlock(&clk_regmap_lock);
 			return 0;
+		}
 	}
 
 	ret = devm_clk_hw_register(dev, &rclk->hw);
@@ -336,10 +341,26 @@ void clk_restore_critical_clocks(struct device *dev)
 	struct qcom_cc_desc *desc = dev_get_drvdata(dev);
 	struct regmap *regmap = dev_get_regmap(dev, NULL);
 	struct critical_clk_offset *cclks = desc->critical_clk_en;
+	struct clk_regmap *rclk;
 	int i;
 
 	for (i = 0; i < desc->num_critical_clk; i++)
 		regmap_update_bits(regmap, cclks[i].offset, cclks[i].mask,
 					 cclks[i].mask);
+
+	/*
+	 * Restore clocks that were made critical via the qcom,critical-devices
+	 * DT property. These clocks were enabled at probe via ops->enable() and
+	 * skipped from framework registration, but are tracked in clk_regmap_critical_list
+	 * so they can be re-enabled here after suspend/resume or hibernation.
+	 */
+	spin_lock(&clk_regmap_lock);
+	list_for_each_entry(rclk, &clk_regmap_critical_list, list_node) {
+		if (rclk->dev == dev && (rclk->flags & QCOM_CLK_IS_CRITICAL) &&
+		    rclk->enable_reg)
+			regmap_update_bits(regmap, rclk->enable_reg,
+					   rclk->enable_mask, rclk->enable_mask);
+	}
+	spin_unlock(&clk_regmap_lock);
 }
 EXPORT_SYMBOL_GPL(clk_restore_critical_clocks);

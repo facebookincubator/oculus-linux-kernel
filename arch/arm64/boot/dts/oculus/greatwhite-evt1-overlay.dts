@@ -42,5 +42,5 @@
 };
 
 &sg_camera_sensor {
-        /delete-property/ aoclpi-enable;
+        /delete-property/ dunelpi-enable;
 };

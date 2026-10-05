@@ -20,6 +20,11 @@
 #include <linux/workqueue.h>
 #include <linux/pinctrl/consumer.h>
 
+#ifdef RT600_CTRL_BOARD_ID
+/* qcom,board-id is a <platform_type, platform_subtype> pair. */
+#define BOARD_ID_COUNT 2
+#endif
+
 struct rt600_ctrl_ctx {
 	struct device *dev;
 	struct pinctrl *pinctrl;
@@ -36,6 +41,12 @@ struct rt600_ctrl_ctx {
 	bool is_rt600;
 	// port << 8 | pin
 	uint32_t nirq_pinmap;
+#ifdef RT600_CTRL_BOARD_ID
+	// CDT <platform_type, platform_subtype>; absent on boards that do not
+	// declare qcom,board-id on this node, so consumers must tolerate -ENODATA.
+	uint32_t board_id[BOARD_ID_COUNT];
+	bool has_board_id;
+#endif
 	enum rt600_boot_state boot_state;
 	char *state_show;
 	struct kernfs_node *crash_attr_node;
@@ -231,6 +242,22 @@ static ssize_t nirq_pinmap_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d", ctx->nirq_pinmap);
 }
 static DEVICE_ATTR_RO(nirq_pinmap);
+
+#ifdef RT600_CTRL_BOARD_ID
+static ssize_t board_id_show(struct device *dev,
+			     struct device_attribute *attr,
+			     char *buf)
+{
+	struct rt600_ctrl_ctx *ctx = dev_get_drvdata(dev);
+
+	if (!ctx->has_board_id) {
+		return -ENODATA;
+	}
+
+	return scnprintf(buf, PAGE_SIZE, "%u %u\n", ctx->board_id[0], ctx->board_id[1]);
+}
+static DEVICE_ATTR_RO(board_id);
+#endif
 
 static ssize_t nirq_value_show(struct device *dev,
 			       struct device_attribute *attr,
@@ -793,6 +820,17 @@ static int rt600_ctrl_probe(struct platform_device *pdev)
 	}
 	ctx->nirq_pinmap = nirq_pinmap[0] << 8 | nirq_pinmap[1];
 
+#ifdef RT600_CTRL_BOARD_ID
+	/* Optional: only boards that declare qcom,board-id on this node have it.
+	 * Absent is normal, so do not fail probe. */
+	ctx->has_board_id = !device_property_read_u32_array(dev, "qcom,board-id",
+							     ctx->board_id, BOARD_ID_COUNT);
+	if (ctx->has_board_id) {
+		dev_info(dev, "CDT board-id: type=%u subtype=%u",
+			 ctx->board_id[0], ctx->board_id[1]);
+	}
+#endif
+
 	/* Init sequence for Oatmeal which uses a clock generator and an enable pin */
 	if (device_property_read_bool(dev, "meta,oatmeal-init-sequence")) {
 		ctx->is_oatmeal = true;
@@ -816,6 +854,9 @@ static int rt600_ctrl_probe(struct platform_device *pdev)
 	device_create_file(dev, &dev_attr_crash_notify);
 	device_create_file(dev, &dev_attr_nirq_value);
 	device_create_file(dev, &dev_attr_nirq_pinmap);
+#ifdef RT600_CTRL_BOARD_ID
+	device_create_file(dev, &dev_attr_board_id);
+#endif
 	device_create_file(dev, &dev_attr_is_rt600);
 	device_create_file(dev, &dev_attr_reset);
 	device_create_file(dev, &dev_attr_reset_spl);

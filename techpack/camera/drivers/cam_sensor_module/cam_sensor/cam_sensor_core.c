@@ -1045,6 +1045,18 @@ static int cam_sensor_cci_handle(struct cam_sensor_ctrl_t *s_ctrl,
 			return -EFAULT;
 		}
 
+		if (everett_exists()) {
+			CAM_INFO(CAM_SENSOR, "Ignoring Probe - Everett will not respond");
+
+			/*
+			 * Set probe succeeded flag to 1 so that no other camera shall
+			 * probed on this slot
+			 */
+			s_ctrl->is_probe_succeed = 1;
+			s_ctrl->sensor_state = CAM_SENSOR_INIT;
+			return 0;
+		}
+
 		wr = (struct i2c_random_wr_payload *) vmalloc(
 			header.count * sizeof(struct i2c_random_wr_payload));
 		if (!wr)
@@ -1760,6 +1772,8 @@ int cam_sensor_power_up(struct cam_sensor_ctrl_t *s_ctrl)
 		CAM_ERR(CAM_SENSOR, "failed: %pK %pK", power_info, slave_info);
 		return -EINVAL;
 	}
+
+	everett_refresh_cache();
 
 	if (s_ctrl->bob_pwm_switch) {
 		rc = cam_sensor_bob_pwm_mode_switch(soc_info,

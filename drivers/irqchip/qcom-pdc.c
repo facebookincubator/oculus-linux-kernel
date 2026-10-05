@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -12,12 +14,15 @@
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/notifier.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/of_irq.h>
 #include <linux/soc/qcom/irq.h>
 #include <linux/spinlock.h>
+#include <linux/suspend.h>
+#include <linux/syscore_ops.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 
@@ -36,7 +41,13 @@
 
 #define PDC_NO_PARENT_IRQ	~0UL
 
-#define PDC_ENABLE_BANKS	DIV_ROUND_UP(PDC_MAX_IRQS, 32)
+struct pdc_irq_info {
+	u32 type;
+	u32 gic_type;
+	bool set;
+	u32 enabled;
+};
+static struct pdc_irq_info pdc_irq_config[PDC_MAX_GPIO_IRQS];
 
 struct pdc_pin_region {
 	u32 pin_base;
@@ -58,27 +69,9 @@ static void __iomem *pdc_base;
 static struct pdc_pin_region *pdc_region;
 static int pdc_region_cnt;
 static struct spi_cfg_regs *spi_cfg;
+static struct irq_domain *pdc_domain;
+static struct irq_domain *pdc_gpio_domain;
 static void *pdc_ipc_log;
-
-/*
- * PDC has no PM support and loses its configuration across a hibernation
- * power cycle, while software keeps believing whatever it last programmed.
- * Every pin comes back holding the power-on default of PDC_LEVEL_HIGH, which
- * on an active-low line that idles high reads as permanently asserted - the
- * enable bits are lost too. Capture the programmed state at .freeze_noirq -
- * plain data, so it lands in the hibernation image - and put it back at
- * .restore_noirq, before the irq core re-drives anything.
- *
- * Only pins and banks this driver has already programmed are touched.
- * Touching arbitrary words in the PDC windows can reset the SoC with no
- * kernel exception, so the valid bitmaps are a safety boundary, not just an
- * optimisation.
- */
-static DECLARE_BITMAP(pdc_cfg_valid, PDC_MAX_IRQS);
-static DECLARE_BITMAP(pdc_enable_valid, PDC_ENABLE_BANKS);
-static u32 pdc_cfg_shadow[PDC_MAX_IRQS];
-static u32 pdc_enable_shadow[PDC_ENABLE_BANKS];
-static bool pdc_shadow_captured;
 
 static void pdc_reg_write(int reg, u32 i, u32 val)
 {
@@ -90,22 +83,26 @@ static u32 pdc_reg_read(int reg, u32 i)
 	return readl_relaxed(pdc_base + reg + i * sizeof(u32));
 }
 
-static void pdc_enable_intr(struct irq_data *d, bool on)
+static void __pdc_enable_intr(int pin_out, bool on)
 {
-	int pin_out = d->hwirq;
-	unsigned long flags;
 	u32 index, mask;
 	u32 enable;
 
 	index = pin_out / 32;
 	mask = pin_out % 32;
 
-	raw_spin_lock_irqsave(&pdc_lock, flags);
 	enable = pdc_reg_read(IRQ_ENABLE_BANK, index);
 	enable = on ? ENABLE_INTR(enable, mask) : CLEAR_INTR(enable, mask);
 	pdc_reg_write(IRQ_ENABLE_BANK, index, enable);
-	if (index < PDC_ENABLE_BANKS)
-		set_bit(index, pdc_enable_valid);
+	pdc_irq_config[pin_out].enabled = on;
+}
+
+static void pdc_enable_intr(struct irq_data *d, bool on)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&pdc_lock, flags);
+	__pdc_enable_intr(d->hwirq, on);
 	ipc_log_string(pdc_ipc_log, "PIN=%d enable=%d", d->hwirq, on);
 	raw_spin_unlock_irqrestore(&pdc_lock, flags);
 }
@@ -243,10 +240,12 @@ static int qcom_pdc_gic_set_type(struct irq_data *d, unsigned int type)
 
 	old_pdc_type = pdc_reg_read(IRQ_i_CFG, d->hwirq);
 	pdc_reg_write(IRQ_i_CFG, d->hwirq, pdc_type);
-	if (d->hwirq < PDC_MAX_IRQS)
-		set_bit(d->hwirq, pdc_cfg_valid);
 	ipc_log_string(pdc_ipc_log, "Set type: PIN=%d pdc_type=%d gic_type=%d",
 		       d->hwirq, pdc_type, type);
+
+	pdc_irq_config[d->hwirq].type = pdc_type;
+	pdc_irq_config[d->hwirq].gic_type = type;
+	pdc_irq_config[d->hwirq].set = true;
 
 	/* Additionally, configure (only) the GPIO in the f/w */
 	ret = spi_configure_type(parent_hwirq, type);
@@ -290,6 +289,88 @@ static struct irq_chip qcom_pdc_gic_chip = {
 	.irq_set_vcpu_affinity	= irq_chip_set_vcpu_affinity_parent,
 	.irq_set_affinity	= irq_chip_set_affinity_parent,
 };
+
+#if IS_ENABLED(CONFIG_HIBERNATION) || IS_ENABLED(CONFIG_DEEPSLEEP)
+static bool pdc_save_restore;
+
+static int pdc_suspend_notifier(struct notifier_block *nb,
+				unsigned long event, void *dummy)
+{
+	if (event == PM_HIBERNATION_PREPARE)
+		pdc_save_restore = true;
+	else if (event == PM_POST_HIBERNATION)
+		pdc_save_restore = false;
+	else if (event == PM_SUSPEND_PREPARE && (pm_suspend_target_state == PM_SUSPEND_MEM))
+		pdc_save_restore = true;
+	else if (event == PM_POST_SUSPEND && (pm_suspend_target_state == PM_SUSPEND_MEM))
+		pdc_save_restore = false;
+
+	return NOTIFY_OK;
+}
+
+static void pdc_resume(void)
+{
+	int i;
+	u32 config;
+	unsigned int virq;
+	struct irq_domain *domain;
+	struct irq_data *d;
+
+	if (!pdc_save_restore)
+		return;
+
+	for (i = 0; i < PDC_MAX_GPIO_IRQS; i++) {
+		if (pdc_irq_config[i].set) {
+			pdc_reg_write(IRQ_i_CFG, i, pdc_irq_config[i].type);
+
+			do {
+				config = pdc_reg_read(IRQ_i_CFG, i);
+				if (config == pdc_irq_config[i].type)
+					break;
+				udelay(5);
+			} while (1);
+
+			if (pdc_irq_config[i].enabled)
+				__pdc_enable_intr(i, true);
+
+			domain = pdc_domain;
+			virq = irq_find_mapping(domain, i);
+			if (!virq) {
+				domain = pdc_gpio_domain;
+				virq = irq_find_mapping(domain, i);
+			}
+			if (!virq)
+				continue;
+
+			d = irq_domain_get_irq_data(domain, virq);
+			if (d && d->parent_data)
+				spi_configure_type(d->parent_data->hwirq,
+						    pdc_irq_config[i].gic_type);
+		}
+	}
+}
+
+static struct notifier_block pdc_notifier_block = {
+	.notifier_call = pdc_suspend_notifier,
+};
+
+static struct syscore_ops pdc_syscore_ops = {
+	.resume = pdc_resume,
+};
+
+static int pdc_init_save_restore_config(void)
+{
+	u32 ret;
+
+	register_syscore_ops(&pdc_syscore_ops);
+
+	ret = register_pm_notifier(&pdc_notifier_block);
+	if (ret)
+		unregister_syscore_ops(&pdc_syscore_ops);
+
+	return ret;
+}
+#endif
 
 static irq_hw_number_t get_parent_hwirq(int pin)
 {
@@ -470,7 +551,7 @@ static int pdc_setup_pin_mapping(struct device_node *np)
 
 static int qcom_pdc_init(struct device_node *node, struct device_node *parent)
 {
-	struct irq_domain *parent_domain, *pdc_domain, *pdc_gpio_domain;
+	struct irq_domain *parent_domain;
 	struct resource res;
 	int ret;
 
@@ -536,6 +617,10 @@ static int qcom_pdc_init(struct device_node *node, struct device_node *parent)
 
 	irq_domain_update_bus_token(pdc_gpio_domain, DOMAIN_BUS_WAKEUP);
 
+#if IS_ENABLED(CONFIG_HIBERNATION) || IS_ENABLED(CONFIG_DEEPSLEEP)
+	pdc_init_save_restore_config();
+#endif
+
 	pdc_ipc_log = ipc_log_context_create(PDC_IPC_LOG_SZ, "pdc", 0);
 	return 0;
 
@@ -556,92 +641,6 @@ static int qcom_pdc_probe(struct platform_device *pdev)
 	return qcom_pdc_init(np, parent);
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int qcom_pdc_freeze_noirq(struct device *dev)
-{
-	unsigned long flags;
-	unsigned int i;
-
-	raw_spin_lock_irqsave(&pdc_lock, flags);
-	for_each_set_bit(i, pdc_cfg_valid, PDC_MAX_IRQS)
-		pdc_cfg_shadow[i] = pdc_reg_read(IRQ_i_CFG, i);
-	for_each_set_bit(i, pdc_enable_valid, PDC_ENABLE_BANKS)
-		pdc_enable_shadow[i] = pdc_reg_read(IRQ_ENABLE_BANK, i);
-	pdc_shadow_captured = true;
-	raw_spin_unlock_irqrestore(&pdc_lock, flags);
-
-	pr_debug("qcom-pdc: freeze_noirq: captured %d cfg pin(s), %d enable bank(s)\n",
-		 bitmap_weight(pdc_cfg_valid, PDC_MAX_IRQS),
-		 bitmap_weight(pdc_enable_valid, PDC_ENABLE_BANKS));
-
-	for_each_set_bit(i, pdc_cfg_valid, PDC_MAX_IRQS)
-		pr_debug("qcom-pdc: freeze_noirq: PIN=%u cfg=0x%x\n",
-			 i, pdc_cfg_shadow[i]);
-	for_each_set_bit(i, pdc_enable_valid, PDC_ENABLE_BANKS)
-		pr_debug("qcom-pdc: freeze_noirq: BANK=%u enable=0x%08x\n",
-			 i, pdc_enable_shadow[i]);
-
-	return 0;
-}
-
-static int qcom_pdc_restore_noirq(struct device *dev)
-{
-	unsigned long flags;
-	unsigned int i;
-
-	if (!pdc_shadow_captured) {
-		pr_warn("qcom-pdc: restore_noirq: no shadow captured, nothing to restore\n");
-		return 0;
-	}
-
-	/*
-	 * Trigger type is written before the enable bits so a port is never
-	 * armed while its cfg still holds the power-on default. Device-nGnRE
-	 * accesses to the same peripheral are non-reordering, so program order
-	 * holds without an explicit barrier.
-	 */
-	raw_spin_lock_irqsave(&pdc_lock, flags);
-	for_each_set_bit(i, pdc_cfg_valid, PDC_MAX_IRQS)
-		pdc_reg_write(IRQ_i_CFG, i, pdc_cfg_shadow[i]);
-	for_each_set_bit(i, pdc_enable_valid, PDC_ENABLE_BANKS)
-		pdc_reg_write(IRQ_ENABLE_BANK, i, pdc_enable_shadow[i]);
-	raw_spin_unlock_irqrestore(&pdc_lock, flags);
-
-	/*
-	 * The GIC SPI polarity in apss-shared-spi-cfg is lost with the same
-	 * power cycle. spi_configure_type() expects the GIC domain hwirq, i.e.
-	 * SPI + 32, while get_parent_hwirq() returns the raw SPI number that
-	 * qcom_pdc_alloc() puts in param[1]. It takes pdc_lock itself, so it
-	 * must be called unlocked.
-	 */
-	for_each_set_bit(i, pdc_cfg_valid, PDC_MAX_IRQS) {
-		u32 cfg = pdc_cfg_shadow[i];
-		irq_hw_number_t spi = get_parent_hwirq(i);
-
-		if (spi == PDC_NO_PARENT_IRQ)
-			continue;
-
-		spi_configure_type(spi + 32,
-				   (cfg == PDC_LEVEL_LOW || cfg == PDC_LEVEL_HIGH) ?
-				   IRQ_TYPE_LEVEL_HIGH : IRQ_TYPE_EDGE_RISING);
-	}
-
-	pr_debug("qcom-pdc: restore_noirq: replayed %d pin(s), %d bank(s)\n",
-		 bitmap_weight(pdc_cfg_valid, PDC_MAX_IRQS),
-		 bitmap_weight(pdc_enable_valid, PDC_ENABLE_BANKS));
-
-	return 0;
-}
-
-static const struct dev_pm_ops qcom_pdc_pm_ops = {
-	.freeze_noirq	= qcom_pdc_freeze_noirq,
-	.restore_noirq	= qcom_pdc_restore_noirq,
-};
-#define QCOM_PDC_PM_OPS	(&qcom_pdc_pm_ops)
-#else
-#define QCOM_PDC_PM_OPS	NULL
-#endif
-
 static const struct of_device_id qcom_pdc_match_table[] = {
 	{ .compatible = "qcom,pdc" },
 	{}
@@ -654,7 +653,6 @@ static struct platform_driver qcom_pdc_driver = {
 		.name = "qcom-pdc",
 		.of_match_table = qcom_pdc_match_table,
 		.suppress_bind_attrs = true,
-		.pm = QCOM_PDC_PM_OPS,
 	},
 };
 module_platform_driver(qcom_pdc_driver);

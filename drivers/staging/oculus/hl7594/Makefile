@@ -1,0 +1,1 @@
+obj-$(CONFIG_REGULATOR_HL7594)		+= hl7594.o

@@ -1,0 +1,18 @@
+obj-$(CONFIG_ARFIRMWARE_COMMON) += arfw.o
+arfw-y := arfw_interface.o \
+    arfw_debug.o \
+    arfw_int_map.o \
+    arfw_int_queue.o \
+    arfw_loopback_map_fd.o \
+    arfw_sysfs.o \
+    ../common/ar_binned_sampler/src/ar_binned_sampler.o
+
+obj-$(CONFIG_ARFIRMWARE_COMMON) += arfw_queue.o
+arfw_queue-y := \
+    ../common/ar_queue/src/ar_queue_int.o \
+    ../common/ar_queue/src/ar_queue.o \
+    ../common/ar_fw_queue/src/ar_fw_queue.o
+
+obj-$(CONFIG_ARFIRMWARE_COMMON) += arfw_shim.o
+
+#ccflags-y += -DDEBUG

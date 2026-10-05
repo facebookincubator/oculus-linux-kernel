@@ -129,6 +129,7 @@
 		reg = <0x4d>;
 		#thermal-sensor-cells = <0>;
 		vdd-supply = <&L15A>;
+		conver-rate-select = <3>;
 	};
 
 	temp_sensor_6: max31875@48 {
@@ -136,6 +137,7 @@
 		reg = <0x48>;
 		#thermal-sensor-cells = <0>;
 		vdd-supply = <&L15A>;
+		conver-rate-select = <3>;
 	};
 
 	temp_sensor_9: max31875@4f {
@@ -143,6 +145,7 @@
 		reg = <0x4f>;
 		#thermal-sensor-cells = <0>;
 		vdd-supply = <&L15A>;
+		conver-rate-select = <3>;
 	};
 
 	temp_sensor_10: max31875@4a {
@@ -150,6 +153,7 @@
 		reg = <0x4a>;
 		#thermal-sensor-cells = <0>;
 		vdd-supply = <&L15A>;
+		conver-rate-select = <3>;
 	};
 
 	temp_sensor_13: max31875@4e {
@@ -157,6 +161,7 @@
 		reg = <0x4e>;
 		#thermal-sensor-cells = <0>;
 		vdd-supply = <&L15A>;
+		conver-rate-select = <3>;
 	};
 };
 
@@ -166,6 +171,7 @@
 		reg = <0x4c>;
 		#thermal-sensor-cells = <0>;
 		vdd-supply = <&L15A>;
+		conver-rate-select = <3>;
 	};
 
 	temp_sensor_15: max31875@4d {
@@ -173,5 +179,6 @@
 		reg = <0x4d>;
 		#thermal-sensor-cells = <0>;
 		vdd-supply = <&L15A>;
+		conver-rate-select = <3>;
 	};
 };

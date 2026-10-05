@@ -93,6 +93,7 @@ driver_includes = [
     "drivers/cam_req_mgr",
     "drivers/cam_sensor_module/cam_actuator",
     "drivers/cam_sensor_module/cam_cci",
+    "drivers/cam_sensor_module/cam_cci/include",
     "drivers/cam_sensor_module/cam_csiphy",
     "drivers/cam_sensor_module/cam_csiphy/include",
     "drivers/cam_sensor_module/cam_eeprom",

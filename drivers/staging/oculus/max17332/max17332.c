@@ -63,14 +63,14 @@
 static const struct regmap_config max17332_regmap_config = {
 	.reg_bits   = 8,
 	.val_bits   = 16,
-	.val_format_endian = REGMAP_ENDIAN_NATIVE,
+	.val_format_endian = REGMAP_ENDIAN_LITTLE,
 	.cache_type = REGCACHE_NONE,
 };
 
 static const struct regmap_config max17332_regmap_config_nvm = {
 	.reg_bits   = 8,
 	.val_bits   = 16,
-	.val_format_endian = REGMAP_ENDIAN_NATIVE,
+	.val_format_endian = REGMAP_ENDIAN_LITTLE,
 	.cache_type = REGCACHE_NONE,
 };
 

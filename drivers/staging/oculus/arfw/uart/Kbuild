@@ -1,0 +1,10 @@
+obj-$(CONFIG_ARFIRMWARE_ACRO_UART) += arfw_acro_uart.o
+arfw_acro_uart-y := arfw_acro_uart_main.o arfw_uart_dev.o arfw_uart_framing.o
+
+# The test module carries both KUnit suites. arfw_uart_framing_test.c #includes
+# arfw_uart_framing.c (the codec, with its static helpers); arfw_uart_dev_test.c
+# #includes arfw_uart_dev.c (the engine, to reach its static functions) and the
+# engine references the non-static framing encode/decode defined by the codec
+# include above -- so both objects resolve within this single module.
+obj-$(CONFIG_ARFIRMWARE_ACRO_UART_TEST) += arfw_acro_uart_test.o
+arfw_acro_uart_test-y := arfw_uart_framing_test.o arfw_uart_dev_test.o

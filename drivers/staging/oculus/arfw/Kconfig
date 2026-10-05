@@ -1,0 +1,67 @@
+config ARFIRMWARE
+    tristate "AR firmware driver support"
+    default n
+
+config ARFIRMWARE_COMMON
+    tristate "AR firmware common driver support"
+    depends on ARFIRMWARE
+
+config ARFIRMWARE_LOOPBACK
+    tristate "AR firmware Loopback driver support"
+    depends on ARFIRMWARE_COMMON
+    default m
+
+config ARFIRMWARE_COLEMAN_PCI
+    tristate "AR firmware IPC Coleman PCI driver"
+    depends on ARFIRMWARE_COMMON
+    depends on PCI
+    default n
+
+config ARFIRMWARE_JAZZ_PCI
+    tristate "AR firmware IPC Jazz PCI driver"
+    depends on ARFIRMWARE_COMMON
+    depends on PCI
+    default n
+
+config ARFIRMWARE_JAZZ_USB_HOST
+    tristate "AR firmware Jazz USB host driver support (experimental)"
+    depends on ARFIRMWARE_COMMON
+    depends on USB
+    default n
+
+config ARFIRMWARE_COLEMAN_PCI_TEST
+    tristate "AR firmware test IPC Coleman PCI driver"
+    depends on ARFIRMWARE_COMMON
+    depends on PCI
+    default n
+
+config ARFIRMWARE_ACRO_PCI
+    tristate "AR firmware ACROPOLIS PCI driver support"
+    depends on ARFIRMWARE_COMMON
+    depends on PCI
+    default n
+
+config ARFIRMWARE_AVO_PCI
+    tristate "AR firmware AVOGADRO PCI driver support"
+    depends on ARFIRMWARE_COMMON
+    depends on PCI
+
+config ARFIRMWARE_ACRO_UART
+    tristate "AR firmware Acropolis UART transport"
+    depends on ARFIRMWARE_COMMON
+    depends on TTY
+    default n
+    help
+      Kernel transport for Janus IPC over UART to Acropolis IMCU. Registered as
+      the N_ARFW tty line discipline (attached by the arfwuartattach userspace
+      helper); uses super_serial (COBS+CRC32) framing.
+
+config ARFIRMWARE_ACRO_UART_TEST
+    tristate "AR firmware Acropolis UART transport unit tests"
+    depends on ARFIRMWARE_ACRO_UART && KUNIT
+    default n
+    help
+      KUnit tests for the UART transport: the super_serial (COBS+CRC32) framing
+      codec and the transport-agnostic engine (header translation, TX/RX bounds
+      checks, RX frame routing, queue-slot reuse). Builds as a loadable module;
+      test results appear in the kernel log when the module is loaded.

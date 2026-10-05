@@ -84,6 +84,14 @@
 #define REG_MISCCFG         0x0F
 #define REG_NMISCCFG        0xB2
 
+/* For SIP and PACK SN */
+#define REG_SIP_SN_MISC		0xBA
+#define REG_SIP_SN_RUN		0xE0
+#define SIP_SN_RUN_LEN		8	/* 0xE0 to 0xE7 */
+#define SIP_SN_REGS		5	/* 0xBA, 0xE0, 0xE1, 0xE6, 0xE7 */
+#define REG_PACK_SN		0xE9
+#define PACK_SN_LEN		7	/* 0xE9 to 0xEF */
+
 /* Config register bits for MAX17332 */
 #define BIT_CONFIG_ALRT_EN		BIT(2)
 #define BIT_PROTSTATUS_FULL		BIT(13)
@@ -95,9 +103,9 @@
 #define MAX17332_HAMMERHEAD_BATT_OVRCHG_THRESHOLD_UV 4400000 /* 4.40v */
 #define MAX17332_DEFAULT_BATT_OVRCHG_THRESHOLD_UV 4400000 /* 4.40v */
 
-#if (IS_ENABLED(CONFIG_BATTERY_CAPACITY_EMULATION))
 #define INVALID_EMUL_BATT_CAPACITY -1
 #define INVALID_EMUL_BATT_TEMPERATURE -1000
+#if (IS_ENABLED(CONFIG_BATTERY_CAPACITY_EMULATION))
 #define INVALID_EMUL_MIX_SOC -1
 #define INVALID_EMUL_VOLTAGE_OCV -1
 #endif
@@ -369,6 +377,12 @@ ssize_t max17332_fg_store_attrs(struct device *dev,
 #define SIP_SERIAL_NUMBER_SIZE      12
 #define PACK_SERIAL_NUMBER_SIZE     16
 
+struct max17332_batt_cap_cache {
+	unsigned long last_update;
+	/* capacity | is_full << 16. It's to load and store can be atomic.  */
+	u32 value;
+};
+
 /* Structure to maintain stats for fg update framework */
 struct fg_config_update_work_params {
 	u32 fg_config_update_algo_version;
@@ -482,9 +496,14 @@ struct max17332_fg_chip {
 
   struct thermal_zone_device *tzd;
   struct fg_config_update_work_params fg_config_update_work_params;
+
+  struct max17332_batt_cap_cache batt_cap_cache;
 };
 
 int max17332_get_batt_capacity(struct max17332_fg_chip *chip,
 	int *capacity, bool *is_full);
+
+int max17332_get_batt_capacity_cached(struct max17332_fg_chip *chip,
+				      int *capacity, bool *is_full);
 
 #endif // __MAX17332_BATTERY_H_

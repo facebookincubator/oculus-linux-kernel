@@ -201,7 +201,8 @@ static int calculate_usoc(metasoc_config_data *cfg,
                           bool is_repsoc_zero,
                           bool is_charging,
                           bool *is_battery_voltage_low,
-                          uint32_t *time_is_battery_voltage_low)
+                          uint32_t *time_is_battery_voltage_low,
+                          uint32_t time_now)
 {
     // scale for battery full with 2 decimal place resolution
     const int BATTERY_FULL_2DEC_SCALE = 10000;
@@ -219,7 +220,7 @@ static int calculate_usoc(metasoc_config_data *cfg,
         *is_battery_voltage_low = true;
         if (*time_is_battery_voltage_low == 0)
         {
-            *time_is_battery_voltage_low = cfg->utility_function.get_time_in_sec(cfg->private_data);
+            *time_is_battery_voltage_low = time_now;
         }
         return 0;
     }
@@ -864,15 +865,13 @@ int metasoc_update_soc(uint8_t batt_id, metasoc_param *params)
     if (NUM_BATTERIES == 1 && context->charge_transition &&
         time_delta_s > DIRECTION_SWITCH_TIME_DELTA_S)
     {
-        context->last_update_time_s =
-            context->config.utility_function.get_time_in_sec(context->config.private_data);
+        context->last_update_time_s = time;
         time_delta_s         = 0;
         context->is_charging = params->is_charging;
     }
     else if (NUM_BATTERIES > 1 && context->charge_transition)
     {
-        context->last_update_time_s =
-            context->config.utility_function.get_time_in_sec(context->config.private_data);
+        context->last_update_time_s = time;
         time_delta_s         = 0;
         context->is_charging = params->is_charging;
     }
@@ -975,7 +974,8 @@ int metasoc_update_soc(uint8_t batt_id, metasoc_param *params)
                               params->is_repsoc_zero,
                               params->is_charging,
                               &context->is_battery_voltage_low,
-                              &context->time_is_battery_voltage_low);
+                              &context->time_is_battery_voltage_low,
+                              time);
 
         context->peak_voltage_droop_penalty = peak_voltage_droop_penalty;
 
@@ -1002,9 +1002,7 @@ int metasoc_update_soc(uint8_t batt_id, metasoc_param *params)
                 params->full_capacity_nominal_mah,
                 context->usoc_filtered);
 
-            time_since_battery_voltage_low =
-                context->config.utility_function.get_time_in_sec(context->config.private_data) -
-                context->time_is_battery_voltage_low;
+            time_since_battery_voltage_low = time - context->time_is_battery_voltage_low;
             new_metasoc = compute_metasoc(context->config.charge_soc_masking,
                                           context->config.enable_zero_repsoc_convergence,
                                           context->config.max_slew_rate,
@@ -1027,8 +1025,7 @@ int metasoc_update_soc(uint8_t batt_id, metasoc_param *params)
     {
         if (new_metasoc != context->metasoc)
         {
-            context->last_update_time_s =
-                context->config.utility_function.get_time_in_sec(context->config.private_data);
+            context->last_update_time_s = time;
             context->metasoc = new_metasoc;
         }
 

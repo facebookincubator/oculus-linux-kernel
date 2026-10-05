@@ -1,0 +1,1 @@
+obj-$(CONFIG_REGULATOR_KTB8399)		+= ktb8399.o

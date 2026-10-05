@@ -1,0 +1,20 @@
+if REGULATOR_DA9172
+
+config DA9172_PWRSEQ_DEBUG
+	bool "DA9172 power sequencer debug sysfs"
+	default n
+	help
+	  Expose read-only pwrseq and read-write vneg{1,2,3}_vout sysfs nodes
+	  for debugging DA9172 power sequencer timing and VNEG rail voltages.
+	  Only enable on bring-up builds; disable once the OTP profile is final.
+
+config DA9172_VNEG_VOUT_DT_OVERRIDE
+	bool "DA9172 VNEG VOUT override from device tree"
+	default n
+	help
+	  Apply VNEG output voltage overrides from device tree properties at probe.
+	  Reads meta,vneg{1,2,3}-vout-microvolt and programs the rails before
+	  userspace starts. Only enable on bring-up builds; disable once the OTP profile
+	  is final.
+
+endif

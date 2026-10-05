@@ -1,0 +1,51 @@
+cc_library_headers {
+    name: "libarfw_common_headers",
+    export_include_dirs: ["include"],
+    host_supported: true,
+    shared_libs: ["liblog"],
+    vendor_available: true,
+}
+
+cc_defaults {
+    name: "libarfw_defaults",
+    defaults: [
+        "oculus_clang_tidy_defaults",
+        "oculus_default_cflags",
+    ],
+    header_libs: ["libarfw_common_headers"],
+    shared_libs: ["liblog"],
+}
+
+/*
+ * libarfw_internal_common_defaults should only be used in the common
+ * subdirectory. Do not use elsewhere, in order to prevent leaking
+ * vendor_available broadly.
+ */
+cc_defaults {
+    name: "libarfw_internal_common_defaults",
+    defaults: [
+        "libarfw_defaults",
+    ],
+    host_supported: true,
+    vendor_available: true,
+}
+
+cc_defaults {
+    name: "libarfw_sanitized_defaults",
+    sanitize: {
+        address: true,
+        undefined: true,
+        all_undefined: true,
+        diag: {
+            undefined: true,
+        },
+    },
+    strip: {
+        none: true,
+    },
+}
+
+filegroup {
+    name: "binder_gtest_main",
+    srcs: ["BinderGtestMain.cpp"],
+}

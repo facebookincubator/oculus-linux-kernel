@@ -588,7 +588,7 @@ static int finish_ssr(struct msm_cvp_core* core)
 			dprintk(CVP_ERR, "%s: SSR completion timed out after %dms\n", __func__, MAX_SSR_COMPLETION_TIMEOUT);
 			rc = -ETIMEDOUT;
 		} else {
-		    dprintk(CVP_WARN, "%s: SSR completed successfully\n", __func__);
+			dprintk(CVP_WARN, "%s: SSR completed successfully\n", __func__);
 			rc = 0;
 		}
 	}

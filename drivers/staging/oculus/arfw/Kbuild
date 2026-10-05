@@ -1,0 +1,18 @@
+# Include the common arfirmware headers in all sub-directories
+basedir := $(srctree)/$(src)
+subdir-ccflags-y := \
+    -I$(basedir)/include \
+    -I$(basedir)/util \
+    -I$(basedir)/common/include \
+    -I$(basedir)/common/ar_binned_sampler/include \
+    -I$(basedir)/common/ar_queue/include \
+    -I$(basedir)/common/ar_fw_queue/include \
+    -std=gnu11 \
+
+obj-y = \
+    generic/ \
+    pci/ \
+    loopback/ \
+    usb/ \
+    uart/ \
+    util/ \

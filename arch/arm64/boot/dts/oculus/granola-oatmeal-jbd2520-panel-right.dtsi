@@ -53,8 +53,14 @@
 					39 01 00 00 00 00 0D BF 03 20 02 58 00 14 00 24 00 10 00 51
 					/* Input frame rate 60Hz */
 					15 01 00 00 00 00 02 BE 01
-					/* Refresh rate 240Hz, on_duty 1200 */
-					39 01 00 00 00 00 06 B6 01 00 04 B0 02
+					/* Refresh 60Hz, on_duty 1200 */
+					39 01 00 00 00 00 06 B6 01 00 04 B0 00
+					/* Disable ACL; other params left at defaults */
+					39 01 00 00 00 00 05 E2 00 01 40 C0
+					/* Enable dither */
+					39 01 00 00 00 00 0A D6 04 00 01 05 25 95 AB ED FB
+					/* Enable DSC decode (QTI sends PPS separately) */
+					15 01 00 00 00 00 02 B2 01
 					/* Panel Update */
 					15 01 00 00 00 00 02 F4 01
 					/* Sleep out, delay 5ms after send this command */
@@ -88,7 +94,18 @@
 				qcom,mdss-dsi-panel-phy-timings = [
 					00 1D 08 07 17 22 07
 					07 08 02 04 00 19 0C];
-				qcom,display-topology = <1 0 1>;
+				qcom,compression-mode = "dsc";
+				qcom,mdss-dsc-version = <0x12>;
+				qcom,mdss-dsc-slice-height = <32>;
+				qcom,mdss-dsc-slice-width = <600>;
+				qcom,mdss-dsc-slice-per-pkt = <1>;
+				qcom,mdss-dsc-bit-per-component = <8>;
+				qcom,mdss-dsc-bit-per-pixel = <8>;
+				qcom,mdss-dsc-rc-model-size = <4096>;
+				qcom,mdss-dsc-initial-offset = <3072>;
+				qcom,mdss-dsc-line-buf-depth = <0>;
+
+				qcom,display-topology = <1 1 1>;
 				qcom,default-topology-index = <0>;
 			};
 		};

@@ -1,0 +1,4 @@
+obj-$(CONFIG_ARFIRMWARE_COMMON) += arfw_util.o
+arfw_util-y := \
+	ar_future.o \
+	arfw_mem_util.o \

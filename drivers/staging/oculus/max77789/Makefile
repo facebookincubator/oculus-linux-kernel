@@ -1,0 +1,1 @@
+obj-$(CONFIG_MAX77789) += max77789.o

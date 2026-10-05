@@ -716,8 +716,10 @@ static int stp_raw_dev_create(struct stp_raw_data *stp_raw)
 
 	stp_raw_class = class_create(THIS_MODULE, STP_RAW_CLASS_NAME);
 	if (IS_ERR(stp_raw_class)) {
+		status = PTR_ERR(stp_raw_class);
+		stp_raw_class = NULL;
 		unregister_chrdev(STP_RAW_DEV_MAJOR, STP_RAW_DEVICE_NAME);
-		return PTR_ERR(stp_raw_class);
+		return status;
 	}
 
 	mutex_lock(&device_list_lock);
@@ -778,6 +780,14 @@ int stp_raw_dev_remove(void)
 	struct stp_raw_data	*stp_raw;
 	struct stp_raw_data	*stp_raw_temp;
 
+	/*
+	 * Tolerate being called without a matching stp_raw_dev_init(): a probe
+	 * that unwinds before init would otherwise class_destroy() the class a
+	 * previous bind already freed.
+	 */
+	if (!stp_raw_class)
+		return 0;
+
 	mutex_lock(&device_list_lock);
 
 	// Use safe operation to delete device entry while iterating
@@ -799,6 +809,7 @@ int stp_raw_dev_remove(void)
 	mutex_unlock(&device_list_lock);
 
 	class_destroy(stp_raw_class);
+	stp_raw_class = NULL;
 
 	return 0;
 }

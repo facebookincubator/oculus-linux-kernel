@@ -1,0 +1,53 @@
+obj-$(CONFIG_ARFIRMWARE_COLEMAN_PCI) += arfw_col_pci.o
+arfw_col_pci-y := \
+	arfw_col_pci_main.o \
+	arfw_device.o \
+	ar_pci_bar.o \
+	ar_pci_sysfs.o \
+	data_ring.o \
+	control_rings.o \
+	test/pci_debug.o \
+	test/control_ring_debug.o \
+	test/data_ring_debug.o
+
+obj-$(CONFIG_ARFIRMWARE_JAZZ_PCI) += arfw_jazz_pci.o
+arfw_jazz_pci-y := \
+	arfw_jazz_pci_main.o \
+	arfw_device.o \
+	ar_pci_bar.o \
+	ar_pci_sysfs.o \
+	data_ring.o \
+	control_rings.o \
+	test/pci_debug.o \
+	test/control_ring_debug.o \
+	test/data_ring_debug.o
+
+obj-$(CONFIG_ARFIRMWARE_COLEMAN_PCI_TEST) += arfw_coleman_pci_test.o
+arfw_coleman_pci_test-y := coleman_pci_test.o
+
+obj-$(CONFIG_ARFIRMWARE_ACRO_PCI) += arfw_acro_pci.o
+arfw_acro_pci-y := \
+	arfw_acro_pci_main.o \
+	arfw_device.o \
+	ar_pci_bar.o \
+	ar_pci_sysfs.o \
+	data_ring.o \
+	control_rings.o \
+	msm_pcie.o \
+	test/pci_debug.o \
+	test/control_ring_debug.o \
+	test/data_ring_debug.o
+
+obj-$(CONFIG_ARFIRMWARE_AVO_PCI) += arfw_avo_pci.o
+arfw_avo_pci-y := \
+	arfw_avo_pci_main.o \
+	arfw_device.o \
+	ar_pci_bar.o \
+	data_ring.o \
+	control_rings.o \
+	data_ring.o \
+	test/pci_debug.o \
+	test/control_ring_debug.o \
+	test/data_ring_debug.o
+
+#ccflags-y += -DDEBUG

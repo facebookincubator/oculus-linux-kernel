@@ -21,22 +21,22 @@
 		enable-output = <0x01>;
 		/* Initialize SEL_FEM_FPWM to low state for TPS62802 work as FPWM */
 		initial-state = <0x00>;
-		status = "ok";
+		status = "okay";
 	};
 
-	tlv61290: tlv61290@75 {
-		compatible = "ti, tlv61290";
+	boost_granola: boost_granola@75 {
+		compatible = "meta,boost_granola";
 		reg = <0x75>;
-		regulator-name = "tlv61290-boost";
 		boost-en-gpios = <&tca9536 2 GPIO_ACTIVE_HIGH>;
-		status = "ok";
+		regulator-boot-on;
+		status = "okay";
 	};
 };
 
 &soc {
 	bbc_ctrl_granola: bbc_ctrl_granola {
 		compatible = "meta,bbc-ctrl-granola";
-		boost-supply = <&tlv61290>;
+		boost-supply = <&boost_granola>;
 		boost-voutroof-th-uv = <3500000>;
 		extcon = <&max77789>;
 		status = "okay";

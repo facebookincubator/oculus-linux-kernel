@@ -1,0 +1,1 @@
+obj-$(CONFIG_REGULATOR_DA9172)		+= da9172.o

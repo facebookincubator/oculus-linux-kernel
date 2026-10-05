@@ -110,7 +110,7 @@ struct cam_sensor_dev_res_info {
  * @batch_number: Number of batched frames
  * @sensor_name: Sensor name
  * @is_aon_user: To determine whether sensor is AON user or not
- * @aon_sensor_state: Always on sensor states
+ * @aon_sensor_state: Dune sensor states
  */
 struct cam_sensor_ctrl_t {
 	char                           device_name[

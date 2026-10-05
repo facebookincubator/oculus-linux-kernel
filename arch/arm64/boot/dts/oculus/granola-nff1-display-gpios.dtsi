@@ -32,6 +32,11 @@
 		regulator-name = "vsys_disp_pmic_ls";
 		gpio = <&display_gpio_expander 3 GPIO_ACTIVE_HIGH>;
 		enable-active-high;
+		/*
+		 * Preserve XBL's enabled load switch so the DA9172 remains
+		 * powered during probe.
+		 */
+		regulator-boot-on;
 		startup-delay-us = <50000>;
 		status = "okay";
 	};

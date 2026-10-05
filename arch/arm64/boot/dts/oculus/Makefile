@@ -56,7 +56,8 @@ dtbo-$(CONFIG_META_GREATWHITE) += \
     greatwhite-evt2-overlay.dtbo \
     greatwhite-dvt-overlay.dtbo \
     greatwhite-pvt-overlay.dtbo \
-    protostar-ff3-overlay.dtbo
+    protostar-ff3-overlay.dtbo \
+    protostar-ff4-overlay.dtbo
 
 dtbo-$(CONFIG_META_BLUEWHITE) += \
     bluewhite-dev1.2-overlay.dtbo \
@@ -162,6 +163,7 @@ greatwhite-evt2-overlay.dtbo-base := greatwhite-base.dtb
 greatwhite-dvt-overlay.dtbo-base := greatwhite-base.dtb
 greatwhite-pvt-overlay.dtbo-base := greatwhite-base.dtb
 protostar-ff3-overlay.dtbo-base := greatwhite-base.dtb
+protostar-ff4-overlay.dtbo-base := greatwhite-base.dtb
 hammerhead-dev0-overlay.dtbo-base := hammerhead-base.dtb
 hammerhead-dev0.1-overlay.dtbo-base := hammerhead-base.dtb
 hammerhead-dev1-overlay.dtbo-base := hammerhead-base.dtb

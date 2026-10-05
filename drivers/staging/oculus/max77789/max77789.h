@@ -1,0 +1,225 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+
+#ifndef __MAX77789_H
+#define __MAX77789_H
+
+/* MAX77789 Registers */
+enum {
+	MAX77789_REG_CHIP_ID = 0xA0,
+	MAX77789_REG_CHIP_REVISION,
+	MAX77789_REG_CHIP_SWRST,
+	MAX77789_REG_TOP_INT,
+	MAX77789_REG_TOP_INT_MASK,
+	MAX77789_REG_TOP_INT_OK,
+	MAX77789_REG_CHG_INT = 0xB0,
+	MAX77789_REG_CHG_INT_MASK,
+	MAX77789_REG_CHG_CNFG_00 = 0xB7,
+	MAX77789_REG_CHG_CNFG_01,
+	MAX77789_REG_CHG_CNFG_02,
+	MAX77789_REG_CHG_CNFG_03,
+	MAX77789_REG_CHG_CNFG_04,
+	MAX77789_REG_CHG_CNFG_05,
+	MAX77789_REG_CHG_CNFG_06,
+	MAX77789_REG_CHG_CNFG_07,
+	MAX77789_REG_CHG_CNFG_08,
+	MAX77789_REG_CHG_CNFG_09,
+	MAX77789_REG_CHG_CNFG_10,
+	MAX77789_REG_CHG_CNFG_11,
+	MAX77789_REG_CHG_CNFG_12,
+	MAX77789_REG_USB_TYPE_DTLS,
+	MAX77789_REG_USB_ILIM_DTLS,
+	MAX77789_REG_CHG_CNFG_13,
+	MAX77789_REG_CHG_CNFG_14,
+	MAX77789_REG_BC_CTRL1,
+	MAX77789_REG_BC_CTRL2,
+	MAX77789_REG_CC_CTRL1,
+	MAX77789_REG_BC_INT,
+	MAX77789_REG_CC_INT,
+	MAX77789_REG_BC_INTMASK,
+	MAX77789_REG_CC_INTMASK,
+	MAX77789_REG_BC_STATUS1,
+	MAX77789_REG_CC_STATUS1,
+	MAX77789_REG_CC_STATUS2,
+	MAX77789_REG_BC_CTRL3,
+	MAX77789_REG_CC_CTRL2,
+	MAX77789_REG_CC_CTRL3,
+	MAX77789_REG_CHG_CNFG_15,
+};
+
+enum {
+	DTS_CURR_DEFAULT,
+	/* CC1D=MID and CC2D=LOW */
+	DTS_CURR_1500MA,
+	/* CC1D=HIGH and CC2D=LOW */
+	DTS_CURR_3000MA,
+};
+
+enum {
+	/* V(CCx) < 0.65V */
+	CC_LEVEL_LOW,
+	/* 0.65V < V(CCx) < 1.24V */
+	CC_LEVEL_MID,
+	/* 1.24 < V(CCx) < 1.9V */
+	CC_LEVEL_HIGH,
+	/* V(CCx) > 1.9V */
+	CC_LEVEL_TOO_HIGH,
+};
+
+#define HOST_CURR_0_MA				0
+#define HOST_CURR_500_MA			500
+#define HOST_CURR_900_MA			900
+#define HOST_CURR_1500_MA			1500
+#define HOST_CURR_3000_MA			3000
+
+#define CC_V_LOW_MID_THOLD_MV			650
+#define CC_V_MID_HIGH_THOLD_MV			1240
+#define CC_V_ABNORMALLY_HIGH_THOLD_MV		1900
+
+#define MAX77789_MASK_CHGPROT			GENMASK(3, 2)
+#define MAX77789_CHGPROT_SHIFT			2
+
+/* MAX77789_REG_CHG_CNFG_00  Bits[3:0] -- MODE */
+#define MAX77789_MASK_CHG_CNFG_00		GENMASK(3, 0)
+/* charger = off, OTG = off, buck = on, boost = off */
+#define MAX77789_BUCK_EN			0x4
+/* charger = off, OTG = off, buck = on, boost = off */
+#define MAX77789_BUCK_DIS			0x0
+
+/*
+ * MAX77789_REG_USB_TYPE_DTLS
+ * CHG_TYP Bits[6:5] - Readback BC1.2 standard adaptor detection
+ * PR_CHG_TYP Bits[4:2] - Readback type of proprietary adaptor detected
+ * CC_CURR[1:0] - Readback CC current capability detection.
+ */
+#define MAX77789_MASK_CHG_TYP			GENMASK(6, 5)
+#define MAX77789_CHG_TYP_SHIFT			5
+#define MAX77789_NO_ADAPTOR			0x0
+/* SDP (500mA input current) */
+#define MAX77789_CHG_SDP			0x1
+/* CDP (1.5A input current) */
+#define MAX77789_CHG_CDP			0x2
+/* DCP (1.5A input current) */
+#define MAX77789_CHG_DCP			0x3
+#define MAX77789_MASK_CC_CURR			GENMASK(1, 0)
+#define MAX77789_CC_CURR_NO			0x0
+/* 500mA input current */
+#define MAX77789_CC_CURR_500MA			0x1
+/* 1.5A input current */
+#define MAX77789_CC_CURR_1500MA			0x2
+/* 3A input current */
+#define MAX77789_CC_CURR_3000MA			0x3
+
+/*
+ * MAX77789_REG_USB_ILIM_DTLS
+ */
+#define MAX77789_USB_ILIM_500MA		0x13
+#define MAX77789_USB_ILIM_1500MA		0x3b
+#define MAX77789_USB_ILIM_3000MA		0x77
+
+/*
+ * MAX77789_REG_CC_STATUS1
+ * CCPinStat Bits[7:6] - Output of Active CC Pin
+ * CCIStat Bits[5:4] - CC Pin Detected Allowed VBUS Current in UFP mode
+ * CCStat[2:0] - CC Pin State Machine Detection
+ */
+#define MAX77789_MASK_CCPIN_STAT		GENMASK(7, 6)
+#define MAX77789_CCPIN_STAT_SHIFT		6
+#define MAX77789_CCPIN_NO_DET			0x0
+#define MAX77789_CC1_ACTIVE			0x1
+#define MAX77789_CC2_ACTIVE			0x2
+#define MAX77789_CC_RFU				0x3
+#define MAX77789_MASK_CCI_STAT			GENMASK(5, 4)
+#define MAX77789_CCI_STAT_SHIFT			4
+#define MAX77789_CCI_NO_UFP			0x0
+#define MAX77789_CCI_500MA			0x1
+#define MAX77789_CCI_1500MA			0x2
+#define MAX77789_CCI_3000MA			0x3
+#define MAX77789_MASK_CC_STAT			GENMASK(2, 0)
+#define MAX77789_CC_NO_CONN			0x0
+#define MAX77789_CC_SINK			0x1
+#define MAX77789_CC_SOURCE			0x2
+#define MAX77789_CC_RFU				0x3
+
+#define MAX77789_VSYS_MIN_MV			3600
+#define MAX77789_VSYS_MAX_MV			4550
+#define MAX77789_VSYS_STEP1_MV			100
+#define MAX77789_VSYS_STEP2_MV			10
+#define MAX77789_VSYS_STEP_THOLD_MV		4000
+#define MAX77789_VSYS_STEP_THOLD_REG_VALUE	0x04
+
+/*
+ * MAX77789_CHG_CNFG_04_CHG_CV_PR Bits[5:0] -- CHG_CV_PRM
+ * only bit[5:0] is valid
+ */
+#define MAX77789_CHG_CNFG_04_CHG_CV_PRM		GENMASK(5, 0)
+
+/*
+ * MAX77789_REG_CHG_CNFG_09  Bits[6:0] -- CHGIN_ILIM
+ * 7-bit adjustment from100mA to 3.2A in 25mA steps.
+ * Note that the first 4 codes are all 100mA.
+ */
+#define MAX77789_ILIM_MIN_MA			100
+#define MAX77789_ILIM_MAX_MA			3200
+#define MAX77789_ILIM_STEP_MA			25
+#define MAX77789_ILIM_MIN_REG_VALUE		0x03
+
+/*
+ * MAX77789_REG_CHG_CNFG_12  Bits[5] -- NO_AUTOISET
+ * Bypass USBC control for INLIM
+ * 0x0: USBC
+ * 0x1: CHGIN_ILIM
+ */
+#define MAX77789_MASK_NO_AUTOISET		BIT(7)
+
+/*
+ * MAX77789_REG_CHG_CNFG_13  Bits[5] -- STBY_EN
+ * 0b0: DC-DC is controlled by the power-path
+ * state machine
+ * 0b1: Force DC-DC off. Device goes to CHGIN
+ * low quiescent current standby
+ */
+#define MAX77789_MASK_STBY_EN			BIT(5)
+
+/*
+ * MAX77789_REG_BC_INT -- MAX77789_REG_BC_INT
+ */
+#define MAX77789_MASK_BC_VBUSDETI		BIT(7)
+#define MAX77789_MASK_BC_DCDTMOL		BIT(1)
+#define MAX77789_MASK_BC_CHGTYPL		BIT(0)
+
+/*
+ * MAX77789_REG_CC_INT
+ */
+#define MAX77789_MASK_CC_VSAFE0VI		BIT(6)
+#define MAX77789_MASK_CC_CCPINSTATI		BIT(3)
+#define MAX77789_MASK_CC_CCISTATI		BIT(2)
+#define MAX77789_MASK_CC_CCSTATI		BIT(0)
+
+/*
+ * MAX77789_REG_BC_STATUS1
+ */
+#define MAX77789_MASK_BC_VBUSDET		BIT(7)
+
+/* only interested to get a Thermal Shutdown interrupt */
+#define MAX77789_DEFAULT_TOP_INT_MASK		0x09
+/* no interrupts on charger */
+#define MAX77789_DEFAULT_CHG_INT_MASK		0x00
+/* BATT to SYS FET is forced on, MODE = 4 */
+#define MAX77789_DEFAULT_CHG_CNFG_00		0x24
+/* Inductor = 1uH */
+#define MAX77789_DEFAULT_CHG_CNFG_01		0x48
+/* configures VSYS to 3.8V */
+#define MAX77789_DEFAULT_CHG_CNFG_04		0x02
+/* interrupts unmasked */
+#define MAX77789_DEFAULT_BC_INTMASK		0x86
+/* interrupts unmasked */
+#define MAX77789_DEFAULT_CC_INTMASK		0x6C
+/* disable Bypass USBC control for INLIM */
+#define MAX77789_DEFAULT_CHG_CNFG_12		0x00
+/* STBY disabled */
+#define MAX77789_DEFAULT_CHG_CNFG_13		0x0C
+/* Sink Mode selected and Reverse Boost disabled (send this one first) */
+#define MAX77789_DEFAULT_CC_CTRL3		0x06
+/* Configure the STAT2 Pin to be used as Adaptor Detection */
+#define MAX77789_DEFAULT_CHG_CNFG_15		0x04
+#endif /* __MAX77789_H */

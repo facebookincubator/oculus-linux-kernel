@@ -1,0 +1,84 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*******************************************************************************
+ * @file ar_device.h
+ *
+ * @brief Common ar-device defintions across all contexts
+ *
+ ********************************************************************************
+ * Copyright (c) Meta, Inc. and its affiliates. All Rights Reserved
+ *******************************************************************************/
+
+#pragma once
+
+#include "ar_utils.h"
+
+/** AR devices
+ *
+ * Endpoint IDS follow the following scheme:
+ *   | 8-bit MSB = Device ID | 8-bit LSB = endpoint ID |
+ */
+typedef enum {
+  AR_DEVICE_NONE = 0,
+  AR_DEVICE_ACROPOLIS = 0x1,
+  AR_DEVICE_AVOGADRO = 0x2,
+  AR_DEVICE_STAGE = 0x3,
+  AR_DEVICE_ARMSTRONG = 0x4,
+  AR_DEVICE_ACRO_UART = 0x8,
+  AR_DEVICE_COLEMAN = 0x50,
+  AR_DEVICE_COLEMAN_CV = 0x52,
+  AR_DEVICE_COLEMAN_FCV = 0x53,
+  AR_DEVICE_COLEMAN_DLA = 0x54,
+  AR_DEVICE_COLEMAN_GFX = 0x55,
+  AR_DEVICE_COLEMAN_DISPLAY = 0x56,
+  AR_DEVICE_COLEMAN_CAI = 0x57,
+  AR_DEVICE_DRAGON = 0x60,
+  AR_DEVICE_JAZZ_SMCU = 0x70,
+  AR_DEVICE_JAZZ_FDLAMCU = 0x74,
+  AR_DEVICE_JAZZ_TMCU = 0x77,
+  AR_DEVICE_TEST = 0xFE,
+  AR_DEVICE_MAX = 0xFF
+} ar_device_t;
+
+#define AR_ENDPOINT_TO_DEVICE(ep) (ep >> AR_BITS_PER_UINT8)
+#define AR_ENDPOINT_MASK_FROM_DEVICE(dev) (dev << AR_BITS_PER_UINT8)
+
+#define ARFW_LOOPBACK_DEV_NAME "ARFW-LOOPBACK"
+#define ARFW_LOOPBACK_DEVICE_NAME_PREFIX ARFW_LOOPBACK_DEV_NAME "-"
+#define ARFW_LOOPBACK_CHAR_DEVICE_PREFIX "/dev/" ARFW_LOOPBACK_DEVICE_NAME_PREFIX
+#define ARFW_LOOPBACK_CHAR_DEVICE_CTL_SUFFIX "-CTL"
+#define ARFW_LOOPBACK_DEVICE_PATH "/dev/" ARFW_LOOPBACK_DEV_NAME
+
+#define AR_PCIE_DEVICE_PATH "/dev/AR-AVO-PCI"
+
+#define AR_PCIE_COLEMAN_F_PATH_PREFIX "/dev/AR-COL-PCI-"
+#define AR_PCIE_COLEMAN_F_PATH(NUM) AR_PCIE_COLEMAN_F_PATH_PREFIX #NUM
+#define AR_PCIE_COLEMAN_F_MIN 0
+#define AR_PCIE_COLEMAN_F_MAX 7
+
+#define AR_PCIE_COLEMAN_F0_PATH AR_PCIE_COLEMAN_F_PATH(0)
+#define AR_PCIE_COLEMAN_F1_PATH AR_PCIE_COLEMAN_F_PATH(1)
+#define AR_PCIE_COLEMAN_F2_PATH AR_PCIE_COLEMAN_F_PATH(2)
+#define AR_PCIE_COLEMAN_F3_PATH AR_PCIE_COLEMAN_F_PATH(3)
+#define AR_PCIE_COLEMAN_F4_PATH AR_PCIE_COLEMAN_F_PATH(4)
+#define AR_PCIE_COLEMAN_F5_PATH AR_PCIE_COLEMAN_F_PATH(5)
+#define AR_PCIE_COLEMAN_F6_PATH AR_PCIE_COLEMAN_F_PATH(6)
+#define AR_PCIE_COLEMAN_F7_PATH AR_PCIE_COLEMAN_F_PATH(7)
+
+#define AR_PCIE_COLEMAN_PATH(SYS) AR_PCIE_COLEMAN_F_PATH_PREFIX #SYS
+
+#define AR_PCIE_JAZZ_F_PATH_PREFIX "/dev/AR-JAZZ-PCI-"
+#define AR_PCIE_JAZZ_F_PATH(NUM) AR_PCIE_JAZZ_F_PATH_PREFIX #NUM
+#define AR_PCIE_JAZZ_F_MIN 0
+#define AR_PCIE_JAZZ_F_MAX 2
+
+#define AR_PCIE_JAZZ_F0_PATH AR_PCIE_JAZZ_F_PATH(0)
+#define AR_PCIE_JAZZ_F1_PATH AR_PCIE_JAZZ_F_PATH(1)
+#define AR_PCIE_JAZZ_F2_PATH AR_PCIE_JAZZ_F_PATH(2)
+
+#define AR_PCIE_ACROPOLIS_PATH "/dev/AR-ACRO-PCI"
+#define AR_UART_ACROPOLIS_PATH "/dev/AR-ACRO-UART"
+
+#define AR_USB_JAZZ_PATH_PREFIX "/dev/AR-JAZZ-USB-"
+#define AR_USB_JAZZ_PATH(SYS) AR_USB_JAZZ_PATH_PREFIX #SYS
+
+#define ARFW_LOOPBACK_INLINE_DATA_OFFSET 80

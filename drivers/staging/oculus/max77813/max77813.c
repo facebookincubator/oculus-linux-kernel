@@ -3,6 +3,7 @@
 #include <linux/i2c.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/kstrtox.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/of.h>
@@ -91,6 +92,70 @@ static struct regulator_ops max77813_ops = {
 	.set_mode = max77813_set_mode,
 	.get_mode = max77813_get_mode,
 };
+
+/*
+ * The buck-boost enable bit, exposed by name so userspace can drop the charge
+ * path deliberately.
+ *
+ * The glasses and the charging case share a single line for both charging and
+ * comms, so the case only re-reports its state (lid position, platform id, ...)
+ * when charging disconnects. Suspending the BOB provokes that handshake on
+ * demand instead of waiting for a case-initiated disconnect at an unknown time.
+ *
+ * This writes the same bit as the regulator's enable op and the regulator's
+ * is_enabled op reads it back, so the framework's view of the rail stays
+ * truthful. Going through the regulator core instead is not an option: its
+ * sysfs is read-only by design, and this rail has no in-kernel consumers to
+ * refcount against (constraints.keep_on, no DT consumer).
+ */
+static ssize_t bb_enable_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	struct max77813_chip *pchip = dev_get_drvdata(dev);
+	unsigned int val;
+	int ret;
+
+	ret = regmap_read(pchip->regmap, MAX77813_REG_CONFIG2, &val);
+	if (ret < 0) {
+		dev_err(pchip->dev, "failed to read CONFIG2: %d\n", ret);
+		return ret;
+	}
+
+	return sysfs_emit(buf, "%d\n", !!(val & MAX77813_MASK_BB_EN));
+}
+
+static ssize_t bb_enable_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct max77813_chip *pchip = dev_get_drvdata(dev);
+	bool enable;
+	int ret;
+
+	ret = kstrtobool(buf, &enable);
+	if (ret)
+		return ret;
+
+	ret = regmap_update_bits(pchip->regmap, MAX77813_REG_CONFIG2,
+				 MAX77813_MASK_BB_EN,
+				 enable ? MAX77813_MASK_BB_EN : 0);
+	if (ret < 0) {
+		dev_err(pchip->dev, "failed to %s buck-boost: %d\n",
+			enable ? "enable" : "disable", ret);
+		return ret;
+	}
+
+	dev_info(pchip->dev, "buck-boost %s\n",
+		 enable ? "enabled" : "disabled");
+	return count;
+}
+static DEVICE_ATTR_RW(bb_enable);
+
+static struct attribute *max77813_attrs[] = {
+	&dev_attr_bb_enable.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(max77813);
 
 static const struct regmap_config max77813_regmap_config = {
 	.reg_bits = 8,
@@ -197,6 +262,7 @@ static struct i2c_driver max77813_driver = {
 	.driver = {
 		.name = DRIVER_NAME,
 		.of_match_table = of_match_ptr(max77813_of_match),
+		.dev_groups = max77813_groups,
 	},
 	.probe	= max77813_regulator_probe,
 	.id_table = max77813_i2c_id,

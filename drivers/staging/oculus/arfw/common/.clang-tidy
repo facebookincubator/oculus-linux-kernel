@@ -1,0 +1,5 @@
+---
+InheritParentConfig: true
+WarningsAsErrors: '
+-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+'

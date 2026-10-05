@@ -1,0 +1,7 @@
+obj-m += arfw_loopback.o
+arfw_loopback-y := \
+    arfw_loopback_ctl.o \
+    arfw_loopback_dev.o \
+    arfw_loopback_main.o
+
+#ccflags-y += -DDEBUG

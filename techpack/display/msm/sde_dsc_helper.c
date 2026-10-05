@@ -250,7 +250,8 @@ int sde_dsc_populate_dsc_config(struct drm_dsc_config *dsc, int scr_ver) {
 	u32 slice_width_mod;
 	int i, ratio_idx;
 
-	dsc->rc_model_size = 8192;
+	if (!dsc->rc_model_size)
+		dsc->rc_model_size = 8192;
 
 	if ((dsc->dsc_version_major == 0x1) &&
 			(dsc->dsc_version_minor == 0x1)) {
@@ -277,7 +278,8 @@ int sde_dsc_populate_dsc_config(struct drm_dsc_config *dsc, int scr_ver) {
 		return -EINVAL;
 
 	for (i = 0; i < DSC_NUM_BUF_RANGES - 1; i++)
-		dsc->rc_buf_thresh[i] = sde_dsc_rc_buf_thresh[i];
+		dsc->rc_buf_thresh[i] = sde_dsc_rc_buf_thresh[i] *
+				dsc->rc_model_size / 8192;
 
 	for (i = 0; i < DSC_NUM_BUF_RANGES; i++) {
 		dsc->rc_range_params[i].range_min_qp =
@@ -291,7 +293,8 @@ int sde_dsc_populate_dsc_config(struct drm_dsc_config *dsc, int scr_ver) {
 	rc_param_lut = &sde_dsc_rc_init_param_lut[ratio_idx];
 	dsc->rc_quant_incr_limit0 = rc_param_lut->rc_quant_incr_limit0;
 	dsc->rc_quant_incr_limit1 = rc_param_lut->rc_quant_incr_limit1;
-	dsc->initial_offset = rc_param_lut->initial_fullness_offset;
+	if (!dsc->initial_offset)
+		dsc->initial_offset = rc_param_lut->initial_fullness_offset;
 	dsc->initial_xmit_delay = rc_param_lut->initial_xmit_delay;
 	dsc->second_line_bpg_offset = rc_param_lut->second_line_bpg_offset;
 	dsc->second_line_offset_adj = rc_param_lut->second_line_offset_adj;
@@ -359,9 +362,14 @@ int sde_dsc_populate_dsc_config(struct drm_dsc_config *dsc, int scr_ver) {
 
 	dsc->final_offset = final_value;
 
-	data = (final_scale - 9) * (dsc->nfl_bpg_offset +
-		dsc->slice_bpg_offset);
-	dsc->scale_increment_interval = (2048 * dsc->final_offset) / data;
+	if (final_scale > 9) {
+		data = (final_scale - 9) * (dsc->nfl_bpg_offset +
+			dsc->slice_bpg_offset);
+		dsc->scale_increment_interval =
+			(2048 * dsc->final_offset) / data;
+	} else {
+		dsc->scale_increment_interval = 0;
+	}
 
 	dsc->scale_decrement_interval = groups_per_line /
 		(dsc->initial_scale_value - 8);
@@ -569,4 +577,3 @@ int sde_dsc_create_pps_buf_cmd(struct msm_display_dsc_info *dsc_info,
 
 	return 0;
 }
-

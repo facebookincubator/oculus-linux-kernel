@@ -824,7 +824,20 @@ void stp_controller_reset_all_channel_buffer(void)
 
 void stp_controller_request_protocol_resync(void)
 {
+	STP_LOCK(_stp_controller_data->lock_set_has_data);
+
 	stp_controller_set_state(STP_STATE_INIT);
+
+	/*
+	 * In INIT the SoC only transacts when the MCU already asserted its
+	 * line, and the one place that self-asserts in INIT
+	 * (stp_controller_update_has_data_post_process) runs inside a
+	 * completed transaction, so it cannot bootstrap one. Without this
+	 * assert both sides idle waiting for the other. See T272204085.
+	 */
+	stp_controller_set_controller_has_data(true);
+
+	STP_UNLOCK(_stp_controller_data->lock_set_has_data);
 }
 
 uint8_t stp_controller_get_packet_channel(uint8_t *buffer, unsigned int len)

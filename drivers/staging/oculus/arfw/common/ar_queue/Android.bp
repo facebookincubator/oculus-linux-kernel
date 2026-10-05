@@ -1,0 +1,24 @@
+cc_library {
+    name: "libarfw_ar_queue",
+    defaults: [
+        "libarfw_internal_common_defaults",
+    ],
+    export_include_dirs: ["include"],
+    srcs: ["src/*.c"],
+}
+
+cc_library {
+    name: "libarfw_ar_queue_mock",
+    defaults: [
+        "libarfw_internal_common_defaults",
+    ],
+    export_include_dirs: [
+        "mocks/include",
+    ],
+    srcs: ["mocks/src/*.cpp"],
+    static_libs: [
+        "libarfw_ar_queue",
+        "libgmock",
+        "libgtest",
+    ],
+}

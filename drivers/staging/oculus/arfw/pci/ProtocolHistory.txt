@@ -1,0 +1,140 @@
+/*
+ * This software contains information and intellectual property
+ * that is confidential and proprietary to Meta, Inc. and its affiliates.
+ */
+
+Protocol Update Process:
+https://docs.google.com/document/d/1m_YyeHH3xUDB2c4AwCQdGqYIhtiV_Fil22orU_8XZ-s/edit?usp=sharing
+
+PCIe Protocol Version history:
+
+================================================================================
+
+Initial version:
+ARP 1.0
+AP 0.0
+
+================================================================================
+
+Update to support new doorbell location on ARP. 10/2021:
+ARP 2.0
+AP 0.1
+AP is backwards compatible to ARP 1.0.
+ARP 2.0 is backwards compatible to AP 0.0.
+
+================================================================================
+
+Update to support an arbitrary number of PCIe send/receive queues. 03/2022:
+ARP 3.0
+AP 0.1
+AP is backwards compatible to ARP 1.0
+ARP 3.0 requires AP 0.2. Older AP builds will fail the handshake.
+
+Note: AP minor version should have been updated, but bug T113830228 on Avo
+prevented this working as designed. Keeping the AP version unchanged as the
+workaround.
+
+================================================================================
+
+Updated to support asking ARP for how many pend buffers it can support on a
+session via a new control message type of arp_info. 06/2022:
+ARP 3.1
+AP 0.2
+AP is backwards compatible to ARP 1.0
+ARP 3.1 is compatible with AP 0.1 and 0.2 (untested support for AP 0.0)
+
+Note: AP 0.2 will report version AP 0.1 to ARP 3.0 to fix a ARP 3.0 bug that
+prevented forwards compatibility with the AP. See T113830228
+
+================================================================================
+
+Update to support a dynamically assigned doorbell offset provided by the APP.
+This allows support for more ARP hardware configurations that may have the
+doorbell in a different location.
+
+ARP 4.0
+AP 0.3
+AP is backwards compatible to ARP 1.0
+ARP 4.0 is backwards compatibility to AP 0.1
+
+===============================================================================
+
+Update to support PCIE_WAKE GPIO interrupt from AVO.
+Prior to version 4.1 of ARP, AP would wait for a timeout if AVO reboots, and then bring up the PCIe link.
+With ARP version 4.1, AP instead waits for AVO to de-assert the PCIe WAKE GPIO, and
+only then brings up the PCIe link.
+NOTE: If both AP and AVO are rebooted simultaneously (via adb reboot), then AP brings up the
+PCIe link irrespective of AVO's WAKE GPIO setting. So this new change only affects the case
+where AVO is rebooted, without rebooting the AP.
+
+ARP 4.1
+AP 0.3
+AP is backwards compatible to ARP 1.0
+ARP 4.1 is backwards compatible to AP 0.1.
+
+================================================================================
+
+Updated to support only dynamically set DBs from the bar. 10/2023
+Old versions of AP between 0.2 to 0.1 should still work as they use the same
+offset but are officially unsupported.
+
+ARP 4.2
+AP 0.3
+AP is backwards compatible to ARP 1.0
+ARP 4.2 is backwards compatibility to AP 0.3
+
+================================================================================
+
+Bumped version number to let QEMU know it's safe to attempt probing functions 1 & 2
+
+ARP 4.3
+AP 0.3
+AP is backwards compatible to ARP 1.0
+ARP 4.3 is backwards compatibility to AP 0.3
+
+
+================================================================================
+
+Added support for Mixed buffer messages for all message types
+
+CP 4.4
+AP 1.0
+AP is backwards compatible to CP 1.0
+CP is backwards compatible to AP 0.3
+
+================================================================================
+
+Added version 5.0 for the new PCIe BAR layout to support the duty cycle.
+This is a breaking change.
+
+CP 5.0
+AP 5.0
+AP is backwards compatible to CP 5.0
+CP is backwards compatible to AP 5.0
+
+================================================================================
+
+Added support for deferred handshakes to CP.
+
+CP 5.1
+AP 5.0
+AP is backwards compatible to CP 5.0
+CP is backwards compatible to AP 5.0
+
+================================================================================
+
+Added support for the delete_all command allowing efficient removal of all data rings.
+
+CP 5.3
+AP 5.3
+AP is backwards compatible to CP 5.0
+CP is backwards compatible to AP 5.0
+
+================================================================================
+
+Added support for the MCU names for cdevs instead of the function numbers
+
+CP 5.4
+AP 5.3
+AP is backwards compatible to CP 5.0
+CP is backwards compatible to AP 5.0

@@ -14,8 +14,8 @@
 #include <linux/interconnect.h>
 #include <linux/interconnect-provider.h>
 
-static uint feature_aoclpi;
-module_param(feature_aoclpi, uint, 0444);
+static uint feature_dunelpi;
+module_param(feature_dunelpi, uint, 0444);
 
 static const struct {
 	u32 avg, peak;
@@ -301,7 +301,11 @@ static int32_t cam_sensor_driver_get_dt_data(struct cam_sensor_ctrl_t *s_ctrl)
 	s_ctrl->is_ignore_sensor_id_mismatch =
 		of_property_read_bool(of_node, "ignore-sensor-id-mismatch");
 
-	feature_aoclpi = of_property_read_bool(of_node, "aoclpi-enable");
+	/* Accept the new device-tree property name, falling back to the legacy
+	 * one so this driver works either side of the device-tree rename.
+	 */
+	feature_dunelpi = of_property_read_bool(of_node, "dunelpi-enable") ||
+		of_property_read_bool(of_node, "aoclpi-enable");
 
 	return rc;
 

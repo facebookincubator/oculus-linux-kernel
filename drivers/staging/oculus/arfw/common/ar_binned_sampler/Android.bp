@@ -1,0 +1,8 @@
+cc_library {
+    name: "libarfw_ar_binned_sampler",
+    defaults: [
+        "libarfw_internal_common_defaults",
+    ],
+    export_include_dirs: ["include"],
+    srcs: ["src/*.c"],
+}

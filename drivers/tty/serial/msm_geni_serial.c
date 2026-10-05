@@ -166,8 +166,6 @@ module_param(con_enabled, bool, 0644);
 #define CREATE_TRACE_POINTS
 #include "serial_trace.h"
 
-static bool force_suspend;
-
 /* FTRACE Logging */
 static void __ftrace_dbg(struct device *dev, const char *fmt, ...)
 {
@@ -323,7 +321,20 @@ struct msm_geni_serial_port {
 	void *console_log;
 	void *ipc_log_irqstatus;
 	unsigned int cur_baud;
-	atomic_t ioctl_count;
+	/*
+	 * Userspace clock vote. Only ever 0 or 1. It used to be a real count,
+	 * and that is how the runtime PM reference ended up stranded, so do
+	 * not let it nest again.
+	 *
+	 * Keep it atomic. msm_geni_serial_shutdown() clears it and
+	 * vote_clock_off() decrements it, and whoever gets the old 1 back is
+	 * the one that drops the PM reference. A plain flag would let both of
+	 * them drop it and hit the BUG_ON in shutdown.
+	 *
+	 * stop_rx_sequencer() and msm_geni_serial_sys_suspend() just read it,
+	 * and they do that outside tty_port->mutex.
+	 */
+	atomic_t ioctl_vote;
 	bool manual_flow;
 	struct msm_geni_serial_ver_info ver_info;
 	u32 cur_tx_remaining;
@@ -723,18 +734,16 @@ static int vote_clock_on(struct uart_port *uport)
 {
 	struct msm_geni_serial_port *port = GET_DEV_PORT(uport);
 	int usage_count;
-	int ioctl_count;
 	int ret = 0;
 
-	ioctl_count = atomic_add_return(1, &port->ioctl_count);
-	if (ioctl_count != 1) {
+	if (atomic_cmpxchg(&port->ioctl_vote, 0, 1)) {
 		UART_LOG_DBG(port->ipc_log_pwr, uport->dev,
-			     "%s clock already on ioctl_count %d\n", __func__, ioctl_count);
+			     "%s clock already on\n", __func__);
 		return ret;
 	}
 	ret = msm_geni_serial_power_on(uport);
 	if (ret) {
-		atomic_dec(&port->ioctl_count);
+		atomic_set(&port->ioctl_vote, 0);
 		dev_err(uport->dev, "Failed to vote clock on\n");
 		return ret;
 	}
@@ -742,8 +751,8 @@ static int vote_clock_on(struct uart_port *uport)
 	complete(&port->wakeup_comp);
 	usage_count = atomic_read(&uport->dev->power.usage_count);
 	UART_LOG_DBG(port->ipc_log_pwr, uport->dev,
-		     "%s :%s ioctl:%d usage_count:%d\n",
-		     __func__, current->comm, ioctl_count, usage_count);
+		     "%s :%s ioctl_vote:1 usage_count:%d\n",
+		     __func__, current->comm, usage_count);
 	return 0;
 }
 
@@ -751,31 +760,31 @@ static int vote_clock_off(struct uart_port *uport)
 {
 	struct msm_geni_serial_port *port = GET_DEV_PORT(uport);
 	int usage_count;
-	int ioctl_count;
+	int ioctl_vote;
 	int ret = 0;
 
 	if (!pm_runtime_enabled(uport->dev)) {
 		dev_err(uport->dev, "RPM not available.Can't enable clocks\n");
 		return -EPERM;
 	}
-	ioctl_count = atomic_fetch_add_unless(&port->ioctl_count, -1, 0);
-	if (ioctl_count != 1) {
+	ioctl_vote = atomic_fetch_add_unless(&port->ioctl_vote, -1, 0);
+	if (ioctl_vote != 1) {
 		WARN_ON_ONCE(1);
 		return 0;
 	}
 	ret = wait_for_transfers_inflight(uport);
 	if (ret) {
-		ioctl_count = atomic_inc_return(&port->ioctl_count);
+		ioctl_vote = atomic_inc_return(&port->ioctl_vote);
 		UART_LOG_DBG(port->ipc_log_pwr, uport->dev,
-			"%s wait_for_transfer_inflight return ret: %d ioctl:%d",
-			__func__, ret, ioctl_count);
+			"%s wait_for_transfer_inflight return ret: %d ioctl_vote:%d",
+			__func__, ret, ioctl_vote);
 		return -EAGAIN;
 	}
 
 	msm_geni_serial_power_off(uport);
 	usage_count = atomic_read(&uport->dev->power.usage_count);
-	UART_LOG_DBG(port->ipc_log_pwr, uport->dev, "%s:%s ioctl:%d usage_count:%d\n",
-		__func__, current->comm, (ioctl_count - 1), usage_count);
+	UART_LOG_DBG(port->ipc_log_pwr, uport->dev, "%s:%s ioctl_vote:0 usage_count:%d\n",
+		__func__, current->comm, usage_count);
 	return 0;
 };
 
@@ -1866,7 +1875,7 @@ static int stop_rx_sequencer(struct uart_port *uport)
 			UART_LOG_DBG(port->ipc_log_misc, uport->dev, "%s: Interrupt delay\n",
 					__func__);
 			handle_rx_dma_xfer(s_irq_status, uport);
-			if (pm_runtime_enabled(uport->dev) && !atomic_read(&port->ioctl_count)) {
+			if (pm_runtime_enabled(uport->dev) && !atomic_read(&port->ioctl_vote)) {
 				usage_count = atomic_read(&uport->dev->power.usage_count);
 				UART_LOG_DBG(port->ipc_log_misc, uport->dev,
 					"%s: Abort Stop Rx, extend the PM timer, usage_count:%d\n",
@@ -2842,7 +2851,7 @@ static void msm_geni_serial_shutdown(struct uart_port *uport)
 		disable_irq(uport->irq);
 
 	if (!uart_console(uport)) {
-		int ioctl_count = atomic_fetch_and(0, &msm_port->ioctl_count);
+		int ioctl_vote = atomic_fetch_and(0, &msm_port->ioctl_vote);
 
 		if (pm_runtime_enabled(uport->dev)) {
 			int usage_count;
@@ -2851,10 +2860,10 @@ static void msm_geni_serial_shutdown(struct uart_port *uport)
 			 * If shutdown took ownership of an active ioctl vote
 			 * (vote_clock_off hasn't released it yet), release that
 			 * PM reference. vote_clock_off coordinates via
-			 * atomic_fetch_add_unless and will bail if ioctl_count
+			 * atomic_fetch_add_unless and will bail if ioctl_vote
 			 * is already 0.
 			 */
-			if (ioctl_count)
+			if (ioctl_vote)
 				pm_runtime_put_noidle(uport->dev);
 
 			/*
@@ -3353,25 +3362,6 @@ static ssize_t ver_info_show(struct device *dev,
 	return ret;
 }
 static DEVICE_ATTR_RO(ver_info);
-
-static ssize_t serial_force_suspend_store(
-				struct device *dev,
-				struct device_attribute *attr,
-				 const char *buf, size_t len)
-{
-	if (!strncmp(buf, "enable", len - 1)) {
-		force_suspend = true;
-		dev_info(dev, "%s: enabled force suspend\n",__func__);
-	} else if (!strncmp(buf, "disable", len - 1)) {
-		force_suspend = false;
-		dev_info(dev, "%s: disabled force suspend\n",__func__);
-	} else {
-		dev_info(dev, "%s: invalid argument\n",__func__);
-	}
-
-	return len;
-}
-static DEVICE_ATTR_WO(serial_force_suspend);
 
 #if IS_ENABLED(CONFIG_SERIAL_MSM_GENI_CONSOLE) || \
 						IS_ENABLED(CONFIG_CONSOLE_POLL)
@@ -4051,7 +4041,6 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 	device_create_file(uport->dev, &dev_attr_loopback);
 	device_create_file(uport->dev, &dev_attr_xfer_mode);
 	device_create_file(uport->dev, &dev_attr_ver_info);
-	device_create_file(&pdev->dev, &dev_attr_serial_force_suspend);
 	msm_geni_serial_debug_init(uport, is_console);
 	dev_port->port_setup = false;
 
@@ -4100,9 +4089,6 @@ static int msm_geni_serial_remove(struct platform_device *pdev)
 					port->rx_buf, DMA_RX_BUF_SIZE);
 		port->rx_dma = (dma_addr_t)NULL;
 	}
-
-	device_remove_file(&pdev->dev, &dev_attr_serial_force_suspend);
-
 	return 0;
 }
 
@@ -4267,7 +4253,7 @@ exit_runtime_resume:
 	return ret;
 }
 
-static int msm_geni_serial_enter_suspend(struct device *dev, const bool force)
+static int msm_geni_serial_sys_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct msm_geni_serial_port *port = platform_get_drvdata(pdev);
@@ -4286,7 +4272,7 @@ static int msm_geni_serial_enter_suspend(struct device *dev, const bool force)
 	} else {
 		struct uart_state *state = uport->state;
 		struct tty_port *tty_port = &state->port;
-		int ioctl_count = atomic_read(&port->ioctl_count);
+		int ioctl_vote = atomic_read(&port->ioctl_vote);
 
 		if (!tty_port) {
 			dev_err(dev, "%s:tty_port is NULL\n", __func__);
@@ -4295,41 +4281,19 @@ static int msm_geni_serial_enter_suspend(struct device *dev, const bool force)
 		}
 
 		mutex_lock(&tty_port->mutex);
-		if (!force)
-		{
-			if (!pm_runtime_status_suspended(dev)) {
-				dev_err(dev, "%s:Active userspace vote; ioctl_cnt %d\n",
-						__func__, ioctl_count);
-				UART_LOG_DBG(port->ipc_log_pwr, dev,
-					"%s:Active userspace vote; ioctl_cnt %d\n",
-						__func__, ioctl_count);
-				mutex_unlock(&tty_port->mutex);
-				return -EBUSY;
-			}
-			UART_LOG_DBG(port->ipc_log_pwr, dev, "%s\n", __func__);
-
+		if (!pm_runtime_status_suspended(dev)) {
+			dev_err(dev, "%s:Active userspace vote; ioctl_vote %d\n",
+					__func__, ioctl_vote);
+			UART_LOG_DBG(port->ipc_log_pwr, dev,
+				"%s:Active userspace vote; ioctl_vote %d\n",
+					__func__, ioctl_vote);
+			mutex_unlock(&tty_port->mutex);
+			return -EBUSY;
 		}
-		else
-		{
-			dev_err(dev, "%s:Forcing driver suspend; ioctl_cnt %d\n",
-					__func__, ioctl_count);
-		}
+		UART_LOG_DBG(port->ipc_log_pwr, dev, "%s\n", __func__);
 		mutex_unlock(&tty_port->mutex);
 	}
 	return 0;
-}
-
-static int msm_geni_serial_sys_suspend(struct device *dev)
-{
-	return msm_geni_serial_enter_suspend (dev, force_suspend);
-}
-
-static int msm_geni_serial_sys_freeze(struct device *dev)
-{
-	/* When entering hibernation, ignore PM runtime autosuspend.
-	 * Suspend the device unconditionally.
-	 */
-	return msm_geni_serial_enter_suspend (dev, true);
 }
 
 static int msm_geni_serial_sys_resume(struct device *dev)
@@ -4349,7 +4313,7 @@ static int msm_geni_serial_sys_resume(struct device *dev)
 	return 0;
 }
 
-static int msm_geni_serial_sys_hib_resume(struct device *dev)
+static int msm_geni_serial_sys_restore(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct msm_geni_serial_port *port = platform_get_drvdata(pdev);
@@ -4370,8 +4334,59 @@ static int msm_geni_serial_sys_hib_resume(struct device *dev)
 		 * during next session. Clients of HS-UART will close and
 		 * open the port during hibernation.
 		 */
+
+		/*
+		 * Balance the pm_runtime_force_suspend() done in .freeze:
+		 * re-enable runtime PM and restore the port's RT-PM state
+		 * before it is used again.
+		 */
+		pm_runtime_force_resume(dev);
+
 		port->port_setup = false;
 	}
+	return 0;
+}
+
+static int msm_geni_serial_sys_freeze(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct msm_geni_serial_port *port = platform_get_drvdata(pdev);
+	struct uart_port *uport = &port->uport;
+	int ret;
+
+	/* Console disabled from cmdline: nothing to do. */
+	if (port->is_console && !con_enabled)
+		return 0;
+
+	/*
+	 * Console and auto-suspend-disabled ports use the regular system
+	 * suspend path (uart_suspend_port()).
+	 */
+	if (uart_console(uport) || port->pm_auto_suspend_disable)
+		return msm_geni_serial_sys_suspend(dev);
+
+	/*
+	 * Non-console HS-UART: hibernation must snapshot the port
+	 * runtime-suspended, with resources (clocks/BW/CX votes) released and
+	 * no pending autosuspend timer.
+	 *
+	 * pm_runtime_force_suspend() is used rather than pm_runtime_suspend():
+	 * device_prepare() holds a pm_runtime_get_noresume() ref across the
+	 * sleep transition, so usage_count >= 1 and pm_runtime_suspend() would
+	 * return -EAGAIN. force_suspend() runs ->runtime_suspend now (bypassing
+	 * the autosuspend delay) and disables runtime PM until the paired
+	 * pm_runtime_force_resume() in .thaw/.restore.
+	 */
+	ret = pm_runtime_force_suspend(dev);
+	if (ret) {
+		dev_err(dev, "%s: force runtime suspend failed rc=%d ioctl_vote=%d\n",
+			__func__, ret, atomic_read(&port->ioctl_vote));
+		UART_LOG_DBG(port->ipc_log_pwr, dev,
+			"%s: force suspend failed rc=%d\n", __func__, ret);
+		return ret;
+	}
+	UART_LOG_DBG(port->ipc_log_pwr, dev,
+		"%s: forced runtime suspend for hibernation\n", __func__);
 	return 0;
 }
 #else
@@ -4395,7 +4410,12 @@ static int msm_geni_serial_sys_resume(struct device *dev)
 	return 0;
 }
 
-static int msm_geni_serial_sys_hib_resume(struct device *dev)
+static int msm_geni_serial_sys_restore(struct device *dev)
+{
+	return 0;
+}
+
+static int msm_geni_serial_sys_freeze(struct device *dev)
 {
 	return 0;
 }
@@ -4407,8 +4427,8 @@ static const struct dev_pm_ops msm_geni_serial_pm_ops = {
 	.suspend = msm_geni_serial_sys_suspend,
 	.resume = msm_geni_serial_sys_resume,
 	.freeze = msm_geni_serial_sys_freeze,
-	.restore = msm_geni_serial_sys_hib_resume,
-	.thaw = msm_geni_serial_sys_hib_resume,
+	.restore = msm_geni_serial_sys_restore,
+	.thaw = msm_geni_serial_sys_restore,
 };
 
 static struct platform_driver msm_geni_serial_platform_driver = {

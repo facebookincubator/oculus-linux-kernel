@@ -2675,6 +2675,8 @@ static int dsi_panel_parse_dsc_params(struct dsi_display_mode *mode,
 				struct dsi_parser_utils *utils)
 {
 	u32 data;
+	u32 line_buf_depth = 0;
+	bool line_buf_depth_override = false;
 	int rc = -EINVAL;
 	int intf_width;
 	const char *compression;
@@ -2833,6 +2835,17 @@ static int dsi_panel_parse_dsc_params(struct dsi_display_mode *mode,
 	priv_info->dsc.config.block_pred_enable = utils->read_bool(utils->data,
 		"qcom,mdss-dsc-block-prediction-enable");
 
+	if (!utils->read_u32(utils->data,
+			"qcom,mdss-dsc-rc-model-size", &data))
+		priv_info->dsc.config.rc_model_size = data;
+
+	if (!utils->read_u32(utils->data,
+			"qcom,mdss-dsc-initial-offset", &data))
+		priv_info->dsc.config.initial_offset = data;
+
+	line_buf_depth_override = !utils->read_u32(utils->data,
+			"qcom,mdss-dsc-line-buf-depth", &line_buf_depth);
+
 	priv_info->dsc.config.slice_count = DIV_ROUND_UP(intf_width,
 		priv_info->dsc.config.slice_width);
 
@@ -2843,6 +2856,9 @@ static int dsi_panel_parse_dsc_params(struct dsi_display_mode *mode,
 		rc = -EINVAL;
 		goto error;
 	}
+
+	if (line_buf_depth_override)
+		priv_info->dsc.config.line_buf_depth = line_buf_depth;
 
 	rc = sde_dsc_populate_dsc_private_params(&priv_info->dsc, intf_width);
 	if (rc) {

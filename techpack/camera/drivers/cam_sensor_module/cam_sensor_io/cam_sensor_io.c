@@ -5,6 +5,7 @@
 
 #include "cam_sensor_io.h"
 #include "cam_sensor_i2c.h"
+#include "cam_sensor_util.h"
 
 int32_t camera_io_dev_poll(struct camera_io_master *io_master_info,
 	uint32_t addr, uint16_t data, uint32_t data_mask,
@@ -17,6 +18,11 @@ int32_t camera_io_dev_poll(struct camera_io_master *io_master_info,
 	if (!io_master_info) {
 		CAM_ERR(CAM_SENSOR, "Invalid Args");
 		return -EINVAL;
+	}
+
+    if (everett_exists()) {
+		CAM_INFO(CAM_SENSOR, "Ignoring camera_io_dev_poll()");
+		return 0;
 	}
 
 	if (io_master_info->master_type == CCI_MASTER) {
@@ -118,6 +124,11 @@ int32_t camera_io_dev_read_seq(struct camera_io_master *io_master_info,
 int32_t camera_io_dev_write(struct camera_io_master *io_master_info,
 	struct cam_sensor_i2c_reg_setting *write_setting)
 {
+	if (everett_exists()) {
+		CAM_INFO(CAM_SENSOR, "Ignoring camera_io_dev_write()");
+		return 0;
+	}
+
 	if (!write_setting || !io_master_info) {
 		CAM_ERR(CAM_SENSOR,
 			"Input parameters not valid ws: %pK ioinfo: %pK",
