@@ -4315,26 +4315,27 @@ static bool sde_encoder_calc_lineptr_headroom(struct sde_encoder_virt *sde_enc,
 		u64 *sample_time, int *vtotal_out, int *lineptr_offset,
 		int *lineptr_headroom)
 {
+	struct sde_encoder_phys *cur_master;
 	struct drm_display_mode *mode;
 	u64 start_time, end_time, external_1h_ns;
 	int cur_line, vtotal;
 
 	/* This should *never* be true, but check anyway */
 	if (!lineptr_offset || !lineptr_headroom || !vtotal_out || !sde_enc ||
-			!sde_enc->cur_master ||
+			!(cur_master = READ_ONCE(sde_enc->cur_master)) ||
 			sde_enc->disp_info.intf_type != DRM_MODE_CONNECTOR_DSI ||
-			!sde_enc->cur_master->ops.get_line_count) {
+			!cur_master->ops.get_line_count) {
 		*sample_time = ktime_to_ns(ktime_get());
 		return false;
 	}
 
-	mode = &sde_enc->cur_master->cached_mode;
-	*lineptr_offset = sde_enc->cur_master->lineptr_offset_cached -
-			sde_enc->cur_master->vfp_fetch_lines_cached;
+	mode = &cur_master->cached_mode;
+	*lineptr_offset = cur_master->lineptr_offset_cached -
+			cur_master->vfp_fetch_lines_cached;
 
 	vtotal = mode->vtotal;
 	start_time = ktime_get_ns();
-	cur_line = sde_enc->cur_master->ops.get_line_count(sde_enc->cur_master);
+	cur_line = cur_master->ops.get_line_count(cur_master);
 	end_time = ktime_get_ns();
 
 	/* Wrap cur_line so that headroom is zeroed at Vsync */

@@ -5,6 +5,7 @@ ifeq ($(CONFIG_SYNCBOSS_DEBUG),y)
 syncboss_spi-objs += syncboss_debugfs.o
 endif
 
+CFLAGS_syncboss_powerstate.o += -I$(srctree)/drivers/staging/oculus/mcu/syncboss
 obj-$(CONFIG_SYNCBOSS_POWERSTATE) += syncboss_powerstate.o
 obj-$(CONFIG_SYNCBOSS_NSYNC) += syncboss_nsync.o
 obj-$(CONFIG_SYNCBOSS_MISCFIFO) += syncboss_miscfifo.o

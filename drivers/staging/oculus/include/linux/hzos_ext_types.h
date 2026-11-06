@@ -25,11 +25,15 @@ struct hzos_ext_stats {
 	u64 nr_srq_any;
 };
 
+/* Maximum length, including the NUL terminator, of a task profiles tag. */
+#define HZOS_EXT_TASK_PROFILES_LEN 256
+
 /**
  * struct hzos_ext - Wrapper struct for hzos_ext object.
  *
  * @flags Flags
  * @preferred_mask The cpumask that the task prefers to run on.
+ * @task_profiles The task profiles init applied to the task.
  * @lock The mutex synchronization object.
  */
 struct hzos_ext {
@@ -69,6 +73,25 @@ struct hzos_ext {
 #ifdef CONFIG_HZOS_EXT_STATS
 	struct hzos_ext_stats stats;
 #endif
+
+	/*
+	 * The task profiles that init applied to the task, in the same space
+	 * separated form as the task_profiles option of the service's init.rc
+	 * entry. Purely informational: it lets user space attribute a process
+	 * to its profiles without having to ask init, and it is never used to
+	 * make scheduling or cgroup decisions in the kernel.
+	 */
+	char task_profiles[HZOS_EXT_TASK_PROFILES_LEN];
+
+	/*
+	 * Bumped on every change to task_profiles, and nonzero exactly when a
+	 * tag has been applied. Pollers of the procfs file compare it against
+	 * the generation they last observed, so the tag behaves as state
+	 * rather than an event stream: a reader that misses intermediate
+	 * changes still converges on the current value.
+	 */
+	u32 task_profiles_gen;
+
 	struct mutex lock;
 };
 

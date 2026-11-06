@@ -440,16 +440,9 @@ EXPORT_SYMBOL_GPL(nf_conntrack_helper_register);
 
 static bool expect_iter_me(struct nf_conntrack_expect *exp, void *data)
 {
-	struct nf_conn_help *help = nfct_help(exp->master);
 	const struct nf_conntrack_helper *me = data;
-	const struct nf_conntrack_helper *this;
 
-	if (exp->helper == me)
-		return true;
-
-	this = rcu_dereference_protected(help->helper,
-					 lockdep_is_held(&nf_conntrack_expect_lock));
-	return this == me;
+	return exp->helper == me;
 }
 
 void nf_conntrack_helper_unregister(struct nf_conntrack_helper *me)
@@ -464,7 +457,7 @@ void nf_conntrack_helper_unregister(struct nf_conntrack_helper *me)
 	 */
 	synchronize_rcu();
 
-	nf_ct_expect_iterate_destroy(expect_iter_me, NULL);
+	nf_ct_expect_iterate_destroy(expect_iter_me, me);
 	nf_ct_iterate_destroy(unhelp, me);
 
 	/* Maybe someone has gotten the helper already when unhelp above.

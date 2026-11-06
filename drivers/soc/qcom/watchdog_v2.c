@@ -17,6 +17,7 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
+#include <linux/irqchip/arm-gic-v3.h>
 #include <linux/percpu.h>
 #include <linux/of.h>
 #include <linux/cpu.h>
@@ -444,8 +445,10 @@ static void ping_other_cpus(struct msm_watchdog_data *wdog_dd)
 		cpumask_empty(&wdog_dd->ping_pending_mask), msecs_to_jiffies(1000))) {
 		dev_info(wdog_dd->dev, "Timeout waiting for ping response, pending mask %*pb",
 			 cpumask_pr_args(&wdog_dd->ping_pending_mask));
-		for_each_cpu(cpu, &wdog_dd->ping_pending_mask)
+		for_each_cpu(cpu, &wdog_dd->ping_pending_mask) {
+			gic_show_cpu_irqs(cpu);
 			arch_send_call_function_single_ipi(cpu);
+		}
 	}
 
 	cpu_hotplug_enable();
@@ -458,6 +461,18 @@ static void pet_task_wakeup(struct timer_list *t)
 	wdog_dd->timer_expired = true;
 	wdog_dd->timer_fired = sched_clock();
 	wake_up(&wdog_dd->pet_complete);
+}
+
+/*
+ * Pin to the boot CPU: on the timer base of a CPU that stops taking
+ * interrupts, the pet task is never woken and no ping is ever sent.
+ */
+static void pet_timer_arm(struct msm_watchdog_data *wdog_dd,
+			  unsigned long delay_time)
+{
+	del_timer(&wdog_dd->pet_timer);
+	wdog_dd->pet_timer.expires = jiffies + delay_time;
+	add_timer_on(&wdog_dd->pet_timer, 0);
 }
 
 static int cmp_irq_info_fn(const void *a, const void *b)
@@ -674,7 +689,7 @@ static __ref int watchdog_kthread(void *arg)
 		/* Check again before scheduling
 		 * Could have been changed on other cpu
 		 */
-		mod_timer(&wdog_dd->pet_timer, jiffies + delay_time);
+		pet_timer_arm(wdog_dd, delay_time);
 		queue_work(system_unbound_wq, &wdog_dd->irq_counts_work);
 	}
 	return 0;
@@ -784,8 +799,13 @@ static irqreturn_t wdog_bark_handler(int irq, void *dev_id)
 	nanosec_rem = do_div(wdog_dd->last_pet, 1000000000);
 	dev_info(wdog_dd->dev, "Watchdog last pet at %lu.%06lu\n",
 			(unsigned long) wdog_dd->last_pet, nanosec_rem / 1000);
-	if (wdog_dd->do_ipi_ping)
+	if (wdog_dd->do_ipi_ping) {
+		int cpu;
+
 		dump_cpu_ping_mask(wdog_dd);
+		for_each_cpu(cpu, &wdog_dd->ping_pending_mask)
+			gic_show_cpu_irqs(cpu);
+	}
 
 	/*
 	 * Trigger a kernel panic so we get some useful logs.
@@ -940,8 +960,7 @@ static void init_watchdog_data(struct msm_watchdog_data *wdog_dd)
 	wdog_dd->user_pet_enabled = false;
 	wake_up_process(wdog_dd->watchdog_task);
 	timer_setup(&wdog_dd->pet_timer, pet_task_wakeup, 0);
-	wdog_dd->pet_timer.expires = jiffies + delay_time;
-	add_timer(&wdog_dd->pet_timer);
+	pet_timer_arm(wdog_dd, delay_time);
 
 	val = BIT(EN);
 	if (wdog_dd->wakeup_irq_enable)

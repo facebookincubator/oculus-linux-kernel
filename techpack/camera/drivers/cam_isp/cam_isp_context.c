@@ -3082,7 +3082,7 @@ static int __cam_isp_ctx_apply_stream_req_in_activated_state(
 {
 	struct cam_isp_stream_image *stream_image;
 	struct cam_isp_context *ctx_isp = ctx->ctx_priv;
-	struct cam_hw_config_args cfg;
+	struct cam_hw_config_args cfg = {0};
 	int rc;
 
 	if (ctx_isp->active_req_cnt > 2) {

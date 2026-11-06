@@ -1001,10 +1001,9 @@ static inline unsigned int num_other_active_cpus(void)
 void smp_send_stop(void)
 {
 	unsigned long timeout;
+	cpumask_t mask;
 
 	if (num_other_online_cpus()) {
-		cpumask_t mask;
-
 		cpumask_copy(&mask, cpu_online_mask);
 		cpumask_clear_cpu(smp_processor_id(), &mask);
 
@@ -1018,9 +1017,12 @@ void smp_send_stop(void)
 	while (num_other_active_cpus() && timeout--)
 		udelay(1);
 
-	if (num_other_active_cpus())
+	if (num_other_active_cpus()) {
+		cpumask_copy(&mask, cpu_active_mask);
+		cpumask_clear_cpu(smp_processor_id(), &mask);
 		pr_warning("SMP: failed to stop secondary CPUs %*pbl\n",
-			   cpumask_pr_args(cpu_online_mask));
+			   cpumask_pr_args(&mask));
+	}
 
 	sdei_mask_local_cpu();
 }

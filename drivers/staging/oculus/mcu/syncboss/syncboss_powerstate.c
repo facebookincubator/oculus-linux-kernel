@@ -14,6 +14,9 @@
 #include "syncboss_consumer_priorities.h"
 #include "syncboss_powerstate.h"
 
+#define CREATE_TRACE_POINTS
+#include "syncboss_powerstate_trace.h"
+
 /*
  * These are SPI message types that the driver explicitly monitors and
  * sends to SyncBoss firmware. They must be kept in sync.
@@ -273,6 +276,7 @@ static int signal_powerstate_event(struct powerstate_dev_data *devdata, int evt)
 			devdata->eat_prox_on_events = false;
 		}
 
+		trace_syncboss_powerstate_signal(evt);
 		ret = miscfifo_send_buf(&devdata->powerstate_fifo, (u8 *) &msg, sizeof(msg));
 		if (ret < 0)
 			dev_warn_ratelimited(devdata->dev, "powerstate fifo error (%d)", ret);
@@ -448,10 +452,13 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 
 	switch (type) {
 	case SYNCBOSS_PROXSTATE_MESSAGE_TYPE:
+		trace_syncboss_powerstate_rx(type, packet->data[0] ?
+					SYNCBOSS_PROX_EVENT_PROX_ON : SYNCBOSS_PROX_EVENT_PROX_OFF);
 		signal_powerstate_event(devdata, packet->data[0] ?
 					SYNCBOSS_PROX_EVENT_PROX_ON : SYNCBOSS_PROX_EVENT_PROX_OFF);
 		return NOTIFY_STOP;
 	case SYNCBOSS_WAKEUP_REASON_MESSAGE_TYPE:
+		trace_syncboss_powerstate_rx(type, packet->data[0]);
 		signal_powerstate_event(devdata, packet->data[0]);
 		return NOTIFY_STOP;
 	default:

@@ -161,6 +161,7 @@ const struct nf_conntrack_l4proto nf_conntrack_l4proto_generic =
 {
 	.l3proto		= PF_UNSPEC,
 	.l4proto		= 255,
+	.allow_clash            = true,
 	.pkt_to_tuple		= generic_pkt_to_tuple,
 	.packet			= generic_packet,
 	.new			= generic_new,

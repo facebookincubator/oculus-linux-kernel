@@ -442,6 +442,46 @@ static u64 gic_mpidr_to_affinity(unsigned long mpidr)
 	return aff;
 }
 
+/*
+ * Redistributor state of another CPU, read from here rather than from the
+ * target, which by the time this is useful is no longer answering.  Enough
+ * to tell why an SGI did not arrive:
+ *
+ *   aff mismatch	 this redistributor does not belong to that CPU
+ *   WAKER ChildrenAsleep (bit 2), ProcessorSleep (bit 1)
+ *			 the GIC thinks the CPU is down and will not deliver
+ *   ISENABLER0 bit clear the SGI is disabled
+ *   ISPENDR0 bit set	 delivered and waiting: the CPU is not taking it
+ *   prio		 SGI priority, ignored if numerically >= the PMR
+ */
+void gic_show_cpu_irqs(int cpu)
+{
+	void __iomem *rd, *sgi;
+	u64 typer, aff;
+
+	if (!gic_data.rdists.rdist)
+		return;
+	rd = per_cpu_ptr(gic_data.rdists.rdist, cpu)->rd_base;
+	if (!rd)
+		return;
+	sgi = rd + SZ_64K;
+
+	typer = gic_read_typer(rd + GICR_TYPER);
+	aff = gic_mpidr_to_affinity(cpu_logical_map(cpu));
+
+	pr_err("CPU%d GICR: aff=%llx/%llx%s CTLR=%08x WAKER=%08x\n",
+	       cpu, typer >> 32, aff,
+	       (typer >> 32) == aff ? "" : " MISMATCH",
+	       readl_relaxed(rd + GICR_CTLR),
+	       readl_relaxed(rd + GICR_WAKER));
+
+	pr_err("CPU%d GICR: ISENABLER0=%08x ISPENDR0=%08x ISACTIVER0=%08x prio[SGI0-3]=%08x\n",
+	       cpu, readl_relaxed(sgi + GICR_ISENABLER0),
+	       readl_relaxed(sgi + GICR_ISPENDR0),
+	       readl_relaxed(sgi + GICR_ISACTIVER0),
+	       readl_relaxed(sgi + GICR_IPRIORITYR0));
+}
+
 static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
 {
 	u32 irqnr;

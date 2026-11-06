@@ -586,8 +586,6 @@ int virtio_crypto_ablkcipher_crypt_req(
 	if (ret < 0)
 		return ret;
 
-	virtqueue_kick(data_vq->vq);
-
 	return 0;
 }
 

@@ -406,8 +406,10 @@ gmbus_xfer_read_chunk(struct drm_i915_private *dev_priv,
 
 		val = I915_READ_FW(GMBUS3);
 		do {
-			if (extra_byte_added && len == 1)
+			if (extra_byte_added && len == 1) {
+				len--;
 				break;
+			}
 
 			*buf++ = val & 0xff;
 			val >>= 8;
