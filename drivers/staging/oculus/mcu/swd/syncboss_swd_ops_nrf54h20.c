@@ -710,7 +710,11 @@ int syncboss_swd_nrf54h20_prepare(struct device *dev)
 		dev_err(dev, "%s: Could not reset into DebugWait mode\n", __func__);
 
 
-	return syncboss_swd_nrf54h20_wait_swd_init(dev);
+	status = syncboss_swd_nrf54h20_wait_swd_init(dev);
+	if (status != 0)
+		syncboss_swd_setstate(dev, false);
+
+	return status;
 }
 
 int syncboss_swd_nrf54h20_finalize(struct device *dev)

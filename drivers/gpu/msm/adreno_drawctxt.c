@@ -327,13 +327,10 @@ void adreno_drawctxt_set_guilty(struct kgsl_device *device,
 static inline bool _is_current_uid_privileged(struct kgsl_device *device)
 {
 	/*
-	 * If the privileged UID list is empty, then all UIDs should be
-	 * considered privileged for the purposes of allowing high-priority
-	 * contexts.
+	 * If the privileged UID list is empty, no UID is considered privileged
+	 * and high-priority contexts are disallowed by default. Only UIDs
+	 * explicitly present on the list are treated as privileged.
 	 */
-	if (list_empty(&device->privileged_uid_list))
-		return true;
-
 	return kgsl_is_uid_privileged(device, current_uid().val);
 }
 
@@ -444,10 +441,14 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	    drawctxt->base.priority == KGSL_CONTEXT_PRIORITY_HIGH) {
 		/* Elevate this TID's context from high to max priority */
 		drawctxt->base.priority = KGSL_CONTEXT_PRIORITY_MAX;
-	} else if (!_is_current_uid_privileged(&adreno_dev->dev) &&
-		   drawctxt->base.priority < KGSL_CONTEXT_PRIORITY_MED) {
-		/* Block out this UID's context from getting high+ priority */
-		drawctxt->base.priority = KGSL_CONTEXT_PRIORITY_MED;
+	} else {
+		/*
+		 * Cap the context priority: privileged UIDs are allowed up to
+		 * high priority, everyone else is limited to medium priority.
+		 */
+		drawctxt->base.priority = max_t(u32, drawctxt->base.priority,
+			_is_current_uid_privileged(&adreno_dev->dev) ?
+			KGSL_CONTEXT_PRIORITY_HIGH : KGSL_CONTEXT_PRIORITY_MED);
 	}
 	drawctxt->base.flags &= ~KGSL_CONTEXT_PRIORITY_MASK;
 	drawctxt->base.flags |= (drawctxt->base.priority <<

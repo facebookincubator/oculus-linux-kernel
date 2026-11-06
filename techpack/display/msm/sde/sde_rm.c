@@ -288,12 +288,16 @@ void sde_rm_get_resource_info(struct sde_rm *rm,
 	bool is_built_in, is_pref;
 	u32 lm_pref = (BIT(SDE_DISP_PRIMARY_PREF) | BIT(SDE_DISP_SECONDARY_PREF));
 
+	mutex_lock(&rm->rm_lock);
+
 	/* Get all currently available resources */
 	memcpy(avail_res, &rm->avail_res,
 			sizeof(rm->avail_res));
 
-	if (!drm_enc)
+	if (!drm_enc) {
+		mutex_unlock(&rm->rm_lock);
 		return;
+	}
 
 	is_built_in = sde_encoder_is_built_in_display(drm_enc);
 
@@ -318,6 +322,8 @@ void sde_rm_get_resource_info(struct sde_rm *rm,
 			}
 		}
 	}
+
+	mutex_unlock(&rm->rm_lock);
 }
 
 static void _sde_rm_print_rsvps(

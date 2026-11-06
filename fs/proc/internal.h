@@ -334,4 +334,5 @@ static inline void pde_force_lookup(struct proc_dir_entry *pde)
 
 #ifdef CONFIG_HZOS_EXT
 extern const struct file_operations proc_hzos_ext_flag_ops;
+extern const struct file_operations proc_task_profiles_ops;
 #endif

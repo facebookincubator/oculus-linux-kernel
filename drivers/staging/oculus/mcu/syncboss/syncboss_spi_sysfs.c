@@ -538,32 +538,30 @@ static ssize_t streaming_show(
  * syncboss handle, or close/re-open the syncboss handle after changing these
  * settings.
  *
- * transaction_length - set the fixed size of the SPI transaction
- * minimum_time_between_transactions_us - set the minimum amount of time we
- *     should wait between SPI transactions
+ * cpu_affinity - cpu mask for thread affinity
+ * enable_fastpath - enable or disable faspath
  * maximum_send_delay_us - set the maximum amount of time we should wait for more data
  *     before sending a queued command to the MCU
- * transaction_history_size - set the size of the transaction history
+ * minimum_time_between_transactions_us - set the minimum amount of time we
+ *     should wait between SPI transactions
+ * poll_prio - sets poll thread priority
+ * reset - set to 1 to reset the syncboss (toggle reset pin)
  * spi_max_clk_rate - set the maximum clock rate to use for SPI transactions
  *     (actual clock rate may be lower)
-
- *     have been rejected by SyncBoss (deprecated, use the stats file instead)
- * reset - set to 1 to reset the syncboss (toggle reset pin)
  * stats - show various driver stats, write "reset" to clear
- * update_firmware - write 1 to do a firmware update (firmware must be under
- *      /vendor/firmware/syncboss.bin)
- * enable_fastpath - enable or disable faspath
+ * streaming - show whether we are streaming
+ * transaction_length - set the fixed size of the SPI transaction
  */
+static DEVICE_ATTR_RW(cpu_affinity);
+static DEVICE_ATTR_RW(enable_fastpath);
+static DEVICE_ATTR_RW(maximum_send_delay_us);
+static DEVICE_ATTR_RW(minimum_time_between_transactions_us);
+static DEVICE_ATTR_RW(poll_prio);
 static DEVICE_ATTR_WO(reset);
 static DEVICE_ATTR_RW(spi_max_clk_rate);
-static DEVICE_ATTR_RW(minimum_time_between_transactions_us);
-static DEVICE_ATTR_RW(maximum_send_delay_us);
-static DEVICE_ATTR_RW(transaction_length);
-static DEVICE_ATTR_RW(cpu_affinity);
 static DEVICE_ATTR_RW(stats);
-static DEVICE_ATTR_RW(poll_prio);
-static DEVICE_ATTR_RW(enable_fastpath);
 static DEVICE_ATTR_RO(streaming);
+static DEVICE_ATTR_RW(transaction_length);
 
 static struct attribute *syncboss_attrs[] = {
 	&dev_attr_reset.attr,

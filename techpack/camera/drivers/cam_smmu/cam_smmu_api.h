@@ -188,6 +188,14 @@ int cam_smmu_unmap_user_iova(int handle,
 	int ion_fd, struct dma_buf *dma_buf, enum cam_smmu_region_id region_id);
 
 /**
+ * @brief : Drain the delayed-unmap (late-unmap) IOVA cache for every context
+ *          bank device. Called at camera teardown so IOVAs left cached by a
+ *          dead client (dma_bufs still held elsewhere) are released instead
+ *          of lingering until the dma_buf is freed.
+ */
+void cam_smmu_drain_delayed_unmaps_all_cb(void);
+
+/**
  * @brief       : Unmaps kernel IOVA for calling driver
  *
  * @param handle: Handle to identify the CAMSMMU client (VFE, CPP, FD etc.)

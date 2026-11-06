@@ -31,6 +31,12 @@
 #include "wlan_objmgr_vdev_obj.h"
 #include "wlan_osif_features.h"
 
+#define FEATURE_DRIVER_DISCONNECT_REASON				\
+	[QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON_INDEX] = {	\
+	.vendor_id = QCA_NL80211_VENDOR_ID,				\
+	.subcmd = QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON,	\
+},
+
 /**
  * struct osif_connect_params - extra connect params
  * @scan_ie: default scan ie to be used in connect scan and unicast probe req

@@ -1551,6 +1551,14 @@ static int cam_mem_mgr_cleanup_table(void)
 	set_bit(0, tbl.bitmap);
 	mutex_unlock(&tbl.m_lock);
 
+	/*
+	 * A buffer whose dma_buf is still referenced elsewhere keeps its IOVA
+	 * in the SMMU delayed-unmap cache after the per-buffer unmaps above.
+	 * Drain that cache for every CB device so the IOVAs are released at
+	 * teardown instead of leaking across client restarts.
+	 */
+	cam_smmu_drain_delayed_unmaps_all_cb();
+
 	return 0;
 }
 

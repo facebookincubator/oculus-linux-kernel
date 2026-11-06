@@ -256,6 +256,20 @@ static int get_cmdline_nofault(struct task_struct *task, char *buffer, int bufle
  * small (10) so a flat array beats any pointer-chasing structure. Slice
  * boundary is one timestamp read + 2 stores in set_next_task_rt; no scan.
  */
+static void rt_top_capture_name(struct rt_top_contrib *e,
+				struct task_struct *curr)
+{
+	struct task_struct *gl;
+
+	rcu_read_lock();
+	gl = curr->group_leader;
+	if (!(curr->flags & PF_EXITING) && gl)
+		strscpy(e->comm, gl->comm, sizeof(e->comm));
+	else
+		strscpy(e->comm, curr->comm, sizeof(e->comm));
+	rcu_read_unlock();
+}
+
 static void rt_top_account(struct rt_rq *rt_rq, struct task_struct *curr,
 			   u64 slice_ns, u64 now)
 {
@@ -295,9 +309,7 @@ static void rt_top_account(struct rt_rq *rt_rq, struct task_struct *curr,
 	e->last_seen_ns = now;
 	e->slice_count = 1;
 	e->max_slice_ns = slice_ns;
-	strscpy(e->comm, curr->group_leader ? curr->group_leader->comm
-					    : curr->comm,
-		sizeof(e->comm));
+	rt_top_capture_name(e, curr);
 }
 
 /*
@@ -2747,6 +2759,7 @@ static void push_rt_tasks(struct rq *rq)
  */
 static int rto_next_cpu(struct root_domain *rd)
 {
+	int this_cpu = smp_processor_id();
 	int next;
 	int cpu;
 
@@ -2769,6 +2782,10 @@ static int rto_next_cpu(struct root_domain *rd)
 		cpu = cpumask_next(rd->rto_cpu, rd->rto_mask);
 
 		rd->rto_cpu = cpu;
+
+		/* Do not send IPI to self */
+		if (cpu == this_cpu)
+			continue;
 
 		if (cpu < nr_cpu_ids)
 			return cpu;

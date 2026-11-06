@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
+ * Copyright (c) 2017-2018, 2021 The Linux Foundation. All rights reserved.
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
@@ -85,8 +86,8 @@ int32_t cam_camera_cci_i2c_read_seq(struct cam_sensor_cci_client *cci_client,
 	rc = cam_cci_client_ops(cci_client->cci_subdev, VIDIOC_MSM_CCI_CFG,
 		&cci_ctrl);
 	if (rc < 0) {
-		CAM_ERR(CAM_SENSOR, "rc = %d", rc);
-		return rc;
+		CAM_ERR(CAM_SENSOR, "CCI config failed rc = %d", rc);
+		goto end;
 	}
 	rc = cci_ctrl.status;
 	CAM_DBG(CAM_SENSOR, "addr = 0x%x, rc = %d", addr, rc);
@@ -94,6 +95,7 @@ int32_t cam_camera_cci_i2c_read_seq(struct cam_sensor_cci_client *cci_client,
 		data[i] = buf[i];
 		CAM_DBG(CAM_SENSOR, "Byte %d: Data: 0x%x\n", i, data[i]);
 	}
+end:
 	kfree(buf);
 	return rc;
 }
@@ -137,7 +139,6 @@ static int32_t cam_cci_i2c_write_table_cmd(
 
 	return rc;
 }
-
 
 int32_t cam_cci_i2c_write_table(
 	struct camera_io_master *client,

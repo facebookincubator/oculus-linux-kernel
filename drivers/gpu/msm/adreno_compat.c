@@ -138,8 +138,12 @@ static long adreno_ioctl_perfcounter_read_compat(
 	 * across context switches. Reading the counters when they are zapped is
 	 * not permitted.
 	 */
-	if (!adreno_dev->perfcounter)
+	if (!adreno_dev->perfcounter) {
+		dev_warn_ratelimited(KGSL_DEVICE(adreno_dev)->dev,
+			"perfcounter read from %s (pid %d) rejected: counter zapping is enabled, write 1 to /sys/class/kgsl/kgsl-3d0/perfcounter\n",
+			current->comm, current->pid);
 		return -EPERM;
+	}
 
 	read.reads = (struct kgsl_perfcounter_read_group __user *)
 		(uintptr_t)read32->reads;

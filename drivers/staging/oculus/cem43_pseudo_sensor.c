@@ -19,13 +19,25 @@
 #include <linux/version.h>
 
 /* Internal precision for fixed-point computations */
-#define COEFFICIENT_SCALAR 10000
+#define COEFFICIENT_SCALAR ((s64)10000)
+
+/* Internal exposure units per CEM second */
+#define EXPOSURE_PER_SECOND COEFFICIENT_SCALAR
+
+/* Internal exposure units per CEM minute */
+#define EXPOSURE_PER_MINUTE (60 * EXPOSURE_PER_SECOND)
 
 /*
- * We expect that the user would not be touching or carrying a hot
- * device longer than this.
+ * Internal exposure units (EXPOSURE_PER_SECOND-scaled seconds) per external
+ * units of 1/1000 of a CEM minute.
  */
-#define EXPECTED_HOT_TOUCH_MINUTES 5
+#define EXPOSURE_PER_MILLIMINUTE (EXPOSURE_PER_MINUTE / 1000)
+
+/*
+ * The largest usable cap, in CEM minutes. Leaves room to add up two values
+ * without overflowing.
+ */
+#define MAX_EXPOSURE_CAP_MINUTES (S64_MAX / (2 * EXPOSURE_PER_MINUTE))
 
 /**
  * Data for the CEM43 pseudo sensor driver, accessed with dev_[get/set]_drvdata
@@ -61,10 +73,10 @@ struct cem43_drvdata {
 
 	/* Scaling factor scales to millidegrees */
 	int tz_scaling_factor;
-	/* CEM horizon in minutes */
-	int cem_horizon_minutes;
 	/* CEM target temperature in millidegrees Celsius */
 	int cem_target_mdeg;
+	/* Cap on CEM exposure, in same units as sum_cem43 */
+	s64 cem_cap;
 	/* Project temperature forward by this many seconds */
 	int projection_seconds;
 
@@ -72,7 +84,7 @@ struct cem43_drvdata {
 	int last_raw_temp;
 	/* Last temperature after running averaging */
 	int last_avg_temp;
-	/* Exposure in COEFFICIENT_SCALAR units matching last_avg_temp */
+	/* Exposure in EXPOSURE_PER_SECOND units matching last_avg_temp */
 	s64 last_exposure;
 
 	/* Input time averaging logic */
@@ -91,28 +103,18 @@ struct cem43_drvdata {
 	/* time of the last historic value, in milliseconds */
 	s64 hist_ms;
 
-	/* Accumulator state, all sums are in exposure seconds scaled by COEFFICIENT_SCALAR */
-	/*
-	 * For the last minute we carry only the sum, and reset it when
-	 * we collect the whole minute, at time (cem43_ktime_boottime_s() % 60 == 0).
-	 */
-	s64 sum_last_minute;
+	/* CEM43 accumulator state */
 	/* Timestamp of the most recent accumulated second */
 	time64_t tstamp_last_second;
+	/* Timestamp of when the suspension started */
+	time64_t tstamp_suspend;
+	/* The CEM43 total sum in exposure seconds scaled by EXPOSURE_PER_SECOND */
+	s64 sum_cem43;
 	/*
-	 * The debugging allows to emulate skipping the seconds, and the
-	 * total of skipped seconds is accumulated here.
+	 * We allow the history to be reloaded only once (unless explicitly
+	 * cleared), to avoid adding the same history multiple times.
 	 */
-	time64_t debug_skipped_seconds;
-	/*
-	 * The full horizon circular buffer, sliced in minutes, dynamically sized
-	 * to contain cem_horizon_minutes elements, the index is
-	 *   cem43_idx_in_horizon(drv, cem43_time_sec_to_min(cem43_ktime_boottime_s())
-	 *   = (cem43_time_sec_to_min(cem43_ktime_boottime_s()) % cem_horizon_minutes).
-	 * The current point is determined by tstamp_last_second.
-	 */
-	s64 *accum_horizon;
-	s64 sum_horizon;
+	bool history_reloaded;
 };
 
 static struct class *cem43_class;
@@ -288,7 +290,7 @@ static int cem43_read_averaged_temp(struct cem43_drvdata *drv)
 }
 
 /*
- * Compute the CEM multiplier in units of (1/COEFFICIENT_SCALAR)
+ * Compute the CEM multiplier in units of EXPOSURE_PER_SECOND
  * from temperature in millidegrees.
  *
  */
@@ -299,9 +301,9 @@ static s64 cem43_temp_to_cem(struct cem43_drvdata *drv, s64 temp)
 	 * https://docs.google.com/document/d/1I22xKX_8VEqStUIcM5t9nOhSQW2O22LdvEP1XfcdOV0/edit
 	 *
 	 * The exponent, converted from milli-degrees
-	 * to units of (1/COEFFICIENT_SCALAR).
+	 * to units of EXPOSURE_PER_SECOND.
 	 */
-	s64 exp = (temp - drv->cem_target_mdeg) * (COEFFICIENT_SCALAR / 1000);
+	s64 exp = (temp - drv->cem_target_mdeg) * (EXPOSURE_PER_SECOND / 1000);
 
 	if (exp >= 0) {
 		/*
@@ -316,14 +318,14 @@ static s64 cem43_temp_to_cem(struct cem43_drvdata *drv, s64 temp)
 		 *   (1 + frac) << whole_exp
 		 */
 		/* The whole part, unscaled. */
-		s64 whole_exp = exp / COEFFICIENT_SCALAR;
+		s64 whole_exp = exp / EXPOSURE_PER_SECOND;
 		/* (1 + frac), scaled */
-		s64 frac1 = COEFFICIENT_SCALAR +
-			    (exp - whole_exp * COEFFICIENT_SCALAR);
+		s64 frac1 = EXPOSURE_PER_SECOND +
+			    (exp - whole_exp * EXPOSURE_PER_SECOND);
 		/* Avoid overflow on very large values. */
 		if (whole_exp > 15) {
 			whole_exp = 15;
-			frac1 = COEFFICIENT_SCALAR * 2 - 1;
+			frac1 = EXPOSURE_PER_SECOND * 2 - 1;
 		}
 		return frac1 << whole_exp;
 	}
@@ -347,12 +349,12 @@ static s64 cem43_temp_to_cem(struct cem43_drvdata *drv, s64 temp)
 	 *   (1 - frac/2) >> whole_nexp
 	 */
 	/* The whole part, unscaled. */
-	s64 whole_nexp = nexp / COEFFICIENT_SCALAR;
+	s64 whole_nexp = nexp / EXPOSURE_PER_SECOND;
 	/* (1 - frac/2), scaled */
-	s64 frac1 = COEFFICIENT_SCALAR -
-				((nexp - whole_nexp * COEFFICIENT_SCALAR) >> 1);
+	s64 frac1 = EXPOSURE_PER_SECOND -
+				((nexp - whole_nexp * EXPOSURE_PER_SECOND) >> 1);
 	/* Large values of nexp produce 0. */
-	if (whole_nexp > 12)
+	if (whole_nexp >= 8)
 		return 0;
 	return frac1 >> whole_nexp;
 }
@@ -365,144 +367,43 @@ static inline time64_t cem43_ktime_boottime_s(void)
 	return div64_s64(cur_ms, 1000);
 }
 
-static inline time64_t cem43_time_sec_to_min(time64_t sec)
+/* Limit the exposure to the cap. */
+static inline s64 cem43_cap_exposure(const struct cem43_drvdata *drv, s64 cem)
 {
-	return div64_s64(sec, 60);
-}
-
-static int cem43_idx_in_minute(int idx)
-{
-	idx %= 60;
-	if (idx < 0)
-		idx += 60;
-	return idx;
-}
-
-static int cem43_idx_in_horizon(struct cem43_drvdata *drv, int idx)
-{
-	int mins = drv->cem_horizon_minutes;
-
-	idx %= mins;
-	if (idx < 0)
-		idx += mins;
-	return idx;
+	return min_t(s64, cem, drv->cem_cap);
 }
 
 /*
- * This returns the exposure adjusted for the last fractional
- * minute and the projection into the future.
- * It's measured in CEM-seconds and scaled with COEFFICIENT_SCALAR.
+ * This returns the exposure adjusted for the projection into the future.
+ * It's measured in CEM-seconds and scaled with EXPOSURE_PER_SECOND.
  */
 static s64 cem43_compute_cem(struct cem43_drvdata *drv)
 {
-	int horiz_idx;
-	s64 cem = drv->sum_horizon;
-	/* Whole minutes in timestamp */
-	s64 tstamp_min = cem43_time_sec_to_min(drv->tstamp_last_second);
-	/* How many seconds will be pushed out from the horizon */
-	int pushout_sec =
-		drv->tstamp_last_second - (tstamp_min * 60) + drv->projection_seconds;
-
-	/*
-	 * The minutes at the end of horizon are getting pushed out,
-	 * and the earliest minute is in the slot where the current minute
-	 * will be written after it completes, (tstamp_min + 1).
-	 */
-	horiz_idx = cem43_idx_in_horizon(drv, tstamp_min + 1);
-	for (; pushout_sec > 60; pushout_sec -= 60) {
-		cem -= drv->accum_horizon[horiz_idx];
-		horiz_idx = cem43_idx_in_horizon(drv, horiz_idx + 1);
-	}
-	/* Push out the last few seconds in proportion to their minute */
-	cem -= div64_s64(drv->accum_horizon[horiz_idx] * pushout_sec, 60);
-
-	/* Push in the last minute */
-	cem += drv->sum_last_minute;
-	/* Push in the projection */
+	s64 cem = drv->sum_cem43;
+	/* Push in the projection, which may be above the cap. */
 	cem += drv->projection_seconds * drv->last_exposure;
 	return cem;
 }
 
 static void cem43_accumulate_exposure(struct cem43_drvdata *drv, s64 exposure)
 {
-	int interval, interval_mins, left_in_minute, horiz_idx;
-
-	time64_t now_sec = cem43_ktime_boottime_s() + drv->debug_skipped_seconds;
+	time64_t now_sec = cem43_ktime_boottime_s();
 
 	drv->last_exposure = exposure;
 
-	if (now_sec == drv->tstamp_last_second)
-		return; /* a second hasn't passed yet */
-
-	/*
-	 * Fill the intermediate time with the current exposure.
-	 * Even if the device was sleeping, the temperature at wake-up
-	 * might be a good indication of temperature in between.
-	 */
-	interval = (int)(now_sec - drv->tstamp_last_second);
-
-	/* First, sum in the current minute */
-	left_in_minute = 60 - cem43_idx_in_minute(drv->tstamp_last_second);
-	if (interval < left_in_minute) {
-		/* The current minute is not closed yet, add to it */
-		drv->sum_last_minute += interval * exposure;
-		drv->tstamp_last_second += interval;
-		return;
+	if (now_sec > drv->tstamp_last_second) {
+		/* Fill the intermediate time with the current exposure. */
+		drv->sum_cem43 += exposure * (now_sec - drv->tstamp_last_second);
+		drv->sum_cem43 = cem43_cap_exposure(drv, drv->sum_cem43);
+		drv->tstamp_last_second = now_sec;
 	}
-
-	/* Close the current minute */
-	drv->sum_last_minute += left_in_minute * exposure;
-	drv->tstamp_last_second += left_in_minute;
-	interval -= left_in_minute;
-
-	/* Insert the current minute into the horizon storage */
-	horiz_idx = cem43_idx_in_horizon(drv, cem43_time_sec_to_min(drv->tstamp_last_second));
-	drv->sum_horizon +=
-		drv->sum_last_minute - drv->accum_horizon[horiz_idx];
-	drv->accum_horizon[horiz_idx] = drv->sum_last_minute;
-
-	/* See if there are whole minnutes to be filled in the horizon */
-	interval_mins = interval / 60;
-	if (interval_mins >= drv->cem_horizon_minutes) {
-		/* Uh-oh, it's been a very long time, so reset the accumulator to 0 */
-		memset(drv->accum_horizon, 0,
-		       sizeof(*drv->accum_horizon) * drv->cem_horizon_minutes);
-		drv->sum_horizon = 0;
-	} else {
-		for (; interval_mins > 0; interval_mins--) {
-			horiz_idx = cem43_idx_in_horizon(drv, horiz_idx + 1);
-			/*
-			 * Could potentially fill with the current exposure, but
-			 * that would probably be overly pessimistic on long intervals.
-			 * Fill only the last few minutes with the current exposure.
-			 */
-			if (interval_mins <= EXPECTED_HOT_TOUCH_MINUTES) {
-				drv->sum_horizon +=
-					exposure * 60 -
-					drv->accum_horizon[horiz_idx];
-				drv->accum_horizon[horiz_idx] = exposure * 60;
-			} else {
-				drv->sum_horizon -=
-					drv->accum_horizon[horiz_idx];
-				drv->accum_horizon[horiz_idx] = 0;
-			}
-		}
-	}
-
-	/* Fill the start of the new second */
-	interval = interval % 60;
-	drv->sum_last_minute = exposure * interval;
-	drv->tstamp_last_second = now_sec;
 }
 
 static void cem43_clear_history(struct cem43_drvdata *drv)
 {
-	drv->sum_last_minute = 0;
 	drv->tstamp_last_second = cem43_ktime_boottime_s();
-	drv->debug_skipped_seconds = 0;
-	memset(drv->accum_horizon, 0,
-	       sizeof(*drv->accum_horizon) * drv->cem_horizon_minutes);
-	drv->sum_horizon = 0;
+	drv->sum_cem43 = 0;
+	drv->history_reloaded = false;
 }
 
 #if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE)
@@ -520,14 +421,12 @@ static int cem43_get_temp(void *data, int *temperature)
 	mutex_lock(&drv->lock);
 
 	s64 temp = cem43_read_averaged_temp(drv);
-
 	s64 exposure = cem43_temp_to_cem(drv, temp);
-
 	cem43_accumulate_exposure(drv, exposure);
 
 	/* Convert the CEM into exposure minutes, with 1/1000 precision */
 	*temperature = (int)div64_s64(cem43_compute_cem(drv),
-				      60 * (COEFFICIENT_SCALAR / 1000));
+				      EXPOSURE_PER_MILLIMINUTE);
 
 	mutex_unlock(&drv->lock);
 	return 0;
@@ -541,32 +440,12 @@ static const struct thermal_zone_of_device_ops cem43_thermal_ops = {
 	.get_temp = cem43_get_temp,
 };
 
-/*
- * Find the index of earliest non-0 minute in the horizon buffer,
- * to skip the tail zeroes. If all the data is 0, will return the
- * index of the most recent minute.
- */
-static int cem43_find_earliest_non0_minute(struct cem43_drvdata *drv)
-{
-	int hidx, hidx_end;
-
-	/* hidx_end is the last written minute */
-	hidx_end = cem43_idx_in_horizon(drv, cem43_time_sec_to_min(drv->tstamp_last_second));
-	for (hidx = cem43_idx_in_horizon(drv, hidx_end + 1); hidx != hidx_end;
-	     hidx = cem43_idx_in_horizon(drv, hidx + 1)) {
-		if (drv->accum_horizon[hidx] != 0)
-			break;
-	}
-	return hidx;
-}
-
 static ssize_t cem_history_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct cem43_drvdata *drv = dev_get_drvdata(dev);
 	ssize_t ret, pos = 0;
 	time64_t now, now_k;
-	int hidx, hidx_end;
 
 	ret = mutex_lock_interruptible(&drv->lock);
 	if (ret < 0) {
@@ -581,41 +460,15 @@ static ssize_t cem_history_show(struct device *dev,
 	now -= (now_k - drv->tstamp_last_second);
 
 	/*
-	 * The data contains:
+	 * The data format is:
 	 * 1. Wall clock time in seconds.
-	 * 2. The current time since boot, since the minutes are expressed in
-	 * multiples of 60 from this.
-	 * 3. The length of horizon in minutes.
-	 * 4. The total sum of the horizon.
-	 * 5. The sum of the last minute.
-	 * 6. The values of sums for every minute, staring from the most recently completed one
-	 * and going backwards (the tail 0s are skipped). The tail minutes may get skipped
-	 * if the buffer runs out, then the reader is supposed to fill the rest from the
-	 * total sum and length of the horizon.
+	 * 2. The current time since boot in seconds (not really needed any more
+	 *    but present historically).
+	 * 3. The total sum of the exposure seconds, scaled by EXPOSURE_PER_SECOND.
+	 * 4. Another copy of (3), as an easy verification against corruption.
 	 */
-	pos = scnprintf(buf, PAGE_SIZE, "%lld %lld %d %lld %lld\n", now, drv->tstamp_last_second,
-			drv->cem_horizon_minutes, drv->sum_horizon, drv->sum_last_minute);
-
-	/*
-	 * Now fill as much as possible of the buffer with per-minute data,
-	 * going backwards to the earliest non-0 minute.
-	 */
-	hidx = cem43_idx_in_horizon(drv, cem43_time_sec_to_min(drv->tstamp_last_second));
-	hidx_end = cem43_find_earliest_non0_minute(drv);
-	if (hidx != hidx_end || drv->accum_horizon[hidx] != 0) {
-		for (; ; hidx = cem43_idx_in_horizon(drv, hidx - 1)) {
-			if (pos >= PAGE_SIZE - 25)
-				break; /* The buffer would overflow */
-			pos += scnprintf(buf + pos, PAGE_SIZE - pos, " %lld",
-					 drv->accum_horizon[hidx]);
-
-			/* Loop condition is a postcondition. */
-			if (hidx == hidx_end)
-				break;
-		}
-	}
-	if (pos <= PAGE_SIZE - 2)
-		pos += scnprintf(buf + pos, PAGE_SIZE - pos, "\n");
+	pos = scnprintf(buf, PAGE_SIZE, "%lld %lld %lld %lld\n", now, drv->tstamp_last_second,
+			drv->sum_cem43, drv->sum_cem43);
 
 	mutex_unlock(&drv->lock);
 
@@ -623,40 +476,27 @@ static ssize_t cem_history_show(struct device *dev,
 }
 
 /*
- * Remix a sum of per-second CEM43 values in a minute to an offset
- * minute boundary.
- * offset_sec - how many seconds from the current minute get carried into
- *   the next processed minute, and replaced with the same number of seconds
- *   carried from the previous processed minute.
- * carry - on input the sum carried in from the previous processed minute,
- *   on output the sum carried from the current minute to the next processed one.
- * sum_minute - the sum of current minute that gets updated in place.
- * collected_sec - how many seconds were collected in sum_minute (would be 60
- *   for a full minute). Must not be 0, a minute with no seconds collected
- *   cannot be used for remixing because it doesn't have any data to
- *   contribute to the mix (skip it and move on to the next minute).
+ * Reduce the exposure by the pause in seconds.
+ * A negative pause is ignored.
  */
-static inline void cem43_remix_minute(s64 offset_sec, s64 *carry,
-				      s64 *sum_minute, s64 collected_sec)
+static void reduce_exposure(struct cem43_drvdata *drv, s64 seconds)
 {
-	s64 new_carry = div64_s64(*sum_minute * offset_sec, collected_sec);
+	if (seconds <= 0)
+		return;
 
-	*sum_minute = *sum_minute - new_carry + *carry;
-	*carry = new_carry;
-}
-
-/*
- * If a minute's buffer was unfilled in the horizon buffer,
- * fill a new value into it.
- * hidx - index of the minute in the horizon buffer
- * sum_minute - new sum for this minute
- */
-static inline void cem43_maybe_overwrite(struct cem43_drvdata *drv, int hidx, s64 sum_minute)
-{
-	if (drv->accum_horizon[hidx] == 0) {
-		drv->accum_horizon[hidx] = sum_minute;
-		drv->sum_horizon += sum_minute;
+	/*
+	 * The exposure never exceeds the cap, so a pause longer than the cap
+	 * in seconds reduces it to 0 in any case. Cutting it short
+	 * here also keeps the scaling below from overflowing.
+	 */
+	if (seconds > div64_s64(drv->cem_cap, EXPOSURE_PER_SECOND)) {
+		drv->sum_cem43 = 0;
+		return;
 	}
+
+	drv->sum_cem43 -= seconds * EXPOSURE_PER_SECOND;
+	if (drv->sum_cem43 < 0)
+		drv->sum_cem43 = 0;
 }
 
 static ssize_t cem_history_store(struct device *dev,
@@ -664,14 +504,10 @@ static ssize_t cem_history_store(struct device *dev,
 				 size_t count)
 {
 	struct cem43_drvdata *drv = dev_get_drvdata(dev);
-	int dump_h_minutes;
 	time64_t dump_systime, dump_ktime;
-	time64_t now, now_k, now_kmin, now_ksec;
-	s64 dump_sum_horizon, dump_sum_minute;
-	s64 dump_kmin, dump_ksec, dump_offset, dump_offset_min, dump_offset_sec;
-	s64 sum_carry = 0;
-	int hidx, hidx_end;
-	int pos = 0;
+	time64_t now, boot_systime;
+	s64 dump_sum_cem43, copy_dump_sum_cem43;
+	s64 current_exposure;
 	int ret;
 
 	if (!strncmp(buf, "clear", 5)) {
@@ -689,13 +525,17 @@ static ssize_t cem_history_store(struct device *dev,
 		return count;
 	}
 
-	if (sscanf(buf, "%lld %lld %d %lld %lld%n", &dump_systime, &dump_ktime,
-		   &dump_h_minutes, &dump_sum_horizon, &dump_sum_minute,
-		   &pos) != 5)
+	if (sscanf(buf, "%lld %lld %lld %lld", &dump_systime, &dump_ktime,
+		   &dump_sum_cem43, &copy_dump_sum_cem43) != 4)
 		return -EINVAL;
-	if (dump_ktime < 0 || dump_h_minutes <= 0 || dump_sum_horizon < 0 || dump_sum_minute < 0)
+	if (dump_sum_cem43 < 0)
 		return -EINVAL;
-	buf += pos;
+
+	if (dump_sum_cem43 != copy_dump_sum_cem43) {
+		dev_warn_ratelimited(drv->dev, "Mismatch in two copies of cem43 sum: %lld vs %lld",
+				dump_sum_cem43, copy_dump_sum_cem43);
+		return -EINVAL;
+	}
 
 	ret = mutex_lock_interruptible(&drv->lock);
 	if (ret < 0) {
@@ -704,135 +544,43 @@ static ssize_t cem_history_store(struct device *dev,
 		return ret;
 	}
 
+	/* The system time at which the current boot started */
 	now = ktime_get_real_seconds();
-	now_k = cem43_ktime_boottime_s();
-	/* Adjust the system time to match the last collected second */
-	now -= (now_k - drv->tstamp_last_second);
+	boot_systime = now - cem43_ktime_boottime_s();
 
-	/* The current minute boundaries from boot time */
-	now_kmin = cem43_time_sec_to_min(drv->tstamp_last_second);
-	now_ksec = drv->tstamp_last_second - 60 * now_kmin;
-
-	/* The minute boundaries from boot time in the dump */
-	dump_kmin = cem43_time_sec_to_min(dump_ktime);
-	dump_ksec = dump_ktime - 60 * dump_kmin;
-
-	/* How much time has passed since the dump between the ends of last minutes */
-	dump_offset = (now - now_ksec) - (dump_systime - dump_ksec);
-	/* Silently ignore the dumps from the future. */
-	if (dump_offset < 0) {
-		dev_warn_ratelimited(drv->dev, "Ignored the history load from the future");
-		goto success;
+	if (drv->history_reloaded) {
+		dev_warn_ratelimited(drv->dev, "Ignored the repeated history load");
+		goto unlock;
+	}
+	if (dump_systime > now) {
+		dev_warn_ratelimited(drv->dev, "Ignored the history load from %lld after boot time %lld",
+			dump_systime, now);
+		goto unlock;
+	}
+	if (dump_sum_cem43 > drv->cem_cap) {
+		dev_warn_ratelimited(drv->dev, "Rejecting the reload of exposure %lld above the cap of %lld minutes",
+			div64_s64(dump_sum_cem43, EXPOSURE_PER_MINUTE),
+			div64_s64(drv->cem_cap, EXPOSURE_PER_MINUTE));
+		goto unlock;
 	}
 
-	dump_offset_min = cem43_time_sec_to_min(dump_offset);
-	/* Silently ignore the dumps from the distant past. */
-	if (dump_offset_min > drv->cem_horizon_minutes - 2)
-		goto success;
+	/* Preserve the exposure accumulated since boot against reduction. */
+	current_exposure = drv->sum_cem43;
 
-	/*
-	 * The minute boundaries are misaligned by this amount, which
-	 * means that when converting from dump minutes to our minutes
-	 * we need to fill in this much time from the next minute (and
-	 * correspondingly, drop this much time from the current minute).
-	 */
-	dump_offset_sec = dump_offset - 60 * dump_offset_min;
+	cem43_clear_history(drv);
 
-	/*
-	 * Convert the last, possibly partial minute
-	 */
-	if (dump_ksec > 0 && dump_ksec >= dump_offset_sec) {
-		cem43_remix_minute(dump_offset_sec, &sum_carry, &dump_sum_minute, dump_ksec);
-	} else {
-		/* Carry the whole remaining partial minute over */
-		sum_carry = dump_sum_minute;
-		dump_sum_minute = 0;
-	}
+	drv->sum_cem43 = dump_sum_cem43;
+	/* Reduce the exposure for the time the device had been powered off. */
+	reduce_exposure(drv, boot_systime - dump_systime);
 
-	/*
-	 * This prevents the very last minute of the horizon from being
-	 * filled from the history, but it makes the loop termination
-	 * condition much more convenient, and this minute will be
-	 * overwritten soon by the new data anyway.
-	 */
-	hidx_end = cem43_idx_in_horizon(drv, now_kmin + 1);
+	drv->sum_cem43 = cem43_cap_exposure(drv, drv->sum_cem43 + current_exposure);
 
-	/* dump_sum_minute contains data for the next minute after dump_kmin */
-	hidx = cem43_idx_in_horizon(drv, now_kmin - dump_offset_min + 1);
+	drv->history_reloaded = true;
 
-	/*
-	 * Avoid updating the current minute, i.e. ignore dump_offset_min == 0. This
-	 * should never happen in reality because the minute boundary starts with the
-	 * current boot time, and the pre-reboot dump could not have happened after
-	 * reboot.
-	 */
-	if (dump_offset_min > 0)
-		cem43_maybe_overwrite(drv, hidx, dump_sum_minute);
-	dump_h_minutes--;
-
-	/* Fill in the whole minutes, remixing them for the new boundary */
-	for (hidx = cem43_idx_in_horizon(drv, hidx - 1);
-	     hidx != hidx_end && dump_sum_horizon + sum_carry > 0;
-	     hidx = cem43_idx_in_horizon(drv, hidx - 1)) {
-		if (sscanf(buf, " %lld%n", &dump_sum_minute, &pos) < 1)
-			break; /* We're out of data. */
-		buf += pos;
-		dump_sum_horizon -= dump_sum_minute;
-		dump_h_minutes--;
-
-		cem43_remix_minute(dump_offset_sec, &sum_carry, &dump_sum_minute, 60);
-		cem43_maybe_overwrite(drv, hidx, dump_sum_minute);
-	}
-	if (hidx != hidx_end && dump_sum_horizon + sum_carry > 0) {
-		/* Ran out of data, fill assuming the remaining horizon is flat */
-		if (dump_sum_horizon > 0 && dump_h_minutes > 0)
-			dump_sum_horizon = div64_s64(dump_sum_horizon, dump_h_minutes);
-		else
-			dump_sum_horizon = 0;
-		/* Now dump_sum_horizon contains the flat per-minute filling */
-
-		/* Remix and write the last potentially uneven minute */
-		dump_h_minutes--;
-		dump_sum_minute = dump_sum_horizon;
-		cem43_remix_minute(dump_offset_sec, &sum_carry, &dump_sum_minute, 60);
-		cem43_maybe_overwrite(drv, hidx, dump_sum_minute);
-
-		if (dump_sum_horizon > 0) {
-			dump_sum_minute = dump_sum_horizon;
-			/* Write the even-leveled tail */
-			for (hidx = cem43_idx_in_horizon(drv, hidx - 1);
-			     hidx != hidx_end && dump_h_minutes > 0;
-			     hidx = cem43_idx_in_horizon(drv, hidx - 1)) {
-				dump_h_minutes--;
-				cem43_maybe_overwrite(drv, hidx, dump_sum_minute);
-			}
-		}
-	}
-
-success:
+unlock:
 	mutex_unlock(&drv->lock);
 
 	return count;
-}
-
-static ssize_t cem_horizon_minutes_show(struct device *dev,
-					struct device_attribute *attr,
-					char *buf)
-{
-	struct cem43_drvdata *drv = dev_get_drvdata(dev);
-	ssize_t ret;
-
-	ret = mutex_lock_interruptible(&drv->lock);
-	if (ret < 0) {
-		dev_warn(dev, "%s aborted due to signal. status=%d", __func__,
-			 (int)ret);
-		return ret;
-	}
-
-	ret = scnprintf(buf, PAGE_SIZE, "%d\n", drv->cem_horizon_minutes);
-	mutex_unlock(&drv->lock);
-
-	return ret;
 }
 
 static ssize_t cem_target_mdeg_show(struct device *dev,
@@ -852,6 +600,68 @@ static ssize_t cem_target_mdeg_show(struct device *dev,
 	mutex_unlock(&drv->lock);
 
 	return ret;
+}
+
+static ssize_t cem_cap_minutes_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct cem43_drvdata *drv = dev_get_drvdata(dev);
+	ssize_t ret;
+	s64 minutes;
+
+	ret = mutex_lock_interruptible(&drv->lock);
+	if (ret < 0) {
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__,
+			 (int)ret);
+		return ret;
+	}
+
+	minutes = div64_s64(drv->cem_cap, EXPOSURE_PER_MINUTE);
+	/* Capping at the maximum is the same as not capping at all */
+	if (minutes >= MAX_EXPOSURE_CAP_MINUTES)
+		minutes = 0;
+
+	ret = scnprintf(buf, PAGE_SIZE, "%lld\n", minutes);
+	mutex_unlock(&drv->lock);
+
+	return ret;
+}
+
+static ssize_t cem_cap_minutes_store(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t count)
+{
+	struct cem43_drvdata *drv = dev_get_drvdata(dev);
+	s64 minutes;
+	int ret;
+
+	ret = kstrtos64(buf, 10, &minutes);
+	if (ret < 0)
+		return ret;
+
+	if (minutes < 0) {
+		dev_warn(dev, "%s: the cap must be non-negative", __func__);
+		return -EINVAL;
+	}
+
+	/* 0 means no cap, and so does anything above the maximum */
+	if (minutes == 0 || minutes > MAX_EXPOSURE_CAP_MINUTES)
+		minutes = MAX_EXPOSURE_CAP_MINUTES;
+
+	ret = mutex_lock_interruptible(&drv->lock);
+	if (ret < 0) {
+		dev_warn(dev, "%s aborted due to signal. status=%d", __func__,
+			 ret);
+		return ret;
+	}
+
+	drv->cem_cap = minutes * EXPOSURE_PER_MINUTE;
+	/* Apply the new cap to what has been accumulated already */
+	drv->sum_cem43 = cem43_cap_exposure(drv, drv->sum_cem43);
+
+	mutex_unlock(&drv->lock);
+
+	return count;
 }
 
 static ssize_t projection_seconds_show(struct device *dev,
@@ -961,7 +771,7 @@ static ssize_t emul_skip_sec_store(struct device *dev, struct device_attribute *
 	 * This simulates skipping a number of seconds, just as if the
 	 * device were sleeping.
 	 */
-	drv->debug_skipped_seconds += seconds;
+	reduce_exposure(drv, seconds);
 
 	mutex_unlock(&drv->lock);
 
@@ -970,8 +780,8 @@ static ssize_t emul_skip_sec_store(struct device *dev, struct device_attribute *
 #endif /* CONFIG_THERMAL_EMULATION */
 
 static DEVICE_ATTR_RW(cem_history);
-static DEVICE_ATTR_RO(cem_horizon_minutes);
 static DEVICE_ATTR_RO(cem_target_mdeg);
+static DEVICE_ATTR_RW(cem_cap_minutes);
 static DEVICE_ATTR_RO(projection_seconds);
 static DEVICE_ATTR_RO(last_raw_temp);
 static DEVICE_ATTR_RO(last_avg_temp);
@@ -982,8 +792,8 @@ static DEVICE_ATTR_WO(emul_skip_sec);
 
 static struct attribute *cem43_attrs[] = {
 	&dev_attr_cem_history.attr,
-	&dev_attr_cem_horizon_minutes.attr,
 	&dev_attr_cem_target_mdeg.attr,
+	&dev_attr_cem_cap_minutes.attr,
 	&dev_attr_projection_seconds.attr,
 	&dev_attr_last_raw_temp.attr,
 	&dev_attr_last_avg_temp.attr,
@@ -1081,6 +891,7 @@ out:
 static int cem43_probe(struct platform_device *pdev)
 {
 	int ret = 0;
+	u32 cem_cap_mins;
 	struct cem43_drvdata *drv;
 	struct thermal_zone_device *tzd = NULL;
 
@@ -1132,16 +943,6 @@ static int cem43_probe(struct platform_device *pdev)
 	if (!drv->historic_temps)
 		return -ENOMEM;
 
-	ret = of_property_read_u32(pdev->dev.of_node, "cem-horizon-minutes",
-				   &drv->cem_horizon_minutes);
-	if (ret < 0)
-		drv->cem_horizon_minutes = 180;
-
-	if (drv->cem_horizon_minutes <= 0) {
-		dev_err(&pdev->dev, "cem-horizon-minutes must be positive");
-		return -EINVAL;
-	}
-
 	/* Parse cem-target-mdeg, the CEM target temperature */
 	ret = of_property_read_u32(pdev->dev.of_node, "cem-target-mdeg",
 				   &drv->cem_target_mdeg);
@@ -1149,6 +950,16 @@ static int cem43_probe(struct platform_device *pdev)
 		/* the default is CEM43, 43 degrees */
 		drv->cem_target_mdeg = 43000;
 	}
+
+	/*
+	 * Parse cem-cap-minutes, the upper bound on the accumulated exposure.
+	 * By default, and for any larger value, use a bound that keeps the
+	 * exposure arithmetic from overflowing.
+	 */
+	drv->cem_cap = MAX_EXPOSURE_CAP_MINUTES * EXPOSURE_PER_MINUTE;
+	if (of_property_read_u32(pdev->dev.of_node, "cem-cap-minutes", &cem_cap_mins) == 0 &&
+	    cem_cap_mins != 0 && (s64)cem_cap_mins < MAX_EXPOSURE_CAP_MINUTES)
+		drv->cem_cap = (s64)cem_cap_mins * EXPOSURE_PER_MINUTE;
 
 	/* Parse projection-seconds with default of 0 */
 	ret = of_property_read_u32(pdev->dev.of_node, "projection-seconds",
@@ -1161,18 +972,6 @@ static int cem43_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	/*
-	 * Limit the projection so cem43_compute_cem() cannot push out more than half
-	 * the horizon, since exceeding the horizon would wrap the ring buffer and
-	 * subtract slots more than once.
-	 */
-	if (drv->projection_seconds > drv->cem_horizon_minutes * 60 / 2) {
-		dev_err(&pdev->dev,
-			"projection-seconds must not exceed half the horizon (%d)",
-			drv->cem_horizon_minutes * 60 / 2);
-		return -EINVAL;
-	}
-
 	ret = cem43_parse_thermal_zones_dt(drv);
 	if (ret == -EPROBE_DEFER) {
 		return ret;
@@ -1180,13 +979,6 @@ static int cem43_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to parse data for sensor: %d", ret);
 		return ret;
 	}
-
-	/* Allocate horizon accumulator, zeroed */
-	drv->accum_horizon = devm_kcalloc(&pdev->dev, drv->cem_horizon_minutes,
-					  sizeof(*drv->accum_horizon),
-					  GFP_KERNEL);
-	if (!drv->accum_horizon)
-		return -ENOMEM;
 
 	drv->tstamp_last_second = cem43_ktime_boottime_s();
 
@@ -1238,6 +1030,52 @@ static int cem43_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_PM_SLEEP)
+
+static int cem43_suspend(struct device *dev)
+{
+	struct cem43_drvdata *drv = dev_get_drvdata(dev);
+
+	mutex_lock(&drv->lock);
+
+	s64 temp = cem43_read_averaged_temp(drv);
+	s64 exposure = cem43_temp_to_cem(drv, temp);
+
+	cem43_accumulate_exposure(drv, exposure);
+
+	drv->tstamp_suspend = cem43_ktime_boottime_s();
+
+	mutex_unlock(&drv->lock);
+
+	return 0;
+}
+
+static int cem43_resume(struct device *dev)
+{
+	struct cem43_drvdata *drv = dev_get_drvdata(dev);
+
+	mutex_lock(&drv->lock);
+
+	/* Restart accumulation from the current time */
+	drv->tstamp_last_second = cem43_ktime_boottime_s();
+	/*
+	 * Assume that while suspended, the device was doffed, so
+	 * reduce the exposure.
+	 */
+	reduce_exposure(drv, drv->tstamp_last_second - drv->tstamp_suspend);
+	drv->tstamp_suspend = 0;
+
+	mutex_unlock(&drv->lock);
+
+	return 0;
+}
+
+#endif /* CONFIG_PM_SLEEP */
+
+static const struct dev_pm_ops cem43_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(cem43_suspend, cem43_resume)
+};
+
 static const struct of_device_id cem43_table[] = {
 	{ .compatible = "oculus,cem43-pseudo-sensor" },
 	{}
@@ -1249,6 +1087,7 @@ static struct platform_driver cem43_driver = {
 	.remove = cem43_remove,
 	.driver = {
 		.name = "cem43-pseudo-sensor",
+		.pm = &cem43_pm_ops,
 		.of_match_table = cem43_table,
 	},
 };

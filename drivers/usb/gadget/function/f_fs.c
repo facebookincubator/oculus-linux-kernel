@@ -715,9 +715,6 @@ static void ffs_epfile_io_complete(struct usb_ep *_ep, struct usb_request *req)
 
 	ENTER();
 
-	if (WARN_ON(io_data == NULL))
-		return;
-
 	if (req->status)
 		io_data->status = req->status;
 	else
@@ -1093,9 +1090,19 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 		if (unlikely(wait_for_completion_interruptible(&io_data->done))) {
 			spin_lock_irq(&epfile->ffs->eps_lock);
 			if (epfile->ep != ep) {
+				/*
+				 * ep/req may be freed by ffs_func_unbind(); don't
+				 * touch them. The disable already gave the request
+				 * back. Wait for the completion so the on-stack
+				 * io_data outlives ffs_epfile_io_complete().
+				 */
 				ret = -ESHUTDOWN;
-				req->context = NULL;
-				goto error_lock;
+				spin_unlock_irq(&epfile->ffs->eps_lock);
+				while (!wait_for_completion_timeout(&io_data->done,
+							     msecs_to_jiffies(5000)))
+					pr_warn_ratelimited("%s: slow giveback of disabled-ep request\n",
+							    __func__);
+				goto error_mutex;
 			}
 			/*
 			 * To avoid race condition with ffs_epfile_io_complete,
@@ -1109,7 +1116,6 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 			interrupted = io_data->status < 0;
 		}
 
-		req->context = NULL;
 		if (interrupted)
 			ret = -EINTR;
 		else if (io_data->read && io_data->status > 0)
@@ -2009,7 +2015,12 @@ static int ffs_func_eps_enable(struct ffs_function *func)
 	ep = func->eps;
 	epfile = ffs->epfiles;
 	count = ffs->eps_count;
-	while(count--) {
+	if (!epfile) {
+		ret = -ENOMEM;
+		goto done;
+	}
+
+	while (count--) {
 		ep->ep->driver_data = ep;
 
 		ret = config_ep_by_speed(func->gadget, &func->function, ep->ep);
@@ -2033,6 +2044,7 @@ static int ffs_func_eps_enable(struct ffs_function *func)
 	}
 
 	wake_up_interruptible(&ffs->wait);
+done:
 	spin_unlock_irqrestore(&func->ffs->eps_lock, flags);
 
 	return ret;

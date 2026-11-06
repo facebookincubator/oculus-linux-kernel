@@ -315,6 +315,18 @@ config SENSORS_PWM_TACH_FAN
 	  This driver can also be built as a module.  If so, the module
 	  will be called pwm-tach-fan.
 
+config SENSORS_SGM458
+	tristate "SG Micro SGM458 temperature sensor"
+	depends on I2C && THERMAL
+	default n
+	help
+	  If you say yes here you get support for the SG Micro SGM458 low-power
+	  12-bit I2C/SMBus digital temperature sensor. The temperature is
+	  exposed to the kernel thermal framework as an OF thermal zone sensor.
+
+	  This driver can also be built as a module. If so, the module will
+	  be called sgm458.
+
 config SPI_STP
 	tristate "STP SPI driver"
 	depends on SPI

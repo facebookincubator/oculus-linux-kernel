@@ -29,6 +29,11 @@
 #include "osif_cm_util.h"
 #include "wlan_mlo_mgr_sta.h"
 
+#define DRIVER_DISCONNECT_REASON \
+	QCA_WLAN_VENDOR_ATTR_GET_STATION_INFO_DRIVER_DISCONNECT_REASON
+#define DRIVER_DISCONNECT_REASON_INDEX \
+	QCA_NL80211_VENDOR_SUBCMD_DRIVER_DISCONNECT_REASON_INDEX
+
 /**
  * osif_validate_disconnect_and_reset_src_id() - Validate disconnection
  * and resets source and id
@@ -235,6 +240,39 @@ osif_is_disconnect_locally_generated(struct wlan_cm_discon_rsp *rsp)
 }
 #endif
 
+#ifdef CONN_MGR_ADV_FEATURE
+static void
+osif_cm_indicate_qca_reason(struct vdev_osif_priv *osif_priv,
+			    enum qca_disconnect_reason_codes qca_reason)
+{
+	struct sk_buff *vendor_event;
+
+	vendor_event = wlan_cfg80211_vendor_event_alloc(
+					osif_priv->wdev->wiphy, osif_priv->wdev,
+					NLMSG_HDRLEN + sizeof(qca_reason) +
+					NLMSG_HDRLEN,
+					DRIVER_DISCONNECT_REASON_INDEX,
+					GFP_KERNEL);
+	if (!vendor_event) {
+		osif_err("cfg80211_vendor_event_alloc failed");
+		return;
+	}
+	if (nla_put_u32(vendor_event, DRIVER_DISCONNECT_REASON, qca_reason)) {
+		osif_err("DISCONNECT_REASON put fail");
+		kfree_skb(vendor_event);
+		return;
+	}
+
+	wlan_cfg80211_vendor_event(vendor_event, GFP_KERNEL);
+}
+#else
+static inline void
+osif_cm_indicate_qca_reason(struct vdev_osif_priv *osif_priv,
+			    enum qca_disconnect_reason_codes qca_reason)
+{
+}
+#endif
+
 QDF_STATUS osif_disconnect_handler(struct wlan_objmgr_vdev *vdev,
 				   struct wlan_cm_discon_rsp *rsp)
 {
@@ -273,6 +311,8 @@ QDF_STATUS osif_disconnect_handler(struct wlan_objmgr_vdev *vdev,
 		osif_cm_disconnect_comp_ind(vdev, rsp, OSIF_NOT_HANDLED);
 		return status;
 	}
+
+	osif_cm_indicate_qca_reason(osif_priv, qca_reason);
 
 	/* If disconnect due to ML Reconfig, fill link id */
 	if (rsp->req.req.reason_code == REASON_HOST_TRIGGERED_LINK_DELETE)

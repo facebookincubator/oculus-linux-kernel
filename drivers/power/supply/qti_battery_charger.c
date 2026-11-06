@@ -113,7 +113,7 @@ enum battery_property_id {
 	BATT_FCT_STATE,
 	BATT_RBLT_STATE,
 	BATT_RBLT_OVERRIDE,
-	BATT_CHARGER_MODE,
+	BATT_FORCE_EOC_5V,
 	BATT_PROP_MAX,
 };
 
@@ -2741,7 +2741,7 @@ static ssize_t charge_capacity_limit_show(struct class *c, struct class_attribut
 }
 static CLASS_ATTR_RW(charge_capacity_limit);
 
-static ssize_t batt_charger_mode_store(struct class *c, struct class_attribute *attr,
+static ssize_t force_eoc_5v_store(struct class *c, struct class_attribute *attr,
 				const char *buf, size_t count)
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
@@ -2753,16 +2753,16 @@ static ssize_t batt_charger_mode_store(struct class *c, struct class_attribute *
 		return -EINVAL;
 
 	rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_BATTERY],
-					BATT_CHARGER_MODE, val);
+					BATT_FORCE_EOC_5V, val);
 	if (rc < 0) {
-		pr_err("Failed to change charger mode value, error ret: %d.\n", rc);
+		pr_err("Failed to set force_eoc_5v, error ret: %d.\n", rc);
 		return -EINVAL;
 	}
 
 	return count;
 }
 
-static ssize_t batt_charger_mode_show(struct class *c, struct class_attribute *attr,
+static ssize_t force_eoc_5v_show(struct class *c, struct class_attribute *attr,
 				char *buf)
 {
 	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
@@ -2770,13 +2770,13 @@ static ssize_t batt_charger_mode_show(struct class *c, struct class_attribute *a
 	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
 	int rc;
 
-	rc = read_property_id(bcdev, pst, BATT_CHARGER_MODE);
+	rc = read_property_id(bcdev, pst, BATT_FORCE_EOC_5V);
 	if (rc < 0)
 		return rc;
 
-	return scnprintf(buf, PAGE_SIZE, "%d\n", pst->prop[BATT_CHARGER_MODE]);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", pst->prop[BATT_FORCE_EOC_5V]);
 }
-static CLASS_ATTR_RW(batt_charger_mode);
+static CLASS_ATTR_RW(force_eoc_5v);
 
 static ssize_t moisture_detection_override_thres_kohm_store(struct class *c, struct class_attribute *attr,
 				const char *buf, size_t count)
@@ -2854,7 +2854,7 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_cable_max_speed.attr,
 	&class_attr_cable_vid.attr,
 	&class_attr_cable_pid.attr,
-	&class_attr_batt_charger_mode.attr,
+	&class_attr_force_eoc_5v.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_class);
@@ -2892,7 +2892,7 @@ static struct attribute *battery_class_no_wls_attrs[] = {
 	&class_attr_cable_max_speed.attr,
 	&class_attr_cable_vid.attr,
 	&class_attr_cable_pid.attr,
-	&class_attr_batt_charger_mode.attr,
+	&class_attr_force_eoc_5v.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_class_no_wls);

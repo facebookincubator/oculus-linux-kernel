@@ -8875,6 +8875,14 @@ static struct cftype cpu_files[] = {
 		.read_s64 = cpu_weight_nice_read_s64,
 		.write_s64 = cpu_weight_nice_write_s64,
 	},
+#ifdef CONFIG_HZOS_EXT
+	{
+		.name = "preferred_mask",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = hzos_ext_preferred_mask_read,
+		.write = hzos_ext_preferred_mask_write,
+	},
+#endif
 #endif
 #ifdef CONFIG_CFS_BANDWIDTH
 	{

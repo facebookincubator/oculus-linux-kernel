@@ -173,6 +173,28 @@ static bool can_set_eas(const struc task_struct *p)
 }
 ```
 
+# Task profiles
+
+Android task profiles are applied by init, and until now nothing recorded which
+profiles a running process was given. `/proc/<pid>/task_profiles` is that
+record. It works like `comm` or `cmdline`: init writes the profiles it applied
+to a service at start up, and anything that wants to know which profiles a
+process is in reads them back without having to talk to init.
+
+```
+stanley:/ # cat /proc/1017/task_profiles
+ProcessCapacityHigh HighPerformance
+```
+
+The tag is purely informational. The kernel never uses it to make scheduling or
+cgroup decisions, and writing to it does not move the task between profiles.
+
+The file is world readable and only writable by CAP_SYS_ADMIN, which in practice
+means init. Its contents are the space separated profile list from the service's
+`task_profiles` init.rc option, truncated to `HZOS_EXT_TASK_PROFILES_LEN`. The
+tag survives the exec of the service, and like `cmdline` it is a per process
+file: it is not exposed under `/proc/<pid>/task/<tid>/`.
+
 # Contributing
 
 If you want to add a new feature or submit a bugfix to HzOS Ext, please add
