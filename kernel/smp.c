@@ -207,6 +207,9 @@ static __always_inline void csd_lock_wait(struct __call_single_data *csd)
 	int bug_id = 0;
 	u64 ts0, ts1;
 
+	if (likely(!(smp_load_acquire(&csd->flags) & CSD_FLAG_LOCK)))
+		return;
+
 	ts1 = ts0 = sched_clock();
 	for (;;) {
 		if (csd_lock_wait_toolong(csd, ts0, &ts1, &bug_id))

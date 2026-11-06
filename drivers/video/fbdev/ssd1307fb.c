@@ -723,7 +723,7 @@ regulator_enable_error:
 reset_oled_error:
 	fb_deferred_io_cleanup(info);
 fb_defio_error:
-	__free_pages(vmem, get_order(vmem_size));
+	__free_pages((void *)vmem, get_order(vmem_size));
 fb_alloc_error:
 	framebuffer_release(info);
 	return ret;

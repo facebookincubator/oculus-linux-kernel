@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.​
+/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 
@@ -3416,7 +3416,7 @@ static int msm_compr_volume_put(struct snd_kcontrol *kcontrol,
 			__func__, fe_id);
 		return -EINVAL;
 	}
-
+	mutex_lock(&pdata->lock);
 	cstream = pdata->cstream[fe_id];
 	volume = pdata->volume[fe_id];
 
@@ -3426,6 +3426,7 @@ static int msm_compr_volume_put(struct snd_kcontrol *kcontrol,
 		 __func__, fe_id, volume[0], volume[1]);
 	if (cstream)
 		msm_compr_set_volume(cstream, volume[0], volume[1]);
+	mutex_unlock(&pdata->lock);
 	return 0;
 }
 
@@ -4030,15 +4031,13 @@ static int msm_compr_adsp_stream_cmd_put(struct snd_kcontrol *kcontrol,
 	cstream = pdata->cstream[fe_id];
 	if (cstream == NULL) {
 		pr_err("%s cstream is null\n", __func__);
-		ret = -EINVAL;
-		goto done;
+		return -EINVAL;
 	}
 
 	prtd = cstream->runtime->private_data;
 	if (!prtd) {
 		pr_err("%s: prtd is null\n", __func__);
-		ret = -EINVAL;
-		goto done;
+		return -EINVAL;
 	}
 
 	if (prtd->audio_client == NULL) {

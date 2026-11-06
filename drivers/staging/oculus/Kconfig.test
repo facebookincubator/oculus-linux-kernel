@@ -1,9 +1,20 @@
+config HZOS_EXT_GPU_FREQ_KUNIT_TEST
+	tristate "KUnit tests for hzos_ext gpu.freq parse helper" if !KUNIT_ALL_TESTS
+	depends on KUNIT && CGROUP_GPU
+	default KUNIT_STAGING_OCULUS
+	help
+	  Unit tests for the self-contained gpu_freq_parse_khz() helper in
+	  hzos_ext/hzos_ext_gpu_freq.h.  The test includes only the header and
+	  requires CONFIG_CGROUP_GPU for the gpu_cgroup.h definitions.
+
 config KUNIT_STAGING_OCULUS
 	tristate "Enable all KUnit tests for Oculus staging drivers"
 	depends on KUNIT
 	select DMABUF_REORDER_KUNIT_TEST if DMABUF_REORDER
 	select MISCFIFO_KUNIT_TEST if MISCFIFO
 	select META_SWD_FWUPDATE_KUNIT_TEST if META_SWD
+	select HZOS_EXT_GPU_FREQ_KUNIT_TEST if CGROUP_GPU
+	select META_PROGLOGIC_KUNIT_TEST if META_PROGLOGIC
 	help
 	  Master switch to enable all KUnit tests under drivers/staging/oculus/.
 
@@ -27,3 +38,14 @@ config META_SWD_FWUPDATE_KUNIT_TEST
 	default KUNIT_STAGING_OCULUS
 	help
 	  Unit tests for the SWD firmware update manager APIs.
+
+config META_PROGLOGIC_KUNIT_TEST
+	bool "KUnit tests for meta-proglogic" if !KUNIT_ALL_TESTS
+	depends on KUNIT && META_PROGLOGIC
+	select REGMAP_I2C
+	default KUNIT_STAGING_OCULUS
+	help
+	  Unit tests for the meta-proglogic control-bit data model, variant
+	  selection, and the tether/SD LPD enable and latch-clear APIs. The
+	  tests are compiled into the meta-proglogic driver via an #include at
+	  the end of meta-proglogic.c, so they reach its static tables.

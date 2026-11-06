@@ -595,6 +595,7 @@ struct rdists {
 
 struct irq_domain;
 void gic_show_pending_irqs(void);
+void gic_show_cpu_irqs(int cpu);
 struct fwnode_handle;
 int its_cpu_init(void);
 int its_init(struct fwnode_handle *handle, struct rdists *rdists,

@@ -3078,7 +3078,7 @@ static inline void f2fs_reset_iostat(struct f2fs_sb_info *sbi)
 	spin_unlock(&sbi->iostat_lock);
 }
 
-extern void f2fs_record_iostat(struct f2fs_sb_info *sbi);
+static inline void f2fs_record_iostat(struct f2fs_sb_info *sbi) { }
 
 static inline void f2fs_update_iostat(struct f2fs_sb_info *sbi,
 			enum iostat_type type, unsigned long long io_bytes)

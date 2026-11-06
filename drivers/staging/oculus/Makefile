@@ -46,6 +46,7 @@ obj-$(CONFIG_RT600_CTRL) 		+= rt600-ctrl.o
 obj-$(CONFIG_SEACLIFF_BLU)		+= seacliff_blu_spi.o
 obj-$(CONFIG_SENSORLOCK)		+= sensorlock.o
 obj-$(CONFIG_SENSORS_PWM_TACH_FAN)	+= pwm-tach-fan.o
+obj-$(CONFIG_SENSORS_SGM458)		+= sgm458.o
 obj-$(CONFIG_SPI_STP)			+= stp/
 obj-$(CONFIG_ST_VD6281_ADAPTER)		+= vd6281/
 obj-$(CONFIG_UVLO_TLV4021)		+= uvlo_tlv4021.o

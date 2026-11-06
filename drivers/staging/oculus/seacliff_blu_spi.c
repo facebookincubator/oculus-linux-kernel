@@ -884,7 +884,6 @@ static int blu_spi_probe(struct spi_device *spi)
 	struct blu_device *blu;
 	int vsync_gpio;
 	int ret = 0;
-	char device_name[8];
 
 	spi->mode = BLU_SPI_MODE;
 	spi->bits_per_word = BLU_SPI_BITS_PER_WORD;
@@ -1034,10 +1033,11 @@ static int blu_spi_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	snprintf(device_name, sizeof(device_name), "blu%d", number_of_devices++);
-
 	/* misc device info */
-	blu->misc.name = device_name;
+	blu->misc.name = devm_kasprintf(&spi->dev, GFP_KERNEL, "blu%d",
+					number_of_devices++);
+	if (!blu->misc.name)
+		return -ENOMEM;
 	blu->misc.minor = MISC_DYNAMIC_MINOR;
 	blu->misc.groups = blu_spi_groups;
 	blu->misc.fops = &blu_spi_fops;

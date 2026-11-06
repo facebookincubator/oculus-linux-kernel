@@ -53,6 +53,8 @@ static int charging_dock_send_vdm_request(
 		return -ENODEV;
 
 	reinit_completion(&ddev->rx_complete);
+	ddev->ack_parameter = PARAMETER_TYPE_UNKNOWN;
+	ddev->ack_result = -ETIMEDOUT;
 
 	result = usbvdm_subscriber_vdm(sub_data->sub, vdm_header, &vdo, num_vdos);
 	if (result != 0) {
@@ -64,8 +66,6 @@ static int charging_dock_send_vdm_request(
 	dev_dbg(ddev->dev, "Sent vdm: header=0x%x, num_vdos= %d, vdo=0x%x",
 			vdm_header, num_vdos, vdo);
 
-	ddev->ack_parameter = PARAMETER_TYPE_UNKNOWN;
-
 	result = wait_for_completion_timeout(&ddev->rx_complete, msecs_to_jiffies(REQ_ACK_TIMEOUT_MS));
 	if (!result || ddev->ack_parameter != parameter) {
 		dev_err(ddev->dev,
@@ -74,7 +74,7 @@ static int charging_dock_send_vdm_request(
 		return -ETIMEDOUT;
 	}
 
-	return 0;
+	return ddev->ack_result;
 }
 
 static void charging_dock_handle_queued_request_work(struct work_struct *work)
@@ -269,12 +269,14 @@ static void charging_dock_usbvdm_disconnect(struct usbvdm_subscription *sub)
 	struct charging_dock_device_t *ddev = usbvdm_subscriber_get_drvdata(sub);
 
 	mutex_lock(&ddev->lock);
+	mutex_lock(&ddev->log_lock);
 	ddev->docked = false;
 	ddev->current_svid = 0;
 	ddev->current_pid = 0;
 	ddev->gathering_log = false;
 	ddev->log_chunk_num = 0;
 	memset(&ddev->params, 0, sizeof(ddev->params));
+	mutex_unlock(&ddev->log_lock);
 	mutex_unlock(&ddev->lock);
 
 	sysfs_notify(&ddev->dev->kobj, NULL, "docked");
@@ -585,6 +587,8 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 		if (new_log_size == 0)
 			break;
 
+		mutex_lock(&ddev->log_lock);
+
 		/* Reset to start receiving new log */
 		ddev->gathering_log = false;
 		ddev->log_chunk_num = 0;
@@ -595,24 +599,29 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 		ddev->log = NULL;
 
 		ddev->log = devm_kzalloc(ddev->dev, new_log_size, GFP_KERNEL);
-		if (!ddev->log)
+		if (!ddev->log) {
+			mutex_unlock(&ddev->log_lock);
 			break;
+		}
 
 		ddev->params.log_size = new_log_size;
 		ddev->gathering_log = true;
+		mutex_unlock(&ddev->log_lock);
 		break;
 	case PARAMETER_TYPE_LOG_CHUNK:
+		mutex_lock(&ddev->log_lock);
+
 		if (!ddev->gathering_log || !ddev->log) {
 			dev_err(ddev->dev,
 					"Error: log chunk received, but gathering_log is false\n");
-			break;
+			goto log_chunk_unlock;
 		}
 		log_chunk_offset = (size_t)ddev->log_chunk_num * MAX_VDO_SIZE;
 		if (log_chunk_offset >= ddev->params.log_size) {
 			ddev->gathering_log = false;
 			dev_err(ddev->dev, "Error: invalid log chunk offset %zu for log size %zu\n",
 				log_chunk_offset, ddev->params.log_size);
-			break;
+			goto log_chunk_unlock;
 		}
 		if (ddev->params.log_size - log_chunk_offset <= MAX_VDO_SIZE) {
 			/* last log chunk */
@@ -629,11 +638,14 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 			dev_err(ddev->dev, "Error: less log chunk data: %lu than expected %d",
 					num_vdos * sizeof(vdos[0]),
 					log_chunk_size);
-			break;
+			goto log_chunk_unlock;
 		}
 		vdm_memcpy(ddev, parameter_type, num_vdos,
 				ddev->log + log_chunk_offset,
 				vdos, log_chunk_size);
+
+log_chunk_unlock:
+		mutex_unlock(&ddev->log_lock);
 		break;
 	case PARAMETER_TYPE_PORT_CONFIGURATION:
 		dev_dbg(ddev->dev, "Received port configuration: 0x%x",
@@ -667,6 +679,7 @@ static void charging_dock_usbvdm_vdm_rx(struct usbvdm_subscription *sub,
 complete:
 	if (protocol_type == VDM_RESPONSE) {
 		ddev->ack_parameter = parameter_type;
+		ddev->ack_result = VDMH_ACK(vdm_hdr) ? 0 : -EOPNOTSUPP;
 		complete(&ddev->rx_complete);
 	}
 }
@@ -767,7 +780,7 @@ static ssize_t log_show(struct device *dev,
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
 	size_t size = 0;
 
-	mutex_lock(&ddev->lock);
+	mutex_lock(&ddev->log_lock);
 
 	if (ddev->gathering_log) {
 		/* currently gathering, return nothing */
@@ -789,7 +802,7 @@ static ssize_t log_show(struct device *dev,
 	memcpy(buf, ddev->log, size);
 
 log_show_unlock:
-	mutex_unlock(&ddev->lock);
+	mutex_unlock(&ddev->log_lock);
 	return size;
 }
 
@@ -800,36 +813,55 @@ static ssize_t log_store(struct device *dev,
 	struct charging_dock_device_t *ddev =
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
 	int last_log_chunk = -1;
+	u32 log_chunk_num;
 
 	mutex_lock(&ddev->lock);
+	mutex_lock(&ddev->log_lock);
 
 	if (!ddev->docked || ddev->gathering_log) {
 		dev_dbg(ddev->dev, "Not docked or already gathering log");
+		mutex_unlock(&ddev->log_lock);
 		goto log_store_unlock;
 	}
+	mutex_unlock(&ddev->log_lock);
 
 	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_LOG_TRANSMIT, VDO_LOG_TRANSMIT_START, 1);
 
 	/* we likely didn't get a response to TRANSMIT_START or the log_size was 0 */
+	mutex_lock(&ddev->log_lock);
 	if (!ddev->gathering_log) {
+		mutex_unlock(&ddev->log_lock);
 		dev_err(ddev->dev, "Error: either no response to TRANSMIT_START or there is no log to gather");
 		goto log_store_unlock;
 	}
+	mutex_unlock(&ddev->log_lock);
 
-	while (ddev->gathering_log) {
+	while (true) {
+		mutex_lock(&ddev->log_lock);
+		if (!ddev->gathering_log) {
+			mutex_unlock(&ddev->log_lock);
+			break;
+		}
+
 		if (last_log_chunk == ddev->log_chunk_num) {
 			ddev->params.log_size = ddev->log_chunk_num * MAX_VDO_SIZE;
+			mutex_unlock(&ddev->log_lock);
 			dev_err(ddev->dev, "Error: didn't receive response to log chunk request");
 			break;
 		}
-		last_log_chunk = ddev->log_chunk_num;
-		charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_LOG_CHUNK, ddev->log_chunk_num, 1);
+
+		log_chunk_num = ddev->log_chunk_num;
+		last_log_chunk = log_chunk_num;
+		mutex_unlock(&ddev->log_lock);
+		charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_LOG_CHUNK, log_chunk_num, 1);
 	}
 
 	charging_dock_send_vdm_request(ddev, PARAMETER_TYPE_LOG_TRANSMIT, VDO_LOG_TRANSMIT_STOP, 1);
 
 log_store_unlock:
+	mutex_lock(&ddev->log_lock);
 	ddev->gathering_log = false;
+	mutex_unlock(&ddev->log_lock);
 	mutex_unlock(&ddev->lock);
 	return count;
 }
@@ -925,8 +957,10 @@ static ssize_t log_size_show(struct device *dev,
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
 	int result;
 
+	mutex_lock(&ddev->log_lock);
 	result = scnprintf(buf, PAGE_SIZE, "%lu\n",
 		ddev->params.log_size);
+	mutex_unlock(&ddev->log_lock);
 
 	return result;
 }
@@ -939,8 +973,10 @@ static ssize_t gathering_log_show(struct device *dev,
 		(struct charging_dock_device_t *) dev_get_drvdata(dev);
 	int result;
 
+	mutex_lock(&ddev->log_lock);
 	result = scnprintf(buf, PAGE_SIZE, "%d\n",
 		ddev->gathering_log);
+	mutex_unlock(&ddev->log_lock);
 
 	return result;
 }
@@ -1613,6 +1649,7 @@ static int charging_dock_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "Broadcast period=%d\n", ddev->broadcast_period);
 
 	mutex_init(&ddev->lock);
+	mutex_init(&ddev->log_lock);
 	INIT_WORK(&ddev->work, charging_dock_handle_work);
 
 	ddev->workqueue = alloc_ordered_workqueue("charging_dock_request_wq", WQ_FREEZABLE | WQ_HIGHPRI);
@@ -1687,14 +1724,16 @@ static int charging_dock_remove(struct platform_device *pdev)
 	dev_dbg(ddev->dev, "enter\n");
 
 	cancel_work_sync(&ddev->work);
+	cancel_delayed_work_sync(&ddev->periodic_work);
 	if (ddev->send_state_of_charge) {
 		batt_psy_unregister_notifier(ddev);
 		cancel_work_sync(&ddev->work_soc);
 	}
 	list_for_each_entry(pos, &ddev->sub_list, entry)
 		usbvdm_unsubscribe(pos->sub);
-	mutex_destroy(&ddev->lock);
 	sysfs_remove_groups(&ddev->dev->kobj, charging_dock_groups);
+	mutex_destroy(&ddev->log_lock);
+	mutex_destroy(&ddev->lock);
 
 	/* wake up sleeping threads */
 	complete_all(&ddev->rx_complete);

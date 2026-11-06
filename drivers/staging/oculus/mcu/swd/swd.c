@@ -504,4 +504,14 @@ void swd_reset(struct device *dev)
 	swd_memory_write(dev,
 			 SWD_REG_AIRCR,
 			 (SWD_VAL_AIRCR_VECTKEY | SWD_VAL_AIRCR_SYSRSTRQ));
+	/*
+	 * Clear C_DEBUGEN so the core is released from halt and not left in
+	 * debug mode after flashing. The debug enable bit lives in the debug
+	 * power domain, so it is not cleared by the SYSRSTRQ above (or any
+	 * software/system reset) and must be cleared explicitly over SWD as the
+	 * final transaction. Leaving it set keeps flash unprotected and raises
+	 * power consumption / alters sleep behavior on all the Cortex-M targets
+	 * we flash.
+	 */
+	swd_memory_write(dev, SWD_REG_DHCSR, SWD_VAL_DHCSR_DBGKEY);
 }

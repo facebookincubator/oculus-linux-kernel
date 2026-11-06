@@ -1050,7 +1050,7 @@ static void __exit dfl_fpga_exit(void)
 	dfl_ids_destroy();
 }
 
-module_init(dfl_fpga_init);
+subsys_initcall(dfl_fpga_init);
 module_exit(dfl_fpga_exit);
 
 MODULE_DESCRIPTION("FPGA Device Feature List (DFL) Support");

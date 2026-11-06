@@ -87,6 +87,25 @@ static void set_allowed_mask_handler(void *unused, struct task_struct *p,
 	task_update_allowed(p, new_mask);
 }
 
+#ifdef CONFIG_ANDROID_VENDOR_HOOKS
+static void cpu_cgroup_attach_handler(void *unused,
+				      struct cgroup_taskset *tset)
+{
+	struct cgroup_subsys_state *css;
+	struct task_struct *p;
+	unsigned long flags;
+
+	cgroup_taskset_for_each(p, css, tset) {
+		if (css->cgroup->root != &cgrp_dfl_root)
+			continue;
+
+		raw_spin_lock_irqsave(&p->pi_lock, flags);
+		task_update_allowed(p, task_cpumask(p));
+		raw_spin_unlock_irqrestore(&p->pi_lock, flags);
+	}
+}
+#endif
+
 static void record_idle_enter_handler(void *unused, int *state,
 				      struct cpuidle_device *dev)
 {
@@ -312,6 +331,7 @@ void hzos_ext_sched_init(void)
 
 #ifdef CONFIG_ANDROID_VENDOR_HOOKS
 	register_trace_android_rvh_set_cpus_allowed_comm(set_allowed_mask_handler, NULL);
+	register_trace_android_rvh_cpu_cgroup_attach(cpu_cgroup_attach_handler, NULL);
 	register_trace_android_vh_cpu_idle_enter(record_idle_enter_handler, NULL);
 	register_trace_android_vh_cpu_idle_exit(record_idle_exit_handler, NULL);
 	register_trace_android_vh_task_setscheduler(hzos_ext_task_setscheduler, NULL);
