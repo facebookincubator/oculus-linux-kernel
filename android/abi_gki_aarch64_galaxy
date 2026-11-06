@@ -4276,6 +4276,7 @@
   usb_deregister
   usb_deregister_dev
   usb_disabled
+  usb_disable_autosuspend
   usb_disable_xhci_ports
   usb_enable_autosuspend
   usb_enable_intel_xhci_ports

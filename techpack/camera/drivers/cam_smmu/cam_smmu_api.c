@@ -3416,6 +3416,21 @@ unmap_end:
 }
 EXPORT_SYMBOL(cam_smmu_unmap_user_iova);
 
+void cam_smmu_drain_delayed_unmaps_all_cb(void)
+{
+	int idx;
+
+	for (idx = 0; idx < iommu_cb_set.cb_num; idx++) {
+		struct cam_context_bank_info *cb = &iommu_cb_set.cb_info[idx];
+
+		if (cb->dev && msm_dma_unmap_all_for_dev(cb->dev))
+			CAM_DBG(CAM_SMMU,
+				"delayed-unmap drain incomplete for cb=%s",
+				cb->name[0] ? cb->name[0] : "?");
+	}
+}
+EXPORT_SYMBOL(cam_smmu_drain_delayed_unmaps_all_cb);
+
 int cam_smmu_unmap_kernel_iova(int handle,
 	struct dma_buf *buf, enum cam_smmu_region_id region_id)
 {

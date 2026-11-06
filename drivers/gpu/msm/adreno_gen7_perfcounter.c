@@ -168,10 +168,13 @@ static int gen7_hwsched_counter_enable(struct adreno_device *adreno_dev,
 		const struct adreno_perfcount_group *group,
 		u32 counter, u32 countable)
 {
-	if (!(KGSL_DEVICE(adreno_dev)->state == KGSL_STATE_ACTIVE))
-		return gen7_counter_enable(adreno_dev, group, counter, countable);
-
-	return gen7_hwsched_counter_inline_enable(adreno_dev, group, counter, countable);
+	/*
+	 * Program the select register from the host instead of submitting a
+	 * command to the global context. That context queue is never drained,
+	 * so after it fills up every submission returns -ENOSPC and the counter
+	 * is rejected for the rest of the boot.
+	 */
+	return gen7_counter_enable(adreno_dev, group, counter, countable);
 }
 
 static u64 gen7_counter_read(struct adreno_device *adreno_dev,

@@ -5,6 +5,7 @@
  * Copyright (c) 2024 Meta Platforms, Inc. and affiliates
  */
 
+#include <linux/hzos_ext.h>
 #include <linux/init.h>
 #include <linux/mutex.h>
 #include <linux/sched.h>
@@ -38,6 +39,7 @@ static int __init init_hzos_ext(void)
 	hzos_ext_bpf_init();
 	hzos_ext_sched_init();
 	hzos_ext_mem_init();
+	hzos_ext_task_profiles_init();
 
 #ifdef CONFIG_ANDROID_VENDOR_HOOKS
 	register_trace_android_vh_post_clone(hzos_ext_post_clone, NULL);

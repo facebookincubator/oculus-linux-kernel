@@ -8,7 +8,6 @@
 #include "cam_cci_core.h"
 #include "cam_cci_dev.h"
 #include "cam_cci_api.h"
-#include "cam_req_mgr_worker_wrapper.h"
 #include "cam_common_util.h"
 
 static int32_t cam_cci_convert_type_to_num_bytes(
@@ -1188,7 +1187,7 @@ read_again:
 				} else {
 					read_cfg->data[index] =
 						(val  >> (i * 8)) & 0xFF;
-					CAM_DBG(CAM_CCI, "CCI%d_I2C_M%d_Q%d data[%d] 0x%x",
+					CAM_DBG(CAM_CCI, "CCI%d_I2C_M%d_Q%d data[%d] 0x%x", 
 						cci_dev->soc_info.index, master, queue, index, read_cfg->data[index]);
 					index++;
 				}

@@ -283,6 +283,12 @@ int qcom_wdt_pet_suspend(struct device *dev)
 	if (!wdog_data)
 		return 0;
 
+	/* Panic-only registration (disable_wdt=1): no pet kthread/timers were set
+	 * up and the wdt must not be armed here.
+	 */
+	if (!wdog_data->watchdog_task)
+		return 0;
+
 	if (wdog_data->user_pet_enabled)
 		del_timer_sync(&wdog_data->user_pet_timer);
 
@@ -319,6 +325,12 @@ int qcom_wdt_pet_resume(struct device *dev)
 	unsigned long delay_time = 0;
 
 	if (!wdog_data)
+		return 0;
+
+	/* Panic-only registration (disable_wdt=1): no pet kthread/timers were set
+	 * up and the wdt must not be armed here.
+	 */
+	if (!wdog_data->watchdog_task)
 		return 0;
 
 	if (wdog_data->user_pet_enabled) {

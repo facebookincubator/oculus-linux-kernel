@@ -3371,6 +3371,8 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_HZOS_EXT
 	REG("hzos_ext_flags", S_IRUSR|S_IWUSR,
 	    proc_hzos_ext_flag_ops),
+	REG("task_profiles", S_IRUGO|S_IWUGO,
+	    proc_task_profiles_ops),
 #endif
 };
 
