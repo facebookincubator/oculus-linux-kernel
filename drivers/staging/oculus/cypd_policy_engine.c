@@ -93,6 +93,8 @@ struct cypd {
 	u16 pid;
 	struct vdm_tx		*vdm_tx;
 	struct vdm_tx		*vdm_tx_retry;
+	spinlock_t		vdm_tx_lock;
+	u32			vdm_tx_generation;
 	struct mutex		svid_handler_lock;
 	struct list_head	svid_handlers;
 	ktime_t			svdm_start_time;
@@ -162,7 +164,7 @@ static void enter_state_snk_ready(struct cypd *pd)
 
 	cypd_startup_common(pd);
 
-	if (pd->vdm_tx)
+	if (READ_ONCE(pd->vdm_tx))
 		kick_sm(pd, 0);
 	else if (pd->vdm_state == VDM_NONE)
 		cypd_send_svdm(pd, USB_SID_PD,
@@ -249,6 +251,8 @@ static void rx_msg_cleanup(struct cypd *pd)
 static void reset_vdm_state(struct cypd *pd)
 {
 	struct cypd_svid_handler *handler;
+	struct vdm_tx *vdm_tx, *vdm_tx_retry;
+	unsigned long flags;
 
 	/* in_interrupt() == true when handling VDM RX during suspend */
 	if (!in_interrupt())
@@ -263,18 +267,26 @@ static void reset_vdm_state(struct cypd *pd)
 		}
 	}
 
-	if (!in_interrupt())
-		mutex_unlock(&pd->svid_handler_lock);
-
 	pd->num_svids = 0;
 	kfree(pd->discovered_svids);
 	pd->discovered_svids = NULL;
 	pd->pid = 0;
 	pd->vdm_state = VDM_NONE;
-	kfree(pd->vdm_tx_retry);
+
+	spin_lock_irqsave(&pd->vdm_tx_lock, flags);
+	/* Prevent an in-flight send from restoring state after this reset. */
+	pd->vdm_tx_generation++;
+	vdm_tx_retry = pd->vdm_tx_retry;
 	pd->vdm_tx_retry = NULL;
-	kfree(pd->vdm_tx);
+	vdm_tx = pd->vdm_tx;
 	pd->vdm_tx = NULL;
+	spin_unlock_irqrestore(&pd->vdm_tx_lock, flags);
+
+	if (!in_interrupt())
+		mutex_unlock(&pd->svid_handler_lock);
+
+	kfree(vdm_tx_retry);
+	kfree(vdm_tx);
 }
 
 static void enter_state_disconnect(struct cypd *pd)
@@ -333,11 +345,16 @@ static void handle_vdm_resp_ack(struct cypd *pd, u32 *vdos, u8 num_vdos,
 	u16 svid, *psvid;
 	u8 cmd = PD_VDO_CMD(vdm_hdr);
 	struct cypd_svid_handler *handler;
+	struct vdm_tx *vdm_tx_retry;
+	unsigned long flags;
 
 	switch (cmd) {
 	case CMD_DISCOVER_IDENT:
-		kfree(pd->vdm_tx_retry);
+		spin_lock_irqsave(&pd->vdm_tx_lock, flags);
+		vdm_tx_retry = pd->vdm_tx_retry;
 		pd->vdm_tx_retry = NULL;
+		spin_unlock_irqrestore(&pd->vdm_tx_lock, flags);
+		kfree(vdm_tx_retry);
 
 		if (!num_vdos) {
 			dev_dbg(&pd->dev, "Discarding Discover ID response with no VDOs\n");
@@ -362,8 +379,11 @@ static void handle_vdm_resp_ack(struct cypd *pd, u32 *vdos, u8 num_vdos,
 	case CMD_DISCOVER_SVID:
 		pd->vdm_state = DISCOVERED_SVIDS;
 
-		kfree(pd->vdm_tx_retry);
+		spin_lock_irqsave(&pd->vdm_tx_lock, flags);
+		vdm_tx_retry = pd->vdm_tx_retry;
 		pd->vdm_tx_retry = NULL;
+		spin_unlock_irqrestore(&pd->vdm_tx_lock, flags);
+		kfree(vdm_tx_retry);
 
 		if (!pd->discovered_svids) {
 			pd->num_svids = 2 * num_vdos;
@@ -463,6 +483,8 @@ static void handle_vdm_rx(struct cypd *pd, struct rx_msg *rx_msg)
 	u8 cmd = PD_VDO_CMD(vdm_hdr);
 	u8 cmd_type = PD_VDO_CMDT(vdm_hdr);
 	struct cypd_svid_handler *handler;
+	struct vdm_tx *vdm_tx_old;
+	unsigned long flags;
 	ktime_t recvd_time = ktime_get();
 
 	dev_dbg(&pd->dev,
@@ -526,15 +548,20 @@ static void handle_vdm_rx(struct cypd *pd, struct rx_msg *rx_msg)
 		switch (cmd) {
 		case CMD_DISCOVER_IDENT:
 		case CMD_DISCOVER_SVID:
+			spin_lock_irqsave(&pd->vdm_tx_lock, flags);
 			if (!pd->vdm_tx_retry) {
+				spin_unlock_irqrestore(&pd->vdm_tx_lock, flags);
 				dev_err(&pd->dev, "Discover command %d VDM was unexpectedly freed\n",
 						cmd);
 				break;
 			}
 
 			/* wait tVDMBusy, then retry */
+			vdm_tx_old = pd->vdm_tx;
 			pd->vdm_tx = pd->vdm_tx_retry;
 			pd->vdm_tx_retry = NULL;
+			spin_unlock_irqrestore(&pd->vdm_tx_lock, flags);
+			kfree(vdm_tx_old);
 			/* TODO: Handle VDM busy */
 			break;
 		default:
@@ -645,6 +672,7 @@ static void phy_msg_received(struct cypd *pd, enum pd_sop_type sop,
 		dev_dbg(&pd->dev, "Skip wq and handle VDM directly\n");
 		handle_vdm_rx(pd, rx_msg);
 		kfree(rx_msg);
+		return;
 	}
 
 	spin_lock_irqsave(&pd->rx_lock, flags);
@@ -685,22 +713,40 @@ static int pd_send_msg(struct cypd *pd, u8 msg_type, const u32 *data,
 static void handle_vdm_tx(struct cypd *pd, enum pd_sop_type sop_type)
 {
 	u32 vdm_hdr;
+	u32 vdm_tx_generation;
 	int ret;
+	struct vdm_tx *vdm_tx, *vdm_tx_retry = NULL;
+	unsigned long flags;
 
 	mutex_lock(&pd->svid_handler_lock);
-	if (!pd->vdm_tx) {
+
+	spin_lock_irqsave(&pd->vdm_tx_lock, flags);
+	vdm_tx = pd->vdm_tx;
+	vdm_tx_generation = pd->vdm_tx_generation;
+	pd->vdm_tx = NULL;
+	spin_unlock_irqrestore(&pd->vdm_tx_lock, flags);
+
+	if (!vdm_tx) {
 		mutex_unlock(&pd->svid_handler_lock);
 		return;
 	}
 
 	/* only send one VDM at a time */
-	vdm_hdr = pd->vdm_tx->data[0];
+	vdm_hdr = vdm_tx->data[0];
 
-	ret = pd_send_msg(pd, PD_DATA_VENDOR_DEF, pd->vdm_tx->data,
-			pd->vdm_tx->size, sop_type);
+	ret = pd_send_msg(pd, PD_DATA_VENDOR_DEF, vdm_tx->data,
+			vdm_tx->size, sop_type);
 	if (ret) {
 		dev_err(&pd->dev, "Error (%d) sending VDM command %d\n",
-				ret, PD_VDO_CMD(pd->vdm_tx->data[0]));
+				ret, PD_VDO_CMD(vdm_tx->data[0]));
+
+		spin_lock_irqsave(&pd->vdm_tx_lock, flags);
+		if (vdm_tx_generation == pd->vdm_tx_generation && !pd->vdm_tx) {
+			pd->vdm_tx = vdm_tx;
+			vdm_tx = NULL;
+		}
+		spin_unlock_irqrestore(&pd->vdm_tx_lock, flags);
+		kfree(vdm_tx);
 
 		mutex_unlock(&pd->svid_handler_lock);
 
@@ -722,32 +768,29 @@ static void handle_vdm_tx(struct cypd *pd, enum pd_sop_type sop_type)
 	if (PD_VDO_SVDM(vdm_hdr) &&
 		PD_VDO_CMDT(vdm_hdr) == CMDT_INIT &&
 		PD_VDO_CMD(vdm_hdr) <= CMD_DISCOVER_SVID) {
-		if (pd->vdm_tx_retry) {
-			dev_dbg(&pd->dev, "Previous Discover VDM command %d not ACKed/NAKed\n",
-				PD_VDO_CMD(
-					pd->vdm_tx_retry->data[0]));
-			kfree(pd->vdm_tx_retry);
+		spin_lock_irqsave(&pd->vdm_tx_lock, flags);
+		if (vdm_tx_generation == pd->vdm_tx_generation) {
+			vdm_tx_retry = pd->vdm_tx_retry;
+			pd->vdm_tx_retry = vdm_tx;
+			vdm_tx = NULL;
 		}
-		pd->vdm_tx_retry = pd->vdm_tx;
-	} else {
-		kfree(pd->vdm_tx);
+		spin_unlock_irqrestore(&pd->vdm_tx_lock, flags);
+
+		if (vdm_tx_retry) {
+			dev_dbg(&pd->dev, "Previous Discover VDM command %d not ACKed/NAKed\n",
+				PD_VDO_CMD(vdm_tx_retry->data[0]));
+			kfree(vdm_tx_retry);
+		}
 	}
 
-	pd->vdm_tx = NULL;
+	kfree(vdm_tx);
 	mutex_unlock(&pd->svid_handler_lock);
 }
 
 int cypd_send_vdm(struct cypd *pd, u32 vdm_hdr, const u32 *vdos, int num_vdos)
 {
-	struct vdm_tx *vdm_tx;
-
-	if (pd->vdm_tx) {
-		dev_warn(&pd->dev, "Discarding previously queued VDM tx (SVID:0x%04x)\n",
-				PD_VDO_VID(pd->vdm_tx->data[0]));
-
-		kfree(pd->vdm_tx);
-		pd->vdm_tx = NULL;
-	}
+	struct vdm_tx *vdm_tx, *vdm_tx_old;
+	unsigned long flags;
 
 	vdm_tx = kzalloc(sizeof(*vdm_tx), GFP_ATOMIC);
 	if (!vdm_tx)
@@ -758,8 +801,17 @@ int cypd_send_vdm(struct cypd *pd, u32 vdm_hdr, const u32 *vdos, int num_vdos)
 		memcpy(&vdm_tx->data[1], vdos, num_vdos * sizeof(u32));
 	vdm_tx->size = num_vdos + 1; /* include the header */
 
+	spin_lock_irqsave(&pd->vdm_tx_lock, flags);
+	vdm_tx_old = pd->vdm_tx;
 	/* VDM will get sent in PE_SRC/SNK_READY state handling */
 	pd->vdm_tx = vdm_tx;
+	spin_unlock_irqrestore(&pd->vdm_tx_lock, flags);
+
+	if (vdm_tx_old) {
+		dev_warn(&pd->dev, "Discarding previously queued VDM tx (SVID:0x%04x)\n",
+				PD_VDO_VID(vdm_tx_old->data[0]));
+		kfree(vdm_tx_old);
+	}
 
 	/* slight delay before queuing to prioritize handling of incoming VDM */
 	kick_sm(pd, 2);
@@ -1113,6 +1165,7 @@ struct cypd *cypd_create(struct device *parent)
 	hrtimer_init(&pd->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	pd->timer.function = pd_timeout;
 	mutex_init(&pd->svid_handler_lock);
+	spin_lock_init(&pd->vdm_tx_lock);
 	spin_lock_init(&pd->rx_lock);
 	INIT_LIST_HEAD(&pd->rx_q);
 	INIT_LIST_HEAD(&pd->svid_handlers);

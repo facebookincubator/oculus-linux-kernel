@@ -1161,6 +1161,8 @@ assocReject:
 	qdf_mem_free(beacon);
 	qdf_mem_free(assoc_rsp->sha384_ft_subelem.gtk);
 	qdf_mem_free(assoc_rsp->sha384_ft_subelem.igtk);
+	if (session_entry->limAssocResponseData == assoc_rsp)
+		session_entry->limAssocResponseData = NULL;
 	qdf_mem_free(assoc_rsp);
 	return;
 }

@@ -336,8 +336,10 @@ int __init omap2_cm_base_init(void)
 		data = (struct omap_prcm_init_data *)match->data;
 
 		ret = of_address_to_resource(np, 0, &res);
-		if (ret)
+		if (ret) {
+			of_node_put(np);
 			return ret;
+		}
 
 		if (data->index == TI_CLKM_CM)
 			mem = &cm_base;
@@ -383,8 +385,10 @@ int __init omap_cm_init(void)
 			continue;
 
 		ret = omap2_clk_provider_init(np, data->index, NULL, data->mem);
-		if (ret)
+		if (ret) {
+			of_node_put(np);
 			return ret;
+		}
 	}
 
 	return 0;

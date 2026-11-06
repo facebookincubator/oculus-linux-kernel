@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 #include "syncboss_devfs_clients.h"
 
+#include <linux/sched/task.h>
+
 #include "syncboss_debugfs.h"
 #include "syncboss_sequence_number.h"
 
@@ -30,6 +32,7 @@ int syncboss_devfs_client_create_locked(struct syncboss_devfs_clients *clients,
 	INIT_LIST_HEAD(&data->list_entry);
 	data->file = file;
 	data->task = task;
+	get_task_struct(task);
 	data->index = clients->client_data_index++;
 
 	status = syncboss_sequence_number_client_create_locked(clients->seq,
@@ -51,6 +54,7 @@ int syncboss_devfs_client_create_locked(struct syncboss_devfs_clients *clients,
 	return 0;
 
 error:
+	put_task_struct(task);
 	devm_kfree(dev, data);
 
 	return status;
@@ -79,6 +83,8 @@ void syncboss_devfs_client_destroy_locked(struct syncboss_devfs_clients *clients
 	list_del(&client->list_entry);
 
 	syncboss_sequence_number_client_destroy_locked(clients->seq, client->seq);
+
+	put_task_struct(client->task);
 
 	devm_kfree(dev, client);
 }

@@ -483,24 +483,32 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 		if (!acked) {
 			dev_warn(pd->dev, "NACK(ack=%d)", acked);
 		} else if (parameter_type == EXT_BATT_FW_HMD_MOUNTED) {
-			dev_dbg(pd->dev,
-				"Received mount status ack response code 0x%x",
-				vdos[0]);
+			if (num_vdos < 1) {
+				dev_err(pd->dev, "Too few VDOs for mount status vdm");
+			} else {
+				dev_dbg(pd->dev,
+					"Received mount status ack response code 0x%x",
+					vdos[0]);
+			}
 		} else if (parameter_type == EXT_BATT_FW_HMD_DOCKED) {
 			struct ext_batt_pr_swap_work *prs_work;
 
-			dev_dbg(pd->dev,
-				"Received dock status ack response code 0x%x", vdos[0]);
-
-			prs_work = kzalloc(sizeof(*prs_work), GFP_KERNEL);
-			if (!prs_work) {
-				dev_err(pd->dev, "unable to allow prs_work");
+			if (num_vdos < 1) {
+				dev_err(pd->dev, "Too few VDOs for dock status vdm");
 			} else {
-				prs_work->vdo = vdos[0];
-				prs_work->pd = pd;
+				dev_dbg(pd->dev,
+					"Received dock status ack response code 0x%x", vdos[0]);
 
-				INIT_WORK(&prs_work->work, ext_batt_pr_swap);
-				queue_work(pd->wq, &prs_work->work);
+				prs_work = kzalloc(sizeof(*prs_work), GFP_KERNEL);
+				if (!prs_work) {
+					dev_err(pd->dev, "unable to allow prs_work");
+				} else {
+					prs_work->vdo = vdos[0];
+					prs_work->pd = pd;
+
+					INIT_WORK(&prs_work->work, ext_batt_pr_swap);
+					queue_work(pd->wq, &prs_work->work);
+				}
 			}
 		} else if (parameter_type == EXT_BATT_FW_BOOTLOADER_VERSION) {
 			if (num_vdos < 2) {
@@ -526,8 +534,15 @@ void ext_batt_vdm_received(struct ext_batt_pd *pd,
 				parameter_type <= EXT_BATT_FW_ERROR_DRP_OVP) {
 
 		u32 error_state_header = 0;
-		u32 error_state_vdo = vdos[0];
+		u32 error_state_vdo;
 		int index = parameter_type - EXT_BATT_FW_ERROR_UFP_LPD;
+
+		if (num_vdos < 1) {
+			dev_err(pd->dev, "Too few VDOs for error state vdm");
+			return;
+		}
+
+		error_state_vdo = vdos[0];
 
 		// svid, ack, proto, high, size, param
 		error_state_header =

@@ -15,6 +15,8 @@
 
 #include <uapi/linux/sched/types.h>
 
+struct poll_table_struct;
+
 #ifdef CONFIG_HZOS_EXT
 
 /**
@@ -41,6 +43,61 @@ ssize_t hzos_ext_flags_read_procfs(struct task_struct *task,
 ssize_t hzos_ext_flags_write_procfs(struct task_struct *task,
 				        const char __user *ubuf,
 				        size_t count, loff_t *ppos);
+
+/**
+ * hzos_ext_task_profiles_read_procfs - Read the task_profiles procfs file.
+ *
+ * Reading marks the tag generation seen, which is what stops a poller from
+ * being told about the same change again.
+ *
+ * @task: The task for the procfs read.
+ * @ubuf: The user space buffer where the result will be written.
+ * @count: Size of user space buffer.
+ * @ppos: Offset into buffer.
+ * @seen_gen: The generation this open has observed, updated on return.
+ */
+ssize_t hzos_ext_task_profiles_read_procfs(struct task_struct *task,
+					   char __user *ubuf,
+					   size_t count, loff_t *ppos,
+					   u32 *seen_gen);
+
+/**
+ * hzos_ext_task_profiles_write_procfs - Tag a task with the task profiles
+ * that were applied to it.
+ *
+ * @task: The task being tagged.
+ * @ubuf: The user space buffer containing the input data.
+ * @count: Size of user space buffer.
+ * @ppos: Offset into buffer.
+ */
+ssize_t hzos_ext_task_profiles_write_procfs(struct task_struct *task,
+					    const char __user *ubuf,
+					    size_t count, loff_t *ppos);
+
+/**
+ * hzos_ext_task_profiles_poll_procfs - Report whether a task's task profiles
+ * have changed since this open of the procfs file last observed them.
+ *
+ * Returns EPOLLPRI, following the convention that a regular file always reads
+ * as ready so a change has to be signalled out of band. Keeps reporting until
+ * the tag is read; polling deliberately does not consume the change, because
+ * epoll polls a file both on registration and again when it reports.
+ *
+ * @task: The task being watched.
+ * @file: The procfs file being polled.
+ * @wait: The poll table to register on.
+ * @seen_gen: The generation this open last observed.
+ */
+__poll_t hzos_ext_task_profiles_poll_procfs(struct task_struct *task,
+					    struct file *file,
+					    struct poll_table_struct *wait,
+					    u32 *seen_gen);
+
+/**
+ * hzos_ext_task_profiles_init - Initialize the wait queue table that task
+ * profile watchers park on. Called once from the hzos_ext initcall.
+ */
+void hzos_ext_task_profiles_init(void);
 
 /**
  * hzos_ext_task_setscheduler - Call into the HzOS Ext subsystem

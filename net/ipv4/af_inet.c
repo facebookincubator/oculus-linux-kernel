@@ -151,6 +151,7 @@ static DEFINE_SPINLOCK(inetsw_lock);
 void inet_sock_destruct(struct sock *sk)
 {
 	struct inet_sock *inet = inet_sk(sk);
+	struct ip_options_rcu *inet_opt;
 
 	__skb_queue_purge(&sk->sk_receive_queue);
 	__skb_queue_purge(&sk->sk_error_queue);
@@ -172,7 +173,9 @@ void inet_sock_destruct(struct sock *sk)
 	WARN_ON(sk->sk_wmem_queued);
 	WARN_ON(sk->sk_forward_alloc);
 
-	kfree(rcu_dereference_protected(inet->inet_opt, 1));
+	inet_opt = rcu_dereference_protected(inet->inet_opt, 1);
+	if (inet_opt)
+		kfree_rcu(inet_opt, rcu);
 	dst_release(rcu_dereference_check(sk->sk_dst_cache, 1));
 	dst_release(rcu_dereference_protected(sk->sk_rx_dst, 1));
 	sk_refcnt_debug_dec(sk);

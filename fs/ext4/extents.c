@@ -3233,6 +3233,9 @@ static int ext4_split_extent_at(handle_t *handle,
 	BUG_ON((split_flag & (EXT4_EXT_DATA_VALID1 | EXT4_EXT_DATA_VALID2)) ==
 	       (EXT4_EXT_DATA_VALID1 | EXT4_EXT_DATA_VALID2));
 
+	/* Do not cache extents that are in the process of being modified. */
+	flags |= EXT4_EX_NOCACHE;
+
 	ext_debug("ext4_split_extents_at: inode %lu, logical"
 		"block %llu\n", inode->i_ino, (unsigned long long)split);
 
@@ -3294,7 +3297,9 @@ static int ext4_split_extent_at(handle_t *handle,
 		ext4_ext_mark_unwritten(ex2);
 
 	err = ext4_ext_insert_extent(handle, inode, ppath, &newex, flags);
-	if (err != -ENOSPC && err != -EDQUOT && err != -ENOMEM)
+	if (err && err != -ENOSPC && err != -EDQUOT && err != -ENOMEM)
+		goto out_err;
+	if (!err)
 		goto out;
 
 	/*
@@ -3310,7 +3315,8 @@ static int ext4_split_extent_at(handle_t *handle,
 	if (IS_ERR(path)) {
 		EXT4_ERROR_INODE(inode, "Failed split extent on %u, err %ld",
 				 split, PTR_ERR(path));
-		return PTR_ERR(path);
+		err = PTR_ERR(path);
+		goto out_err;
 	}
 	depth = ext_depth(inode);
 	ex = path[depth].p_ext;
@@ -3362,6 +3368,9 @@ fix_extent_len:
 	ex->ee_len = orig_ex.ee_len;
 	ext4_ext_dirty(handle, inode, path + path->p_depth);
 	return err;
+out_err:
+	/* Remove all remaining potentially stale extents. */
+	ext4_es_remove_extent(inode, ee_block, ee_len);
 out:
 	ext4_ext_show_leaf(inode, *ppath);
 	return err;
@@ -3399,6 +3408,9 @@ static int ext4_split_extent(handle_t *handle,
 	ee_block = le32_to_cpu(ex->ee_block);
 	ee_len = ext4_ext_get_actual_len(ex);
 	unwritten = ext4_ext_is_unwritten(ex);
+
+	/* Do not cache extents that are in the process of being modified. */
+	flags |= EXT4_EX_NOCACHE;
 
 	if (map->m_lblk + map->m_len < ee_block + ee_len) {
 		split_flag1 = split_flag & EXT4_EXT_MAY_ZEROOUT;
@@ -4567,14 +4579,22 @@ got_allocated_blocks:
 					     &newex, flags);
 
 	if (err && free_on_err) {
-		int fb_flags = flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE ?
-			EXT4_FREE_BLOCKS_NO_QUOT_UPDATE : 0;
-		/* free data blocks we just allocated */
-		/* not a good idea to call discard here directly,
-		 * but otherwise we'd need to call it every free() */
-		ext4_discard_preallocations(inode);
-		ext4_free_blocks(handle, inode, NULL, newblock,
-				 EXT4_C2B(sbi, allocated_clusters), fb_flags);
+		/*
+		 * Gracefully handle out of space conditions. If the filesystem
+		 * is inconsistent, we'll just leak allocated blocks to avoid
+		 * causing even more damage.
+		 */
+		if (err == -EDQUOT || err == -ENOSPC) {
+			int fb_flags = flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE ?
+				EXT4_FREE_BLOCKS_NO_QUOT_UPDATE : 0;
+			/* free data blocks we just allocated */
+			/* not a good idea to call discard here directly,
+			 * but otherwise we'd need to call it every free() */
+			ext4_discard_preallocations(inode);
+			ext4_free_blocks(handle, inode, NULL, newblock,
+					 EXT4_C2B(sbi, allocated_clusters),
+					 fb_flags);
+		}
 		goto out2;
 	}
 
@@ -5480,7 +5500,8 @@ ext4_ext_shift_extents(struct inode *inode, handle_t *handle,
 		if (!extent) {
 			EXT4_ERROR_INODE(inode, "unexpected hole at %lu",
 					 (unsigned long) *iterator);
-			return -EFSCORRUPTED;
+			ret = -EFSCORRUPTED;
+			goto out;
 		}
 		if (SHIFT == SHIFT_LEFT && *iterator >
 		    le32_to_cpu(extent->ee_block)) {

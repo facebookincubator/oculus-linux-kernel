@@ -104,11 +104,13 @@ struct usbvdm_subscription_data {
  * @workqueue: workqueue for @work
  * @periodic_work: delayed work queue for sending periodic requests
  * @ack_parameter: VDM request parameter for which ack is received
+ * @ack_result: result reported by the VDM response
  * @rx_complete: VDM response completion
  * @params: items reported by the dock
  * @log: buffer for dock log
  * @log_chunk_num: current log chunk being received
  * @gathering_log: flag for whether log is being received
+ * @log_lock: lock for accessing dock log state
  * @battery_psy: power supply object handle for internal HMD battery
  * @nb: notifier block for handling power supply change events
  * @system_battery_capacity: system-wide battery capacity (internal + external)
@@ -130,12 +132,14 @@ struct charging_dock_device_t {
 	struct workqueue_struct	*workqueue;
 	struct delayed_work periodic_work;
 	u32 ack_parameter;
+	int ack_result;
 	struct completion rx_complete;
 	struct charging_dock_params_t params;
 
 	char *log;
 	u32 log_chunk_num;
 	bool gathering_log;
+	struct mutex log_lock;
 
 	struct power_supply *battery_psy;
 	struct notifier_block nb;

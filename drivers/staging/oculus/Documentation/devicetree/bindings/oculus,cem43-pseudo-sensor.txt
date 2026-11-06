@@ -3,12 +3,12 @@ Oculus CEM43 Pseudo-Sensor Driver
 =================================
 
 This driver computes the cumulative CEM43 (Cumulative Equivalent Minutes at
-43°C) thermal dose of a single input thermal zone and reports the accumulated
-dose in 1/1000s of a minute, as a pseudo-temperature through the thermal
-framework.
+43°C) thermal exposure of a single input thermal zone and reports the
+accumulated exposure in 1/1000s of a minute, as a pseudo-temperature through
+the thermal framework.
 
-The driver supports projection into the future to allow sufficient time for
-a shutdown before exceeding the limit.
+The driver supports projection into the future to allow sufficient time for a
+shutdown before exceeding the limit.
 
 Even though the CEM43 standard specifies accumulation with temperatures
 averaged over a minute, it has been developed in the setup where temperatures
@@ -19,6 +19,10 @@ CEM minutes.  The input temperatures are averaged by default over a second, but
 optionally a longer rolling average can be specified, averaging over 60 seconds
 would emulate the classic CEM43 but have slower reactions to overheating.
 
+The exposure is accumulating continuously while the device is active. It is
+reduced only while the device is suspended, at the rate of one CEM43 second per
+second of real time.
+
 CEM43 Pseudo-Sensor Node
 -------------------------
 
@@ -26,20 +30,20 @@ Required properties:
 - compatible: Should be "oculus,cem43-pseudo-sensor".
 - #thermal-sensor-cells: Required by thermal framework, should be 0.
 - input-thermal-zone: String name of the input thermal zone to monitor.
-  The driver will read temperature from this zone to compute the CEM43 dose.
+  The driver will read temperature from this zone to compute the CEM43 exposure.
 
 Optional properties:
 - input-scaling-factor: Integer value to multiply the input thermal zone
 	reading by, to convert to millidegrees Celsius. Default is 1 if not
 	specified.
 
-- cem-horizon-minutes: Integer value specifying the CEM43 horizon in minutes.
-  The driver computes the cumulative thermal dose over this time horizon.
-  Default is 180 minutes if not specified. Must be positive (> 0).
-
 - cem-target-mdeg: Integer value specifying the CEM target temperature in
 	millidegrees Celsius. The default is 43000 for CEM43 calculations (43°C =
 	43000 millidegrees).
+
+- cem-cap-minutes: Integer value specifying the upper bound on the accumulated
+  exposure, in CEM minutes.  The exposure is clamped to this value whenever it
+  is accumulated or restored from a saved history. 0 (default) means no cap.
 
 - averaging-count: Integer value specifying the number of samples over
   which to average the output temperature. Uses a circular buffer to
@@ -101,8 +105,8 @@ cem43_pseudo_sensor: cem43-pseudo-sensor {
 	input-scaling-factor = <1>;
 
 	/* CEM43 configuration */
-	cem-horizon-minutes = <180>;
 	cem-target-mdeg = <43000>;
+	cem-cap-minutes = <150>;
 	projection-seconds = <300>;
 
 	/* Averaging configuration */

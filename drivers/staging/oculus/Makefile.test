@@ -1,3 +1,4 @@
 obj-$(CONFIG_MISCFIFO_KUNIT_TEST)	+= miscfifo_test.o
 obj-$(CONFIG_META_SWD_FWUPDATE_KUNIT_TEST)	+= mcu/swd/fwupdate_manager_test.o
 obj-$(CONFIG_DMABUF_REORDER_KUNIT_TEST)	+= dmabuf_reorder_test.o
+obj-$(CONFIG_HZOS_EXT_GPU_FREQ_KUNIT_TEST)	+= hzos_ext/hzos_ext_gpu_freq_test.o

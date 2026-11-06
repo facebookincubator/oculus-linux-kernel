@@ -901,7 +901,7 @@ static void nft_ct_timeout_obj_destroy(const struct nft_ctx *ctx,
 	nf_ct_untimeout(ctx->net, timeout);
 	nf_ct_l4proto_put(timeout->l4proto);
 	nf_ct_netns_put(ctx->net, ctx->family);
-	kfree(priv->timeout);
+	kfree_rcu(priv->timeout, rcu);
 }
 
 static int nft_ct_timeout_obj_dump(struct sk_buff *skb,
