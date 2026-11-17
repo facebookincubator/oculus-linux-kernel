@@ -28,12 +28,40 @@ struct hzos_ext_stats {
 /* Maximum length, including the NUL terminator, of a task profiles tag. */
 #define HZOS_EXT_TASK_PROFILES_LEN 256
 
+/* Which hzos_ext_tag slot of a task: the per-process or the per-thread tag. */
+enum hzos_ext_tag_kind {
+	HZOS_EXT_TAG_PROCESS,
+	HZOS_EXT_TAG_THREAD,
+};
+
+/**
+ * struct hzos_ext_tag - A string tag set from user space via procfs.
+ *
+ * @buf The tag, NUL terminated.
+ * @gen Bumped on every change to @buf, and nonzero exactly when a tag has
+ *	been applied. Pollers of the procfs file compare it against the
+ *	generation they last observed, so the tag behaves as state rather than
+ *	an event stream: a reader that misses intermediate changes still
+ *	converges on the current value.
+ */
+struct hzos_ext_tag {
+	char buf[HZOS_EXT_TASK_PROFILES_LEN];
+	u32 gen;
+};
+
 /**
  * struct hzos_ext - Wrapper struct for hzos_ext object.
  *
  * @flags Flags
  * @preferred_mask The cpumask that the task prefers to run on.
+ * @srt_node Entry in the per-CPU queue of runnable SOFT_RT tasks.
+ * @srt_wake_runtime se.sum_exec_runtime when the task last woke.
+ * @srt_slice_runtime se.sum_exec_runtime when the current slice began.
+ * @srt_charge_runtime se.sum_exec_runtime when the task was last charged to
+ *		      its CPU's window.
+ * @srt_awake Set from the first enqueue after a sleep until the next sleep.
  * @task_profiles The task profiles init applied to the task.
+ * @thread_profiles The profile tag applied to this thread.
  * @lock The mutex synchronization object.
  */
 struct hzos_ext {
@@ -68,6 +96,16 @@ struct hzos_ext {
 	 * decide how it should be applied.
 	 */
 	cpumask_t preferred_mask;
+
+	/*
+	 * SOFT_RT scheduling state, protected by the lock of the
+	 * runqueue the task is queued on. See hzos_ext/soft_rt.c.
+	 */
+	struct list_head srt_node;
+	u64 srt_wake_runtime;
+	u64 srt_slice_runtime;
+	u64 srt_charge_runtime;
+	bool srt_awake;
 #endif
 
 #ifdef CONFIG_HZOS_EXT_STATS
@@ -81,16 +119,13 @@ struct hzos_ext {
 	 * to its profiles without having to ask init, and it is never used to
 	 * make scheduling or cgroup decisions in the kernel.
 	 */
-	char task_profiles[HZOS_EXT_TASK_PROFILES_LEN];
+	struct hzos_ext_tag task_profiles;
 
 	/*
-	 * Bumped on every change to task_profiles, and nonzero exactly when a
-	 * tag has been applied. Pollers of the procfs file compare it against
-	 * the generation they last observed, so the tag behaves as state
-	 * rather than an event stream: a reader that misses intermediate
-	 * changes still converges on the current value.
+	 * The profile tag applied to this individual thread. Purely
+	 * informational, like task_profiles.
 	 */
-	u32 task_profiles_gen;
+	struct hzos_ext_tag thread_profiles;
 
 	struct mutex lock;
 };

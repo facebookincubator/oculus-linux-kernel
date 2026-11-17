@@ -26,4 +26,6 @@ int syncboss_swd_nrf54h20_force_sec_dom_fw_version(struct device *dev,
 						 const char *str);
 int syncboss_swd_nrf54h20_prepare(struct device *dev);
 int syncboss_swd_nrf54h20_finalize(struct device *dev);
+
+int syncboss_swd_nrf54h20_bus_enable(struct device *dev, bool enable);
 #endif // SYNCBOSS_SWD_NRF54H20_OPS_H

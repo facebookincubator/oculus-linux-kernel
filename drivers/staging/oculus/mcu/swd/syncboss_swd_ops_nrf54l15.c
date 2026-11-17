@@ -223,12 +223,38 @@ int syncboss_swd_nrf54l15_read(struct device *dev, int addr, u8 *dest,
 	return 0;
 }
 
+/*
+ * Provisioning data must survive an app update, so it may only live where erase_app does not
+ * reach: the UICR user region, or the retained pages at the end of flash. UICR is RW1 and can
+ * only be cleared by ERASEALL, so data that needs correcting belongs in the retained pages.
+ */
+static bool provisioning_range_is_valid(struct device *dev, int addr, size_t len)
+{
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	struct flash_info *flash = &devdata->mcu_data.flash_info;
+	u64 start = addr;
+	u64 end = start + len;
+
+	if (addr < 0)
+		return false;
+
+	if (start >= SWD_NRF54L15_UICR_USER_BASE &&
+	    end <= SWD_NRF54L15_UICR_USER_BASE + SWD_NRF54L15_UICR_USER_SIZE)
+		return true;
+
+	if (flash->num_retained_pages == 0 || flash->num_retained_pages > flash->num_pages)
+		return false;
+
+	return start >= (u64)(flash->num_pages - flash->num_retained_pages) * flash->page_size &&
+	       end <= (u64)flash->num_pages * flash->page_size;
+}
+
 int syncboss_swd_nrf54l15_provisioning_read(struct device *dev, int addr, u8 *data, size_t len)
 {
 	int status;
 
-	if (addr < SWD_NRF54L15_UICR_USER_BASE || addr + len >= SWD_NRF54L15_UICR_USER_BASE + SWD_NRF54L15_UICR_USER_SIZE) {
-		dev_err(dev, "Provisioning data addr/len is not within UICR");
+	if (!provisioning_range_is_valid(dev, addr, len)) {
+		dev_err(dev, "Provisioning data addr/len is not within UICR or retained flash");
 		return -EINVAL;
 	}
 
@@ -243,16 +269,17 @@ int syncboss_swd_nrf54l15_provisioning_write(struct device *dev, int addr, u8 *d
 {
 	int status;
 
-	if (addr < SWD_NRF54L15_UICR_USER_BASE || addr + len >= SWD_NRF54L15_UICR_USER_BASE + SWD_NRF54L15_UICR_USER_SIZE) {
-		dev_err(dev, "Provisioning data does not fit within UICR");
+	if (!provisioning_range_is_valid(dev, addr, len)) {
+		dev_err(dev, "Provisioning data does not fit within UICR or retained flash");
 		return -EINVAL;
 	}
 
-	// We just write to the required portion of UICR as RRAMC does not need to erase blocks
-	// in order to perform a write. The starting region of the UICR should remain untouched.
+	// Write only the bytes we own; neither target needs a block erase first. In RRAM that
+	// also means the write can be repeated, but a UICR target cannot: UICR is RW1, so a word
+	// that is already programmed silently ignores this write.
 	status = syncboss_swd_nrf54l15_write_chunk(dev, addr, data, len);
 	if (status)
-		dev_err(dev, "Failed to write UICR");
+		dev_err(dev, "Failed to write provisioning data");
 
 	return status;
 }

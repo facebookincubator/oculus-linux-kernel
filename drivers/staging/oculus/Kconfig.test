@@ -7,6 +7,14 @@ config HZOS_EXT_GPU_FREQ_KUNIT_TEST
 	  hzos_ext/hzos_ext_gpu_freq.h.  The test includes only the header and
 	  requires CONFIG_CGROUP_GPU for the gpu_cgroup.h definitions.
 
+config HZOS_EXT_TAG_KUNIT_TEST
+	tristate "KUnit tests for hzos_ext tag store helper" if !KUNIT_ALL_TESTS
+	depends on KUNIT && HZOS_EXT
+	default KUNIT_STAGING_OCULUS
+	help
+	  Unit tests for the self-contained hzos_ext_tag_store() helper in
+	  linux/hzos_ext_tag.h.  The test includes only the header.
+
 config KUNIT_STAGING_OCULUS
 	tristate "Enable all KUnit tests for Oculus staging drivers"
 	depends on KUNIT
@@ -14,9 +22,32 @@ config KUNIT_STAGING_OCULUS
 	select MISCFIFO_KUNIT_TEST if MISCFIFO
 	select META_SWD_FWUPDATE_KUNIT_TEST if META_SWD
 	select HZOS_EXT_GPU_FREQ_KUNIT_TEST if CGROUP_GPU
+	select HZOS_EXT_TAG_KUNIT_TEST if HZOS_EXT
 	select META_PROGLOGIC_KUNIT_TEST if META_PROGLOGIC
+	select META_LPD_KUNIT_TEST if META_LPD
 	help
 	  Master switch to enable all KUnit tests under drivers/staging/oculus/.
+
+config RT_THROTTLE_KUNIT_TEST
+	tristate "KUnit tests for the RT throttle dump" if !KUNIT_ALL_TESTS
+	depends on KUNIT && RT_THROTTLING_SYSCTL
+	default n
+	help
+	  Behavioural tests for the sched_rt throttle dump. Drives a real
+	  throttle with a pinned FIFO kthread and checks the latched
+	  /proc/sys/sched_rt data: that the process name is a name rather than
+	  "unavailable", and that contributor rows keep the column layout the
+	  crash-report preprocessor parses.
+
+	  Costs one CPU for about one RT period per test case. Skips unless
+	  /proc/sys/sched_rt/panic_on_throttle is 0, since tripping the
+	  throttle with it armed panics the device.
+
+	  Not selected by KUNIT_STAGING_OCULUS, and off by default: all
+	  privileged setup runs from kunit_suite::suite_init, which kernels
+	  older than 5.17 do not have, and a per-case init cannot substitute
+	  because KUnit runs cases in a kthread that gets -EACCES on /proc/sys.
+	  Enable it per target in the defconfig: niobe and newer.
 
 config DMABUF_REORDER_KUNIT_TEST
 	tristate "KUnit tests for dmabuf_reorder helpers" if !KUNIT_ALL_TESTS
@@ -40,12 +71,22 @@ config META_SWD_FWUPDATE_KUNIT_TEST
 	  Unit tests for the SWD firmware update manager APIs.
 
 config META_PROGLOGIC_KUNIT_TEST
-	bool "KUnit tests for meta-proglogic" if !KUNIT_ALL_TESTS
+	tristate "KUnit tests for meta-proglogic" if !KUNIT_ALL_TESTS
 	depends on KUNIT && META_PROGLOGIC
 	select REGMAP_I2C
 	default KUNIT_STAGING_OCULUS
 	help
 	  Unit tests for the meta-proglogic control-bit data model, variant
-	  selection, and the tether/SD LPD enable and latch-clear APIs. The
-	  tests are compiled into the meta-proglogic driver via an #include at
-	  the end of meta-proglogic.c, so they reach its static tables.
+	  selection, and the tether/SD LPD enable and latch-clear APIs. Builds
+	  as meta-proglogic_test.ko; the driver's tables and helpers are reached
+	  via VISIBLE_IF_KUNIT in meta-proglogic_internal.h.
+
+config META_LPD_KUNIT_TEST
+	tristate "KUnit tests for meta-lpd" if !KUNIT_ALL_TESTS
+	depends on KUNIT && META_LPD
+	default KUNIT_STAGING_OCULUS
+	help
+	  Unit tests for the meta-lpd shared decision model (per-source
+	  request helpers and reconciler) and the tether state machine.
+	  Builds as meta-lpd_kunit_test.ko; the tether state machine is
+	  reached via EXPORT_SYMBOL_IF_KUNIT in meta-lpd_tether.c.

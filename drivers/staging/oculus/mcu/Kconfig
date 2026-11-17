@@ -138,6 +138,15 @@ config SYNCBOSS_MISCFIFO
 	help
 	  Syncboss MiscFIFO event notification driver
 
+config SYNCBOSS_CAMTEMP
+	tristate "Syncboss Camera Temperature Thermal Zones"
+	depends on SYNCBOSS && THERMAL_OF
+	default n
+	help
+	  Exposes the camera on-die temperatures reported by the syncboss MCU
+	  as thermal zones, so that they can be read by any process instead of
+	  only by the owner of the camera stream.
+
 choice
 	prompt "Syncboss driver mode"
 	default SYNCBOSS_STANDALONE

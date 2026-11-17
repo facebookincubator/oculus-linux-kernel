@@ -931,6 +931,7 @@ static void kgsl_destroy_process_private(struct kref *kref)
 	mutex_unlock(&kgsl_driver.process_mutex);
 
 	put_pid(private->pid);
+	mmdrop(private->mm);
 	idr_destroy(&private->mem_idr);
 	idr_destroy(&private->syncsource_idr);
 
@@ -1003,6 +1004,8 @@ static struct kgsl_process_private *kgsl_process_private_new(
 	kref_init(&private->refcount);
 
 	private->pid = cur_pid;
+	private->mm = current->mm;
+	mmgrab(current->mm);
 	get_task_comm(private->comm, current->group_leader);
 
 	spin_lock_init(&private->mem_lock);
@@ -1023,6 +1026,7 @@ static struct kgsl_process_private *kgsl_process_private_new(
 		idr_destroy(&private->mem_idr);
 		idr_destroy(&private->syncsource_idr);
 		put_pid(private->pid);
+		mmdrop(private->mm);
 
 		kfree(private);
 		return ERR_PTR(err);
@@ -4680,8 +4684,10 @@ static void kgsl_gpumem_vm_open(struct vm_area_struct *vma)
 {
 	struct kgsl_mem_entry *entry = vma->vm_private_data;
 
-	if (kgsl_mem_entry_get(entry) == 0)
+	if (!kgsl_mem_entry_get(entry)) {
 		vma->vm_private_data = NULL;
+		return;
+	}
 
 	atomic_inc(&entry->map_count);
 }
@@ -5058,6 +5064,9 @@ static int kgsl_mmap(struct file *file, struct vm_area_struct *vma)
 	struct kgsl_process_private *private = dev_priv->process_priv;
 	struct kgsl_mem_entry *entry = NULL;
 	struct kgsl_device *device = dev_priv->device;
+
+	if (vma->vm_mm != private->mm)
+		return -EACCES;
 
 	/* Handle leagacy behavior for memstore */
 

@@ -122,6 +122,7 @@ static struct {
 		.flavor = "nrf54h20",
 		.swd_ops = {
 			.target_prepare = syncboss_swd_nrf54h20_prepare,
+			.bus_enable = syncboss_swd_nrf54h20_bus_enable,
 			.target_erase = syncboss_swd_nrf54h20_target_erase,
 			.target_get_write_chunk_size = syncboss_swd_nrf54h20_get_app_write_chunk_size,
 			.target_program_write_chunk = syncboss_swd_nrf54h20_write_chunk,
@@ -862,6 +863,9 @@ ssize_t fwupdate_update_firmware_store(struct device *dev, const char *buf,
 		status = -EINVAL;
 		goto error;
 	}
+	status = swd_debug_claim_check(dev);
+	if (status)
+		goto error;
 
 	work_queued = !fw_queue_work(devdata->workqueue, update_data, fwupdate_swd_workqueue_fw_update, NULL);
 	if (work_queued) {
