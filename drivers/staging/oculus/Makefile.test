@@ -2,3 +2,11 @@ obj-$(CONFIG_MISCFIFO_KUNIT_TEST)	+= miscfifo_test.o
 obj-$(CONFIG_META_SWD_FWUPDATE_KUNIT_TEST)	+= mcu/swd/fwupdate_manager_test.o
 obj-$(CONFIG_DMABUF_REORDER_KUNIT_TEST)	+= dmabuf_reorder_test.o
 obj-$(CONFIG_HZOS_EXT_GPU_FREQ_KUNIT_TEST)	+= hzos_ext/hzos_ext_gpu_freq_test.o
+obj-$(CONFIG_HZOS_EXT_TAG_KUNIT_TEST)	+= hzos_ext/hzos_ext_tag_test.o
+obj-$(CONFIG_META_PROGLOGIC_KUNIT_TEST)	+= internal/meta-proglogic_test.o
+obj-$(CONFIG_RT_THROTTLE_KUNIT_TEST)	+= sched/rt_throttle_test.o
+
+CFLAGS_internal/meta-proglogic_test.o += -I$(srctree)/drivers/staging/oculus/internal/include
+CFLAGS_internal/meta-lpd_test.o += -I$(srctree)/drivers/staging/oculus/internal/include
+obj-$(CONFIG_META_LPD_KUNIT_TEST)	+= internal/meta-lpd_kunit_test.o
+internal/meta-lpd_kunit_test-y := internal/meta-lpd_test.o

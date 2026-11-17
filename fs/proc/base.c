@@ -3369,7 +3369,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 	ONE("arch_status", S_IRUGO, proc_pid_arch_status),
 #endif
 #ifdef CONFIG_HZOS_EXT
-	REG("hzos_ext_flags", S_IRUSR|S_IWUSR,
+	REG("hzos_ext_flags", S_IRUSR|S_IWUGO,
 	    proc_hzos_ext_flag_ops),
 	REG("task_profiles", S_IRUGO|S_IWUGO,
 	    proc_task_profiles_ops),
@@ -3707,6 +3707,10 @@ static const struct pid_entry tid_base_stuff[] = {
 #endif
 #ifdef CONFIG_CPU_FREQ_TIMES
 	ONE("time_in_state", 0444, proc_time_in_state_show),
+#endif
+#ifdef CONFIG_HZOS_EXT
+	REG("thread_profiles", S_IRUGO|S_IWUGO,
+	    proc_thread_profiles_ops),
 #endif
 };
 

@@ -45,6 +45,19 @@ ssize_t hzos_ext_flags_write_procfs(struct task_struct *task,
 				        size_t count, loff_t *ppos);
 
 /**
+ * hzos_ext_flags_write_allowed - Whether the current task may write HzOS Ext
+ * flags. Check it when the flags file is opened for writing (FMODE_WRITE) and
+ * on every write.
+ */
+bool hzos_ext_flags_write_allowed(void);
+
+/**
+ * hzos_ext_tag_write_allowed - Whether the current task may set a tag. Check
+ * it when a tag file is opened for writing (FMODE_WRITE) and on every write.
+ */
+bool hzos_ext_tag_write_allowed(void);
+
+/**
  * hzos_ext_task_profiles_read_procfs - Read the task_profiles procfs file.
  *
  * Reading marks the tag generation seen, which is what stops a poller from
@@ -64,6 +77,9 @@ ssize_t hzos_ext_task_profiles_read_procfs(struct task_struct *task,
 /**
  * hzos_ext_task_profiles_write_procfs - Tag a task with the task profiles
  * that were applied to it.
+ *
+ * The tag is stored on @task's thread group leader, so writing through any
+ * thread of the process tags the process.
  *
  * @task: The task being tagged.
  * @ubuf: The user space buffer containing the input data.
@@ -92,6 +108,54 @@ __poll_t hzos_ext_task_profiles_poll_procfs(struct task_struct *task,
 					    struct file *file,
 					    struct poll_table_struct *wait,
 					    u32 *seen_gen);
+
+/**
+ * hzos_ext_thread_profiles_read_procfs - Read the thread_profiles procfs file.
+ *
+ * Like hzos_ext_task_profiles_read_procfs(), for @task's own thread tag.
+ *
+ * @task: The thread for the procfs read.
+ * @ubuf: The user space buffer where the result will be written.
+ * @count: Size of user space buffer.
+ * @ppos: Offset into buffer.
+ * @seen_gen: The generation this open has observed, updated on return.
+ */
+ssize_t hzos_ext_thread_profiles_read_procfs(struct task_struct *task,
+					     char __user *ubuf,
+					     size_t count, loff_t *ppos,
+					     u32 *seen_gen);
+
+/**
+ * hzos_ext_thread_profiles_write_procfs - Tag a thread with the profiles that
+ * were applied to it.
+ *
+ * Like hzos_ext_task_profiles_write_procfs(), but the tag is stored on @task
+ * itself. New threads inherit it; new processes start untagged.
+ *
+ * @task: The thread being tagged.
+ * @ubuf: The user space buffer containing the input data.
+ * @count: Size of user space buffer.
+ * @ppos: Offset into buffer.
+ */
+ssize_t hzos_ext_thread_profiles_write_procfs(struct task_struct *task,
+					      const char __user *ubuf,
+					      size_t count, loff_t *ppos);
+
+/**
+ * hzos_ext_thread_profiles_poll_procfs - Report whether a thread's tag has
+ * changed since this open of the procfs file last observed it.
+ *
+ * Same semantics as hzos_ext_task_profiles_poll_procfs().
+ *
+ * @task: The thread being watched.
+ * @file: The procfs file being polled.
+ * @wait: The poll table to register on.
+ * @seen_gen: The generation this open last observed.
+ */
+__poll_t hzos_ext_thread_profiles_poll_procfs(struct task_struct *task,
+					      struct file *file,
+					      struct poll_table_struct *wait,
+					      u32 *seen_gen);
 
 /**
  * hzos_ext_task_profiles_init - Initialize the wait queue table that task
@@ -125,6 +189,23 @@ void hzos_ext_task_setscheduler(void *unused, struct task_struct *task,
  */
 void hzos_ext_post_clone(void *unused, struct task_struct *new, struct task_struct *orig);
 
+/* The thread group that FORK_TG_NORMAL threads create new threads in. */
+#define HZOS_EXT_FORK_CGROUP_NAME "tg_normal"
+
+/**
+ * hzos_ext_fork_tg_normal - Whether a thread cloned by @parent should start in
+ * the HZOS_EXT_FORK_CGROUP_NAME sibling of @parent's thread group rather than
+ * in @parent's own cgroup.
+ *
+ * A thread tagged into a cgroup v2 thread group would otherwise pass its group
+ * to every thread it spawns, since clone() places a new thread in its creator's
+ * cgroup.
+ *
+ * @parent: The task calling clone().
+ * @clone_flags: The clone flags of the new task.
+ */
+bool hzos_ext_fork_tg_normal(struct task_struct *parent, u64 clone_flags);
+
 /**
  * hzos_ext_preferred_mask_write - Write the preferred mask for a task.
  *
@@ -155,6 +236,12 @@ void hzos_ext_check_bpf_helper(int func_id, int *ret);
 #else
 
 static inline void hzos_ext_check_bpf_helper(int func_id, int *ret) { }
+
+static inline bool hzos_ext_fork_tg_normal(struct task_struct *parent,
+					   u64 clone_flags)
+{
+	return false;
+}
 
 #endif /* CONFIG_HZOS_EXT */
 

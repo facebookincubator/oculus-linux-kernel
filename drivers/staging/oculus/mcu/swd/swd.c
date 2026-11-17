@@ -89,7 +89,7 @@ static void swd_wire_write_len(struct swd_dev_data *devdata, bool value,
 			       size_t len);
 static int swd_mode_switch(struct device *dev);
 
-int swd_init(struct device *dev)
+void swd_wire_init(struct device *dev)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 
@@ -101,6 +101,11 @@ int swd_init(struct device *dev)
 
 	/* must be 150+ clocks @125kHz+ */
 	swd_wire_write_len(devdata, 1, 200);
+}
+
+int swd_init(struct device *dev)
+{
+	swd_wire_init(dev);
 	return swd_mode_switch(dev);
 }
 
@@ -164,8 +169,13 @@ static void swd_wire_turnaround(struct swd_dev_data *devdata)
 	swd_wire_read(devdata);
 }
 
-static bool swd_wire_header(struct device *dev, bool read,
-			    bool apndp, u8 reg)
+/*
+ * Drive one request header and sample the acknowledge, without acting on it.
+ * The caller owns the turnaround that has to follow a non-OK response, and any
+ * decision to retry.
+ */
+static u8 swd_wire_header_once(struct device *dev, bool read,
+			       bool apndp, u8 reg)
 {
 	struct swd_dev_data *devdata = dev_get_drvdata(dev);
 
@@ -175,22 +185,32 @@ static bool swd_wire_header(struct device *dev, bool read,
 	u8 bitcount = (apndp + read + address2 + address3);
 	bool parity = bitcount & 1;
 
+	swd_wire_write(devdata, SWD_VAL_START);
+	swd_wire_write(devdata, apndp);
+	swd_wire_write(devdata, read);
+	swd_wire_write(devdata, address2);
+	swd_wire_write(devdata, address3);
+	swd_wire_write(devdata, parity);
+	swd_wire_write(devdata, SWD_VAL_STOP);
+	swd_wire_write(devdata, SWD_VAL_PARK);
+
+	swd_wire_turnaround(devdata);
+
+	ack |= swd_wire_read(devdata) << 0;
+	ack |= swd_wire_read(devdata) << 1;
+	ack |= swd_wire_read(devdata) << 2;
+
+	return ack;
+}
+
+static bool swd_wire_header(struct device *dev, bool read,
+			    bool apndp, u8 reg)
+{
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	u8 ack;
+
 	while (true) {
-		swd_wire_write(devdata, SWD_VAL_START);
-		swd_wire_write(devdata, apndp);
-		swd_wire_write(devdata, read);
-		swd_wire_write(devdata, address2);
-		swd_wire_write(devdata, address3);
-		swd_wire_write(devdata, parity);
-		swd_wire_write(devdata, SWD_VAL_STOP);
-		swd_wire_write(devdata, SWD_VAL_PARK);
-
-		swd_wire_turnaround(devdata);
-
-		ack = 0;
-		ack |= swd_wire_read(devdata) << 0;
-		ack |= swd_wire_read(devdata) << 1;
-		ack |= swd_wire_read(devdata) << 2;
+		ack = swd_wire_header_once(dev, read, apndp, reg);
 
 		if (ack == SWD_VAL_OK)
 			return true;
@@ -205,6 +225,18 @@ static bool swd_wire_header(struct device *dev, bool read,
 
 		return false;
 	}
+}
+
+int swd_debug_claim_check(struct device *dev)
+{
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+
+	if (!devdata->debug_claimed)
+		return 0;
+
+	dev_err(dev, "refusing: an external debugger (pid %d) holds the SWD link\n",
+		devdata->debug_claim_pid);
+	return -EBUSY;
 }
 
 void swd_flush(struct device *dev)
@@ -341,6 +373,72 @@ static u32 swd_dp_read(struct device *dev, u8 reg)
 int swd_dp_read_rd_buff(struct device *dev, u32 *data_ptr)
 {
 	return swd_dpap_read_robust(dev, SWD_VAL_DP, SWD_DP_REG_RO_RDBUFF, data_ptr);
+}
+
+int swd_dpap_xfer_raw(struct device *dev, bool apndp, bool rnw, u8 reg,
+		      u32 *data, u32 idle_clocks, u8 *ack_out)
+{
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	int bitcount = 0;
+	bool parity, check;
+	u32 value;
+	u8 ack;
+	int i;
+
+	ack = swd_wire_header_once(dev, rnw, apndp, reg);
+	*ack_out = ack;
+
+	if (ack != SWD_VAL_OK) {
+		/* No data phase follows; just hand the line back. */
+		swd_wire_turnaround(devdata);
+		goto idle;
+	}
+
+	if (rnw) {
+		value = 0;
+		for (i = 0; i < 32; i++) {
+			bool bit = swd_wire_read(devdata);
+
+			bitcount += bit;
+			value |= ((u32)bit) << i;
+		}
+		parity = bitcount & 1;
+		check = swd_wire_read(devdata);
+		swd_wire_turnaround(devdata);
+
+		if (check != parity) {
+			dev_err_ratelimited(dev, "SWD Parity error in %s\n", __func__);
+			return -EIO;
+		}
+
+		*data = value;
+	} else {
+		swd_wire_turnaround(devdata);
+
+		value = *data;
+		for (i = 0; i < 32; i++) {
+			bool bit = !!(value & (1U << i));
+
+			bitcount += bit;
+			swd_wire_write(devdata, bit);
+		}
+		swd_wire_write(devdata, bitcount & 1);
+	}
+
+idle:
+	if (idle_clocks)
+		swd_wire_write_len(devdata, 0, idle_clocks);
+
+	return 0;
+}
+
+void swd_wire_raw_seq(struct device *dev, const u8 *bits, u32 nbits)
+{
+	struct swd_dev_data *devdata = dev_get_drvdata(dev);
+	u32 i;
+
+	for (i = 0; i < nbits; i++)
+		swd_wire_write(devdata, !!(bits[i / 8] & (1 << (i % 8))));
 }
 
 void swd_select_ap_reg(struct device *dev, u8 apsel, u32 reg_addr_sel)

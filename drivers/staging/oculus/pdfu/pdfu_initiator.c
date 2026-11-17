@@ -772,11 +772,9 @@ static int pdfu_initiator_probe(struct platform_device *pdev)
 
 	for (i = 0; i < num_pids; i++) {
 		pdfu->subs[i] =
-			usbvdm_subscribe(dev, VDM_SVID_META, pids[i], ops);
+			usbvdm_subscribe(dev, VDM_SVID_META, pids[i], ops, pdfu);
 		if (IS_ERR_OR_NULL(pdfu->subs[i]))
 			return IS_ERR(pdfu->subs[i]) ? PTR_ERR(pdfu) : -ENODEV;
-
-		usbvdm_subscriber_set_drvdata(pdfu->subs[i], pdfu);
 	}
 
 	rc = sysfs_create_groups(&dev->kobj, pdfu_initiator_groups);

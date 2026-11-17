@@ -693,14 +693,10 @@ static inline int rt_bandwidth_enabled(void)
 # define HAVE_RT_PUSH_IPI
 #endif
 
-/* Real-Time classes' related field in a runqueue: */
-#ifdef CONFIG_RT_TOP_CONTRIBUTORS
-#define RT_TOP_CONTRIB_N 10
-/* Bound on the cmdline length we resolve at dump time. Caps each entry's
- * printed name so the printk buf and sysctl latch buffer can't be
- * monopolized by a single pathologically long /proc/<tgid>/cmdline.
+/*
+ * Defined unconditionally: the throttle report names it in a prototype that
+ * is not itself guarded. Only the storage below depends on the config.
  */
-#define RT_TOP_NAME_MAX 64
 struct rt_top_contrib {
 	pid_t	tgid;
 	u64	runtime_ns;	/* sum of all contiguous-slice durations this period */
@@ -708,7 +704,12 @@ struct rt_top_contrib {
 	u64	max_slice_ns;	/* longest single contiguous slice (no preemption) */
 	u32	slice_count;	/* number of times scheduled in this period */
 	char	comm[TASK_COMM_LEN];
+	char	max_comm[TASK_COMM_LEN];	/* thread that ran max_slice_ns */
 };
+
+/* Real-Time classes' related field in a runqueue: */
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+#define RT_TOP_CONTRIB_N 10
 #endif
 
 struct rt_rq {

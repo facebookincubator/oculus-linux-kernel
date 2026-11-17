@@ -4,6 +4,7 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
+#include <linux/rwsem.h>
 #include <linux/soc/qcom/pmic_glink.h>
 #include <linux/slab.h>
 #include <linux/usb/pd_vdo.h>
@@ -32,6 +33,7 @@
 struct usbvdm_dev {
 	struct device *dev;
 	struct usbvdm_engine *engine;
+	struct rw_semaphore engine_rwsem;	/* protects engine */
 
 	struct pmic_glink_client *client;
 	enum pmic_glink_state state;
@@ -273,17 +275,32 @@ static const struct usbvdm_engine_ops usbvdm_glink_ops = {
 	.transfer_firmware = usbvdm_glink_transfer_firmware,
 };
 
+static void usbvdm_glink_teardown(struct usbvdm_dev *uv_dev)
+{
+	struct usbvdm_engine *engine;
+
+	down_write(&uv_dev->engine_rwsem);
+	engine = uv_dev->engine;
+	uv_dev->engine = NULL;
+	up_write(&uv_dev->engine_rwsem);
+
+	usbvdm_unregister(engine);
+}
+
 static int usbvdm_glink_setup(struct usbvdm_dev *uv_dev)
 {
-	mutex_lock(&uv_dev->state_lock);
-	uv_dev->engine = usbvdm_register(uv_dev->dev, usbvdm_glink_ops, uv_dev);
-	if (IS_ERR(uv_dev->engine)) {
+	struct usbvdm_engine *engine;
+
+	down_write(&uv_dev->engine_rwsem);
+	engine = usbvdm_register(uv_dev->dev, usbvdm_glink_ops, uv_dev);
+	if (IS_ERR(engine)) {
 		dev_err(uv_dev->dev, "Error in registering with usbvdm, rc=%ld",
-				PTR_ERR(uv_dev->engine));
-		mutex_unlock(&uv_dev->state_lock);
-		return PTR_ERR(uv_dev->engine);
+				PTR_ERR(engine));
+		up_write(&uv_dev->engine_rwsem);
+		return PTR_ERR(engine);
 	}
-	mutex_unlock(&uv_dev->state_lock);
+	uv_dev->engine = engine;
+	up_write(&uv_dev->engine_rwsem);
 
 	return 0;
 }
@@ -314,6 +331,7 @@ static void usbvdm_glink_handle_notify(struct usbvdm_dev *uv_dev,
 		return;
 	}
 
+	down_read(&uv_dev->engine_rwsem);
 	switch (msg->notification) {
 	case OEM_NOTIFICATION_CONNECTED:
 		usbvdm_connect(uv_dev->engine, msg->svid, msg->pid);
@@ -326,6 +344,7 @@ static void usbvdm_glink_handle_notify(struct usbvdm_dev *uv_dev,
 				msg->notification);
 		break;
 	}
+	up_read(&uv_dev->engine_rwsem);
 }
 
 static void usbvdm_glink_handle_recv_ext_msg(struct usbvdm_dev *uv_dev,
@@ -339,8 +358,10 @@ static void usbvdm_glink_handle_recv_ext_msg(struct usbvdm_dev *uv_dev,
 		return;
 	}
 
+	down_read(&uv_dev->engine_rwsem);
 	usbvdm_engine_ext_msg(uv_dev->engine, msg->msg_type,
 			msg->data, msg->data_len);
+	up_read(&uv_dev->engine_rwsem);
 }
 
 static void usbvdm_glink_handle_recv_vdm(struct usbvdm_dev *uv_dev,
@@ -359,7 +380,9 @@ static void usbvdm_glink_handle_recv_vdm(struct usbvdm_dev *uv_dev,
 	vdos = &msg->data[1];
 	num_vdos = msg->size - 1;
 
+	down_read(&uv_dev->engine_rwsem);
 	usbvdm_engine_vdm(uv_dev->engine, vdm_hdr, vdos, num_vdos);
+	up_read(&uv_dev->engine_rwsem);
 }
 
 static void usbvdm_glink_handle_fw_progress_update(struct usbvdm_dev *uv_dev,
@@ -375,7 +398,9 @@ static void usbvdm_glink_handle_fw_progress_update(struct usbvdm_dev *uv_dev,
 
 	dev_dbg(uv_dev->dev, "Received FW transfer progress update: %d%%", msg->progress);
 
+	down_read(&uv_dev->engine_rwsem);
 	usbvdm_engine_transfer_firmware(uv_dev->engine, msg->progress);
+	up_read(&uv_dev->engine_rwsem);
 }
 
 static void usbvdm_glink_handle_ack(struct usbvdm_dev *uv_dev,
@@ -437,24 +462,22 @@ static void usbvdm_glink_state_cb(void *priv, enum pmic_glink_state state)
 
 	if (uv_dev->state == state) {
 		dev_dbg(uv_dev->dev, "glink state %d unchanged, do nothing", state);
-		goto out;
+		mutex_unlock(&uv_dev->state_lock);
+		return;
 	}
 	uv_dev->state = state;
+	mutex_unlock(&uv_dev->state_lock);
 
 	switch (state) {
 	case PMIC_GLINK_STATE_UP:
 		schedule_work(&uv_dev->setup_work);
 		break;
 	case PMIC_GLINK_STATE_DOWN:
-		usbvdm_unregister(uv_dev->engine);
-		uv_dev->engine = NULL;
+		usbvdm_glink_teardown(uv_dev);
 		break;
 	default:
 		break;
 	}
-
-out:
-	mutex_unlock(&uv_dev->state_lock);
 }
 
 static int usbvdm_glink_probe(struct platform_device *pdev)
@@ -471,6 +494,7 @@ static int usbvdm_glink_probe(struct platform_device *pdev)
 	INIT_WORK(&uv_dev->setup_work, usbvdm_glink_setup_work);
 	init_completion(&uv_dev->ack_complete);
 	mutex_init(&uv_dev->state_lock);
+	init_rwsem(&uv_dev->engine_rwsem);
 	uv_dev->state = PMIC_GLINK_STATE_DOWN;
 
 	platform_set_drvdata(pdev, uv_dev);
@@ -506,10 +530,7 @@ static int usbvdm_glink_remove(struct platform_device *pdev)
 
 	pmic_glink_unregister_client(uv_dev->client);
 	cancel_work_sync(&uv_dev->setup_work);
-	mutex_lock(&uv_dev->state_lock);
-	usbvdm_unregister(uv_dev->engine);
-	uv_dev->engine = NULL;
-	mutex_unlock(&uv_dev->state_lock);
+	usbvdm_glink_teardown(uv_dev);
 
 	mutex_destroy(&uv_dev->state_lock);
 
