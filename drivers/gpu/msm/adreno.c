@@ -397,9 +397,33 @@ void adreno_fault_detect_stop(struct adreno_device *adreno_dev)
 #define GMU_CM3_CFG_NONMASKINTR_SHIFT	9
 
 /* Send an NMI to the GMU */
-void adreno_gmu_send_nmi(struct adreno_device *adreno_dev)
+void adreno_gmu_send_nmi(struct adreno_device *adreno_dev, bool force)
 {
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	u32 val;
+
+	/*
+	 * Do not send NMI if the SMMU is stalled because GMU will not be able
+	 * to save cm3 state to DDR.
+	 */
+	if (gmu_core_dev_gx_is_on(device) && a6xx_is_smmu_stalled(device)) {
+		dev_err(device->dev, "Skipping NMI because SMMU is stalled\n");
+		return;
+	}
+
+	if (force)
+		goto nmi;
+
+	/*
+	 * Don't send NMI if GMU reset is already active. We could have hit a
+	 * GMU assert and NMI might have already been triggered.
+	 */
+	gmu_core_regread(device, A6XX_GMU_CM3_FW_INIT_RESULT, &val);
+
+	if (val & 0xE00)
+		return;
+
+nmi:
 	/* Mask so there's no interrupt caused by NMI */
 	adreno_write_gmureg(adreno_dev,
 			ADRENO_REG_GMU_GMU2HOST_INTR_MASK, 0xFFFFFFFF);
@@ -416,6 +440,9 @@ void adreno_gmu_send_nmi(struct adreno_device *adreno_dev)
 
 	/* Make sure the NMI is invoked before we proceed*/
 	wmb();
+
+	/* Wait for the NMI to be handled */
+	udelay(200);
 }
 
 /*

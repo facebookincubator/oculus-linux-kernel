@@ -254,9 +254,7 @@ static void reset_vdm_state(struct cypd *pd)
 	struct vdm_tx *vdm_tx, *vdm_tx_retry;
 	unsigned long flags;
 
-	/* in_interrupt() == true when handling VDM RX during suspend */
-	if (!in_interrupt())
-		mutex_lock(&pd->svid_handler_lock);
+	mutex_lock(&pd->svid_handler_lock);
 
 	list_for_each_entry(handler, &pd->svid_handlers, entry) {
 		if (handler->discovered) {
@@ -281,9 +279,7 @@ static void reset_vdm_state(struct cypd *pd)
 	vdm_tx = pd->vdm_tx;
 	pd->vdm_tx = NULL;
 	spin_unlock_irqrestore(&pd->vdm_tx_lock, flags);
-
-	if (!in_interrupt())
-		mutex_unlock(&pd->svid_handler_lock);
+	mutex_unlock(&pd->svid_handler_lock);
 
 	kfree(vdm_tx_retry);
 	kfree(vdm_tx);
@@ -313,27 +309,18 @@ static const struct cypd_state_handler state_handlers[] = {
 	[PE_DISCONNECT] = {enter_state_disconnect, NULL},
 };
 
-static struct cypd_svid_handler *find_svid_handler(struct cypd *pd,
+/* Caller must hold pd->svid_handler_lock */
+static struct cypd_svid_handler *find_svid_handler_locked(struct cypd *pd,
 		u16 svid, u16 pid)
 {
 	struct cypd_svid_handler *handler;
 
-	/* in_interrupt() == true when handling VDM RX during suspend */
-	if (!in_interrupt())
-		mutex_lock(&pd->svid_handler_lock);
-
 	list_for_each_entry(handler, &pd->svid_handlers, entry) {
 		if (svid == handler->svid)
 			/* Treat a registered PID of 0 as a wildcard */
-			if (!handler->pid || pid == handler->pid) {
-				if (!in_interrupt())
-					mutex_unlock(&pd->svid_handler_lock);
+			if (!handler->pid || pid == handler->pid)
 				return handler;
-			}
 	}
-
-	if (!in_interrupt())
-		mutex_unlock(&pd->svid_handler_lock);
 
 	return NULL;
 }
@@ -451,7 +438,9 @@ static void handle_vdm_resp_ack(struct cypd *pd, u32 *vdos, u8 num_vdos,
 		for (i = 0; i < pd->num_svids; i++) {
 			svid = pd->discovered_svids[i];
 			if (svid) {
-				handler = find_svid_handler(pd, svid, pd->pid);
+				mutex_lock(&pd->svid_handler_lock);
+				handler = find_svid_handler_locked(pd, svid, pd->pid);
+				mutex_unlock(&pd->svid_handler_lock);
 				if (handler) {
 					dev_dbg(&pd->dev,
 							"Notify SVID/PID: 0x%04x/0x%04x connect\n",
@@ -492,7 +481,9 @@ static void handle_vdm_rx(struct cypd *pd, struct rx_msg *rx_msg)
 			svid, cmd, cmd_type, vdm_hdr);
 
 	/* if it's a supported SVID, pass the message to the handler */
-	handler = find_svid_handler(pd, svid, pd->pid);
+	mutex_lock(&pd->svid_handler_lock);
+	handler = find_svid_handler_locked(pd, svid, pd->pid);
+	mutex_unlock(&pd->svid_handler_lock);
 
 	/* Unstructured VDM */
 	if (!PD_VDO_SVDM(vdm_hdr)) {
@@ -837,9 +828,11 @@ EXPORT_SYMBOL(cypd_send_svdm);
 
 int cypd_register_svid(struct cypd *pd, struct cypd_svid_handler *hdlr)
 {
-	if (find_svid_handler(pd, hdlr->svid, hdlr->pid)) {
+	mutex_lock(&pd->svid_handler_lock);
+	if (find_svid_handler_locked(pd, hdlr->svid, hdlr->pid)) {
 		dev_err(&pd->dev, "SVID/PID 0x%04x/0x%04x already registered\n",
 				hdlr->svid, hdlr->pid);
+		mutex_unlock(&pd->svid_handler_lock);
 		return -EINVAL;
 	}
 
@@ -848,12 +841,12 @@ int cypd_register_svid(struct cypd *pd, struct cypd_svid_handler *hdlr)
 		dev_err(&pd->dev,
 				"SVID/PID 0x%04x/0x%04x connect/disconnect must be non-NULL\n",
 				hdlr->svid, hdlr->pid);
+		mutex_unlock(&pd->svid_handler_lock);
 		return -EINVAL;
 	}
 
 	dev_dbg(&pd->dev, "registered handler(%pK) for SVID/PID 0x%04x/0x%04x\n",
 							hdlr, hdlr->svid, hdlr->pid);
-	mutex_lock(&pd->svid_handler_lock);
 	list_add_tail(&hdlr->entry, &pd->svid_handlers);
 	mutex_unlock(&pd->svid_handler_lock);
 

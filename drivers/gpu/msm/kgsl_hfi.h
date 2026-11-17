@@ -46,7 +46,7 @@ struct hfi_queue_table;
 #define HFI_DBG_PRI 40
 #define HFI_DSP_PRI_0 20
 
-#define HFI_RSP_TIMEOUT 100 /* msec */
+#define HFI_RSP_TIMEOUT 1000 /* msec */
 #define HFI_H2F_CMD_IRQ_MASK BIT(0)
 
 #define HFI_IRQ_MSGQ_MASK		BIT(0)

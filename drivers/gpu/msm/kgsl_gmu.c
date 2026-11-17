@@ -932,12 +932,7 @@ static irqreturn_t gmu_irq_handler(int irq, void *data)
 				ADRENO_REG_GMU_AO_HOST_INTERRUPT_MASK,
 				(mask | GMU_INT_WDOG_BITE));
 
-		adreno_gmu_send_nmi(adreno_dev);
-		/*
-		 * There is sufficient delay for the GMU to have finished
-		 * handling the NMI before snapshot is taken, as the fault
-		 * worker is scheduled below.
-		 */
+		adreno_gmu_send_nmi(adreno_dev, false);
 
 		dev_err_ratelimited(&gmu->pdev->dev,
 				"GMU watchdog expired interrupt received\n");
@@ -1530,9 +1525,7 @@ static void gmu_snapshot(struct kgsl_device *device)
 	if (test_and_set_bit(GMU_FAULT, &device->gmu_core.flags))
 		return;
 
-	adreno_gmu_send_nmi(adreno_dev);
-	/* Wait for the NMI to be handled */
-	udelay(100);
+	adreno_gmu_send_nmi(adreno_dev, false);
 	kgsl_device_snapshot(device, NULL, true);
 
 	adreno_write_gmureg(adreno_dev,

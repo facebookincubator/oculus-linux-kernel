@@ -264,6 +264,7 @@ static int poll_adreno_gmu_reg(struct adreno_device *adreno_dev,
 	enum adreno_regs offset_name, unsigned int expected_val,
 	unsigned int mask, unsigned int timeout_ms)
 {
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	unsigned int val;
 	unsigned long timeout = jiffies + msecs_to_jiffies(timeout_ms);
 
@@ -271,6 +272,21 @@ static int poll_adreno_gmu_reg(struct adreno_device *adreno_dev,
 		adreno_read_gmureg(adreno_dev, offset_name, &val);
 		if ((val & mask) == expected_val)
 			return 0;
+
+		/*
+		 * If GMU firmware fails any assertion, error message is sent
+		 * to KMD and NMI is triggered. So check if GMU is in NMI and
+		 * timeout early. Bits [11:9] of A6XX_GMU_CM3_FW_INIT_RESULT
+		 * contain GMU reset status. Non zero value here indicates that
+		 * GMU reset is active, NMI handler would eventually complete
+		 * and GMU would wait for recovery.
+		 */
+		gmu_core_regread(device, A6XX_GMU_CM3_FW_INIT_RESULT, &val);
+		if (val & 0xE00) {
+			dev_err(device->dev, "kgsl hfi poll abort: GMU in NMI\n");
+			return -ETIMEDOUT;
+		}
+
 		usleep_range(10, 100);
 	}
 

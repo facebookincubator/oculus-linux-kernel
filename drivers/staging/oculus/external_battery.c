@@ -2734,7 +2734,8 @@ static int ext_batt_probe(struct platform_device *pdev)
 
 		sub_data->vid = usb_ids[i];
 		sub_data->pid = usb_ids[i + 1];
-		sub_data->sub = usbvdm_subscribe(pd->dev, sub_data->vid, sub_data->pid, ops);
+		sub_data->sub = usbvdm_subscribe(pd->dev, sub_data->vid, sub_data->pid,
+				ops, pd);
 		if (IS_ERR_OR_NULL(sub_data->sub)) {
 			dev_err(pd->dev, "Failed to subscribe to VID/PID 0x%04x/0x%04x: %d",
 					sub_data->vid, sub_data->pid, PTR_ERR_OR_ZERO(sub_data->sub));
@@ -2742,7 +2743,6 @@ static int ext_batt_probe(struct platform_device *pdev)
 			return IS_ERR(sub_data->sub) ? PTR_ERR(sub_data) : -ENODATA;
 		}
 
-		usbvdm_subscriber_set_drvdata(sub_data->sub, pd);
 		list_add(&sub_data->entry, &pd->sub_list);
 	}
 

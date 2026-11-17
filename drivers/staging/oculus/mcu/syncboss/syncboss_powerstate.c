@@ -452,6 +452,20 @@ static int rx_packet_handler(struct notifier_block *nb, unsigned long type, void
 
 	switch (type) {
 	case SYNCBOSS_PROXSTATE_MESSAGE_TYPE:
+	case SYNCBOSS_WAKEUP_REASON_MESSAGE_TYPE:
+		break;
+	default:
+		return NOTIFY_DONE;
+	}
+
+	if (packet->data_len < 1) {
+		dev_warn_ratelimited(devdata->dev,
+				     "dropping empty type %lu packet\n", type);
+		return NOTIFY_STOP;
+	}
+
+	switch (type) {
+	case SYNCBOSS_PROXSTATE_MESSAGE_TYPE:
 		trace_syncboss_powerstate_rx(type, packet->data[0] ?
 					SYNCBOSS_PROX_EVENT_PROX_ON : SYNCBOSS_PROX_EVENT_PROX_OFF);
 		signal_powerstate_event(devdata, packet->data[0] ?

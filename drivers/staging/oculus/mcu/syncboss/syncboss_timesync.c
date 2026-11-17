@@ -173,10 +173,19 @@ static void update_stats(struct timesync_dev_data *devdata,
 static void handle_display_event(struct timesync_dev_data *devdata, const struct syncboss_data *packet)
 {
 	struct syncboss_display_event *dfevent = (struct syncboss_display_event *)packet->data;
-	int64_t mcu_ts_us = dfevent->timestamp;
+	int64_t mcu_ts_us;
 	int64_t ap_ts_us;
 	unsigned long flags;
 	bool was_idle = false;
+
+	if (packet->data_len < sizeof(dfevent->timestamp)) {
+		dev_warn_ratelimited(devdata->dev,
+				     "dropping short display event: %u bytes\n",
+				     packet->data_len);
+		return;
+	}
+
+	mcu_ts_us = dfevent->timestamp;
 
 	spin_lock_irqsave(&devdata->lock, flags);
 	if (unlikely(!devdata->waiting_for_msg)) {
@@ -211,6 +220,13 @@ static void handle_nsync_event(struct timesync_dev_data *devdata, const struct s
 
 	/* Start by handling the fields that are common to SYNCBOSS_DISPLAY_FRAME_MESSAGE_TYPE */
 	handle_display_event(devdata, packet);
+
+	if (packet->data_len < sizeof(*nevent)) {
+		dev_warn_ratelimited(devdata->dev,
+				     "dropping short nsync event: %u bytes\n",
+				     packet->data_len);
+		return;
+	}
 
 	/* Handle the additional fields that are specific to SYNCBOSS_NSYNC_FRAME_MESSAGE_TYPE */
 	if (nevent->offset_valid) {

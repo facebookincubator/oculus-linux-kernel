@@ -10,6 +10,7 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/jiffies.h>
+#include <linux/nospec.h>
 #include <linux/skbuff.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -78,6 +79,7 @@ static int validate_nla(const struct nlattr *nla, int maxtype,
 	if (type <= 0 || type > maxtype)
 		return 0;
 
+	type = array_index_nospec(type, maxtype + 1);
 	pt = &policy[type];
 
 	BUG_ON(pt->type > NLA_TYPE_MAX);
@@ -264,6 +266,7 @@ int nla_parse(struct nlattr **tb, int maxtype, const struct nlattr *head,
 			static const char _msg[] = "Attribute failed policy validation";
 			const char *msg = _msg;
 
+			type = array_index_nospec(type, maxtype + 1);
 			if (policy) {
 				err = validate_nla(nla, maxtype, policy, &msg);
 				if (err < 0) {
