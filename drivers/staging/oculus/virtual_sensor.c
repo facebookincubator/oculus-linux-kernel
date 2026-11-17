@@ -277,7 +277,7 @@ static int virtual_sensor_calculate_tz_temp(struct device *dev,
 		ret = virtual_sensor_thermal_zone_get_temp_scaled(tz,
 				data->tz_scaling_factors[i], &temp);
 		if (ret)
-			dev_err_ratelimited(dev, "%s: error getting temp: %d",
+			dev_err_once(dev, "%s: error getting temp: %d",
 					tz->type, ret);
 
 		if (data->tzs[i].fault_handling &&

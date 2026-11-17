@@ -38,10 +38,11 @@ enum boot_stage {
 	BOOT_STAGE_RECOVERY,
 };
 
-static void syncboss_swd_setstate(struct device *dev, bool enable)
+static int syncboss_swd_setstate(struct device *dev, bool enable)
 {
 	struct device_node *np = dev->of_node;
 	int count, i, ret;
+	int status = 0;
 	struct device_node *proglogic_dev_node;
 	struct device_node *tether_hpd;
 	struct platform_device *meta_hpd;
@@ -50,26 +51,27 @@ static void syncboss_swd_setstate(struct device *dev, bool enable)
 
 	if (!np) {
 		dev_err(dev, "%s: no dtsi entry for nrf54h20\n", __func__);
-		return;
+		return -EINVAL;
 	}
 
 	tether_hpd = of_parse_phandle(np, "meta,hpd", 0);
 	if (!tether_hpd) {
 		dev_err(dev, "%s: meta,hpd handle not found\n", __func__);
-		return;
+		return -EINVAL;
 	}
 	meta_hpd = of_find_device_by_node(tether_hpd);
 	if (!meta_hpd) {
 		dev_err(dev, "%s: ynable to find meta-hpd platform device\n", __func__);
 		of_node_put(tether_hpd);
-		return;
+		return -ENODEV;
 	}
 	of_node_put(tether_hpd);
 
 	count = of_count_phandle_with_args(np, "meta,proglogic", NULL);
 	if (count <= 0) {
 		dev_err(dev, "%s: proglogic handle not found: %d\n", __func__, count);
-		return;
+		put_device(&meta_hpd->dev);
+		return -ENODEV;
 	}
 	dev_dbg(dev, "%s: found %d devices!", __func__, count);
 
@@ -99,13 +101,17 @@ static void syncboss_swd_setstate(struct device *dev, bool enable)
 			if (ret)
 				dev_err(dev, "%s: unable to disable HPD detection: %d\n", __func__, ret);
 			ret = proglogic_swd_enable(&i2c_usb_mux_client->dev);
-			if (ret)
+			if (ret) {
 				dev_err(dev, "%s: unable to enable SWD: %d\n", __func__, ret);
+				status = ret;
+			}
 			udelay(MUX_STATE_CHANGE_WAIT_US);
 		} else {
 			ret = proglogic_swd_disable(&i2c_usb_mux_client->dev);
-			if (ret)
+			if (ret) {
 				dev_err(dev, "%s: unable to disable SWD: %d\n", __func__, ret);
+				status = ret;
+			}
 			udelay(MUX_STATE_CHANGE_WAIT_US);
 			ret = hpd_enable_detect(&meta_hpd->dev, true);
 			if (ret)
@@ -116,7 +122,19 @@ static void syncboss_swd_setstate(struct device *dev, bool enable)
 	} else {
 		put_device(&meta_hpd->dev);
 		dev_err(dev, "%s: failed to find swd mux device\n", __func__);
+		status = -ENODEV;
 	}
+
+	return status;
+}
+
+/*
+ * Connect or disconnect the SWD lines. Exposed so a debug claim can switch the
+ * mux without the power cycle and boot mode change that target_prepare does.
+ */
+int syncboss_swd_nrf54h20_bus_enable(struct device *dev, bool enable)
+{
+	return syncboss_swd_setstate(dev, enable);
 }
 
 static int syncboss_swd_set_tetherpower(struct device *dev, bool enable)

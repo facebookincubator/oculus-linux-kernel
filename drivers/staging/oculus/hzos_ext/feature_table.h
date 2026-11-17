@@ -26,6 +26,7 @@
 HZOS_EXT_FEATURE(ALLOW_RT, false)
 HZOS_EXT_FEATURE(SELECT_RQ_IDLE, false)
 HZOS_EXT_FEATURE(BALANCE_ANON_FILE_RECLAIM, true)
+HZOS_EXT_FEATURE(SOFT_RT, true)
 
 /*
  * HZOS_EXT_NUMERIC_FEATURE(name, write_cb, read_cb)
@@ -45,3 +46,11 @@ HZOS_EXT_FEATURE(BALANCE_ANON_FILE_RECLAIM, true)
  * will be printed as NAME=VALUE.
  */
 HZOS_EXT_NUMERIC_FEATURE(MEM_HAIRCUT, mem_haircut_write, mem_haircut_get)
+HZOS_EXT_NUMERIC_FEATURE(SOFT_RT_SLICE_NS, soft_rt_slice_write,
+			 soft_rt_slice_get)
+HZOS_EXT_NUMERIC_FEATURE(SOFT_RT_LIMIT_NS, soft_rt_limit_write,
+			 soft_rt_limit_get)
+HZOS_EXT_NUMERIC_FEATURE(SOFT_RT_RQ_WINDOW_NS, soft_rt_rq_window_write,
+			 soft_rt_rq_window_get)
+HZOS_EXT_NUMERIC_FEATURE(SOFT_RT_RQ_SHARE, soft_rt_rq_share_write,
+			 soft_rt_rq_share_get)

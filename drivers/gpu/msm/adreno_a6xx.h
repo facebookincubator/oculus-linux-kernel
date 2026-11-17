@@ -242,6 +242,21 @@ static inline int timed_poll_check_rscc(struct kgsl_device *device,
 	return -ETIMEDOUT;
 }
 
+/**
+ * a6xx_is_smmu_stalled() - Check whether smmu is stalled or not
+ * @device: Pointer to KGSL device
+ *
+ * Return - True if smmu is stalled or false otherwise
+ */
+static inline bool a6xx_is_smmu_stalled(struct kgsl_device *device)
+{
+	u32 val;
+
+	kgsl_regread(device, A6XX_RBBM_STATUS3, &val);
+
+	return val & BIT(24);
+}
+
 /* Preemption functions */
 void a6xx_preemption_trigger(struct adreno_device *adreno_dev);
 void a6xx_preemption_schedule(struct adreno_device *adreno_dev);

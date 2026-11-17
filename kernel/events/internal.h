@@ -39,6 +39,7 @@ struct ring_buffer {
 	struct user_struct		*mmap_user;
 
 	/* AUX area */
+	struct mutex			aux_mutex;
 	long				aux_head;
 	local_t				aux_nest;
 	long				aux_wakeup;	/* last aux_watermark boundary crossed by aux_head */

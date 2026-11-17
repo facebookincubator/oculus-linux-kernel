@@ -1578,6 +1578,17 @@ static void a6xx_gmu_snapshot_memories(struct kgsl_device *device,
 				.last = a6xx_gmu_tcm_registers[3],
 			};
 
+			/*
+			 * A stalled SMMU can lead to NoC timeouts when host
+			 * accesses DTCM
+			 */
+			if (a6xx_gmu_gx_is_on(device) &&
+					a6xx_is_smmu_stalled(device)) {
+				dev_err(&gmu->pdev->dev,
+					"Not dumping dtcm because SMMU is stalled\n");
+				continue;
+			}
+
 			kgsl_snapshot_add_section(device,
 				KGSL_SNAPSHOT_SECTION_GMU_MEMORY,
 				snapshot, a6xx_snapshot_gmu_tcm, &tcm);
@@ -1705,8 +1716,8 @@ static void a6xx_gmu_cooperative_reset(struct kgsl_device *device)
 	 * If we dont get a snapshot ready from GMU, trigger NMI
 	 * and if we still timeout then we just continue with reset.
 	 */
-	adreno_gmu_send_nmi(ADRENO_DEVICE(device));
-	udelay(200);
+	adreno_gmu_send_nmi(ADRENO_DEVICE(device), true);
+
 	gmu_core_regread(device, A6XX_GMU_CM3_FW_INIT_RESULT, &result);
 	if ((result & 0x800) != 0x800)
 		dev_err(&gmu->pdev->dev,

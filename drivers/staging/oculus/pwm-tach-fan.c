@@ -57,6 +57,14 @@
 #define MAX_STR_LEN 10
 #define MAX_RPM_HISTORY 3
 
+/*
+ * Stall is reported through a dedicated read-only cooling device whose state
+ * is 0 while the fan is healthy and 1 once it has been stalled for
+ * FAN_STALL_REPORT_TIME_MS.
+ */
+#define FAN_STALL_STATE_OK 0
+#define FAN_STALL_STATE_STALLED 1
+
 #define MID(a, b, c) ((max((a), (b)) > (c)) ? \
 		max(min((a), (b)), (c)) : max((a), (b)))
 
@@ -71,6 +79,7 @@ struct pwm_fan_ctx {
 	struct pinctrl_state *active_state;
 	struct pinctrl_state *idle_state;
 	struct thermal_cooling_device *cdev;
+	struct thermal_cooling_device *stall_cdev;
 	struct regulator *vdd_supply;
 	struct workqueue_struct *wq;
 	struct delayed_work fan_dwork;
@@ -527,6 +536,61 @@ static bool pwm_fan_has_failure_locked(struct pwm_fan_ctx *ctx)
 	return true;
 }
 
+/*
+ * Return true iff the fan has been stalled long enough to be worth reporting.
+ * Recovery is attempted for FAN_STALL_REPORT_TIME_MS before userspace is told.
+ */
+static bool pwm_fan_stall_reportable_locked(struct pwm_fan_ctx *ctx)
+{
+	s64 time_since_stall_ms;
+
+	/* A disabled fan cannot be stalled. */
+	if (ctx->pwm_value == 0 || !ctx->fan_stalled)
+		return false;
+
+	time_since_stall_ms = ktime_to_ms(ktime_sub(ktime_get(),
+						    ctx->last_stall_start_timestamp));
+
+	return time_since_stall_ms > FAN_STALL_REPORT_TIME_MS;
+}
+
+static int pwm_fan_stall_get_max_state(struct thermal_cooling_device *cdev,
+				       unsigned long *state)
+{
+	*state = FAN_STALL_STATE_STALLED;
+
+	return 0;
+}
+
+static int pwm_fan_stall_get_cur_state(struct thermal_cooling_device *cdev,
+				       unsigned long *state)
+{
+	struct pwm_fan_ctx *ctx = cdev->devdata;
+
+	if (!ctx)
+		return -EINVAL;
+
+	mutex_lock(&ctx->lock);
+	*state = pwm_fan_stall_reportable_locked(ctx) ?
+		FAN_STALL_STATE_STALLED : FAN_STALL_STATE_OK;
+	mutex_unlock(&ctx->lock);
+
+	return 0;
+}
+
+/* Stall is a status readout, not something userspace gets to drive. */
+static int pwm_fan_stall_set_cur_state(struct thermal_cooling_device *cdev,
+				       unsigned long state)
+{
+	return -EOPNOTSUPP;
+}
+
+static const struct thermal_cooling_device_ops pwm_fan_stall_cooling_ops = {
+	.get_max_state = pwm_fan_stall_get_max_state,
+	.get_cur_state = pwm_fan_stall_get_cur_state,
+	.set_cur_state = pwm_fan_stall_set_cur_state,
+};
+
 static int pwm_fan_get_cur_state(struct thermal_cooling_device *cdev,
 				 unsigned long *state)
 {
@@ -536,27 +600,7 @@ static int pwm_fan_get_cur_state(struct thermal_cooling_device *cdev,
 		return -EINVAL;
 
 	mutex_lock(&ctx->lock);
-
-	/*
-	 * Report fan malfunction if fan has been stalled for
-	 * at least FAN_STALL_REPORT_TIME_MS.
-	 */
-	if (ctx->fan_stalled) {
-		s64 time_since_stall_ms = ktime_to_ms(ktime_sub(ktime_get(), ctx->last_stall_start_timestamp));
-		if (time_since_stall_ms > FAN_STALL_REPORT_TIME_MS) {
-			/*
-			 * If fan has not recovered, set a state that exceeds the maximum
-			 * to signal userspace of the fan malfunction.
-			 */
-			*state = ctx->pwm_fan_max_state + 1;
-			goto end_get_cur_state;
-		}
-	}
-
-	/* Otherwise, report currently set state.  */
 	*state = ctx->pwm_fan_state;
-
-end_get_cur_state:
 	mutex_unlock(&ctx->lock);
 
 	return 0;
@@ -1279,6 +1323,7 @@ static int pwm_fan_probe(struct platform_device *pdev)
 
 	if (IS_ENABLED(CONFIG_THERMAL)) {
 		char cdev_name[THERMAL_NAME_LENGTH] = "";
+		struct thermal_cooling_device *stall_cdev;
 
 		snprintf(cdev_name, THERMAL_NAME_LENGTH, "pwm-tach-fan%d",
 				dt_addr);
@@ -1293,9 +1338,30 @@ static int pwm_fan_probe(struct platform_device *pdev)
 			goto err_tach_gpio_dir;
 		}
 		ctx->cdev = cdev;
+
+		/*
+		 * Registered without an of_node so it can't be bound to a
+		 * thermal zone by a cooling-map: this reports stall, it does
+		 * not provide cooling.
+		 */
+		snprintf(cdev_name, THERMAL_NAME_LENGTH, "pwm-tach-fan%d-stall",
+			 dt_addr);
+		stall_cdev = thermal_cooling_device_register(cdev_name, ctx,
+							     &pwm_fan_stall_cooling_ops);
+		if (IS_ERR(stall_cdev)) {
+			dev_err(&pdev->dev,
+				"Failed to register %s as cooling device",
+				cdev_name);
+			ret = PTR_ERR(stall_cdev);
+			goto err_unregister_cdev;
+		}
+		ctx->stall_cdev = stall_cdev;
 	}
 
 	return 0;
+
+err_unregister_cdev:
+	thermal_cooling_device_unregister(ctx->cdev);
 
 err_tach_gpio_dir:
 	if (!IS_ERR(ctx->pwm))
@@ -1322,6 +1388,7 @@ static int pwm_fan_remove(struct platform_device *pdev)
 #endif
 #endif
 
+	thermal_cooling_device_unregister(ctx->stall_cdev);
 	thermal_cooling_device_unregister(ctx->cdev);
 	mutex_lock(&ctx->lock);
 	if (ctx->pwm_value)

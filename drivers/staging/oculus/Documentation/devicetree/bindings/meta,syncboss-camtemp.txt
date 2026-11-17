@@ -1,0 +1,55 @@
+=========================================
+Meta SyncBoss Camera Temperature Provider
+=========================================
+
+Exposes the camera on-die temperatures reported by the SyncBoss MCU as thermal
+zones.
+
+The MCU owns the camera imagers and stamps a camera's on-die temperature into
+every camera shutter packet it sends to the AP. That packet is delivered to
+userspace only through the camera metadata stream, which is readable only by
+the process that owns the stream. This driver registers as a SyncBoss packet
+consumer, takes the temperature out of the shutter packets the SyncBoss driver
+already delivers in-kernel, and republishes it through the thermal framework,
+where any number of readers can poll it concurrently.
+
+Because the temperature arrives with camera frames, a zone only reports a live
+value while its camera is streaming. When the camera is not streaming the MCU
+has no reading to report and the zone reads 0, which is not a temperature a
+powered die can produce. Consumers must treat 0 as "not measuring" and never as
+a passing measurement. Readings are also dropped when the SyncBoss stream stops
+or the MCU goes down, so a stale value is never served.
+
+Only cameras whose imagers implement an on-die temperature register are
+supported. The eye-tracking imagers do not have one.
+
+SyncBoss Camera Temperature Node
+--------------------------------
+
+The node must be a child of a "meta,syncboss-spi" node.
+
+Required properties:
+- compatible : Should be "meta,syncboss-camtemp", "meta,syncboss-consumer".
+- #thermal-sensor-cells : Required by the thermal framework, should be 1. The
+        cell is the camera id, matching the camera ids used by the MCU firmware
+        and the cam<id>-usr thermal zone naming convention.
+
+A thermal zone is registered only for the camera ids that a thermal zone in the
+device tree actually refers to.
+
+Example:
+
+&syncboss_nrf54l15 {
+        syncboss_camtemp: camtemp@0 {
+                compatible = "meta,syncboss-camtemp", "meta,syncboss-consumer";
+                #thermal-sensor-cells = <1>;
+        };
+};
+
+&thermal_zones {
+        cam2-usr {
+                polling-delay-passive = <0>;
+                polling-delay = <0>;
+                thermal-sensors = <&syncboss_camtemp 2>;
+        };
+};

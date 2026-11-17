@@ -39,6 +39,10 @@ static ssize_t swd_debug_reset_write(struct file *fp,
 		goto exit_debug_reset;
 	}
 
+	status = swd_debug_claim_check(dev);
+	if (status)
+		goto exit_debug_reset;
+
 	if (!gpio_is_valid(devdata->gpio_reset)) {
 		dev_err(dev, "Reset gpio not valid");
 		status =  -ENODEV;
@@ -86,6 +90,10 @@ static ssize_t swd_debug_erase_app_write(struct file *fp,
 		status = -EBUSY;
 		goto exit_debug_erase_app;
 	}
+
+	status = swd_debug_claim_check(dev);
+	if (status)
+		goto exit_debug_erase_app;
 
 	if (!devdata->mcu_data.swd_ops.target_erase) {
 		dev_err(dev, "target_erase is NULL!");
@@ -148,6 +156,10 @@ static ssize_t swd_debug_erase_chip_write(struct file *fp,
 		goto exit_debug_erase_chip;
 	}
 
+	status = swd_debug_claim_check(dev);
+	if (status)
+		goto exit_debug_erase_chip;
+
 	if (!devdata->mcu_data.swd_ops.target_chip_erase) {
 		dev_err(dev, "target_chip_erase is NULL!");
 		status = -EOPNOTSUPP;
@@ -203,6 +215,10 @@ static ssize_t swd_debug_write_app_write(struct file *fp,
 		status = -EBUSY;
 		goto exit_debug_write;
 	}
+
+	status = swd_debug_claim_check(dev);
+	if (status)
+		goto exit_debug_write;
 
 	status = fwupdate_get_firmware_images(dev, devdata);
 	if (status) {
@@ -341,6 +357,10 @@ static ssize_t swd_debug_force_write_all_write(struct file *fp,
 		status = -EBUSY;
 		goto exit_debug_write;
 	}
+
+	status = swd_debug_claim_check(dev);
+	if (status)
+		goto exit_debug_write;
 
 	dev_info(dev, "Retrieving firmware images");
 	status = fwupdate_get_firmware_images(dev, devdata);

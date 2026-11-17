@@ -512,23 +512,14 @@ static inline int adreno_dispatcher_requeue_cmdobj(
  *
  * Add a context to the dispatcher pending list.
  */
-static int dispatcher_queue_context(struct adreno_device *adreno_dev,
+static void dispatcher_queue_context(struct adreno_device *adreno_dev,
 		struct adreno_context *drawctxt)
 {
 	struct adreno_dispatcher *dispatcher = &adreno_dev->dispatcher;
-	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
-	int ret = 0;
 
 	/* Refuse to queue a detached context */
 	if (kgsl_context_detached(&drawctxt->base))
-		return ret;
-
-	/* Lazily allocate the drawctxt's preemption record (if necessary) */
-	if (gpudev->preemption_context_init) {
-		ret = gpudev->preemption_context_init(&drawctxt->base);
-		if (ret)
-			return ret;
-	}
+		return;
 
 	spin_lock(&dispatcher->plist_lock);
 
@@ -542,8 +533,6 @@ static int dispatcher_queue_context(struct adreno_device *adreno_dev,
 	}
 
 	spin_unlock(&dispatcher->plist_lock);
-
-	return ret;
 }
 
 /*
@@ -1389,6 +1378,7 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 {
 	struct kgsl_device *device = dev_priv->device;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+	struct adreno_gpudev *gpudev = ADRENO_GPU_DEVICE(adreno_dev);
 	struct adreno_context *drawctxt = ADRENO_CONTEXT(context);
 	struct adreno_dispatcher_drawqueue *dispatch_q;
 	int ret;
@@ -1404,6 +1394,21 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 	ret = _verify_cmdobj(dev_priv, context, drawobj, count);
 	if (ret)
 		return ret;
+
+	/*
+	 * Lazily allocate the drawctxt's preemption record (if necessary).
+	 * This must be done before anything is queued: the caller frees the
+	 * drawobjs on error, but once queued they are owned by the drawqueue.
+	 */
+	if (gpudev->preemption_context_init) {
+		ret = gpudev->preemption_context_init(&drawctxt->base);
+		if (ret) {
+			dev_err_ratelimited(device->dev,
+				"ctx %u: preemption record alloc failed: %d\n",
+				context->id, ret);
+			return ret;
+		}
+	}
 
 	/* wait for the suspend gate */
 	wait_for_completion(&device->halt_gate);
@@ -1485,14 +1490,10 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 				KGSL_L2PC_QUEUE_TIMEOUT);
 
 	/*
-	 * Add the context to the dispatcher pending list. If this has to
-	 * allocate the context's preemption record and that fails, then it'll
-	 * dump out an error code which we need to pass back to the caller. Not
-	 * much else we can do at that point.
+	 * Add the context to the dispatcher pending list. The drawobjs are
+	 * already queued, so nothing past here may fail the submission.
 	 */
-	ret = dispatcher_queue_context(adreno_dev, drawctxt);
-	if (ret)
-		return ret;
+	dispatcher_queue_context(adreno_dev, drawctxt);
 
 	/*
 	 * Only issue commands if inflight is less than burst -this prevents us
