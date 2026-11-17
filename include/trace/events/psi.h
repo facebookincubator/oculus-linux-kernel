@@ -105,6 +105,39 @@ TRACE_EVENT(psi_memstall_leave,
 	TP_printk("pid=%d tgid=%d", __entry->pid, __entry->tgid)
 );
 
+/*
+ * Every change to a task's PSI state flags. Emitted with the runqueue lock of
+ * task_cpu(task) held and interrupts disabled, after task->psi_flags has been
+ * updated, so a consumer can maintain per-cpu PSI-style counters without
+ * further synchronization.
+ */
+TRACE_EVENT(psi_flags_change,
+
+	TP_PROTO(struct task_struct *task, int clear, int set),
+
+	TP_ARGS(task, clear, set),
+
+	TP_STRUCT__entry(
+		__field(pid_t, pid)
+		__field(pid_t, tgid)
+		__field(int, clear)
+		__field(int, set)
+		__field(unsigned int, flags)
+	),
+
+	TP_fast_assign(
+		__entry->pid = task->pid;
+		__entry->tgid = task->tgid;
+		__entry->clear = clear;
+		__entry->set = set;
+		__entry->flags = task->psi_flags;
+	),
+
+	TP_printk("pid=%d tgid=%d clear=%#x set=%#x flags=%#x",
+		__entry->pid, __entry->tgid, __entry->clear, __entry->set,
+		__entry->flags)
+);
+
 #endif
 
 /* This part must be outside protection */

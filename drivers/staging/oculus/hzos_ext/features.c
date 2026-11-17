@@ -14,6 +14,7 @@
 
 #include "features.h"
 #include "mem.h"
+#include "soft_rt.h"
 
 /* Undefine macros if previously defined */
 #ifdef HZOS_EXT_FEATURE

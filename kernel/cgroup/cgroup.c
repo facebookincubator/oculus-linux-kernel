@@ -58,6 +58,7 @@
 #include <linux/sched/cputime.h>
 #include <linux/sched/deadline.h>
 #include <linux/psi.h>
+#include <linux/hzos_ext.h>
 #include <net/sock.h>
 
 #define CREATE_TRACE_POINTS
@@ -6169,6 +6170,52 @@ static struct cgroup *cgroup_get_from_file(struct file *f)
 	return cgrp;
 }
 
+/* The HZOS_EXT_FORK_CGROUP_NAME sibling of a threaded @cgrp, if any. */
+static struct cgroup *hzos_ext_fork_cgroup(struct cgroup *cgrp)
+{
+	struct cgroup *parent = cgroup_parent(cgrp);
+	struct cgroup_subsys_state *css;
+
+	lockdep_assert_held(&cgroup_mutex);
+
+	if (!parent || !cgroup_is_threaded(cgrp))
+		return NULL;
+
+	css_for_each_child(css, &parent->self) {
+		struct cgroup *sibling = css->cgroup;
+
+		if (sibling != cgrp && cgroup_is_threaded(sibling) &&
+		    !cgroup_is_dead(sibling) &&
+		    !strcmp(sibling->kn->name, HZOS_EXT_FORK_CGROUP_NAME))
+			return sibling;
+	}
+
+	return NULL;
+}
+
+/*
+ * Pick the css_set for a new thread of a FORK_TG_NORMAL thread. Called with
+ * cgroup_mutex held, which stays held only if the thread is redirected, in
+ * which case kargs->cgrp pins the target as it does for CLONE_INTO_CGROUP.
+ */
+static void hzos_ext_css_set_fork(struct kernel_clone_args *kargs,
+				  struct css_set *cset)
+{
+	struct cgroup *dst_cgrp = hzos_ext_fork_cgroup(cset->dfl_cgrp);
+	struct css_set *dst_cset = dst_cgrp ? find_css_set(cset, dst_cgrp) : NULL;
+
+	if (!dst_cset) {
+		mutex_unlock(&cgroup_mutex);
+		kargs->cset = cset;
+		return;
+	}
+
+	cgroup_get(dst_cgrp);
+	put_css_set(cset);
+	kargs->cset = dst_cset;
+	kargs->cgrp = dst_cgrp;
+}
+
 /**
  * cgroup_css_set_fork - find or create a css_set for a child process
  * @kargs: the arguments passed to create the child process
@@ -6193,8 +6240,10 @@ static int cgroup_css_set_fork(struct kernel_clone_args *kargs)
 	struct css_set *cset;
 	struct super_block *sb;
 	struct file *f;
+	bool fork_tg_normal = !(kargs->flags & CLONE_INTO_CGROUP) &&
+			      hzos_ext_fork_tg_normal(current, kargs->flags);
 
-	if (kargs->flags & CLONE_INTO_CGROUP)
+	if ((kargs->flags & CLONE_INTO_CGROUP) || fork_tg_normal)
 		mutex_lock(&cgroup_mutex);
 
 	cgroup_threadgroup_change_begin(current);
@@ -6203,6 +6252,11 @@ static int cgroup_css_set_fork(struct kernel_clone_args *kargs)
 	cset = task_css_set(current);
 	get_css_set(cset);
 	spin_unlock_irq(&css_set_lock);
+
+	if (fork_tg_normal) {
+		hzos_ext_css_set_fork(kargs, cset);
+		return 0;
+	}
 
 	if (!(kargs->flags & CLONE_INTO_CGROUP)) {
 		kargs->cset = cset;
@@ -6287,7 +6341,8 @@ static void cgroup_css_set_put_fork(struct kernel_clone_args *kargs)
 		kargs->cset = NULL;
 	}
 
-	if (kargs->flags & CLONE_INTO_CGROUP) {
+	/* A FORK_TG_NORMAL redirect holds cgroup_mutex whenever it pins cgrp. */
+	if ((kargs->flags & CLONE_INTO_CGROUP) || cgrp) {
 		mutex_unlock(&cgroup_mutex);
 		if (cgrp) {
 			cgroup_put(cgrp);

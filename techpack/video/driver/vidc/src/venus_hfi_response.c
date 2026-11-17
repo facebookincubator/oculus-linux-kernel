@@ -282,9 +282,21 @@ static bool check_for_packet_payload(struct msm_vidc_inst *inst,
 		if (pkt->type == HFI_CMD_BUFFER)
 			payload_size = sizeof(struct hfi_buffer);
 		break;
-	default:
-		payload_size = 0;
+	case HFI_PAYLOAD_BLOB:
+	case HFI_PAYLOAD_STRING:
+		/* variable-length types: require at least 1 byte of payload */
+		payload_size = 1;
 		break;
+	case HFI_PAYLOAD_U32_ARRAY:
+	case HFI_PAYLOAD_S32_ARRAY:
+		/* array of 32-bit elements: require at least one element */
+		payload_size = sizeof(u32);
+		break;
+	default:
+		i_vpr_e(inst,
+			"%s: unsupported payload_info %#x for packet %#x\n",
+			func, pkt->payload_info, pkt->type);
+		return false;
 	}
 
 	if (pkt->size < sizeof(struct hfi_packet) + payload_size) {
@@ -1401,6 +1413,14 @@ static int handle_session_buffer(struct msm_vidc_inst *inst,
 		return 0;
 	}
 
+	if (pkt->payload_info != HFI_PAYLOAD_STRUCTURE) {
+		i_vpr_e(inst,
+			"%s: invalid payload_info %#x for HFI_CMD_BUFFER, expected HFI_PAYLOAD_STRUCTURE\n",
+			__func__, pkt->payload_info);
+		msm_vidc_change_state(inst, MSM_VIDC_ERROR, __func__);
+		return 0;
+	}
+
 	buffer = (struct hfi_buffer *)((u8 *)pkt + sizeof(struct hfi_packet));
 	if (!is_valid_hfi_buffer_type(inst, buffer->type, __func__)) {
 		msm_vidc_change_state(inst, MSM_VIDC_ERROR, __func__);
@@ -1656,6 +1676,15 @@ static int handle_dpb_list_property(struct msm_vidc_inst *inst,
 	u8 *payload_start;
 	int i = 0;
 
+	if (pkt->payload_info != HFI_PAYLOAD_BLOB &&
+	    pkt->payload_info != HFI_PAYLOAD_NONE) {
+		i_vpr_e(inst,
+			"%s: invalid payload_info %#x, expected HFI_PAYLOAD_BLOB or HFI_PAYLOAD_NONE\n",
+			__func__, pkt->payload_info);
+		msm_vidc_change_state(inst, MSM_VIDC_ERROR, __func__);
+		return -EINVAL;
+	}
+
 	payload_size = pkt->size - sizeof(struct hfi_packet);
 	num_words_in_payload = payload_size / 4;
 	payload_start = (u8 *)((u8 *)pkt + sizeof(struct hfi_packet));
@@ -1724,11 +1753,106 @@ static int handle_property_fence_array(struct msm_vidc_inst *inst,
 	return 0;
 }
 
+static bool validate_property_payload_info(struct msm_vidc_inst *inst,
+					   struct hfi_packet *pkt)
+{
+	u32 expected = HFI_PAYLOAD_NONE;
+
+	switch (pkt->type) {
+	/* 32-bit packed properties */
+	case HFI_PROP_BITSTREAM_RESOLUTION:
+	case HFI_PROP_LUMA_CHROMA_BIT_DEPTH:
+	case HFI_PROP_CODED_FRAMES:
+	case HFI_PROP_SIGNAL_COLOR_INFO:
+	case HFI_PROP_MAX_NUM_REORDER_FRAMES:
+		expected = HFI_PAYLOAD_32_PACKED;
+		break;
+	/* 32-bit scalar properties */
+	case HFI_PROP_BUFFER_FW_MIN_OUTPUT_COUNT:
+	case HFI_PROP_PIC_ORDER_CNT_TYPE:
+	case HFI_PROP_AV1_FILM_GRAIN_PRESENT:
+	case HFI_PROP_AV1_SUPER_BLOCK_ENABLED:
+	case HFI_PROP_SUBFRAME_INPUT:
+	case HFI_PROP_WORST_COMPRESSION_RATIO:
+	case HFI_PROP_WORST_COMPLEXITY_FACTOR:
+	case HFI_PROP_CABAC_SESSION:
+	case HFI_PROP_STAGE:
+	case HFI_PROP_PIPE:
+		expected = HFI_PAYLOAD_U32;
+		break;
+	/* 32-bit enum properties */
+	case HFI_PROP_PROFILE:
+	case HFI_PROP_LEVEL:
+	case HFI_PROP_TIER:
+	case HFI_PROP_QUALITY_MODE:
+		expected = HFI_PAYLOAD_U32_ENUM;
+		break;
+	/*
+	 * HFI doc currently specifies HFI_PAYLOAD_U32 for PICTURE_TYPE and
+	 * carries a FIXME that it should be HFI_PAYLOAD_U32_ENUM. Accept both
+	 * for compatibility with firmware revisions.
+	 */
+	case HFI_PROP_PICTURE_TYPE:
+		if (pkt->payload_info != HFI_PAYLOAD_U32 &&
+		    pkt->payload_info != HFI_PAYLOAD_U32_ENUM) {
+			i_vpr_e(inst,
+				"%s: invalid payloadinfo %#x for property %#x, expected %#x or %#x\n",
+				__func__, pkt->payload_info, pkt->type,
+				HFI_PAYLOAD_U32, HFI_PAYLOAD_U32_ENUM);
+			return false;
+		}
+		return true;
+	/* 64-bit packed property (two u32 fields) */
+	case HFI_PROP_CROP_OFFSETS:
+		if (pkt->payload_info != HFI_PAYLOAD_64_PACKED &&
+		    pkt->payload_info != HFI_PAYLOAD_U64) {
+			i_vpr_e(inst,
+				"%s: invalid payloadinfo %#x for property %#x, expected %#x or %#x\n",
+				__func__, pkt->payload_info, pkt->type,
+				HFI_PAYLOAD_64_PACKED, HFI_PAYLOAD_U64);
+			return false;
+		}
+		return true;
+	/*
+	 * DPB_LIST is documented as HFI_PAYLOAD_BLOB. Firmware may also send
+	 * the property without payload to indicate an empty DPB list.
+	 */
+	case HFI_PROP_DPB_LIST:
+		if (pkt->payload_info != HFI_PAYLOAD_BLOB &&
+		    pkt->payload_info != HFI_PAYLOAD_NONE) {
+			i_vpr_e(inst,
+				"%s: invalid payloadinfo %#x for property %#x, expected %#x or %#x\n",
+				__func__, pkt->payload_info, pkt->type,
+				HFI_PAYLOAD_BLOB, HFI_PAYLOAD_NONE);
+			return false;
+		}
+		return true;
+	default:
+		/* unknown property - allow through, handled by switch default */
+		i_vpr_h(inst, "%s: unrecognized property %#x, skipping payload validation\n",
+				__func__, pkt->type);
+		return true;
+	}
+
+	if (pkt->payload_info != expected) {
+		i_vpr_e(inst,
+			"%s: invalid payload_info %#x for property %#x, expected %#x\n",
+			__func__, pkt->payload_info, pkt->type, expected);
+		return false;
+	}
+	return true;
+}
+
 static int handle_property_with_payload(struct msm_vidc_inst *inst,
 	struct hfi_packet *pkt, u32 port)
 {
 	int rc = 0;
 	u32 *payload_ptr = NULL;
+
+	if (!validate_property_payload_info(inst, pkt)) {
+		msm_vidc_change_state(inst, MSM_VIDC_ERROR, __func__);
+		return -EINVAL;
+	}
 
 	payload_ptr = (u32 *)((u8 *)pkt + sizeof(struct hfi_packet));
 	if (!payload_ptr) {
@@ -1925,6 +2049,12 @@ static int handle_image_version_property(struct msm_vidc_core *core,
 	u32 i = 0;
 	u8 *str_image_version;
 	u32 req_bytes;
+
+	if (pkt->payload_info != HFI_PAYLOAD_STRING) {
+		d_vpr_e("%s: invalid payload_info %#x, expected HFI_PAYLOAD_STRING\n",
+			__func__, pkt->payload_info);
+		return -EINVAL;
+	}
 
 	req_bytes = pkt->size - sizeof(*pkt);
 	if (req_bytes < VENUS_VERSION_LENGTH - 1) {

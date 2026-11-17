@@ -3,6 +3,7 @@
  */
 
 #include <linux/bug.h>
+#include <linux/capability.h>
 #include <linux/proc_fs.h>
 #include <linux/hzos_ext.h>
 #include <linux/sched.h>
@@ -16,7 +17,7 @@
 #undef HZOS_EXT_FLAG
 #endif
 
-#define MAX_FLAGS_LEN 64
+#define MAX_FLAGS_LEN 128
 
 ssize_t hzos_ext_flags_read_procfs(struct task_struct *task,
 				       char __user *ubuf,
@@ -55,6 +56,18 @@ ssize_t hzos_ext_flags_read_procfs(struct task_struct *task,
 	return simple_read_from_buffer(ubuf, count, ppos, tmpbuf, MAX_FLAGS_LEN);
 }
 
+/*
+ * The procfs file is world writable so that task profiles applied by init or
+ * system_server can reach other processes. Flags such as ALLOW_RT are
+ * permissions, so like task_profiles every write, including to the writer's
+ * own threads, takes CAP_SYS_NICE or CAP_SYS_ADMIN.
+ */
+bool hzos_ext_flags_write_allowed(void)
+{
+	return ns_capable_noaudit(&init_user_ns, CAP_SYS_NICE) ||
+	       ns_capable_noaudit(&init_user_ns, CAP_SYS_ADMIN);
+}
+
 ssize_t hzos_ext_flags_write_procfs(struct task_struct *task,
 				        const char __user *ubuf,
 				        size_t count, loff_t *ppos)
@@ -68,6 +81,9 @@ ssize_t hzos_ext_flags_write_procfs(struct task_struct *task,
 	/* No partial writes. */
 	if (*ppos != 0)
 		return -EINVAL;
+
+	if (!hzos_ext_flags_write_allowed())
+		return -EPERM;
 
 	/* Shouldn't exceed maxmum flag length */
 	if (count > MAX_FLAGS_LEN || count <= 3)

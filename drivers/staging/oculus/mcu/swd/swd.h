@@ -13,8 +13,44 @@
 /* Initialize the SWD GPIO state */
 int swd_init(struct device *dev);
 
+/*
+ * Bring the SWD pins up and clock the line into a known state, stopping short
+ * of the mode switch, IDCODE read and power-up handshake that swd_init() goes
+ * on to do. A debugger attached over the chardev drives those itself; having
+ * the driver drive them too leaves the two with conflicting ideas of DP state.
+ */
+void swd_wire_init(struct device *dev);
+
 /* Deinit the SWD GPIO state */
 void swd_deinit(struct device *dev);
+
+/*
+ * Run a single DP/AP transfer and report the acknowledge verbatim in @ack_out.
+ *
+ * Unlike the driver's own transfers this never retries a WAIT. A debugger runs
+ * its own WAIT/FAULT recovery, and two retry layers produce failures that
+ * cannot be attributed to either one.
+ *
+ * Returns 0 when the transfer was driven to completion, including when the
+ * target NAKed it - inspect @ack_out for that. A negative return means the
+ * wire itself failed.
+ */
+int swd_dpap_xfer_raw(struct device *dev, bool apndp, bool rnw, u8 reg,
+		      u32 *data, u32 idle_clocks, u8 *ack_out);
+
+/*
+ * Clock an arbitrary bit sequence out on SWDIO, LSB of each byte first. Used
+ * for the ADIv5 special sequences, which belong to the debugger.
+ */
+void swd_wire_raw_seq(struct device *dev, const u8 *bits, u32 nbits);
+
+/*
+ * Refuse an operation that would drive SWD from somewhere other than the fd
+ * holding the claim, while an external debugger holds the link. Returns -EBUSY
+ * and logs who is holding it, or 0 when the caller is free to proceed. Caller
+ * must hold state_mutex.
+ */
+int swd_debug_claim_check(struct device *dev);
 
 /* Stop the target */
 void swd_halt(struct device *dev);
@@ -99,6 +135,16 @@ struct swd_ops_params {
 	 * return: 0 on success
 	 */
 	int (*target_prepare)(struct device *dev);
+
+	/*
+	 * Connect or disconnect the SWD lines from the MCU, on boards that mux
+	 * them elsewhere. Optional: leave NULL where the lines are always wired
+	 * through. target_prepare/target_finalize already do this around a
+	 * firmware update; this exists so a debug claim can do it on its own,
+	 * without the power cycle and boot mode change those also perform.
+	 * return: 0 on success
+	 */
+	int (*bus_enable)(struct device *dev, bool enable);
 
 	/*
 	 * Clear program flash region (but not provisioning region)
@@ -257,6 +303,19 @@ struct swd_dev_data {
 
 	/* Perform a full chip erase before writing firmware */
 	bool erase_all;
+
+	/*
+	 * An external debugger holds the SWD link via SWD_IOCTL_DEBUG_CLAIM.
+	 * The sysfs, debugfs and firmware update paths refuse while this is
+	 * set, so nothing drives SWD or resets the MCU behind the debugger's
+	 * back. The chardev fd that took the claim keeps its own access,
+	 * including SWD_IOCTL_RESET, which the debugger uses to drive srst.
+	 * Guarded by state_mutex.
+	 */
+	bool debug_claimed;
+
+	/* Pid that took the claim, so refusals can name it. */
+	pid_t debug_claim_pid;
 
 	/* swd_dev_data for any system that has multiple MCUs or cores sharing an SWD */
 	struct swd_mcu_data *child_mcu_data;

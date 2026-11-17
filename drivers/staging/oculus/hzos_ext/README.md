@@ -139,6 +139,41 @@ them from RT. While they technically no longer have permission to use RT, we
 want to err on the side of simplicity to avoid conflicting with e.g. temporary
 priority inheritance.
 
+### SOFT_RT
+
+Soft real-time scheduling for cgroup v2. With cgroup v1, soft real-time threads
+joined the system-wide `soft-rt` cpu cgroup and took precedence over other
+processes' threads. On a cgroup v2 cpu controller, a thread's CFS weight only
+competes with the other threads of its own process: the process cgroup's
+`cpu.weight` decides how much CPU the process gets against everything else, so
+there is no per-thread equivalent.
+
+The SOFT_RT flag restores that. The `SOFT_RT` feature is enabled by default.
+While it is enabled,
+runnable flagged threads are kept on a per-CPU queue and picked ahead of the
+CFS choice, regardless of their cgroup, and a waking flagged thread preempts an
+unflagged one. Flagged threads are bounded so they cannot starve the system.
+All bounds are numeric features:
+
+- `SOFT_RT_SLICE_NS` (3 ms): how long a flagged thread runs before the
+  next flagged thread on the CPU gets a turn.
+- `SOFT_RT_LIMIT_NS` (12 ms): once a thread has run this long since it
+  woke, it falls back to plain CFS until it sleeps again.
+- `SOFT_RT_RQ_WINDOW_NS` (100 ms) and `SOFT_RT_RQ_SHARE` (80, in
+  percent): the runtime of queued flagged threads is charged to their CPU in
+  fixed windows. Once it exceeds the share of the window, the CPU ignores them
+  until the window ends, however briefly they sleep in between.
+
+Setting or clearing the flag requires CAP_SYS_NICE or CAP_SYS_ADMIN.
+
+```
+stanley:/ # echo SOFT_RT > /proc/hzos_ext
+stanley:/ # echo SOFT_RT_SLICE_NS=2000000 > /proc/hzos_ext
+stanley:/ # echo SOFT_RT > /proc/<tid>/hzos_ext_flags
+```
+
+The flag is not inherited by threads the flagged thread spawns.
+
 ## Adding a new flag
 
 Adding a new flag is simple. Notice that there is a `flags_table.h` header file
@@ -189,11 +224,26 @@ ProcessCapacityHigh HighPerformance
 The tag is purely informational. The kernel never uses it to make scheduling or
 cgroup decisions, and writing to it does not move the task between profiles.
 
-The file is world readable and only writable by CAP_SYS_ADMIN, which in practice
-means init. Its contents are the space separated profile list from the service's
-`task_profiles` init.rc option, truncated to `HZOS_EXT_TASK_PROFILES_LEN`. The
-tag survives the exec of the service, and like `cmdline` it is a per process
-file: it is not exposed under `/proc/<pid>/task/<tid>/`.
+The file is world readable and writable by CAP_SYS_NICE or CAP_SYS_ADMIN (the
+file mode is 0666; the capability check is the gate). Writers without either
+capability get `EPERM`, and no capability audit denial is logged. Its contents
+are the space separated profile list from the service's `task_profiles` init.rc
+option, truncated to `HZOS_EXT_TASK_PROFILES_LEN`. The tag survives the exec of
+the service, and like `cmdline` it is a per process file: it is stored on the
+thread group leader, so writing it through any thread of the process tags the
+process, and it is not exposed under `/proc/<pid>/task/<tid>/`.
+
+On anorak and niobe kernels (not kona), `/proc/<pid>/task/<tid>/thread_profiles`
+is the per thread counterpart, for profiles applied to an individual thread. It
+has the same format and the same capability gate. A new thread inherits the tag
+of the thread that created it, unless that thread has the `FORK_TG_NORMAL` flag,
+which starts the new thread in `tg_normal` untagged. A new process starts with
+both tags cleared. A write that changes either tag fires the
+`hzos_ext:hzos_ext_task_profiles_changed` tracepoint; rewriting the current
+value does not. The tracepoint also fires when a new thread inherits a
+non-empty thread tag, so user space learns inherited tags too. On these kernels
+the capability is also checked when either file is opened for writing, so a
+writable fd cannot be obtained without it and handed to a privileged process.
 
 # Contributing
 

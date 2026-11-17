@@ -1150,10 +1150,14 @@ err:
 
 	if (skb)
 		dev_kfree_skb_any(skb);
-	if (ncm->skb_tx_data)
+	if (ncm->skb_tx_data) {
 		dev_kfree_skb_any(ncm->skb_tx_data);
-	if (ncm->skb_tx_ndp)
+		ncm->skb_tx_data = NULL;
+	}
+	if (ncm->skb_tx_ndp) {
 		dev_kfree_skb_any(ncm->skb_tx_ndp);
+		ncm->skb_tx_ndp = NULL;
+	}
 
 	return NULL;
 }
@@ -1397,6 +1401,33 @@ static void ncm_disable(struct usb_function *f)
 	if (ncm->notify->enabled) {
 		usb_ep_disable(ncm->notify);
 		ncm->notify->desc = NULL;
+	}
+
+	/*
+	 * NCM is only torn down when the last consumer releases it, but the TX
+	 * aggregation timer and any partially-built NTB can be left behind on
+	 * deactivate, so reclaim both here.
+	 *
+	 * Use hrtimer_try_to_cancel(): disable() can run in atomic context --
+	 * reset_config() invokes it under cdev->lock with interrupts disabled --
+	 * and task_timer is HRTIMER_MODE_REL_SOFT, so a blocking cancel could
+	 * spin waiting on a softirq that cannot make progress. A callback that
+	 * is already running is harmless: ncm_tx_timeout() is HRTIMER_NORESTART
+	 * and the datapath is torn down above, so it cannot re-arm the timer.
+	 *
+	 * Freeing the skbs here needs no extra lock: ncm_wrap_ntb() runs only
+	 * under dev->lock with port_usb non-NULL, and gether_disconnect() takes
+	 * that same lock to clear port_usb before returning, so no wrap can be
+	 * in flight or start once it has.
+	 */
+	hrtimer_try_to_cancel(&ncm->task_timer);
+	if (ncm->skb_tx_data) {
+		dev_kfree_skb_any(ncm->skb_tx_data);
+		ncm->skb_tx_data = NULL;
+	}
+	if (ncm->skb_tx_ndp) {
+		dev_kfree_skb_any(ncm->skb_tx_ndp);
+		ncm->skb_tx_ndp = NULL;
 	}
 }
 

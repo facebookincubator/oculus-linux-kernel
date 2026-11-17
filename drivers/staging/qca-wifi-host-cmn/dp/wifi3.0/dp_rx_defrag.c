@@ -962,6 +962,15 @@ dp_rx_construct_fraglist(struct dp_txrx_peer *txrx_peer, int tid,
 			return QDF_STATUS_E_FAILURE;
 		}
 
+		/* Validate buffer has enough data before pulling header */
+		if (soc->rx_pkt_tlv_size + hdrsize > qdf_nbuf_len(msdu)) {
+			QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
+				  "%s: hdrsize %u exceeds frag len %u",
+				  __func__, hdrsize,
+				  (uint32_t)qdf_nbuf_len(msdu));
+			return QDF_STATUS_E_FAILURE;
+		}
+
 		dp_rx_frag_pull_hdr(soc, msdu, hdrsize);
 		len += qdf_nbuf_len(msdu);
 		msdu = qdf_nbuf_next(msdu);
@@ -1603,6 +1612,16 @@ static QDF_STATUS dp_rx_defrag(struct dp_txrx_peer *txrx_peer, unsigned int tid,
 
 			return QDF_STATUS_E_DEFRAG_ERROR;
 		}
+	}
+
+	/* Validate hdr_space doesn't exceed first fragment's data */
+	if (soc->rx_pkt_tlv_size + hdr_space + sizeof(struct llc_snap_hdr_t) >
+	    qdf_nbuf_len(frag_list_head)) {
+		QDF_TRACE(QDF_MODULE_ID_TXRX, QDF_TRACE_LEVEL_ERROR,
+			  "%s: hdr_space %u exceeds frag data len %u",
+			  __func__, hdr_space,
+			  (uint32_t)qdf_nbuf_len(frag_list_head));
+		return QDF_STATUS_E_DEFRAG_ERROR;
 	}
 
 	/* Convert the header to 802.3 header */

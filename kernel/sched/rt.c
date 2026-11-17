@@ -7,6 +7,9 @@
 #include <linux/kmemleak.h>
 #include <trace/hooks/sched.h>
 #include <linux/sysctl.h>
+#include <linux/irq_work.h>
+#include <linux/workqueue.h>
+#include <linux/sched/mm.h>
 
 int sched_rr_timeslice = RR_TIMESLICE;
 int sysctl_sched_rr_timeslice = (MSEC_PER_SEC * RR_TIMESLICE) / HZ;
@@ -19,8 +22,12 @@ static const u64 max_rt_runtime = MAX_BW;
 #define SYSCTL_PROCESS_NAME_LEN (SYSCTL_THREAD_NAME_LEN * 2)
 #define SYSCTL_LIST_LEN ((SYSCTL_THREAD_NAME_LEN + sizeof(' ')) * 8)
 #ifdef CONFIG_RT_TOP_CONTRIBUTORS
-/* Up to 10 entries, ~100 chars each: "<comm> <tgid> <ms> <hits> <ms>\n". */
-#define SYSCTL_TOP_CONTRIB_LEN 1024
+/* Up to 10 entries, ~120 chars each:
+ * "<comm> <tgid> <ms> <hits> <ms> <top_thread>\n".
+ */
+#define SYSCTL_TOP_CONTRIB_LEN 1280
+/* "\t<comm> (tgid N) N N N top_thread=<comm>\n" */
+#define RT_TOP_ROW_MAX 128
 #endif
 
 #ifdef CONFIG_PANIC_ON_RT_THROTTLING_DEFAULT_ON
@@ -102,15 +109,16 @@ static int sched_rt_clear_data_handler(struct ctl_table *table, int write,
 		void __user *buffer, size_t *lenp,
 		loff_t *ppos)
 {
+	unsigned long flags;
 	int ret;
 
-	raw_spin_lock(&sysctl_rt_throttling_info.rt_lock);
+	raw_spin_lock_irqsave(&sysctl_rt_throttling_info.rt_lock, flags);
 	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
 
 	if (!ret && write)
 		reset_sysctl_to_defaults();
 
-	raw_spin_unlock(&sysctl_rt_throttling_info.rt_lock);
+	raw_spin_unlock_irqrestore(&sysctl_rt_throttling_info.rt_lock, flags);
 
 	return ret;
 }
@@ -224,12 +232,15 @@ void init_rt_sysctl(void)
 
 #endif /* CONFIG_RT_THROTTLING_SYSCTL */
 
-#ifdef CONFIG_RT_TOP_CONTRIBUTORS
-#ifdef CONFIG_SCHED_INFO
-/* Defined later in this file; forward declared for rt_top_resolve_name(). */
-static int get_cmdline_nofault(struct task_struct *task, char *buffer, int buflen);
-#endif
+/* Strip control characters to keep one row per line. */
+static void rt_sanitize_name(char *s)
+{
+	for (; *s; s++)
+		if ((unsigned char)*s < 0x20 || (unsigned char)*s == 0x7f)
+			*s = '?';
+}
 
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
 /*
  * Top-N RT contributors per period (per-CPU root rt_rq).
  *
@@ -268,6 +279,7 @@ static void rt_top_capture_name(struct rt_top_contrib *e,
 	else
 		strscpy(e->comm, curr->comm, sizeof(e->comm));
 	rcu_read_unlock();
+	rt_sanitize_name(e->comm);
 }
 
 static void rt_top_account(struct rt_rq *rt_rq, struct task_struct *curr,
@@ -283,8 +295,12 @@ static void rt_top_account(struct rt_rq *rt_rq, struct task_struct *curr,
 			e->runtime_ns += slice_ns;
 			e->last_seen_ns = now;
 			e->slice_count++;
-			if (slice_ns > e->max_slice_ns)
+			if (slice_ns > e->max_slice_ns) {
 				e->max_slice_ns = slice_ns;
+				strscpy(e->max_comm, curr->comm,
+					sizeof(e->max_comm));
+				rt_sanitize_name(e->max_comm);
+			}
 			return;
 		}
 	}
@@ -309,6 +325,8 @@ static void rt_top_account(struct rt_rq *rt_rq, struct task_struct *curr,
 	e->last_seen_ns = now;
 	e->slice_count = 1;
 	e->max_slice_ns = slice_ns;
+	strscpy(e->max_comm, curr->comm, sizeof(e->max_comm));
+	rt_sanitize_name(e->max_comm);
 	rt_top_capture_name(e, curr);
 }
 
@@ -373,6 +391,80 @@ static void rt_top_reset(struct rt_rq *rt_rq)
 	rt_rq->rt_top_count = 0;
 }
 
+static inline struct rq *rq_of_rt_rq(struct rt_rq *rt_rq);
+
+/*
+ * Contributor tracking lives on the root rq. With RT_GROUP_SCHED this timer
+ * also runs per task group, and a group boundary advancing the root slice
+ * start would undercount it.
+ */
+static bool rt_top_is_root(struct rt_rq *rt_rq)
+{
+	return rt_rq == &rq_of_rt_rq(rt_rq)->rt;
+}
+
+/*
+ * The table and rt_top_slice_start_ns are written only under rq->lock, by the
+ * slice hooks and by the dump, so the reset and the re-base have to happen in
+ * one rq->lock section: done separately, slice_end can clear the timestamp and
+ * charge a whole pre-boundary slice into the period that just started, leaving
+ * the re-base a no-op.
+ */
+static void rt_top_period_boundary(struct rt_rq *rt_rq)
+{
+	struct rq *rq = rq_of_rt_rq(rt_rq);
+
+	if (!rt_top_is_root(rt_rq))
+		return;
+
+	rt_top_reset(rt_rq);
+	/* A slice straddling the boundary keeps running; charge only its tail. */
+	if (rt_rq->rt_top_slice_start_ns)
+		rt_rq->rt_top_slice_start_ns = rq_clock_task(rq);
+}
+
+static bool rt_top_boundary_pending(struct rt_rq *rt_rq)
+{
+	return rt_top_is_root(rt_rq) &&
+	       (READ_ONCE(rt_rq->rt_top_count) ||
+		READ_ONCE(rt_rq->rt_top_slice_start_ns));
+}
+
+/*
+ * Account the slice that is still running.
+ *
+ * rt_top_account() only runs at slice end, so the task actually burning the
+ * CPU is absent from the table that is about to blame it: its time has been
+ * charged against the bandwidth, but no slice of its has finished. The table
+ * then reports only the threads short-lived enough to have been descheduled,
+ * which understates runtime badly and makes max_slice_ns name one of them.
+ *
+ * Called from the dump with rt_runtime_lock held, so this calls
+ * rt_top_account() directly rather than rt_top_slice_end(), which would take
+ * the lock again. The slice is restarted so the eventual slice end accounts
+ * only the remainder.
+ */
+static void rt_top_account_in_flight(struct rq *rq, struct rt_rq *rt_rq,
+				     struct task_struct *curr)
+{
+	u64 now, slice_ns;
+
+	lockdep_assert_held(&rq->lock);
+
+	if (!rt_rq->rt_top_slice_start_ns)
+		return;
+	if (curr->tgid != rt_rq->rt_top_slice_tgid)
+		return;
+
+	now = rq_clock_task(rq);
+	slice_ns = now - rt_rq->rt_top_slice_start_ns;
+	if (unlikely((s64)slice_ns <= 0))
+		return;
+
+	rt_top_account(rt_rq, curr, slice_ns, now);
+	rt_rq->rt_top_slice_start_ns = now;
+}
+
 static int rt_top_snapshot_sorted(struct rt_rq *rt_rq,
 				  struct rt_top_contrib *out)
 {
@@ -396,60 +488,42 @@ static int rt_top_snapshot_sorted(struct rt_rq *rt_rq,
 }
 
 /*
- * Look up the cmdline of `tgid` into `scratch` (RT_TOP_NAME_MAX bytes).
- * Returns a pointer to a printable name: the (possibly truncated) cmdline
- * if available, or `fallback` (the snapshotted comm) if the process exited
- * or the lookup failed.
- *
- * The RT_TOP_NAME_MAX cap bounds each entry's length so a single very long
- * cmdline (e.g. a Java app classpath) cannot monopolize the printk buf or
- * the sysctl latch buffer at the expense of other entries.
- *
- * Safe in scheduler context (called from dump_throttled_rt_tasks() under
- * rt_runtime_lock with preemption disabled). Specifically:
- *   - find_vpid()/pid_task() require RCU; we take rcu_read_lock()
- *     explicitly because CONFIG_PREEMPT_RCU=y means
- *     preemption-disabled is NOT an implicit RCU read-side critical
- *     section.
- *   - get_task_struct() inside get_pid_task() is a single atomic
- *     refcount bump — no locks, never sleeps.
- *   - get_cmdline_nofault() uses mmap_read_trylock() and
- *     access_process_vm() with FOLL_NOFAULT; both bail on contention
- *     rather than block. No GFP allocation, no sleeping.
- *
- * Caller must provide scratch as RT_TOP_NAME_MAX bytes.
+ * One printk record per row. The dump buffer is already close to LOG_LINE_MAX
+ * (992 here) and printk truncates a record at that bound, so appending the
+ * table to it silently drops the trailing rows.
  */
-static const char *rt_top_resolve_name(pid_t tgid, char *scratch,
-				       const char *fallback)
+static void rt_top_emit(const struct rt_top_contrib *snap, int n, bool now)
 {
-#ifdef CONFIG_SCHED_INFO
-	struct task_struct *t;
-	int res;
+	static const char hdr[] =
+		"top RT contributors this period (runtime_ms slices max_slice_ms):\n";
+	int i;
 
-	if (!scratch || !task_active_pid_ns(current))
-		return fallback;
+	if (!n)
+		return;
+	if (now)
+		pr_err("%s", hdr);
+	else
+		printk_deferred("%s", hdr);
 
-	rcu_read_lock();
-	t = get_pid_task(find_vpid(tgid), PIDTYPE_PID);
-	rcu_read_unlock();
-	if (!t)
-		return fallback;
+	for (i = 0; i < n; i++) {
+		char row[RT_TOP_ROW_MAX];
 
-	res = get_cmdline_nofault(t, scratch, RT_TOP_NAME_MAX - 1);
-	put_task_struct(t);
-
-	if (res <= 0)
-		return fallback;
-	scratch[res] = '\0';
-	return scratch;
-#else
-	return fallback;
-#endif
+		scnprintf(row, sizeof(row),
+			  "\t%s (tgid %d) %llu %u %llu top_thread=%s\n",
+			  snap[i].comm, snap[i].tgid,
+			  snap[i].runtime_ns / NSEC_PER_MSEC,
+			  snap[i].slice_count,
+			  snap[i].max_slice_ns / NSEC_PER_MSEC,
+			  snap[i].max_comm);
+		if (now)
+			pr_err("%s", row);
+		else
+			printk_deferred("%s", row);
+	}
 }
 
 static int rt_top_format(char *buf, int len,
-			 const struct rt_top_contrib *snap, int n,
-			 const char *fmt, char *cmdline_scratch)
+			 const struct rt_top_contrib *snap, int n)
 {
 	int written = 0;
 	int i;
@@ -458,15 +532,15 @@ static int rt_top_format(char *buf, int len,
 		return 0;
 	buf[0] = '\0';
 	for (i = 0; i < n && written < len - 1; i++) {
-		const char *name = rt_top_resolve_name(snap[i].tgid,
-						       cmdline_scratch,
-						       snap[i].comm);
+		const char *name = snap[i].comm;
 		u64 runtime_ms = snap[i].runtime_ns / NSEC_PER_MSEC;
 		u64 max_ms = snap[i].max_slice_ns / NSEC_PER_MSEC;
 
-		written += scnprintf(buf + written, len - written, fmt,
+		written += scnprintf(buf + written, len - written,
+				     "%s %d %llu %u %llu %s\n",
 				     name, snap[i].tgid,
-				     runtime_ms, snap[i].slice_count, max_ms);
+				     runtime_ms, snap[i].slice_count, max_ms,
+				     snap[i].max_comm);
 	}
 	return written;
 }
@@ -478,10 +552,18 @@ static inline void rt_top_slice_start(struct rq *rq,
 static inline void rt_top_slice_end(struct rq *rq,
 				    struct task_struct *p) { }
 static inline void rt_top_reset(struct rt_rq *rt_rq) { }
+static inline void rt_top_period_boundary(struct rt_rq *rt_rq) { }
+static inline bool rt_top_boundary_pending(struct rt_rq *rt_rq)
+{
+	return false;
+}
 
 #endif /* CONFIG_RT_TOP_CONTRIBUTORS */
 
 static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun);
+#ifdef CONFIG_RT_THROTTLING_SYSCTL
+static void rt_report_watchdog(void);
+#endif
 
 struct rt_bandwidth def_rt_bandwidth;
 
@@ -1357,13 +1439,19 @@ static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun)
 		if (!sched_feat(RT_RUNTIME_SHARE) && rt_rq->rt_runtime != RUNTIME_INF)
 			rt_rq->rt_runtime = rt_b->rt_runtime;
 		skip = !rt_rq->rt_time && !rt_rq->rt_nr_running;
-		rt_top_reset(rt_rq);
 		raw_spin_unlock(&rt_rq->rt_runtime_lock);
-		if (skip)
+		/*
+		 * An idle CPU still needs one boundary to clear what the last
+		 * active period left behind, because this invocation may be the
+		 * one that stops the timer.
+		 */
+		if (skip && !rt_top_boundary_pending(rt_rq))
 			continue;
 
 		raw_spin_lock(&rq->lock);
 		update_rq_clock(rq);
+
+		rt_top_period_boundary(rt_rq);
 
 		if (rt_rq->rt_time) {
 			u64 runtime;
@@ -1403,6 +1491,11 @@ static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun)
 		raw_spin_unlock(&rq->lock);
 	}
 
+#ifdef CONFIG_RT_THROTTLING_SYSCTL
+	/* An armed report that never emitted must still panic. */
+	rt_report_watchdog();
+#endif
+
 	if (!throttled && (!rt_bandwidth_enabled() || rt_b->rt_runtime == RUNTIME_INF))
 		return 1;
 
@@ -1421,39 +1514,288 @@ static inline int rt_se_prio(struct sched_rt_entity *rt_se)
 	return rt_task_of(rt_se)->prio;
 }
 
-#ifdef CONFIG_SCHED_INFO
-static int get_cmdline_nofault(struct task_struct *task, char *buffer, int buflen)
-{
-	int res = 0;
-	unsigned int len;
-	struct mm_struct *mm = get_task_mm(task);
-	unsigned long arg_start, arg_end;
-	if (!mm)
-		goto out;
-	if (!mm->arg_end)
-		goto out_mm;    /* Shh! No looking before we're done */
+#ifdef CONFIG_RT_THROTTLING_SYSCTL
+/*
+ * The throttle report is latched in hard irq and resolved in a worker:
+ * get_cmdline() takes task_lock() and mmap_lock, neither of which the dump
+ * may take from scheduler_tick() under rq->lock.
+ *
+ * Deferring the panic is safe: the throttle dequeues the RT runqueue, so the
+ * CPU has the rest of the period. The dump is still printed from the tick,
+ * so a crash in the gap still carries it.
+ */
+#define RT_REPORT_NAME_MAX	128
 
-	spin_lock(&mm->arg_lock);
-	arg_start = mm->arg_start;
-	arg_end = mm->arg_end;
-	spin_unlock(&mm->arg_lock);
-
-	len = arg_end - arg_start;
-
-	if (len > buflen)
-		len = buflen;
-
-	if (!mmap_read_trylock(mm))
-		goto out_mm;
-	res = access_process_vm(task, arg_start, buffer, len, FOLL_FORCE | FOLL_NOFAULT);
-	mmap_read_unlock(mm);
-
-out_mm:
-	mmput(mm);
-out:
-	return res;
-}
+struct rt_throttle_report {
+	struct irq_work		iw;
+	struct work_struct	work;
+	unsigned long		busy;
+	unsigned long		emitted;
+	atomic_t		periods_waited;
+	/* Pinned in irq, released in the worker. */
+	struct task_struct	*culprit;
+	char			thread_comm[TASK_COMM_LEN];
+	char			leader_comm[TASK_COMM_LEN];
+	bool			panic_armed;
+	/* The sysctl latch this throttle took, else 0. */
+	unsigned int		latch_gen;
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	struct rt_top_contrib	snap[RT_TOP_CONTRIB_N];
+	int			top_n;
+	char			rows[SYSCTL_TOP_CONTRIB_LEN];
 #endif
+};
+
+static DEFINE_PER_CPU(struct rt_throttle_report, rt_report);
+static struct workqueue_struct *rt_throttle_wq;
+/* Set once, by the first CPU to arm a panic. */
+static atomic_t rt_panic_owner = ATOMIC_INIT(-1);
+/* Bumped under rt_lock each time the sysctl latches. */
+static unsigned int rt_latch_gen;
+
+/*
+ * argv[0] of p's process into buf, else fallback. p->mm is shared across the
+ * thread group, so any pinned thread resolves the process.
+ */
+static void rt_report_resolve(struct task_struct *p, const char *fallback,
+			      char *buf, size_t len)
+{
+	int res;
+
+	lockdep_assert_irqs_enabled();
+	might_sleep();
+
+	res = p ? get_cmdline(p, buf, len - 1) : 0;
+	buf[res > 0 ? res : 0] = '\0';
+	/* A positive length can still be an empty argv[0]. */
+	if (buf[0]) {
+		rt_sanitize_name(buf);
+		return;
+	}
+
+	strscpy(buf, fallback, len);
+}
+
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+/* argv[0] of the process @tgid names, else @fallback. */
+static void rt_resolve_tgid(pid_t tgid, const char *fallback,
+			    char *buf, size_t len)
+{
+	struct task_struct *t;
+
+	/* tgid is an init-ns pid and the worker runs there. */
+	rcu_read_lock();
+	t = get_pid_task(find_pid_ns(tgid, &init_pid_ns), PIDTYPE_PID);
+	rcu_read_unlock();
+
+	rt_report_resolve(t, fallback, buf, len);
+	if (t)
+		put_task_struct(t);
+}
+
+/*
+ * Print one line per contributor and build the sysctl copy.
+ */
+static void rt_report_rows(struct rt_throttle_report *r)
+{
+	int used = 0;
+	int i;
+
+	r->rows[0] = '\0';
+	if (!r->top_n)
+		return;
+
+	pr_err("top RT contributors this period, resolved (runtime_ms slices max_slice_ms):\n");
+
+	for (i = 0; i < r->top_n; i++) {
+		const struct rt_top_contrib *e = &r->snap[i];
+		u64 runtime_ms = e->runtime_ns / NSEC_PER_MSEC;
+		u64 max_ms = e->max_slice_ns / NSEC_PER_MSEC;
+		char name[RT_REPORT_NAME_MAX];
+
+		rt_resolve_tgid(e->tgid, e->comm, name, sizeof(name));
+
+		pr_err("\t%s (tgid %d) %llu %u %llu top_thread=%s\n",
+		       name, e->tgid, runtime_ms, e->slice_count, max_ms,
+		       e->max_comm);
+
+		used += scnprintf(r->rows + used, sizeof(r->rows) - used,
+				  "%s %d %llu %u %llu %s\n",
+				  name, e->tgid, runtime_ms, e->slice_count,
+				  max_ms, e->max_comm);
+	}
+}
+#else
+static void rt_report_rows(struct rt_throttle_report *r) { }
+#endif
+
+/* Republish what the worker resolved; the irq side could only write comms. */
+static void rt_report_publish(struct rt_throttle_report *r, const char *name)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(&sysctl_rt_throttling_info.rt_lock, flags);
+	/*
+	 * The latch belongs to the first throttle after a clear. Later reports,
+	 * or one overtaken by a clear, must not mix their names into its pid.
+	 */
+	if (!r->latch_gen || r->latch_gen != rt_latch_gen ||
+	    !sysctl_rt_throttling_info.data_latched)
+		goto out;
+	strscpy(sysctl_rt_throttling_info.process_name, name,
+		sizeof(sysctl_rt_throttling_info.process_name));
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	if (r->rows[0])
+		strscpy(sysctl_rt_throttling_info.top_contributors, r->rows,
+			sizeof(sysctl_rt_throttling_info.top_contributors));
+#endif
+out:
+	raw_spin_unlock_irqrestore(&sysctl_rt_throttling_info.rt_lock, flags);
+
+	WRITE_ONCE(r->emitted, 1);
+}
+
+static void rt_report_finish(struct rt_throttle_report *r, const char *name)
+{
+	if (r->culprit) {
+		put_task_struct(r->culprit);
+		r->culprit = NULL;
+	}
+	if (r->panic_armed)
+		panic("Throttling triggered by thread \"%s\" process \"%s\"",
+		      r->thread_comm, name);
+	/* Frees the slot; pairs with the cmpxchg() in rt_report_latch(). */
+	smp_store_release(&r->busy, 0);
+}
+
+/*
+ * The panic moved off the tick, so it can now be lost: nothing makes the
+ * worker run. If an armed report has not emitted after a full period, panic
+ * here instead, with the comm latched in irq.
+ */
+static void rt_report_watchdog(void)
+{
+	struct rt_throttle_report *r;
+	int owner = atomic_read(&rt_panic_owner);
+
+	if (owner < 0)
+		return;
+
+	r = per_cpu_ptr(&rt_report, owner);
+	if (READ_ONCE(r->emitted))
+		return;
+	if (atomic_inc_return(&r->periods_waited) <= 1)
+		return;
+
+	pr_err("rt_throttle: report timed out, falling back to comm\n");
+	panic("Throttling triggered by thread \"%s\" process \"%s\"",
+	      r->thread_comm, r->leader_comm);
+}
+
+static void rt_report_work(struct work_struct *w)
+{
+	struct rt_throttle_report *r =
+		container_of(w, struct rt_throttle_report, work);
+	char name[RT_REPORT_NAME_MAX];
+
+	rt_report_resolve(r->culprit, r->leader_comm, name, sizeof(name));
+	pr_err("rt_throttle: process \"%s\"\n", name);
+	rt_report_rows(r);
+	rt_report_publish(r, name);
+	rt_report_finish(r, name);
+}
+
+/*
+ * queue_work() can reach try_to_wake_up() -> rq->lock, so it is called from an
+ * irq_work, which runs after rq->lock is dropped. PREEMPT_RT would need the
+ * hard init variant: it defers a non-hard irq_work to irq_workd, a
+ * sched_set_fifo_low() kthread subject to the throttling being reported.
+ */
+static void rt_report_irq(struct irq_work *iw)
+{
+	struct rt_throttle_report *r =
+		container_of(iw, struct rt_throttle_report, iw);
+
+	if (rt_throttle_wq) {
+		queue_work(rt_throttle_wq, &r->work);
+		return;
+	}
+
+	/*
+	 * A throttle before the initcall, so no worker will ever run this.
+	 * Release the slot; the tick already printed the dump, and an armed
+	 * report still panics from rt_report_finish().
+	 *
+	 * The put_task_struct() there cannot be the last reference even though
+	 * this is hard irq: culprit was running when the tick fired, and this
+	 * irq_work runs on the same CPU before it can be reaped.
+	 */
+	rt_report_finish(r, r->leader_comm);
+}
+
+/* False when the report was declined, so the caller still owes the panic. */
+static bool rt_report_latch(struct rq *rq, struct task_struct *curr,
+			    bool panic_armed, unsigned int latch_gen,
+			    const struct rt_top_contrib *snap, int top_n)
+{
+	struct rt_throttle_report *r = this_cpu_ptr(&rt_report);
+	struct task_struct *gl;
+
+	if (cmpxchg(&r->busy, 0, 1))
+		return false;		/* previous report still in flight */
+
+	if (panic_armed &&
+	    atomic_cmpxchg(&rt_panic_owner, -1, smp_processor_id()) != -1) {
+		/* Pairs with the cmpxchg() above; nothing was latched. */
+		smp_store_release(&r->busy, 0);
+		return false;		/* another CPU armed first; its report wins */
+	}
+
+	r->panic_armed = panic_armed;
+	r->latch_gen = latch_gen;
+	WRITE_ONCE(r->emitted, 0);
+	atomic_set(&r->periods_waited, 0);
+
+	strscpy(r->thread_comm, curr->comm, sizeof(r->thread_comm));
+	rt_sanitize_name(r->thread_comm);
+	/* curr does not pin its leader; it can be reaped on the exit path. */
+	rcu_read_lock();
+	gl = curr->group_leader;
+	if (!(curr->flags & PF_EXITING) && gl)
+		strscpy(r->leader_comm, gl->comm, sizeof(r->leader_comm));
+	else
+		strscpy(r->leader_comm, curr->comm, sizeof(r->leader_comm));
+	rcu_read_unlock();
+	rt_sanitize_name(r->leader_comm);
+
+	get_task_struct(curr);
+	r->culprit = curr;
+
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	r->top_n = min(top_n, RT_TOP_CONTRIB_N);
+	memcpy(r->snap, snap, r->top_n * sizeof(*snap));
+#endif
+	irq_work_queue(&r->iw);
+	return true;
+}
+
+static int __init rt_throttle_report_init(void)
+{
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		struct rt_throttle_report *r = per_cpu_ptr(&rt_report, cpu);
+
+		init_irq_work(&r->iw, rt_report_irq);
+		INIT_WORK(&r->work, rt_report_work);
+	}
+
+	rt_throttle_wq = alloc_workqueue("rt_throttle",
+					 WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_HIGHPRI, 1);
+	return rt_throttle_wq ? 0 : -ENOMEM;
+}
+early_initcall(rt_throttle_report_init);
+#endif /* CONFIG_RT_THROTTLING_SYSCTL */
 
 static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 {
@@ -1461,25 +1803,34 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	struct rt_prio_array *array = &rt_rq->active;
 	struct sched_rt_entity *rt_se;
 	char buf[1024];
-	char blame_buf[128];
+	char blame_buf[128] = "Throttling triggered with no runnable RT tasks";
 	char *process_list;
 	char *pos = buf;
 	char *end = buf + sizeof(buf);
 	int idx;
 	struct rt_bandwidth *rt_b = sched_rt_bandwidth(rt_rq);
-	char unknown_pid[] = "unknown_process";
-	char *tgid_comm = NULL;
+	char thread_comm[TASK_COMM_LEN];
+	char leader_comm[TASK_COMM_LEN];
+	const char *tgid_comm = "unknown_process";
+#ifdef CONFIG_RT_THROTTLING_SYSCTL
+	bool panic_now;
+	bool latched;
+	unsigned int latch_gen = 0;
+#endif
 #ifdef CONFIG_RT_TOP_CONTRIBUTORS
 	struct rt_top_contrib snap[RT_TOP_CONTRIB_N];
-	int top_n;
-	char cmdline_scratch[RT_TOP_NAME_MAX];
+	/* The bitmap_empty early-out jumps to out: before the snapshot. */
+	int top_n = 0;
 #endif
 
-	pos += snprintf(pos, sizeof(buf),
+	strscpy(thread_comm, curr->comm, sizeof(thread_comm));
+	rt_sanitize_name(thread_comm);
+
+	pos += scnprintf(pos, end - pos,
 		"sched: RT throttling activated for cpu %d\n",
 		cpu_of(rq_of_rt_rq(rt_rq)));
 
-	pos += snprintf(pos, end - pos,
+	pos += scnprintf(pos, end - pos,
 			"rt_period_timer: expires=%lld now=%llu rt_time=%llu runtime=%llu period=%llu\n",
 			hrtimer_get_expires_ns(&rt_b->rt_period_timer),
 			ktime_get_ns(), rt_rq->rt_time, sched_rt_runtime(rt_rq),
@@ -1488,31 +1839,24 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	if (bitmap_empty(array->bitmap, MAX_RT_PRIO))
 		goto out;
 
-	pos += snprintf(pos, end - pos, "potential CPU hogs:\n");
+	pos += scnprintf(pos, end - pos, "potential CPU hogs:\n");
 #ifdef CONFIG_SCHED_INFO
 	if (sched_info_on()) {
-		struct task_struct *tgid_task =
-			(curr->tgid && task_active_pid_ns(current)) ?
-			get_pid_task(find_vpid(curr->tgid), PIDTYPE_PID) : NULL;
-		if (tgid_task != NULL) {
-			tgid_comm = kmalloc(PAGE_SIZE, GFP_ATOMIC);
-			if (tgid_comm) {
-				int res = get_cmdline_nofault(tgid_task, tgid_comm, PAGE_SIZE - 1);
-				if (res > 0) {
-					tgid_comm[res] = '\0';
-				} else {
-					strcpy(tgid_comm, "unavailable");
-				}
-			}
-			put_task_struct(tgid_task);
-		}
+		struct task_struct *gl;
 
-		if (tgid_comm == NULL)
-			tgid_comm = unknown_pid;
+		/* curr does not pin its leader; it can be reaped on the exit path. */
+		rcu_read_lock();
+		gl = curr->group_leader;
+		strscpy(leader_comm,
+			!(curr->flags & PF_EXITING) && gl ? gl->comm : curr->comm,
+			sizeof(leader_comm));
+		rcu_read_unlock();
+		rt_sanitize_name(leader_comm);
+		tgid_comm = leader_comm;
 
-		pos += snprintf(pos, end - pos,
+		pos += scnprintf(pos, end - pos,
 				"Thread %s (%d) Process %s (%d) is running for %llu nsec\n",
-				curr->comm, curr->pid,
+				thread_comm, curr->pid,
 				tgid_comm, curr->tgid,
 				rq_clock(rq_of_rt_rq(rt_rq)) -
 				curr->sched_info.last_arrival);
@@ -1522,25 +1866,23 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 	idx = sched_find_first_bit(array->bitmap);
 	while (idx < MAX_RT_PRIO) {
 		list_for_each_entry(rt_se, array->queue + idx, run_list) {
+			char p_comm[TASK_COMM_LEN];
 			struct task_struct *p;
 
 			if (!rt_entity_is_task(rt_se))
 				continue;
 
 			p = rt_task_of(rt_se);
-			if (pos < end)
-				pos += snprintf(pos, end - pos, "\t%s (%d)\n",
-					p->comm, p->pid);
+			strscpy(p_comm, p->comm, sizeof(p_comm));
+			rt_sanitize_name(p_comm);
+			pos += scnprintf(pos, end - pos, "\t%s (%d)\n",
+				p_comm, p->pid);
 		}
 		idx = find_next_bit(array->bitmap, MAX_RT_PRIO, idx + 1);
 	}
 
 #ifdef CONFIG_RT_TOP_CONTRIBUTORS
-	/* Snapshot the top contributors table; consumed by both the SYSCTL
-	 * latch below and the printk-buf append at the end of this function.
-	 * cmdline_scratch is a small stack buffer (RT_TOP_NAME_MAX) reused
-	 * across both consumers to resolve cmdlines for printable names.
-	 */
+	rt_top_account_in_flight(rq_of_rt_rq(rt_rq), rt_rq, curr);
 	top_n = rt_top_snapshot_sorted(rt_rq, snap);
 #endif /* CONFIG_RT_TOP_CONTRIBUTORS */
 
@@ -1557,7 +1899,7 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 		sysctl_rt_throttling_info.pid = curr->tgid;
 
 		strscpy(sysctl_rt_throttling_info.thread_name,
-			curr->comm, sizeof(sysctl_rt_throttling_info.thread_name));
+			thread_comm, sizeof(sysctl_rt_throttling_info.thread_name));
 
 		if (tgid_comm != NULL)
 			strscpy(sysctl_rt_throttling_info.process_name,
@@ -1573,44 +1915,55 @@ static void dump_throttled_rt_tasks(struct rt_rq *rt_rq)
 			len - n, process_list);
 
 #ifdef CONFIG_RT_TOP_CONTRIBUTORS
-		/* Format: <name> <tgid> <runtime_ms> <hits> <max_ms>\n  */
 		rt_top_format(sysctl_rt_throttling_info.top_contributors,
 			      sizeof(sysctl_rt_throttling_info.top_contributors),
-			      snap, top_n, "%s %d %llu %u %llu\n",
-			      cmdline_scratch);
+			      snap, top_n);
 #endif
 
 		sysctl_rt_throttling_info.data_latched = 1;
+		latch_gen = ++rt_latch_gen;
 	}
 	raw_spin_unlock(&sysctl_rt_throttling_info.rt_lock);
 #endif /* CONFIG_RT_THROTTLING_SYSCTL */
 
-#ifdef CONFIG_RT_TOP_CONTRIBUTORS
-	/* Append the top contributors block to the printk buf. */
-	if (top_n && pos < end) {
-		pos += snprintf(pos, end - pos,
-				"top RT contributors this period (runtime_ms slices max_slice_ms):\n");
-		pos += rt_top_format(pos, end - pos, snap, top_n,
-				     "\t%s (tgid %d) %llu %u %llu\n",
-				     cmdline_scratch);
-	}
-#endif /* CONFIG_RT_TOP_CONTRIBUTORS */
-
 	snprintf(blame_buf, sizeof(blame_buf), "Throttling triggered by thread \"%s\" process \"%s\"",
-			curr->comm, tgid_comm ?: unknown_pid);
-
-	if (tgid_comm != NULL && tgid_comm != unknown_pid)
-		kfree(tgid_comm);
+			thread_comm, tgid_comm);
 out:
-	if (sysctl_rt_throttling_info.panic_on_throttle) {
-		/*
-		 * Use pr_err() in the BUG() case since printk_sched() will
-		 * not get flushed and deadlock is not a concern.
-		 */
+#ifdef CONFIG_RT_THROTTLING_SYSCTL
+	/* Cache it: a concurrent clear_data write can re-arm it mid-dump. */
+	raw_spin_lock(&sysctl_rt_throttling_info.rt_lock);
+	panic_now = sysctl_rt_throttling_info.panic_on_throttle;
+	raw_spin_unlock(&sysctl_rt_throttling_info.rt_lock);
+
+	/* Emit now so the dump survives anything that kills us first. */
+	if (panic_now) {
 		pr_err("%s\n", buf);
-		panic("%s\n", blame_buf);
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+		rt_top_emit(snap, top_n, true);
+#endif
+		pr_err("%s\n", blame_buf);
 	}
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	latched = rt_report_latch(rq_of_rt_rq(rt_rq), curr, panic_now,
+				  latch_gen, snap, top_n);
+#else
+	latched = rt_report_latch(rq_of_rt_rq(rt_rq), curr, panic_now,
+				  latch_gen, NULL, 0);
+#endif
+	if (panic_now) {
+		/*
+		 * Nothing was armed, so neither the worker nor the watchdog
+		 * will panic for this throttle. Do it here.
+		 */
+		if (!latched)
+			panic("%s", blame_buf);
+		return;
+	}
+#endif
 	printk_deferred("%s\n", buf);
+#ifdef CONFIG_RT_TOP_CONTRIBUTORS
+	rt_top_emit(snap, top_n, false);
+#endif
 	printk_deferred("%s\n", blame_buf);
 }
 

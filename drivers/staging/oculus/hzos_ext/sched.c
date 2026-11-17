@@ -236,6 +236,12 @@ void hzos_ext_task_setscheduler(void *unused, struct task_struct *task,
 	return;
 }
 
+bool hzos_ext_fork_tg_normal(struct task_struct *parent, u64 clone_flags)
+{
+	return (clone_flags & CLONE_THREAD) &&
+	       hzos_ext_task_has_flag(parent, HZOS_EXT_FLAG_FORK_TG_NORMAL);
+}
+
 void hzos_ext_sched_post_clone(struct task_struct *new)
 {
 #ifdef CONFIG_FAIR_GROUP_SCHED

@@ -821,6 +821,8 @@ static void psi_flags_change(struct task_struct *task, int clear, int set)
 
 	task->psi_flags &= ~clear;
 	task->psi_flags |= set;
+
+	trace_psi_flags_change(task, clear, set);
 }
 
 void psi_task_change(struct task_struct *task, int clear, int set)
